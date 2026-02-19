@@ -982,12 +982,21 @@ Canonical ownership map (non-reductive, full-feature):
 - fault harness/cancellation injection/DPOR exploration: canonical harness in `10.14`, control-plane enforcement gate in `10.15`.
 - verifier SDK/replay capsules/claim compiler + trust scoreboard: canonical in `10.17`, ecosystem distribution/adoption in `10.9` + `10.12`.
 - semantic oracle: L1 product oracle owned in `10.2`, L2 engine-boundary oracle owned in `10.17`.
+- authenticated control channel + anti-replay framing: canonical protocol in `10.13`, adoption and policy rollout in `10.10` + `10.15`.
+- revocation freshness semantics: canonical enforcement in `10.13`, ecosystem/policy adoption in `10.4` + `10.10`.
+- stable error taxonomy and recovery contract: canonical definition in `10.13`, operations and product-surface adoption in `10.8` + `10.10`.
+- trust protocol vectors/golden fixtures: canonical generation in `10.13` + `10.14`, release and publication gates in `10.7` + `10.10`.
+- verifiable execution fabric (policy-constraint compiler + receipt commitments + proof generation/verification): canonical in `10.18`, consumed by `10.17` verifier/claim surfaces and enforced through `10.15` control-plane gates.
+- adversarial trust commons federation (privacy-preserving signal sharing + global priors + incentive weighting): canonical in `10.19`, consumed by `10.17` adversary graph/reputation surfaces and enforced through `10.15` + `10.4` trust controls.
+- dependency graph immune system (topological risk model + contagion simulator + preemptive barrier planner): canonical in `10.20`, consumed by `10.17` adversary/economic scoring, `10.15` control-plane containment, and `10.19` federated threat-intelligence enrichment.
+- behavioral phenotype evolution tracker (longitudinal genome modeling + drift/regime-shift detection + hazard scoring): canonical in `10.21`, consumed by `10.17` adversary/trust scoring, `10.20` topological prioritization, `10.19` federated temporal intelligence, and `10.2`/`10.15` migration-control gating.
+- spec-first Node/Bun compatibility extraction and fixture-oracle baselining: canonical in `10.2`, consumed by `10.3` migration automation and `10.7` release verification.
 
 ### 10.0 Top 10 Initiative Tracking
 - [ ] Implement compatibility envelope + divergence ledger.
 - [ ] Implement migration autopilot pipeline.
 - [ ] Implement trust cards for extensions and publishers.
-- [ ] Implement dual-layer lockstep oracle (L1 product + L2 engine boundary).
+- [ ] Deliver dual-layer lockstep oracle program (L1 product + L2 engine boundary + release-policy linkage).
 - [ ] Implement policy-visible compatibility shim system.
 - [ ] Implement fleet quarantine UX + control plane.
 - [ ] Implement secure extension distribution network.
@@ -1001,6 +1010,8 @@ Canonical ownership map (non-reductive, full-feature):
 - [ ] Add dependency-direction guard preventing local engine crate reintroduction.
 - [ ] Add reproducibility contract templates (`env.json`, `manifest.json`, `repro.lock`).
 - [ ] Add claim-language policy requiring verifier artifacts for external claims.
+- [ ] Add ADR: "Hybrid Baseline Strategy" codifying no Bun-first clone, spec-first compatibility extraction, and native franken architecture from day one.
+- [ ] Add implementation-governance policy that forbids line-by-line legacy translation and requires spec+fixture references in compatibility PRs.
 
 ### 10.2 Compatibility Core
 - [ ] Define compatibility bands (`core`, `high-value`, `edge`, `unsafe`) with policy defaults.
@@ -1012,6 +1023,9 @@ Canonical ownership map (non-reductive, full-feature):
 - [ ] Implement minimized divergence fixture generation.
 - [ ] Implement L2 engine-boundary semantic oracle integration policy and release gate linkage.
 - [ ] Implement compatibility regression dashboard by API family.
+- [ ] Create the four-doc spec pack for compatibility extraction (`PLAN_TO_PORT_NODE_BUN_SURFACES_TO_RUST.md`, `EXISTING_NODE_BUN_STRUCTURE.md`, `PROPOSED_ARCHITECTURE.md`, `FEATURE_PARITY.md`) and keep it release-gated.
+- [ ] Build prioritized Node/Bun reference capture programs and fixture corpora per API band (CLI/process/fs/network/module/tooling).
+- [ ] Add CI gate: compatibility implementations must cite spec section + fixture IDs; missing references fail review gates.
 
 ### 10.3 Migration System
 - [ ] Build project scanner for API/runtime/dependency risk inventory.
@@ -1026,7 +1040,7 @@ Canonical ownership map (non-reductive, full-feature):
 ### 10.4 Extension Ecosystem + Registry
 - [ ] Define signed extension package manifest schema.
 - [ ] Define provenance attestation requirements and verification chain.
-- [ ] Implement revocation propagation and freshness checks.
+- [ ] Integrate revocation propagation with canonical freshness checks (from `10.13`) in extension workflows.
 - [ ] Implement extension trust-card API and CLI surfaces.
 - [ ] Implement publisher reputation model with explainable transitions.
 - [ ] Implement fast quarantine/recall workflow for compromised artifacts.
@@ -1054,7 +1068,7 @@ Canonical ownership map (non-reductive, full-feature):
 
 ### 10.7 Conformance + Verification
 - [ ] Build compatibility golden corpus and fixture metadata schema.
-- [ ] Add conformance vectors for trust artifact serialization/signature rules.
+- [ ] Adopt canonical trust protocol vectors from `10.13` + `10.14` and enforce release/publication gates on those vectors.
 - [ ] Add fuzz/adversarial tests for migration and shim logic.
 - [ ] Add metamorphic tests for compatibility invariants.
 - [ ] Add verifier CLI conformance contract tests.
@@ -1062,7 +1076,7 @@ Canonical ownership map (non-reductive, full-feature):
 
 ### 10.8 Operational Readiness
 - [ ] Implement fleet control API for quarantine/revocation operations.
-- [ ] Implement structured observability with stable error taxonomies.
+- [ ] Adopt canonical structured observability + stable error taxonomy contracts (from `10.13`) across operational surfaces.
 - [ ] Implement deterministic safe-mode startup and operation flags.
 - [ ] Implement incident bundle retention and export policy.
 - [ ] Implement operator runbooks for high-severity trust incidents.
@@ -1074,36 +1088,35 @@ Canonical ownership map (non-reductive, full-feature):
 - [ ] Build migration singularity demo pipeline for flagship repositories.
 - [ ] Build verifier economy portal and external attestation publishing flow.
 - [ ] Build trust economics dashboard with attacker-ROI deltas.
-- [ ] Build category-shift quarterly reports with reproducible artifacts.
+- [ ] Build category-shift reporting pipeline with reproducible artifacts.
 
-### 10.10 FCP-Inspired Hardening + Interop Track
+### 10.10 FCP-Inspired Hardening + Interop Integration Track
 - [ ] Define canonical product trust object IDs with domain separation.
-- [ ] Enforce deterministic serialization and signature preimage rules.
+- [ ] Enforce product-level adoption of canonical deterministic serialization and signature preimage rules (from `10.13` + `10.14`).
 - [ ] Implement policy checkpoint chain for product release channels.
-- [ ] Implement rollback/fork detection in control-plane state propagation.
+- [ ] Implement rollback/fork detection in control-plane state propagation using canonical divergence and marker proofs (from `10.14`).
 - [ ] Implement audience-bound token chains for control actions.
 - [ ] Implement key-role separation for control-plane signing/encryption/issuance.
-- [ ] Implement session-authenticated control-plane traffic channels.
-- [ ] Implement monotonic sequence anti-replay checks for control messages.
-- [ ] Implement revocation freshness checks before risky product actions.
+- [ ] Integrate canonical session-authenticated control channel + monotonic anti-replay framing (from `10.13`) across product control APIs.
+- [ ] Integrate canonical revocation freshness semantics (from `10.13`) before risky and dangerous product actions.
 - [ ] Implement zone/tenant trust segmentation policies.
-- [ ] Implement stable product error code namespace and compatibility policy.
-- [ ] Implement conformance vectors and golden fixtures for product trust protocols.
+- [ ] Adopt canonical stable error namespace and compatibility policy (from `10.13`) across product surfaces.
+- [ ] Adopt canonical trust protocol vectors/golden fixtures (from `10.13` + `10.14`) as product publication and release gates.
 
-### 10.11 FrankenSQLite-Inspired Runtime Systems Track
+### 10.11 FrankenSQLite-Inspired Runtime Systems Integration Track
 - [ ] Define capability profiles for product subsystems and enforce narrowing.
 - [ ] Add ambient-authority audit gate for product security-critical modules.
 - [ ] Add checkpoint-placement contract in all long orchestration loops.
-- [ ] Implement cancel -> drain -> finalize protocol for product services.
+- [ ] Adopt canonical cancel -> drain -> finalize protocol contracts (from `10.15`) for product services.
 - [ ] Implement bounded masking helper for tiny atomic product operations.
-- [ ] Implement obligation-tracked channels for critical two-phase flows.
+- [ ] Adopt canonical obligation-tracked two-phase channel contracts (from `10.15`) for critical flows.
 - [ ] Implement supervision tree with restart budgets and escalation policies.
-- [ ] Implement deterministic lab runtime for product control-plane logic.
+- [ ] Adopt canonical deterministic lab runtime and protocol scenario suites (from `10.14` + `10.15`) for product control-plane logic.
 - [ ] Implement BOCPD regime detector for workload/incident stream shifts.
 - [ ] Implement VOI-budgeted monitor scheduling for expensive diagnostics.
-- [ ] Implement monotonic security epochs and transition barriers.
-- [ ] Implement remote idempotency + saga orchestration for multi-step workflows.
-- [ ] Implement scheduler lanes and global bulkheads for product operations.
+- [ ] Integrate canonical monotonic security epochs and transition barriers (from `10.14`) across product services.
+- [ ] Integrate canonical remote idempotency + saga semantics (from `10.14`) for multi-step workflows.
+- [ ] Integrate canonical scheduler lane and global bulkhead policies (from `10.14` + `10.15`) for product operations.
 - [ ] Implement anti-entropy reconciliation for distributed product trust state.
 
 ### 10.12 Frontier Programs Execution Track (9H)
@@ -1113,9 +1126,10 @@ Canonical ownership map (non-reductive, full-feature):
 - [ ] Implement verifier-economy SDK with independent validation workflows.
 - [ ] Implement operator intelligence recommendation engine with rollback proofs.
 - [ ] Implement ecosystem network-effect APIs (registry/reputation/compliance evidence).
-- [ ] Add quarterly frontier demo gates with external reproducibility requirements.
+- [ ] Add frontier demo gates with external reproducibility requirements.
 
 ### 10.13 FCP Deep-Mined Expansion Execution Track (9I)
+- In this track, `connector/provider` denotes extension integration class per `8.8` terminology contract.
 - [ ] Implement connector lifecycle enum, transition table, and illegal-transition rejection tests.
   `Acceptance Criteria:` FSM is complete and deterministic for all states; illegal transitions return stable codes; full transition matrix tests pass.
   `Artifacts:` `docs/specs/connector_lifecycle.md`, `tests/conformance/connector_lifecycle_transitions.rs`, `artifacts/10.13/lifecycle_transition_matrix.json`.
@@ -1225,7 +1239,7 @@ Canonical ownership map (non-reductive, full-feature):
   `Acceptance Criteria:` Retention class is mandatory per control-plane message type; required objects are durably stored; ephemeral objects can be dropped only under policy.
   `Artifacts:` `docs/specs/control_plane_retention.md`, `tests/conformance/retention_class_enforcement.rs`, `artifacts/10.13/retention_policy_matrix.json`.
 - [ ] Persist required artifacts (`invoke/response/receipt/approval/revocation/audit`) with deterministic replay hooks.
-  `Acceptance Criteria:` Required artifact families are persisted and indexable; replay hook reconstructs high-impact timeline deterministically; missing required artifacts fail integrity checks.
+  `Acceptance Criteria:` Required artifact families are persisted and indexable; replay hook reconstructs high-impact event sequence deterministically; missing required artifacts fail integrity checks.
   `Artifacts:` `tests/integration/required_artifact_replay.rs`, `docs/specs/replay_hook_contract.md`, `artifacts/10.13/replay_integrity_report.json`.
 - [ ] Implement authenticated control channel with per-direction sequence monotonicity and replay-window checks.
   `Acceptance Criteria:` Channel rejects out-of-window and non-monotonic frames; per-direction sequence state survives restart safely; replay attack fixtures are blocked.
@@ -1305,7 +1319,7 @@ Canonical ownership map (non-reductive, full-feature):
   `Acceptance Criteria:` Sweep cadence adjusts according to policy evidence bands; escalation/de-escalation hysteresis prevents oscillation; decisions are ledgered.
   `Artifacts:` `src/policy/integrity_sweep_scheduler.rs`, `tests/perf/integrity_sweep_adaptation.rs`, `artifacts/10.14/sweep_policy_trajectory.csv`.
 - [ ] Emit "durability contract violated" diagnostic bundles when hardening cannot restore verifiability.
-  `Acceptance Criteria:` Violation bundles include causal timeline, failed artifacts, and proof context; bundle generation is deterministic; gating operations are halted per policy.
+  `Acceptance Criteria:` Violation bundles include causal event sequence, failed artifacts, and proof context; bundle generation is deterministic; gating operations are halted per policy.
   `Artifacts:` `docs/runbooks/durability_contract_violated.md`, `tests/integration/durability_violation_bundle.rs`, `artifacts/10.14/durability_violation_bundle_example.json`.
 - [ ] Gate durable-claiming operations on verifiable marker/proof availability.
   `Acceptance Criteria:` Durable claims fail closed when marker/proof verification is incomplete; claim API exposes reason codes; false-claim path is blocked in tests.
@@ -1398,10 +1412,10 @@ Canonical ownership map (non-reductive, full-feature):
   `Acceptance Criteria:` Bootstrap rejects unauthenticated or malformed root pointers; acceptance requires valid auth material and version checks; failures are diagnosable.
   `Artifacts:` `tests/security/root_bootstrap_fail_closed.rs`, `docs/specs/root_bootstrap_auth.md`, `artifacts/10.14/root_bootstrap_validation_report.json`.
 - [ ] Implement deterministic repro bundle export for control-plane failures and policy incidents.
-  `Acceptance Criteria:` Repro bundles include seed, config, timeline, and evidence references; replay tool re-executes incident deterministically; bundle schema is versioned.
+  `Acceptance Criteria:` Repro bundles include seed, config, event-sequence trace, and evidence references; replay tool re-executes incident deterministically; bundle schema is versioned.
   `Artifacts:` `src/tools/repro_bundle_export.rs`, `tests/integration/repro_bundle_replay.rs`, `artifacts/10.14/repro_bundle_schema_v1.json`.
 - [ ] Implement virtual transport fault harness (drop/reorder/corrupt) for remote-control protocol testing.
-  `Acceptance Criteria:` Harness supports deterministic fault schedules from seed; scenarios cover drop/reorder/corrupt classes; reproductions include exact fault timeline.
+  `Acceptance Criteria:` Harness supports deterministic fault schedules from seed; scenarios cover drop/reorder/corrupt classes; reproductions include exact fault sequence.
   `Artifacts:` `tests/harness/virtual_transport_faults.rs`, `docs/testing/virtual_transport_harness.md`, `artifacts/10.14/virtual_fault_campaign_results.json`.
 - [ ] Add cancellation injection at all await points for critical control workflows in lab tests.
   `Acceptance Criteria:` Critical workflows are instrumented for all-point cancellation injection; leak-free and half-commit-free invariants hold under injected cancellations.
@@ -1480,8 +1494,8 @@ Canonical ownership map (non-reductive, full-feature):
 - [ ] Add invariant-breach runbooks for region-quiescence failure, obligation leak, and cancel-timeout incidents.
   `Acceptance Criteria:` Runbooks include detection signature, immediate containment steps, replay procedure, and rollback procedure.
   `Artifacts:` `docs/runbooks/region_quiescence_breach.md`, `docs/runbooks/obligation_leak_incident.md`, `docs/runbooks/cancel_timeout_incident.md`.
-- [ ] Add migration plan for existing non-asupersync control surfaces with milestone burn-down tracking.
-  `Acceptance Criteria:` Legacy control paths are inventoried with migration status and deadlines; remaining exceptions are explicitly justified.
+- [ ] Add migration plan for existing non-asupersync control surfaces with scope burn-down tracking.
+  `Acceptance Criteria:` Legacy control paths are inventoried with migration status and closure criteria; remaining exceptions are explicitly justified.
   `Artifacts:` `docs/migration/asupersync_control_surface_migration.md`, `artifacts/10.15/control_surface_burndown.csv`.
 - [ ] Add performance budget guard for asupersync integration overhead in control-plane hot paths.
   `Acceptance Criteria:` Integration overhead remains within agreed p95/p99/cold-start budgets; regressions fail CI and include flamegraph evidence.
@@ -1589,6 +1603,185 @@ Canonical ownership map (non-reductive, full-feature):
 - [ ] Implement claim compiler and public trust scoreboard pipeline.
   `Acceptance Criteria:` External claims must compile to executable evidence contracts; unverifiable claim text is blocked and scoreboard updates publish signed evidence links.
   `Artifacts:` `docs/specs/claim_compiler.md`, `src/claims/claim_compiler.rs`, `tests/conformance/claim_compiler_gate.rs`, `artifacts/10.17/public_trust_scoreboard_snapshot.json`.
+
+### 10.18 Verifiable Execution Fabric Execution Track (9L)
+- [ ] Define VEF policy-constraint language and compiler contract for high-risk action classes.
+  `Acceptance Criteria:` Constraint language maps runtime policy to proof-checkable predicates for required action classes; compiler outputs are deterministic and versioned.
+  `Artifacts:` `docs/specs/vef_policy_constraint_language.md`, `spec/vef_policy_constraints_v1.json`, `artifacts/10.18/vef_constraint_compiler_report.json`.
+- [ ] Define canonical `ExecutionReceipt` schema and deterministic serialization rules.
+  `Acceptance Criteria:` Receipt schema includes action type, capability context, actor/artifact identity, policy snapshot hash, timestamp/sequence, and witness references; serialization is canonical and hash-stable.
+  `Artifacts:` `docs/specs/vef_execution_receipt.md`, `spec/vef_execution_receipt_v1.json`, `artifacts/10.18/vef_receipt_schema_vectors.json`.
+- [ ] Implement hash-chained receipt stream with periodic commitment checkpoints.
+  `Acceptance Criteria:` Receipt stream is append-only with deterministic chain linkage; checkpoint commitments are reproducible; tamper detection is fail-closed.
+  `Artifacts:` `src/trust/vef_receipt_chain.rs`, `tests/conformance/vef_receipt_chain_integrity.rs`, `artifacts/10.18/vef_receipt_commitment_log.jsonl`.
+- [ ] Implement receipt-window selection and proof-job scheduler with bounded latency budgets.
+  `Acceptance Criteria:` Proof windows are deterministic by policy and workload class; scheduler respects latency/resource budgets; backlog health is observable.
+  `Artifacts:` `src/trust/vef_proof_scheduler.rs`, `tests/perf/vef_scheduler_latency_budget.rs`, `artifacts/10.18/vef_scheduler_metrics.csv`.
+- [ ] Implement proof-generation service interface (backend-agnostic) for receipt-window compliance proofs.
+  `Acceptance Criteria:` Proof service supports deterministic input envelope and output proof envelope; backend selection is pluggable without semantic drift.
+  `Artifacts:` `docs/specs/vef_proof_service_contract.md`, `src/trust/vef_proof_service.rs`, `artifacts/10.18/vef_proof_service_matrix.json`.
+- [ ] Implement proof-verification gate API for control-plane trust decisions.
+  `Acceptance Criteria:` Verification gate validates proof, receipt-window commitment, and policy hash binding; invalid/missing proofs return stable fail-closed verdict classes.
+  `Artifacts:` `src/trust/vef_verification_gate.rs`, `tests/security/vef_verification_gate.rs`, `artifacts/10.18/vef_verification_gate_report.json`.
+- [ ] Integrate VEF verification state into high-risk control transitions and action authorization.
+  `Acceptance Criteria:` High-risk actions require configured VEF verification state; policy can enforce strict/graded modes; gate decisions are auditable and replayable.
+  `Artifacts:` `docs/integration/vef_control_plane_integration.md`, `tests/integration/vef_high_risk_action_gating.rs`, `artifacts/10.18/vef_control_gate_decisions.json`.
+- [ ] Implement degraded-mode policy for proof lag/outage (`restricted`, `quarantine`, `halt`) with explicit SLOs.
+  `Acceptance Criteria:` Proof pipeline lag/outage triggers deterministic degraded mode by policy tier; mode transitions emit mandatory audit events and recovery receipts.
+  `Artifacts:` `docs/specs/vef_degraded_mode_policy.md`, `tests/security/vef_degraded_mode_transitions.rs`, `artifacts/10.18/vef_degraded_mode_events.jsonl`.
+- [ ] Integrate VEF evidence into verifier SDK replay capsules and external verification APIs.
+  `Acceptance Criteria:` Replay capsules include receipt commitments, proof references, and verifier-friendly validation metadata; external verifiers can independently validate VEF claims.
+  `Artifacts:` `docs/specs/vef_capsule_extension.md`, `tests/conformance/vef_verifier_sdk_integration.rs`, `artifacts/10.18/vef_external_verification_report.json`.
+- [ ] Integrate VEF coverage and proof-validity metrics into claim compiler and public trust scoreboard.
+  `Acceptance Criteria:` Claim compiler can require VEF-backed evidence for security/compliance claims; scoreboard publishes VEF coverage/validity stats with signed evidence links.
+  `Artifacts:` `docs/specs/vef_claim_integration.md`, `tests/conformance/vef_claim_gate.rs`, `artifacts/10.18/vef_claim_coverage_snapshot.json`.
+- [ ] Add adversarial test suite for receipt tampering, proof replay, stale-policy proofs, and commitment mismatch.
+  `Acceptance Criteria:` Adversarial scenarios are deterministic and fail closed; mismatch classes map to stable error codes and remediation hints.
+  `Artifacts:` `tests/security/vef_adversarial_suite.rs`, `docs/security/vef_adversarial_testing.md`, `artifacts/10.18/vef_adversarial_results.json`.
+- [ ] Add performance budget gates for VEF overhead in p95/p99 control and extension-host hot paths.
+  `Acceptance Criteria:` VEF overhead remains within agreed budgets by mode; regressions fail CI with reproducible profiling evidence.
+  `Artifacts:` `tests/perf/vef_overhead_budget_gate.rs`, `benchmarks/vef_overhead/*`, `artifacts/10.18/vef_overhead_report.csv`.
+- [ ] Add release gate requiring VEF-backed evidence for designated high-impact security and compliance claims.
+  `Acceptance Criteria:` Release pipeline blocks designated claims without VEF evidence coverage; gate output is machine-readable, signed, and externally verifiable.
+  `Artifacts:` `.github/workflows/vef-claim-gate.yml`, `docs/conformance/vef_release_claim_gate.md`, `artifacts/10.18/vef_release_gate_report.json`.
+
+### 10.19 Adversarial Trust Commons Execution Track (9M)
+- [ ] Define ATC federation trust model, participant identity contracts, and governance boundaries.
+  `Acceptance Criteria:` Participant roles, identity requirements, trust zones, and governance controls are explicit and machine-readable; unauthorized participants fail closed.
+  `Artifacts:` `docs/specs/atc_federation_trust_model.md`, `spec/atc_participant_contract_v1.json`, `artifacts/10.19/atc_participant_registry_snapshot.json`.
+- [ ] Define canonical federated signal schema for anomaly/trust/revocation/quarantine intelligence.
+  `Acceptance Criteria:` Schema covers required signal classes with stable typing, provenance fields, confidence semantics, and expiry windows; schema validation is enforced in CI.
+  `Artifacts:` `docs/specs/atc_signal_schema.md`, `spec/atc_signal_schema_v1.json`, `artifacts/10.19/atc_signal_vectors.json`.
+- [ ] Implement local signal extraction pipeline from trust cards, adversary graph, and control-plane events.
+  `Acceptance Criteria:` Extraction is deterministic for identical inputs; sensitive raw payloads are excluded by policy; extraction outputs are replay-auditable.
+  `Artifacts:` `src/federation/atc_signal_extractor.rs`, `tests/conformance/atc_signal_extraction.rs`, `artifacts/10.19/atc_local_signal_samples.jsonl`.
+- [ ] Implement privacy envelope layer: secure aggregation + differential-privacy budget enforcement.
+  `Acceptance Criteria:` Participant contributions are aggregated without exposing per-participant raw values; privacy budget accounting is deterministic and policy-gated.
+  `Artifacts:` `docs/specs/atc_privacy_envelope.md`, `src/federation/atc_secure_aggregation.rs`, `artifacts/10.19/atc_privacy_budget_report.json`.
+- [ ] Implement mergeable sketch system for scalable ecosystem pattern sharing.
+  `Acceptance Criteria:` Sketch merge semantics are deterministic and bounded-error; bandwidth and compute costs stay within configured budgets under large participant counts.
+  `Artifacts:` `src/federation/atc_sketches.rs`, `tests/perf/atc_sketch_scaling.rs`, `artifacts/10.19/atc_sketch_accuracy_report.csv`.
+- [ ] Implement poisoning-resilient aggregation and outlier-robust global prior updates.
+  `Acceptance Criteria:` Aggregation resists bounded adversarial submissions per policy assumptions; poisoning test suites show bounded degradation and fail-closed behavior on threshold breach.
+  `Artifacts:` `docs/security/atc_poisoning_resilience.md`, `tests/security/atc_poisoning_attack_suite.rs`, `artifacts/10.19/atc_poisoning_resilience_results.json`.
+- [ ] Implement Sybil-resistant participation controls tied to attestation/staking/reputation evidence.
+  `Acceptance Criteria:` Participation weighting rejects untrusted identity inflation; weighting policy is auditable and deterministic; attack simulations validate resistance properties.
+  `Artifacts:` `src/federation/atc_participation_weighting.rs`, `tests/security/atc_sybil_resistance.rs`, `artifacts/10.19/atc_weighting_audit_report.json`.
+- [ ] Implement contribution-weighted intelligence access policy and reciprocity controls.
+  `Acceptance Criteria:` Intelligence access tiers map to measured contribution quality/quantity by policy; free-rider limits and exception paths are explicit and auditable.
+  `Artifacts:` `docs/specs/atc_reciprocity_policy.md`, `tests/conformance/atc_reciprocity_enforcement.rs`, `artifacts/10.19/atc_reciprocity_matrix.json`.
+- [ ] Integrate ATC global priors into Bayesian adversary graph and risk scoring pipelines.
+  `Acceptance Criteria:` Global priors influence local posterior updates under explicit weighting policy; local-vs-global attribution is explainable in evidence outputs.
+  `Artifacts:` `src/security/adversary_graph_federated_priors.rs`, `tests/integration/atc_bayesian_prior_integration.rs`, `artifacts/10.19/atc_prior_influence_report.json`.
+- [ ] Integrate privacy-preserving urgent routing for revocation/quarantine signals.
+  `Acceptance Criteria:` High-severity signals propagate within policy SLO while preserving privacy envelopes; urgent route decisions are signed and replayable.
+  `Artifacts:` `docs/specs/atc_urgent_signal_routing.md`, `tests/integration/atc_urgent_routing_latency.rs`, `artifacts/10.19/atc_urgent_routing_telemetry.csv`.
+- [ ] Add verifier APIs and proof artifacts for ATC computations and published ecosystem metrics.
+  `Acceptance Criteria:` External verifiers can validate federation computation integrity and metric provenance without private raw participant data; verifier outputs are deterministic.
+  `Artifacts:` `docs/specs/atc_verifier_contract.md`, `tests/conformance/atc_verifier_apis.rs`, `artifacts/10.19/atc_verifier_report.json`.
+- [ ] Define ATC degraded/offline modes and local-first fallback behavior.
+  `Acceptance Criteria:` Federation outage or partition triggers deterministic fallback policy; local risk controls remain functional; rejoin/reconciliation is audited.
+  `Artifacts:` `docs/specs/atc_degraded_mode.md`, `tests/integration/atc_partition_fallback.rs`, `artifacts/10.19/atc_degraded_mode_events.jsonl`.
+- [ ] Add release gate requiring ATC-backed evidence for designated ecosystem-level trust claims.
+  `Acceptance Criteria:` Release and public claims about collective intelligence are blocked without required ATC coverage/provenance artifacts; gate output is signed and machine-readable.
+  `Artifacts:` `.github/workflows/atc-claim-gate.yml`, `docs/conformance/atc_release_claim_gate.md`, `artifacts/10.19/atc_release_gate_report.json`.
+
+### 10.20 Dependency Graph Immune System Execution Track (9N)
+- [ ] Define canonical dependency/topology graph schema covering packages, extensions, publishers, maintainers, and transitive edge semantics.
+  `Acceptance Criteria:` Schema captures runtime/build/provenance edge types, trust metadata, update cadence, and policy annotations; identical inputs yield hash-stable graph serialization and signed snapshots.
+  `Artifacts:` `docs/specs/dgis_graph_schema.md`, `spec/dgis_graph_schema_v1.json`, `artifacts/10.20/dgis_graph_schema_vectors.json`.
+- [ ] Implement deterministic graph ingestion pipeline from lockfiles, extension manifests, registry metadata, and local execution evidence.
+  `Acceptance Criteria:` Ingestion reproducibly resolves graph state from the same source set; stale/missing provenance is explicitly surfaced as typed risk signals; ingestion supports replay.
+  `Artifacts:` `src/security/dgis/graph_ingestion.rs`, `tests/conformance/dgis_graph_ingestion.rs`, `artifacts/10.20/dgis_ingestion_replay_report.json`.
+- [ ] Implement topological risk metric engine (fan-out, betweenness, articulation points, percolation thresholds, trust bottleneck scores).
+  `Acceptance Criteria:` Metric computation is deterministic, versioned, and scalable for representative ecosystem graph sizes; output includes explainable feature attribution for each high-risk node.
+  `Artifacts:` `src/security/dgis/topology_metrics.rs`, `tests/security/dgis_topology_metrics.rs`, `artifacts/10.20/dgis_topology_risk_snapshot.csv`.
+- [ ] Implement maintainer/publisher fragility model and single-point-of-failure detector.
+  `Acceptance Criteria:` Graph nodes with concentrated maintainer or provenance risk are flagged with stable severity classes; false-negatives against seeded risk fixtures remain below defined threshold.
+  `Artifacts:` `docs/specs/dgis_maintainer_fragility.md`, `src/security/dgis/fragility_model.rs`, `artifacts/10.20/dgis_fragility_findings.json`.
+- [ ] Implement adversarial contagion simulator for xz-style and multi-stage supply-chain campaigns.
+  `Acceptance Criteria:` Simulator supports campaign templates, probabilistic branching, and policy-conditioned propagation; runs are reproducible via fixed seeds and canonical scenario descriptors.
+  `Artifacts:` `src/security/dgis/contagion_simulator.rs`, `tests/security/dgis_contagion_scenarios.rs`, `artifacts/10.20/dgis_contagion_simulation_report.json`.
+- [ ] Implement critical-node immunization planner and choke-point barrier synthesis engine.
+  `Acceptance Criteria:` Planner proposes minimum-cost barrier sets that reduce expected cascade loss under policy/performance constraints; recommendation rationale is machine-readable and replayable.
+  `Artifacts:` `docs/specs/dgis_immunization_planner.md`, `src/security/dgis/immunization_planner.rs`, `artifacts/10.20/dgis_barrier_plan_catalog.json`.
+- [ ] Implement trust barrier primitives and policy wiring (behavioral sandbox escalation, composition firewall, verified-fork pinning, staged rollout fences).
+  `Acceptance Criteria:` Barrier primitives are independently testable and composable; policy engine can enforce barrier sets at designated choke points with deterministic overrides and audit receipts.
+  `Artifacts:` `src/security/dgis/barrier_primitives.rs`, `tests/integration/dgis_barrier_enforcement.rs`, `artifacts/10.20/dgis_barrier_enforcement_trace.jsonl`.
+- [ ] Integrate DGIS topological context into trust cards, adversary graph posterior updates, and extension risk UI.
+  `Acceptance Criteria:` Risk surfaces show node-level topological blast-radius context and delta impact from planned updates; posterior scoring incorporates topology features with explicit attribution.
+  `Artifacts:` `src/security/dgis/risk_surface_integration.rs`, `tests/integration/dgis_trust_card_integration.rs`, `artifacts/10.20/dgis_risk_ui_snapshot.json`.
+- [ ] Integrate graph-aware quarantine and rollback orchestration with choke-point-first containment strategy.
+  `Acceptance Criteria:` Quarantine plans can target upstream choke points and downstream blast zones deterministically; rollback sequencing avoids reintroducing known high-risk paths.
+  `Artifacts:` `docs/specs/dgis_quarantine_orchestration.md`, `tests/security/dgis_quarantine_containment.rs`, `artifacts/10.20/dgis_quarantine_drill_results.json`.
+- [ ] Add ATC interoperability for topology indicators and federated cascade priors.
+  `Acceptance Criteria:` DGIS emits privacy-preserving topology indicators to ATC and consumes federated priors without raw dependency disclosure; ingestion/output contracts are versioned and verifier-checkable.
+  `Artifacts:` `src/federation/dgis_atc_bridge.rs`, `tests/integration/dgis_atc_interop.rs`, `artifacts/10.20/dgis_atc_exchange_report.json`.
+- [ ] Implement expected-loss cascade economics and ROI-aware mitigation ranking.
+  `Acceptance Criteria:` Each candidate mitigation includes expected-loss delta, residual risk, and operational cost estimates; rankings are stable under fixed assumptions and sensitivity-tested.
+  `Artifacts:` `src/security/dgis/cascade_economics.rs`, `docs/specs/dgis_expected_loss_model.md`, `artifacts/10.20/dgis_economic_rankings.csv`.
+- [ ] Add operator copilot guidance for dependency updates with topology-aware risk deltas and mitigation playbooks.
+  `Acceptance Criteria:` Update proposals include pre/post topology risk scores, containment recommendations, and verifier-backed confidence outputs; high-risk updates require explicit policy acknowledgements.
+  `Artifacts:` `src/ops/dgis_update_copilot.rs`, `tests/integration/dgis_update_recommendations.rs`, `artifacts/10.20/dgis_operator_recommendation_log.jsonl`.
+- [ ] Integrate DGIS health scoring into migration autopilot admission and progression gates.
+  `Acceptance Criteria:` Migration plans include graph-health baselines and target thresholds; migrations that worsen cascade risk beyond policy budgets are blocked or auto-replanned.
+  `Artifacts:` `src/migration/dgis_migration_gate.rs`, `tests/integration/dgis_migration_gate.rs`, `artifacts/10.20/dgis_migration_health_report.json`.
+- [ ] Add adversarial validation suite (graph poisoning, edge-obfuscation, fake-low-risk pivots, delayed activation) with fail-closed semantics.
+  `Acceptance Criteria:` Adversarial campaigns are encoded as deterministic fixtures; DGIS detects or bounds damage within defined limits; bypass attempts emit stable error classes and remediation hints.
+  `Artifacts:` `tests/security/dgis_adversarial_suite.rs`, `docs/security/dgis_attack_playbook.md`, `artifacts/10.20/dgis_adversarial_results.json`.
+- [ ] Add performance/scale budgets and release claim gates for DGIS-derived security assertions.
+  `Acceptance Criteria:` DGIS computation overhead and decision latency remain within p95/p99 budgets at target graph scales; release pipeline blocks topology-security claims lacking signed DGIS evidence artifacts.
+  `Artifacts:` `tests/perf/dgis_budget_gate.rs`, `.github/workflows/dgis-claim-gate.yml`, `artifacts/10.20/dgis_release_gate_report.json`.
+
+### 10.21 Behavioral Phenotype Evolution Tracker Execution Track (9O)
+- [ ] Define canonical `BehavioralGenome` schema and version-lineage contract for extension phenotypes.
+  `Acceptance Criteria:` Schema encodes capability usage, dependency reach, API-surface traits, resource/network envelopes, complexity signals, maintainer/build events, and provenance bindings; serialization is deterministic and signed.
+  `Artifacts:` `docs/specs/bpet_behavioral_genome_schema.md`, `spec/bpet_behavioral_genome_v1.json`, `artifacts/10.21/bpet_genome_schema_vectors.json`.
+- [ ] Implement deterministic phenotype feature extraction per version from runtime evidence, manifests, and code metadata.
+  `Acceptance Criteria:` Identical inputs produce identical phenotype vectors; extraction records feature provenance and uncertainty; missing fields are typed rather than silently dropped.
+  `Artifacts:` `src/security/bpet/phenotype_extractor.rs`, `tests/conformance/bpet_feature_extraction.rs`, `artifacts/10.21/bpet_feature_samples.jsonl`.
+- [ ] Implement signed lineage graph builder linking versions, maintainers, dependency graph deltas, and build pipeline transitions.
+  `Acceptance Criteria:` Lineage graph is replayable and tamper-evident; version ancestry, handoff events, and dependency pivot points are queryable with stable identifiers.
+  `Artifacts:` `src/security/bpet/lineage_graph.rs`, `docs/specs/bpet_lineage_contract.md`, `artifacts/10.21/bpet_lineage_snapshot.json`.
+- [ ] Implement cohort-aware baseline modeling for expected phenotype evolution patterns.
+  `Acceptance Criteria:` Baselines are generated for comparable extension cohorts (domain, maturity, release cadence, dependency class) and include confidence envelopes; model recalibration is deterministic and versioned.
+  `Artifacts:` `src/security/bpet/cohort_baselines.rs`, `tests/security/bpet_baseline_calibration.rs`, `artifacts/10.21/bpet_cohort_baseline_report.json`.
+- [ ] Implement temporal drift feature engine (velocity, acceleration, entropy, novelty, capability-creep gradient).
+  `Acceptance Criteria:` Drift features are numerically stable and reproducible; feature-store interfaces support historical replay and windowed recomputation.
+  `Artifacts:` `src/security/bpet/drift_features.rs`, `tests/security/bpet_drift_feature_stability.rs`, `artifacts/10.21/bpet_drift_feature_matrix.csv`.
+- [ ] Implement changepoint and regime-shift detection layer (Bayesian changepoint + HMM state transitions).
+  `Acceptance Criteria:` Regime shifts are detected with calibrated false-positive/false-negative bounds on historical and synthetic trajectories; shift explanations include dominant contributing dimensions.
+  `Artifacts:` `src/security/bpet/regime_shift_detector.rs`, `tests/security/bpet_regime_shift_suite.rs`, `artifacts/10.21/bpet_regime_shift_eval.json`.
+- [ ] Implement survival/hazard model for compromise-propensity progression under observed trajectory patterns.
+  `Acceptance Criteria:` Hazard outputs are calibrated and monotonic under defined risk assumptions; censoring handling and covariate drift strategy are explicit and test-covered.
+  `Artifacts:` `src/security/bpet/hazard_model.rs`, `docs/specs/bpet_time_to_compromise_model.md`, `artifacts/10.21/bpet_hazard_calibration_report.json`.
+- [ ] Implement unified evolution-risk scorer with explainability contract and confidence decomposition.
+  `Acceptance Criteria:` Scorer combines drift, regime, hazard, and provenance features under a documented weighting policy; output includes stable explanation vectors and confidence intervals.
+  `Artifacts:` `src/security/bpet/evolution_risk_scorer.rs`, `tests/conformance/bpet_risk_score_explainability.rs`, `artifacts/10.21/bpet_risk_score_catalog.json`.
+- [ ] Integrate BPET trajectory signals into trust cards and adversary graph posterior updates.
+  `Acceptance Criteria:` Trust surfaces show "current state + trajectory path" with interpretable risk deltas; adversary posteriors account for evolution velocity and suspicious sequence motifs.
+  `Artifacts:` `src/security/bpet/trust_surface_integration.rs`, `tests/integration/bpet_trust_card_integration.rs`, `artifacts/10.21/bpet_trust_surface_snapshot.json`.
+- [ ] Integrate BPET with DGIS for topology-amplified early warning prioritization.
+  `Acceptance Criteria:` Trajectory anomalies at high-centrality nodes are escalated by policy with explicit expected-loss context; prioritization logic is deterministic and replayable.
+  `Artifacts:` `src/security/bpet/dgis_fusion.rs`, `tests/integration/bpet_dgis_priority_escalation.rs`, `artifacts/10.21/bpet_dgis_escalation_report.json`.
+- [ ] Integrate BPET with ATC for privacy-preserving federated temporal intelligence exchange.
+  `Acceptance Criteria:` BPET exports anonymized trajectory summaries and consumes federated temporal priors without raw longitudinal leakage; contracts are verifier-checkable and versioned.
+  `Artifacts:` `src/federation/bpet_atc_bridge.rs`, `tests/integration/bpet_atc_temporal_interop.rs`, `artifacts/10.21/bpet_atc_exchange_report.json`.
+- [ ] Integrate evolution stability scoring into migration autopilot dependency admission and rollback gates.
+  `Acceptance Criteria:` Migration planner includes trajectory-stability constraints; upgrades crossing risk thresholds require additional evidence or staged rollout with automated fallback plans.
+  `Artifacts:` `src/migration/bpet_migration_gate.rs`, `tests/integration/bpet_migration_stability_gate.rs`, `artifacts/10.21/bpet_migration_gate_results.json`.
+- [ ] Integrate BPET risk into economic trust layer and operator copilot recommendation engine.
+  `Acceptance Criteria:` Economic models price trajectory-derived compromise propensity and intervention ROI; operator guidance includes historical motif matches and mitigation playbooks.
+  `Artifacts:` `src/security/bpet/economic_integration.rs`, `src/ops/bpet_operator_copilot.rs`, `artifacts/10.21/bpet_economic_guidance_report.csv`.
+- [ ] Implement adversarial evaluation suite for slow-roll mimicry, staged camouflage, and dormant-then-burst mutation campaigns.
+  `Acceptance Criteria:` Simulated adversaries test resilience to trajectory-gaming tactics; bypasses emit typed failure classes and trigger policy hardening recommendations.
+  `Artifacts:` `tests/security/bpet_adversarial_evolution_suite.rs`, `docs/security/bpet_adversarial_playbook.md`, `artifacts/10.21/bpet_adversarial_results.json`.
+- [ ] Define BPET governance policy for thresholding, appeals, and evidence-backed override workflows.
+  `Acceptance Criteria:` False-positive handling, human override, and appeal lifecycle are explicit, auditable, and bounded by safety constraints; every override emits signed rationale.
+  `Artifacts:` `docs/policy/bpet_governance_policy.md`, `tests/policy/bpet_override_audit.rs`, `artifacts/10.21/bpet_governance_audit_log.jsonl`.
+- [ ] Add performance budgets and release claim gates for predictive pre-compromise trajectory assertions.
+  `Acceptance Criteria:` BPET scoring latency and storage overhead meet p95/p99 budgets; release claims about predictive detection are blocked without signed calibration/provenance artifacts.
+  `Artifacts:` `tests/perf/bpet_budget_gate.rs`, `.github/workflows/bpet-claim-gate.yml`, `artifacts/10.21/bpet_release_gate_report.json`.
 
 ## 11. Evidence And Decision Contracts (Mandatory)
 Every major subsystem proposal must include:
