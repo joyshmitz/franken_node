@@ -1800,13 +1800,27 @@ No contract, no merge.
 - Compatibility illusion risk:
   - Countermeasure: lockstep oracle + divergence receipts.
 - Scope explosion:
-  - Countermeasure: phase gates + artifact-gated delivery.
+  - Countermeasure: capability gates + artifact-gated delivery.
 - Trust-system complexity:
   - Countermeasure: deterministic replay and explicit degraded-mode contracts.
 - Migration friction persistence:
   - Countermeasure: migration autopilot and confidence reporting.
 - Performance regressions from hardening:
   - Countermeasure: profile-governed tuning and p99 gates.
+- Federated privacy leakage risk:
+  - Countermeasure: strict privacy budgets + secure aggregation + external verifier checks on federation outputs.
+- Federated signal poisoning/Sybil risk:
+  - Countermeasure: robust aggregation + participation attestation/stake weighting + adversarial federation test gates.
+- Dependency topology blind-spot risk:
+  - Countermeasure: mandatory graph ingestion coverage + topology-metric baselines + unresolved-edge risk escalation.
+- Over-hardening false-positive risk at topological choke points:
+  - Countermeasure: counterfactual simulation validation + expected-loss calibration + staged barrier rollout with automatic rollback receipts.
+- Temporal concept-drift risk in evolution models:
+  - Countermeasure: continuous recalibration windows + cohort-specific drift audits + mandatory calibration regression gates before threshold updates.
+- Longitudinal trajectory privacy/re-identification risk:
+  - Countermeasure: privacy-preserving trajectory sketching + minimum cohort-size publication thresholds + federated temporal verifier checks.
+- Trajectory-gaming adversarial camouflage risk:
+  - Countermeasure: adversarial mimicry test corpus + motif randomization stress tests + hybrid static/dynamic/provenance signal fusion.
 
 ## 13. Program Success Criteria
 `franken_node` is successful when:
@@ -1821,7 +1835,7 @@ Concrete targets:
 - `>= 95%` pass on targeted compatibility corpus
 - `>= 3x` migration velocity improvement
 - `>= 10x` host-compromise reduction under adversarial campaigns
-- `<= 15 min` install-to-first-safe-production workload for representative setups
+- friction-minimized install-to-first-safe-production pathway for representative setups
 - `100%` high-severity replay artifact coverage
 - `>= 2` independent external reproductions of core headline claims
 
@@ -1853,7 +1867,7 @@ Execution pillars:
 - partner and lighthouse programs proving category-shift outcomes in production
 
 Adoption targets:
-- time-to-first-safe-extension `<= 15 min` primary target; temporary early-rollout adoption floor `<= 30 min` for greenfield users with mandatory trend-down tracking to the primary target
+- friction-minimized path to first safe extension with automation-first onboarding and deterministic validation
 - deterministic migration validation on representative Node/Bun project cohorts
 - published case studies with measurable security and operational improvements
 
@@ -1867,7 +1881,7 @@ Required contributions:
 - external red-team and independent evaluation reports
 - transparent technical reports including failures and corrective actions
 
-Annual output contract:
-- at least 4 publishable technical reports with reproducible artifact bundles
-- at least 2 externally replicated high-impact claims
-- at least 1 widely used open verifier or benchmark tool release
+Program output contract:
+- multiple publishable technical reports with reproducible artifact bundles
+- externally replicated high-impact claims
+- widely used open verifier or benchmark tool releases
