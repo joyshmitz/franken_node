@@ -1,0 +1,299 @@
+{
+  "schema": "connector_lifecycle_transition_matrix",
+  "version": "1.0",
+  "states": [
+    "discovered",
+    "verified",
+    "installed",
+    "configured",
+    "active",
+    "paused",
+    "stopped",
+    "failed"
+  ],
+  "total_transitions": 56,
+  "legal_count": 17,
+  "illegal_count": 39,
+  "transitions": [
+    {
+      "from": "discovered",
+      "to": "verified",
+      "legal": true
+    },
+    {
+      "from": "discovered",
+      "to": "installed",
+      "legal": false
+    },
+    {
+      "from": "discovered",
+      "to": "configured",
+      "legal": false
+    },
+    {
+      "from": "discovered",
+      "to": "active",
+      "legal": false
+    },
+    {
+      "from": "discovered",
+      "to": "paused",
+      "legal": false
+    },
+    {
+      "from": "discovered",
+      "to": "stopped",
+      "legal": false
+    },
+    {
+      "from": "discovered",
+      "to": "failed",
+      "legal": true
+    },
+    {
+      "from": "verified",
+      "to": "discovered",
+      "legal": false
+    },
+    {
+      "from": "verified",
+      "to": "installed",
+      "legal": true
+    },
+    {
+      "from": "verified",
+      "to": "configured",
+      "legal": false
+    },
+    {
+      "from": "verified",
+      "to": "active",
+      "legal": false
+    },
+    {
+      "from": "verified",
+      "to": "paused",
+      "legal": false
+    },
+    {
+      "from": "verified",
+      "to": "stopped",
+      "legal": false
+    },
+    {
+      "from": "verified",
+      "to": "failed",
+      "legal": true
+    },
+    {
+      "from": "installed",
+      "to": "discovered",
+      "legal": false
+    },
+    {
+      "from": "installed",
+      "to": "verified",
+      "legal": false
+    },
+    {
+      "from": "installed",
+      "to": "configured",
+      "legal": true
+    },
+    {
+      "from": "installed",
+      "to": "active",
+      "legal": false
+    },
+    {
+      "from": "installed",
+      "to": "paused",
+      "legal": false
+    },
+    {
+      "from": "installed",
+      "to": "stopped",
+      "legal": false
+    },
+    {
+      "from": "installed",
+      "to": "failed",
+      "legal": true
+    },
+    {
+      "from": "configured",
+      "to": "discovered",
+      "legal": false
+    },
+    {
+      "from": "configured",
+      "to": "verified",
+      "legal": false
+    },
+    {
+      "from": "configured",
+      "to": "installed",
+      "legal": false
+    },
+    {
+      "from": "configured",
+      "to": "active",
+      "legal": true
+    },
+    {
+      "from": "configured",
+      "to": "paused",
+      "legal": false
+    },
+    {
+      "from": "configured",
+      "to": "stopped",
+      "legal": false
+    },
+    {
+      "from": "configured",
+      "to": "failed",
+      "legal": true
+    },
+    {
+      "from": "active",
+      "to": "discovered",
+      "legal": false
+    },
+    {
+      "from": "active",
+      "to": "verified",
+      "legal": false
+    },
+    {
+      "from": "active",
+      "to": "installed",
+      "legal": false
+    },
+    {
+      "from": "active",
+      "to": "configured",
+      "legal": false
+    },
+    {
+      "from": "active",
+      "to": "paused",
+      "legal": true
+    },
+    {
+      "from": "active",
+      "to": "stopped",
+      "legal": true
+    },
+    {
+      "from": "active",
+      "to": "failed",
+      "legal": true
+    },
+    {
+      "from": "paused",
+      "to": "discovered",
+      "legal": false
+    },
+    {
+      "from": "paused",
+      "to": "verified",
+      "legal": false
+    },
+    {
+      "from": "paused",
+      "to": "installed",
+      "legal": false
+    },
+    {
+      "from": "paused",
+      "to": "configured",
+      "legal": false
+    },
+    {
+      "from": "paused",
+      "to": "active",
+      "legal": true
+    },
+    {
+      "from": "paused",
+      "to": "stopped",
+      "legal": true
+    },
+    {
+      "from": "paused",
+      "to": "failed",
+      "legal": true
+    },
+    {
+      "from": "stopped",
+      "to": "discovered",
+      "legal": false
+    },
+    {
+      "from": "stopped",
+      "to": "verified",
+      "legal": false
+    },
+    {
+      "from": "stopped",
+      "to": "installed",
+      "legal": false
+    },
+    {
+      "from": "stopped",
+      "to": "configured",
+      "legal": true
+    },
+    {
+      "from": "stopped",
+      "to": "active",
+      "legal": false
+    },
+    {
+      "from": "stopped",
+      "to": "paused",
+      "legal": false
+    },
+    {
+      "from": "stopped",
+      "to": "failed",
+      "legal": true
+    },
+    {
+      "from": "failed",
+      "to": "discovered",
+      "legal": true
+    },
+    {
+      "from": "failed",
+      "to": "verified",
+      "legal": false
+    },
+    {
+      "from": "failed",
+      "to": "installed",
+      "legal": false
+    },
+    {
+      "from": "failed",
+      "to": "configured",
+      "legal": false
+    },
+    {
+      "from": "failed",
+      "to": "active",
+      "legal": false
+    },
+    {
+      "from": "failed",
+      "to": "paused",
+      "legal": false
+    },
+    {
+      "from": "failed",
+      "to": "stopped",
+      "legal": false
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "gate": "rollout_planner_verification",
+  "section": "10.3",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T10:16:21.849467+00:00",
+  "checks": [
+    {
+      "id": "PLAN-ORDER",
+      "status": "PASS"
+    },
+    {
+      "id": "PLAN-GATED",
+      "status": "PASS"
+    },
+    {
+      "id": "PLAN-ROLLBACK",
+      "status": "PASS"
+    },
+    {
+      "id": "PLAN-CONSTRAINTS",
+      "status": "PASS"
+    },
+    {
+      "id": "PLAN-CHECKLIST",
+      "status": "PASS"
+    },
+    {
+      "id": "PLAN-HIGH-RISK-CANARY",
+      "status": "PASS",
+      "details": {
+        "canary_traffic": 1
+      }
+    }
+  ],
+  "summary": {
+    "total_checks": 6,
+    "passing_checks": 6,
+    "failing_checks": 0
+  }
+}

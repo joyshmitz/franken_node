@@ -1,0 +1,40 @@
+{
+  "schema": "fencing_rejection_receipts",
+  "version": "1.0.0",
+  "receipts": [
+    {
+      "object_id": "obj-1",
+      "error": "WRITE_UNFENCED",
+      "write_seq": null,
+      "current_fence_seq": 3,
+      "description": "Write without fence token rejected"
+    },
+    {
+      "object_id": "obj-1",
+      "error": "WRITE_STALE_FENCE",
+      "write_seq": 1,
+      "current_fence_seq": 3,
+      "description": "Write with stale seq=1 rejected (current=3)"
+    },
+    {
+      "object_id": "obj-1",
+      "error": "LEASE_EXPIRED",
+      "write_seq": 3,
+      "current_fence_seq": 3,
+      "description": "Write with valid seq but expired lease rejected"
+    },
+    {
+      "object_id": "obj-1",
+      "error": "LEASE_OBJECT_MISMATCH",
+      "write_seq": 3,
+      "current_fence_seq": 3,
+      "description": "Write targeting different object than lease rejected"
+    }
+  ],
+  "invariants_verified": [
+    "INV-FENCE-MONOTONIC",
+    "INV-FENCE-REJECT-UNFENCED",
+    "INV-FENCE-REJECT-STALE",
+    "INV-FENCE-LINKED"
+  ]
+}

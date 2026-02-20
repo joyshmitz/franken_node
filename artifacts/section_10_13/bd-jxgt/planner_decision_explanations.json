@@ -1,0 +1,45 @@
+{
+  "description": "bd-jxgt: Planner decision explanation examples",
+  "scenarios": [
+    {
+      "id": "latency-dominant",
+      "weights": {"latency": 0.7, "risk": 0.15, "capability": 0.15},
+      "candidates": [
+        {"device_id": "fast-gpu", "latency_ms": 20, "risk": 0.3, "capability": 0.8},
+        {"device_id": "slow-gpu", "latency_ms": 800, "risk": 0.1, "capability": 1.0}
+      ],
+      "expected_winner": "fast-gpu",
+      "explanation": "High latency weight favors the low-latency device despite lower capability"
+    },
+    {
+      "id": "risk-dominant",
+      "weights": {"latency": 0.1, "risk": 0.8, "capability": 0.1},
+      "candidates": [
+        {"device_id": "safe-device", "latency_ms": 500, "risk": 0.05, "capability": 0.5},
+        {"device_id": "fast-risky", "latency_ms": 10, "risk": 0.9, "capability": 0.9}
+      ],
+      "expected_winner": "safe-device",
+      "explanation": "High risk weight favors the low-risk device despite higher latency"
+    },
+    {
+      "id": "capability-dominant",
+      "weights": {"latency": 0.1, "risk": 0.1, "capability": 0.8},
+      "candidates": [
+        {"device_id": "full-match", "latency_ms": 300, "risk": 0.5, "capability": 1.0},
+        {"device_id": "partial-match", "latency_ms": 50, "risk": 0.1, "capability": 0.2}
+      ],
+      "expected_winner": "full-match",
+      "explanation": "High capability weight favors full-match device"
+    },
+    {
+      "id": "tiebreak-scenario",
+      "weights": {"latency": 0.4, "risk": 0.3, "capability": 0.3},
+      "candidates": [
+        {"device_id": "device-b", "latency_ms": 100, "risk": 0.5, "capability": 0.5},
+        {"device_id": "device-a", "latency_ms": 100, "risk": 0.5, "capability": 0.5}
+      ],
+      "expected_winner": "device-a",
+      "explanation": "Identical scores broken by lexicographic device_id order"
+    }
+  ]
+}

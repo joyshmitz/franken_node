@@ -1,0 +1,24 @@
+{
+  "description": "bd-y7lu: Revocation head history — sample zone progression",
+  "zones": {
+    "zone-alpha": {
+      "heads": [
+        {"sequence": 1, "revoked_artifact": "connector-v1.2.0", "reason": "CVE-2026-001", "timestamp": "2026-01-01T00:00:00Z", "trace_id": "tr-001"},
+        {"sequence": 2, "revoked_artifact": "connector-v1.2.1", "reason": "regression", "timestamp": "2026-01-02T00:00:00Z", "trace_id": "tr-002"},
+        {"sequence": 5, "revoked_artifact": "connector-v1.3.0", "reason": "supply-chain compromise", "timestamp": "2026-01-05T00:00:00Z", "trace_id": "tr-005"}
+      ],
+      "current_head": 5,
+      "total_revocations": 3
+    },
+    "zone-beta": {
+      "heads": [
+        {"sequence": 1, "revoked_artifact": "provider-v2.0.0", "reason": "untrusted attestation", "timestamp": "2026-01-03T00:00:00Z", "trace_id": "tr-003"}
+      ],
+      "current_head": 1,
+      "total_revocations": 1
+    }
+  },
+  "stale_rejections": [
+    {"zone_id": "zone-alpha", "offered": 3, "current": 5, "timestamp": "2026-01-06T00:00:00Z", "trace_id": "tr-006"}
+  ]
+}

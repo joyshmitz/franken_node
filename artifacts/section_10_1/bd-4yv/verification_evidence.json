@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0",
+  "bead_id": "bd-4yv",
+  "artifact_type": "verification_evidence",
+  "timestamp": "2026-02-20T09:15:49.307961+00:00",
+  "git_commit": "32b56e4c639fd2a39f3f0b77ee55a656ae65109e",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "REPRO-SCHEMAS",
+      "status": "PASS"
+    },
+    {
+      "id": "REPRO-ENV-VALID",
+      "status": "PASS"
+    },
+    {
+      "id": "REPRO-MANIFEST-VALID",
+      "status": "PASS"
+    },
+    {
+      "id": "REPRO-LOCK-VALID",
+      "status": "PASS"
+    },
+    {
+      "id": "REPRO-TEMPLATES",
+      "status": "PASS"
+    }
+  ],
+  "unit_tests": {
+    "total": 13,
+    "passed": 13,
+    "failed": 0
+  },
+  "outputs": [
+    {
+      "path": "schemas/reproducibility_env.schema.json",
+      "sha256": "7616592a8e959f9ccdd8175c67f5c9ecba3f5868de6b0c3686ff05e6d745d7c6",
+      "size_bytes": 1608
+    },
+    {
+      "path": "schemas/reproducibility_manifest.schema.json",
+      "sha256": "3f486ff983f5e035b6809af01234b06439ed256d63f5bd5743f9520da9ca85cb",
+      "size_bytes": 2023
+    },
+    {
+      "path": "schemas/reproducibility_lock.schema.json",
+      "sha256": "197395d01bec27f2ba6f5b1d4889631904052dce993145a9f5671f23e2271c09",
+      "size_bytes": 1354
+    },
+    {
+      "path": "scripts/validate_repro_pack.py",
+      "sha256": "18d739d5f6608a3efd982d041ab529da0ad18a3705337390778829a6f78babf4",
+      "size_bytes": 10891
+    },
+    {
+      "path": "tests/test_validate_repro_pack.py",
+      "sha256": "3e1c6a739f1f78085b3c40300964b87a98e960a3050bb4dabdc7bd57a3211eab",
+      "size_bytes": 4548
+    },
+    {
+      "path": "docs/templates/reproducibility/env.json",
+      "sha256": "6263b6b9c52523a6a7a23ecc3e86eb9b26ae10fee6b37c047695bb4d0988682e",
+      "size_bytes": 428
+    },
+    {
+      "path": "docs/templates/reproducibility/manifest.json",
+      "sha256": "f1dfe1dda127aab669dbaf0afb0d7360a7f9dc5eb2bb1b64ec7d7544553022a4",
+      "size_bytes": 503
+    },
+    {
+      "path": "docs/templates/reproducibility/repro.lock",
+      "sha256": "9f13c7c5fc0dbfe6831ff70505e49ee605a89e97ed9cbe74bd78f7a7908f92c4",
+      "size_bytes": 382
+    },
+    {
+      "path": "docs/specs/section_10_1/bd-4yv_contract.md",
+      "sha256": "169a9fc20c215593add5942548d63b40bb6698fb83d650a37fb5814ee5993a29",
+      "size_bytes": 1381
+    }
+  ]
+}

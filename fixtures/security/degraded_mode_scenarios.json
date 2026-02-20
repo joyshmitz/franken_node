@@ -1,0 +1,48 @@
+{
+  "description": "bd-w0jq: Degraded-mode audit event test scenarios",
+  "cases": [
+    {
+      "id": "valid-event-emitted",
+      "description": "Override emits valid degraded-mode event with all fields",
+      "event_type": "degraded_mode_override",
+      "action_id": "act-1",
+      "actor": "admin",
+      "tier": "Risky",
+      "expected_valid": true
+    },
+    {
+      "id": "missing-actor-rejected",
+      "description": "Event with empty actor field is rejected",
+      "event_type": "degraded_mode_override",
+      "action_id": "act-2",
+      "actor": "",
+      "expected_valid": false,
+      "expected_error_code": "DM_MISSING_FIELD"
+    },
+    {
+      "id": "wrong-event-type-rejected",
+      "description": "Event with wrong event_type is rejected",
+      "event_type": "wrong",
+      "expected_valid": false,
+      "expected_error_code": "DM_SCHEMA_VIOLATION"
+    },
+    {
+      "id": "event-not-found",
+      "description": "Querying non-existent action_id returns error",
+      "action_id": "missing",
+      "expected_error_code": "DM_EVENT_NOT_FOUND"
+    },
+    {
+      "id": "correlation-by-action",
+      "description": "Events can be found by action_id",
+      "action_id": "act-corr",
+      "expected_found": true
+    },
+    {
+      "id": "correlation-by-trace",
+      "description": "Events can be found by trace_id",
+      "trace_id": "tr-corr",
+      "expected_found": true
+    }
+  ]
+}

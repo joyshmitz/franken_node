@@ -1,0 +1,44 @@
+{
+  "description": "Migration path resolution test fixtures",
+  "cases": [
+    {
+      "name": "direct_path",
+      "from": "1.0.0",
+      "to": "1.1.0",
+      "hints": [
+        {"from": "1.0.0", "to": "1.1.0", "hint_type": "add_field", "idempotent": true, "rollback_safe": true}
+      ],
+      "expected_steps": 1,
+      "expected_result": "ok"
+    },
+    {
+      "name": "multi_step_path",
+      "from": "1.0.0",
+      "to": "2.0.0",
+      "hints": [
+        {"from": "1.0.0", "to": "1.1.0", "hint_type": "add_field", "idempotent": true, "rollback_safe": true},
+        {"from": "1.1.0", "to": "1.2.0", "hint_type": "rename_field", "idempotent": true, "rollback_safe": true},
+        {"from": "1.2.0", "to": "2.0.0", "hint_type": "transform", "idempotent": false, "rollback_safe": false}
+      ],
+      "expected_steps": 3,
+      "expected_result": "ok"
+    },
+    {
+      "name": "no_path",
+      "from": "1.0.0",
+      "to": "3.0.0",
+      "hints": [
+        {"from": "1.0.0", "to": "1.1.0", "hint_type": "add_field", "idempotent": true, "rollback_safe": true}
+      ],
+      "expected_result": "MIGRATION_PATH_MISSING"
+    },
+    {
+      "name": "same_version",
+      "from": "1.0.0",
+      "to": "1.0.0",
+      "hints": [],
+      "expected_steps": 0,
+      "expected_result": "ok"
+    }
+  ]
+}

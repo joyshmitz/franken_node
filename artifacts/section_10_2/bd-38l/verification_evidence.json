@@ -1,0 +1,66 @@
+{
+  "schema_version": "1.0",
+  "bead_id": "bd-38l",
+  "artifact_type": "verification_evidence",
+  "timestamp": "2026-02-20T09:35:54.974041+00:00",
+  "git_commit": "32b56e4c639fd2a39f3f0b77ee55a656ae65109e",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "DIV-EXISTS",
+      "status": "PASS"
+    },
+    {
+      "id": "DIV-SCHEMA",
+      "status": "PASS"
+    },
+    {
+      "id": "DIV-STRUCTURE",
+      "status": "PASS"
+    },
+    {
+      "id": "DIV-FIELDS",
+      "status": "PASS"
+    },
+    {
+      "id": "DIV-RATIONALE",
+      "status": "PASS"
+    },
+    {
+      "id": "DIV-UNIQUE",
+      "status": "PASS"
+    }
+  ],
+  "unit_tests": {
+    "total": 9,
+    "passed": 9,
+    "failed": 0
+  },
+  "outputs": [
+    {
+      "path": "docs/DIVERGENCE_LEDGER.json",
+      "sha256": "9742746024bb2dc7d3f236425a6d8789524bcaec12753c4aafc51c56dff0ece6",
+      "size_bytes": 1836
+    },
+    {
+      "path": "schemas/divergence_ledger.schema.json",
+      "sha256": "4748da48d275c6fe530729c3cffdf7e39aa0664a9cf7cd75f33092fd9ca5d66a",
+      "size_bytes": 2330
+    },
+    {
+      "path": "docs/specs/section_10_2/bd-38l_contract.md",
+      "sha256": "23b959200f54ad41b511eec83dc6b400087f2e60672dfd8c3bb100bb60913989",
+      "size_bytes": 1727
+    },
+    {
+      "path": "scripts/check_divergence_ledger.py",
+      "sha256": "176bb5071864687ce9ecba6285081ad7421b5120d21f27d630fe20c594e3507c",
+      "size_bytes": 7244
+    },
+    {
+      "path": "tests/test_check_divergence_ledger.py",
+      "sha256": "7898ebe1e518b42b573f9ddd00a1ccdf9cb474ed201ae2bf26bf8922a34c7e4b",
+      "size_bytes": 2043
+    }
+  ]
+}

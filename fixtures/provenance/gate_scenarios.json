@@ -1,0 +1,44 @@
+{
+  "description": "Provenance/attestation gate scenarios (bd-3i9o)",
+  "cases": [
+    {
+      "id": "full_compliance",
+      "attestations": ["slsa", "sigstore"],
+      "build_assurance": "hardened",
+      "builder_id": "builder-alpha",
+      "expected_passed": true
+    },
+    {
+      "id": "missing_attestation",
+      "attestations": ["slsa"],
+      "build_assurance": "hardened",
+      "builder_id": "builder-alpha",
+      "expected_passed": false,
+      "expected_failure": "missing_attestation"
+    },
+    {
+      "id": "low_assurance",
+      "attestations": ["slsa", "sigstore"],
+      "build_assurance": "basic",
+      "builder_id": "builder-alpha",
+      "expected_passed": false,
+      "expected_failure": "insufficient_assurance"
+    },
+    {
+      "id": "untrusted_builder",
+      "attestations": ["slsa", "sigstore"],
+      "build_assurance": "hardened",
+      "builder_id": "rogue-builder",
+      "expected_passed": false,
+      "expected_failure": "untrusted_builder"
+    },
+    {
+      "id": "all_failures",
+      "attestations": [],
+      "build_assurance": "none",
+      "builder_id": "rogue",
+      "expected_passed": false,
+      "expected_failure": "missing_attestation"
+    }
+  ]
+}

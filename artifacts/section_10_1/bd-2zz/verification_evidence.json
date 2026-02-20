@@ -1,0 +1,57 @@
+{
+  "gate": "dependency_direction_guard",
+  "section": "10.1",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T09:08:24.541636+00:00",
+  "checks": [
+    {
+      "id": "GUARD-WS-MEMBERS",
+      "status": "PASS",
+      "details": {
+        "members": [
+          "crates/franken-node"
+        ]
+      }
+    },
+    {
+      "id": "GUARD-PKG-NAMES",
+      "status": "PASS",
+      "details": {
+        "scanned": 2
+      }
+    },
+    {
+      "id": "GUARD-DEP-DIR",
+      "status": "PASS",
+      "details": {
+        "deps_checked": 2,
+        "valid_deps": [
+          {
+            "file": "crates/franken-node/Cargo.toml",
+            "dep": "frankenengine-engine",
+            "path": "../../../franken_engine/crates/franken-engine"
+          },
+          {
+            "file": "crates/franken-node/Cargo.toml",
+            "dep": "frankenengine-extension-host",
+            "path": "../../../franken_engine/crates/franken-extension-host"
+          }
+        ]
+      }
+    },
+    {
+      "id": "GUARD-CRATES-CLEAN",
+      "status": "PASS",
+      "details": {
+        "crates_present": [
+          "franken-node"
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "total_checks": 4,
+    "passing_checks": 4,
+    "failing_checks": 0
+  }
+}

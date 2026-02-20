@@ -1,0 +1,45 @@
+{
+  "gate": "device_profile_verification",
+  "bead": "bd-8vby",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "DPR-IMPL",
+      "description": "Implementation with all required types",
+      "status": "PASS"
+    },
+    {
+      "id": "DPR-ERRORS",
+      "description": "All 4 error codes present",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "DPR-FIXTURES",
+      "description": "Device profile example fixtures",
+      "status": "PASS"
+    },
+    {
+      "id": "DPR-CONF",
+      "description": "Conformance tests cover all 4 invariants",
+      "status": "PASS"
+    },
+    {
+      "id": "DPR-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "21 tests passed"
+    },
+    {
+      "id": "DPR-SPEC",
+      "description": "Specification with invariants and types",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 6,
+    "passing_checks": 6,
+    "failing_checks": 0
+  }
+}

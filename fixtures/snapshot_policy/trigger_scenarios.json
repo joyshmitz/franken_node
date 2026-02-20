@@ -1,0 +1,40 @@
+{
+  "description": "Snapshot trigger evaluation scenarios",
+  "cases": [
+    {
+      "name": "no_trigger_fresh",
+      "policy": {"every_updates": 100, "every_bytes": 65536},
+      "ops_since_snapshot": 0,
+      "bytes_since_snapshot": 0,
+      "expected_should_snapshot": false
+    },
+    {
+      "name": "trigger_by_updates",
+      "policy": {"every_updates": 100, "every_bytes": 65536},
+      "ops_since_snapshot": 100,
+      "bytes_since_snapshot": 1000,
+      "expected_should_snapshot": true
+    },
+    {
+      "name": "trigger_by_bytes",
+      "policy": {"every_updates": 100, "every_bytes": 65536},
+      "ops_since_snapshot": 5,
+      "bytes_since_snapshot": 65536,
+      "expected_should_snapshot": true
+    },
+    {
+      "name": "below_both_thresholds",
+      "policy": {"every_updates": 100, "every_bytes": 65536},
+      "ops_since_snapshot": 99,
+      "bytes_since_snapshot": 65535,
+      "expected_should_snapshot": false
+    },
+    {
+      "name": "both_exceeded",
+      "policy": {"every_updates": 50, "every_bytes": 1024},
+      "ops_since_snapshot": 200,
+      "bytes_since_snapshot": 5000,
+      "expected_should_snapshot": true
+    }
+  ]
+}

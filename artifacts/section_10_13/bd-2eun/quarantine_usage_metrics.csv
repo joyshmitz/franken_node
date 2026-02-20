@@ -1,0 +1,6 @@
+snapshot_time,object_count,total_bytes,quota_objects,quota_bytes,ttl_seconds,evictions_ttl,evictions_quota,oldest_age_s
+1000,3,300,5,500,100,0,0,0
+1050,5,480,5,500,100,0,0,50
+1100,4,380,5,500,100,2,0,50
+1150,5,450,5,500,100,2,1,50
+1200,2,200,5,500,100,5,1,50

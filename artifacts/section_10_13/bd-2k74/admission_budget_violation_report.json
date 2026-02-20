@@ -1,0 +1,52 @@
+{
+  "report_id": "abv-001",
+  "generated": "2026-02-20T12:00:00Z",
+  "scenarios": [
+    {
+      "scenario": "normal_admission",
+      "peer_id": "peer-alpha",
+      "budget": {"max_bytes": 10000000, "max_symbols": 100000, "max_failed_auth": 5, "max_inflight_decode": 10, "max_decode_cpu_ms": 5000},
+      "request": {"bytes_requested": 50000, "symbols_requested": 500, "decode_cpu_estimate_ms": 100},
+      "verdict": "ADMIT",
+      "violated_dimensions": [],
+      "remaining": {"bytes": 9950000, "symbols": 99500, "decode_cpu": 4900}
+    },
+    {
+      "scenario": "bytes_budget_breach",
+      "peer_id": "peer-beta",
+      "budget": {"max_bytes": 1000, "max_symbols": 100000, "max_failed_auth": 5, "max_inflight_decode": 10, "max_decode_cpu_ms": 5000},
+      "request": {"bytes_requested": 1001, "symbols_requested": 0, "decode_cpu_estimate_ms": 0},
+      "verdict": "REJECT",
+      "violated_dimensions": ["bytes"],
+      "error_code": "PAB_BYTES_EXCEEDED"
+    },
+    {
+      "scenario": "multiple_dimension_breach",
+      "peer_id": "peer-gamma",
+      "budget": {"max_bytes": 1000, "max_symbols": 500, "max_failed_auth": 3, "max_inflight_decode": 5, "max_decode_cpu_ms": 2000},
+      "request": {"bytes_requested": 1500, "symbols_requested": 600, "decode_cpu_estimate_ms": 2500},
+      "verdict": "REJECT",
+      "violated_dimensions": ["bytes", "symbols", "decode_cpu"],
+      "error_codes": ["PAB_BYTES_EXCEEDED", "PAB_SYMBOLS_EXCEEDED", "PAB_CPU_EXCEEDED"]
+    },
+    {
+      "scenario": "failed_auth_lockout",
+      "peer_id": "peer-delta",
+      "budget": {"max_bytes": 10000000, "max_symbols": 100000, "max_failed_auth": 3, "max_inflight_decode": 10, "max_decode_cpu_ms": 5000},
+      "failed_auth_count": 3,
+      "request": {"bytes_requested": 100, "symbols_requested": 10, "decode_cpu_estimate_ms": 10},
+      "verdict": "REJECT",
+      "violated_dimensions": ["failed_auth"],
+      "error_code": "PAB_AUTH_EXCEEDED"
+    },
+    {
+      "scenario": "cumulative_budget_exhaustion",
+      "peer_id": "peer-epsilon",
+      "budget": {"max_bytes": 1000, "max_symbols": 500, "max_failed_auth": 5, "max_inflight_decode": 10, "max_decode_cpu_ms": 2000},
+      "requests": [
+        {"bytes_requested": 600, "symbols_requested": 300, "decode_cpu_estimate_ms": 1000, "verdict": "ADMIT"},
+        {"bytes_requested": 500, "symbols_requested": 300, "decode_cpu_estimate_ms": 1100, "verdict": "REJECT", "violated_dimensions": ["bytes", "symbols", "decode_cpu"]}
+      ]
+    }
+  ]
+}

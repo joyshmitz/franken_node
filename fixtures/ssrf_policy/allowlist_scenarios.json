@@ -1,0 +1,29 @@
+{
+  "description": "Allowlist exception scenarios for SSRF policy (bd-1nk5)",
+  "cases": [
+    {
+      "id": "allowlist_private_api",
+      "host": "10.0.0.5",
+      "port": 8080,
+      "reason": "Internal health-check endpoint",
+      "expected_action": "allow",
+      "should_produce_receipt": true
+    },
+    {
+      "id": "allowlist_any_port",
+      "host": "192.168.1.100",
+      "port": null,
+      "reason": "Local dev database",
+      "expected_action": "allow",
+      "should_produce_receipt": true
+    },
+    {
+      "id": "allowlist_empty_reason",
+      "host": "10.0.0.1",
+      "port": null,
+      "reason": "",
+      "expected_action": "error",
+      "should_produce_receipt": false
+    }
+  ]
+}

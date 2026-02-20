@@ -1,0 +1,43 @@
+{
+  "schema": "connector_state_model_samples",
+  "version": "1.0.0",
+  "samples": [
+    {
+      "connector_id": "sample-stateless-1",
+      "state_model": "stateless",
+      "head": null,
+      "description": "Stateless connector with no persistent state"
+    },
+    {
+      "connector_id": "sample-kv-1",
+      "state_model": "key_value",
+      "head": {"config_version": "2.1.0", "enabled_features": ["auth", "logging"]},
+      "description": "Key-value connector storing configuration state"
+    },
+    {
+      "connector_id": "sample-doc-1",
+      "state_model": "document",
+      "head": {
+        "schema_version": "1.0.0",
+        "endpoints": [
+          {"path": "/api/v1/health", "method": "GET", "status": "active"},
+          {"path": "/api/v1/data", "method": "POST", "status": "active"}
+        ],
+        "last_sync": "2026-02-20T00:00:00Z"
+      },
+      "description": "Document connector with structured API state"
+    },
+    {
+      "connector_id": "sample-append-1",
+      "state_model": "append_only",
+      "head": {
+        "entries": [
+          {"seq": 1, "event": "initialized", "ts": "2026-02-20T00:00:00Z"},
+          {"seq": 2, "event": "configured", "ts": "2026-02-20T00:01:00Z"},
+          {"seq": 3, "event": "activated", "ts": "2026-02-20T00:02:00Z"}
+        ]
+      },
+      "description": "Append-only connector with event log state"
+    }
+  ]
+}

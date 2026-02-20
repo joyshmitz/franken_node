@@ -1,0 +1,40 @@
+{
+  "description": "Profile transition scenarios testing downgrade blocking",
+  "cases": [
+    {
+      "name": "upgrade_strict_to_moderate",
+      "from": "strict",
+      "to": "moderate",
+      "allow_downgrade": false,
+      "expected": "ok"
+    },
+    {
+      "name": "downgrade_moderate_to_strict_blocked",
+      "from": "moderate",
+      "to": "strict",
+      "allow_downgrade": false,
+      "expected": "SANDBOX_DOWNGRADE_BLOCKED"
+    },
+    {
+      "name": "downgrade_with_override",
+      "from": "moderate",
+      "to": "strict",
+      "allow_downgrade": true,
+      "expected": "ok"
+    },
+    {
+      "name": "same_level_allowed",
+      "from": "moderate",
+      "to": "moderate",
+      "allow_downgrade": false,
+      "expected": "ok"
+    },
+    {
+      "name": "downgrade_permissive_to_strict_plus",
+      "from": "permissive",
+      "to": "strict_plus",
+      "allow_downgrade": false,
+      "expected": "SANDBOX_DOWNGRADE_BLOCKED"
+    }
+  ]
+}

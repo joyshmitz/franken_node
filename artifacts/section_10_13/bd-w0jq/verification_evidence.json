@@ -1,0 +1,50 @@
+{
+  "gate": "degraded_mode_audit_verification",
+  "bead": "bd-w0jq",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "DM-IMPL",
+      "description": "Implementation with all required types",
+      "status": "PASS"
+    },
+    {
+      "id": "DM-ERRORS",
+      "description": "All 3 error codes present",
+      "status": "PASS",
+      "details": "found 3/3"
+    },
+    {
+      "id": "DM-FIXTURES",
+      "description": "Degraded mode scenarios fixture",
+      "status": "PASS"
+    },
+    {
+      "id": "DM-EVENTS",
+      "description": "Degraded mode events JSONL artifact",
+      "status": "PASS"
+    },
+    {
+      "id": "DM-CONF-TESTS",
+      "description": "Conformance tests cover all 4 invariants",
+      "status": "PASS"
+    },
+    {
+      "id": "DM-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "19 tests passed"
+    },
+    {
+      "id": "DM-SPEC",
+      "description": "Specification with invariants and types",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 7,
+    "passing_checks": 7,
+    "failing_checks": 0
+  }
+}

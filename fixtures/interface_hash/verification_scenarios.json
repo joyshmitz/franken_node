@@ -1,0 +1,49 @@
+{
+  "description": "Interface hash verification scenarios (bd-3n58)",
+  "cases": [
+    {
+      "id": "valid_hash",
+      "domain": "connector.v1",
+      "data": "hello_world",
+      "expected_admitted": true,
+      "expected_rejection": null
+    },
+    {
+      "id": "hash_mismatch",
+      "domain": "connector.v1",
+      "data": "hello_world",
+      "tampered_data": "goodbye_world",
+      "expected_admitted": false,
+      "expected_rejection": "hash_mismatch"
+    },
+    {
+      "id": "domain_mismatch",
+      "domain": "connector.v1",
+      "verify_domain": "provider.v1",
+      "data": "hello_world",
+      "expected_admitted": false,
+      "expected_rejection": "domain_mismatch"
+    },
+    {
+      "id": "malformed_hash",
+      "domain": "connector.v1",
+      "data": "hello_world",
+      "override_hash": "not-valid-hex!",
+      "expected_admitted": false,
+      "expected_rejection": "malformed_hash"
+    },
+    {
+      "id": "domain_separation_different_domains",
+      "domain_a": "connector.v1",
+      "domain_b": "provider.v1",
+      "data": "same_data",
+      "hashes_should_differ": true
+    },
+    {
+      "id": "deterministic_same_input",
+      "domain": "connector.v1",
+      "data": "test_data",
+      "hashes_should_match": true
+    }
+  ]
+}

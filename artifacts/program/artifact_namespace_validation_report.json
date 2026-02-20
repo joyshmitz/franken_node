@@ -1,0 +1,17 @@
+{
+  "gate": "artifact_namespace",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T08:37:28.374030+00:00",
+  "artifacts_dir": "/data/projects/franken_node/artifacts",
+  "artifacts_scanned": 2,
+  "with_meta": 0,
+  "without_meta": 2,
+  "legacy_paths": 1,
+  "collisions": [],
+  "meta_warnings": [
+    {
+      "path": "artifacts/program/artifact_namespace_validation_report.json",
+      "error": "Parse error: Expecting value: line 1 column 1 (char 0)"
+    }
+  ]
+}

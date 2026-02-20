@@ -1,0 +1,6 @@
+cycle_id,tenants,items_pending,items_repaired,units_used,units_cap,tenants_served,tenants_skipped
+c001,5,25,15,95,100,5,0
+c002,3,10,10,50,100,3,0
+c003,12,60,20,100,100,10,2
+c004,1,5,5,25,100,1,0
+c005,8,40,18,98,100,8,0

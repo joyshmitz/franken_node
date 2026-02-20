@@ -1,0 +1,55 @@
+{
+  "gate": "threshold_sig_verification",
+  "bead": "bd-35q1",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "TS-IMPL",
+      "description": "Implementation with config, artifact, result, verify_threshold",
+      "status": "PASS"
+    },
+    {
+      "id": "TS-QUORUM",
+      "description": "Quorum check against threshold",
+      "status": "PASS"
+    },
+    {
+      "id": "TS-ERRORS",
+      "description": "All 4 error codes present",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "TS-FIXTURES",
+      "description": "Verification scenarios fixture",
+      "status": "PASS"
+    },
+    {
+      "id": "TS-VECTORS",
+      "description": "Threshold signature test vectors",
+      "status": "PASS"
+    },
+    {
+      "id": "TS-SECURITY-TESTS",
+      "description": "Security tests cover quorum, partial, duplicate",
+      "status": "PASS"
+    },
+    {
+      "id": "TS-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "18 tests passed"
+    },
+    {
+      "id": "TS-SPEC",
+      "description": "Specification with invariants and failure reasons",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 8,
+    "passing_checks": 8,
+    "failing_checks": 0
+  }
+}

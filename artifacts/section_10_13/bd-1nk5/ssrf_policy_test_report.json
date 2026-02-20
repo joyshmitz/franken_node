@@ -1,0 +1,71 @@
+{
+  "bead": "bd-1nk5",
+  "section": "10.13",
+  "test_report": "ssrf_default_deny_policy",
+  "timestamp": "2026-02-20T11:25:00Z",
+  "ssrf_patterns_tested": [
+    {
+      "pattern": "ipv4_loopback",
+      "hosts": ["127.0.0.1", "127.255.255.255"],
+      "cidr": "127.0.0.0/8",
+      "result": "denied"
+    },
+    {
+      "pattern": "rfc1918_class_a",
+      "hosts": ["10.0.0.1", "10.255.255.255"],
+      "cidr": "10.0.0.0/8",
+      "result": "denied"
+    },
+    {
+      "pattern": "rfc1918_class_b",
+      "hosts": ["172.16.0.1", "172.31.255.255"],
+      "cidr": "172.16.0.0/12",
+      "result": "denied"
+    },
+    {
+      "pattern": "rfc1918_class_c",
+      "hosts": ["192.168.0.1", "192.168.255.255"],
+      "cidr": "192.168.0.0/16",
+      "result": "denied"
+    },
+    {
+      "pattern": "cloud_metadata",
+      "hosts": ["169.254.169.254"],
+      "cidr": "169.254.0.0/16",
+      "result": "denied"
+    },
+    {
+      "pattern": "cgnat_tailnet",
+      "hosts": ["100.64.0.1", "100.100.100.100", "100.127.255.255"],
+      "cidr": "100.64.0.0/10",
+      "result": "denied"
+    },
+    {
+      "pattern": "ipv6_loopback",
+      "hosts": ["::1"],
+      "cidr": "::1/128",
+      "result": "denied"
+    },
+    {
+      "pattern": "public_ip",
+      "hosts": ["8.8.8.8", "1.1.1.1", "203.0.113.1"],
+      "cidr": null,
+      "result": "allowed"
+    }
+  ],
+  "allowlist_tests": [
+    {
+      "host": "10.0.0.5",
+      "port": 8080,
+      "reason": "Internal health-check endpoint",
+      "result": "allowed_with_receipt"
+    },
+    {
+      "host": "10.0.0.5",
+      "port": 8080,
+      "reason": "",
+      "result": "rejected_missing_reason"
+    }
+  ],
+  "verdict": "PASS"
+}

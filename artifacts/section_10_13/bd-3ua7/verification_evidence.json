@@ -1,0 +1,63 @@
+{
+  "gate": "sandbox_profile_verification",
+  "bead": "bd-3ua7",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "SANDBOX-IMPL",
+      "description": "Implementation with profiles, compiler, tracker, audit",
+      "status": "PASS"
+    },
+    {
+      "id": "SANDBOX-PROFILES",
+      "description": "All 4 profiles defined",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "SANDBOX-CAPABILITIES",
+      "description": "All 6 capabilities defined",
+      "status": "PASS",
+      "details": "found 6/6"
+    },
+    {
+      "id": "SANDBOX-ERRORS",
+      "description": "All 4 error codes present",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "SANDBOX-FIXTURES",
+      "description": "Fixture files for capabilities and downgrades",
+      "status": "PASS",
+      "details": "found 2/2"
+    },
+    {
+      "id": "SANDBOX-COMPILER-OUTPUT",
+      "description": "Compiled policy output for all 4 profiles",
+      "status": "PASS"
+    },
+    {
+      "id": "SANDBOX-CONFORMANCE",
+      "description": "Conformance tests cover ordering, downgrade, audit",
+      "status": "PASS"
+    },
+    {
+      "id": "SANDBOX-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "22 tests passed"
+    },
+    {
+      "id": "SANDBOX-SPEC",
+      "description": "Specification with invariants and profile definitions",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 9,
+    "passing_checks": 9,
+    "failing_checks": 0
+  }
+}

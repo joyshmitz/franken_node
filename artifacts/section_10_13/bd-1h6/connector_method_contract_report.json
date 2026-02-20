@@ -1,0 +1,26 @@
+{
+  "schema": "connector_method_contract_report",
+  "version": "1.0.0",
+  "standard_methods": [
+    {"name": "handshake", "required": true, "version": "1.0.0", "direction": "bidirectional"},
+    {"name": "describe", "required": true, "version": "1.0.0", "direction": "connector_to_host"},
+    {"name": "introspect", "required": true, "version": "1.0.0", "direction": "connector_to_host"},
+    {"name": "capabilities", "required": true, "version": "1.0.0", "direction": "connector_to_host"},
+    {"name": "configure", "required": true, "version": "1.0.0", "direction": "host_to_connector"},
+    {"name": "simulate", "required": false, "version": "1.0.0", "direction": "host_to_connector"},
+    {"name": "invoke", "required": true, "version": "1.0.0", "direction": "host_to_connector"},
+    {"name": "health", "required": true, "version": "1.0.0", "direction": "host_to_connector"},
+    {"name": "shutdown", "required": true, "version": "1.0.0", "direction": "host_to_connector"}
+  ],
+  "summary": {
+    "total_methods": 9,
+    "required_methods": 8,
+    "optional_methods": 1
+  },
+  "error_codes": [
+    "METHOD_MISSING",
+    "SCHEMA_MISMATCH",
+    "VERSION_INCOMPATIBLE",
+    "RESPONSE_INVALID"
+  ]
+}

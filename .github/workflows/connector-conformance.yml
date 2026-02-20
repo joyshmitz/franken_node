@@ -1,0 +1,52 @@
+name: Connector Conformance Gate
+
+on:
+  pull_request:
+    paths:
+      - 'crates/franken-node/src/conformance/**'
+      - 'crates/franken-node/src/connector/**'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/franken-node/src/conformance/**'
+      - 'crates/franken-node/src/connector/**'
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Run conformance tests
+        run: cargo test -- conformance::
+
+      - name: Run connector lifecycle tests
+        run: cargo test -- connector::
+
+      - name: Run Python verification
+        run: |
+          python3 scripts/check_connector_lifecycle.py --json > /tmp/lifecycle.json
+          python3 scripts/check_health_gate.py --json > /tmp/health_gate.json
+          python3 scripts/check_method_validator.py --json > /tmp/method_validator.json
+          python3 scripts/check_conformance_harness.py --json > /tmp/conformance_harness.json
+
+      - name: Verify all gates pass
+        run: |
+          for f in /tmp/lifecycle.json /tmp/health_gate.json /tmp/method_validator.json /tmp/conformance_harness.json; do
+            verdict=$(python3 -c "import json; print(json.load(open('$f'))['verdict'])")
+            if [ "$verdict" != "PASS" ]; then
+              echo "FAIL: $f"
+              exit 1
+            fi
+          done
+          echo "All conformance gates passed"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-evidence
+          path: /tmp/*.json

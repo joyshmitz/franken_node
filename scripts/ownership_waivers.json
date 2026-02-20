@@ -1,0 +1,5 @@
+{
+  "schema_version": "v1",
+  "description": "Waivers for the duplicate-implementation CI gate. Each waiver exempts a specific file+rule combination from the ownership check. Waivers must include justification and are subject to governance review.",
+  "waivers": []
+}

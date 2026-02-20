@@ -1,0 +1,74 @@
+{
+  "gate": "product_charter_verification",
+  "section": "10.1",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T09:01:43.334532+00:00",
+  "checks": [
+    {
+      "id": "CHARTER-EXISTS",
+      "status": "PASS",
+      "details": {
+        "path": "docs/PRODUCT_CHARTER.md"
+      }
+    },
+    {
+      "id": "CHARTER-SECTIONS",
+      "status": "PASS",
+      "details": {
+        "missing": [],
+        "found": [
+          "Product Purpose",
+          "Scope Boundary",
+          "Target Users",
+          "Non-Negotiable",
+          "Success Criteria",
+          "Impossible-by-Default",
+          "Governance Model",
+          "Execution Tracks",
+          "Off-Charter Behaviors",
+          "Cross-References"
+        ]
+      }
+    },
+    {
+      "id": "CHARTER-XREFS",
+      "status": "PASS",
+      "details": {
+        "valid": [
+          "ENGINE_SPLIT_CONTRACT.md",
+          "ROADMAP.md",
+          "CAPABILITY_OWNERSHIP_REGISTRY.md",
+          "DUAL_ORACLE_CLOSE_CONDITION.md",
+          "PLAN_TO_CREATE_FRANKEN_NODE.md"
+        ],
+        "broken": []
+      }
+    },
+    {
+      "id": "CHARTER-README-LINK",
+      "status": "PASS",
+      "details": {
+        "linked": true
+      }
+    },
+    {
+      "id": "CHARTER-ROADMAP-LINK",
+      "status": "PASS",
+      "details": {
+        "linked": true
+      }
+    },
+    {
+      "id": "CHARTER-HEADINGS",
+      "status": "PASS",
+      "details": {
+        "heading_count": 27
+      }
+    }
+  ],
+  "summary": {
+    "total_checks": 6,
+    "passing_checks": 6,
+    "failing_checks": 0
+  }
+}

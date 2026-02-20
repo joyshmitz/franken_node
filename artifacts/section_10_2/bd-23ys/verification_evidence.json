@@ -1,0 +1,119 @@
+{
+  "gate": "section_10_2_verification",
+  "section": "10.2",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T10:04:58.004120+00:00",
+  "verification_scripts": {
+    "total": 12,
+    "passing": 12,
+    "results": [
+      {
+        "bead": "bd-2wz",
+        "name": "Compatibility Bands",
+        "script": "scripts/check_compat_bands.py",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-2qf",
+        "name": "Compatibility Registry",
+        "script": "scripts/check_compat_registry.py",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-38l",
+        "name": "Divergence Ledger",
+        "script": "scripts/check_divergence_ledger.py",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-2kf",
+        "name": "Compatibility Mode Policy",
+        "script": "scripts/check_compat_modes.py",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-1z3",
+        "name": "Fixture Runner",
+        "script": "scripts/fixture_runner.py",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-2vi",
+        "name": "L1 Lockstep Runner",
+        "script": "scripts/check_lockstep_runner.py",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-32v",
+        "name": "Minimized Fixture Generation",
+        "script": "scripts/check_minimized_fixtures.py",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-1ck",
+        "name": "L2 Engine-Boundary Oracle",
+        "script": "scripts/check_l2_oracle.py",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-240",
+        "name": "Compatibility Dashboard",
+        "script": "scripts/check_compat_dashboard.py",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-2hs",
+        "name": "Four-Doc Spec Pack",
+        "script": "scripts/check_spec_pack.py",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-80g",
+        "name": "Fixture Corpus",
+        "script": "scripts/check_fixture_corpus.py",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-7mt",
+        "name": "Compat CI Gate",
+        "script": "scripts/check_compat_ci_gate.py",
+        "status": "PASS"
+      }
+    ]
+  },
+  "unit_tests": {
+    "status": "PASS",
+    "summary": "============================= 121 passed in 0.15s ==============================",
+    "test_count": 12
+  },
+  "evidence_artifacts": {
+    "status": "PASS",
+    "details": {
+      "bd-2wz": true,
+      "bd-2qf": true,
+      "bd-38l": true,
+      "bd-2kf": true,
+      "bd-1z3": true,
+      "bd-2vi": true,
+      "bd-32v": true,
+      "bd-1ck": true,
+      "bd-240": true,
+      "bd-2hs": true,
+      "bd-80g": true,
+      "bd-7mt": true
+    }
+  },
+  "governance_docs": {
+    "status": "PASS",
+    "details": {
+      "docs/COMPATIBILITY_BANDS.md": true,
+      "docs/COMPATIBILITY_MODE_POLICY.md": true,
+      "docs/COMPATIBILITY_REGISTRY.json": true,
+      "docs/DIVERGENCE_LEDGER.json": true,
+      "docs/L1_LOCKSTEP_RUNNER.md": true,
+      "docs/L2_ENGINE_BOUNDARY_ORACLE.md": true,
+      "docs/MINIMIZED_FIXTURE_SPEC.md": true,
+      "docs/COMPAT_DASHBOARD_SPEC.md": true
+    }
+  }
+}

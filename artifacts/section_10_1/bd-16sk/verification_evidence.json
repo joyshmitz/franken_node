@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "bead_id": "bd-16sk",
+  "artifact_type": "gate_verdict",
+  "timestamp": "2026-02-20T09:27:43.252675+00:00",
+  "git_commit": "32b56e4c639fd2a39f3f0b77ee55a656ae65109e",
+  "verdict": "PASS",
+  "gate_type": "section_comprehensive",
+  "section": "10.1",
+  "section_name": "Charter + Split Governance",
+  "checks": [
+    {
+      "id": "GATE-SCRIPTS",
+      "status": "PASS",
+      "detail": "7/7 verification scripts pass"
+    },
+    {
+      "id": "GATE-TESTS",
+      "status": "PASS",
+      "detail": "57 unit tests passed, 0 failed"
+    },
+    {
+      "id": "GATE-ARTIFACTS",
+      "status": "PASS",
+      "detail": "8/8 evidence artifacts verified with PASS verdicts"
+    },
+    {
+      "id": "GATE-GOVERNANCE",
+      "status": "PASS",
+      "detail": "5/5 governance documents present"
+    }
+  ],
+  "beads_verified": [
+    "bd-2nd",
+    "bd-vjq",
+    "bd-1j2",
+    "bd-2zz",
+    "bd-4yv",
+    "bd-1mj",
+    "bd-20l",
+    "bd-1pc"
+  ],
+  "unit_test_summary": {
+    "total": 57,
+    "passed": 57,
+    "failed": 0
+  },
+  "outputs": [
+    {
+      "path": "scripts/gate_section_10_1.py",
+      "sha256": "fe48ab197f39dbf2027408282b554b9ecfedd53a6551e4fd6b5c189023cc357c",
+      "size_bytes": 10680
+    }
+  ]
+}

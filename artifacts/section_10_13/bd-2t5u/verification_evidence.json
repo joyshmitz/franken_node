@@ -1,0 +1,45 @@
+{
+  "gate": "prestage_engine_verification",
+  "bead": "bd-2t5u",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "PSE-IMPL",
+      "description": "Implementation with all required types",
+      "status": "PASS"
+    },
+    {
+      "id": "PSE-ERRORS",
+      "description": "All 4 error codes present",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "PSE-REPORT",
+      "description": "Pre-staging model report CSV",
+      "status": "PASS"
+    },
+    {
+      "id": "PSE-INTEG",
+      "description": "Integration tests cover all 4 invariants",
+      "status": "PASS"
+    },
+    {
+      "id": "PSE-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "19 tests passed"
+    },
+    {
+      "id": "PSE-SPEC",
+      "description": "Specification with invariants and types",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 6,
+    "passing_checks": 6,
+    "failing_checks": 0
+  }
+}

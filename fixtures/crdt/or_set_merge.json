@@ -1,0 +1,36 @@
+{
+  "description": "OR-Set merge conformance fixtures",
+  "crdt_type": "or_set",
+  "cases": [
+    {
+      "name": "commutativity_basic",
+      "a": {"adds": ["x"], "removes": []},
+      "b": {"adds": ["y"], "removes": []},
+      "expected_elements": ["x", "y"],
+      "law": "commutativity"
+    },
+    {
+      "name": "idempotency_basic",
+      "a": {"adds": ["x", "y"], "removes": ["y"]},
+      "b": {"adds": ["x", "y"], "removes": ["y"]},
+      "expected_elements": ["x"],
+      "law": "idempotency"
+    },
+    {
+      "name": "add_wins_over_remove",
+      "a": {"adds": ["x"], "removes": []},
+      "b": {"adds": [], "removes": ["x"]},
+      "expected_elements": [],
+      "law": "commutativity",
+      "note": "union of removes includes x, so x is hidden"
+    },
+    {
+      "name": "associativity",
+      "a": {"adds": ["x"], "removes": []},
+      "b": {"adds": ["y"], "removes": []},
+      "c": {"adds": ["z"], "removes": ["x"]},
+      "expected_elements": ["y", "z"],
+      "law": "associativity"
+    }
+  ]
+}

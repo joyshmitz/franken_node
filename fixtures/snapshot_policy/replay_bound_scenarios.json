@@ -1,0 +1,37 @@
+{
+  "description": "Replay bound evaluation scenarios",
+  "cases": [
+    {
+      "name": "within_bounds",
+      "snapshot_version": 10,
+      "current_version": 60,
+      "max_replay_ops": 100,
+      "expected_distance": 50,
+      "expected_within_bounds": true
+    },
+    {
+      "name": "at_boundary",
+      "snapshot_version": 10,
+      "current_version": 110,
+      "max_replay_ops": 100,
+      "expected_distance": 100,
+      "expected_within_bounds": true
+    },
+    {
+      "name": "exceeded",
+      "snapshot_version": 10,
+      "current_version": 200,
+      "max_replay_ops": 100,
+      "expected_distance": 190,
+      "expected_within_bounds": false
+    },
+    {
+      "name": "no_replay_needed",
+      "snapshot_version": 50,
+      "current_version": 50,
+      "max_replay_ops": 100,
+      "expected_distance": 0,
+      "expected_within_bounds": true
+    }
+  ]
+}

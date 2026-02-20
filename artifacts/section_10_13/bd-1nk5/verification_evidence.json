@@ -1,0 +1,61 @@
+{
+  "gate": "ssrf_policy_verification",
+  "bead": "bd-1nk5",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "SSRF-IMPL",
+      "description": "Implementation with template, CIDR, receipt, allowlist types",
+      "status": "PASS"
+    },
+    {
+      "id": "SSRF-CIDRS",
+      "description": "All 7 standard CIDR ranges present",
+      "status": "PASS",
+      "details": "found 7/7"
+    },
+    {
+      "id": "SSRF-ERRORS",
+      "description": "All 4 error codes present",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "SSRF-TOML",
+      "description": "Default policy TOML with blocked CIDRs",
+      "status": "PASS"
+    },
+    {
+      "id": "SSRF-FIXTURES",
+      "description": "SSRF deny scenarios fixture with cases",
+      "status": "PASS"
+    },
+    {
+      "id": "SSRF-REPORT",
+      "description": "SSRF policy test report",
+      "status": "PASS"
+    },
+    {
+      "id": "SSRF-SECURITY-TESTS",
+      "description": "Security tests cover deny, allow, allowlist, audit",
+      "status": "PASS"
+    },
+    {
+      "id": "SSRF-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "31 tests passed"
+    },
+    {
+      "id": "SSRF-SPEC",
+      "description": "Specification with invariants and receipt schema",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 9,
+    "passing_checks": 9,
+    "failing_checks": 0
+  }
+}

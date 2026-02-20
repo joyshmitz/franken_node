@@ -1,0 +1,45 @@
+{
+  "gate": "quarantine_store_verification",
+  "bead": "bd-2eun",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "QDS-IMPL",
+      "description": "Implementation with all required types",
+      "status": "PASS"
+    },
+    {
+      "id": "QDS-ERRORS",
+      "description": "All 5 error codes present",
+      "status": "PASS",
+      "details": "found 5/5"
+    },
+    {
+      "id": "QDS-METRICS",
+      "description": "Quarantine usage metrics CSV",
+      "status": "PASS"
+    },
+    {
+      "id": "QDS-INTEG",
+      "description": "Integration tests cover all 4 invariants",
+      "status": "PASS"
+    },
+    {
+      "id": "QDS-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "19 tests passed"
+    },
+    {
+      "id": "QDS-SPEC",
+      "description": "Specification with invariants and types",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 6,
+    "passing_checks": 6,
+    "failing_checks": 0
+  }
+}

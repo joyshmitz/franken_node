@@ -1,0 +1,49 @@
+{
+  "description": "bd-29w6: Offline SLO dashboard snapshot examples",
+  "snapshots": [
+    {
+      "id": "healthy-prod",
+      "scope": "prod",
+      "metrics": {
+        "coverage_ratio": 0.95,
+        "availability_ratio": 0.95,
+        "repair_debt_count": 2,
+        "total_artifacts": 40,
+        "available_count": 38
+      },
+      "slo_targets": [
+        {"metric": "coverage", "threshold": 0.9, "status": "OK"},
+        {"metric": "repair_debt", "threshold": 5.0, "status": "OK"}
+      ]
+    },
+    {
+      "id": "breached-staging",
+      "scope": "staging",
+      "metrics": {
+        "coverage_ratio": 0.6,
+        "availability_ratio": 0.6,
+        "repair_debt_count": 8,
+        "total_artifacts": 20,
+        "available_count": 12
+      },
+      "slo_targets": [
+        {"metric": "coverage", "threshold": 0.9, "status": "BREACH"},
+        {"metric": "repair_debt", "threshold": 5.0, "status": "BREACH"}
+      ]
+    },
+    {
+      "id": "zero-coverage",
+      "scope": "disaster-recovery",
+      "metrics": {
+        "coverage_ratio": 0.0,
+        "availability_ratio": 0.0,
+        "repair_debt_count": 10,
+        "total_artifacts": 10,
+        "available_count": 0
+      },
+      "slo_targets": [
+        {"metric": "coverage", "threshold": 0.5, "status": "BREACH"}
+      ]
+    }
+  ]
+}

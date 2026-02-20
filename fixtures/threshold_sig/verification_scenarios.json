@@ -1,0 +1,53 @@
+{
+  "description": "Threshold signature verification scenarios (bd-35q1)",
+  "cases": [
+    {
+      "id": "full_quorum_3_of_3",
+      "threshold": 3,
+      "total_signers": 3,
+      "valid_signatures": 3,
+      "expected_verified": true
+    },
+    {
+      "id": "exact_threshold_2_of_3",
+      "threshold": 2,
+      "total_signers": 3,
+      "valid_signatures": 2,
+      "expected_verified": true
+    },
+    {
+      "id": "below_threshold_1_of_2",
+      "threshold": 2,
+      "total_signers": 3,
+      "valid_signatures": 1,
+      "expected_verified": false,
+      "expected_failure": "below_threshold"
+    },
+    {
+      "id": "zero_signatures",
+      "threshold": 2,
+      "total_signers": 3,
+      "valid_signatures": 0,
+      "expected_verified": false,
+      "expected_failure": "below_threshold"
+    },
+    {
+      "id": "unknown_signer",
+      "threshold": 2,
+      "total_signers": 3,
+      "valid_signatures": 1,
+      "extra_unknown": 1,
+      "expected_verified": false,
+      "expected_failure": "unknown_signer"
+    },
+    {
+      "id": "duplicate_signer",
+      "threshold": 2,
+      "total_signers": 3,
+      "valid_signatures": 1,
+      "duplicate_count": 1,
+      "expected_verified": false,
+      "expected_failure": "duplicate_signer"
+    }
+  ]
+}

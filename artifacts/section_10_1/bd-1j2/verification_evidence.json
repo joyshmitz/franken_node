@@ -1,0 +1,69 @@
+{
+  "gate": "split_contract_enforcement",
+  "section": "10.1",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T09:06:13.548650+00:00",
+  "checks": [
+    {
+      "id": "SPLIT-NO-LOCAL",
+      "status": "PASS",
+      "details": {
+        "checked": [
+          "crates/franken-engine",
+          "crates/franken-extension-host"
+        ]
+      }
+    },
+    {
+      "id": "SPLIT-PATH-DEPS",
+      "status": "PASS",
+      "details": {
+        "cargo_files": [
+          {
+            "path": "crates/franken-node/Cargo.toml",
+            "engine_deps": [
+              {
+                "crate": "frankenengine-engine",
+                "path": "../../../franken_engine/crates/franken-engine",
+                "valid": true
+              },
+              {
+                "crate": "frankenengine-extension-host",
+                "path": "../../../franken_engine/crates/franken-extension-host",
+                "valid": true
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SPLIT-NO-INTERNALS",
+      "status": "PASS",
+      "details": {
+        "files_scanned": 3
+      }
+    },
+    {
+      "id": "SPLIT-GOVERNANCE",
+      "status": "PASS",
+      "details": {
+        "docs": [
+          {
+            "path": "docs/ENGINE_SPLIT_CONTRACT.md",
+            "exists": true
+          },
+          {
+            "path": "docs/PRODUCT_CHARTER.md",
+            "exists": true
+          }
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "total_checks": 4,
+    "passing_checks": 4,
+    "failing_checks": 0
+  }
+}

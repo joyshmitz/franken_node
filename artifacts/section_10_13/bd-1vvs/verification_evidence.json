@@ -1,0 +1,56 @@
+{
+  "gate": "isolation_backend_verification",
+  "bead": "bd-1vvs",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "ISOL-IMPL",
+      "description": "Implementation with backends, capabilities, selection, verification",
+      "status": "PASS"
+    },
+    {
+      "id": "ISOL-BACKENDS",
+      "description": "All 4 isolation backends defined",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "ISOL-ERRORS",
+      "description": "All 4 error codes present",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "ISOL-FIXTURES",
+      "description": "Backend selection fixture with scenarios",
+      "status": "PASS"
+    },
+    {
+      "id": "ISOL-MATRIX",
+      "description": "Runtime matrix CSV with all backends",
+      "status": "PASS"
+    },
+    {
+      "id": "ISOL-INTEGRATION",
+      "description": "Integration tests with e2e, fallback, policy checks",
+      "status": "PASS"
+    },
+    {
+      "id": "ISOL-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "15 tests passed"
+    },
+    {
+      "id": "ISOL-SPEC",
+      "description": "Specification with invariants and backend matrix",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 8,
+    "passing_checks": 8,
+    "failing_checks": 0
+  }
+}

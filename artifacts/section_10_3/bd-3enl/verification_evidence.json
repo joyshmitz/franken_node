@@ -1,0 +1,69 @@
+{
+  "gate": "section_10_3_verification",
+  "section": "10.3",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T10:22:52.371176+00:00",
+  "verification_scripts": {
+    "total": 8,
+    "passing": 8,
+    "results": [
+      {
+        "bead": "bd-2a0",
+        "name": "Project Scanner",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-33x",
+        "name": "Risk Scorer",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-2ew",
+        "name": "Rewrite Engine",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-2st",
+        "name": "Migration Validation",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-3dn",
+        "name": "Rollout Planner",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-12f",
+        "name": "Confidence Report",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-hg1",
+        "name": "Migrate Report",
+        "status": "PASS"
+      },
+      {
+        "bead": "bd-3f9",
+        "name": "Failure Replay",
+        "status": "PASS"
+      }
+    ]
+  },
+  "unit_tests": {
+    "status": "PASS",
+    "summary": "============================= 102 passed in 0.12s =============================="
+  },
+  "evidence_artifacts": {
+    "status": "PASS",
+    "details": {
+      "bd-2a0": true,
+      "bd-33x": true,
+      "bd-2ew": true,
+      "bd-2st": true,
+      "bd-3dn": true,
+      "bd-12f": true,
+      "bd-hg1": true,
+      "bd-3f9": true
+    }
+  }
+}

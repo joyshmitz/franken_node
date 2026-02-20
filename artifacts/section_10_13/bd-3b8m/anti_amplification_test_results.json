@@ -1,0 +1,82 @@
+{
+  "harness_id": "aar-001",
+  "generated": "2026-02-20T12:00:00Z",
+  "policy": {
+    "max_response_ratio": 10.0,
+    "unauth_max_bytes": 1000,
+    "auth_max_bytes": 10000,
+    "max_items_per_response": 50
+  },
+  "scenarios": [
+    {
+      "name": "normal_auth_request",
+      "request_id": "r1",
+      "peer": "peer-alpha",
+      "authenticated": true,
+      "request_bytes": 100,
+      "declared_bound_bytes": 5000,
+      "actual_response_bytes": 500,
+      "verdict": "ALLOW",
+      "violations": []
+    },
+    {
+      "name": "oversized_response",
+      "request_id": "r2",
+      "peer": "peer-beta",
+      "authenticated": true,
+      "request_bytes": 100,
+      "declared_bound_bytes": 5000,
+      "actual_response_bytes": 6000,
+      "verdict": "BLOCK",
+      "violations": ["AAR_RESPONSE_TOO_LARGE"]
+    },
+    {
+      "name": "amplification_attack",
+      "request_id": "r3",
+      "peer": "peer-gamma",
+      "authenticated": true,
+      "request_bytes": 10,
+      "declared_bound_bytes": 10000,
+      "actual_response_bytes": 5000,
+      "ratio": 500.0,
+      "verdict": "BLOCK",
+      "violations": ["AAR_RATIO_EXCEEDED"]
+    },
+    {
+      "name": "unauth_strict_enforcement",
+      "request_id": "r4",
+      "peer": "peer-delta",
+      "authenticated": false,
+      "request_bytes": 100,
+      "declared_bound_bytes": 5000,
+      "actual_response_bytes": 1500,
+      "verdict": "BLOCK",
+      "violations": ["AAR_RESPONSE_TOO_LARGE", "AAR_UNAUTH_LIMIT"]
+    },
+    {
+      "name": "items_overflow",
+      "request_id": "r5",
+      "peer": "peer-epsilon",
+      "authenticated": true,
+      "request_bytes": 100,
+      "declared_bound_bytes": 5000,
+      "actual_response_bytes": 500,
+      "actual_items": 100,
+      "declared_max_items": 50,
+      "verdict": "BLOCK",
+      "violations": ["AAR_ITEMS_EXCEEDED"]
+    },
+    {
+      "name": "zero_byte_request_nonzero_response",
+      "request_id": "r6",
+      "peer": "peer-zeta",
+      "authenticated": true,
+      "request_bytes": 0,
+      "declared_bound_bytes": 5000,
+      "actual_response_bytes": 500,
+      "ratio": "infinity",
+      "verdict": "BLOCK",
+      "violations": ["AAR_RATIO_EXCEEDED"]
+    }
+  ]
+}

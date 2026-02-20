@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "bead_id": "bd-1ck",
+  "artifact_type": "verification_evidence",
+  "timestamp": "2026-02-20T09:46:22.505068+00:00",
+  "git_commit": "32b56e4c639fd2a39f3f0b77ee55a656ae65109e",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "L2-DESIGN",
+      "status": "PASS"
+    },
+    {
+      "id": "L2-BOUNDARY",
+      "status": "PASS"
+    },
+    {
+      "id": "L2-BLOCKS",
+      "status": "PASS"
+    },
+    {
+      "id": "L2-SPLIT-REF",
+      "status": "PASS"
+    },
+    {
+      "id": "L2-L1-COMPLEMENT",
+      "status": "PASS"
+    }
+  ],
+  "unit_tests": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0
+  },
+  "outputs": [
+    {
+      "path": "docs/L2_ENGINE_BOUNDARY_ORACLE.md",
+      "sha256": "6cfb66c8a9ea18a7e8af2aae4333cb8ddf1e5a7583a874fe5771a10a2af1aad9",
+      "size_bytes": 3733
+    },
+    {
+      "path": "docs/specs/section_10_2/bd-1ck_contract.md",
+      "sha256": "6c225a3574d9cab8d2fa4f3a74995c28f265fd6a6bbcd61da9ae8c0dd0425113",
+      "size_bytes": 1273
+    },
+    {
+      "path": "scripts/check_l2_oracle.py",
+      "sha256": "39bb392ce25f2fdc42b55527ebf2a6358247b8982fd4037fe7d3da68d2976b0f",
+      "size_bytes": 4859
+    },
+    {
+      "path": "tests/test_check_l2_oracle.py",
+      "sha256": "c2340ce0a9ca9e01df45ff2dcf3b5d5ddb54d5ad0b9f3aed4de639fcf005dfea",
+      "size_bytes": 1226
+    }
+  ]
+}

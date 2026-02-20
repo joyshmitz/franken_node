@@ -1,0 +1,23 @@
+{
+  "description": "Migration idempotency test fixtures",
+  "cases": [
+    {
+      "name": "idempotent_reapply",
+      "current_version": "1.1.0",
+      "hint": {"from": "1.0.0", "to": "1.1.0", "hint_type": "add_field", "idempotent": true},
+      "expected_outcome": "already_applied"
+    },
+    {
+      "name": "non_idempotent_reapply",
+      "current_version": "1.1.0",
+      "hint": {"from": "1.0.0", "to": "1.1.0", "hint_type": "transform", "idempotent": false},
+      "expected_outcome": "failed"
+    },
+    {
+      "name": "apply_at_source",
+      "current_version": "1.0.0",
+      "hint": {"from": "1.0.0", "to": "1.1.0", "hint_type": "add_field", "idempotent": true},
+      "expected_outcome": "applied"
+    }
+  ]
+}

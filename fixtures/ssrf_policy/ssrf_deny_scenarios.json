@@ -1,0 +1,95 @@
+{
+  "description": "SSRF deny scenarios for default policy template (bd-1nk5)",
+  "cases": [
+    {
+      "id": "localhost_v4",
+      "host": "127.0.0.1",
+      "port": 80,
+      "protocol": "http",
+      "expected_action": "deny",
+      "expected_cidr": "127.0.0.0/8",
+      "category": "loopback"
+    },
+    {
+      "id": "localhost_high_port",
+      "host": "127.0.0.1",
+      "port": 8080,
+      "protocol": "http",
+      "expected_action": "deny",
+      "expected_cidr": "127.0.0.0/8",
+      "category": "loopback"
+    },
+    {
+      "id": "rfc1918_class_a",
+      "host": "10.0.0.1",
+      "port": 443,
+      "protocol": "http",
+      "expected_action": "deny",
+      "expected_cidr": "10.0.0.0/8",
+      "category": "private"
+    },
+    {
+      "id": "rfc1918_class_b",
+      "host": "172.16.0.1",
+      "port": 443,
+      "protocol": "http",
+      "expected_action": "deny",
+      "expected_cidr": "172.16.0.0/12",
+      "category": "private"
+    },
+    {
+      "id": "rfc1918_class_c",
+      "host": "192.168.1.1",
+      "port": 443,
+      "protocol": "http",
+      "expected_action": "deny",
+      "expected_cidr": "192.168.0.0/16",
+      "category": "private"
+    },
+    {
+      "id": "cloud_metadata",
+      "host": "169.254.169.254",
+      "port": 80,
+      "protocol": "http",
+      "expected_action": "deny",
+      "expected_cidr": "169.254.0.0/16",
+      "category": "metadata"
+    },
+    {
+      "id": "tailnet_ip",
+      "host": "100.100.100.100",
+      "port": 443,
+      "protocol": "http",
+      "expected_action": "deny",
+      "expected_cidr": "100.64.0.0/10",
+      "category": "tailnet"
+    },
+    {
+      "id": "ipv6_loopback",
+      "host": "::1",
+      "port": 80,
+      "protocol": "http",
+      "expected_action": "deny",
+      "expected_cidr": "::1/128",
+      "category": "loopback"
+    },
+    {
+      "id": "public_ip_allowed",
+      "host": "8.8.8.8",
+      "port": 443,
+      "protocol": "http",
+      "expected_action": "allow",
+      "expected_cidr": null,
+      "category": "public"
+    },
+    {
+      "id": "hostname_allowed",
+      "host": "api.example.com",
+      "port": 443,
+      "protocol": "http",
+      "expected_action": "allow",
+      "expected_cidr": null,
+      "category": "hostname"
+    }
+  ]
+}

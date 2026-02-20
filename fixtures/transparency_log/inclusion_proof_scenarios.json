@@ -1,0 +1,48 @@
+{
+  "description": "Transparency log inclusion proof scenarios (bd-1z9s)",
+  "cases": [
+    {
+      "id": "valid_proof",
+      "proof_provided": true,
+      "root_pinned": true,
+      "leaf_matches": true,
+      "expected_verified": true
+    },
+    {
+      "id": "missing_proof_required",
+      "proof_provided": false,
+      "policy_required": true,
+      "expected_verified": false,
+      "expected_failure": "proof_missing"
+    },
+    {
+      "id": "missing_proof_optional",
+      "proof_provided": false,
+      "policy_required": false,
+      "expected_verified": true
+    },
+    {
+      "id": "root_not_pinned",
+      "proof_provided": true,
+      "root_pinned": false,
+      "expected_verified": false,
+      "expected_failure": "root_not_pinned"
+    },
+    {
+      "id": "leaf_mismatch",
+      "proof_provided": true,
+      "root_pinned": true,
+      "leaf_matches": false,
+      "expected_verified": false,
+      "expected_failure": "leaf_mismatch"
+    },
+    {
+      "id": "tampered_audit_path",
+      "proof_provided": true,
+      "root_pinned": true,
+      "path_tampered": true,
+      "expected_verified": false,
+      "expected_failure": "root_not_pinned"
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "bead_id": "bd-2vi",
+  "artifact_type": "verification_evidence",
+  "timestamp": "2026-02-20T09:42:26.095619+00:00",
+  "git_commit": "32b56e4c639fd2a39f3f0b77ee55a656ae65109e",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "L1-DESIGN",
+      "status": "PASS"
+    },
+    {
+      "id": "L1-CONFIG",
+      "status": "PASS"
+    },
+    {
+      "id": "L1-PHASES",
+      "status": "PASS"
+    },
+    {
+      "id": "L1-DELTA",
+      "status": "PASS"
+    },
+    {
+      "id": "L1-GATING",
+      "status": "PASS"
+    }
+  ],
+  "unit_tests": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0
+  },
+  "outputs": [
+    {
+      "path": "docs/L1_LOCKSTEP_RUNNER.md",
+      "sha256": "9159bebc438186144a0bc39f0eb95794175d507a8738a504bc12a669a08fa32d",
+      "size_bytes": 3702
+    },
+    {
+      "path": "schemas/lockstep_runner_config.schema.json",
+      "sha256": "abb3900d56fe36d27a0f8b20875d57359bcdb7fd635133d6401114379a8eb44c",
+      "size_bytes": 1744
+    },
+    {
+      "path": "docs/specs/section_10_2/bd-2vi_contract.md",
+      "sha256": "f7a04cfebf50c61fa2ceb6a659f455fa351edbb4fa18c22b11db6d8688a5b4b1",
+      "size_bytes": 1523
+    },
+    {
+      "path": "scripts/check_lockstep_runner.py",
+      "sha256": "d0fd48f1ade41ca188498cc12f1644497a90d89fa8c2aa691819b4a9e8e9c2fa",
+      "size_bytes": 5522
+    },
+    {
+      "path": "tests/test_check_lockstep_runner.py",
+      "sha256": "713fd6327c88229fe166bac33972f3bbe5c0bfb2eb2fd49b280b4d13fbfdc0d9",
+      "size_bytes": 1641
+    }
+  ]
+}

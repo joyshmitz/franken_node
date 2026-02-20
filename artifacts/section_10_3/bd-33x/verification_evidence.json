@@ -1,0 +1,57 @@
+{
+  "gate": "risk_scorer_verification",
+  "section": "10.3",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T10:10:25.047478+00:00",
+  "checks": [
+    {
+      "id": "SCORER-EXISTS",
+      "status": "PASS",
+      "details": {
+        "scorer": true,
+        "spec": true
+      }
+    },
+    {
+      "id": "SCORER-WEIGHTS",
+      "status": "PASS",
+      "details": {
+        "weight_count": 7,
+        "has_critical_weight": true,
+        "has_native_weight": true
+      }
+    },
+    {
+      "id": "SCORER-BANDS",
+      "status": "PASS",
+      "details": {
+        "band_count": 4,
+        "levels": [
+          "low",
+          "medium",
+          "high",
+          "critical"
+        ]
+      }
+    },
+    {
+      "id": "SCORER-SELFTEST",
+      "status": "PASS",
+      "details": {
+        "verdict": "PASS"
+      }
+    },
+    {
+      "id": "SCORER-BOUNDED",
+      "status": "PASS",
+      "details": {
+        "extreme_score": 100.0
+      }
+    }
+  ],
+  "summary": {
+    "total_checks": 5,
+    "passing_checks": 5,
+    "failing_checks": 0
+  }
+}

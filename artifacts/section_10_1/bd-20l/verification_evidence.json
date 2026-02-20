@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "bead_id": "bd-20l",
+  "artifact_type": "verification_evidence",
+  "timestamp": "2026-02-20T09:23:43.188192+00:00",
+  "git_commit": "32b56e4c639fd2a39f3f0b77ee55a656ae65109e",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "ADR-EXISTS",
+      "status": "PASS"
+    },
+    {
+      "id": "ADR-STATUS",
+      "status": "PASS"
+    },
+    {
+      "id": "ADR-RULES",
+      "status": "PASS"
+    },
+    {
+      "id": "ADR-REFS",
+      "status": "PASS"
+    },
+    {
+      "id": "ADR-CHARTER-XREF",
+      "status": "PASS"
+    }
+  ],
+  "unit_tests": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0
+  },
+  "outputs": [
+    {
+      "path": "docs/adr/ADR-001-hybrid-baseline-strategy.md",
+      "sha256": "282d2b8a165817961588fa920c284d2650720101c672e8b3a18b85b804b47962",
+      "size_bytes": 4402
+    },
+    {
+      "path": "docs/specs/section_10_1/bd-20l_contract.md",
+      "sha256": "4efc8371fbe58ba223399f32de6366d69fe19991a04cc4ba4e39e194bc35de62",
+      "size_bytes": 1320
+    },
+    {
+      "path": "scripts/verify_adr_hybrid_baseline.py",
+      "sha256": "40697a4172855c3a59dab89bb5de512f8bdfd2d43d6fc56fd8bff6cdc8069d93",
+      "size_bytes": 5827
+    },
+    {
+      "path": "tests/test_verify_adr_hybrid_baseline.py",
+      "sha256": "36de010e5dc5176b2b1477528ae301c4d271fe294eb5780f2e123077caa51cdc",
+      "size_bytes": 1902
+    }
+  ]
+}

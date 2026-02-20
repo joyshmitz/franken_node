@@ -1,0 +1,56 @@
+{
+  "description": "bd-2yc4: Crash-loop detector test scenarios",
+  "cases": [
+    {
+      "id": "below-threshold",
+      "description": "Crash count below threshold does not trigger rollback",
+      "config": {"max_crashes": 3, "window_secs": 60, "cooldown_secs": 30},
+      "crash_count": 2,
+      "expected_triggered": false,
+      "expected_rollback": false
+    },
+    {
+      "id": "at-threshold-with-trusted-pin",
+      "description": "Crash count at threshold triggers automatic rollback to trusted pin",
+      "config": {"max_crashes": 3, "window_secs": 60, "cooldown_secs": 30},
+      "crash_count": 3,
+      "pin_trusted": true,
+      "expected_triggered": true,
+      "expected_rollback": true
+    },
+    {
+      "id": "no-known-good-pin",
+      "description": "Threshold exceeded but no known-good pin available",
+      "config": {"max_crashes": 3, "window_secs": 60, "cooldown_secs": 30},
+      "crash_count": 3,
+      "pin_available": false,
+      "expected_triggered": true,
+      "expected_error_code": "CLD_NO_KNOWN_GOOD"
+    },
+    {
+      "id": "untrusted-pin-rejected",
+      "description": "Threshold exceeded but pin fails trust policy",
+      "config": {"max_crashes": 3, "window_secs": 60, "cooldown_secs": 30},
+      "crash_count": 3,
+      "pin_trusted": false,
+      "expected_triggered": true,
+      "expected_error_code": "CLD_PIN_UNTRUSTED"
+    },
+    {
+      "id": "cooldown-active",
+      "description": "Rollback already occurred; cooldown prevents re-trigger",
+      "config": {"max_crashes": 3, "window_secs": 60, "cooldown_secs": 30},
+      "crash_count": 3,
+      "cooldown_elapsed_secs": 10,
+      "expected_error_code": "CLD_COOLDOWN_ACTIVE"
+    },
+    {
+      "id": "sliding-window-expiry",
+      "description": "Old crashes outside sliding window do not count",
+      "config": {"max_crashes": 3, "window_secs": 60, "cooldown_secs": 30},
+      "old_crash_count": 3,
+      "recent_crash_count": 1,
+      "expected_triggered": false
+    }
+  ]
+}

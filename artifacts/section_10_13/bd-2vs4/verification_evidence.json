@@ -1,0 +1,45 @@
+{
+  "gate": "lease_coordinator_verification",
+  "bead": "bd-2vs4",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "LC-IMPL",
+      "description": "Implementation with all required types",
+      "status": "PASS"
+    },
+    {
+      "id": "LC-ERRORS",
+      "description": "All 4 error codes present",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "LC-VECTORS",
+      "description": "Quorum test vectors artifact",
+      "status": "PASS"
+    },
+    {
+      "id": "LC-CONF-TESTS",
+      "description": "Conformance tests cover all 4 invariants",
+      "status": "PASS"
+    },
+    {
+      "id": "LC-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "16 tests passed"
+    },
+    {
+      "id": "LC-SPEC",
+      "description": "Specification with invariants and types",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 6,
+    "passing_checks": 6,
+    "failing_checks": 0
+  }
+}

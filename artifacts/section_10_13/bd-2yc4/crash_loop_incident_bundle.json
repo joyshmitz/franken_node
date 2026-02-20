@@ -1,0 +1,55 @@
+{
+  "description": "bd-2yc4: Crash-loop incident bundle — sample rollback event",
+  "incidents": [
+    {
+      "connector_id": "conn-1",
+      "crash_events": [
+        {"connector_id": "conn-1", "timestamp": "2026-01-01T00:00:00Z", "reason": "OOM killed"},
+        {"connector_id": "conn-1", "timestamp": "2026-01-01T00:00:15Z", "reason": "OOM killed"},
+        {"connector_id": "conn-1", "timestamp": "2026-01-01T00:00:30Z", "reason": "OOM killed"}
+      ],
+      "decision": {
+        "connector_id": "conn-1",
+        "triggered": true,
+        "crash_count": 3,
+        "window_secs": 60,
+        "rollback_target": {
+          "connector_id": "conn-1",
+          "version": "1.0.0",
+          "pin_hash": "abc123def456",
+          "trusted": true
+        },
+        "rollback_allowed": true,
+        "reason": "CLD_THRESHOLD_EXCEEDED: rolling back to 1.0.0",
+        "trace_id": "trace-incident-001",
+        "timestamp": "2026-01-01T00:00:31Z"
+      },
+      "trace_id": "trace-incident-001"
+    },
+    {
+      "connector_id": "conn-2",
+      "crash_events": [
+        {"connector_id": "conn-2", "timestamp": "2026-01-01T01:00:00Z", "reason": "segfault"},
+        {"connector_id": "conn-2", "timestamp": "2026-01-01T01:00:05Z", "reason": "segfault"},
+        {"connector_id": "conn-2", "timestamp": "2026-01-01T01:00:10Z", "reason": "segfault"}
+      ],
+      "decision": {
+        "connector_id": "conn-2",
+        "triggered": true,
+        "crash_count": 3,
+        "window_secs": 60,
+        "rollback_target": {
+          "connector_id": "conn-2",
+          "version": "0.8.0",
+          "pin_hash": "untrusted999",
+          "trusted": false
+        },
+        "rollback_allowed": false,
+        "reason": "pin 0.8.0 is untrusted",
+        "trace_id": "trace-incident-002",
+        "timestamp": "2026-01-01T01:00:11Z"
+      },
+      "trace_id": "trace-incident-002"
+    }
+  ]
+}

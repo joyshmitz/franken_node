@@ -1,0 +1,73 @@
+{
+  "description": "bd-1d7n: Deterministic activation pipeline test scenarios",
+  "cases": [
+    {
+      "id": "full-success",
+      "description": "All four stages complete successfully",
+      "input": {
+        "connector_id": "conn-1",
+        "sandbox_config": "default",
+        "secret_refs": ["secret-a", "secret-b"],
+        "capabilities": ["cap-read", "cap-write"],
+        "trace_id": "trace-1",
+        "timestamp": "2026-01-01T00:00:00Z"
+      },
+      "expected_completed": true,
+      "expected_stage_count": 4,
+      "expected_order": ["SandboxCreate", "SecretMount", "CapabilityIssue", "HealthReady"]
+    },
+    {
+      "id": "sandbox-failure",
+      "description": "Pipeline stops at stage 1 when sandbox creation fails",
+      "fail_stage": "SandboxCreate",
+      "fail_reason": "no cgroup namespace",
+      "expected_completed": false,
+      "expected_stage_count": 1,
+      "expected_error_code": "ACT_SANDBOX_FAILED"
+    },
+    {
+      "id": "secret-mount-failure",
+      "description": "Pipeline stops at stage 2 when secret mount fails; secrets cleaned up",
+      "fail_stage": "SecretMount",
+      "fail_reason": "vault sealed",
+      "expected_completed": false,
+      "expected_stage_count": 2,
+      "expected_error_code": "ACT_SECRET_MOUNT_FAILED",
+      "expected_secret_cleanup": true
+    },
+    {
+      "id": "capability-failure",
+      "description": "Pipeline stops at stage 3; mounted secrets must be cleaned",
+      "fail_stage": "CapabilityIssue",
+      "fail_reason": "capability denied",
+      "expected_completed": false,
+      "expected_stage_count": 3,
+      "expected_error_code": "ACT_CAPABILITY_FAILED",
+      "expected_secret_cleanup": true
+    },
+    {
+      "id": "health-failure",
+      "description": "Pipeline stops at stage 4; mounted secrets must be cleaned",
+      "fail_stage": "HealthReady",
+      "fail_reason": "probe timeout",
+      "expected_completed": false,
+      "expected_stage_count": 4,
+      "expected_error_code": "ACT_HEALTH_FAILED",
+      "expected_secret_cleanup": true
+    },
+    {
+      "id": "deterministic-replay",
+      "description": "Two runs with identical inputs produce matching transcripts",
+      "input": {
+        "connector_id": "conn-replay",
+        "sandbox_config": "strict",
+        "secret_refs": ["ref-1"],
+        "capabilities": ["net"],
+        "trace_id": "trace-replay",
+        "timestamp": "2026-01-02T00:00:00Z"
+      },
+      "expected_completed": true,
+      "expected_deterministic": true
+    }
+  ]
+}

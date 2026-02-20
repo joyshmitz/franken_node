@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "bead_id": "bd-32v",
+  "artifact_type": "verification_evidence",
+  "timestamp": "2026-02-20T09:44:28.851933+00:00",
+  "git_commit": "32b56e4c639fd2a39f3f0b77ee55a656ae65109e",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "MIN-SPEC",
+      "status": "PASS"
+    },
+    {
+      "id": "MIN-DIR",
+      "status": "PASS"
+    },
+    {
+      "id": "MIN-STRATEGIES",
+      "status": "PASS"
+    },
+    {
+      "id": "MIN-FORMAT",
+      "status": "PASS"
+    },
+    {
+      "id": "MIN-INTEGRATION",
+      "status": "PASS"
+    }
+  ],
+  "unit_tests": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0
+  },
+  "outputs": [
+    {
+      "path": "docs/MINIMIZED_FIXTURE_SPEC.md",
+      "sha256": "e66a383c522df71c0af675e3f4387959a91da185fa7d793cdd65be207fa28ad1",
+      "size_bytes": 3049
+    },
+    {
+      "path": "docs/specs/section_10_2/bd-32v_contract.md",
+      "sha256": "aa343a3b78f37ed4c95ef96e004bbf2ca4c0673a30309a803ef418ab03dae7a6",
+      "size_bytes": 1648
+    },
+    {
+      "path": "scripts/check_minimized_fixtures.py",
+      "sha256": "4f071fd794725eb094009948a7f2b1f083fdd92f2ebbd6cc9e25d88e17dc3fac",
+      "size_bytes": 4727
+    },
+    {
+      "path": "tests/test_check_minimized_fixtures.py",
+      "sha256": "1231099a610a506578a1dd7b6c85727adc0ecbfcbfbedda6936851c909c24331",
+      "size_bytes": 1314
+    }
+  ]
+}

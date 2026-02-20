@@ -1,0 +1,55 @@
+{
+  "gate": "interface_hash_verification",
+  "bead": "bd-3n58",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "IH-IMPL",
+      "description": "Implementation with hash, telemetry, check, rejection types",
+      "status": "PASS"
+    },
+    {
+      "id": "IH-DOMAIN-SEP",
+      "description": "Domain separation in hash derivation",
+      "status": "PASS"
+    },
+    {
+      "id": "IH-ERRORS",
+      "description": "All 4 error codes present",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "IH-FIXTURES",
+      "description": "Verification scenarios fixture",
+      "status": "PASS"
+    },
+    {
+      "id": "IH-METRICS",
+      "description": "Rejection metrics CSV with distribution",
+      "status": "PASS"
+    },
+    {
+      "id": "IH-CONFORMANCE",
+      "description": "Conformance tests cover domain sep, admission, telemetry",
+      "status": "PASS"
+    },
+    {
+      "id": "IH-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "21 tests passed"
+    },
+    {
+      "id": "IH-SPEC",
+      "description": "Specification with invariants and rejection codes",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 8,
+    "passing_checks": 8,
+    "failing_checks": 0
+  }
+}

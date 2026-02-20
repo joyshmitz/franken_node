@@ -1,0 +1,94 @@
+{
+  "description": "bd-8vby: Device profile examples for placement policy evaluation",
+  "profiles": [
+    {
+      "device_id": "gpu-us-east-01",
+      "capabilities": ["gpu", "cuda", "tensorrt"],
+      "region": "us-east",
+      "tier": "Standard",
+      "registered_at": 1000,
+      "schema_version": 1
+    },
+    {
+      "device_id": "tpu-eu-west-01",
+      "capabilities": ["tpu", "xla"],
+      "region": "eu-west",
+      "tier": "Risky",
+      "registered_at": 1100,
+      "schema_version": 1
+    },
+    {
+      "device_id": "edge-ap-south-01",
+      "capabilities": ["cpu", "arm"],
+      "region": "ap-south",
+      "tier": "Standard",
+      "registered_at": 900,
+      "schema_version": 1
+    },
+    {
+      "device_id": "hpc-us-west-01",
+      "capabilities": ["gpu", "cuda", "infiniband", "nvlink"],
+      "region": "us-west",
+      "tier": "Dangerous",
+      "registered_at": 1200,
+      "schema_version": 1
+    }
+  ],
+  "policies": [
+    {
+      "id": "gpu-us-preferred",
+      "constraints": [
+        {
+          "required_capabilities": ["gpu", "cuda"],
+          "preferred_region": "us-east",
+          "min_tier": "",
+          "max_latency_ms": 100
+        }
+      ],
+      "freshness_max_age_secs": 3600,
+      "expected_match_count": 2,
+      "expected_first_match": "gpu-us-east-01"
+    },
+    {
+      "id": "tpu-only",
+      "constraints": [
+        {
+          "required_capabilities": ["tpu"],
+          "preferred_region": "",
+          "min_tier": "",
+          "max_latency_ms": 200
+        }
+      ],
+      "freshness_max_age_secs": 3600,
+      "expected_match_count": 1,
+      "expected_first_match": "tpu-eu-west-01"
+    },
+    {
+      "id": "no-match-quantum",
+      "constraints": [
+        {
+          "required_capabilities": ["quantum"],
+          "preferred_region": "",
+          "min_tier": "",
+          "max_latency_ms": 100
+        }
+      ],
+      "freshness_max_age_secs": 3600,
+      "expected_error": "DPR_NO_MATCH"
+    },
+    {
+      "id": "stale-profile",
+      "constraints": [
+        {
+          "required_capabilities": ["cpu"],
+          "preferred_region": "",
+          "min_tier": "",
+          "max_latency_ms": 100
+        }
+      ],
+      "freshness_max_age_secs": 50,
+      "note": "All profiles older than 50s at evaluation time",
+      "expected_error": "DPR_NO_MATCH"
+    }
+  ]
+}

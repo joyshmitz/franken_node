@@ -1,0 +1,45 @@
+{
+  "gate": "execution_scorer_verification",
+  "bead": "bd-jxgt",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "EPS-IMPL",
+      "description": "Implementation with all required types",
+      "status": "PASS"
+    },
+    {
+      "id": "EPS-ERRORS",
+      "description": "All 4 error codes present",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "EPS-FIXTURES",
+      "description": "Planner decision explanation fixtures",
+      "status": "PASS"
+    },
+    {
+      "id": "EPS-INTEG",
+      "description": "Integration tests cover all 4 invariants",
+      "status": "PASS"
+    },
+    {
+      "id": "EPS-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "20 tests passed"
+    },
+    {
+      "id": "EPS-SPEC",
+      "description": "Specification with invariants and types",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 6,
+    "passing_checks": 6,
+    "failing_checks": 0
+  }
+}

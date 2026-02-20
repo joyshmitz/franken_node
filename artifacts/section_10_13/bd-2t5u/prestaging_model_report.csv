@@ -1,0 +1,6 @@
+scenario,candidates,staged,skipped,budget_used,budget_total,precision,recall,f1
+baseline,10,0,10,0,1000,0.00,0.00,0.00
+low_threshold,10,8,2,800,1000,0.50,0.80,0.62
+high_threshold,10,3,7,300,1000,0.67,0.40,0.50
+tight_budget,10,2,8,200,200,1.00,0.20,0.33
+all_high_prob,5,5,0,500,1000,0.60,1.00,0.75

@@ -1,0 +1,55 @@
+{
+  "description": "bd-1m8r: Revocation freshness gate test scenarios",
+  "cases": [
+    {
+      "id": "standard-always-passes",
+      "description": "Standard-tier action passes regardless of revocation age",
+      "tier": "Standard",
+      "revocation_age_secs": 999999,
+      "expected_allowed": true
+    },
+    {
+      "id": "risky-fresh",
+      "description": "Risky action with fresh revocation data passes",
+      "tier": "Risky",
+      "revocation_age_secs": 1000,
+      "max_age_secs": 3600,
+      "expected_allowed": true
+    },
+    {
+      "id": "risky-stale-denied",
+      "description": "Risky action with stale revocation data is denied",
+      "tier": "Risky",
+      "revocation_age_secs": 7200,
+      "max_age_secs": 3600,
+      "expected_allowed": false,
+      "expected_error_code": "RF_STALE_FRONTIER"
+    },
+    {
+      "id": "dangerous-fresh",
+      "description": "Dangerous action with fresh revocation data passes",
+      "tier": "Dangerous",
+      "revocation_age_secs": 100,
+      "max_age_secs": 300,
+      "expected_allowed": true
+    },
+    {
+      "id": "dangerous-stale-denied",
+      "description": "Dangerous action with stale revocation data is denied",
+      "tier": "Dangerous",
+      "revocation_age_secs": 600,
+      "max_age_secs": 300,
+      "expected_allowed": false,
+      "expected_error_code": "RF_STALE_FRONTIER"
+    },
+    {
+      "id": "risky-stale-with-override",
+      "description": "Stale risky action allowed with override receipt",
+      "tier": "Risky",
+      "revocation_age_secs": 7200,
+      "override_provided": true,
+      "expected_allowed": true,
+      "expected_override_receipt": true
+    }
+  ]
+}

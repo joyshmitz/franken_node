@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "bead_id": "bd-1pc",
+  "artifact_type": "verification_evidence",
+  "timestamp": "2026-02-20T09:25:53.286958+00:00",
+  "git_commit": "32b56e4c639fd2a39f3f0b77ee55a656ae65109e",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "GOV-EXISTS",
+      "status": "PASS"
+    },
+    {
+      "id": "GOV-RULES",
+      "status": "PASS"
+    },
+    {
+      "id": "GOV-ADR-REF",
+      "status": "PASS"
+    },
+    {
+      "id": "GOV-CHARTER-XREF",
+      "status": "PASS"
+    },
+    {
+      "id": "GOV-ENFORCEMENT",
+      "status": "PASS"
+    }
+  ],
+  "unit_tests": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0
+  },
+  "outputs": [
+    {
+      "path": "docs/IMPLEMENTATION_GOVERNANCE.md",
+      "sha256": "0ee1af401aa0cfd6d8651fda64435dce58ffdff6d25b15779f863dd5782c9ace",
+      "size_bytes": 3808
+    },
+    {
+      "path": "docs/specs/section_10_1/bd-1pc_contract.md",
+      "sha256": "8c6e43a47b56be3701fb6b4210fefeb7d90ef2dc2a3a824513e25aa24e2671fa",
+      "size_bytes": 1845
+    },
+    {
+      "path": "scripts/check_impl_governance.py",
+      "sha256": "fc13eb75637bebf4f910098b581511bc21a40fdb48232cff439c53f974efc468",
+      "size_bytes": 5945
+    },
+    {
+      "path": "tests/test_check_impl_governance.py",
+      "sha256": "c902e4e7d8bf2374b135760fd91277e354353b24a46c30da868a753cbd353077",
+      "size_bytes": 1698
+    }
+  ]
+}

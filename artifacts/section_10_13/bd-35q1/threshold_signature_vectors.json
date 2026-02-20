@@ -1,0 +1,37 @@
+{
+  "bead": "bd-35q1",
+  "section": "10.13",
+  "description": "Threshold signature test vectors",
+  "timestamp": "2026-02-20T11:38:00Z",
+  "vectors": [
+    {
+      "config": {"threshold": 2, "total_signers": 3},
+      "artifact_hash": "hash-abc-001",
+      "signatures": 3,
+      "result": "verified",
+      "valid_count": 3
+    },
+    {
+      "config": {"threshold": 2, "total_signers": 3},
+      "artifact_hash": "hash-abc-002",
+      "signatures": 2,
+      "result": "verified",
+      "valid_count": 2
+    },
+    {
+      "config": {"threshold": 2, "total_signers": 3},
+      "artifact_hash": "hash-abc-003",
+      "signatures": 1,
+      "result": "rejected",
+      "failure_reason": "THRESH_BELOW_QUORUM: have 1, need 2"
+    },
+    {
+      "config": {"threshold": 2, "total_signers": 3},
+      "artifact_hash": "hash-abc-004",
+      "signatures": 0,
+      "result": "rejected",
+      "failure_reason": "THRESH_BELOW_QUORUM: have 0, need 2"
+    }
+  ],
+  "verdict": "PASS"
+}

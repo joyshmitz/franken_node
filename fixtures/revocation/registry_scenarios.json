@@ -1,0 +1,54 @@
+{
+  "description": "bd-y7lu: Revocation registry test scenarios",
+  "cases": [
+    {
+      "id": "monotonic-advance",
+      "description": "Sequential advances with increasing sequence numbers succeed",
+      "zone_id": "zone-a",
+      "advances": [1, 2, 5, 10],
+      "expected_head": 10,
+      "expected_revocations": 4
+    },
+    {
+      "id": "stale-head-rejected",
+      "description": "Advancing with seq <= current head is rejected",
+      "zone_id": "zone-a",
+      "current_head": 5,
+      "offered_seq": 3,
+      "expected_error_code": "REV_STALE_HEAD"
+    },
+    {
+      "id": "equal-seq-rejected",
+      "description": "Advancing with seq == current head is rejected (not strictly greater)",
+      "zone_id": "zone-a",
+      "current_head": 5,
+      "offered_seq": 5,
+      "expected_error_code": "REV_STALE_HEAD"
+    },
+    {
+      "id": "zone-isolation",
+      "description": "Zone A and Zone B have independent heads",
+      "zones": ["zone-a", "zone-b"],
+      "zone_a_head": 100,
+      "zone_b_head": 1,
+      "expected_isolated": true
+    },
+    {
+      "id": "unknown-zone",
+      "description": "Querying an unknown zone returns error",
+      "zone_id": "ghost",
+      "expected_error_code": "REV_ZONE_NOT_FOUND"
+    },
+    {
+      "id": "recovery-from-log",
+      "description": "Registry state reconstructed from canonical log",
+      "log_entries": [
+        {"zone_id": "zone-a", "sequence": 1},
+        {"zone_id": "zone-a", "sequence": 2},
+        {"zone_id": "zone-b", "sequence": 1}
+      ],
+      "expected_zone_a_head": 2,
+      "expected_zone_b_head": 1
+    }
+  ]
+}

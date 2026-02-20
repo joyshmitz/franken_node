@@ -1,0 +1,50 @@
+{
+  "gate": "revocation_freshness_verification",
+  "bead": "bd-1m8r",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "RF-IMPL",
+      "description": "Implementation with all required types",
+      "status": "PASS"
+    },
+    {
+      "id": "RF-ERRORS",
+      "description": "All 3 error codes present",
+      "status": "PASS",
+      "details": "found 3/3"
+    },
+    {
+      "id": "RF-FIXTURES",
+      "description": "Freshness scenarios fixture",
+      "status": "PASS"
+    },
+    {
+      "id": "RF-DECISIONS",
+      "description": "Freshness decisions artifact",
+      "status": "PASS"
+    },
+    {
+      "id": "RF-SEC-TESTS",
+      "description": "Security tests cover all 4 invariants",
+      "status": "PASS"
+    },
+    {
+      "id": "RF-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "19 tests passed"
+    },
+    {
+      "id": "RF-SPEC",
+      "description": "Specification with invariants and types",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 7,
+    "passing_checks": 7,
+    "failing_checks": 0
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "command": "cargo test --workspace",
+  "rch_kind": "CargoTest",
+  "worker_id": "local",
+  "worker_host": "localhost",
+  "queue_name": "local",
+  "wait_duration_ms": 0,
+  "run_duration_ms": 89000,
+  "exit_code": 0,
+  "timestamp": "2026-02-20T08:30:00Z",
+  "policy_version": "1.0",
+  "exception_id": null
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Policy change audit scenarios",
+  "cases": [
+    {
+      "name": "valid_policy_change",
+      "old_policy": {"every_updates": 100, "every_bytes": 65536},
+      "new_policy": {"every_updates": 50, "every_bytes": 32768},
+      "valid": true
+    },
+    {
+      "name": "invalid_zero_updates",
+      "old_policy": {"every_updates": 100, "every_bytes": 65536},
+      "new_policy": {"every_updates": 0, "every_bytes": 65536},
+      "valid": false,
+      "expected_error": "POLICY_INVALID"
+    },
+    {
+      "name": "invalid_zero_bytes",
+      "old_policy": {"every_updates": 100, "every_bytes": 65536},
+      "new_policy": {"every_updates": 100, "every_bytes": 0},
+      "valid": false,
+      "expected_error": "POLICY_INVALID"
+    }
+  ]
+}

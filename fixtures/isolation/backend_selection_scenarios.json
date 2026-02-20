@@ -1,0 +1,52 @@
+{
+  "description": "Isolation backend selection scenarios",
+  "cases": [
+    {
+      "name": "linux_x86_kvm",
+      "os": "linux", "arch": "x86_64",
+      "has_kvm": true, "has_seccomp": true, "has_namespaces": true, "has_cgroups": true,
+      "has_macos_sandbox": false, "has_oci_runtime": true,
+      "expected_backend": "microvm",
+      "expected_equivalence": "full"
+    },
+    {
+      "name": "linux_x86_no_kvm",
+      "os": "linux", "arch": "x86_64",
+      "has_kvm": false, "has_seccomp": true, "has_namespaces": true, "has_cgroups": true,
+      "has_macos_sandbox": false, "has_oci_runtime": false,
+      "expected_backend": "hardened",
+      "expected_equivalence": "equivalent"
+    },
+    {
+      "name": "linux_aarch64_kvm",
+      "os": "linux", "arch": "aarch64",
+      "has_kvm": true, "has_seccomp": true, "has_namespaces": true, "has_cgroups": true,
+      "has_macos_sandbox": false, "has_oci_runtime": false,
+      "expected_backend": "microvm",
+      "expected_equivalence": "full"
+    },
+    {
+      "name": "macos_aarch64",
+      "os": "macos", "arch": "aarch64",
+      "has_kvm": false, "has_seccomp": false, "has_namespaces": false, "has_cgroups": false,
+      "has_macos_sandbox": true, "has_oci_runtime": false,
+      "expected_backend": "os_sandbox",
+      "expected_equivalence": "equivalent"
+    },
+    {
+      "name": "oci_only",
+      "os": "freebsd", "arch": "x86_64",
+      "has_kvm": false, "has_seccomp": false, "has_namespaces": false, "has_cgroups": false,
+      "has_macos_sandbox": false, "has_oci_runtime": true,
+      "expected_backend": "container",
+      "expected_equivalence": "baseline"
+    },
+    {
+      "name": "no_backends",
+      "os": "unknown", "arch": "unknown",
+      "has_kvm": false, "has_seccomp": false, "has_namespaces": false, "has_cgroups": false,
+      "has_macos_sandbox": false, "has_oci_runtime": false,
+      "expected_error": "ISOLATION_BACKEND_UNAVAILABLE"
+    }
+  ]
+}

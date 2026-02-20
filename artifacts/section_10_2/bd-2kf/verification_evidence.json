@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0",
+  "bead_id": "bd-2kf",
+  "artifact_type": "verification_evidence",
+  "timestamp": "2026-02-20T09:37:55.404821+00:00",
+  "git_commit": "32b56e4c639fd2a39f3f0b77ee55a656ae65109e",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "MODE-EXISTS",
+      "status": "PASS"
+    },
+    {
+      "id": "MODE-DEFINED",
+      "status": "PASS"
+    },
+    {
+      "id": "MODE-DEFAULT",
+      "status": "PASS"
+    },
+    {
+      "id": "MODE-BANDS",
+      "status": "PASS"
+    },
+    {
+      "id": "MODE-UNSAFE",
+      "status": "PASS"
+    },
+    {
+      "id": "MODE-BANDS-REF",
+      "status": "PASS"
+    }
+  ],
+  "unit_tests": {
+    "total": 9,
+    "passed": 9,
+    "failed": 0
+  },
+  "outputs": [
+    {
+      "path": "docs/COMPATIBILITY_MODE_POLICY.md",
+      "sha256": "fbe6b9dfb8aaf47ddb2c0043a78a0a4563749e1be09bde43d575a631aacb3876",
+      "size_bytes": 3919
+    },
+    {
+      "path": "docs/specs/section_10_2/bd-2kf_contract.md",
+      "sha256": "7ccf76436b94f1390a545a30fc46e08b2bd006ff6dd4e5f8b0506ef05714f57c",
+      "size_bytes": 1184
+    },
+    {
+      "path": "scripts/check_compat_modes.py",
+      "sha256": "561a696ad855679140c74470ca1922632fb1fbcb0995541564313e4b48122a17",
+      "size_bytes": 5864
+    },
+    {
+      "path": "tests/test_check_compat_modes.py",
+      "sha256": "5e97327e99f594e48229955e45dbb68e939ba485455be5df1ad6bc128276b832",
+      "size_bytes": 1781
+    }
+  ]
+}

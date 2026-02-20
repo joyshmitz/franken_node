@@ -1,0 +1,55 @@
+{
+  "description": "bd-1m8r: Revocation freshness gate decisions — sample evaluations",
+  "decisions": [
+    {
+      "action_id": "deploy-v2.1.0",
+      "tier": "Dangerous",
+      "allowed": true,
+      "revocation_age_secs": 120,
+      "max_age_secs": 300,
+      "override_receipt": null,
+      "reason": "revocation data is fresh",
+      "trace_id": "tr-001",
+      "timestamp": "2026-01-01T00:00:00Z"
+    },
+    {
+      "action_id": "update-permissions",
+      "tier": "Risky",
+      "allowed": false,
+      "revocation_age_secs": 7200,
+      "max_age_secs": 3600,
+      "override_receipt": null,
+      "reason": "RF_STALE_FRONTIER: revocation data stale",
+      "trace_id": "tr-002",
+      "timestamp": "2026-01-01T00:05:00Z"
+    },
+    {
+      "action_id": "emergency-patch",
+      "tier": "Dangerous",
+      "allowed": true,
+      "revocation_age_secs": 600,
+      "max_age_secs": 300,
+      "override_receipt": {
+        "action_id": "emergency-patch",
+        "actor": "ops-lead",
+        "reason": "P0 incident mitigation",
+        "timestamp": "2026-01-01T00:10:00Z",
+        "trace_id": "tr-003"
+      },
+      "reason": "override accepted: P0 incident mitigation",
+      "trace_id": "tr-003",
+      "timestamp": "2026-01-01T00:10:00Z"
+    },
+    {
+      "action_id": "read-logs",
+      "tier": "Standard",
+      "allowed": true,
+      "revocation_age_secs": 86400,
+      "max_age_secs": null,
+      "override_receipt": null,
+      "reason": "standard tier: no freshness requirement",
+      "trace_id": "tr-004",
+      "timestamp": "2026-01-01T00:15:00Z"
+    }
+  ]
+}

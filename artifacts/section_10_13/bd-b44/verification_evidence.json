@@ -1,0 +1,62 @@
+{
+  "gate": "schema_migration_verification",
+  "bead": "bd-b44",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "MIGRATE-IMPL",
+      "description": "Implementation with all core types",
+      "status": "PASS"
+    },
+    {
+      "id": "MIGRATE-HINTS",
+      "description": "All 4 hint types (add/remove/rename/transform)",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "MIGRATE-ERRORS",
+      "description": "All 4 error codes present",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "MIGRATE-IDEMPOTENT",
+      "description": "Idempotency check function",
+      "status": "PASS"
+    },
+    {
+      "id": "MIGRATE-FIXTURES",
+      "description": "Migration fixture files",
+      "status": "PASS",
+      "details": "found 2/2"
+    },
+    {
+      "id": "MIGRATE-RECEIPTS",
+      "description": "Migration receipts artifact",
+      "status": "PASS"
+    },
+    {
+      "id": "MIGRATE-INTEGRATION",
+      "description": "Integration tests with e2e, idempotency, contract checks",
+      "status": "PASS"
+    },
+    {
+      "id": "MIGRATE-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "20 tests passed"
+    },
+    {
+      "id": "MIGRATE-SPEC",
+      "description": "Specification with invariants and hint types",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 9,
+    "passing_checks": 9,
+    "failing_checks": 0
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "gate": "failure_replay_verification",
+  "section": "10.3",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T10:21:32.983444+00:00",
+  "checks": [
+    {
+      "id": "REPLAY-CAPTURE",
+      "status": "PASS"
+    },
+    {
+      "id": "REPLAY-VALID",
+      "status": "PASS",
+      "details": {
+        "errors": []
+      }
+    },
+    {
+      "id": "REPLAY-ROUNDTRIP",
+      "status": "PASS"
+    },
+    {
+      "id": "REPLAY-HINTS",
+      "status": "PASS",
+      "details": {
+        "hint_count": 1
+      }
+    },
+    {
+      "id": "REPLAY-SELFCONTAINED",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 5,
+    "passing_checks": 5,
+    "failing_checks": 0
+  }
+}

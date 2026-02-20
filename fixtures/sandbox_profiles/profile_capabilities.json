@@ -1,0 +1,49 @@
+{
+  "description": "Expected capability grants per sandbox profile",
+  "profiles": {
+    "strict": {
+      "level": 0,
+      "grants": {
+        "network_access": "deny",
+        "fs_read": "deny",
+        "fs_write": "deny",
+        "process_exec": "deny",
+        "ipc": "deny",
+        "env_access": "deny"
+      }
+    },
+    "strict_plus": {
+      "level": 1,
+      "grants": {
+        "network_access": "deny",
+        "fs_read": "deny",
+        "fs_write": "deny",
+        "process_exec": "deny",
+        "ipc": "deny",
+        "env_access": "deny"
+      }
+    },
+    "moderate": {
+      "level": 2,
+      "grants": {
+        "network_access": "filtered",
+        "fs_read": "scoped",
+        "fs_write": "deny",
+        "process_exec": "deny",
+        "ipc": "scoped",
+        "env_access": "filtered"
+      }
+    },
+    "permissive": {
+      "level": 3,
+      "grants": {
+        "network_access": "allow",
+        "fs_read": "allow",
+        "fs_write": "allow",
+        "process_exec": "allow",
+        "ipc": "allow",
+        "env_access": "allow"
+      }
+    }
+  }
+}

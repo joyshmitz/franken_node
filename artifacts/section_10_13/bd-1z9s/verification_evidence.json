@@ -1,0 +1,55 @@
+{
+  "gate": "transparency_verifier_verification",
+  "bead": "bd-1z9s",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "TL-IMPL",
+      "description": "Implementation with LogRoot, InclusionProof, policy, verify",
+      "status": "PASS"
+    },
+    {
+      "id": "TL-MERKLE",
+      "description": "Merkle path recomputation with hash_pair",
+      "status": "PASS"
+    },
+    {
+      "id": "TL-ERRORS",
+      "description": "All 4 error codes present",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "TL-FIXTURES",
+      "description": "Inclusion proof scenarios fixture",
+      "status": "PASS"
+    },
+    {
+      "id": "TL-RECEIPTS",
+      "description": "Transparency proof receipts artifact",
+      "status": "PASS"
+    },
+    {
+      "id": "TL-SECURITY-TESTS",
+      "description": "Security tests cover install, proof, pinned roots",
+      "status": "PASS"
+    },
+    {
+      "id": "TL-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "18 tests passed"
+    },
+    {
+      "id": "TL-SPEC",
+      "description": "Specification with invariants and proof failure types",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 8,
+    "passing_checks": 8,
+    "failing_checks": 0
+  }
+}

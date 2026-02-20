@@ -1,0 +1,72 @@
+{
+  "gate": "project_scanner_verification",
+  "section": "10.3",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T10:08:16.474367+00:00",
+  "checks": [
+    {
+      "id": "SCANNER-EXISTS",
+      "status": "PASS",
+      "details": {
+        "scanner": true,
+        "schema": true
+      }
+    },
+    {
+      "id": "SCANNER-PATTERNS",
+      "status": "PASS",
+      "details": {
+        "api_pattern_count": 15,
+        "unsafe_pattern_count": 4
+      }
+    },
+    {
+      "id": "SCANNER-REGISTRY",
+      "status": "PASS",
+      "details": {
+        "registry_entries": 5
+      }
+    },
+    {
+      "id": "SCANNER-SELFTEST",
+      "status": "PASS",
+      "details": {
+        "self_test_verdict": "PASS",
+        "apis_detected": 5
+      }
+    },
+    {
+      "id": "SCANNER-RISK",
+      "status": "PASS",
+      "details": {
+        "risk_tests": [
+          {
+            "expected": "low",
+            "got": "low",
+            "ok": true
+          },
+          {
+            "expected": "medium",
+            "got": "medium",
+            "ok": true
+          },
+          {
+            "expected": "high",
+            "got": "high",
+            "ok": true
+          },
+          {
+            "expected": "critical",
+            "got": "critical",
+            "ok": true
+          }
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "total_checks": 5,
+    "passing_checks": 5,
+    "failing_checks": 0
+  }
+}

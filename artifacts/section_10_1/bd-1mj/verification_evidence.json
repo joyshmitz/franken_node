@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "bead_id": "bd-1mj",
+  "artifact_type": "verification_evidence",
+  "timestamp": "2026-02-20T09:20:32.939696+00:00",
+  "git_commit": "32b56e4c639fd2a39f3f0b77ee55a656ae65109e",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "CLAIM-REGISTRY",
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-FORMAT",
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-ARTIFACTS",
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-VERDICTS",
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-POLICY",
+      "status": "PASS"
+    }
+  ],
+  "unit_tests": {
+    "total": 11,
+    "passed": 11,
+    "failed": 0
+  },
+  "outputs": [
+    {
+      "path": "docs/specs/section_10_1/bd-1mj_contract.md",
+      "sha256": "718221dd2011760abb5760d861e3d761b43585be3e02116a908ba45f4ec2e988",
+      "size_bytes": 3090
+    },
+    {
+      "path": "docs/CLAIMS_REGISTRY.md",
+      "sha256": "bd144ffd7ccf4fe1febc7bf423157c5c6e49f4c33c7f7a46818f3d0d69a49190",
+      "size_bytes": 1150
+    },
+    {
+      "path": "scripts/check_claim_language.py",
+      "sha256": "01db68cbfb0413d31251456371ad5b85503f9b9d39a4c1ba1b81fbbb8dbf2d77",
+      "size_bytes": 8256
+    },
+    {
+      "path": "tests/test_check_claim_language.py",
+      "sha256": "52c11f30a52bf98964c861f5b87b2a9363b00e719244ed1da7f53c5ac956c6a7",
+      "size_bytes": 3985
+    }
+  ]
+}

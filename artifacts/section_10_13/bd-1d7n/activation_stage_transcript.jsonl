@@ -1,0 +1,10 @@
+{"event":"stage_complete","stage":"SandboxCreate","order":0,"success":true,"connector_id":"conn-1","trace_id":"trace-1","timestamp":"2026-01-01T00:00:00Z"}
+{"event":"stage_complete","stage":"SecretMount","order":1,"success":true,"connector_id":"conn-1","trace_id":"trace-1","timestamp":"2026-01-01T00:00:00Z","secrets_mounted":2}
+{"event":"stage_complete","stage":"CapabilityIssue","order":2,"success":true,"connector_id":"conn-1","trace_id":"trace-1","timestamp":"2026-01-01T00:00:00Z"}
+{"event":"stage_complete","stage":"HealthReady","order":3,"success":true,"connector_id":"conn-1","trace_id":"trace-1","timestamp":"2026-01-01T00:00:00Z"}
+{"event":"activation_complete","connector_id":"conn-1","trace_id":"trace-1","completed":true,"stage_count":4}
+{"event":"stage_complete","stage":"SandboxCreate","order":0,"success":true,"connector_id":"conn-fail","trace_id":"trace-2","timestamp":"2026-01-01T00:00:01Z"}
+{"event":"stage_complete","stage":"SecretMount","order":1,"success":true,"connector_id":"conn-fail","trace_id":"trace-2","timestamp":"2026-01-01T00:00:01Z","secrets_mounted":1}
+{"event":"stage_failed","stage":"CapabilityIssue","order":2,"success":false,"connector_id":"conn-fail","trace_id":"trace-2","timestamp":"2026-01-01T00:00:01Z","error_code":"ACT_CAPABILITY_FAILED","reason":"denied"}
+{"event":"secret_cleanup","connector_id":"conn-fail","trace_id":"trace-2","timestamp":"2026-01-01T00:00:01Z","cleaned":true}
+{"event":"activation_complete","connector_id":"conn-fail","trace_id":"trace-2","completed":false,"stage_count":3}

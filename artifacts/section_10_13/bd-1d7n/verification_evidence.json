@@ -1,0 +1,61 @@
+{
+  "gate": "activation_pipeline_verification",
+  "bead": "bd-1d7n",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "AP-IMPL",
+      "description": "Implementation with all required types and activate fn",
+      "status": "PASS"
+    },
+    {
+      "id": "AP-STAGES",
+      "description": "All 4 activation stages present",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "AP-ERRORS",
+      "description": "All 4 error codes present",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "AP-FIXTURES",
+      "description": "Pipeline scenarios fixture",
+      "status": "PASS"
+    },
+    {
+      "id": "AP-TRANSCRIPT",
+      "description": "Stage transcript artifact",
+      "status": "PASS"
+    },
+    {
+      "id": "AP-INTEG-TESTS",
+      "description": "Integration tests cover all 4 invariants",
+      "status": "PASS"
+    },
+    {
+      "id": "AP-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "20 tests passed"
+    },
+    {
+      "id": "AP-SPEC",
+      "description": "Specification with invariants and stages",
+      "status": "PASS"
+    },
+    {
+      "id": "AP-SECRET-CLEANUP",
+      "description": "Secret cleanup on failure path",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 9,
+    "passing_checks": 9,
+    "failing_checks": 0
+  }
+}

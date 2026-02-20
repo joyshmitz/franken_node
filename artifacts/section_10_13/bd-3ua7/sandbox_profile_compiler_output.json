@@ -1,0 +1,53 @@
+{
+  "description": "Sample compiled policy outputs for all sandbox profiles",
+  "compiled_policies": [
+    {
+      "profile": "strict",
+      "level": 0,
+      "grants": [
+        {"capability": "network_access", "access": "deny"},
+        {"capability": "fs_read", "access": "deny"},
+        {"capability": "fs_write", "access": "deny"},
+        {"capability": "process_exec", "access": "deny"},
+        {"capability": "ipc", "access": "deny"},
+        {"capability": "env_access", "access": "deny"}
+      ]
+    },
+    {
+      "profile": "strict_plus",
+      "level": 1,
+      "grants": [
+        {"capability": "network_access", "access": "deny"},
+        {"capability": "fs_read", "access": "deny"},
+        {"capability": "fs_write", "access": "deny"},
+        {"capability": "process_exec", "access": "deny"},
+        {"capability": "ipc", "access": "deny"},
+        {"capability": "env_access", "access": "deny"}
+      ]
+    },
+    {
+      "profile": "moderate",
+      "level": 2,
+      "grants": [
+        {"capability": "network_access", "access": "filtered"},
+        {"capability": "fs_read", "access": "scoped"},
+        {"capability": "fs_write", "access": "deny"},
+        {"capability": "process_exec", "access": "deny"},
+        {"capability": "ipc", "access": "scoped"},
+        {"capability": "env_access", "access": "filtered"}
+      ]
+    },
+    {
+      "profile": "permissive",
+      "level": 3,
+      "grants": [
+        {"capability": "network_access", "access": "allow"},
+        {"capability": "fs_read", "access": "allow"},
+        {"capability": "fs_write", "access": "allow"},
+        {"capability": "process_exec", "access": "allow"},
+        {"capability": "ipc", "access": "allow"},
+        {"capability": "env_access", "access": "allow"}
+      ]
+    }
+  ]
+}

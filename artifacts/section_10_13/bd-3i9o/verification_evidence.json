@@ -1,0 +1,56 @@
+{
+  "gate": "provenance_gate_verification",
+  "bead": "bd-3i9o",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "PG-IMPL",
+      "description": "Implementation with policy, provenance, gate, evaluate",
+      "status": "PASS"
+    },
+    {
+      "id": "PG-ATTEST",
+      "description": "Attestation types present",
+      "status": "PASS",
+      "details": "found 3/3"
+    },
+    {
+      "id": "PG-ERRORS",
+      "description": "All 4 error codes present",
+      "status": "PASS",
+      "details": "found 4/4"
+    },
+    {
+      "id": "PG-FIXTURES",
+      "description": "Gate scenarios fixture",
+      "status": "PASS"
+    },
+    {
+      "id": "PG-DECISIONS",
+      "description": "Provenance gate decisions artifact",
+      "status": "PASS"
+    },
+    {
+      "id": "PG-SECURITY-TESTS",
+      "description": "Security tests cover attestation, assurance, builder",
+      "status": "PASS"
+    },
+    {
+      "id": "PG-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "15 tests passed"
+    },
+    {
+      "id": "PG-SPEC",
+      "description": "Specification with invariants and gate types",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 8,
+    "passing_checks": 8,
+    "failing_checks": 0
+  }
+}

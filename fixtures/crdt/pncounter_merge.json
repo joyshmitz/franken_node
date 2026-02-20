@@ -1,0 +1,35 @@
+{
+  "description": "PNCounter merge conformance fixtures",
+  "crdt_type": "pncounter",
+  "cases": [
+    {
+      "name": "commutativity_basic",
+      "a": {"positive": {"r1": 10}, "negative": {"r1": 3}},
+      "b": {"positive": {"r2": 5}, "negative": {}},
+      "expected_value": 12,
+      "law": "commutativity"
+    },
+    {
+      "name": "idempotency_basic",
+      "a": {"positive": {"r1": 10}, "negative": {"r1": 3}},
+      "b": {"positive": {"r1": 10}, "negative": {"r1": 3}},
+      "expected_value": 7,
+      "law": "idempotency"
+    },
+    {
+      "name": "negative_result",
+      "a": {"positive": {}, "negative": {"r1": 5}},
+      "b": {"positive": {}, "negative": {"r2": 3}},
+      "expected_value": -8,
+      "law": "commutativity"
+    },
+    {
+      "name": "associativity",
+      "a": {"positive": {"r1": 10}, "negative": {"r1": 3}},
+      "b": {"positive": {"r2": 5}, "negative": {"r2": 1}},
+      "c": {"positive": {"r3": 2}, "negative": {"r3": 8}},
+      "expected_value": 5,
+      "law": "associativity"
+    }
+  ]
+}

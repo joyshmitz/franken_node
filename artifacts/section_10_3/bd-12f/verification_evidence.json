@@ -1,0 +1,46 @@
+{
+  "gate": "confidence_report_verification",
+  "section": "10.3",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T10:18:14.316222+00:00",
+  "checks": [
+    {
+      "id": "CONF-HIGH",
+      "status": "PASS",
+      "details": {
+        "score": 96.0
+      }
+    },
+    {
+      "id": "CONF-LOW",
+      "status": "PASS",
+      "details": {
+        "score": 24.5
+      }
+    },
+    {
+      "id": "CONF-BOUNDED",
+      "status": "PASS"
+    },
+    {
+      "id": "CONF-UNCERTAINTY",
+      "status": "PASS",
+      "details": {
+        "width": 1.5
+      }
+    },
+    {
+      "id": "CONF-CLASSIFY",
+      "status": "PASS"
+    },
+    {
+      "id": "CONF-REPORT",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 6,
+    "passing_checks": 6,
+    "failing_checks": 0
+  }
+}

@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Unit tests for check_conformance_harness.py."""
+
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+import check_conformance_harness as ch
+
+
+class TestCheckHarnessImpl(unittest.TestCase):
+    def test_passes(self):
+        self.assertEqual(ch.check_harness_impl()["status"], "PASS")
+
+
+class TestCheckGateErrorCodes(unittest.TestCase):
+    def test_passes(self):
+        self.assertEqual(ch.check_gate_error_codes()["status"], "PASS")
+
+
+class TestCheckOverrideSupport(unittest.TestCase):
+    def test_passes(self):
+        self.assertEqual(ch.check_override_support()["status"], "PASS")
+
+
+class TestCheckCIWorkflow(unittest.TestCase):
+    def test_passes(self):
+        self.assertEqual(ch.check_ci_workflow()["status"], "PASS")
+
+
+class TestCheckConformanceFile(unittest.TestCase):
+    def test_passes(self):
+        self.assertEqual(ch.check_conformance_test_file()["status"], "PASS")
+
+
+class TestCheckSpec(unittest.TestCase):
+    def test_passes(self):
+        self.assertEqual(ch.check_spec_document()["status"], "PASS")
+
+
+class TestCheckEvidence(unittest.TestCase):
+    def test_passes(self):
+        self.assertEqual(ch.check_publication_evidence()["status"], "PASS")
+
+
+class TestSelfTest(unittest.TestCase):
+    def test_verdict_pass(self):
+        result = ch.self_test()
+        self.assertEqual(result["verdict"], "PASS")
+
+    def test_all_checks_present(self):
+        result = ch.self_test()
+        self.assertGreaterEqual(result["summary"]["total_checks"], 8)
+
+    def test_no_failures(self):
+        result = ch.self_test()
+        self.assertEqual(result["summary"]["failing_checks"], 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

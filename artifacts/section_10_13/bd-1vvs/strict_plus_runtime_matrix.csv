@@ -1,0 +1,7 @@
+os,arch,kvm,backend,equivalence
+linux,x86_64,yes,microvm,full
+linux,x86_64,no,hardened,equivalent
+linux,aarch64,yes,microvm,full
+linux,aarch64,no,hardened,equivalent
+macos,aarch64,no,os_sandbox,equivalent
+any,any,no,container,baseline

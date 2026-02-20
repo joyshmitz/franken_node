@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "command": "cargo test --workspace",
+  "rch_kind": "CargoTest",
+  "worker_id": "vmi1264463",
+  "worker_host": "worker-1.rch.internal",
+  "queue_name": "default",
+  "wait_duration_ms": 120,
+  "run_duration_ms": 45200,
+  "exit_code": 0,
+  "timestamp": "2026-02-20T08:30:00Z",
+  "policy_version": "1.0",
+  "exception_id": null
+}

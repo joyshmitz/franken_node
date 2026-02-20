@@ -1,0 +1,50 @@
+{
+  "description": "Network guard egress policy evaluation scenarios",
+  "cases": [
+    {
+      "name": "allowed_by_exact_rule",
+      "host": "api.example.com", "port": 443, "protocol": "http",
+      "rules": [{"host": "api.example.com", "port": 443, "action": "allow", "protocol": "http"}],
+      "default_action": "deny",
+      "expected_action": "allow"
+    },
+    {
+      "name": "allowed_by_wildcard",
+      "host": "sub.trusted.com", "port": 443, "protocol": "http",
+      "rules": [{"host": "*.trusted.com", "port": null, "action": "allow", "protocol": "http"}],
+      "default_action": "deny",
+      "expected_action": "allow"
+    },
+    {
+      "name": "denied_by_default",
+      "host": "unknown.com", "port": 80, "protocol": "http",
+      "rules": [{"host": "api.example.com", "port": 443, "action": "allow", "protocol": "http"}],
+      "default_action": "deny",
+      "expected_action": "deny"
+    },
+    {
+      "name": "denied_by_explicit_rule",
+      "host": "evil.com", "port": 80, "protocol": "http",
+      "rules": [{"host": "evil.com", "port": null, "action": "deny", "protocol": "http"}],
+      "default_action": "allow",
+      "expected_action": "deny"
+    },
+    {
+      "name": "first_match_wins",
+      "host": "bad.example.com", "port": 443, "protocol": "http",
+      "rules": [
+        {"host": "*.example.com", "port": null, "action": "allow", "protocol": "http"},
+        {"host": "bad.example.com", "port": null, "action": "deny", "protocol": "http"}
+      ],
+      "default_action": "deny",
+      "expected_action": "allow"
+    },
+    {
+      "name": "tcp_rule_does_not_match_http",
+      "host": "api.example.com", "port": 443, "protocol": "http",
+      "rules": [{"host": "api.example.com", "port": 443, "action": "allow", "protocol": "tcp"}],
+      "default_action": "deny",
+      "expected_action": "deny"
+    }
+  ]
+}

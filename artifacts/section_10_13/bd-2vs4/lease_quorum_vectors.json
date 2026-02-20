@@ -1,0 +1,62 @@
+{
+  "description": "bd-2vs4: Lease quorum verification test vectors",
+  "vectors": [
+    {
+      "id": "standard-1-of-1",
+      "tier": "Standard",
+      "threshold": 1,
+      "signers": ["s1"],
+      "valid_signatures": 1,
+      "expected_passed": true
+    },
+    {
+      "id": "risky-2-of-2",
+      "tier": "Risky",
+      "threshold": 2,
+      "signers": ["s1", "s2"],
+      "valid_signatures": 2,
+      "expected_passed": true
+    },
+    {
+      "id": "risky-1-of-2-fails",
+      "tier": "Risky",
+      "threshold": 2,
+      "signers": ["s1"],
+      "valid_signatures": 1,
+      "expected_passed": false,
+      "expected_failure": "LC_BELOW_QUORUM"
+    },
+    {
+      "id": "dangerous-3-of-3",
+      "tier": "Dangerous",
+      "threshold": 3,
+      "signers": ["s1", "s2", "s3"],
+      "valid_signatures": 3,
+      "expected_passed": true
+    },
+    {
+      "id": "unknown-signer",
+      "tier": "Standard",
+      "threshold": 1,
+      "known_signers": ["s1"],
+      "provided_signers": ["s1", "unknown"],
+      "expected_failure": "LC_UNKNOWN_SIGNER"
+    },
+    {
+      "id": "invalid-signature",
+      "tier": "Standard",
+      "threshold": 1,
+      "signers": ["s1"],
+      "signature_valid": false,
+      "expected_failure": "LC_INVALID_SIGNATURE"
+    }
+  ],
+  "coordinator_selection": [
+    {
+      "id": "deterministic-replay",
+      "lease_id": "lease-1",
+      "candidates": ["node-a", "node-b", "node-c"],
+      "expected_deterministic": true
+    }
+  ]
+}

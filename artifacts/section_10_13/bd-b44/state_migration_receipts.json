@@ -1,0 +1,33 @@
+{
+  "description": "Sample migration receipts for conformance verification",
+  "receipts": [
+    {
+      "connector_id": "conn-alpha",
+      "from_version": "1.0.0",
+      "to_version": "1.2.0",
+      "outcome": "applied",
+      "steps_applied": 2,
+      "steps_total": 2,
+      "timestamp": "2026-02-20T10:00:00Z"
+    },
+    {
+      "connector_id": "conn-beta",
+      "from_version": "1.0.0",
+      "to_version": "3.0.0",
+      "outcome": "failed",
+      "error": "MIGRATION_PATH_MISSING",
+      "steps_applied": 0,
+      "steps_total": 0,
+      "timestamp": "2026-02-20T10:01:00Z"
+    },
+    {
+      "connector_id": "conn-gamma",
+      "from_version": "1.1.0",
+      "to_version": "1.1.0",
+      "outcome": "already_applied",
+      "steps_applied": 0,
+      "steps_total": 0,
+      "timestamp": "2026-02-20T10:02:00Z"
+    }
+  ]
+}

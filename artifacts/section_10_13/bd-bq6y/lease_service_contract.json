@@ -1,0 +1,38 @@
+{
+  "description": "bd-bq6y: Lease service contract — sample lease lifecycle",
+  "leases": [
+    {
+      "lease_id": "lease-1",
+      "holder": "connector-alpha",
+      "purpose": "Operation",
+      "ttl_secs": 60,
+      "granted_at": 1000,
+      "renewed_at": 1000,
+      "status": "active"
+    },
+    {
+      "lease_id": "lease-2",
+      "holder": "migrator-beta",
+      "purpose": "MigrationHandoff",
+      "ttl_secs": 120,
+      "granted_at": 1000,
+      "renewed_at": 1050,
+      "status": "active"
+    },
+    {
+      "lease_id": "lease-3",
+      "holder": "writer-gamma",
+      "purpose": "StateWrite",
+      "ttl_secs": 30,
+      "granted_at": 900,
+      "renewed_at": 900,
+      "status": "expired"
+    }
+  ],
+  "decisions": [
+    {"lease_id": "lease-1", "action": "grant", "allowed": true, "trace_id": "tr-001"},
+    {"lease_id": "lease-2", "action": "grant", "allowed": true, "trace_id": "tr-002"},
+    {"lease_id": "lease-2", "action": "renew", "allowed": true, "trace_id": "tr-003"},
+    {"lease_id": "lease-3", "action": "use", "allowed": false, "reason": "LS_STALE_USE", "trace_id": "tr-004"}
+  ]
+}

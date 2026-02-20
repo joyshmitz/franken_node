@@ -1,0 +1,64 @@
+{
+  "description": "LWW-Map merge conformance fixtures",
+  "crdt_type": "lww_map",
+  "cases": [
+    {
+      "name": "commutativity_basic",
+      "a": {
+        "entries": {"k": {"value": "a", "timestamp": 1}}
+      },
+      "b": {
+        "entries": {"k": {"value": "b", "timestamp": 2}}
+      },
+      "expected": {
+        "entries": {"k": {"value": "b", "timestamp": 2}}
+      },
+      "law": "commutativity"
+    },
+    {
+      "name": "idempotency_basic",
+      "a": {
+        "entries": {"k": {"value": "v", "timestamp": 1}}
+      },
+      "b": {
+        "entries": {"k": {"value": "v", "timestamp": 1}}
+      },
+      "expected": {
+        "entries": {"k": {"value": "v", "timestamp": 1}}
+      },
+      "law": "idempotency"
+    },
+    {
+      "name": "disjoint_keys",
+      "a": {
+        "entries": {"x": {"value": 1, "timestamp": 1}}
+      },
+      "b": {
+        "entries": {"y": {"value": 2, "timestamp": 1}}
+      },
+      "expected": {
+        "entries": {
+          "x": {"value": 1, "timestamp": 1},
+          "y": {"value": 2, "timestamp": 1}
+        }
+      },
+      "law": "commutativity"
+    },
+    {
+      "name": "associativity",
+      "a": {
+        "entries": {"k": {"value": "a", "timestamp": 1}}
+      },
+      "b": {
+        "entries": {"k": {"value": "b", "timestamp": 2}}
+      },
+      "c": {
+        "entries": {"k": {"value": "c", "timestamp": 3}}
+      },
+      "expected": {
+        "entries": {"k": {"value": "c", "timestamp": 3}}
+      },
+      "law": "associativity"
+    }
+  ]
+}

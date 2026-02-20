@@ -1,0 +1,34 @@
+{
+  "gate": "connector_lifecycle_verification",
+  "bead": "bd-2gh",
+  "section": "10.13",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T10:31:49Z",
+  "checks": [
+    {"id": "LIFECYCLE-COMPLETE", "status": "PASS", "details": {"total_pairs": 56, "legal": 17, "illegal": 39}},
+    {"id": "LIFECYCLE-NO-SELF", "status": "PASS"},
+    {"id": "LIFECYCLE-REACHABLE", "status": "PASS"},
+    {"id": "LIFECYCLE-OUTGOING", "status": "PASS"},
+    {"id": "LIFECYCLE-HAPPY-PATH", "status": "PASS"},
+    {"id": "LIFECYCLE-RECOVERY", "status": "PASS"},
+    {"id": "LIFECYCLE-IMPL", "status": "PASS"},
+    {"id": "LIFECYCLE-TESTS", "status": "PASS", "details": {"rust_tests": 10, "python_tests": 21}},
+    {"id": "LIFECYCLE-MATRIX", "status": "PASS", "details": {"total_entries": 56, "legal_count": 17}},
+    {"id": "LIFECYCLE-SPEC", "status": "PASS"}
+  ],
+  "summary": {
+    "total_checks": 10,
+    "passing_checks": 10,
+    "failing_checks": 0,
+    "rust_unit_tests": 10,
+    "python_unit_tests": 21
+  },
+  "artifacts": {
+    "spec": "docs/specs/section_10_13/bd-2gh_contract.md",
+    "implementation": "crates/franken-node/src/connector/lifecycle.rs",
+    "conformance_tests": "tests/conformance/connector_lifecycle_transitions.rs",
+    "transition_matrix": "artifacts/section_10_13/bd-2gh/lifecycle_transition_matrix.json",
+    "verification_script": "scripts/check_connector_lifecycle.py",
+    "python_tests": "tests/test_check_connector_lifecycle.py"
+  }
+}

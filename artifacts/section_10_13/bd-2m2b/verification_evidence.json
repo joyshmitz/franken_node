@@ -1,0 +1,55 @@
+{
+  "gate": "network_guard_verification",
+  "bead": "bd-2m2b",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "GUARD-IMPL",
+      "description": "Implementation with guard, policy, rules, audit events",
+      "status": "PASS"
+    },
+    {
+      "id": "GUARD-PROTOCOLS",
+      "description": "HTTP and TCP protocol support",
+      "status": "PASS"
+    },
+    {
+      "id": "GUARD-ERRORS",
+      "description": "All 3 error codes present",
+      "status": "PASS",
+      "details": "found 3/3"
+    },
+    {
+      "id": "GUARD-FIXTURES",
+      "description": "Egress policy fixture with scenarios",
+      "status": "PASS"
+    },
+    {
+      "id": "GUARD-AUDIT-SAMPLES",
+      "description": "Audit JSONL samples with trace IDs",
+      "status": "PASS"
+    },
+    {
+      "id": "GUARD-CONFORMANCE",
+      "description": "Conformance tests cover deny, ordering, audit",
+      "status": "PASS"
+    },
+    {
+      "id": "GUARD-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "19 tests passed"
+    },
+    {
+      "id": "GUARD-SPEC",
+      "description": "Specification with invariants and audit event schema",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 8,
+    "passing_checks": 8,
+    "failing_checks": 0
+  }
+}

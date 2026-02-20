@@ -1,0 +1,56 @@
+{
+  "bead": "bd-17mb",
+  "section": "10.13",
+  "trace": "manifest_negotiation_fail_closed",
+  "timestamp": "2026-02-20T11:30:00Z",
+  "negotiations": [
+    {
+      "connector_id": "conn-alpha",
+      "version": "2.1.0",
+      "required_features": ["auth", "streaming"],
+      "transport_caps": ["http2"],
+      "outcome": "accepted",
+      "version_ok": true,
+      "features_ok": true,
+      "transport_ok": true,
+      "trace_id": "trace-001"
+    },
+    {
+      "connector_id": "conn-beta",
+      "version": "5.0.0",
+      "required_features": ["auth"],
+      "transport_caps": ["http1"],
+      "outcome": "rejected",
+      "version_ok": false,
+      "features_ok": true,
+      "transport_ok": true,
+      "reason": "MANIFEST_VERSION_UNSUPPORTED: 5.0.0 not in 1.0.0-2.99.99",
+      "trace_id": "trace-002"
+    },
+    {
+      "connector_id": "conn-delta",
+      "version": "1.5.0",
+      "required_features": ["auth", "teleport"],
+      "transport_caps": ["http1"],
+      "outcome": "rejected",
+      "version_ok": true,
+      "features_ok": false,
+      "transport_ok": true,
+      "missing_features": ["teleport"],
+      "trace_id": "trace-003"
+    },
+    {
+      "connector_id": "conn-epsilon",
+      "version": "1.0.0",
+      "required_features": [],
+      "transport_caps": ["http3"],
+      "outcome": "rejected",
+      "version_ok": true,
+      "features_ok": true,
+      "transport_ok": false,
+      "missing_transports": ["http3"],
+      "trace_id": "trace-004"
+    }
+  ],
+  "verdict": "PASS"
+}

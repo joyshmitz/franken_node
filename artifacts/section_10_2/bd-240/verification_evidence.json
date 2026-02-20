@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "bead_id": "bd-240",
+  "artifact_type": "verification_evidence",
+  "timestamp": "2026-02-20T09:48:19.308497+00:00",
+  "git_commit": "32b56e4c639fd2a39f3f0b77ee55a656ae65109e",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "DASH-SPEC",
+      "status": "PASS"
+    },
+    {
+      "id": "DASH-SCHEMA",
+      "status": "PASS"
+    },
+    {
+      "id": "DASH-VIEWS",
+      "status": "PASS"
+    },
+    {
+      "id": "DASH-SOURCES",
+      "status": "PASS"
+    },
+    {
+      "id": "DASH-CI",
+      "status": "PASS"
+    }
+  ],
+  "unit_tests": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0
+  },
+  "outputs": [
+    {
+      "path": "docs/COMPAT_DASHBOARD_SPEC.md",
+      "sha256": "8a77299af50b91940385a9733b1fa6acbdaf11b209b5dc0ec0c78753e782ecc4",
+      "size_bytes": 3092
+    },
+    {
+      "path": "schemas/compat_dashboard.schema.json",
+      "sha256": "2eeb54cffd8e193ba4f384f87edffb39c7e7f026b62e9b8ba1ab68406ec93fca",
+      "size_bytes": 2241
+    },
+    {
+      "path": "docs/specs/section_10_2/bd-240_contract.md",
+      "sha256": "341b71fbf8eea8f05e59f943418da80ee74b9f8562218e664b60b39b24e0a678",
+      "size_bytes": 1297
+    },
+    {
+      "path": "scripts/check_compat_dashboard.py",
+      "sha256": "5eaa83097b462e3d6cae4739e20141c41bef1c75f016f7c9d41df283a9de7299",
+      "size_bytes": 3769
+    },
+    {
+      "path": "tests/test_check_compat_dashboard.py",
+      "sha256": "cbf9957d80423f5095522147bb9f493cbab7bc09900b914907cffb69a3867387",
+      "size_bytes": 1088
+    }
+  ]
+}

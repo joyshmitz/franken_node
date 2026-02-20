@@ -1,0 +1,4 @@
+{"connector_id":"conn-alpha","timestamp":"2026-02-20T10:00:00Z","protocol":"http","host":"api.example.com","port":443,"action":"allow","rule_matched":0,"trace_id":"trace-001"}
+{"connector_id":"conn-alpha","timestamp":"2026-02-20T10:00:01Z","protocol":"http","host":"unknown.com","port":80,"action":"deny","rule_matched":null,"trace_id":"trace-002"}
+{"connector_id":"conn-beta","timestamp":"2026-02-20T10:00:02Z","protocol":"tcp","host":"db.internal.com","port":5432,"action":"allow","rule_matched":1,"trace_id":"trace-003"}
+{"connector_id":"conn-beta","timestamp":"2026-02-20T10:00:03Z","protocol":"http","host":"evil.com","port":443,"action":"deny","rule_matched":2,"trace_id":"trace-004"}

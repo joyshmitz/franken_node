@@ -1,0 +1,16 @@
+{
+  "gate": "fencing_verification",
+  "bead": "bd-1cm",
+  "section": "10.13",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T10:52:00Z",
+  "checks": [
+    {"id": "FENCE-IMPL", "status": "PASS"},
+    {"id": "FENCE-ERRORS", "status": "PASS"},
+    {"id": "FENCE-TESTS", "status": "PASS", "details": {"rust_tests": 11, "python_tests": 9}},
+    {"id": "FENCE-CONFORMANCE", "status": "PASS"},
+    {"id": "FENCE-RECEIPTS", "status": "PASS"},
+    {"id": "FENCE-SPEC", "status": "PASS"}
+  ],
+  "summary": {"total_checks": 6, "passing_checks": 6, "failing_checks": 0, "rust_unit_tests": 11, "python_unit_tests": 9}
+}

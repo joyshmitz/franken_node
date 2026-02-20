@@ -1,0 +1,28 @@
+{
+  "schema": "publication_gate_evidence",
+  "version": "1.0.0",
+  "gate_logic": {
+    "default_action": "BLOCK",
+    "pass_action": "ALLOW",
+    "override_action": "ALLOW_OVERRIDE",
+    "fail_closed": true
+  },
+  "override_support": {
+    "fields": ["override_id", "connector_id", "reason", "authorized_by", "expires_at", "scope"],
+    "scoped": true,
+    "expiring": true,
+    "audit_logged": true
+  },
+  "error_codes": [
+    "PUBLICATION_BLOCKED",
+    "OVERRIDE_EXPIRED",
+    "OVERRIDE_SCOPE_MISMATCH"
+  ],
+  "invariants": [
+    "INV-HARNESS-DETERMINISTIC",
+    "INV-GATE-FAIL-CLOSED",
+    "INV-OVERRIDE-EXPLICIT",
+    "INV-OVERRIDE-SCOPED",
+    "INV-OVERRIDE-EXPIRY"
+  ]
+}

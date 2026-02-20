@@ -1,0 +1,44 @@
+{
+  "bead": "bd-1z9s",
+  "section": "10.13",
+  "description": "Transparency log proof verification receipts",
+  "timestamp": "2026-02-20T11:42:00Z",
+  "receipts": [
+    {
+      "connector_id": "conn-alpha",
+      "artifact_id": "art-001",
+      "verified": true,
+      "log_root_matched": true,
+      "proof_valid": true,
+      "trace_id": "trace-001"
+    },
+    {
+      "connector_id": "conn-beta",
+      "artifact_id": "art-002",
+      "verified": false,
+      "log_root_matched": false,
+      "proof_valid": false,
+      "failure_reason": "TLOG_PROOF_MISSING",
+      "trace_id": "trace-002"
+    },
+    {
+      "connector_id": "conn-gamma",
+      "artifact_id": "art-003",
+      "verified": false,
+      "log_root_matched": false,
+      "proof_valid": true,
+      "failure_reason": "TLOG_ROOT_NOT_PINNED",
+      "trace_id": "trace-003"
+    },
+    {
+      "connector_id": "conn-delta",
+      "artifact_id": "art-004",
+      "verified": false,
+      "log_root_matched": false,
+      "proof_valid": false,
+      "failure_reason": "TLOG_LEAF_MISMATCH",
+      "trace_id": "trace-004"
+    }
+  ],
+  "verdict": "PASS"
+}

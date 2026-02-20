@@ -1,0 +1,45 @@
+{
+  "gate": "admission_budget_verification",
+  "bead": "bd-2k74",
+  "section": "10.13",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "PAB-IMPL",
+      "description": "Implementation with all required types",
+      "status": "PASS"
+    },
+    {
+      "id": "PAB-ERRORS",
+      "description": "All 6 error codes present",
+      "status": "PASS",
+      "details": "found 6/6"
+    },
+    {
+      "id": "PAB-REPORT",
+      "description": "Admission budget violation report",
+      "status": "PASS"
+    },
+    {
+      "id": "PAB-INTEG",
+      "description": "Integration tests cover all 4 invariants",
+      "status": "PASS"
+    },
+    {
+      "id": "PAB-TESTS",
+      "description": "Rust unit tests pass",
+      "status": "PASS",
+      "details": "28 tests passed"
+    },
+    {
+      "id": "PAB-SPEC",
+      "description": "Specification with invariants and types",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 6,
+    "passing_checks": 6,
+    "failing_checks": 0
+  }
+}

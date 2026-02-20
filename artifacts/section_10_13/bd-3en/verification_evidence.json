@@ -1,0 +1,24 @@
+{
+  "gate": "conformance_harness_verification",
+  "bead": "bd-3en",
+  "section": "10.13",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T10:44:00Z",
+  "checks": [
+    {"id": "HARNESS-IMPL", "status": "PASS"},
+    {"id": "HARNESS-ERRORS", "status": "PASS"},
+    {"id": "HARNESS-OVERRIDE", "status": "PASS"},
+    {"id": "HARNESS-TESTS", "status": "PASS", "details": {"rust_tests": 10, "python_tests": 10}},
+    {"id": "HARNESS-CI", "status": "PASS"},
+    {"id": "HARNESS-CONFORMANCE", "status": "PASS"},
+    {"id": "HARNESS-SPEC", "status": "PASS"},
+    {"id": "HARNESS-EVIDENCE", "status": "PASS"}
+  ],
+  "summary": {
+    "total_checks": 8,
+    "passing_checks": 8,
+    "failing_checks": 0,
+    "rust_unit_tests": 10,
+    "python_unit_tests": 10
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "description": "bd-bq6y: Generic lease service test scenarios",
+  "cases": [
+    {
+      "id": "grant-and-use",
+      "description": "Grant a lease and use it within TTL",
+      "purpose": "Operation",
+      "ttl_secs": 60,
+      "use_at_offset": 10,
+      "expected_allowed": true
+    },
+    {
+      "id": "expired-use-rejected",
+      "description": "Using an expired lease is rejected",
+      "purpose": "StateWrite",
+      "ttl_secs": 60,
+      "use_at_offset": 100,
+      "expected_allowed": false,
+      "expected_error_code": "LS_STALE_USE"
+    },
+    {
+      "id": "renewal-extends-ttl",
+      "description": "Renewing a lease extends its expiry",
+      "purpose": "Operation",
+      "ttl_secs": 60,
+      "renew_at_offset": 50,
+      "use_at_offset": 100,
+      "expected_allowed": true
+    },
+    {
+      "id": "revoked-use-rejected",
+      "description": "Using a revoked lease is rejected",
+      "purpose": "MigrationHandoff",
+      "ttl_secs": 120,
+      "revoke_at_offset": 10,
+      "use_at_offset": 20,
+      "expected_allowed": false,
+      "expected_error_code": "LS_STALE_USE"
+    },
+    {
+      "id": "purpose-mismatch",
+      "description": "Using a lease for wrong purpose is rejected",
+      "purpose": "Operation",
+      "required_purpose": "MigrationHandoff",
+      "ttl_secs": 60,
+      "use_at_offset": 10,
+      "expected_allowed": false,
+      "expected_error_code": "LS_PURPOSE_MISMATCH"
+    }
+  ]
+}

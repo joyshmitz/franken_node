@@ -1,0 +1,13 @@
+{
+  "gate": "rch_execution_policy",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T08:32:40Z",
+  "policy_version": "1.0",
+  "artifacts_dir": "/data/projects/franken_node/artifacts",
+  "provenance_files_scanned": 0,
+  "rch_offloaded_passes": 0,
+  "violations_count": 0,
+  "exceptions_used": 0,
+  "rch_hook_status": "installed",
+  "violations": []
+}

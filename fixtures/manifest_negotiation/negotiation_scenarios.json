@@ -1,0 +1,106 @@
+{
+  "description": "Manifest negotiation scenarios for fail-closed checks (bd-17mb)",
+  "cases": [
+    {
+      "id": "all_pass",
+      "manifest": {
+        "connector_id": "conn-alpha",
+        "version": "2.1.0",
+        "required_features": ["auth", "streaming"],
+        "transport_caps": ["http2"]
+      },
+      "host": {
+        "min_version": "1.0.0",
+        "max_version": "2.99.99",
+        "available_features": ["auth", "streaming", "batch"],
+        "transport_caps": ["http1", "http2", "grpc"]
+      },
+      "expected_outcome": "accepted"
+    },
+    {
+      "id": "version_too_high",
+      "manifest": {
+        "connector_id": "conn-beta",
+        "version": "5.0.0",
+        "required_features": ["auth"],
+        "transport_caps": ["http1"]
+      },
+      "host": {
+        "min_version": "1.0.0",
+        "max_version": "2.99.99",
+        "available_features": ["auth", "batch"],
+        "transport_caps": ["http1", "http2"]
+      },
+      "expected_outcome": "rejected",
+      "expected_error": "MANIFEST_VERSION_UNSUPPORTED"
+    },
+    {
+      "id": "version_too_low",
+      "manifest": {
+        "connector_id": "conn-gamma",
+        "version": "0.5.0",
+        "required_features": [],
+        "transport_caps": ["http1"]
+      },
+      "host": {
+        "min_version": "1.0.0",
+        "max_version": "2.99.99",
+        "available_features": [],
+        "transport_caps": ["http1"]
+      },
+      "expected_outcome": "rejected",
+      "expected_error": "MANIFEST_VERSION_UNSUPPORTED"
+    },
+    {
+      "id": "missing_feature",
+      "manifest": {
+        "connector_id": "conn-delta",
+        "version": "1.5.0",
+        "required_features": ["auth", "teleport"],
+        "transport_caps": ["http1"]
+      },
+      "host": {
+        "min_version": "1.0.0",
+        "max_version": "2.99.99",
+        "available_features": ["auth", "batch"],
+        "transport_caps": ["http1"]
+      },
+      "expected_outcome": "rejected",
+      "expected_error": "MANIFEST_FEATURE_MISSING"
+    },
+    {
+      "id": "missing_transport",
+      "manifest": {
+        "connector_id": "conn-epsilon",
+        "version": "1.0.0",
+        "required_features": [],
+        "transport_caps": ["http3"]
+      },
+      "host": {
+        "min_version": "1.0.0",
+        "max_version": "2.99.99",
+        "available_features": [],
+        "transport_caps": ["http1", "http2"]
+      },
+      "expected_outcome": "rejected",
+      "expected_error": "MANIFEST_TRANSPORT_MISMATCH"
+    },
+    {
+      "id": "all_fail",
+      "manifest": {
+        "connector_id": "conn-zeta",
+        "version": "99.0.0",
+        "required_features": ["warp_drive"],
+        "transport_caps": ["http3"]
+      },
+      "host": {
+        "min_version": "1.0.0",
+        "max_version": "2.99.99",
+        "available_features": ["auth"],
+        "transport_caps": ["http1"]
+      },
+      "expected_outcome": "rejected",
+      "expected_error": "MANIFEST_VERSION_UNSUPPORTED"
+    }
+  ]
+}

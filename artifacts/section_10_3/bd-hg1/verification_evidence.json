@@ -1,0 +1,49 @@
+{
+  "gate": "migrate_report_verification",
+  "section": "10.3",
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T10:19:54.409831+00:00",
+  "checks": [
+    {
+      "id": "REPORT-SECTIONS",
+      "status": "PASS",
+      "details": {
+        "sections": [
+          "executive_summary",
+          "scan",
+          "risk_assessment",
+          "rewrite_suggestions",
+          "rollout_plan",
+          "confidence"
+        ]
+      }
+    },
+    {
+      "id": "REPORT-EXECUTIVE",
+      "status": "PASS"
+    },
+    {
+      "id": "REPORT-SCAN",
+      "status": "PASS",
+      "details": {
+        "apis_detected": 3
+      }
+    },
+    {
+      "id": "REPORT-RISK",
+      "status": "PASS",
+      "details": {
+        "risk_score": 9.5
+      }
+    },
+    {
+      "id": "REPORT-ROLLOUT",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_checks": 5,
+    "passing_checks": 5,
+    "failing_checks": 0
+  }
+}

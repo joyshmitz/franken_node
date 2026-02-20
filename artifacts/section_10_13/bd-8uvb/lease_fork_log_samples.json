@@ -1,0 +1,57 @@
+{
+  "description": "bd-8uvb: Lease fork log sample entries for conflict resolution",
+  "scenarios": [
+    {
+      "id": "standard-overlap-earliest-wins",
+      "leases": [
+        {"lease_id": "l1", "resource": "res-a", "purpose": "Operation", "granted_at": 100, "expires_at": 160, "tier": "Standard"},
+        {"lease_id": "l2", "resource": "res-a", "purpose": "Operation", "granted_at": 130, "expires_at": 190, "tier": "Standard"}
+      ],
+      "expected_winner": "l1",
+      "expected_rule": "earliest_grant",
+      "expected_halted": false
+    },
+    {
+      "id": "purpose-priority-migration-wins",
+      "leases": [
+        {"lease_id": "l1", "resource": "res-b", "purpose": "Operation", "granted_at": 100, "expires_at": 160, "tier": "Standard"},
+        {"lease_id": "l2", "resource": "res-b", "purpose": "MigrationHandoff", "granted_at": 110, "expires_at": 170, "tier": "Standard"}
+      ],
+      "expected_winner": "l2",
+      "expected_rule": "purpose_priority",
+      "expected_halted": false
+    },
+    {
+      "id": "dangerous-halt",
+      "leases": [
+        {"lease_id": "l1", "resource": "res-c", "purpose": "Operation", "granted_at": 100, "expires_at": 160, "tier": "Dangerous"},
+        {"lease_id": "l2", "resource": "res-c", "purpose": "StateWrite", "granted_at": 110, "expires_at": 170, "tier": "Standard"}
+      ],
+      "expected_winner": null,
+      "expected_rule": "dangerous_halt",
+      "expected_halted": true,
+      "expected_error": "OLC_DANGEROUS_HALT"
+    },
+    {
+      "id": "state-write-beats-operation",
+      "leases": [
+        {"lease_id": "l1", "resource": "res-d", "purpose": "Operation", "granted_at": 100, "expires_at": 160, "tier": "Risky"},
+        {"lease_id": "l2", "resource": "res-d", "purpose": "StateWrite", "granted_at": 110, "expires_at": 170, "tier": "Risky"}
+      ],
+      "expected_winner": "l2",
+      "expected_rule": "purpose_priority",
+      "expected_halted": false
+    },
+    {
+      "id": "no-overlap-no-conflict",
+      "leases": [
+        {"lease_id": "l1", "resource": "res-e", "purpose": "Operation", "granted_at": 100, "expires_at": 150, "tier": "Standard"},
+        {"lease_id": "l2", "resource": "res-e", "purpose": "Operation", "granted_at": 200, "expires_at": 260, "tier": "Standard"}
+      ],
+      "expected_winner": null,
+      "expected_rule": null,
+      "expected_halted": false,
+      "note": "No overlap detected; no conflict to resolve"
+    }
+  ]
+}
