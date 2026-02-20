@@ -581,12 +581,12 @@ impl ReproBundleExporter {
     }
 
     /// Export bundles for a time range (manual export).
-    pub fn export_for_range(
+    pub fn export_for_range<'a>(
         &self,
-        bundles: &[ReproBundle],
+        bundles: &'a [ReproBundle],
         start_ms: u64,
         end_ms: u64,
-    ) -> Vec<&ReproBundle> {
+    ) -> Vec<&'a ReproBundle> {
         bundles.iter()
             .filter(|b| b.timestamp_ms >= start_ms && b.timestamp_ms <= end_ms)
             .collect()

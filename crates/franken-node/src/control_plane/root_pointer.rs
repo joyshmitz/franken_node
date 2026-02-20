@@ -305,7 +305,10 @@ pub fn read_root(dir: &Path) -> Result<RootPointer, RootPointerError> {
 /// Fail-closed bootstrap gate for root pointer authentication + epoch/version checks.
 ///
 /// No caller should treat root state as trusted until this function succeeds.
-pub fn bootstrap_root(dir: &Path, auth_config: &RootAuthConfig) -> Result<VerifiedRoot, BootstrapError> {
+pub fn bootstrap_root(
+    dir: &Path,
+    auth_config: &RootAuthConfig,
+) -> Result<VerifiedRoot, BootstrapError> {
     let root_path = root_pointer_path(dir);
     let root_bytes = fs::read(&root_path).map_err(|source| {
         if source.kind() == std::io::ErrorKind::NotFound {
@@ -564,7 +567,11 @@ fn maybe_crash(
 
 fn write_root_auth_record(dir: &Path, record: &RootAuthRecord) -> Result<(), RootPointerError> {
     let auth_path = root_auth_path(dir);
-    let temp_path = dir.join(format!(".{}.tmp.{}", ROOT_POINTER_AUTH_FILE, Uuid::now_v7()));
+    let temp_path = dir.join(format!(
+        ".{}.tmp.{}",
+        ROOT_POINTER_AUTH_FILE,
+        Uuid::now_v7()
+    ));
     let payload = serde_json::to_vec_pretty(record).map_err(RootPointerError::Serialize)?;
 
     let mut temp_file = OpenOptions::new()
@@ -840,7 +847,10 @@ mod tests {
 
         let verified = bootstrap_root(dir.path(), &cfg).expect("bootstrap");
         assert_eq!(verified.root, root);
-        assert_eq!(verified.auth.root_format_version, ROOT_POINTER_FORMAT_VERSION);
+        assert_eq!(
+            verified.auth.root_format_version,
+            ROOT_POINTER_FORMAT_VERSION
+        );
     }
 
     #[test]

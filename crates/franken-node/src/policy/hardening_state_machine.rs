@@ -24,7 +24,7 @@ pub mod event_codes {
 /// Hardening levels ordered from weakest to strongest.
 ///
 /// Total ordering: Baseline < Standard < Enhanced < Maximum < Critical
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum HardeningLevel {
     Baseline = 0,
     Standard = 1,

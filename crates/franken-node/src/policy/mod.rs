@@ -7,3 +7,6 @@ pub mod guardrail_monitor;
 pub mod hardening_auto_trigger;
 pub mod hardening_clamps;
 pub mod hardening_state_machine;
+pub mod integrity_sweep_scheduler;
+pub mod policy_explainer;
+pub mod retroactive_hardening;
