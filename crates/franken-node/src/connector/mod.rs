@@ -11,6 +11,7 @@ pub mod lease_coordinator;
 pub mod lease_service;
 pub mod lifecycle;
 pub mod prestage_engine;
+pub mod quarantine_promotion;
 pub mod quarantine_store;
 pub mod repair_controller;
 pub mod manifest_negotiation;
