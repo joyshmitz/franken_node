@@ -1,0 +1,6 @@
+SURFACE: boundary_alert
+COMPONENT: AlertBanner
+DIMENSIONS: 80x24
+SEED: bd-1719
+STATE: stable
+CHECKSUM: d4128c4f

@@ -1,0 +1,6 @@
+SURFACE: ledger_log_stream
+COMPONENT: LogStreamPanel
+DIMENSIONS: 80x24
+SEED: bd-1719
+STATE: stable
+CHECKSUM: e3f4180d

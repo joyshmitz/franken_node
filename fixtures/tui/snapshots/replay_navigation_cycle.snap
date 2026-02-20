@@ -1,0 +1,9 @@
+REPLAY: navigation_cycle
+SURFACE: main_table_render
+DIMENSIONS: 80x24
+SELECTED_INDEX: 1
+SCROLL_OFFSET: 0
+TAB_FOCUS: 1
+CONFIRMED: false
+CANCELED: false
+EVENTS: Down,Down,Up,Tab

@@ -1,37 +1,44 @@
-//! Security conformance tests for bd-181w: control-plane epoch validity adoption.
-//!
-//! Validates that control artifacts and remote contracts use canonical
-//! fail-closed epoch-window checks from `control_plane::control_epoch`.
+// Security conformance tests for bd-181w: control-plane epoch validity adoption.
+//
+// Validates that control artifacts and remote contracts use canonical
+// fail-closed epoch-window checks from `control_plane::control_epoch`.
 
-mod control_plane {
-    #[path = "../../crates/franken-node/src/control_plane/control_epoch.rs"]
-    pub mod control_epoch;
+#[path = "../../crates/franken-node/src/control_plane/control_epoch.rs"]
+pub mod control_epoch;
+
+#[path = "../../crates/franken-node/src/connector/lifecycle.rs"]
+pub mod lifecycle;
+
+#[path = "../../crates/franken-node/src/connector/health_gate.rs"]
+pub mod health_gate;
+
+#[path = "../../crates/franken-node/src/connector/rollout_state.rs"]
+pub mod rollout_state;
+
+#[path = "../../crates/franken-node/src/connector/fencing.rs"]
+pub mod fencing;
+
+pub mod control_plane {
+    pub use crate::control_epoch;
 }
 
-mod connector {
-    #[path = "../../crates/franken-node/src/connector/lifecycle.rs"]
-    pub mod lifecycle;
-
-    #[path = "../../crates/franken-node/src/connector/health_gate.rs"]
-    pub mod health_gate;
-
-    #[path = "../../crates/franken-node/src/connector/rollout_state.rs"]
-    pub mod rollout_state;
-
-    #[path = "../../crates/franken-node/src/connector/fencing.rs"]
-    pub mod fencing;
+pub mod connector {
+    pub use crate::fencing;
+    pub use crate::health_gate;
+    pub use crate::lifecycle;
+    pub use crate::rollout_state;
 }
 
-use control_plane::control_epoch::{ControlEpoch, ValidityWindowPolicy};
 use connector::fencing::{FenceState, FencedWrite, FencingError, epoch_event_codes as fencing_epv};
 use connector::health_gate::{
-    EpochScopedHealthPolicy, evaluate_epoch_scoped_policy, epoch_event_codes as health_epv,
+    EpochScopedHealthPolicy, epoch_event_codes as health_epv, evaluate_epoch_scoped_policy,
     standard_checks,
 };
 use connector::lifecycle::ConnectorState;
 use connector::rollout_state::{
     RolloutPhase, RolloutState, epoch_event_codes as rollout_epv, persist_epoch_scoped,
 };
+use control_plane::control_epoch::{ControlEpoch, ValidityWindowPolicy};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -48,7 +55,10 @@ fn control_artifact_current_epoch_is_accepted() {
     let outcome = evaluate_epoch_scoped_policy(&policy, &validity)
         .expect("current-epoch health policy should be accepted");
 
-    assert_eq!(outcome.epoch_check_event_code, health_epv::EPOCH_CHECK_PASSED);
+    assert_eq!(
+        outcome.epoch_check_event_code,
+        health_epv::EPOCH_CHECK_PASSED
+    );
     assert_eq!(outcome.epoch_event.event_code, "EPOCH_ARTIFACT_ACCEPTED");
     assert_eq!(outcome.scope_log.event_code, health_epv::EPOCH_SCOPE_LOGGED);
 }
@@ -73,8 +83,14 @@ fn past_but_valid_rollout_epoch_is_accepted() {
         .expect("epoch inside [current-lookback, current] should be accepted");
 
     assert!(path.exists(), "epoch-scoped persist should write state");
-    assert_eq!(outcome.epoch_check_event_code, rollout_epv::EPOCH_CHECK_PASSED);
-    assert_eq!(outcome.scope_log.event_code, rollout_epv::EPOCH_SCOPE_LOGGED);
+    assert_eq!(
+        outcome.epoch_check_event_code,
+        rollout_epv::EPOCH_CHECK_PASSED
+    );
+    assert_eq!(
+        outcome.scope_log.event_code,
+        rollout_epv::EPOCH_SCOPE_LOGGED
+    );
 }
 
 #[test]
@@ -158,7 +174,10 @@ fn accepted_high_impact_operations_emit_epoch_scope_logs() {
     );
     let validity = ValidityWindowPolicy::new(ControlEpoch::new(20), 1);
     let health_outcome = evaluate_epoch_scoped_policy(&policy, &validity).expect("accepted");
-    assert_eq!(health_outcome.scope_log.event_code, health_epv::EPOCH_SCOPE_LOGGED);
+    assert_eq!(
+        health_outcome.scope_log.event_code,
+        health_epv::EPOCH_SCOPE_LOGGED
+    );
 
     // Rollout plan acceptance emits EPV-004.
     let checks = standard_checks(true, true, true, true);

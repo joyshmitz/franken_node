@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "description": "Performance budget policy for asupersync integration overhead on control-plane hot paths",
+  "bead_id": "bd-1xwz",
+  "hot_paths": {
+    "lifecycle_transition": {
+      "label": "Lifecycle FSM transition",
+      "p95_overhead_pct": 25.0,
+      "p99_overhead_pct": 50.0,
+      "cold_start_ms": 5.0
+    },
+    "health_gate_eval": {
+      "label": "Health gate evaluation",
+      "p95_overhead_pct": 25.0,
+      "p99_overhead_pct": 50.0,
+      "cold_start_ms": 10.0
+    },
+    "rollout_persist": {
+      "label": "Rollout state persistence",
+      "p95_overhead_pct": 15.0,
+      "p99_overhead_pct": 30.0,
+      "cold_start_ms": 15.0
+    },
+    "fencing_validate": {
+      "label": "Fencing token validation",
+      "p95_overhead_pct": 20.0,
+      "p99_overhead_pct": 40.0,
+      "cold_start_ms": 5.0
+    }
+  },
+  "benchmark_config": {
+    "warmup_iterations": 100,
+    "measurement_iterations": 1000,
+    "cold_start_iterations": 10
+  },
+  "event_codes": {
+    "PRF-001": "benchmark_started",
+    "PRF-002": "benchmark_within_budget",
+    "PRF-003": "benchmark_over_budget",
+    "PRF-004": "flamegraph_captured",
+    "PRF-005": "cold_start_measurement"
+  }
+}

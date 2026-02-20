@@ -1,0 +1,9 @@
+REPLAY: scrolling_cycle
+SURFACE: ledger_log_stream
+DIMENSIONS: 80x24
+SELECTED_INDEX: 0
+SCROLL_OFFSET: 5
+TAB_FOCUS: 0
+CONFIRMED: false
+CANCELED: false
+EVENTS: PageDown,PageDown,PageUp

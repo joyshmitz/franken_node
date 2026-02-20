@@ -1,0 +1,9 @@
+REPLAY: confirmation_flow
+SURFACE: cli_command_output
+DIMENSIONS: 80x24
+SELECTED_INDEX: 1
+SCROLL_OFFSET: 0
+TAB_FOCUS: 0
+CONFIRMED: true
+CANCELED: false
+EVENTS: Down,Enter

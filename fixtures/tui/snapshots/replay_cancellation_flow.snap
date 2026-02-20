@@ -1,0 +1,9 @@
+REPLAY: cancellation_flow
+SURFACE: replay_alert
+DIMENSIONS: 80x24
+SELECTED_INDEX: 0
+SCROLL_OFFSET: 0
+TAB_FOCUS: 0
+CONFIRMED: false
+CANCELED: true
+EVENTS: Escape,CtrlC

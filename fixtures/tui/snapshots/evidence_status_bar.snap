@@ -1,0 +1,6 @@
+SURFACE: evidence_status_bar
+COMPONENT: StatusBar
+DIMENSIONS: 80x24
+SEED: bd-1719
+STATE: stable
+CHECKSUM: 3da165f0

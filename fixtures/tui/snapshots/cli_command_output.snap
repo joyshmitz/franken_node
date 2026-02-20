@@ -1,0 +1,6 @@
+SURFACE: cli_command_output
+COMPONENT: CommandSurface
+DIMENSIONS: 80x24
+SEED: bd-1719
+STATE: stable
+CHECKSUM: 4d9ef76c

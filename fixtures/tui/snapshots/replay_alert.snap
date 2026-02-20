@@ -1,0 +1,6 @@
+SURFACE: replay_alert
+COMPONENT: AlertBanner
+DIMENSIONS: 80x24
+SEED: bd-1719
+STATE: stable
+CHECKSUM: 3c3205ba

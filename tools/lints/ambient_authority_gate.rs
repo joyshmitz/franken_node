@@ -275,9 +275,7 @@ pub fn compute_allowlist_signature(
     signer: &str,
     expires_on: &str,
 ) -> String {
-    let payload = format!(
-        "{module_path}\n{ambient_api}\n{justification}\n{signer}\n{expires_on}"
-    );
+    let payload = format!("{module_path}\n{ambient_api}\n{justification}\n{signer}\n{expires_on}");
     let mut hasher = Sha256::new();
     hasher.update(payload.as_bytes());
     format!("sha256:{:x}", hasher.finalize())
@@ -328,10 +326,8 @@ fn classify_finding(
             }
             AllowlistEntryStatus::InvalidDate(value) => {
                 if first_invalid.is_none() {
-                    first_invalid = Some((
-                        entry.id.clone(),
-                        format!("invalid expiry date '{value}'"),
-                    ));
+                    first_invalid =
+                        Some((entry.id.clone(), format!("invalid expiry date '{value}'")));
                 }
             }
             AllowlistEntryStatus::InvalidSignature => {
@@ -606,7 +602,10 @@ fn parse_use_line(line: &str) -> Vec<ImportedSymbol> {
         return Vec::new();
     }
 
-    let body = trimmed.trim_start_matches("use ").trim_end_matches(';').trim();
+    let body = trimmed
+        .trim_start_matches("use ")
+        .trim_end_matches(';')
+        .trim();
     if let Some((prefix, remainder)) = body.split_once("::{")
         && let Some(inner) = remainder.strip_suffix('}')
     {
@@ -649,7 +648,11 @@ fn parse_import_item(prefix: &str, item: &str) -> Option<ImportedSymbol> {
     }
 
     let alias = if alias_part.is_empty() {
-        full_path.rsplit("::").next().unwrap_or_default().to_string()
+        full_path
+            .rsplit("::")
+            .next()
+            .unwrap_or_default()
+            .to_string()
     } else {
         alias_part.to_string()
     };
@@ -813,7 +816,9 @@ mod tests {
             std::fs::write(&full_path, body).expect("write fixture");
         }
 
-        let allowlist_path = temp.path().join("docs/specs/ambient_authority_allowlist.toml");
+        let allowlist_path = temp
+            .path()
+            .join("docs/specs/ambient_authority_allowlist.toml");
         if let Some(parent) = allowlist_path.parent() {
             std::fs::create_dir_all(parent).expect("mkdir allowlist");
         }
