@@ -1,0 +1,18 @@
+{
+  "id": "fixture:http:createServer:basic-listen",
+  "api_family": "http",
+  "api_name": "createServer",
+  "band": "high-value",
+  "description": "Create HTTP server and listen on port",
+  "input": {
+    "args": [{"port": 0}],
+    "env": {}
+  },
+  "expected_output": {
+    "return_value": {"listening": true, "address": {"port": "<PORT>"}},
+    "error": null,
+    "side_effects": [{"type": "server_listening", "port": "<PORT>"}]
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["high-value", "http", "createServer", "listen"]
+}

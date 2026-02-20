@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "franken_node/migration/scan_report/v1",
+  "title": "Project Scan Report",
+  "description": "Risk inventory from scanning a JS/TS project for migration readiness.",
+  "type": "object",
+  "required": ["project", "scan_timestamp", "summary", "api_usage", "dependencies"],
+  "properties": {
+    "project": {
+      "type": "string",
+      "description": "Path or name of the scanned project."
+    },
+    "scan_timestamp": {
+      "type": "string",
+      "description": "ISO8601 timestamp of the scan."
+    },
+    "summary": {
+      "type": "object",
+      "required": ["total_apis_detected", "risk_distribution", "migration_readiness"],
+      "properties": {
+        "total_apis_detected": {"type": "integer", "minimum": 0},
+        "risk_distribution": {
+          "type": "object",
+          "properties": {
+            "low": {"type": "integer", "minimum": 0},
+            "medium": {"type": "integer", "minimum": 0},
+            "high": {"type": "integer", "minimum": 0},
+            "critical": {"type": "integer", "minimum": 0}
+          }
+        },
+        "migration_readiness": {
+          "type": "string",
+          "enum": ["not-ready", "partial", "ready"]
+        }
+      }
+    },
+    "api_usage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["api_family", "api_name", "source_file", "risk_level"],
+        "properties": {
+          "api_family": {"type": "string"},
+          "api_name": {"type": "string"},
+          "source_file": {"type": "string"},
+          "line_number": {"type": ["integer", "null"]},
+          "band": {"type": ["string", "null"]},
+          "impl_status": {"type": ["string", "null"]},
+          "risk_level": {"type": "string", "enum": ["low", "medium", "high", "critical"]}
+        }
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "risk_level"],
+        "properties": {
+          "name": {"type": "string"},
+          "version": {"type": ["string", "null"]},
+          "has_native_addon": {"type": "boolean"},
+          "risk_level": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+          "notes": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "category": {"type": "string"},
+          "message": {"type": "string"},
+          "severity": {"type": "string", "enum": ["info", "warning", "error"]}
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

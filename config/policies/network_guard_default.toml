@@ -1,0 +1,68 @@
+# Default SSRF-deny network guard policy template.
+#
+# All private/internal CIDR ranges are blocked by default.
+# Explicit allowlist exceptions require a reason and produce a receipt.
+#
+# Bead: bd-1nk5 | Section: 10.13
+
+[template]
+name = "ssrf_deny_default"
+version = "1.0.0"
+default_action = "deny"
+
+# Blocked CIDR ranges — traffic to these destinations is denied
+# unless an explicit allowlist entry exists.
+
+[[blocked_cidrs]]
+network = "127.0.0.0"
+prefix_len = 8
+label = "ipv4_loopback"
+description = "IPv4 loopback range"
+
+[[blocked_cidrs]]
+network = "10.0.0.0"
+prefix_len = 8
+label = "rfc1918_class_a"
+description = "RFC 1918 private Class A"
+
+[[blocked_cidrs]]
+network = "172.16.0.0"
+prefix_len = 12
+label = "rfc1918_class_b"
+description = "RFC 1918 private Class B"
+
+[[blocked_cidrs]]
+network = "192.168.0.0"
+prefix_len = 16
+label = "rfc1918_class_c"
+description = "RFC 1918 private Class C"
+
+[[blocked_cidrs]]
+network = "169.254.0.0"
+prefix_len = 16
+label = "link_local"
+description = "Link-local (includes cloud metadata 169.254.169.254)"
+
+[[blocked_cidrs]]
+network = "100.64.0.0"
+prefix_len = 10
+label = "cgnat_tailnet"
+description = "Carrier-grade NAT / Tailscale address space"
+
+[[blocked_cidrs]]
+network = "0.0.0.0"
+prefix_len = 8
+label = "this_network"
+description = "'This' network (RFC 1122)"
+
+# IPv6 loopback (::1) is handled at the code level since TOML
+# CIDR entries use IPv4 notation.
+
+# Allowlist entries — add exceptions here with required reason.
+# Each entry must have a reason; the system will generate a receipt.
+#
+# Example:
+# [[allowlist]]
+# host = "10.0.0.5"
+# port = 8080
+# reason = "Internal health-check endpoint"

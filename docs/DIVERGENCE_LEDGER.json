@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "entries": [
+    {
+      "id": "DIV-001",
+      "behavior_id": null,
+      "api_family": "process",
+      "api_name": "process.binding",
+      "band": "unsafe",
+      "node_behavior": "process.binding() exposes internal C++ bindings, allowing unrestricted access to Node internals.",
+      "franken_behavior": "process.binding() is disabled by default. Returns a structured error with policy-gate information. Available only in legacy-risky mode with explicit policy opt-in.",
+      "rationale": "process.binding() bypasses all security boundaries and trust controls. Disabling it by default aligns with the impossible-by-default security model. Legacy applications requiring this behavior must explicitly opt in via policy configuration.",
+      "risk_tier": "low",
+      "status": "accepted",
+      "timestamp": "2025-01-15T00:00:00+00:00",
+      "reviewer": "Dicklesworthstone"
+    },
+    {
+      "id": "DIV-002",
+      "behavior_id": null,
+      "api_family": "vm",
+      "api_name": "vm.runInNewContext",
+      "band": "unsafe",
+      "node_behavior": "vm.runInNewContext() creates a new V8 context and executes arbitrary code with configurable sandbox.",
+      "franken_behavior": "vm.runInNewContext() executes under franken_engine's sandboxed execution model with mandatory capability restrictions. Full V8 context isolation semantics are not replicated; instead, franken_engine provides deterministic execution boundaries.",
+      "rationale": "V8 context isolation has known escape vectors. franken_engine's native sandboxing provides stronger guarantees. Behavioral differences are documented and produce divergence receipts at runtime.",
+      "risk_tier": "medium",
+      "status": "accepted",
+      "timestamp": "2025-01-15T00:00:00+00:00",
+      "reviewer": "Dicklesworthstone"
+    }
+  ]
+}

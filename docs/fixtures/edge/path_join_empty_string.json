@@ -1,0 +1,17 @@
+{
+  "id": "fixture:path:join:all-empty",
+  "api_family": "path",
+  "api_name": "join",
+  "band": "edge",
+  "description": "Join with all empty segments returns dot",
+  "input": {
+    "args": ["", ""]
+  },
+  "expected_output": {
+    "return_value": ".",
+    "error": null,
+    "side_effects": null
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["edge", "path", "join", "empty"]
+}

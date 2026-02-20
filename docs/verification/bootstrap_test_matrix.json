@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "owner_bead": "bd-jvzc",
+  "matrix_version": "1.0",
+  "test_families": [
+    {
+      "id": "TF-CLI",
+      "name": "CLI Bootstrap",
+      "owning_beads": ["bd-2lb", "bd-n9r"],
+      "tests": [
+        {"id": "TF-CLI-001", "scenario": "version flag", "path_type": "happy", "fixture": null},
+        {"id": "TF-CLI-002", "scenario": "help flag", "path_type": "happy", "fixture": null},
+        {"id": "TF-CLI-003", "scenario": "unknown subcommand", "path_type": "error", "fixture": null},
+        {"id": "TF-CLI-004", "scenario": "missing config path", "path_type": "error", "fixture": "cli/missing_config.toml"},
+        {"id": "TF-CLI-005", "scenario": "no args no config", "path_type": "edge", "fixture": null},
+        {"id": "TF-CLI-006", "scenario": "valid config", "path_type": "happy", "fixture": "cli/valid_config.toml"},
+        {"id": "TF-CLI-007", "scenario": "malformed config", "path_type": "adversarial", "fixture": "cli/malformed_config.toml"}
+      ]
+    },
+    {
+      "id": "TF-CONFIG",
+      "name": "Configuration Resolution",
+      "owning_beads": ["bd-n9r"],
+      "tests": [
+        {"id": "TF-CONFIG-001", "scenario": "default resolution", "path_type": "happy", "fixture": null},
+        {"id": "TF-CONFIG-002", "scenario": "env var override", "path_type": "happy", "fixture": "config/env_override.env"},
+        {"id": "TF-CONFIG-003", "scenario": "CLI profile flag", "path_type": "happy", "fixture": "config/base.toml"},
+        {"id": "TF-CONFIG-004", "scenario": "precedence stack", "path_type": "edge", "fixture": "config/precedence_stack/"},
+        {"id": "TF-CONFIG-005", "scenario": "unknown profile", "path_type": "error", "fixture": "config/base.toml"},
+        {"id": "TF-CONFIG-006", "scenario": "empty config", "path_type": "edge", "fixture": "config/empty.toml"},
+        {"id": "TF-CONFIG-007", "scenario": "extra unknown keys", "path_type": "edge", "fixture": "config/extra_keys.toml"},
+        {"id": "TF-CONFIG-008", "scenario": "type mismatch", "path_type": "adversarial", "fixture": "config/type_mismatch.toml"}
+      ]
+    },
+    {
+      "id": "TF-TRANSPLANT",
+      "name": "Transplant Integrity",
+      "owning_beads": ["bd-1qz", "bd-7rt", "bd-29q"],
+      "tests": [
+        {"id": "TF-TRANSPLANT-001", "scenario": "lockfile verify pass", "path_type": "happy", "fixture": "transplant/golden_snapshot/"},
+        {"id": "TF-TRANSPLANT-002", "scenario": "lockfile mismatch", "path_type": "error", "fixture": "transplant/tampered_snapshot/"},
+        {"id": "TF-TRANSPLANT-003", "scenario": "lockfile missing files", "path_type": "error", "fixture": "transplant/incomplete_snapshot/"},
+        {"id": "TF-TRANSPLANT-004", "scenario": "lockfile extra files", "path_type": "edge", "fixture": "transplant/extra_files_snapshot/"},
+        {"id": "TF-TRANSPLANT-005", "scenario": "drift detect clean", "path_type": "happy", "fixture": "transplant/synced_pair/"},
+        {"id": "TF-TRANSPLANT-006", "scenario": "drift detect content change", "path_type": "error", "fixture": "transplant/drifted_pair/"},
+        {"id": "TF-TRANSPLANT-007", "scenario": "resync dry run", "path_type": "edge", "fixture": "transplant/drifted_pair/"},
+        {"id": "TF-TRANSPLANT-008", "scenario": "lockfile determinism", "path_type": "happy", "fixture": "transplant/golden_snapshot/"},
+        {"id": "TF-TRANSPLANT-009", "scenario": "empty snapshot dir", "path_type": "adversarial", "fixture": "transplant/empty_dir/"}
+      ]
+    },
+    {
+      "id": "TF-DIAG",
+      "name": "Operator Diagnostics",
+      "owning_beads": ["bd-2a3"],
+      "tests": [
+        {"id": "TF-DIAG-001", "scenario": "workspace health pass", "path_type": "happy", "fixture": null},
+        {"id": "TF-DIAG-002", "scenario": "missing Cargo.toml", "path_type": "error", "fixture": null},
+        {"id": "TF-DIAG-003", "scenario": "rust toolchain check", "path_type": "happy", "fixture": null},
+        {"id": "TF-DIAG-004", "scenario": "rch connectivity", "path_type": "happy", "fixture": null},
+        {"id": "TF-DIAG-005", "scenario": "rch not available", "path_type": "edge", "fixture": null}
+      ]
+    }
+  ],
+  "fixture_contract": {
+    "deterministic": true,
+    "no_system_clock": true,
+    "relative_paths": true,
+    "expected_outputs_format": "pretty_json_sorted_keys",
+    "fixture_root": "tests/fixtures/bootstrap/"
+  },
+  "gate_consumption": {
+    "gate_bead": "bd-3ohj",
+    "evidence_path": "artifacts/bootstrap/bootstrap/gate_verdict/bd-3ohj_bootstrap_gate.json"
+  }
+}

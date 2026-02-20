@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "timestamp": "2025-01-15T12:00:00+00:00",
+  "git_commit": "a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9",
+  "git_branch": "main",
+  "git_dirty": false,
+  "cargo_lock_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "engine_revision": null,
+  "key_crates": {
+    "clap": "4.5.32",
+    "tokio": "1.0",
+    "serde": "1.0"
+  }
+}

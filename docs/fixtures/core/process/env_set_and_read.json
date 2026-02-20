@@ -1,0 +1,18 @@
+{
+  "id": "fixture:process:env:set-and-read",
+  "api_family": "process",
+  "api_name": "env",
+  "band": "core",
+  "description": "Set and read environment variable",
+  "input": {
+    "args": [],
+    "env": {}
+  },
+  "expected_output": {
+    "return_value": "new_value",
+    "error": null,
+    "side_effects": [{"type": "env_set", "key": "NEW_VAR", "value": "new_value"}]
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["core", "process", "env", "set"]
+}

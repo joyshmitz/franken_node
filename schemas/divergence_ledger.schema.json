@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "franken_node/compatibility/divergence_ledger/v1",
+  "title": "Divergence Ledger",
+  "description": "Records every behavioral divergence from Node/Bun with signed rationale.",
+  "type": "object",
+  "required": ["schema_version", "entries"],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id", "api_family", "api_name", "band",
+          "node_behavior", "franken_behavior", "rationale",
+          "risk_tier", "status", "timestamp"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^DIV-\\d{3,}$",
+            "description": "Unique divergence ID."
+          },
+          "behavior_id": {
+            "type": ["string", "null"],
+            "description": "Reference to compatibility registry entry."
+          },
+          "api_family": {
+            "type": "string"
+          },
+          "api_name": {
+            "type": "string"
+          },
+          "band": {
+            "type": "string",
+            "enum": ["core", "high-value", "edge", "unsafe"]
+          },
+          "node_behavior": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Description of Node.js/Bun behavior."
+          },
+          "franken_behavior": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Description of franken_node behavior."
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Signed rationale for the divergence."
+          },
+          "risk_tier": {
+            "type": "string",
+            "enum": ["critical", "high", "medium", "low"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["accepted", "under-review", "deprecated"]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reviewer": {
+            "type": ["string", "null"],
+            "description": "Who approved the divergence."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

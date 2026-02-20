@@ -1,0 +1,17 @@
+{
+  "id": "fixture:crypto:hash:sha256-basic",
+  "api_family": "crypto",
+  "api_name": "hash",
+  "band": "high-value",
+  "description": "SHA-256 hash of string input",
+  "input": {
+    "args": ["sha256", "hello world", "hex"]
+  },
+  "expected_output": {
+    "return_value": "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+    "error": null,
+    "side_effects": null
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["high-value", "crypto", "hash", "sha256"]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "fixture:fs:writeFile:basic-write",
+  "api_family": "fs",
+  "api_name": "writeFile",
+  "band": "core",
+  "description": "Write string to new file",
+  "input": {
+    "args": ["out.txt", "test data\n"]
+  },
+  "expected_output": {
+    "return_value": null,
+    "error": null,
+    "side_effects": [{"type": "file_created", "path": "out.txt", "content": "test data\n"}]
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["core", "fs", "writeFile", "basic"]
+}

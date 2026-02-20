@@ -1,0 +1,5 @@
+{
+  "schema_version": "1.0",
+  "description": "Active exceptions to the rch-only execution policy. Each exception must have an expiry date (max 7 days) and justification.",
+  "exceptions": []
+}

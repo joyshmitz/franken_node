@@ -1,0 +1,17 @@
+{
+  "id": "fixture:process:argv:basic-args",
+  "api_family": "process",
+  "api_name": "argv",
+  "band": "core",
+  "description": "argv includes runtime, script, and user args",
+  "input": {
+    "args": ["--flag", "value"]
+  },
+  "expected_output": {
+    "return_value": ["<RUNTIME>", "<SCRIPT>", "--flag", "value"],
+    "error": null,
+    "side_effects": null
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["core", "process", "argv"]
+}

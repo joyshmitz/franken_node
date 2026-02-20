@@ -1,0 +1,17 @@
+{
+  "id": "fixture:path:dirname:basic",
+  "api_family": "path",
+  "api_name": "dirname",
+  "band": "core",
+  "description": "dirname returns parent directory",
+  "input": {
+    "args": ["/foo/bar/baz.txt"]
+  },
+  "expected_output": {
+    "return_value": "/foo/bar",
+    "error": null,
+    "side_effects": null
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["core", "path", "dirname"]
+}

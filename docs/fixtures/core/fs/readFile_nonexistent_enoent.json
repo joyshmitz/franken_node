@@ -1,0 +1,18 @@
+{
+  "id": "fixture:fs:readFile:nonexistent-enoent",
+  "api_family": "fs",
+  "api_name": "readFile",
+  "band": "core",
+  "description": "Reading nonexistent file throws ENOENT",
+  "input": {
+    "args": ["missing.txt", {"encoding": "utf8"}],
+    "files": {}
+  },
+  "expected_output": {
+    "return_value": null,
+    "error": {"code": "ENOENT"},
+    "side_effects": null
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["core", "fs", "readFile", "error", "enoent"]
+}

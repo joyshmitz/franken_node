@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "franken_node/compatibility/registry/v1",
+  "title": "Compatibility Behavior Registry",
+  "description": "Typed registry of all compatibility behaviors with shim metadata.",
+  "type": "object",
+  "required": ["schema_version", "behaviors"],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "behaviors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "api_family", "api_name", "band", "shim_type", "spec_ref", "oracle_status"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^compat:[a-z_]+:[a-zA-Z_]+$",
+            "description": "Unique behavior ID (e.g., compat:fs:readFile)."
+          },
+          "api_family": {
+            "type": "string",
+            "description": "API family (fs, path, process, http, crypto, etc.)."
+          },
+          "api_name": {
+            "type": "string",
+            "description": "Specific API name."
+          },
+          "band": {
+            "type": "string",
+            "enum": ["core", "high-value", "edge", "unsafe"],
+            "description": "Compatibility band classification."
+          },
+          "shim_type": {
+            "type": "string",
+            "enum": ["native", "polyfill", "bridge", "stub"],
+            "description": "Type of compatibility implementation."
+          },
+          "spec_ref": {
+            "type": "string",
+            "description": "Reference to specification document or section."
+          },
+          "fixture_ref": {
+            "type": ["string", "null"],
+            "description": "Reference to conformance fixture(s)."
+          },
+          "oracle_status": {
+            "type": "string",
+            "enum": ["validated", "pending", "not-applicable"],
+            "description": "Oracle validation status."
+          },
+          "notes": {
+            "type": ["string", "null"],
+            "description": "Optional implementation notes."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

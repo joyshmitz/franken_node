@@ -1,0 +1,18 @@
+{
+  "id": "fixture:process:env:read-existing",
+  "api_family": "process",
+  "api_name": "env",
+  "band": "core",
+  "description": "Read existing environment variable",
+  "input": {
+    "args": [],
+    "env": {"TEST_VAR": "hello"}
+  },
+  "expected_output": {
+    "return_value": "hello",
+    "error": null,
+    "side_effects": null
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["core", "process", "env", "read"]
+}

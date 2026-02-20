@@ -1,0 +1,60 @@
+{
+  "schema_version": "1.0",
+  "behaviors": [
+    {
+      "id": "compat:fs:readFile",
+      "api_family": "fs",
+      "api_name": "readFile",
+      "band": "core",
+      "shim_type": "stub",
+      "spec_ref": "Node.js docs: fs.readFile",
+      "fixture_ref": null,
+      "oracle_status": "pending",
+      "notes": "Placeholder — implementation pending spec extraction."
+    },
+    {
+      "id": "compat:fs:writeFile",
+      "api_family": "fs",
+      "api_name": "writeFile",
+      "band": "core",
+      "shim_type": "stub",
+      "spec_ref": "Node.js docs: fs.writeFile",
+      "fixture_ref": null,
+      "oracle_status": "pending",
+      "notes": "Placeholder — implementation pending spec extraction."
+    },
+    {
+      "id": "compat:path:join",
+      "api_family": "path",
+      "api_name": "join",
+      "band": "core",
+      "shim_type": "stub",
+      "spec_ref": "Node.js docs: path.join",
+      "fixture_ref": null,
+      "oracle_status": "pending",
+      "notes": "Placeholder — implementation pending spec extraction."
+    },
+    {
+      "id": "compat:process:env",
+      "api_family": "process",
+      "api_name": "env",
+      "band": "core",
+      "shim_type": "stub",
+      "spec_ref": "Node.js docs: process.env",
+      "fixture_ref": null,
+      "oracle_status": "pending",
+      "notes": "Placeholder — implementation pending spec extraction."
+    },
+    {
+      "id": "compat:http:createServer",
+      "api_family": "http",
+      "api_name": "createServer",
+      "band": "high-value",
+      "shim_type": "stub",
+      "spec_ref": "Node.js docs: http.createServer",
+      "fixture_ref": null,
+      "oracle_status": "pending",
+      "notes": "Placeholder — implementation pending spec extraction."
+    }
+  ]
+}

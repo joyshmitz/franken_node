@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "franken_node/reproducibility/env/v1",
+  "title": "Reproducibility Environment Snapshot",
+  "description": "Captures machine/runtime environment at artifact generation time.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "timestamp",
+    "os",
+    "arch",
+    "rust_toolchain",
+    "hostname"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "hostname": {
+      "type": "string",
+      "description": "Machine hostname (may be anonymized)."
+    },
+    "os": {
+      "type": "string",
+      "description": "Operating system name and version."
+    },
+    "arch": {
+      "type": "string",
+      "description": "CPU architecture (e.g., x86_64, aarch64)."
+    },
+    "kernel": {
+      "type": ["string", "null"],
+      "description": "Kernel version if available."
+    },
+    "rust_toolchain": {
+      "type": "object",
+      "required": ["version", "edition"],
+      "properties": {
+        "version": {"type": "string"},
+        "edition": {"type": "string"},
+        "channel": {"type": "string", "enum": ["stable", "beta", "nightly"]}
+      }
+    },
+    "python_version": {
+      "type": ["string", "null"],
+      "description": "Python version if verification scripts were used."
+    },
+    "env_vars": {
+      "type": "object",
+      "description": "Sanitized key environment variables. Must not contain secrets.",
+      "additionalProperties": {"type": "string"}
+    }
+  },
+  "additionalProperties": false
+}

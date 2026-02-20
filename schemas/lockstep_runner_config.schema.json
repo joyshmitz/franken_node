@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "franken_node/compatibility/lockstep_runner/config/v1",
+  "title": "L1 Lockstep Runner Configuration",
+  "description": "Configuration for the L1 product oracle lockstep runner.",
+  "type": "object",
+  "required": ["schema_version", "runtimes", "fixture_dir"],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "runtimes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "command"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Runtime identifier."
+          },
+          "command": {
+            "type": "string",
+            "description": "Command to invoke the runtime."
+          },
+          "version_flag": {
+            "type": "string",
+            "description": "Flag to query runtime version."
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether this runtime is active."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "fixture_dir": {
+      "type": "string",
+      "description": "Path to fixtures directory relative to project root."
+    },
+    "output_dir": {
+      "type": ["string", "null"],
+      "description": "Path to write oracle results."
+    },
+    "canonicalize": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether to canonicalize outputs before comparison."
+    },
+    "fail_on_divergence": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether to exit non-zero on any divergence."
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "bead_id": "bd-example",
+  "artifact_type": "verification_evidence",
+  "timestamp": "2025-01-15T12:00:00+00:00",
+  "commands": [
+    {
+      "command": "python3 scripts/example_check.py --json",
+      "exit_code": 0,
+      "duration_ms": 150
+    }
+  ],
+  "inputs": [],
+  "outputs": [
+    {
+      "path": "artifacts/example/verification_evidence.json",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 512
+    }
+  ]
+}

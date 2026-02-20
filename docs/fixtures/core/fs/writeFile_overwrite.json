@@ -1,0 +1,18 @@
+{
+  "id": "fixture:fs:writeFile:overwrite-existing",
+  "api_family": "fs",
+  "api_name": "writeFile",
+  "band": "core",
+  "description": "Overwrite existing file content",
+  "input": {
+    "args": ["out.txt", "replaced"],
+    "files": {"out.txt": "original"}
+  },
+  "expected_output": {
+    "return_value": null,
+    "error": null,
+    "side_effects": [{"type": "file_modified", "path": "out.txt", "content": "replaced"}]
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["core", "fs", "writeFile", "overwrite"]
+}

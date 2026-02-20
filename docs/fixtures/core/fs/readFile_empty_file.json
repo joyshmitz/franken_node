@@ -1,0 +1,18 @@
+{
+  "id": "fixture:fs:readFile:empty-file",
+  "api_family": "fs",
+  "api_name": "readFile",
+  "band": "core",
+  "description": "Read empty file returns empty string",
+  "input": {
+    "args": ["empty.txt", {"encoding": "utf8"}],
+    "files": {"empty.txt": ""}
+  },
+  "expected_output": {
+    "return_value": "",
+    "error": null,
+    "side_effects": null
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["core", "fs", "readFile", "empty"]
+}

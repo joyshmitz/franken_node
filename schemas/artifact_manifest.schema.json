@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "franken_node/artifact_manifest/v1",
+  "title": "Evidence Artifact Manifest",
+  "description": "Schema for evidence artifact metadata block required in all canonical artifacts.",
+  "type": "object",
+  "required": ["artifact_meta"],
+  "properties": {
+    "artifact_meta": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "bead_id",
+        "section",
+        "artifact_type",
+        "scenario_id",
+        "timestamp",
+        "commit",
+        "trace_id"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0",
+          "description": "Artifact namespace schema version."
+        },
+        "bead_id": {
+          "type": "string",
+          "pattern": "^bd-[a-z0-9]+$",
+          "description": "Owning bead identifier."
+        },
+        "section": {
+          "type": "string",
+          "description": "Plan section (e.g., '10.14', '11', 'bootstrap', 'program')."
+        },
+        "artifact_type": {
+          "type": "string",
+          "enum": [
+            "unit_test",
+            "integration_test",
+            "e2e_test",
+            "benchmark",
+            "coverage",
+            "lint",
+            "gate_verdict",
+            "provenance",
+            "drift_report",
+            "manifest"
+          ],
+          "description": "Canonical artifact type."
+        },
+        "scenario_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$",
+          "description": "Deterministic scenario identifier (snake_case)."
+        },
+        "seed": {
+          "type": ["integer", "null"],
+          "description": "Random seed for deterministic replay.",
+          "default": null
+        },
+        "profile": {
+          "type": "string",
+          "description": "Build/test profile used.",
+          "default": "default"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC production timestamp."
+        },
+        "commit": {
+          "type": "string",
+          "minLength": 7,
+          "description": "Git commit hash at production time."
+        },
+        "trace_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Distributed trace ID for log correlation."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

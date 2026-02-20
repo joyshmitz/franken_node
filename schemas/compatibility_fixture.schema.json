@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "franken_node/compatibility/fixture/v1",
+  "title": "Compatibility Test Fixture",
+  "description": "Defines a compatibility test case with expected canonical output.",
+  "type": "object",
+  "required": ["id", "api_family", "api_name", "band", "input", "expected_output"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^fixture:[a-z_]+:[a-zA-Z_]+:[a-z0-9_-]+$",
+      "description": "Unique fixture ID (e.g., fixture:fs:readFile:utf8-basic)."
+    },
+    "api_family": {
+      "type": "string"
+    },
+    "api_name": {
+      "type": "string"
+    },
+    "band": {
+      "type": "string",
+      "enum": ["core", "high-value", "edge", "unsafe"]
+    },
+    "description": {
+      "type": ["string", "null"],
+      "description": "Human-readable description of what this fixture tests."
+    },
+    "input": {
+      "type": "object",
+      "description": "Input arguments and state for the fixture.",
+      "properties": {
+        "args": {
+          "type": "array",
+          "description": "Arguments to the API call."
+        },
+        "env": {
+          "type": "object",
+          "description": "Environment state required."
+        },
+        "files": {
+          "type": "object",
+          "description": "File contents to set up before execution."
+        }
+      }
+    },
+    "expected_output": {
+      "type": "object",
+      "description": "Expected canonical output.",
+      "properties": {
+        "return_value": {
+          "description": "Expected return value."
+        },
+        "error": {
+          "type": ["object", "null"],
+          "description": "Expected error if applicable."
+        },
+        "side_effects": {
+          "type": ["array", "null"],
+          "description": "Expected side effects."
+        }
+      }
+    },
+    "oracle_source": {
+      "type": ["string", "null"],
+      "description": "Runtime that produced the expected output (e.g., 'node-20.11.0')."
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Tags for filtering fixtures."
+    }
+  },
+  "additionalProperties": false
+}

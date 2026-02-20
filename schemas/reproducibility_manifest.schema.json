@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "franken_node/reproducibility/manifest/v1",
+  "title": "Reproducibility Artifact Manifest",
+  "description": "Captures what was produced and how for reproducible verification.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "bead_id",
+    "artifact_type",
+    "timestamp",
+    "commands",
+    "outputs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "bead_id": {
+      "type": "string",
+      "description": "Bead ID that produced this artifact."
+    },
+    "artifact_type": {
+      "type": "string",
+      "description": "Type of artifact (e.g., verification_evidence, gate_verdict, test_report)."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["command", "exit_code"],
+        "properties": {
+          "command": {"type": "string"},
+          "exit_code": {"type": "integer"},
+          "duration_ms": {"type": "integer", "minimum": 0},
+          "stdout_lines": {"type": "integer", "minimum": 0}
+        }
+      },
+      "description": "Commands executed to produce this artifact."
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string"},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      },
+      "description": "Input files with SHA-256 hashes."
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string"},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "size_bytes": {"type": "integer", "minimum": 0}
+        }
+      },
+      "description": "Output files with SHA-256 hashes."
+    }
+  },
+  "additionalProperties": false
+}

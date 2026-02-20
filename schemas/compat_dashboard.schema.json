@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "franken_node/compatibility/dashboard/v1",
+  "title": "Compatibility Regression Dashboard",
+  "description": "Machine-readable compatibility status report.",
+  "type": "object",
+  "required": ["schema_version", "timestamp", "overall"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "overall": {
+      "type": "object",
+      "required": ["total_behaviors", "tested", "passing", "failing", "pass_rate"],
+      "properties": {
+        "total_behaviors": {"type": "integer", "minimum": 0},
+        "tested": {"type": "integer", "minimum": 0},
+        "passing": {"type": "integer", "minimum": 0},
+        "failing": {"type": "integer", "minimum": 0},
+        "pass_rate": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "by_family": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["family", "total_behaviors", "pass_rate"],
+        "properties": {
+          "family": {"type": "string"},
+          "total_behaviors": {"type": "integer"},
+          "tested": {"type": "integer"},
+          "passing": {"type": "integer"},
+          "failing": {"type": "integer"},
+          "pass_rate": {"type": "number"}
+        }
+      }
+    },
+    "by_band": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["band", "pass_rate"],
+        "properties": {
+          "band": {"type": "string", "enum": ["core", "high-value", "edge", "unsafe"]},
+          "total_fixtures": {"type": "integer"},
+          "passing": {"type": "integer"},
+          "failing": {"type": "integer"},
+          "pass_rate": {"type": "number"},
+          "target": {"type": "number"},
+          "meets_target": {"type": "boolean"}
+        }
+      }
+    },
+    "regressions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "fixture_id": {"type": "string"},
+          "band": {"type": "string"},
+          "previously": {"type": "string"},
+          "now": {"type": "string"},
+          "first_failed": {"type": "string"}
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

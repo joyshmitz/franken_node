@@ -1,0 +1,18 @@
+{
+  "id": "fixture:http:createServer:request-response",
+  "api_family": "http",
+  "api_name": "createServer",
+  "band": "high-value",
+  "description": "Handle HTTP GET request and return 200 response",
+  "input": {
+    "args": [{"port": 0}],
+    "request": {"method": "GET", "path": "/hello"}
+  },
+  "expected_output": {
+    "return_value": {"statusCode": 200, "body": "OK"},
+    "error": null,
+    "side_effects": null
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["high-value", "http", "createServer", "request", "response"]
+}

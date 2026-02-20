@@ -1,0 +1,18 @@
+{
+  "id": "fixture:fs:readFile:buffer-no-encoding",
+  "api_family": "fs",
+  "api_name": "readFile",
+  "band": "core",
+  "description": "Read file without encoding returns Buffer",
+  "input": {
+    "args": ["test.txt"],
+    "files": {"test.txt": "hello world\n"}
+  },
+  "expected_output": {
+    "return_value": "<Buffer>",
+    "error": null,
+    "side_effects": null
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["core", "fs", "readFile", "buffer"]
+}

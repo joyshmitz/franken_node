@@ -1,0 +1,17 @@
+{
+  "id": "fixture:path:join:dotdot-segments",
+  "api_family": "path",
+  "api_name": "join",
+  "band": "core",
+  "description": "Join resolves parent directory references",
+  "input": {
+    "args": ["foo", "bar", "..", "baz"]
+  },
+  "expected_output": {
+    "return_value": "foo/baz",
+    "error": null,
+    "side_effects": null
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["core", "path", "join", "dotdot"]
+}

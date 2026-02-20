@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "franken_node/rch_execution_provenance/v1",
+  "title": "RCH Execution Provenance",
+  "description": "Schema for rch offload provenance records proving CPU-intensive workloads used remote workers.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "command",
+    "rch_kind",
+    "worker_id",
+    "exit_code",
+    "timestamp",
+    "policy_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "description": "Schema version for forward compatibility."
+    },
+    "command": {
+      "type": "string",
+      "description": "The full command string that was offloaded.",
+      "minLength": 1
+    },
+    "rch_kind": {
+      "type": "string",
+      "description": "rch classification kind (e.g., CargoTest, CargoBuild).",
+      "enum": [
+        "CargoCheck",
+        "CargoClippy",
+        "CargoBuild",
+        "CargoTest",
+        "CargoCoverage",
+        "CargoBench",
+        "CargoMiri",
+        "E2ESweep",
+        "Other"
+      ]
+    },
+    "worker_id": {
+      "type": "string",
+      "description": "Unique identifier of the remote worker that executed the command.",
+      "minLength": 1
+    },
+    "worker_host": {
+      "type": "string",
+      "description": "Hostname or address of the remote worker."
+    },
+    "queue_name": {
+      "type": "string",
+      "description": "Name of the rch queue used.",
+      "default": "default"
+    },
+    "wait_duration_ms": {
+      "type": "integer",
+      "description": "Milliseconds spent waiting in queue before execution started.",
+      "minimum": 0
+    },
+    "run_duration_ms": {
+      "type": "integer",
+      "description": "Milliseconds of actual execution time on the worker.",
+      "minimum": 0
+    },
+    "exit_code": {
+      "type": "integer",
+      "description": "Exit code from the offloaded command."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the offloaded run completed."
+    },
+    "policy_version": {
+      "type": "string",
+      "description": "Version of the rch execution policy that was active.",
+      "pattern": "^\\d+\\.\\d+$"
+    },
+    "exception_id": {
+      "type": ["string", "null"],
+      "description": "If a policy exception was used, its identifier. Null for normal rch runs.",
+      "default": null
+    }
+  },
+  "additionalProperties": false
+}

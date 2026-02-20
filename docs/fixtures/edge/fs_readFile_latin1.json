@@ -1,0 +1,18 @@
+{
+  "id": "fixture:fs:readFile:latin1-encoding",
+  "api_family": "fs",
+  "api_name": "readFile",
+  "band": "edge",
+  "description": "Read file with latin1 encoding (legacy)",
+  "input": {
+    "args": ["legacy.txt", {"encoding": "latin1"}],
+    "files": {"legacy.txt": "caf\u00e9"}
+  },
+  "expected_output": {
+    "return_value": "caf\u00e9",
+    "error": null,
+    "side_effects": null
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["edge", "fs", "readFile", "latin1", "legacy"]
+}

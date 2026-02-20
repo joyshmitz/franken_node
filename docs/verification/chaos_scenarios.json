@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.0",
+  "owner_bead": "bd-2nlu",
+  "scenarios": [
+    {
+      "id": "CHAOS-001",
+      "name": "Trust chain break during package install",
+      "target_journey": "J-001",
+      "injection_type": "trust_failure",
+      "injection_point": "10.13",
+      "expected_failure": "TRUST_CHAIN_BROKEN",
+      "invariant": "System must reject package and emit structured error with remediation hint",
+      "severity": "critical"
+    },
+    {
+      "id": "CHAOS-002",
+      "name": "Epoch conflict during migration",
+      "target_journey": "J-002",
+      "injection_type": "state_conflict",
+      "injection_point": "10.14",
+      "expected_failure": "EPOCH_CONFLICT",
+      "invariant": "Saga compensation must execute; no partial state left behind",
+      "severity": "critical"
+    },
+    {
+      "id": "CHAOS-003",
+      "name": "Tampered evidence during fault injection",
+      "target_journey": "J-003",
+      "injection_type": "integrity_failure",
+      "injection_point": "10.14",
+      "expected_failure": "EVIDENCE_TAMPERED",
+      "invariant": "Verifier must reject replay and flag tamper in structured log",
+      "severity": "critical"
+    },
+    {
+      "id": "CHAOS-004",
+      "name": "Poisoned global prior in federation",
+      "target_journey": "J-004",
+      "injection_type": "adversarial_input",
+      "injection_point": "10.19",
+      "expected_failure": "SIGNAL_POISONED",
+      "invariant": "Local topology evidence must override poisoned prior",
+      "severity": "high"
+    },
+    {
+      "id": "CHAOS-005",
+      "name": "Replay attack during incident propagation",
+      "target_journey": "J-005",
+      "injection_type": "replay_attack",
+      "injection_point": "10.13",
+      "expected_failure": "PROPAGATION_REPLAYED",
+      "invariant": "Anti-replay framing must detect and reject; quarantine unaffected",
+      "severity": "critical"
+    },
+    {
+      "id": "CHAOS-006",
+      "name": "Stale evidence in release aggregation",
+      "target_journey": "J-006",
+      "injection_type": "staleness",
+      "injection_point": "all-sections",
+      "expected_failure": "STALE_EVIDENCE",
+      "invariant": "Release gate must reject stale verdicts outside epoch window",
+      "severity": "high"
+    },
+    {
+      "id": "CHAOS-007",
+      "name": "Credential expiry during publication",
+      "target_journey": "J-007",
+      "injection_type": "credential_failure",
+      "injection_point": "10.13",
+      "expected_failure": "CREDENTIAL_EXPIRED",
+      "invariant": "Distribution must block; no package published without valid credential",
+      "severity": "critical"
+    }
+  ]
+}

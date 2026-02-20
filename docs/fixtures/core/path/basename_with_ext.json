@@ -1,0 +1,17 @@
+{
+  "id": "fixture:path:basename:with-extension",
+  "api_family": "path",
+  "api_name": "basename",
+  "band": "core",
+  "description": "basename returns filename with extension",
+  "input": {
+    "args": ["/foo/bar/baz.txt"]
+  },
+  "expected_output": {
+    "return_value": "baz.txt",
+    "error": null,
+    "side_effects": null
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["core", "path", "basename"]
+}

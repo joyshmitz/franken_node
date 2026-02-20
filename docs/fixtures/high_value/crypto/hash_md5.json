@@ -1,0 +1,17 @@
+{
+  "id": "fixture:crypto:hash:md5-basic",
+  "api_family": "crypto",
+  "api_name": "hash",
+  "band": "high-value",
+  "description": "MD5 hash of string input",
+  "input": {
+    "args": ["md5", "hello world", "hex"]
+  },
+  "expected_output": {
+    "return_value": "5eb63bbbe01eeed093cb22bb8f5acdc3",
+    "error": null,
+    "side_effects": null
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["high-value", "crypto", "hash", "md5"]
+}

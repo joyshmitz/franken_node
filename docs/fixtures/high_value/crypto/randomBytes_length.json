@@ -1,0 +1,17 @@
+{
+  "id": "fixture:crypto:randomBytes:length-check",
+  "api_family": "crypto",
+  "api_name": "randomBytes",
+  "band": "high-value",
+  "description": "randomBytes returns buffer of requested length",
+  "input": {
+    "args": [16]
+  },
+  "expected_output": {
+    "return_value": {"type": "Buffer", "length": 16},
+    "error": null,
+    "side_effects": null
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["high-value", "crypto", "randomBytes"]
+}

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "franken_node/e2e_evidence_bundle/v1",
+  "title": "E2E Evidence Bundle",
+  "description": "Schema for program-level E2E journey execution evidence bundles.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "journey_id",
+    "verdict",
+    "timestamp",
+    "trace_id",
+    "phases"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "journey_id": {
+      "type": "string",
+      "pattern": "^J-\\d{3}$",
+      "description": "Journey identifier from the matrix."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "FAIL", "SKIP", "ERROR"],
+      "description": "Overall journey verdict."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "Orchestration trace ID for correlation."
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["structural", "live"],
+      "description": "Execution mode."
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total execution duration in milliseconds."
+    },
+    "phases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["section", "status"],
+        "properties": {
+          "section": {"type": "string"},
+          "capability": {"type": ["string", "null"]},
+          "status": {"type": "string", "enum": ["PASS", "FAIL", "SKIP"]},
+          "fixture_used": {"type": ["string", "null"]},
+          "duration_ms": {"type": "integer", "minimum": 0},
+          "error": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "chaos_injection": {
+      "type": ["object", "null"],
+      "properties": {
+        "scenario_id": {"type": "string"},
+        "injection_type": {"type": "string"},
+        "expected_failure": {"type": "string"},
+        "actual_failure": {"type": ["string", "null"]},
+        "invariant_held": {"type": "boolean"}
+      }
+    },
+    "failure_category": {
+      "type": ["string", "null"],
+      "description": "Failure taxonomy code if verdict is FAIL."
+    },
+    "remediation": {
+      "type": ["string", "null"],
+      "description": "Remediation hint if verdict is FAIL."
+    }
+  },
+  "additionalProperties": false
+}

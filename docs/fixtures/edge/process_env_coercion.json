@@ -1,0 +1,18 @@
+{
+  "id": "fixture:process:env:number-coercion",
+  "api_family": "process",
+  "api_name": "env",
+  "band": "edge",
+  "description": "Env values are always strings; number assignment coerces to string",
+  "input": {
+    "args": [],
+    "env": {}
+  },
+  "expected_output": {
+    "return_value": "42",
+    "error": null,
+    "side_effects": [{"type": "env_set", "key": "NUM_VAR", "value": "42"}]
+  },
+  "oracle_source": "node-20.11.0",
+  "tags": ["edge", "process", "env", "coercion"]
+}

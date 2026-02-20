@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "franken_node/reproducibility/lock/v1",
+  "title": "Reproducibility Dependency Lock",
+  "description": "Captures exact dependency state for reproducible builds.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "timestamp",
+    "git_commit",
+    "cargo_lock_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "git_commit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$",
+      "description": "Full SHA-1 git commit hash."
+    },
+    "git_branch": {
+      "type": ["string", "null"],
+      "description": "Branch name at time of lock."
+    },
+    "git_dirty": {
+      "type": "boolean",
+      "description": "Whether working tree had uncommitted changes."
+    },
+    "cargo_lock_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 of Cargo.lock file."
+    },
+    "engine_revision": {
+      "type": ["string", "null"],
+      "description": "Pinned franken_engine commit hash if applicable."
+    },
+    "key_crates": {
+      "type": "object",
+      "description": "Key crate name -> version mapping.",
+      "additionalProperties": {"type": "string"}
+    }
+  },
+  "additionalProperties": false
+}
