@@ -1,0 +1,314 @@
+{
+  "bead_id": "bd-1u4",
+  "title": "Metamorphic tests for compatibility invariants",
+  "section": "10.7",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 60,
+    "failing": 0,
+    "total": 60
+  },
+  "checks": [
+    {
+      "name": "file_exists:spec",
+      "pass": true,
+      "detail": "spec at docs/specs/section_10_7/bd-1u4_contract.md"
+    },
+    {
+      "name": "file_exists:policy",
+      "pass": true,
+      "detail": "policy at docs/policy/metamorphic_testing.md"
+    },
+    {
+      "name": "relation:MR-EQUIV",
+      "pass": true,
+      "detail": "MR-EQUIV in spec"
+    },
+    {
+      "name": "relation:MR-MONO",
+      "pass": true,
+      "detail": "MR-MONO in spec"
+    },
+    {
+      "name": "relation:MR-IDEM",
+      "pass": true,
+      "detail": "MR-IDEM in spec"
+    },
+    {
+      "name": "relation:MR-COMM",
+      "pass": true,
+      "detail": "MR-COMM in spec"
+    },
+    {
+      "name": "event_code:MMT-001",
+      "pass": true,
+      "detail": "MMT-001"
+    },
+    {
+      "name": "event_code:MMT-002",
+      "pass": true,
+      "detail": "MMT-002"
+    },
+    {
+      "name": "event_code:MMT-003",
+      "pass": true,
+      "detail": "MMT-003"
+    },
+    {
+      "name": "event_code:MMT-004",
+      "pass": true,
+      "detail": "MMT-004"
+    },
+    {
+      "name": "invariant:INV-MMT-RELATIONS",
+      "pass": true,
+      "detail": "INV-MMT-RELATIONS"
+    },
+    {
+      "name": "invariant:INV-MMT-CORPUS",
+      "pass": true,
+      "detail": "INV-MMT-CORPUS"
+    },
+    {
+      "name": "invariant:INV-MMT-PLUGGABLE",
+      "pass": true,
+      "detail": "INV-MMT-PLUGGABLE"
+    },
+    {
+      "name": "invariant:INV-MMT-REPORT",
+      "pass": true,
+      "detail": "INV-MMT-REPORT"
+    },
+    {
+      "name": "error_code:ERR_MMT_CORPUS_EMPTY",
+      "pass": true,
+      "detail": "ERR_MMT_CORPUS_EMPTY"
+    },
+    {
+      "name": "error_code:ERR_MMT_RELATION_INVALID",
+      "pass": true,
+      "detail": "ERR_MMT_RELATION_INVALID"
+    },
+    {
+      "name": "error_code:ERR_MMT_TRANSFORM_FAILED",
+      "pass": true,
+      "detail": "ERR_MMT_TRANSFORM_FAILED"
+    },
+    {
+      "name": "error_code:ERR_MMT_EXECUTION_TIMEOUT",
+      "pass": true,
+      "detail": "ERR_MMT_EXECUTION_TIMEOUT"
+    },
+    {
+      "name": "oracle:oracle-free",
+      "pass": true,
+      "detail": "oracle design: oracle-free"
+    },
+    {
+      "name": "oracle:normalization",
+      "pass": true,
+      "detail": "oracle design: normalization"
+    },
+    {
+      "name": "oracle:canonicalize",
+      "pass": true,
+      "detail": "oracle design: canonicalize"
+    },
+    {
+      "name": "oracle:divergence",
+      "pass": true,
+      "detail": "oracle design: divergence"
+    },
+    {
+      "name": "generation:base input",
+      "pass": true,
+      "detail": "generation: base input"
+    },
+    {
+      "name": "generation:transformation",
+      "pass": true,
+      "detail": "generation: transformation"
+    },
+    {
+      "name": "generation:corpus",
+      "pass": true,
+      "detail": "generation: corpus"
+    },
+    {
+      "name": "generation:extensibility",
+      "pass": true,
+      "detail": "generation: extensibility"
+    },
+    {
+      "name": "violation_field:base_input",
+      "pass": true,
+      "detail": "violation report field: base_input"
+    },
+    {
+      "name": "violation_field:transformation",
+      "pass": true,
+      "detail": "violation report field: transformation"
+    },
+    {
+      "name": "violation_field:expected_relation",
+      "pass": true,
+      "detail": "violation report field: expected_relation"
+    },
+    {
+      "name": "violation_field:original_output",
+      "pass": true,
+      "detail": "violation report field: original_output"
+    },
+    {
+      "name": "violation_field:followup_output",
+      "pass": true,
+      "detail": "violation report field: followup_output"
+    },
+    {
+      "name": "violation_field:divergence_point",
+      "pass": true,
+      "detail": "violation report field: divergence_point"
+    },
+    {
+      "name": "violation_field:severity",
+      "pass": true,
+      "detail": "violation report field: severity"
+    },
+    {
+      "name": "ci:gate",
+      "pass": true,
+      "detail": "CI: gate"
+    },
+    {
+      "name": "ci:95%",
+      "pass": true,
+      "detail": "CI: 95%"
+    },
+    {
+      "name": "ci:blocking",
+      "pass": true,
+      "detail": "CI: blocking"
+    },
+    {
+      "name": "ci:structured logging",
+      "pass": true,
+      "detail": "CI: structured logging"
+    },
+    {
+      "name": "corpus:api_usage",
+      "pass": true,
+      "detail": "corpus: api_usage"
+    },
+    {
+      "name": "corpus:migration",
+      "pass": true,
+      "detail": "corpus: migration"
+    },
+    {
+      "name": "corpus:policy",
+      "pass": true,
+      "detail": "corpus: policy"
+    },
+    {
+      "name": "corpus:edge_case",
+      "pass": true,
+      "detail": "corpus: edge_case"
+    },
+    {
+      "name": "corpus:100 inputs",
+      "pass": true,
+      "detail": "corpus: 100 inputs"
+    },
+    {
+      "name": "comparison_mode:strict",
+      "pass": true,
+      "detail": "comparison mode: strict"
+    },
+    {
+      "name": "comparison_mode:structural",
+      "pass": true,
+      "detail": "comparison mode: structural"
+    },
+    {
+      "name": "comparison_mode:subset",
+      "pass": true,
+      "detail": "comparison mode: subset"
+    },
+    {
+      "name": "comparison_mode:set_equal",
+      "pass": true,
+      "detail": "comparison mode: set_equal"
+    },
+    {
+      "name": "acceptance:pluggable",
+      "pass": true,
+      "detail": "acceptance: pluggable"
+    },
+    {
+      "name": "acceptance:100 inputs",
+      "pass": true,
+      "detail": "acceptance: 100 inputs"
+    },
+    {
+      "name": "acceptance:violation report",
+      "pass": true,
+      "detail": "acceptance: violation report"
+    },
+    {
+      "name": "acceptance:ci gate",
+      "pass": true,
+      "detail": "acceptance: ci gate"
+    },
+    {
+      "name": "relation_desc:equivalence relation",
+      "pass": true,
+      "detail": "relation: equivalence relation"
+    },
+    {
+      "name": "relation_desc:monotonicity relation",
+      "pass": true,
+      "detail": "relation: monotonicity relation"
+    },
+    {
+      "name": "relation_desc:idempotency relation",
+      "pass": true,
+      "detail": "relation: idempotency relation"
+    },
+    {
+      "name": "relation_desc:commutativity relation",
+      "pass": true,
+      "detail": "relation: commutativity relation"
+    },
+    {
+      "name": "severity:blocking",
+      "pass": true,
+      "detail": "severity: blocking"
+    },
+    {
+      "name": "severity:degraded",
+      "pass": true,
+      "detail": "severity: degraded"
+    },
+    {
+      "name": "severity:triage",
+      "pass": true,
+      "detail": "severity: triage"
+    },
+    {
+      "name": "pluggable:MetamorphicRelation",
+      "pass": true,
+      "detail": "pluggable interface: MetamorphicRelation"
+    },
+    {
+      "name": "pluggable:transform",
+      "pass": true,
+      "detail": "pluggable interface: transform"
+    },
+    {
+      "name": "pluggable:validate",
+      "pass": true,
+      "detail": "pluggable interface: validate"
+    }
+  ]
+}

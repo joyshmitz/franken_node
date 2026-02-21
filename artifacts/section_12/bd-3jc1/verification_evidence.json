@@ -1,0 +1,40 @@
+{
+  "bead_id": "bd-3jc1",
+  "section": "12",
+  "title": "Risk control: migration friction persistence",
+  "timestamp": "2026-02-20T00:00:00Z",
+  "verdict": "PASS",
+  "files": {
+    "contract": "docs/specs/section_12/bd-3jc1_contract.md",
+    "risk_report": "artifacts/12/migration_friction_report.json",
+    "verification_script": "scripts/check_migration_friction_persistence.py",
+    "python_tests": "tests/test_check_migration_friction_persistence.py",
+    "check_report": "artifacts/section_12/bd-3jc1/check_report.json",
+    "check_self_test": "artifacts/section_12/bd-3jc1/check_self_test.json",
+    "unit_tests_output": "artifacts/section_12/bd-3jc1/unit_tests.txt"
+  },
+  "metrics": {
+    "cohort_size": 10,
+    "autopilot_coverage_pct": 85.9,
+    "high_confidence_success_rate_pct": 100.0,
+    "mixed_mode_migrated_module_pct": 50,
+    "python_verification_checks": 30,
+    "python_unit_tests": 18,
+    "event_codes": 5
+  },
+  "checks_summary": {
+    "passing": 30,
+    "failing": 0,
+    "total": 30
+  },
+  "commands": [
+    {
+      "command": "python3 scripts/check_migration_friction_persistence.py --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 -m unittest tests/test_check_migration_friction_persistence.py",
+      "status": "pass"
+    }
+  ]
+}

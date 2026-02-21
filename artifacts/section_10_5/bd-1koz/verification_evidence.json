@@ -1,0 +1,50 @@
+{
+  "bead_id": "bd-1koz",
+  "section": "10.5",
+  "title": "Section 10.5 verification gate",
+  "timestamp": "2026-02-20T23:55:00Z",
+  "verdict": "PASS",
+  "files": {
+    "gate_script": "scripts/check_section_10_5_gate.py",
+    "python_tests": "tests/test_check_section_10_5_gate.py"
+  },
+  "metrics": {
+    "gate_checks_total": 46,
+    "gate_checks_passing": 46,
+    "gate_checks_failing": 0,
+    "beads_checked": 8,
+    "beads_passed": 8,
+    "cross_bead_patterns": 6,
+    "audit_event_families": 4,
+    "python_unit_tests": 27
+  },
+  "section_beads": [
+    {"id": "bd-137", "title": "Policy-visible compatibility gate APIs", "verdict": "PASS"},
+    {"id": "bd-21z", "title": "Signed decision receipt export for high-impact actions", "verdict": "PASS"},
+    {"id": "bd-vll", "title": "Deterministic incident replay bundle generation", "verdict": "PASS"},
+    {"id": "bd-2fa", "title": "Counterfactual replay mode for policy simulation", "verdict": "PASS"},
+    {"id": "bd-2yc", "title": "Operator copilot action recommendation API", "verdict": "PASS"},
+    {"id": "bd-33b", "title": "Expected-loss action scoring with explicit loss matrices", "verdict": "PASS"},
+    {"id": "bd-3nr", "title": "Degraded-mode policy behavior with mandatory audit events", "verdict": "PASS"},
+    {"id": "bd-sh3", "title": "Policy change approval workflows with cryptographic audit trail", "verdict": "PASS"}
+  ],
+  "cross_bead_integration": [
+    "compat_gates module registered in policy/mod.rs",
+    "compatibility_gate module registered in policy/mod.rs",
+    "decision_engine module registered in policy/mod.rs",
+    "approval_workflow module registered in policy/mod.rs",
+    "guardrail_monitor module registered in policy/mod.rs",
+    "evidence_emission module registered in policy/mod.rs"
+  ],
+  "audit_event_coverage": [
+    "PCG (Policy compat gate events)",
+    "EVD-DECIDE (Decision engine events)",
+    "EVD-GUARD (Guardrail monitor events)",
+    "COPILOT (Copilot recommendation events)"
+  ],
+  "checks_summary": {
+    "gate_script": "46 checks, 46 passing, 0 failing",
+    "python_unit_tests": "27 passed, 0 failed",
+    "self_test": "passed"
+  }
+}

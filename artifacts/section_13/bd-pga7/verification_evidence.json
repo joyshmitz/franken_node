@@ -1,0 +1,39 @@
+{
+  "bead_id": "bd-pga7",
+  "title": "Deterministic incident containment and explanation",
+  "section": "13",
+  "status": "pass",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "timestamp": "2026-02-20T00:00:00Z",
+  "agent": "CrimsonCrane",
+  "event_codes": ["DIC-001", "DIC-002", "DIC-003", "DIC-004"],
+  "invariants": [
+    "INV-DIC-CONTAIN",
+    "INV-DIC-EXPLAIN",
+    "INV-DIC-BOUND",
+    "INV-DIC-COMPLETE"
+  ],
+  "quantitative_targets": {
+    "blast_radius": {"operator": "<=", "value": 3, "unit": "components"},
+    "time_to_contain": {"operator": "<=", "value": 60, "unit": "seconds"},
+    "evidence_completeness": {"operator": ">=", "value": 95, "unit": "percent"},
+    "explanation_reproducibility": {"operator": "==", "value": 100, "unit": "percent"}
+  },
+  "containment_actions": [
+    "isolate_component",
+    "shed_load",
+    "revoke_credentials",
+    "disable_extension",
+    "snapshot_state",
+    "emit_alert"
+  ],
+  "artifacts": {
+    "spec_contract": "docs/specs/section_13/bd-pga7_contract.md",
+    "policy_document": "docs/policy/deterministic_incident_containment.md",
+    "verification_script": "scripts/check_incident_containment.py",
+    "unit_tests": "tests/test_check_incident_containment.py",
+    "verification_evidence": "artifacts/section_13/bd-pga7/verification_evidence.json",
+    "verification_summary": "artifacts/section_13/bd-pga7/verification_summary.md"
+  }
+}

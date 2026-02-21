@@ -1,0 +1,81 @@
+{
+  "bead_id": "bd-nglx",
+  "section": "11",
+  "title": "Contract field: rollback command",
+  "generated_at": "2026-02-21T00:45:23Z",
+  "status": "pass",
+  "checks": [
+    {
+      "name": "rollback_self_test",
+      "command": "python3 scripts/check_rollback_command.py --self-test --json",
+      "exit_code": 0,
+      "output_path": "artifacts/section_11/bd-nglx/rollback_self_test.json"
+    },
+    {
+      "name": "rollback_validation",
+      "command": "python3 scripts/check_rollback_command.py --changed-files artifacts/section_11/bd-nglx/changed_files_for_validation.txt --json",
+      "exit_code": 0,
+      "output_path": "artifacts/section_11/bd-nglx/rollback_check_report.json",
+      "summary": {
+        "summary_files_checked": [
+          "docs/change_summaries/example_change_summary.json"
+        ],
+        "reverts_count": 3,
+        "does_not_revert_count": 3,
+        "estimated_duration": "2m30s",
+        "trace_correlation": "87d5ec79170013c521e2fac4c68cd0fddbc3d487b594006efbc6118ea375febc"
+      }
+    },
+    {
+      "name": "unit_tests",
+      "command": "python3 -m unittest tests/test_check_rollback_command.py",
+      "exit_code": 0,
+      "output_path": "artifacts/section_11/bd-nglx/unittest_output.txt",
+      "summary": " OK"
+    },
+    {
+      "name": "cargo_check_all_targets_via_rch",
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "output_path": "artifacts/section_11/bd-nglx/rch_cargo_check.log",
+      "note": "Pre-existing repository compile debt outside bd-nglx scope."
+    },
+    {
+      "name": "cargo_clippy_all_targets_via_rch",
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "output_path": "artifacts/section_11/bd-nglx/rch_cargo_clippy.log",
+      "note": "Pre-existing repository-wide clippy debt outside bd-nglx scope."
+    },
+    {
+      "name": "cargo_fmt_check_via_rch",
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "output_path": "artifacts/section_11/bd-nglx/rch_cargo_fmt_check.log",
+      "note": "Pre-existing repository formatting drift outside bd-nglx scope."
+    }
+  ],
+  "acceptance_mapping": {
+    "rollback_command_required": true,
+    "copy_pasteable_no_placeholders": true,
+    "idempotent_required": true,
+    "tested_in_ci_required": true,
+    "rollback_scope_reverts_and_exclusions_required": true,
+    "estimated_duration_required": true,
+    "ci_rejection_on_missing_or_incomplete": true
+  },
+  "contract_surface": {
+    "spec": "docs/specs/section_11/bd-nglx_contract.md",
+    "template": "docs/templates/change_summary_template.md",
+    "example_summary": "docs/change_summaries/example_change_summary.json",
+    "canonical_contract_payload": "artifacts/11/rollback_command_contract.json",
+    "validator": "scripts/check_rollback_command.py",
+    "unit_tests": "tests/test_check_rollback_command.py",
+    "ci_gate": ".github/workflows/rollback-command-gate.yml"
+  },
+  "required_event_codes": [
+    "CONTRACT_ROLLBACK_COMMAND_VALIDATED",
+    "CONTRACT_ROLLBACK_COMMAND_MISSING",
+    "CONTRACT_ROLLBACK_COMMAND_INCOMPLETE"
+  ]
+}

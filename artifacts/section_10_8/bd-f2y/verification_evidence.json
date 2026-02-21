@@ -1,0 +1,189 @@
+{
+  "bead_id": "bd-f2y",
+  "title": "Incident bundle retention and export policy",
+  "section": "10.8",
+  "verdict": "PASS",
+  "total": 34,
+  "passed": 34,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "file_exists: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_8/bd-f2y_contract.md"
+    },
+    {
+      "check": "file_exists: policy document",
+      "pass": true,
+      "detail": "exists: docs/policy/incident_bundle_retention.md"
+    },
+    {
+      "check": "file_exists: incident bundle retention impl",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/connector/incident_bundle_retention.rs"
+    },
+    {
+      "check": "file_exists: upstream retention policy (10.13)",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/connector/retention_policy.rs"
+    },
+    {
+      "check": "file_exists: upstream replay bundle (10.5)",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/tools/replay_bundle.rs"
+    },
+    {
+      "check": "file_exists: config system",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/config.rs"
+    },
+    {
+      "check": "file_exists: health gate",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/connector/health_gate.rs"
+    },
+    {
+      "check": "module_wiring: 'pub mod incident_bundle_retention;'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_codes",
+      "pass": true,
+      "detail": "all 4 event codes present"
+    },
+    {
+      "check": "spec_invariants",
+      "pass": true,
+      "detail": "all 4 invariants present"
+    },
+    {
+      "check": "spec_export_formats",
+      "pass": true,
+      "detail": "all 3 export formats documented"
+    },
+    {
+      "check": "spec_retention_tiers",
+      "pass": true,
+      "detail": "all 3 retention tiers documented"
+    },
+    {
+      "check": "spec_retention_periods",
+      "pass": true,
+      "detail": "all retention periods documented"
+    },
+    {
+      "check": "spec_bundle_format",
+      "pass": true,
+      "detail": "all 11 bundle fields documented"
+    },
+    {
+      "check": "spec_section: 'Dependencies'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_section: 'Acceptance Criteria'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Retention Schedule'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Export Procedures'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Compliance Requirements'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Governance'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_event_codes",
+      "pass": true,
+      "detail": "all 4 event codes in policy"
+    },
+    {
+      "check": "policy_invariants",
+      "pass": true,
+      "detail": "all 4 invariants in policy"
+    },
+    {
+      "check": "policy_section: 'Automated Cleanup'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Audit Trail'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_types",
+      "pass": true,
+      "detail": "all 9 types present"
+    },
+    {
+      "check": "impl_functions",
+      "pass": true,
+      "detail": "all 5 functions present"
+    },
+    {
+      "check": "impl_event_codes",
+      "pass": true,
+      "detail": "all 4 event codes in impl"
+    },
+    {
+      "check": "impl_invariant_comments",
+      "pass": true,
+      "detail": "all 4 invariants referenced in impl"
+    },
+    {
+      "check": "impl_retention_defaults",
+      "pass": true,
+      "detail": "all retention defaults correct"
+    },
+    {
+      "check": "impl_tests: '#[cfg(test)]'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_severity_levels",
+      "pass": true,
+      "detail": "all 4 severity levels present"
+    },
+    {
+      "check": "impl_export_formats",
+      "pass": true,
+      "detail": "all 3 export format variants present"
+    },
+    {
+      "check": "impl_archive_protection: 'ArchiveProtected'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_integrity_verification",
+      "pass": true,
+      "detail": "integrity verification present"
+    }
+  ],
+  "test_summary": {
+    "verification_checks": 34,
+    "python_unit_tests": 89,
+    "rust_unit_tests": 40,
+    "all_passing": true
+  },
+  "generated_at": "2026-02-20T00:00:00Z",
+  "agent": "CrimsonCrane"
+}

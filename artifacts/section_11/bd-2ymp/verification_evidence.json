@@ -1,0 +1,296 @@
+{
+  "bead_id": "bd-2ymp",
+  "title": "rollout wedge contract field",
+  "section": "11",
+  "verdict": "PASS",
+  "total": 57,
+  "passed": 57,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_11/bd-2ymp_contract.md"
+    },
+    {
+      "check": "file: policy document",
+      "pass": true,
+      "detail": "exists: docs/policy/rollout_wedge.md"
+    },
+    {
+      "check": "spec field: wedge_stages",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec field: initial_percentage",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec field: increment_policy",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec field: max_blast_radius",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec field: observation_window_hours",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec field: wedge_state",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "stage field: stage_id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "stage field: target_percentage",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "stage field: duration_hours",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "stage field: success_criteria",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "stage field: rollback_trigger",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code: RWG-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code: RWG-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code: RWG-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code: RWG-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-RWG-STAGED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-RWG-OBSERVE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-RWG-BLAST",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-RWG-ROLLBACK",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec wedge state: PENDING",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec wedge state: ACTIVE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec wedge state: PAUSED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec wedge state: ROLLED_BACK",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec wedge state: COMPLETE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec increment policy: linear",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec increment policy: exponential",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec increment policy: manual",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec threshold: <= 10%",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec threshold: >= 2",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec threshold: >= 1 hour",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec threshold: <= 25%",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec threshold: <= 60 seconds",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec validation rules section",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec helper: validate_rollout_wedge",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec helper: compute_total_rollout_duration",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy event code: RWG-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy event code: RWG-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy event code: RWG-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy event code: RWG-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy invariant: INV-RWG-STAGED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy invariant: INV-RWG-OBSERVE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy invariant: INV-RWG-BLAST",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy invariant: INV-RWG-ROLLBACK",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy wedge state: PENDING",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy wedge state: ACTIVE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy wedge state: PAUSED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy wedge state: ROLLED_BACK",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy wedge state: COMPLETE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy increment policy: linear",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy increment policy: exponential",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy increment policy: manual",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy blast radius controls",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy observation window",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy governance section",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy appeal process",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

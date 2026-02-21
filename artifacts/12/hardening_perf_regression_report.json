@@ -1,0 +1,106 @@
+{
+  "bead_id": "bd-2w4u",
+  "title": "Risk control: hardening perf regression",
+  "section": "12",
+  "trace_id": "trace-bd-2w4u-perf",
+  "profiles": [
+    {
+      "name": "unhardened",
+      "mode": "baseline",
+      "p99_latency_ms": 20.0,
+      "throughput_rps": 10000,
+      "tradeoff": "Reference baseline with no hardening controls."
+    },
+    {
+      "name": "strict",
+      "mode": "strict",
+      "p99_latency_ms": 26.6,
+      "throughput_rps": 7800,
+      "tradeoff": "Maximum sandboxing and validation with highest overhead."
+    },
+    {
+      "name": "balanced",
+      "mode": "balanced",
+      "p99_latency_ms": 22.8,
+      "throughput_rps": 8700,
+      "tradeoff": "Default release profile balancing security and SLA impact."
+    },
+    {
+      "name": "permissive",
+      "mode": "permissive",
+      "p99_latency_ms": 21.2,
+      "throughput_rps": 9400,
+      "tradeoff": "Lower overhead with reduced hardening intensity."
+    }
+  ],
+  "runtime_profile_switch": {
+    "runtime_reconfigurable": true,
+    "requires_restart": false,
+    "requests_during_switch": 20000,
+    "request_failures": 0,
+    "under_load_qps": 8500
+  },
+  "scenarios": [
+    {
+      "scenario": "A",
+      "name": "strict-profile-benchmark",
+      "type": "informational",
+      "overhead_pct": 33.0,
+      "throughput_retention_pct": 78.0,
+      "documented": true
+    },
+    {
+      "scenario": "B",
+      "name": "balanced-profile-gate",
+      "type": "gate",
+      "p99_within_15pct": true,
+      "throughput_at_least_85pct": true
+    },
+    {
+      "scenario": "C",
+      "name": "regression-injection",
+      "type": "gate",
+      "injected_latency_regression_pct": 20.0,
+      "ci_blocked_merge": true
+    },
+    {
+      "scenario": "D",
+      "name": "runtime-switch-under-load",
+      "type": "gate",
+      "switch_without_restart": true,
+      "request_failures": 0
+    }
+  ],
+  "ci_benchmark_runs": [
+    {
+      "pr": "#5001",
+      "metric": "balanced.p99_latency_ms",
+      "regression_pct": 4.0,
+      "blocked_merge": false
+    },
+    {
+      "pr": "#5002",
+      "metric": "balanced.p99_latency_ms",
+      "regression_pct": 20.0,
+      "blocked_merge": true
+    },
+    {
+      "pr": "#5003",
+      "metric": "balanced.throughput_rps",
+      "regression_pct": 3.0,
+      "blocked_merge": false
+    }
+  ],
+  "event_codes": [
+    "HPR-001",
+    "HPR-002",
+    "HPR-003",
+    "HPR-004",
+    "HPR-005"
+  ],
+  "aggregate": {
+    "balanced_p99_overhead_pct": 14.0,
+    "balanced_throughput_retention_pct": 87.0,
+    "hardening_profiles_count": 3
+  }
+}

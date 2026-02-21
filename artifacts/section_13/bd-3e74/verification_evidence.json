@@ -1,0 +1,56 @@
+{
+  "bead_id": "bd-3e74",
+  "title": "benchmark/verifier external usage",
+  "section": "13",
+  "status": "pass",
+  "timestamp": "2026-02-20T00:00:00Z",
+  "checks": {
+    "total": 83,
+    "passed": 83,
+    "failed": 0
+  },
+  "artifacts": {
+    "spec_contract": "docs/specs/section_13/bd-3e74_contract.md",
+    "policy_document": "docs/policy/benchmark_verifier_external_usage.md",
+    "verification_script": "scripts/check_benchmark_external.py",
+    "unit_tests": "tests/test_check_benchmark_external.py"
+  },
+  "event_codes": ["BVE-001", "BVE-002", "BVE-003", "BVE-004"],
+  "invariants": ["INV-BVE-PACKAGE", "INV-BVE-GUIDE", "INV-BVE-TRACK", "INV-BVE-REPORT"],
+  "adoption_tiers": {
+    "U0": "No external usage detected",
+    "U1": ">= 1 external user, < 3 project adoptions",
+    "U2": ">= 2 external validation parties",
+    "U3": ">= 3 external projects adopt benchmark",
+    "U4": ">= 1 external citation"
+  },
+  "release_gate_thresholds": {
+    "alpha": "U2",
+    "beta": "U3",
+    "ga": "U3 + U4"
+  },
+  "quantitative_targets": {
+    "external_project_adoption": ">= 3",
+    "external_validation_parties": ">= 2",
+    "external_citations": ">= 1",
+    "packaging_formats": ">= 1",
+    "getting_started_time": "<= 15 min",
+    "tracking_channels": ">= 2"
+  },
+  "metric_dimensions": [
+    "External Project Adoption",
+    "External Validation Parties",
+    "External Citations",
+    "Packaging Formats",
+    "Getting Started Guide",
+    "Usage Tracking Channels"
+  ],
+  "tracking_channels": [
+    "npm downloads",
+    "Docker pulls",
+    "GitHub stars",
+    "GitHub forks",
+    "Citations",
+    "Usage reports"
+  ]
+}

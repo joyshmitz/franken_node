@@ -1,0 +1,57 @@
+{
+  "bead_id": "bd-137",
+  "section": "10.5",
+  "title": "Policy-visible compatibility gate APIs",
+  "timestamp": "2026-02-20T23:30:00Z",
+  "verdict": "PASS",
+  "files": {
+    "compat_gates": "crates/franken-node/src/policy/compat_gates.rs",
+    "compatibility_gate": "crates/franken-node/src/policy/compatibility_gate.rs",
+    "policy_mod": "crates/franken-node/src/policy/mod.rs",
+    "spec_doc": "docs/specs/section_10_5/bd-137_contract.md",
+    "verification_script": "scripts/check_compat_gates.py",
+    "python_tests": "tests/test_check_compat_gates.py",
+    "api_compat_gate": "crates/franken-node/src/api/compat_gate.rs"
+  },
+  "metrics": {
+    "rust_compat_gates_tests": 72,
+    "rust_compatibility_gate_tests": 24,
+    "python_verification_checks": 126,
+    "python_unit_tests": 36,
+    "rust_api_compat_gate_tests": 40,
+    "total_rust_tests": 136,
+    "types_defined": 15,
+    "methods_defined": 15,
+    "event_codes": 8,
+    "invariants": 4,
+    "compatibility_bands": 4,
+    "compatibility_modes": 3,
+    "divergence_actions": 4,
+    "band_mode_matrix_cells": 12,
+    "serde_enabled_types": 15
+  },
+  "checks_summary": {
+    "cargo_check": "pass",
+    "cargo_test_compat_gates": "72 passed, 0 failed",
+    "cargo_test_compatibility_gate": "24 passed, 0 failed",
+    "python_verification": "126 passing, 0 failing",
+    "python_unit_tests": "36 passed, 0 failed"
+  },
+  "implementation_details": {
+    "modules": [
+      {
+        "module": "compat_gates.rs",
+        "purpose": "Typed band-mode matrix, shim registry with Serde, gate evaluator, non-interference/monotonicity checks, report generation"
+      },
+      {
+        "module": "compatibility_gate.rs",
+        "purpose": "GateEngine with request-based gate checks, mode transitions, divergence receipts, audit trail, signed receipts"
+      }
+    ],
+    "bands": ["Core", "HighValue", "Edge", "Unsafe"],
+    "modes": ["Strict", "Balanced", "LegacyRisky"],
+    "gate_decisions": ["Allow", "Deny", "Audit"],
+    "event_codes": ["PCG-001", "PCG-002", "PCG-003", "PCG-004", "PCG-005", "PCG-006", "PCG-007", "PCG-008"],
+    "formal_properties": ["non-interference (scope isolation)", "monotonicity (adding shims never weakens guarantees)"]
+  }
+}

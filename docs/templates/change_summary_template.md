@@ -15,6 +15,7 @@ Use `docs/change_summaries/<date>-<slug>.json` and follow this contract.
 7. `compatibility`: backward + forward compatibility assessment.
 8. `dependency_changes`: added/removed/updated dependencies.
 9. `compatibility_and_threat_evidence`: compatibility test evidence + threat vector mitigations.
+10. `rollback_command`: tested rollback command, scope boundaries, and expected execution time.
 
 ## JSON Template
 
@@ -85,6 +86,23 @@ Use `docs/change_summaries/<date>-<slug>.json` and follow this contract.
           "mitigation": "Rate limits and bounded retries prevent unbounded amplification."
         }
       ]
+    },
+    "rollback_command": {
+      "command": "franken-node rollback apply --receipt artifacts/rollback/example_receipt.json --force-safe",
+      "idempotent": true,
+      "tested_in_ci": true,
+      "test_evidence_artifact": "artifacts/section_11/bd-nglx/rollback_command_ci_test.json",
+      "rollback_scope": {
+        "reverts": [
+          "runtime policy configuration",
+          "service feature-flag activation"
+        ],
+        "does_not_revert": [
+          "already-emitted audit logs",
+          "externally processed events"
+        ]
+      },
+      "estimated_duration": "2m"
     }
   }
 }

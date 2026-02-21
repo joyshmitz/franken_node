@@ -1,0 +1,73 @@
+{
+  "bead_id": "bd-13yn",
+  "title": "Risk Control: Signal Poisoning and Sybil Defense",
+  "section": "12",
+  "status": "pass",
+  "timestamp": "2026-02-20T18:00:00Z",
+  "agent": "CrimsonCrane",
+  "artifacts": {
+    "spec_contract": "docs/specs/section_12/bd-13yn_contract.md",
+    "risk_policy": "docs/policy/risk_signal_poisoning_sybil.md",
+    "defense_policy": "docs/policy/signal_poisoning_sybil_defense.md",
+    "verification_script": "scripts/check_signal_sybil.py",
+    "unit_tests": "tests/test_check_signal_sybil.py"
+  },
+  "event_codes": [
+    "SPS-001",
+    "SPS-002",
+    "SPS-003",
+    "SPS-004"
+  ],
+  "error_codes": [
+    "ERR_SPS_POISONED_SIGNAL",
+    "ERR_SPS_SYBIL_DETECTED",
+    "ERR_SPS_INSUFFICIENT_STAKE",
+    "ERR_SPS_AGGREGATION_FAILED"
+  ],
+  "invariants": [
+    "INV-SPS-AGGREGATION",
+    "INV-SPS-STAKE",
+    "INV-SPS-SYBIL",
+    "INV-SPS-ADVERSARIAL"
+  ],
+  "countermeasures": [
+    {
+      "id": "CM-1",
+      "name": "Robust Aggregation",
+      "invariant": "INV-SPS-AGGREGATION",
+      "threshold": "20% poisoned signals shift aggregate by <= 5%"
+    },
+    {
+      "id": "CM-2",
+      "name": "Stake-Weighted Signals",
+      "invariant": "INV-SPS-STAKE",
+      "threshold": "New node signal weight <= 1% of established node"
+    },
+    {
+      "id": "CM-3",
+      "name": "Sybil Detection and Attenuation",
+      "invariant": "INV-SPS-SYBIL",
+      "threshold": "100 Sybil identities < influence of 5 honest nodes"
+    },
+    {
+      "id": "CM-4",
+      "name": "Adversarial Test Suite",
+      "invariant": "INV-SPS-ADVERSARIAL",
+      "threshold": ">= 10 distinct attack scenarios pass in CI"
+    }
+  ],
+  "thresholds": {
+    "poisoned_signal_shift_max_pct": 5,
+    "new_node_weight_max_pct": 1,
+    "sybil_vs_honest_influence_max": 1.0,
+    "adversarial_scenarios_min": 10,
+    "sybil_detection_latency_max_s": 60,
+    "signal_provenance_coverage_pct": 100,
+    "identity_binding_coverage_pct": 100,
+    "anomaly_detection_false_positive_max_pct": 5
+  },
+  "checks_total": 39,
+  "checks_passed": 39,
+  "checks_failed": 0,
+  "verdict": "PASS"
+}

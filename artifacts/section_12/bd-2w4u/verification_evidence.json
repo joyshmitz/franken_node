@@ -1,0 +1,45 @@
+{
+  "bead_id": "bd-2w4u",
+  "section": "12",
+  "title": "Risk control: hardening perf regression",
+  "timestamp": "2026-02-20T00:00:00Z",
+  "verdict": "PASS",
+  "files": {
+    "contract": "docs/specs/section_12/bd-2w4u_contract.md",
+    "risk_report": "artifacts/12/hardening_perf_regression_report.json",
+    "verification_script": "scripts/check_hardening_perf_regression.py",
+    "python_tests": "tests/test_check_hardening_perf_regression.py",
+    "check_report": "artifacts/section_12/bd-2w4u/check_report.json",
+    "check_self_test": "artifacts/section_12/bd-2w4u/check_self_test.json",
+    "unit_tests_output": "artifacts/section_12/bd-2w4u/unit_tests.txt"
+  },
+  "metrics": {
+    "hardening_profiles_count": 3,
+    "balanced_p99_overhead_pct": 14.0,
+    "balanced_throughput_retention_pct": 87.0,
+    "runtime_switch_failures": 0,
+    "ci_blocking_threshold_pct": 5.0,
+    "python_verification_checks": 40,
+    "python_unit_tests": 21,
+    "event_codes": 5
+  },
+  "checks_summary": {
+    "passing": 40,
+    "failing": 0,
+    "total": 40
+  },
+  "commands": [
+    {
+      "command": "python3 scripts/check_hardening_perf_regression.py --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 scripts/check_hardening_perf_regression.py --self-test --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 -m unittest tests/test_check_hardening_perf_regression.py",
+      "status": "pass"
+    }
+  ]
+}

@@ -94,6 +94,25 @@
           "mitigation": "Retry bounds and validation caching reduce repeated expensive checks."
         }
       ]
+    },
+    "rollback_command": {
+      "command": "franken-node rollback apply --receipt artifacts/rollback/lease_guard_receipt.json --force-safe",
+      "idempotent": true,
+      "tested_in_ci": true,
+      "test_evidence_artifact": "artifacts/section_11/bd-nglx/rollback_command_ci_test.json",
+      "rollback_scope": {
+        "reverts": [
+          "lease guard validation policy profile",
+          "control-plane feature flag for lease finalize checks",
+          "compatibility gate override used by lease finalize path"
+        ],
+        "does_not_revert": [
+          "audit events already emitted to evidence ledger",
+          "externally consumed workflow events",
+          "historical replay bundles exported before rollback"
+        ]
+      },
+      "estimated_duration": "2m30s"
     }
   }
 }

@@ -1,0 +1,51 @@
+{
+  "bead_id": "bd-nglx",
+  "changed_file_count": 2,
+  "changed_files_source": "artifacts/section_11/bd-nglx/changed_files_for_validation.txt",
+  "errors": [],
+  "events": [
+    {
+      "event_code": "CONTRACT_ROLLBACK_COMMAND_VALIDATED",
+      "message": "rollback command contract validated: docs/change_summaries/example_change_summary.json",
+      "severity": "info",
+      "summary_file": "docs/change_summaries/example_change_summary.json",
+      "trace_correlation": "87d5ec79170013c521e2fac4c68cd0fddbc3d487b594006efbc6118ea375febc"
+    }
+  ],
+  "example": "docs/change_summaries/example_change_summary.json",
+  "ok": true,
+  "required_event_codes": [
+    "CONTRACT_ROLLBACK_COMMAND_INCOMPLETE",
+    "CONTRACT_ROLLBACK_COMMAND_MISSING",
+    "CONTRACT_ROLLBACK_COMMAND_VALIDATED"
+  ],
+  "requires_contract": true,
+  "subsystem_change_count": 1,
+  "summary_directory": "docs/change_summaries",
+  "summary_files_checked": [
+    "docs/change_summaries/example_change_summary.json"
+  ],
+  "template": "docs/templates/change_summary_template.md",
+  "validated_summaries": [
+    {
+      "does_not_revert_count": 3,
+      "errors": [],
+      "estimated_duration": "2m30s",
+      "events": [
+        {
+          "event_code": "CONTRACT_ROLLBACK_COMMAND_VALIDATED",
+          "message": "rollback command contract validated: docs/change_summaries/example_change_summary.json",
+          "severity": "info",
+          "summary_file": "docs/change_summaries/example_change_summary.json",
+          "trace_correlation": "87d5ec79170013c521e2fac4c68cd0fddbc3d487b594006efbc6118ea375febc"
+        }
+      ],
+      "ok": true,
+      "reverts_count": 3,
+      "summary_file": "docs/change_summaries/example_change_summary.json",
+      "trace_correlation": "87d5ec79170013c521e2fac4c68cd0fddbc3d487b594006efbc6118ea375febc",
+      "warnings": []
+    }
+  ],
+  "warnings": []
+}

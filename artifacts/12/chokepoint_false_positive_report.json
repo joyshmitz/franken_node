@@ -1,0 +1,122 @@
+{
+  "bead_id": "bd-paui",
+  "title": "Risk control: topological choke-point false positives",
+  "section": "12",
+  "trace_id": "trace-bd-paui-cfp",
+  "rules": [
+    {
+      "rule_id": "rule-safe-chokepoint-01",
+      "status": "enforced",
+      "counterfactual": {
+        "historical_operations_replayed": 1500,
+        "false_positive_rate_pct": 0.6,
+        "legitimate_block_rate_pct": 0.6
+      },
+      "expected_loss": {
+        "false_positive_cost_usd_per_day": 12.0,
+        "blocked_threat_value_usd_per_day": 260.0,
+        "net_value_usd_per_day": 248.0,
+        "net_positive": true
+      },
+      "rollout": {
+        "stages": [
+          {"stage": "audit", "duration_hours": 24, "blocked_operations": 0, "logged_violations": 18},
+          {"stage": "warn", "duration_hours": 24, "blocked_operations": 0, "logged_violations": 11},
+          {"stage": "enforce", "duration_hours": 24, "blocked_operations": 9, "logged_violations": 9}
+        ],
+        "promotion_allowed": true
+      }
+    },
+    {
+      "rule_id": "rule-overhard-05",
+      "status": "rejected",
+      "counterfactual": {
+        "historical_operations_replayed": 1200,
+        "false_positive_rate_pct": 5.0,
+        "legitimate_block_rate_pct": 5.0
+      },
+      "expected_loss": {
+        "false_positive_cost_usd_per_day": 100.0,
+        "blocked_threat_value_usd_per_day": 10.0,
+        "net_value_usd_per_day": -90.0,
+        "net_positive": false
+      },
+      "rollout": {
+        "stages": [
+          {"stage": "audit", "duration_hours": 24, "blocked_operations": 0, "logged_violations": 41},
+          {"stage": "warn", "duration_hours": 24, "blocked_operations": 0, "logged_violations": 39}
+        ],
+        "promotion_allowed": false,
+        "rollback_receipt_id": "rcpt-rule-overhard-05"
+      }
+    },
+    {
+      "rule_id": "rule-borderline-09",
+      "status": "warn",
+      "counterfactual": {
+        "historical_operations_replayed": 1100,
+        "false_positive_rate_pct": 0.9,
+        "legitimate_block_rate_pct": 0.9
+      },
+      "expected_loss": {
+        "false_positive_cost_usd_per_day": 20.0,
+        "blocked_threat_value_usd_per_day": 40.0,
+        "net_value_usd_per_day": 20.0,
+        "net_positive": true
+      },
+      "rollout": {
+        "stages": [
+          {"stage": "audit", "duration_hours": 24, "blocked_operations": 0, "logged_violations": 23},
+          {"stage": "warn", "duration_hours": 24, "blocked_operations": 0, "logged_violations": 17}
+        ],
+        "promotion_allowed": true
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "scenario": "A",
+      "name": "reject-5pct-legitimate-block",
+      "rule_id": "rule-overhard-05",
+      "rejected_before_enforce": true
+    },
+    {
+      "scenario": "B",
+      "name": "audit-mode-no-block",
+      "rule_id": "rule-borderline-09",
+      "audit_mode_blocks": 0,
+      "audit_mode_logs": 23
+    },
+    {
+      "scenario": "C",
+      "name": "warn-to-enforce-promotion-gate",
+      "rule_id": "rule-safe-chokepoint-01",
+      "false_positive_rate_pct": 0.6,
+      "promotion_allowed": true
+    },
+    {
+      "scenario": "D",
+      "name": "expected-loss-net-negative-flag",
+      "rule_id": "rule-overhard-05",
+      "false_positive_cost_usd_per_day": 100.0,
+      "blocked_threat_value_usd_per_day": 10.0,
+      "flagged_net_negative": true
+    }
+  ],
+  "event_codes": [
+    "CFP-001",
+    "CFP-002",
+    "CFP-003",
+    "CFP-004",
+    "CFP-005"
+  ],
+  "aggregate": {
+    "rules_total": 3,
+    "rules_enforced": 1,
+    "rules_rejected": 1,
+    "min_replay_operations": 1000,
+    "max_false_positive_rate_enforced_pct": 0.6,
+    "all_enforced_net_positive": true,
+    "all_stage_durations_min_24h": true
+  }
+}

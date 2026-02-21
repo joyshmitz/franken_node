@@ -1,0 +1,163 @@
+# Verification Summary: Verifier economy portal and external attestation publishing flow
+
+**Bead:** bd-m8p | **Section:** 10.9
+**Timestamp:** 2026-02-20T23:36:20.431995+00:00
+**Overall:** PASS
+**Checks:** 146/146 passed
+
+## Check Results
+
+- [PASS] file_exists: spec contract: exists: docs/specs/section_10_9/bd-m8p_contract.md
+- [PASS] file_exists: policy document: exists: docs/policy/verifier_economy.md
+- [PASS] file_exists: rust implementation: exists: crates/franken-node/src/verifier_economy/mod.rs
+- [PASS] main_rs: 'pub mod verifier_economy;': found
+- [PASS] spec_event_codes: all 8 event codes present
+- [PASS] spec_invariants: all 4 invariants present
+- [PASS] spec_error_codes: all 5 error codes present
+- [PASS] spec_keyword: 'JSON-LD': found
+- [PASS] spec_section: 'Anti-Gaming': found
+- [PASS] spec_section: 'Replay Capsule': found
+- [PASS] spec_section: 'Reputation Scoring': found
+- [PASS] spec_keyword: 'Dispute': found
+- [PASS] policy_section: 'Publishing Flow': found
+- [PASS] policy_event_codes: all 8 event codes in policy
+- [PASS] policy_invariants: all 4 invariants in policy
+- [PASS] policy_reputation_tiers: all 4 reputation tiers in policy
+- [PASS] policy_section: 'Governance': found
+- [PASS] policy_section: 'Dispute Resolution': found
+- [PASS] policy_section: 'Anti-Gaming': found
+- [PASS] policy_section: 'Appeal Process': found
+- [PASS] policy_section: 'Upgrade Path': found
+- [PASS] policy_section: 'Downgrade Triggers': found
+- [PASS] rust_type: 'pub enum VerificationDimension': found
+- [PASS] rust_type: 'pub enum VerifierTier': found
+- [PASS] rust_type: 'pub enum ReputationTier': found
+- [PASS] rust_type: 'pub enum AttestationState': found
+- [PASS] rust_type: 'pub enum DisputeOutcome': found
+- [PASS] rust_type: 'pub struct AttestationClaim': found
+- [PASS] rust_type: 'pub struct AttestationEvidence': found
+- [PASS] rust_type: 'pub struct AttestationSignature': found
+- [PASS] rust_type: 'pub struct Attestation': found
+- [PASS] rust_type: 'pub struct AttestationSubmission': found
+- [PASS] rust_type: 'pub struct Verifier': found
+- [PASS] rust_type: 'pub struct VerifierRegistration': found
+- [PASS] rust_type: 'pub struct ReputationDimensions': found
+- [PASS] rust_type: 'pub struct Dispute': found
+- [PASS] rust_type: 'pub struct ReplayCapsule': found
+- [PASS] rust_type: 'pub struct ScoreboardEntry': found
+- [PASS] rust_type: 'pub struct TrustScoreboard': found
+- [PASS] rust_type: 'pub struct VerifierEconomyEvent': found
+- [PASS] rust_type: 'pub struct VepError': found
+- [PASS] rust_type: 'pub struct VerifierEconomyRegistry': found
+- [PASS] rust_method: 'pub fn register_verifier(': found
+- [PASS] rust_method: 'pub fn get_verifier(': found
+- [PASS] rust_method: 'pub fn list_verifiers(': found
+- [PASS] rust_method: 'pub fn verifier_count(': found
+- [PASS] rust_method: 'pub fn submit_attestation(': found
+- [PASS] rust_method: 'pub fn review_attestation(': found
+- [PASS] rust_method: 'pub fn publish_attestation(': found
+- [PASS] rust_method: 'pub fn reject_attestation(': found
+- [PASS] rust_method: 'pub fn get_attestation(': found
+- [PASS] rust_method: 'pub fn list_attestations(': found
+- [PASS] rust_method: 'pub fn published_attestations(': found
+- [PASS] rust_method: 'pub fn attestation_count(': found
+- [PASS] rust_method: 'pub fn verify_signature(': found
+- [PASS] rust_method: 'pub fn compute_reputation(': found
+- [PASS] rust_method: 'pub fn update_reputation(': found
+- [PASS] rust_method: 'pub fn file_dispute(': found
+- [PASS] rust_method: 'pub fn resolve_dispute(': found
+- [PASS] rust_method: 'pub fn get_dispute(': found
+- [PASS] rust_method: 'pub fn list_disputes(': found
+- [PASS] rust_method: 'pub fn register_replay_capsule(': found
+- [PASS] rust_method: 'pub fn access_replay_capsule(': found
+- [PASS] rust_method: 'pub fn verify_capsule_integrity(': found
+- [PASS] rust_method: 'pub fn build_scoreboard(': found
+- [PASS] rust_method: 'pub fn check_selective_reporting(': found
+- [PASS] rust_method: 'pub fn reset_submission_counts(': found
+- [PASS] rust_method: 'pub fn reputation_tier_from_score(': found
+- [PASS] rust_event_code: 'VEP-001': found
+- [PASS] rust_event_code: 'VEP-002': found
+- [PASS] rust_event_code: 'VEP-003': found
+- [PASS] rust_event_code: 'VEP-004': found
+- [PASS] rust_event_code: 'VEP-005': found
+- [PASS] rust_event_code: 'VEP-006': found
+- [PASS] rust_event_code: 'VEP-007': found
+- [PASS] rust_event_code: 'VEP-008': found
+- [PASS] rust_invariant: 'INV-VEP-ATTESTATION': found
+- [PASS] rust_invariant: 'INV-VEP-SIGNATURE': found
+- [PASS] rust_invariant: 'INV-VEP-REPUTATION': found
+- [PASS] rust_invariant: 'INV-VEP-PUBLISH': found
+- [PASS] rust_error_code: 'ERR-VEP-INVALID-SIGNATURE': found
+- [PASS] rust_error_code: 'ERR-VEP-DUPLICATE-SUBMISSION': found
+- [PASS] rust_error_code: 'ERR-VEP-UNREGISTERED-VERIFIER': found
+- [PASS] rust_error_code: 'ERR-VEP-INCOMPLETE-PAYLOAD': found
+- [PASS] rust_error_code: 'ERR-VEP-ANTI-GAMING': found
+- [PASS] rust_test: 'test_register_verifier': found
+- [PASS] rust_test: 'test_register_emits_vep005': found
+- [PASS] rust_test: 'test_duplicate_public_key_rejected': found
+- [PASS] rust_test: 'test_verifier_count': found
+- [PASS] rust_test: 'test_get_verifier': found
+- [PASS] rust_test: 'test_list_verifiers': found
+- [PASS] rust_test: 'test_submit_attestation': found
+- [PASS] rust_test: 'test_submit_emits_vep001': found
+- [PASS] rust_test: 'test_submit_unregistered_verifier_rejected': found
+- [PASS] rust_test: 'test_submit_invalid_signature_rejected': found
+- [PASS] rust_test: 'test_submit_empty_statement_rejected': found
+- [PASS] rust_test: 'test_submit_empty_suite_id_rejected': found
+- [PASS] rust_test: 'test_submit_duplicate_rejected': found
+- [PASS] rust_test: 'test_publish_flow_submit_review_publish': found
+- [PASS] rust_test: 'test_publish_emits_vep002': found
+- [PASS] rust_test: 'test_cannot_publish_without_review': found
+- [PASS] rust_test: 'test_cannot_review_already_published': found
+- [PASS] rust_test: 'test_reject_attestation': found
+- [PASS] rust_test: 'test_reject_emits_vep008': found
+- [PASS] rust_test: 'test_compute_reputation_deterministic': found
+- [PASS] rust_test: 'test_compute_reputation_all_ones': found
+- [PASS] rust_test: 'test_compute_reputation_all_zeros': found
+- [PASS] rust_test: 'test_compute_reputation_mixed': found
+- [PASS] rust_test: 'test_update_reputation': found
+- [PASS] rust_test: 'test_update_reputation_emits_vep004': found
+- [PASS] rust_test: 'test_reputation_tier_novice': found
+- [PASS] rust_test: 'test_reputation_tier_active': found
+- [PASS] rust_test: 'test_reputation_tier_established': found
+- [PASS] rust_test: 'test_reputation_tier_trusted': found
+- [PASS] rust_test: 'test_file_dispute': found
+- [PASS] rust_test: 'test_file_dispute_emits_vep003': found
+- [PASS] rust_test: 'test_cannot_dispute_unpublished': found
+- [PASS] rust_test: 'test_resolve_dispute_upheld': found
+- [PASS] rust_test: 'test_resolve_dispute_rejected': found
+- [PASS] rust_test: 'test_register_and_access_capsule': found
+- [PASS] rust_test: 'test_access_capsule_emits_vep007': found
+- [PASS] rust_test: 'test_capsule_integrity_valid': found
+- [PASS] rust_test: 'test_capsule_integrity_invalid_empty_hash': found
+- [PASS] rust_test: 'test_empty_scoreboard': found
+- [PASS] rust_test: 'test_scoreboard_with_published_attestation': found
+- [PASS] rust_test: 'test_sybil_rate_limiting': found
+- [PASS] rust_test: 'test_sybil_rate_limit_emits_vep006': found
+- [PASS] rust_test: 'test_selective_reporting_check_passes': found
+- [PASS] rust_test: 'test_reset_submission_counts': found
+- [PASS] rust_test: 'test_take_events_drains': found
+- [PASS] rust_test: 'test_dimension_display': found
+- [PASS] rust_test: 'test_verifier_tier_display': found
+- [PASS] rust_test: 'test_reputation_tier_display': found
+- [PASS] rust_test: 'test_attestation_state_display': found
+- [PASS] rust_test: 'test_dispute_outcome_display': found
+- [PASS] rust_test: 'test_vep_error_display': found
+- [PASS] rust_test: 'test_verify_signature_valid': found
+- [PASS] rust_test: 'test_verify_signature_wrong_key': found
+- [PASS] rust_test: 'test_verify_signature_wrong_algorithm': found
+- [PASS] rust_test: 'test_verify_signature_empty_value': found
+- [PASS] rust_test: 'test_default_registry': found
+- [PASS] rust_test: 'test_published_attestations_filter': found
+- [PASS] rust_test: 'test_event_code_constants': found
+- [PASS] rust_test: 'test_invariant_constants': found
+- [PASS] rust_test: 'test_error_code_constants': found
+- [PASS] rust_test_count: 60 tests (minimum 50)
+
+## Artifacts
+
+- Spec: `docs/specs/section_10_9/bd-m8p_contract.md`
+- Policy: `docs/policy/verifier_economy.md`
+- Implementation: `crates/franken-node/src/verifier_economy/mod.rs`
+- Evidence: `artifacts/section_10_9/bd-m8p/verification_evidence.json`
+

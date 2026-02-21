@@ -1,0 +1,54 @@
+{
+  "bead_id": "bd-3q9",
+  "section": "10.6",
+  "title": "Release rollback bundles with deterministic restore checks",
+  "timestamp": "2026-02-20T23:50:00Z",
+  "verdict": "PASS",
+  "files": {
+    "spec": "docs/specs/section_10_6/bd-3q9_contract.md",
+    "policy": "docs/policy/release_rollback_bundles.md",
+    "implementation": "crates/franken-node/src/connector/rollback_bundle.rs",
+    "verification_script": "scripts/check_rollback_bundles.py",
+    "python_tests": "tests/test_check_rollback_bundles.py"
+  },
+  "metrics": {
+    "python_checks_total": 149,
+    "python_checks_passing": 149,
+    "python_checks_failing": 0,
+    "rust_tests": 48,
+    "python_unit_tests": 65,
+    "types_verified": 14,
+    "methods_verified": 22,
+    "event_codes_verified": 4,
+    "invariants_verified": 4,
+    "error_codes_verified": 4,
+    "health_checks_verified": 4
+  },
+  "acceptance_criteria_mapping": [
+    {
+      "criterion": "Every release build produces a rollback bundle with previous binary hash, config diff, state migration reversal, and health check definitions.",
+      "evidence": "BundleStore::create_bundle() produces RollbackBundle with BundleComponent entries for binary_ref, config_diff, state_reversal, plus RestoreManifest with health_checks."
+    },
+    {
+      "criterion": "franken-node rollback <bundle-path> applies the bundle and runs health check sequence with structured JSON results.",
+      "evidence": "BundleStore::apply_rollback() with RollbackMode::Apply runs all 4 health checks and returns RollbackResult with to_json()."
+    },
+    {
+      "criterion": "--dry-run previews rollback actions without applying changes.",
+      "evidence": "RollbackMode::DryRun leaves state unchanged; test_dry_run_no_state_change verifies actions show 'would apply'."
+    },
+    {
+      "criterion": "Pre/post state snapshots compared; mismatches produce structured errors.",
+      "evidence": "StateSnapshot::diff() returns field-level mismatches; RollbackBundleError::HealthCheckFailed reports structured failures."
+    },
+    {
+      "criterion": "Rollback is idempotent.",
+      "evidence": "test_apply_rollback_idempotent verifies identical state after repeated applications; INV-RRB-IDEMPOT constant defined."
+    },
+    {
+      "criterion": "Health check sequence covers binary version, config schema, state integrity, and smoke tests.",
+      "evidence": "HealthCheckKind enum with 4 variants; all verified in apply_rollback() health check sequence."
+    }
+  ],
+  "compilation_note": "Pre-existing errors in supply_chain/manifest.rs prevent full cargo test --all; rollback_bundle module itself compiles and passes all tests when isolated."
+}

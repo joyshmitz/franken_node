@@ -1,0 +1,81 @@
+{
+  "bead_id": "bd-36wa",
+  "section": "11",
+  "title": "Contract field: compatibility and threat evidence",
+  "generated_at": "2026-02-20T23:10:49Z",
+  "status": "pass",
+  "checks": [
+    {
+      "name": "compat_threat_self_test",
+      "command": "python3 scripts/check_compatibility_threat_evidence.py --self-test --json",
+      "exit_code": 0,
+      "output_path": "artifacts/section_11/bd-36wa/compat_threat_self_test.json"
+    },
+    {
+      "name": "compat_threat_validation",
+      "command": "python3 scripts/check_compatibility_threat_evidence.py --changed-files artifacts/section_11/bd-36wa/changed_files_for_validation.txt --json",
+      "exit_code": 0,
+      "output_path": "artifacts/section_11/bd-36wa/compat_threat_check_report.json",
+      "summary": {
+        "summary_files_checked": [
+          "docs/change_summaries/example_change_summary.json"
+        ],
+        "validated_suite_count": 2,
+        "required_vectors_present": [
+          "data_exfiltration",
+          "denial_of_service",
+          "privilege_escalation"
+        ],
+        "trace_correlation": "833cb8cf9cd4524cc28ecabe995da8985158130912a0ad70bfcfbb256db8e4ac"
+      }
+    },
+    {
+      "name": "unit_tests",
+      "command": "python3 -m unittest tests/test_check_compatibility_threat_evidence.py",
+      "exit_code": 0,
+      "output_path": "artifacts/section_11/bd-36wa/unittest_output.txt",
+      "summary": "Ran 7 tests in 0.007s (OK)"
+    },
+    {
+      "name": "cargo_check_all_targets_via_rch",
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 0,
+      "output_path": "artifacts/section_11/bd-36wa/rch_cargo_check.log"
+    },
+    {
+      "name": "cargo_clippy_all_targets_via_rch",
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "output_path": "artifacts/section_11/bd-36wa/rch_cargo_clippy.log",
+      "note": "Pre-existing repository-wide clippy debt outside bd-36wa scope."
+    },
+    {
+      "name": "cargo_fmt_check_via_rch",
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "output_path": "artifacts/section_11/bd-36wa/rch_cargo_fmt_check.log",
+      "note": "Pre-existing repository-wide formatting drift outside bd-36wa scope."
+    }
+  ],
+  "acceptance_mapping": {
+    "compatibility_suites_with_counts": true,
+    "suite_artifact_paths_required": true,
+    "threat_vectors_required_and_non_empty": true,
+    "regression_risk_with_api_families": true,
+    "ci_rejection_on_missing_or_incomplete": true
+  },
+  "contract_surface": {
+    "spec": "docs/specs/section_11/bd-36wa_contract.md",
+    "template": "docs/templates/change_summary_template.md",
+    "example_summary": "docs/change_summaries/example_change_summary.json",
+    "canonical_contract_payload": "artifacts/11/compatibility_threat_evidence_contract.json",
+    "validator": "scripts/check_compatibility_threat_evidence.py",
+    "unit_tests": "tests/test_check_compatibility_threat_evidence.py",
+    "ci_gate": ".github/workflows/compatibility-threat-evidence-gate.yml"
+  },
+  "required_event_codes": [
+    "CONTRACT_COMPAT_THREAT_VALIDATED",
+    "CONTRACT_COMPAT_THREAT_MISSING",
+    "CONTRACT_COMPAT_THREAT_INCOMPLETE"
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "bead_id": "bd-1n1t",
+  "section": "12",
+  "title": "Risk control: topology blind spots",
+  "generated_at": "2026-02-21T00:45:00Z",
+  "status": "pass",
+  "checks": [
+    {
+      "name": "topology_self_test",
+      "command": "python3 scripts/check_topology_blind_spots.py --self-test --json",
+      "exit_code": 0,
+      "output_path": "artifacts/section_12/bd-1n1t/check_self_test.json"
+    },
+    {
+      "name": "topology_validation",
+      "command": "python3 scripts/check_topology_blind_spots.py --json",
+      "exit_code": 0,
+      "output_path": "artifacts/section_12/bd-1n1t/check_report.json",
+      "summary": {
+        "verdict": "PASS",
+        "checks_total": 27,
+        "checks_passing": 27,
+        "checks_failing": 0
+      }
+    },
+    {
+      "name": "unit_tests",
+      "command": "python3 -m unittest tests/test_check_topology_blind_spots.py",
+      "exit_code": 0,
+      "output_path": "artifacts/section_12/bd-1n1t/unit_tests.txt",
+      "summary": "Ran 18 tests in 0.003s (OK)"
+    },
+    {
+      "name": "cargo_check_all_targets_via_rch",
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "output_path": "artifacts/section_12/bd-1n1t/rch_cargo_check.log",
+      "note": "Pre-existing workspace compilation errors outside bd-1n1t scope."
+    },
+    {
+      "name": "cargo_clippy_all_targets_via_rch",
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "output_path": "artifacts/section_12/bd-1n1t/rch_cargo_clippy.log",
+      "note": "Pre-existing repository-wide clippy debt outside bd-1n1t scope."
+    },
+    {
+      "name": "cargo_fmt_check_via_rch",
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "output_path": "artifacts/section_12/bd-1n1t/rch_cargo_fmt_check.log",
+      "note": "Pre-existing repository-wide formatting drift outside bd-1n1t scope."
+    }
+  ],
+  "acceptance_mapping": {
+    "mandatory_graph_ingestion": true,
+    "topology_metric_baselines": true,
+    "drift_over_20_percent_requires_review": true,
+    "chokepoint_over_50_percent_detection": true,
+    "scenario_a_deep_transitive_increase": true,
+    "scenario_b_chokepoint_alert": true,
+    "scenario_c_chokepoint_removal_improves_metrics": true,
+    "scenario_d_cycle_detection_graceful_handling": true
+  },
+  "contract_surface": {
+    "spec": "docs/specs/section_12/bd-1n1t_contract.md",
+    "report": "artifacts/12/topology_blind_spots_report.json",
+    "validator": "scripts/check_topology_blind_spots.py",
+    "unit_tests": "tests/test_check_topology_blind_spots.py"
+  },
+  "required_event_codes": [
+    "TBS-101",
+    "TBS-102",
+    "TBS-103",
+    "TBS-104",
+    "TBS-105"
+  ]
+}

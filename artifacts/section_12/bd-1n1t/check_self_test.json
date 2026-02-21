@@ -1,0 +1,140 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "check": "file: contract",
+      "pass": true,
+      "detail": "exists: /data/tmp/bd-1n1t-selftest-23vqr50t/contract.md"
+    },
+    {
+      "check": "file: report",
+      "pass": true,
+      "detail": "exists: /data/tmp/bd-1n1t-selftest-23vqr50t/report.json"
+    },
+    {
+      "check": "contract: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "contract: term INV-TBS-GRAPH-INGEST",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-TBS-METRICS-BASELINE",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-TBS-DRIFT-REVIEW",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-TBS-CHOKEPOINT",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-TBS-CYCLE-HANDLING",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario A",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario B",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario C",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario D",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "report: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report: valid json",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "graph ingestion: generated on build + includes transitive + queryable",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "graph ingestion: metadata source is cargo metadata/equivalent",
+      "pass": true,
+      "detail": "cargo metadata"
+    },
+    {
+      "check": "metrics: drift threshold is 20%",
+      "pass": true,
+      "detail": "threshold=20.0"
+    },
+    {
+      "check": "metrics: max depth baseline/current present",
+      "pass": true,
+      "detail": "baseline=10 current=11"
+    },
+    {
+      "check": "metrics: average fan-out baseline/current present",
+      "pass": true,
+      "detail": "baseline=2.0 current=2.1"
+    },
+    {
+      "check": "metrics: betweenness top-10 computed",
+      "pass": true,
+      "detail": "count=10"
+    },
+    {
+      "check": "metrics: drift >20% triggers review alert",
+      "pass": true,
+      "detail": "no drift breach"
+    },
+    {
+      "check": "choke-point detection: >50% path-share dependencies are flagged",
+      "pass": true,
+      "detail": "flagged=1"
+    },
+    {
+      "check": "scenario A: deep transitive dependency captured and depth increased",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario B: introduced choke-point triggers alert",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario C: choke-point removal improves metrics and clears alert",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario D: cycle dependencies are detected and handled gracefully",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "event codes: required topology codes present",
+      "pass": true,
+      "detail": "codes=['TBS-101', 'TBS-102', 'TBS-103', 'TBS-104', 'TBS-105']"
+    }
+  ]
+}

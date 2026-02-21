@@ -1,0 +1,214 @@
+{
+  "bead_id": "bd-28sz",
+  "title": "Concrete target gate: >=95% compatibility corpus pass",
+  "section": "13",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 40,
+    "failing": 0,
+    "total": 40
+  },
+  "checks": [
+    {
+      "check": "file: contract doc",
+      "pass": true,
+      "detail": "exists: docs/specs/section_13/bd-28sz_contract.md"
+    },
+    {
+      "check": "file: compatibility corpus report",
+      "pass": true,
+      "detail": "exists: artifacts/13/compatibility_corpus_results.json"
+    },
+    {
+      "check": "contract: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "contract: term INV-CCG-OVERALL",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-CCG-BAND",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-CCG-FAMILY-FLOOR",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-CCG-CORPUS-SIZE",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-CCG-TRACKING",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-CCG-REPRODUCIBILITY",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-CCG-RATCHET",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario A",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario B",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario C",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario D",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "report: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report: valid json",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "corpus: total test cases >= 500",
+      "pass": true,
+      "detail": "total=540"
+    },
+    {
+      "check": "corpus: per_test_results count matches total",
+      "pass": true,
+      "detail": "per_test=540 total=540"
+    },
+    {
+      "check": "totals: count partition is consistent",
+      "pass": true,
+      "detail": "total=540 partition=540"
+    },
+    {
+      "check": "totals: overall pass rate matches recomputation",
+      "pass": true,
+      "detail": "reported=98.7 computed=98.7"
+    },
+    {
+      "check": "coverage: all required API families present",
+      "pass": true,
+      "detail": "present=16 required=16"
+    },
+    {
+      "check": "coverage: per-test family coverage includes required set",
+      "pass": true,
+      "detail": "present=16 required=16"
+    },
+    {
+      "check": "per-test: required tags and enums valid",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "per-test: all risk bands represented",
+      "pass": true,
+      "detail": "observed=['critical', 'high', 'low', 'medium']"
+    },
+    {
+      "check": "gate: overall threshold >=95 met",
+      "pass": true,
+      "detail": "current=98.7 threshold=95.0"
+    },
+    {
+      "check": "gate: no family below 80%",
+      "pass": true,
+      "detail": "all pass"
+    },
+    {
+      "check": "gate: band core >= 99.0%",
+      "pass": true,
+      "detail": "observed=99.32"
+    },
+    {
+      "check": "gate: band high-value >= 95.0%",
+      "pass": true,
+      "detail": "observed=97.84"
+    },
+    {
+      "check": "gate: band edge >= 90.0%",
+      "pass": true,
+      "detail": "observed=98.33"
+    },
+    {
+      "check": "tracking: failing tests have bead tracking entries",
+      "pass": true,
+      "detail": "failing=7 tracked=7"
+    },
+    {
+      "check": "tracking: bead ids and statuses valid",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "ci gate: report reflects met threshold and non-blocked release",
+      "pass": true,
+      "detail": "threshold_met=True release_blocked=False"
+    },
+    {
+      "check": "regression: no pass-rate decrease vs previous release",
+      "pass": true,
+      "detail": "current=98.7 previous=98.1"
+    },
+    {
+      "check": "events: CCG-001",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: CCG-002",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: CCG-003",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: CCG-004",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "reproducibility: deterministic metadata complete",
+      "pass": true,
+      "detail": "complete"
+    },
+    {
+      "check": "determinism: order-insensitive aggregates",
+      "pass": true,
+      "detail": "stable"
+    },
+    {
+      "check": "adversarial: threshold drop blocks release",
+      "pass": true,
+      "detail": "adversarial_rate=93.15 blocked=True"
+    }
+  ]
+}

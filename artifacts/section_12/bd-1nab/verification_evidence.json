@@ -1,0 +1,45 @@
+{
+  "bead_id": "bd-1nab",
+  "section": "12",
+  "title": "Risk control: federated privacy leakage",
+  "timestamp": "2026-02-20T00:00:00Z",
+  "verdict": "PASS",
+  "files": {
+    "contract": "docs/specs/section_12/bd-1nab_contract.md",
+    "risk_report": "artifacts/12/federated_privacy_leakage_report.json",
+    "verification_script": "scripts/check_federated_privacy_leakage.py",
+    "python_tests": "tests/test_check_federated_privacy_leakage.py",
+    "check_report": "artifacts/section_12/bd-1nab/check_report.json",
+    "check_self_test": "artifacts/section_12/bd-1nab/check_self_test.json",
+    "unit_tests_output": "artifacts/section_12/bd-1nab/unit_tests.txt"
+  },
+  "metrics": {
+    "channels_count": 3,
+    "channels_with_default_epsilon_leq_1": 3,
+    "secure_aggregation_participants": 10,
+    "external_verifier_aggregate_only": true,
+    "unauthorized_reset_denied": true,
+    "python_verification_checks": 37,
+    "python_unit_tests": 20,
+    "event_codes": 5
+  },
+  "checks_summary": {
+    "passing": 37,
+    "failing": 0,
+    "total": 37
+  },
+  "commands": [
+    {
+      "command": "python3 scripts/check_federated_privacy_leakage.py --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 scripts/check_federated_privacy_leakage.py --self-test --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 -m unittest tests/test_check_federated_privacy_leakage.py",
+      "status": "pass"
+    }
+  ]
+}

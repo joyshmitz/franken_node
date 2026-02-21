@@ -1,0 +1,25 @@
+{
+  "contract_id": "rollback-command-v1",
+  "bead_id": "bd-nglx",
+  "description": "Canonical rollback-command contract payload for Section 11.",
+  "source_summary": "docs/change_summaries/example_change_summary.json",
+  "rollback_command": {
+    "command": "franken-node rollback apply --receipt artifacts/rollback/lease_guard_receipt.json --force-safe",
+    "idempotent": true,
+    "tested_in_ci": true,
+    "test_evidence_artifact": "artifacts/section_11/bd-nglx/rollback_command_ci_test.json",
+    "rollback_scope": {
+      "reverts": [
+        "policy configuration for lease guard finalize path",
+        "service-level compatibility gate override state",
+        "runtime feature-flag activation for lease guard validation"
+      ],
+      "does_not_revert": [
+        "already-emitted audit log events",
+        "externally processed queue messages",
+        "historical evidence bundles already exported"
+      ]
+    },
+    "estimated_duration": "2m30s"
+  }
+}

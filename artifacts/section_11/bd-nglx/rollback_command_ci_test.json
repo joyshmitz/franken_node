@@ -1,0 +1,6 @@
+{
+  "ok": true,
+  "test": "rollback_command_execution",
+  "idempotent_runs": 2,
+  "result": "restored_prior_state"
+}

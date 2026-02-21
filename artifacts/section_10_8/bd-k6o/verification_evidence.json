@@ -1,0 +1,59 @@
+{
+  "bead_id": "bd-k6o",
+  "section": "10.8",
+  "title": "Deterministic safe-mode startup and operation flags",
+  "status": "pass",
+  "timestamp": "2026-02-20T23:40:00Z",
+  "deliverables": {
+    "spec": "docs/specs/section_10_8/bd-k6o_contract.md",
+    "policy": "docs/policy/safe_mode_operations.md",
+    "implementation": "crates/franken-node/src/runtime/safe_mode.rs",
+    "verification_script": "scripts/check_safe_mode.py",
+    "unit_tests": "tests/test_check_safe_mode.py"
+  },
+  "event_codes": ["SMO-001", "SMO-002", "SMO-003", "SMO-004"],
+  "invariants": [
+    "INV-SMO-DETERMINISTIC",
+    "INV-SMO-RESTRICTED",
+    "INV-SMO-FLAGPARSE",
+    "INV-SMO-RECOVERY"
+  ],
+  "rust_types": [
+    "SafeModeEntryReason",
+    "OperationFlags",
+    "Capability",
+    "EventSeverity",
+    "SafeModeEvent",
+    "SafeModeError",
+    "SafeModeConfig",
+    "SafeModeEntryReceipt",
+    "ExitVerification",
+    "SafeModeStatus",
+    "SafeModeAuditEntry",
+    "SafeModeAction",
+    "SafeModeController"
+  ],
+  "rust_test_count": 93,
+  "operation_flags": ["--safe-mode", "--degraded", "--read-only", "--no-network"],
+  "entry_triggers": [
+    "ExplicitFlag (--safe-mode CLI flag)",
+    "EnvironmentVariable (FRANKEN_SAFE_MODE=1)",
+    "ConfigField (safe_mode: true)",
+    "TrustCorruption (automatic)",
+    "CrashLoop (automatic, default 3 crashes in 60s)",
+    "EpochMismatch (automatic)"
+  ],
+  "capabilities_restricted_in_safe_mode": [
+    "extension_loading",
+    "trust_delegations",
+    "trust_ledger_writes",
+    "outbound_network",
+    "scheduled_tasks",
+    "non_essential_listeners"
+  ],
+  "drill_tests": [
+    "test_drill_trust_corruption",
+    "test_drill_crash_loop",
+    "test_drill_epoch_mismatch"
+  ]
+}

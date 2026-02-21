@@ -1,0 +1,214 @@
+{
+  "bead_id": "bd-2w4u",
+  "title": "Risk control: hardening perf regression",
+  "section": "12",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 40,
+    "failing": 0,
+    "total": 40
+  },
+  "checks": [
+    {
+      "check": "file: contract doc",
+      "pass": true,
+      "detail": "exists: docs/specs/section_12/bd-2w4u_contract.md"
+    },
+    {
+      "check": "file: hardening perf report",
+      "pass": true,
+      "detail": "exists: artifacts/12/hardening_perf_regression_report.json"
+    },
+    {
+      "check": "contract: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "contract: term INV-HPR-PROFILES",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-HPR-P99-GATE",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-HPR-THROUGHPUT-GATE",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-HPR-RUNTIME-SWITCH",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-HPR-CI-REGRESSION",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario A",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario B",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario C",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario D",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "report: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report: valid json",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "profiles: baseline exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "profiles: strict exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "profiles: balanced exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "profiles: permissive exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "profiles: at least 3 hardening profiles",
+      "pass": true,
+      "detail": "count=3"
+    },
+    {
+      "check": "profiles: tradeoffs documented",
+      "pass": true,
+      "detail": "all documented"
+    },
+    {
+      "check": "balanced gate: p99 overhead <= 15%",
+      "pass": true,
+      "detail": "overhead=14.0%"
+    },
+    {
+      "check": "balanced gate: throughput >= 85%",
+      "pass": true,
+      "detail": "retention=87.0%"
+    },
+    {
+      "check": "runtime switch: reconfigurable without restart and no failures",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario A: strict profile benchmark documented",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario B: balanced profile gate pass",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario C: 20% regression blocked by CI",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario D: runtime switch under load no failures",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "continuous benchmarking: regressions >5% block merge",
+      "pass": true,
+      "detail": "all regressions >5% blocked"
+    },
+    {
+      "check": "continuous benchmarking: at least one blocked regression sample",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: HPR-001",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: HPR-002",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: HPR-003",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: HPR-004",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: HPR-005",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "logs: trace id present",
+      "pass": true,
+      "detail": "trace-bd-2w4u-perf"
+    },
+    {
+      "check": "aggregate: balanced p99 overhead matches recomputation",
+      "pass": true,
+      "detail": "reported=14.0 computed=14.0"
+    },
+    {
+      "check": "aggregate: balanced throughput retention matches recomputation",
+      "pass": true,
+      "detail": "reported=87.0 computed=87.0"
+    },
+    {
+      "check": "aggregate: hardening profile count matches recomputation",
+      "pass": true,
+      "detail": "reported=3 computed=3"
+    },
+    {
+      "check": "determinism: order-insensitive aggregate metrics",
+      "pass": true,
+      "detail": "stable"
+    },
+    {
+      "check": "determinism: adversarial perturbation flips p99 gate",
+      "pass": true,
+      "detail": "adversarial_overhead=25.0%"
+    }
+  ]
+}

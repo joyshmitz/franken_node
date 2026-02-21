@@ -1,0 +1,199 @@
+{
+  "bead_id": "bd-1nab",
+  "title": "Risk control: federated privacy leakage",
+  "section": "12",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 37,
+    "failing": 0,
+    "total": 37
+  },
+  "checks": [
+    {
+      "check": "file: contract doc",
+      "pass": true,
+      "detail": "exists: docs/specs/section_12/bd-1nab_contract.md"
+    },
+    {
+      "check": "file: federated privacy report",
+      "pass": true,
+      "detail": "exists: artifacts/12/federated_privacy_leakage_report.json"
+    },
+    {
+      "check": "contract: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "contract: term INV-FPL-BUDGETS",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-FPL-EXHAUSTION",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-FPL-SECURE-AGGREGATION",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-FPL-EXTERNAL-VERIFIER",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-FPL-RESET-AUTHZ",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario A",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario B",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario C",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario D",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "report: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report: valid json",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "channels: at least one telemetry channel",
+      "pass": true,
+      "detail": "count=3"
+    },
+    {
+      "check": "channels: default epsilon <= 1.0",
+      "pass": true,
+      "detail": "all channels within default max"
+    },
+    {
+      "check": "channels: budget consumption tracked to exhaustion",
+      "pass": true,
+      "detail": "all channels fully consumed"
+    },
+    {
+      "check": "channels: (N+1) emission blocked with stable error",
+      "pass": true,
+      "detail": "all channels block post-exhaustion emissions"
+    },
+    {
+      "check": "secure aggregation: >=10 participants and non-recoverability",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "external verifier: aggregate-only budget audit",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "unauthorized reset: denied and logged",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario A: budget exhaustion blocks emission",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario B: secure aggregation recovery attempt fails",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario C: verifier reports exhausted budget",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario D: unauthorized reset denied and logged",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "events: FPL-001",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: FPL-002",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: FPL-003",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: FPL-004",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: FPL-005",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "logs: trace id present",
+      "pass": true,
+      "detail": "trace-bd-1nab-federated-privacy"
+    },
+    {
+      "check": "aggregate: channel count matches recomputation",
+      "pass": true,
+      "detail": "reported=3 computed=3"
+    },
+    {
+      "check": "aggregate: default-epsilon channel count matches recomputation",
+      "pass": true,
+      "detail": "reported=3 computed=3"
+    },
+    {
+      "check": "aggregate: n+1 blocking flag matches recomputation",
+      "pass": true,
+      "detail": "reported=True computed=True"
+    },
+    {
+      "check": "aggregate: secure aggregation participant count matches report",
+      "pass": true,
+      "detail": "reported=10 computed=10"
+    },
+    {
+      "check": "determinism: order-insensitive channel aggregates",
+      "pass": true,
+      "detail": "stable"
+    },
+    {
+      "check": "determinism: adversarial perturbation flips exhaustion gate",
+      "pass": true,
+      "detail": "perturbation detected"
+    }
+  ]
+}

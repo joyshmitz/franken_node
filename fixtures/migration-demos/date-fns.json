@@ -1,0 +1,16 @@
+{
+  "name": "date-fns",
+  "category": "utility_library",
+  "repository_url": "https://github.com/date-fns/date-fns",
+  "pinned_version": "v3.6.0",
+  "pinned_commit_sha": "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3",
+  "github_stars_minimum": 10000,
+  "weekly_npm_downloads_minimum": 500000,
+  "direct_dependency_count_minimum": 5,
+  "test_coverage_minimum_percent": 60,
+  "maintenance_window_days": 90,
+  "pipeline_timeout_seconds": 600,
+  "rollback_test_pass_threshold_percent": 80,
+  "rollback_perf_regression_threshold_percent": 20,
+  "notes": "Pure-JS date utility library with broad API surface and strong test coverage."
+}

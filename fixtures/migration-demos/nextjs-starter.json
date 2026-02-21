@@ -1,0 +1,16 @@
+{
+  "name": "nextjs-starter",
+  "category": "fullstack_framework",
+  "repository_url": "https://github.com/vercel/next.js",
+  "pinned_version": "v14.2.0",
+  "pinned_commit_sha": "a1bc2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c",
+  "github_stars_minimum": 10000,
+  "weekly_npm_downloads_minimum": 500000,
+  "direct_dependency_count_minimum": 5,
+  "test_coverage_minimum_percent": 60,
+  "maintenance_window_days": 90,
+  "pipeline_timeout_seconds": 600,
+  "rollback_test_pass_threshold_percent": 80,
+  "rollback_perf_regression_threshold_percent": 20,
+  "notes": "Dominant full-stack React framework. Uses examples/hello-world as demo target."
+}

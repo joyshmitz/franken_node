@@ -1,0 +1,111 @@
+{
+  "bead_id": "bd-28sz",
+  "title": "Compatibility corpus gate (>= 95%)",
+  "section": "13",
+  "verdict": "PASS",
+  "total": 20,
+  "passed": 20,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "file_exists: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_13/bd-28sz_contract.md"
+    },
+    {
+      "check": "file_exists: policy document",
+      "pass": true,
+      "detail": "exists: docs/policy/compat_corpus_gate.md"
+    },
+    {
+      "check": "spec_threshold: '>= 95%'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_floor: '>= 80%'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_gate_tiers",
+      "pass": true,
+      "detail": "all 5 gate tiers present"
+    },
+    {
+      "check": "spec_event_codes",
+      "pass": true,
+      "detail": "all 4 event codes present"
+    },
+    {
+      "check": "spec_invariants",
+      "pass": true,
+      "detail": "all 4 invariants present"
+    },
+    {
+      "check": "spec_ratchet: '0%'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_run_time: '30 min'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_corpus_schema",
+      "pass": true,
+      "detail": "all schema fields documented"
+    },
+    {
+      "check": "spec_module_schema",
+      "pass": true,
+      "detail": "module sub-schema fields documented"
+    },
+    {
+      "check": "spec_section: 'Gate Decision Flow'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_formula: 'pass_rate'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_gate_tiers",
+      "pass": true,
+      "detail": "all 5 gate tiers in policy"
+    },
+    {
+      "check": "policy_event_codes",
+      "pass": true,
+      "detail": "all 4 event codes in policy"
+    },
+    {
+      "check": "policy_invariants",
+      "pass": true,
+      "detail": "all 4 invariants in policy"
+    },
+    {
+      "check": "policy_section: 'Governance'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Appeal Process'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_thresholds",
+      "pass": true,
+      "detail": "both thresholds present"
+    },
+    {
+      "check": "policy_section: 'Gate Decision Flow'",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

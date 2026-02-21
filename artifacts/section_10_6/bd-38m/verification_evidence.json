@@ -1,0 +1,117 @@
+{
+  "bead_id": "bd-38m",
+  "title": "Optimize lockstep harness throughput and memory profile",
+  "section": "10.6",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 21,
+  "passed": 21,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "spec_exists",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_6/bd-38m_contract.md"
+    },
+    {
+      "check": "policy_exists",
+      "pass": true,
+      "detail": "exists: docs/policy/lockstep_harness_optimization.md"
+    },
+    {
+      "check": "spec_keyword_streaming",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword_normalization",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword_spill_to_disk",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword_512mb",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword_20_percent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code_OLH-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code_OLH-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code_OLH-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code_OLH-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant_INV-OLH-STREAMING",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant_INV-OLH-THROUGHPUT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant_INV-OLH-NORMALIZATION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant_INV-OLH-SPILLTODISK",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "optimization_phases",
+      "pass": true,
+      "detail": "all 4 phases present"
+    },
+    {
+      "check": "benchmark_targets",
+      "pass": true,
+      "detail": "throughput+memory+fidelity targets present"
+    },
+    {
+      "check": "memory_ceiling",
+      "pass": true,
+      "detail": "configurable memory ceiling documented"
+    },
+    {
+      "check": "warm_pool",
+      "pass": true,
+      "detail": "warm pool reuse documented"
+    },
+    {
+      "check": "streaming_normalization_rules",
+      "pass": true,
+      "detail": "all 3 normalization rules present"
+    },
+    {
+      "check": "policy_event_codes",
+      "pass": true,
+      "detail": "all 4 event codes in policy"
+    }
+  ]
+}

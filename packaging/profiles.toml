@@ -1,0 +1,115 @@
+# Packaging Profiles for franken-node
+#
+# Defines three deployment profiles: local, dev, enterprise.
+# Selected via `--profile <name>` CLI flag or FRANKEN_NODE_PROFILE env var.
+# CLI flag takes precedence over env var.
+#
+# Bead: bd-3kn | Section: 10.6 Performance + Packaging
+
+[profiles.local]
+description = "Minimal local development build — fastest cold-start, smallest binary"
+
+[profiles.local.components]
+core_binary = true
+debug_symbols = false
+lockstep_harness = false
+fixture_generators = false
+compliance_evidence = false
+audit_log_infra = false
+signed_binary_verification = false
+telemetry_export = false
+
+[profiles.local.defaults]
+telemetry = "off"
+audit_logging = false
+binary_signing_verification = false
+verbose_logging = false
+strict_policy_evaluation = false
+
+[profiles.local.startup]
+mode = "lazy"
+deferred_policy_loading = true
+eager_module_loading = false
+integrity_self_check = false
+
+[profiles.local.size_budget]
+max_binary_mb = 25
+strip_debug_symbols = true
+exclude_compliance_bundles = true
+
+# ---------------------------------------------------------------
+
+[profiles.dev]
+description = "CI/dev pipeline build — debug symbols, verbose logging, reproducibility tooling"
+
+[profiles.dev.components]
+core_binary = true
+debug_symbols = true
+lockstep_harness = true
+fixture_generators = true
+compliance_evidence = false
+audit_log_infra = false
+signed_binary_verification = false
+telemetry_export = false
+
+[profiles.dev.defaults]
+telemetry = "debug-local"
+audit_logging = false
+binary_signing_verification = false
+verbose_logging = true
+strict_policy_evaluation = false
+
+[profiles.dev.startup]
+mode = "eager"
+deferred_policy_loading = false
+eager_module_loading = true
+integrity_self_check = false
+
+[profiles.dev.size_budget]
+max_binary_mb = 60
+strip_debug_symbols = false
+exclude_compliance_bundles = true
+
+# ---------------------------------------------------------------
+
+[profiles.enterprise]
+description = "Enterprise production build — signed binaries, audit logging, compliance evidence"
+
+[profiles.enterprise.components]
+core_binary = true
+debug_symbols = false
+lockstep_harness = false
+fixture_generators = false
+compliance_evidence = true
+audit_log_infra = true
+signed_binary_verification = true
+telemetry_export = true
+
+[profiles.enterprise.defaults]
+telemetry = "structured-export"
+audit_logging = true
+binary_signing_verification = true
+verbose_logging = false
+strict_policy_evaluation = true
+
+[profiles.enterprise.startup]
+mode = "full-integrity"
+deferred_policy_loading = false
+eager_module_loading = true
+integrity_self_check = true
+
+[profiles.enterprise.size_budget]
+max_binary_mb = 80
+strip_debug_symbols = true
+exclude_compliance_bundles = false
+
+# ---------------------------------------------------------------
+# Profile selection rules:
+#   1. --profile <name> CLI flag (highest priority)
+#   2. FRANKEN_NODE_PROFILE env var
+#   3. Default: "local" if neither set
+#
+# Unknown profile names MUST produce a clear error listing valid options
+# and exit non-zero.
+#
+# Valid profiles: local, dev, enterprise

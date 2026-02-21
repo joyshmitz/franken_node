@@ -2,9 +2,16 @@
   "bead_id": "bd-2f5l",
   "section": "10.16",
   "title": "fastapi_rust service skeleton",
-  "timestamp": "2026-02-20T00:00:00Z",
+  "timestamp": "2026-02-20T23:10:00Z",
   "verdict": "PASS",
   "files": {
+    "api_error": "crates/franken-node/src/api/error.rs",
+    "api_middleware": "crates/franken-node/src/api/middleware.rs",
+    "api_operator": "crates/franken-node/src/api/operator_routes.rs",
+    "api_verifier": "crates/franken-node/src/api/verifier_routes.rs",
+    "api_fleet_control": "crates/franken-node/src/api/fleet_control_routes.rs",
+    "api_service": "crates/franken-node/src/api/service.rs",
+    "api_mod": "crates/franken-node/src/api/mod.rs",
     "integration_tests": "tests/integration/fastapi_control_plane_endpoints.rs",
     "endpoint_report": "artifacts/10.16/fastapi_endpoint_report.json",
     "spec_doc": "docs/specs/section_10_16/bd-2f5l_contract.md",
@@ -12,22 +19,40 @@
     "python_tests": "tests/test_check_fastapi_skeleton.py"
   },
   "metrics": {
+    "rust_api_tests": 73,
     "rust_conformance_tests": 38,
     "python_verification_checks": 109,
     "python_unit_tests": 29,
-    "total_endpoints": 10,
+    "total_endpoints": 12,
     "operator_endpoints": 4,
     "verifier_endpoints": 3,
-    "fleet_control_endpoints": 3,
+    "fleet_control_endpoints": 5,
     "middleware_layers": 6,
-    "event_codes": 6,
-    "invariants": 4,
-    "types": 9,
-    "methods": 18
+    "event_codes": 8,
+    "api_error_variants": 8,
+    "rate_limit_configs": 3
   },
   "checks_summary": {
+    "cargo_check": "pass",
+    "cargo_test_api": "73 passed, 0 failed",
     "passing": 109,
     "failing": 0,
     "total": 109
+  },
+  "implementation_details": {
+    "middleware_chain": [
+      "TraceContext extraction (W3C traceparent)",
+      "Authentication (None, ApiKey, BearerToken, MtlsClientCert)",
+      "Authorization (RBAC + PolicyHook)",
+      "Rate limiting (token bucket per group, fail-closed for fleet)",
+      "Handler execution",
+      "Structured response + telemetry emission"
+    ],
+    "error_contract": "RFC 7807 ProblemDetail with FRANKEN_* code mapping",
+    "rate_limits": {
+      "operator": {"sustained_rps": 100, "burst_size": 200, "fail_closed": false},
+      "verifier": {"sustained_rps": 50, "burst_size": 100, "fail_closed": false},
+      "fleet_control": {"sustained_rps": 20, "burst_size": 40, "fail_closed": true}
+    }
   }
 }

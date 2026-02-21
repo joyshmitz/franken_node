@@ -1,0 +1,76 @@
+{
+  "bead_id": "bd-2fpj",
+  "section": "11",
+  "title": "Contract field: expected-loss model",
+  "status": "pass",
+  "passed": 13,
+  "total": 13,
+  "all_passed": true,
+  "checks": [
+    {
+      "name": "file_exists: spec contract",
+      "passed": true,
+      "detail": "exists: docs/specs/section_11/bd-2fpj_contract.md"
+    },
+    {
+      "name": "contract_field: 'change_summary.expected_loss_model'",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "scenarios_schema",
+      "passed": true,
+      "detail": "all scenario fields documented"
+    },
+    {
+      "name": "loss_categories",
+      "passed": true,
+      "detail": "all 5 loss categories present"
+    },
+    {
+      "name": "category_thresholds",
+      "passed": true,
+      "detail": "all threshold values present"
+    },
+    {
+      "name": "aggregate_formula",
+      "passed": true,
+      "detail": "formula documented"
+    },
+    {
+      "name": "confidence_interval",
+      "passed": true,
+      "detail": "confidence interval fully documented"
+    },
+    {
+      "name": "event_codes",
+      "passed": true,
+      "detail": "all 4 event codes present"
+    },
+    {
+      "name": "invariants",
+      "passed": true,
+      "detail": "all 4 invariants present"
+    },
+    {
+      "name": "acceptance_criteria",
+      "passed": true,
+      "detail": "section present with 14 criteria"
+    },
+    {
+      "name": "enforcement",
+      "passed": true,
+      "detail": "validator and tests referenced"
+    },
+    {
+      "name": "verification_evidence",
+      "passed": true,
+      "detail": "valid evidence file"
+    },
+    {
+      "name": "file_exists: verification summary",
+      "passed": true,
+      "detail": "exists: artifacts/section_11/bd-2fpj/verification_summary.md"
+    }
+  ]
+}

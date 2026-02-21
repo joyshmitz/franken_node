@@ -1,0 +1,157 @@
+{
+  "bead_id": "bd-3jc1",
+  "section": "12",
+  "generated_at": "2026-02-20T00:00:00Z",
+  "trace_id": "trace-bd-3jc1-cohort",
+  "event_codes": [
+    "MFP-001",
+    "MFP-002",
+    "MFP-003",
+    "MFP-004",
+    "MFP-005"
+  ],
+  "projects": [
+    {
+      "name": "express-starter",
+      "scenario": "A",
+      "autopilot_steps_total": 25,
+      "autopilot_steps_auto": 24,
+      "manual_interventions": 0,
+      "confidence_score": 93,
+      "migration_success": true,
+      "blockers": [],
+      "ranked_blockers": []
+    },
+    {
+      "name": "fastify-api",
+      "scenario": "cohort",
+      "autopilot_steps_total": 22,
+      "autopilot_steps_auto": 20,
+      "manual_interventions": 0,
+      "confidence_score": 88,
+      "migration_success": true,
+      "blockers": ["middleware API edge case"],
+      "ranked_blockers": [
+        {"rank": 1, "issue": "middleware API edge case"}
+      ]
+    },
+    {
+      "name": "nextjs-starter",
+      "scenario": "cohort",
+      "autopilot_steps_total": 30,
+      "autopilot_steps_auto": 25,
+      "manual_interventions": 0,
+      "confidence_score": 82,
+      "migration_success": true,
+      "blockers": ["dynamic route adapter"],
+      "ranked_blockers": [
+        {"rank": 1, "issue": "dynamic route adapter"}
+      ]
+    },
+    {
+      "name": "react-spa",
+      "scenario": "cohort",
+      "autopilot_steps_total": 18,
+      "autopilot_steps_auto": 16,
+      "manual_interventions": 0,
+      "confidence_score": 86,
+      "migration_success": true,
+      "blockers": ["asset path normalization"],
+      "ranked_blockers": [
+        {"rank": 1, "issue": "asset path normalization"}
+      ]
+    },
+    {
+      "name": "cli-tool",
+      "scenario": "cohort",
+      "autopilot_steps_total": 16,
+      "autopilot_steps_auto": 15,
+      "manual_interventions": 0,
+      "confidence_score": 90,
+      "migration_success": true,
+      "blockers": [],
+      "ranked_blockers": []
+    },
+    {
+      "name": "monorepo-services",
+      "scenario": "cohort",
+      "autopilot_steps_total": 40,
+      "autopilot_steps_auto": 34,
+      "manual_interventions": 0,
+      "confidence_score": 84,
+      "migration_success": true,
+      "blockers": ["workspace boundary mapping"],
+      "ranked_blockers": [
+        {"rank": 1, "issue": "workspace boundary mapping"}
+      ]
+    },
+    {
+      "name": "serverless-api",
+      "scenario": "cohort",
+      "autopilot_steps_total": 20,
+      "autopilot_steps_auto": 17,
+      "manual_interventions": 0,
+      "confidence_score": 81,
+      "migration_success": true,
+      "blockers": ["runtime edge bundling"],
+      "ranked_blockers": [
+        {"rank": 1, "issue": "runtime edge bundling"}
+      ]
+    },
+    {
+      "name": "native-addon-bridge",
+      "scenario": "B",
+      "autopilot_steps_total": 40,
+      "autopilot_steps_auto": 32,
+      "manual_interventions": 0,
+      "confidence_score": 42,
+      "migration_success": false,
+      "blockers": ["native addon", "ABI mismatch"],
+      "ranked_blockers": [
+        {"rank": 1, "issue": "native addon"},
+        {"rank": 2, "issue": "ABI mismatch"}
+      ]
+    },
+    {
+      "name": "ecommerce-mixed-mode",
+      "scenario": "C",
+      "autopilot_steps_total": 28,
+      "autopilot_steps_auto": 23,
+      "manual_interventions": 0,
+      "confidence_score": 78,
+      "migration_success": true,
+      "blockers": ["legacy payment module"],
+      "ranked_blockers": [
+        {"rank": 1, "issue": "legacy payment module"}
+      ],
+      "mixed_mode": {
+        "migrated_module_pct": 50,
+        "franken_node_runtime_ok": true,
+        "legacy_runtime_ok": true,
+        "bridge_calls_ok": true
+      }
+    },
+    {
+      "name": "legacy-bun-interop",
+      "scenario": "cohort",
+      "autopilot_steps_total": 24,
+      "autopilot_steps_auto": 20,
+      "manual_interventions": 0,
+      "confidence_score": 76,
+      "migration_success": true,
+      "blockers": ["bun-specific fs shim"],
+      "ranked_blockers": [
+        {"rank": 1, "issue": "bun-specific fs shim"}
+      ]
+    }
+  ],
+  "aggregate": {
+    "cohort_size": 10,
+    "autopilot_coverage_pct": 85.9,
+    "confidence_reports_generated": 10,
+    "high_confidence_threshold": 80,
+    "high_confidence_count": 7,
+    "high_confidence_success_count": 7,
+    "high_confidence_success_rate_pct": 100.0
+  }
+}

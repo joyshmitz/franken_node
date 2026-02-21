@@ -1,0 +1,209 @@
+{
+  "bead_id": "bd-paui",
+  "title": "Risk control: topological choke-point false positives",
+  "section": "12",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 39,
+    "failing": 0,
+    "total": 39
+  },
+  "checks": [
+    {
+      "check": "file: contract doc",
+      "pass": true,
+      "detail": "exists: docs/specs/section_12/bd-paui_contract.md"
+    },
+    {
+      "check": "file: chokepoint FP report",
+      "pass": true,
+      "detail": "exists: artifacts/12/chokepoint_false_positive_report.json"
+    },
+    {
+      "check": "contract: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "contract: term INV-CFP-SIMULATION",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-CFP-FP-GATE",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-CFP-EV-GATE",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-CFP-STAGED",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-CFP-ROLLBACK",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario A",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario B",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario C",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario D",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "report: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report: valid json",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "rules: at least one rule exists",
+      "pass": true,
+      "detail": "rules=3"
+    },
+    {
+      "check": "simulation: every rule replayed on >=1000 operations",
+      "pass": true,
+      "detail": "all rules satisfy replay minimum"
+    },
+    {
+      "check": "false-positive gate: enforced rules <=1%",
+      "pass": true,
+      "detail": "all enforced rules within threshold"
+    },
+    {
+      "check": "expected-loss gate: enforced rules net-positive",
+      "pass": true,
+      "detail": "all enforced rules net positive"
+    },
+    {
+      "check": "staged rollout: audit->warn->enforce with >=24h stage duration",
+      "pass": true,
+      "detail": "all rules follow staged rollout policy"
+    },
+    {
+      "check": "audit mode: logs violations without blocking",
+      "pass": true,
+      "detail": "audit stages have zero blocked operations"
+    },
+    {
+      "check": "scenario A: 5% legitimate-block rule rejected",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario B: audit mode logs-only behavior",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario C: promotion allowed only for <=1% FP",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario D: expected-loss net-negative rule flagged",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "events: CFP-001",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: CFP-002",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: CFP-003",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: CFP-004",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: CFP-005",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "logs: trace id present",
+      "pass": true,
+      "detail": "trace-bd-paui-cfp"
+    },
+    {
+      "check": "aggregate: rules_total matches recomputation",
+      "pass": true,
+      "detail": "reported=3 computed=3"
+    },
+    {
+      "check": "aggregate: rules_enforced matches recomputation",
+      "pass": true,
+      "detail": "reported=1 computed=1"
+    },
+    {
+      "check": "aggregate: rules_rejected matches recomputation",
+      "pass": true,
+      "detail": "reported=1 computed=1"
+    },
+    {
+      "check": "aggregate: min replay operations >=1000",
+      "pass": true,
+      "detail": "reported=1000"
+    },
+    {
+      "check": "aggregate: max enforced FP matches recomputation",
+      "pass": true,
+      "detail": "reported=0.6 computed=0.6"
+    },
+    {
+      "check": "aggregate: enforced net-positive flag matches recomputation",
+      "pass": true,
+      "detail": "reported=True computed=True"
+    },
+    {
+      "check": "aggregate: stage-duration flag matches recomputation",
+      "pass": true,
+      "detail": "reported=True computed=True"
+    },
+    {
+      "check": "determinism: order-insensitive aggregate evaluation",
+      "pass": true,
+      "detail": "stable"
+    },
+    {
+      "check": "adversarial: enforced FP >1% is detected",
+      "pass": true,
+      "detail": "adversarial_max_enforced_fp=2.0"
+    }
+  ]
+}

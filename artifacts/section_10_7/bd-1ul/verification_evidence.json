@@ -1,0 +1,325 @@
+{
+  "gate": "fuzz_adversarial_testing",
+  "bead": "bd-1ul",
+  "section": "10.7",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "FZT-001",
+      "description": "file_exists: spec contract",
+      "status": "PASS",
+      "details": "exists: docs/specs/section_10_7/bd-1ul_contract.md"
+    },
+    {
+      "id": "FZT-002",
+      "description": "file_exists: fuzz policy document",
+      "status": "PASS",
+      "details": "exists: docs/policy/fuzz_adversarial_testing.md"
+    },
+    {
+      "id": "FZT-003",
+      "description": "file_exists: fuzz budget config",
+      "status": "PASS",
+      "details": "exists: fuzz/config/fuzz_budget.toml"
+    },
+    {
+      "id": "FZT-004",
+      "description": "budget_config: migration section",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-005",
+      "description": "budget_config: shim section",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-006",
+      "description": "budget_config: min_seconds_per_target",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-007",
+      "description": "dir_exists: migration corpus directory",
+      "status": "PASS",
+      "details": "exists: fuzz/corpus/migration"
+    },
+    {
+      "id": "FZT-008",
+      "description": "corpus_migration: seed count >= 50",
+      "status": "PASS",
+      "details": "50 seeds (minimum 50)"
+    },
+    {
+      "id": "FZT-009",
+      "description": "dir_exists: shim corpus directory",
+      "status": "PASS",
+      "details": "exists: fuzz/corpus/shim"
+    },
+    {
+      "id": "FZT-010",
+      "description": "corpus_shim: seed count >= 50",
+      "status": "PASS",
+      "details": "50 seeds (minimum 50)"
+    },
+    {
+      "id": "FZT-011",
+      "description": "dir_exists: migration regression directory",
+      "status": "PASS",
+      "details": "exists: fuzz/regression/migration"
+    },
+    {
+      "id": "FZT-012",
+      "description": "regression_migration: seed count >= 1",
+      "status": "PASS",
+      "details": "3 regression seeds"
+    },
+    {
+      "id": "FZT-013",
+      "description": "dir_exists: shim regression directory",
+      "status": "PASS",
+      "details": "exists: fuzz/regression/shim"
+    },
+    {
+      "id": "FZT-014",
+      "description": "regression_shim: seed count >= 1",
+      "status": "PASS",
+      "details": "2 regression seeds"
+    },
+    {
+      "id": "FZT-015",
+      "description": "dir_exists: fuzz targets directory",
+      "status": "PASS",
+      "details": "exists: fuzz/targets"
+    },
+    {
+      "id": "FZT-016",
+      "description": "file_exists: target: migration_directory_scan.rs",
+      "status": "PASS",
+      "details": "exists: fuzz/targets/migration_directory_scan.rs"
+    },
+    {
+      "id": "FZT-017",
+      "description": "file_exists: target: migration_package_parse.rs",
+      "status": "PASS",
+      "details": "exists: fuzz/targets/migration_package_parse.rs"
+    },
+    {
+      "id": "FZT-018",
+      "description": "file_exists: target: migration_dependency_resolve.rs",
+      "status": "PASS",
+      "details": "exists: fuzz/targets/migration_dependency_resolve.rs"
+    },
+    {
+      "id": "FZT-019",
+      "description": "file_exists: target: shim_api_translation.rs",
+      "status": "PASS",
+      "details": "exists: fuzz/targets/shim_api_translation.rs"
+    },
+    {
+      "id": "FZT-020",
+      "description": "file_exists: target: shim_type_coercion.rs",
+      "status": "PASS",
+      "details": "exists: fuzz/targets/shim_type_coercion.rs"
+    },
+    {
+      "id": "FZT-021",
+      "description": "target_tests: migration_directory_scan.rs",
+      "status": "PASS",
+      "details": "5 tests (minimum 2)"
+    },
+    {
+      "id": "FZT-022",
+      "description": "target_tests: migration_package_parse.rs",
+      "status": "PASS",
+      "details": "5 tests (minimum 2)"
+    },
+    {
+      "id": "FZT-023",
+      "description": "target_tests: migration_dependency_resolve.rs",
+      "status": "PASS",
+      "details": "4 tests (minimum 2)"
+    },
+    {
+      "id": "FZT-024",
+      "description": "target_tests: shim_api_translation.rs",
+      "status": "PASS",
+      "details": "5 tests (minimum 2)"
+    },
+    {
+      "id": "FZT-025",
+      "description": "target_tests: shim_type_coercion.rs",
+      "status": "PASS",
+      "details": "5 tests (minimum 2)"
+    },
+    {
+      "id": "FZT-026",
+      "description": "file_exists: migration coverage report",
+      "status": "PASS",
+      "details": "exists: fuzz/coverage/latest_migration.json"
+    },
+    {
+      "id": "FZT-027",
+      "description": "file_exists: shim coverage report",
+      "status": "PASS",
+      "details": "exists: fuzz/coverage/latest_shim.json"
+    },
+    {
+      "id": "FZT-028",
+      "description": "coverage_migration: has event_code FZT-004",
+      "status": "PASS",
+      "details": "event_code=FZT-004"
+    },
+    {
+      "id": "FZT-029",
+      "description": "coverage_migration: coverage > 0%",
+      "status": "PASS",
+      "details": "coverage_pct=79.2"
+    },
+    {
+      "id": "FZT-030",
+      "description": "coverage_migration: crashes_found field",
+      "status": "PASS",
+      "details": "field present"
+    },
+    {
+      "id": "FZT-031",
+      "description": "coverage_shim: has event_code FZT-004",
+      "status": "PASS",
+      "details": "event_code=FZT-004"
+    },
+    {
+      "id": "FZT-032",
+      "description": "coverage_shim: coverage > 0%",
+      "status": "PASS",
+      "details": "coverage_pct=78.8"
+    },
+    {
+      "id": "FZT-033",
+      "description": "coverage_shim: crashes_found field",
+      "status": "PASS",
+      "details": "field present"
+    },
+    {
+      "id": "FZT-034",
+      "description": "spec_content: FZT-001",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-035",
+      "description": "spec_content: FZT-002",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-036",
+      "description": "spec_content: FZT-003",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-037",
+      "description": "spec_content: FZT-004",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-038",
+      "description": "spec_content: INV-FZT-CORPUS",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-039",
+      "description": "spec_content: INV-FZT-REGRESS",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-040",
+      "description": "spec_content: INV-FZT-BUDGET",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-041",
+      "description": "spec_content: INV-FZT-COVERAGE",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-042",
+      "description": "spec_content: INV-FZT-TRIAGE",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-043",
+      "description": "spec_content: fuzz_migration_directory_scan",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-044",
+      "description": "spec_content: fuzz_migration_package_parse",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-045",
+      "description": "spec_content: fuzz_migration_dependency_resolve",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-046",
+      "description": "spec_content: fuzz_shim_api_translation",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-047",
+      "description": "spec_content: fuzz_shim_type_coercion",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-048",
+      "description": "policy_content: Corpus Management",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-049",
+      "description": "policy_content: Regression Seed",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-050",
+      "description": "policy_content: CI Gate",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-051",
+      "description": "policy_content: Coverage Tracking",
+      "status": "PASS",
+      "details": "found"
+    },
+    {
+      "id": "FZT-052",
+      "description": "policy_content: Structured Logging",
+      "status": "PASS",
+      "details": "found"
+    }
+  ],
+  "summary": {
+    "total_checks": 52,
+    "passing_checks": 52,
+    "failing_checks": 0
+  }
+}

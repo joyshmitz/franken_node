@@ -1,0 +1,16 @@
+{
+  "name": "express",
+  "category": "web_framework",
+  "repository_url": "https://github.com/expressjs/express",
+  "pinned_version": "v4.21.0",
+  "pinned_commit_sha": "bdb89898e18a4e3a5e4c2a7f4a1e3cc2f8b26f61",
+  "github_stars_minimum": 10000,
+  "weekly_npm_downloads_minimum": 500000,
+  "direct_dependency_count_minimum": 5,
+  "test_coverage_minimum_percent": 60,
+  "maintenance_window_days": 90,
+  "pipeline_timeout_seconds": 600,
+  "rollback_test_pass_threshold_percent": 80,
+  "rollback_perf_regression_threshold_percent": 20,
+  "notes": "Most widely used Node.js HTTP framework. Strong test suite coverage."
+}

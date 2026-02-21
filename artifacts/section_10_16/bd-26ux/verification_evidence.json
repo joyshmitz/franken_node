@@ -1,0 +1,54 @@
+{
+  "bead_id": "bd-26ux",
+  "section": "10.16",
+  "title": "Migration path from interim/local stores to frankensqlite",
+  "timestamp": "2026-02-20T00:00:00Z",
+  "verdict": "PASS",
+  "files": {
+    "migration_doc": "docs/migration/to_frankensqlite.md",
+    "migration_tests": "tests/migration/frankensqlite_migration_idempotence.rs",
+    "migration_report": "artifacts/10.16/frankensqlite_migration_report.json",
+    "verification_script": "scripts/check_frankensqlite_migration.py",
+    "python_tests": "tests/test_check_frankensqlite_migration.py",
+    "check_report": "artifacts/section_10_16/bd-26ux/check_report.json",
+    "check_self_test": "artifacts/section_10_16/bd-26ux/check_self_test.json",
+    "unit_tests_output": "artifacts/section_10_16/bd-26ux/unit_tests.txt"
+  },
+  "metrics": {
+    "state_domains": 9,
+    "migration_event_codes": 6,
+    "rust_migration_tests": 12,
+    "python_verification_checks": 206,
+    "python_unit_tests": 24
+  },
+  "checks_summary": {
+    "passing": 206,
+    "failing": 0,
+    "total": 206
+  },
+  "commands": [
+    {
+      "command": "python3 scripts/check_frankensqlite_migration.py --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 -m unittest tests/test_check_frankensqlite_migration.py",
+      "status": "pass"
+    },
+    {
+      "command": "rch exec -- cargo check --all-targets",
+      "status": "pass",
+      "note": "Completed with pre-existing warnings in unrelated modules"
+    },
+    {
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "status": "fail",
+      "note": "Pre-existing repository-wide clippy debt outside bd-26ux scope"
+    },
+    {
+      "command": "rch exec -- cargo fmt --check",
+      "status": "fail",
+      "note": "Pre-existing repository-wide formatting drift outside bd-26ux scope"
+    }
+  ]
+}

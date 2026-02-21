@@ -1,0 +1,71 @@
+{
+  "bead_id": "bd-1xao",
+  "title": "Impossible-by-default adoption enforcement",
+  "section": "13",
+  "status": "pass",
+  "timestamp": "2026-02-20T00:00:00Z",
+  "checks": {
+    "total": 120,
+    "passed": 120,
+    "failed": 0
+  },
+  "artifacts": {
+    "spec_contract": "docs/specs/section_13/bd-1xao_contract.md",
+    "policy_document": "docs/policy/impossible_by_default_adoption.md",
+    "rust_implementation": "crates/franken-node/src/security/impossible_default.rs",
+    "verification_script": "scripts/check_impossible_default.py",
+    "unit_tests": "tests/test_check_impossible_default.py"
+  },
+  "event_codes": ["IBD-001", "IBD-002", "IBD-003", "IBD-004"],
+  "invariants": {
+    "implementation": ["INV-IBD-ENFORCE", "INV-IBD-TOKEN", "INV-IBD-AUDIT", "INV-IBD-ADOPTION"],
+    "spec": ["INV-IBD-DEFAULT", "INV-IBD-AUTH", "INV-IBD-AUDIT", "INV-IBD-COVERAGE"]
+  },
+  "error_codes": ["ERR_IBD_BLOCKED", "ERR_IBD_TOKEN_EXPIRED", "ERR_IBD_INVALID_SIGNATURE", "ERR_IBD_SILENT_DISABLE"],
+  "impossible_capabilities": [
+    "FsAccess",
+    "OutboundNetwork",
+    "ChildProcessSpawn",
+    "UnsignedExtension",
+    "DisableHardening"
+  ],
+  "capability_states": ["BLOCKED", "AUTHORIZED", "ACTIVE", "REVOKED"],
+  "adoption_tiers": {
+    "A0": "< 50%",
+    "A1": "50% - 74%",
+    "A2": "75% - 89%",
+    "A3": "90% - 94%",
+    "A4": ">= 95%"
+  },
+  "release_gate_threshold": "A3",
+  "quantitative_targets": {
+    "capability_coverage": ">= 95%",
+    "bypass_detection_rate": "100%",
+    "authorization_audit_completeness": "100%",
+    "operator_adoption_rate": ">= 90%",
+    "mean_time_to_authorize": "<= 24 hours",
+    "revocation_latency": "<= 1 hour"
+  },
+  "dangerous_operation_categories": [
+    "Credential management",
+    "Network exposure",
+    "Data exfiltration paths",
+    "Privilege escalation",
+    "Configuration override"
+  ],
+  "rust_test_count": 50,
+  "rust_module": "crates/franken-node/src/security/impossible_default.rs",
+  "types": [
+    "ImpossibleCapability",
+    "CapabilityToken",
+    "CapabilityEnforcer",
+    "EnforcementReport",
+    "EnforcementError",
+    "EnforcementAuditEntry",
+    "EnforcementMetrics",
+    "EnforcementStatus",
+    "CapabilityReportEntry",
+    "SignatureVerifier",
+    "HashSignatureVerifier"
+  ]
+}

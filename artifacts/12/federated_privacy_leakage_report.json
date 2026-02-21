@@ -1,0 +1,92 @@
+{
+  "bead_id": "bd-1nab",
+  "title": "Risk control: federated privacy leakage",
+  "section": "12",
+  "trace_id": "trace-bd-1nab-federated-privacy",
+  "channels": [
+    {
+      "channel": "runtime_health",
+      "epsilon_budget": 0.8,
+      "epsilon_consumed": 0.8,
+      "emissions_allowed": 8,
+      "emissions_attempted": 9,
+      "n_plus_one_blocked": true,
+      "blocked_error": "ERR_PRIVACY_BUDGET_EXHAUSTED"
+    },
+    {
+      "channel": "policy_decision_telemetry",
+      "epsilon_budget": 1.0,
+      "epsilon_consumed": 1.0,
+      "emissions_allowed": 10,
+      "emissions_attempted": 11,
+      "n_plus_one_blocked": true,
+      "blocked_error": "ERR_PRIVACY_BUDGET_EXHAUSTED"
+    },
+    {
+      "channel": "anomaly_signal",
+      "epsilon_budget": 0.6,
+      "epsilon_consumed": 0.6,
+      "emissions_allowed": 6,
+      "emissions_attempted": 7,
+      "n_plus_one_blocked": true,
+      "blocked_error": "ERR_PRIVACY_BUDGET_EXHAUSTED"
+    }
+  ],
+  "secure_aggregation": {
+    "participants": 10,
+    "contributions_encrypted": true,
+    "aggregate_visible_only": true,
+    "recovery_attack_attempted": true,
+    "recovery_succeeded": false
+  },
+  "external_verifier": {
+    "api_available": true,
+    "input_scope": "aggregate+budget-only",
+    "budget_exhausted_detected": true,
+    "raw_data_accessed": false
+  },
+  "budget_reset_attempt": {
+    "authorized": false,
+    "denied": true,
+    "error_code": "ERR_PRIVACY_BUDGET_RESET_DENIED",
+    "logged_event": "FPL-005"
+  },
+  "scenarios": [
+    {
+      "scenario": "A",
+      "name": "budget-exhaustion-block",
+      "exhaustion_blocked": true,
+      "error_code": "ERR_PRIVACY_BUDGET_EXHAUSTED"
+    },
+    {
+      "scenario": "B",
+      "name": "secure-aggregation-recovery-attempt",
+      "participants": 10,
+      "recovery_succeeded": false
+    },
+    {
+      "scenario": "C",
+      "name": "external-verifier-consumed-budget",
+      "verifier_reports_exhausted": true
+    },
+    {
+      "scenario": "D",
+      "name": "unauthorized-budget-reset",
+      "reset_denied": true,
+      "logged_event": "FPL-005"
+    }
+  ],
+  "event_codes": [
+    "FPL-001",
+    "FPL-002",
+    "FPL-003",
+    "FPL-004",
+    "FPL-005"
+  ],
+  "aggregate": {
+    "channels_count": 3,
+    "channels_with_default_epsilon_leq_1": 3,
+    "all_exhausted_channels_block_n_plus_one": true,
+    "secure_aggregation_participants": 10
+  }
+}

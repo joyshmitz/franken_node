@@ -1,0 +1,77 @@
+# franken_node Headline Claims Registry
+#
+# Each claim entry defines a verifiable headline claim made by the project.
+# The reproduction system uses this registry to determine what to verify
+# and how to evaluate results.
+#
+# Required fields per claim:
+#   claim_id             - Unique identifier (HC-NNN)
+#   claim_text           - Human-readable claim statement
+#   verification_method  - How the claim is verified (test_suite, benchmark, audit)
+#   acceptance_threshold - Quantitative pass/fail boundary
+#   test_reference       - Path to the specific test or benchmark
+#   category             - One of: compatibility, security, performance, migration, trust
+
+[[claim]]
+claim_id = "HC-001"
+claim_text = "franken_node passes the Node.js compatibility test suite for supported APIs"
+verification_method = "test_suite"
+acceptance_threshold = "100% pass rate"
+test_reference = "tests/compatibility/"
+category = "compatibility"
+
+[[claim]]
+claim_id = "HC-002"
+claim_text = "franken_node enforces supply-chain trust cards with cryptographic integrity"
+verification_method = "test_suite"
+acceptance_threshold = "100% pass rate"
+test_reference = "crates/franken-node/src/supply_chain/trust_card.rs"
+category = "trust"
+
+[[claim]]
+claim_id = "HC-003"
+claim_text = "franken_node API latency is within 10% of Node.js for equivalent workloads"
+verification_method = "benchmark"
+acceptance_threshold = "p99 latency <= 110% of Node.js reference"
+test_reference = "benchmarks/latency/"
+category = "performance"
+
+[[claim]]
+claim_id = "HC-004"
+claim_text = "franken_node migration pathways preserve data integrity across versions"
+verification_method = "test_suite"
+acceptance_threshold = "100% pass rate"
+test_reference = "tests/migration/"
+category = "migration"
+
+[[claim]]
+claim_id = "HC-005"
+claim_text = "franken_node security controls pass all conformance checks"
+verification_method = "test_suite"
+acceptance_threshold = "100% pass rate"
+test_reference = "tests/security/"
+category = "security"
+
+[[claim]]
+claim_id = "HC-006"
+claim_text = "franken_node connector health gate evaluates within 50ms budget"
+verification_method = "benchmark"
+acceptance_threshold = "p99 <= 50ms"
+test_reference = "benchmarks/health_gate/"
+category = "performance"
+
+[[claim]]
+claim_id = "HC-007"
+claim_text = "franken_node fencing decisions are deterministic under identical inputs"
+verification_method = "test_suite"
+acceptance_threshold = "100% determinism"
+test_reference = "crates/franken-node/src/connector/fencing.rs"
+category = "security"
+
+[[claim]]
+claim_id = "HC-008"
+claim_text = "franken_node rollout state transitions conform to the defined state machine"
+verification_method = "test_suite"
+acceptance_threshold = "100% pass rate"
+test_reference = "crates/franken-node/src/connector/rollout_state.rs"
+category = "compatibility"

@@ -1,0 +1,164 @@
+{
+  "bead_id": "bd-3jc1",
+  "title": "Risk control: migration friction persistence",
+  "section": "12",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 30,
+    "failing": 0,
+    "total": 30
+  },
+  "checks": [
+    {
+      "check": "file: contract doc",
+      "pass": true,
+      "detail": "exists: docs/specs/section_12/bd-3jc1_contract.md"
+    },
+    {
+      "check": "file: migration friction report",
+      "pass": true,
+      "detail": "exists: artifacts/12/migration_friction_report.json"
+    },
+    {
+      "check": "contract: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "contract: term INV-MFP-AUTOPILOT",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-MFP-CONFIDENCE-REPORT",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-MFP-CALIBRATION",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-MFP-MIXED-MODE",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario A",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario B",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario C",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "report: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report: valid json",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "report: cohort size",
+      "pass": true,
+      "detail": "10 projects"
+    },
+    {
+      "check": "autopilot: coverage >= 80%",
+      "pass": true,
+      "detail": "coverage=85.9%"
+    },
+    {
+      "check": "autopilot: zero manual interventions",
+      "pass": true,
+      "detail": "all zero"
+    },
+    {
+      "check": "confidence: report generated for every attempt",
+      "pass": true,
+      "detail": "all projects have score and ranked blockers"
+    },
+    {
+      "check": "confidence: score>=80 predicts >=90% success",
+      "pass": true,
+      "detail": "observed=100.0%"
+    },
+    {
+      "check": "scenario A: express starter",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario B: native addon blocker",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario C: mixed-mode partial migration",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "events: MFP-001",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: MFP-002",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: MFP-003",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: MFP-004",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: MFP-005",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "logs: trace id present",
+      "pass": true,
+      "detail": "trace-bd-3jc1-cohort"
+    },
+    {
+      "check": "aggregate: coverage matches recomputation",
+      "pass": true,
+      "detail": "reported=85.9 computed=85.9"
+    },
+    {
+      "check": "aggregate: calibration matches recomputation",
+      "pass": true,
+      "detail": "reported=100.0 computed=100.0"
+    },
+    {
+      "check": "determinism: order-insensitive aggregate metrics",
+      "pass": true,
+      "detail": "stable"
+    },
+    {
+      "check": "determinism: adversarial perturbation flips calibration gate",
+      "pass": true,
+      "detail": "adversarial_rate=85.7%"
+    }
+  ]
+}

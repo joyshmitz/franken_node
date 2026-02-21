@@ -1,0 +1,132 @@
+{
+  "bead_id": "bd-1n1t",
+  "title": "Risk control: topology blind spots",
+  "section": "12",
+  "trace_id": "trace-bd-1n1t-topology",
+  "graph_ingestion": {
+    "generated_on_build": true,
+    "includes_transitive": true,
+    "queryable_structure": "adjacency-list",
+    "metadata_source": "cargo metadata",
+    "node_count": 812,
+    "edge_count": 3196,
+    "unresolved_edges": 0
+  },
+  "topology_metrics": {
+    "drift_threshold_pct": 20.0,
+    "max_depth": {
+      "baseline": 14,
+      "current": 16,
+      "drift_pct": 14.3
+    },
+    "average_fan_out": {
+      "baseline": 3.2,
+      "current": 3.6,
+      "drift_pct": 12.5
+    },
+    "betweenness_top10": [
+      {
+        "node": "serde",
+        "score": 0.82
+      },
+      {
+        "node": "tokio",
+        "score": 0.79
+      },
+      {
+        "node": "syn",
+        "score": 0.71
+      },
+      {
+        "node": "quote",
+        "score": 0.66
+      },
+      {
+        "node": "proc-macro2",
+        "score": 0.63
+      },
+      {
+        "node": "clap",
+        "score": 0.57
+      },
+      {
+        "node": "serde_json",
+        "score": 0.55
+      },
+      {
+        "node": "regex",
+        "score": 0.53
+      },
+      {
+        "node": "bytes",
+        "score": 0.51
+      },
+      {
+        "node": "thiserror",
+        "score": 0.49
+      }
+    ],
+    "review_alerts": []
+  },
+  "choke_points": [
+    {
+      "dependency": "serde",
+      "path_share_pct": 58.4,
+      "alert_triggered": true,
+      "heightened_review": true
+    },
+    {
+      "dependency": "tokio",
+      "path_share_pct": 52.1,
+      "alert_triggered": true,
+      "heightened_review": true
+    },
+    {
+      "dependency": "regex",
+      "path_share_pct": 33.7,
+      "alert_triggered": false,
+      "heightened_review": false
+    }
+  ],
+  "scenarios": [
+    {
+      "scenario": "A",
+      "name": "deep-transitive-addition",
+      "captured_by_ingestion": true,
+      "previous_depth": 15,
+      "current_depth": 18,
+      "depth_increase": 3
+    },
+    {
+      "scenario": "B",
+      "name": "chokepoint-introduced",
+      "dependency": "openssl-sys",
+      "path_share_pct": 62.0,
+      "alert_triggered": true
+    },
+    {
+      "scenario": "C",
+      "name": "chokepoint-removed",
+      "dependency": "openssl-sys",
+      "previous_path_share_pct": 62.0,
+      "current_path_share_pct": 34.0,
+      "metrics_improved": true,
+      "alert_cleared": true
+    },
+    {
+      "scenario": "D",
+      "name": "cycle-detection",
+      "cycles_detected": 2,
+      "reported": true,
+      "handled_gracefully": true,
+      "ingestion_continued": true
+    }
+  ],
+  "event_codes": [
+    "TBS-101",
+    "TBS-102",
+    "TBS-103",
+    "TBS-104",
+    "TBS-105"
+  ]
+}
