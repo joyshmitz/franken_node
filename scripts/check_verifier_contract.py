@@ -24,6 +24,7 @@ TITLE = "Verifier CLI conformance contract tests"
 CONTRACT_PATH = ROOT / "spec" / "verifier_cli_contract.toml"
 CLI_PATH = ROOT / "crates" / "franken-node" / "src" / "cli.rs"
 MAIN_PATH = ROOT / "crates" / "franken-node" / "src" / "main.rs"
+SPEC_CONTRACT_PATH = ROOT / "docs" / "specs" / "section_10_7" / "bd-3ex_contract.md"
 
 REQUIRED_COMMAND_IDS = [
     "verify-module",
@@ -216,6 +217,18 @@ def run_checks(
     main_text = _load_text(MAIN_PATH)
     main_ok = all(marker in main_text for marker in MAIN_MARKERS)
     checks.append(_check("main_routes_required_subcommands", main_ok, "main.rs routes required verifier command variants"))
+
+    spec_text = _load_text(SPEC_CONTRACT_PATH)
+    spec_ok = bool(spec_text.strip()) and all(
+        token in spec_text for token in ("verify-module", "verify-migration", "verify-compatibility", "verify-corpus")
+    )
+    checks.append(
+        _check(
+            "docs_spec_contract_present",
+            spec_ok,
+            str(SPEC_CONTRACT_PATH.relative_to(ROOT)),
+        )
+    )
 
     scenarios = contract.get("scenarios", [])
     scenario_ids = [row.get("scenario_id") for row in scenarios if isinstance(row, dict)]

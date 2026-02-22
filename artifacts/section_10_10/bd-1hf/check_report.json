@@ -1,0 +1,105 @@
+{
+  "bead_id": "bd-1hf",
+  "section": "10.10",
+  "title": "FCP-Inspired Hardening + Interop Integration Track",
+  "checks": [
+    {
+      "check": "epic_record_accessible",
+      "pass": true,
+      "detail": "br show bd-1hf readable"
+    },
+    {
+      "check": "epic_identity",
+      "pass": true,
+      "detail": "id=bd-1hf issue_type=epic"
+    },
+    {
+      "check": "epic_section_label",
+      "pass": true,
+      "detail": "labels=['plan', 'section-10-10']"
+    },
+    {
+      "check": "success_criteria_documented",
+      "pass": true,
+      "detail": "Success Criteria present in description"
+    },
+    {
+      "check": "optimization_notes_documented",
+      "pass": true,
+      "detail": "Optimization Notes present in description"
+    },
+    {
+      "check": "has_dependencies",
+      "pass": true,
+      "detail": "dependency_count=15"
+    },
+    {
+      "check": "all_dependencies_closed",
+      "pass": true,
+      "detail": "closed=15/15 open=[]"
+    },
+    {
+      "check": "section_gate_dependency_present",
+      "pass": true,
+      "detail": "bd-1jjq in dependencies"
+    },
+    {
+      "check": "master_graph_dependent_present",
+      "pass": true,
+      "detail": "dependents=['bd-33v', 'bd-1qp', 'bd-4ou', 'bd-3fo', 'bd-c4f']"
+    },
+    {
+      "check": "section_gate_evidence_exists",
+      "pass": true,
+      "detail": "artifacts/section_10_10/bd-1jjq/verification_evidence.json"
+    },
+    {
+      "check": "section_gate_summary_exists",
+      "pass": true,
+      "detail": "artifacts/section_10_10/bd-1jjq/verification_summary.md"
+    },
+    {
+      "check": "section_gate_evidence_parseable",
+      "pass": true,
+      "detail": "json parse ok"
+    },
+    {
+      "check": "section_gate_verdict_pass",
+      "pass": true,
+      "detail": "verdict=PASS status=None"
+    },
+    {
+      "check": "section_contract_specs_present",
+      "pass": true,
+      "detail": "spec_count=11"
+    },
+    {
+      "check": "all_impl_evidence_present",
+      "pass": true,
+      "detail": "missing=[]"
+    },
+    {
+      "check": "all_impl_summaries_present",
+      "pass": true,
+      "detail": "missing=[]"
+    },
+    {
+      "check": "impl_beads_linked_to_epic_dependencies",
+      "pass": true,
+      "detail": "missing_links=[]"
+    }
+  ],
+  "total": 17,
+  "passed": 17,
+  "failed": 0,
+  "overall_pass": true,
+  "verdict": "PASS",
+  "status": "pass",
+  "metrics": {
+    "dependency_count": 15,
+    "dependency_closed_count": 15,
+    "dependent_count": 5,
+    "section_contract_spec_count": 11,
+    "section_impl_bead_count": 11
+  }
+}

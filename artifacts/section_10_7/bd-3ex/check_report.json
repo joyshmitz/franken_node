@@ -36,6 +36,11 @@
       "detail": "main.rs routes required verifier command variants"
     },
     {
+      "check": "docs_spec_contract_present",
+      "passed": true,
+      "detail": "docs/specs/section_10_7/bd-3ex_contract.md"
+    },
+    {
       "check": "scenario_count",
       "passed": true,
       "detail": "count=5"
@@ -178,9 +183,9 @@
       "changed_fields": []
     }
   ],
-  "passed": 25,
+  "passed": 26,
   "failed": 0,
-  "total": 25,
+  "total": 26,
   "verdict": "PASS",
   "all_passed": true,
   "status": "pass"

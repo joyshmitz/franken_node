@@ -1,0 +1,166 @@
+[
+  {
+    "id": "bd-1hf",
+    "title": "[PLAN 10.10] FCP-Inspired Hardening + Interop Integration Track",
+    "description": "Section: 10.10 — FCP-Inspired Hardening + Interop Integration Track\n\nStrategic Context:\nFCP-inspired hardening/interop contract for IDs, serialization, control-channel auth, revocation freshness, and publication gating.\n\nExecution Requirements:\n- Preserve all scoped capabilities from the canonical plan.\n- Keep contracts self-contained so future contributors can execute without reopening the master plan.\n- Require explicit testing strategy (unit + integration/e2e) and structured logging/telemetry for every child bead.\n- Require artifact-backed validation for performance, security, and correctness claims.\n\nDependency Semantics:\n- This epic is blocked by its child implementation beads.\n- Cross-epic dependencies encode strategic sequencing and canonical ownership boundaries.\n\n## Success Criteria\n- All child beads for this section are completed with acceptance artifacts attached and no unresolved blockers.\n- Section-level verification gate for comprehensive unit tests, integration/e2e workflows, and detailed structured logging evidence is green.\n- Scope-to-plan traceability is explicit, with no feature loss versus the canonical plan section.\n\n## Optimization Notes\n- User-Outcome Lens: \"[PLAN 10.10] FCP-Inspired Hardening + Interop Integration Track\" must improve operator confidence, safety posture, and deterministic recovery behavior under both normal and adversarial conditions.\n- Cross-Section Coordination: child beads must encode integration assumptions explicitly to avoid local optimizations that degrade system-wide correctness.\n- Verification Non-Negotiable: completion requires reproducible unit/integration/E2E evidence and structured logs suitable for independent replay.\n- Scope Protection: any simplification must preserve canonical-plan feature intent and be justified with explicit tradeoff documentation.",
+    "notes": "Claimed ready open integration epic; validating closed child set + section gate and producing closure evidence",
+    "status": "in_progress",
+    "priority": 2,
+    "issue_type": "epic",
+    "assignee": "PurpleHarbor",
+    "created_at": "2026-02-20T07:36:41.031586341Z",
+    "created_by": "ubuntu",
+    "updated_at": "2026-02-22T02:56:23.034356990Z",
+    "source_repo": ".",
+    "compaction_level": 0,
+    "original_size": 0,
+    "labels": [
+      "plan",
+      "section-10-10"
+    ],
+    "dependencies": [
+      {
+        "id": "bd-1jjq",
+        "title": "[10.10] Section-wide verification gate: comprehensive unit+e2e+logging",
+        "status": "closed",
+        "priority": 1,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-1ta",
+        "title": "[PLAN 10.13] FCP Deep-Mined Expansion Execution Track (9I)",
+        "status": "closed",
+        "priority": 1,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-cda",
+        "title": "[PLAN 10.N] Execution Normalization Contract (No Duplicate Implementations)",
+        "status": "closed",
+        "priority": 1,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-1hd",
+        "title": "[10.10] Adopt canonical trust protocol vectors/golden fixtures (from `10.13` + `10.14`) as product publication and release gates.",
+        "status": "closed",
+        "priority": 2,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-13q",
+        "title": "[10.10] Adopt canonical stable error namespace and compatibility policy (from `10.13`) across product surfaces.",
+        "status": "closed",
+        "priority": 2,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-1vp",
+        "title": "[10.10] Implement zone/tenant trust segmentation policies.",
+        "status": "closed",
+        "priority": 2,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-2sx",
+        "title": "[10.10] Integrate canonical revocation freshness semantics (from `10.13`) before risky and dangerous product actions.",
+        "status": "closed",
+        "priority": 2,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-oty",
+        "title": "[10.10] Integrate canonical session-authenticated control channel + monotonic anti-replay framing (from `10.13`) across product control APIs.",
+        "status": "closed",
+        "priority": 2,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-364",
+        "title": "[10.10] Implement key-role separation for control-plane signing/encryption/issuance.",
+        "status": "closed",
+        "priority": 2,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-1r2",
+        "title": "[10.10] Implement audience-bound token chains for control actions.",
+        "status": "closed",
+        "priority": 2,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-2ms",
+        "title": "[10.10] Implement rollback/fork detection in control-plane state propagation using canonical divergence and marker proofs (from `10.14`).",
+        "status": "closed",
+        "priority": 2,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-174",
+        "title": "[10.10] Implement policy checkpoint chain for product release channels.",
+        "status": "closed",
+        "priority": 2,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-jjm",
+        "title": "[10.10] Enforce product-level adoption of canonical deterministic serialization and signature preimage rules (from `10.13` + `10.14`).",
+        "status": "closed",
+        "priority": 2,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-1l5",
+        "title": "[10.10] Define canonical product trust object IDs with domain separation.",
+        "status": "closed",
+        "priority": 2,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-5rh",
+        "title": "[PLAN 10.14] FrankenSQLite Deep-Mined Expansion Execution Track (9J)",
+        "status": "closed",
+        "priority": 2,
+        "dependency_type": "blocks"
+      }
+    ],
+    "dependents": [
+      {
+        "id": "bd-33v",
+        "title": "[PLAN] franken_node master execution graph (full 10.x)",
+        "status": "open",
+        "priority": 0,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-1qp",
+        "title": "[10.0] Implement compatibility envelope + divergence ledger.",
+        "status": "open",
+        "priority": 1,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-4ou",
+        "title": "[PLAN 11] Evidence And Decision Contracts",
+        "status": "open",
+        "priority": 1,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-3fo",
+        "title": "[PLAN 10.0] Top 10 Initiative Tracking",
+        "status": "open",
+        "priority": 1,
+        "dependency_type": "blocks"
+      },
+      {
+        "id": "bd-c4f",
+        "title": "[PLAN 10.8] Operational Readiness",
+        "status": "open",
+        "priority": 2,
+        "dependency_type": "blocks"
+      }
+    ]
+  }
+]

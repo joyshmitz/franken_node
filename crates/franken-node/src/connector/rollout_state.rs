@@ -14,8 +14,7 @@ use crate::control_plane::control_epoch::{
     check_artifact_epoch,
 };
 
-use crate::control_plane::cancellation_protocol::{CancelPhase, CancellationRecord, DrainConfig};
-
+use super::cancellation_protocol::CancellationPhase;
 use super::health_gate::HealthGateResult;
 use super::lifecycle::ConnectorState;
 
@@ -69,7 +68,7 @@ pub struct RolloutState {
     pub version: u32,
     /// bd-1cs7: cancellation phase tracking for the three-phase protocol.
     #[serde(default)]
-    pub cancel_phase: Option<CancelPhase>,
+    pub cancel_phase: Option<CancellationPhase>,
 }
 
 impl RolloutState {
@@ -111,7 +110,7 @@ impl RolloutState {
     }
 
     /// bd-1cs7: Set the cancellation phase for three-phase protocol tracking.
-    pub fn set_cancel_phase(&mut self, phase: CancelPhase) {
+    pub fn set_cancel_phase(&mut self, phase: CancellationPhase) {
         self.cancel_phase = Some(phase);
         self.bump_version();
     }
@@ -125,10 +124,9 @@ impl RolloutState {
     pub fn is_cancelling(&self) -> bool {
         matches!(
             self.cancel_phase,
-            Some(CancelPhase::CancelRequested)
-                | Some(CancelPhase::Draining)
-                | Some(CancelPhase::DrainComplete)
-                | Some(CancelPhase::Finalizing)
+            Some(CancellationPhase::Requested)
+                | Some(CancellationPhase::Draining)
+                | Some(CancellationPhase::Finalizing)
         )
     }
 

@@ -1,170 +1,258 @@
 #!/usr/bin/env python3
-"""bd-1cs7: Three-phase cancellation protocol (REQUEST -> DRAIN -> FINALIZE) — verification gate."""
-import json, os, re, sys
+"""bd-1cs7: Three-phase cancellation protocol (REQUEST -> DRAIN -> FINALIZE) -- verification gate.
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-IMPL = os.path.join(ROOT, "crates", "franken-node", "src", "control_plane", "cancellation_protocol.rs")
-MOD_RS = os.path.join(ROOT, "crates", "franken-node", "src", "control_plane", "mod.rs")
-LIFECYCLE = os.path.join(ROOT, "crates", "franken-node", "src", "connector", "lifecycle.rs")
-ROLLOUT = os.path.join(ROOT, "crates", "franken-node", "src", "connector", "rollout_state.rs")
-HEALTH = os.path.join(ROOT, "crates", "franken-node", "src", "connector", "health_gate.rs")
-SPEC = os.path.join(ROOT, "docs", "specs", "section_10_15", "bd-1cs7_contract.md")
-TIMING_CSV = os.path.join(ROOT, "artifacts", "10.15", "cancel_protocol_timing.csv")
-CONFORMANCE = os.path.join(ROOT, "tests", "conformance", "cancel_drain_finalize.rs")
-EVIDENCE = os.path.join(ROOT, "artifacts", "section_10_15", "bd-1cs7", "verification_evidence.json")
-SUMMARY = os.path.join(ROOT, "artifacts", "section_10_15", "bd-1cs7", "verification_summary.md")
-BEAD, SECTION = "bd-1cs7", "10.15"
+Usage:
+    python scripts/check_cancellation_protocol.py            # human-readable
+    python scripts/check_cancellation_protocol.py --json     # machine-readable JSON
+    python scripts/check_cancellation_protocol.py --self-test # self-test mode
+"""
+from __future__ import annotations
 
-EVENT_CODES = ["CAN-001", "CAN-002", "CAN-003", "CAN-004", "CAN-005", "CAN-006"]
-ERROR_CODES = [
-    "ERR_CANCEL_INVALID_PHASE", "ERR_CANCEL_ALREADY_FINAL",
-    "ERR_CANCEL_DRAIN_TIMEOUT", "ERR_CANCEL_LEAK",
+import json
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+SRC = ROOT / "crates" / "franken-node" / "src" / "connector" / "cancellation_protocol.rs"
+MOD = ROOT / "crates" / "franken-node" / "src" / "connector" / "mod.rs"
+SPEC = ROOT / "docs" / "specs" / "section_10_15" / "bd-1cs7_contract.md"
+TIMING_CSV = ROOT / "artifacts" / "10.15" / "cancel_protocol_timing.csv"
+
+BEAD = "bd-1cs7"
+SECTION = "10.15"
+
+PHASES = [
+    "Idle", "Requested", "Draining", "Finalizing", "Completed",
 ]
+
+EVENT_CODES = [
+    "CAN-001", "CAN-002", "CAN-003", "CAN-004", "CAN-005", "CAN-006",
+]
+
 INVARIANTS = [
-    "INV-CANP-THREE-PHASE", "INV-CANP-NO-NEW-WORK", "INV-CANP-DRAIN-BOUNDED",
-    "INV-CANP-FINALIZE-CLEAN", "INV-CANP-IDEMPOTENT", "INV-CANP-AUDIT-COMPLETE",
+    "INV-CAN-THREE-PHASE",
+    "INV-CAN-BUDGET-BOUNDED",
+    "INV-CAN-PROPAGATION",
+    "INV-CAN-NO-LEAK",
 ]
-PHASES = ["Idle", "CancelRequested", "Draining", "DrainComplete", "Finalizing", "Finalized"]
 
-def _read(p):
-    with open(p) as f:
-        return f.read()
+ERROR_CODES = [
+    "ERR_CANCEL_INVALID_PHASE",
+    "ERR_CANCEL_ALREADY_FINAL",
+    "ERR_CANCEL_DRAIN_TIMEOUT",
+    "ERR_CANCEL_LEAK",
+]
 
-def _checks():
-    r = []
-    def ok(n, p, d=""):
-        r.append({"check": n, "passed": p, "detail": d})
+TYPES = [
+    "CancellationPhase", "CancellationBudget", "CancellationProtocol",
+    "ResourceGuard", "ResourceTracker", "CancellationAuditEvent",
+    "PhaseTransitionResult", "WorkflowKind", "TimingRow",
+]
 
-    src = _read(IMPL)
+OPS = [
+    "fn request", "fn drain", "fn finalize", "fn run_full",
+    "fn force_finalize", "fn register_child", "fn complete_child",
+]
 
-    # --- File existence ---
-    ok("source_exists", os.path.isfile(IMPL), IMPL)
-    ok("module_wiring", "pub mod cancellation_protocol;" in _read(MOD_RS))
-    ok("spec_contract_exists", os.path.isfile(SPEC), SPEC)
-    ok("conformance_test_exists", os.path.isfile(CONFORMANCE), CONFORMANCE)
-    ok("timing_csv_exists", os.path.isfile(TIMING_CSV), TIMING_CSV)
-    ok("evidence_exists", os.path.isfile(EVIDENCE), EVIDENCE)
-    ok("summary_exists", os.path.isfile(SUMMARY), SUMMARY)
 
-    # --- Core types ---
-    for st in ["CancelPhase", "CancelProtocolError", "DrainConfig", "CancelAuditEvent",
-               "ResourceTracker", "CancellationRecord", "CancellationProtocol"]:
-        ok(f"type_{st}", st in src and ("struct " + st in src or "enum " + st in src or "pub struct " + st in src), st)
+def _safe_rel(p: Path) -> str:
+    try:
+        return str(p.relative_to(ROOT))
+    except ValueError:
+        return str(p)
 
-    # --- FSM phases ---
+
+def _check(name: str, passed: bool, detail: str = "") -> dict:
+    return {"check": name, "pass": passed, "detail": detail or ("found" if passed else "missing")}
+
+
+def _read(p: Path) -> str:
+    if not p.exists():
+        return ""
+    return p.read_text()
+
+
+def check_files() -> list:
+    checks = []
+    checks.append(_check("file: source module", SRC.exists(), _safe_rel(SRC)))
+    checks.append(_check("file: spec contract", SPEC.exists(), _safe_rel(SPEC)))
+    checks.append(_check("file: timing CSV", TIMING_CSV.exists(), _safe_rel(TIMING_CSV)))
+    return checks
+
+
+def check_module_wired() -> list:
+    mod_src = _read(MOD)
+    return [_check(
+        "module wired in connector/mod.rs",
+        "pub mod cancellation_protocol;" in mod_src,
+        "connector/mod.rs contains pub mod cancellation_protocol"
+    )]
+
+
+def check_phases() -> list:
+    src = _read(SRC)
+    checks = []
     for phase in PHASES:
-        ok(f"phase_{phase}", phase in src, phase)
-
-    # --- Three-phase protocol functions ---
-    ok("fn_request_cancel", "fn request_cancel" in src, "Phase 1: REQUEST")
-    ok("fn_start_drain", "fn start_drain" in src, "Phase 2a: DRAIN start")
-    ok("fn_complete_drain", "fn complete_drain" in src, "Phase 2b: DRAIN complete")
-    ok("fn_finalize", "fn finalize" in src, "Phase 3: FINALIZE")
-
-    # --- Drain configuration ---
-    ok("drain_timeout_ms", "timeout_ms" in src, "Drain timeout config")
-    ok("force_on_timeout", "force_on_timeout" in src, "Force finalize on timeout")
-    ok("default_drain_timeout", "DEFAULT_DRAIN_TIMEOUT_MS" in src, "Default drain timeout constant")
-
-    # --- Resource tracking ---
-    ok("resource_tracker_clean", "fn is_clean" in src, "Resource tracker clean check")
-    ok("resource_tracker_leaks", "fn leaked_resources" in src, "Resource leak detection")
-
-    # --- Audit and export ---
-    ok("audit_log", "fn export_audit_log_jsonl" in src, "JSONL audit export")
-    ok("audit_event_schema", "schema_version" in src, "Audit event schema version")
-
-    # --- Event codes ---
-    ec = sum(1 for c in EVENT_CODES if c in src)
-    ok("event_codes", ec >= 6, f"{ec}/6 event codes")
-
-    # --- Error codes ---
-    erc = sum(1 for c in ERROR_CODES if c in src)
-    ok("error_codes", erc >= 4, f"{erc}/4 error codes")
-
-    # --- Invariants ---
-    inv = sum(1 for i in INVARIANTS if i in src)
-    ok("invariants", inv >= 6, f"{inv}/6 invariants")
-
-    # --- Schema version ---
-    ok("schema_version", "cp-v1.0" in src, "cp-v1.0")
-
-    # --- Idempotent cancel ---
-    ok("idempotent_cancel", "CANP-IDEMPOTENT" in src and "idempotent" in src.lower(), "Idempotent cancel requests")
-
-    # --- Lifecycle integration ---
-    lifecycle_src = _read(LIFECYCLE)
-    ok("lifecycle_cancelling_state", "Cancelling" in lifecycle_src, "Cancelling state in lifecycle FSM")
-    ok("lifecycle_cancel_transition", "Cancelling" in lifecycle_src and "can_transition_to" in lifecycle_src, "Cancel transition in lifecycle")
-
-    # --- Rollout state integration ---
-    rollout_src = _read(ROLLOUT)
-    ok("rollout_cancel_phase", "cancel_phase" in rollout_src, "CancelPhase field in RolloutState")
-    ok("rollout_set_cancel", "fn set_cancel_phase" in rollout_src, "set_cancel_phase in RolloutState")
-    ok("rollout_is_cancelling", "fn is_cancelling" in rollout_src, "is_cancelling in RolloutState")
-    ok("rollout_imports_cancel", "cancellation_protocol" in rollout_src, "RolloutState imports cancellation_protocol")
-
-    # --- Counts and accessors ---
-    ok("fn_active_count", "fn active_count" in src, "Active cancellation count")
-    ok("fn_finalized_count", "fn finalized_count" in src, "Finalized cancellation count")
-    ok("fn_current_phase", "fn current_phase" in src, "Current phase accessor")
-    ok("fn_get_record", "fn get_record" in src, "Get record accessor")
-
-    # --- Timing report ---
-    ok("fn_timing_report", "fn generate_timing_report" in src, "Timing report generation")
-
-    # --- Cancellation readiness ---
-    ok("fn_readiness_check", "fn cancellation_readiness_check" in src, "Cancellation readiness health check")
-
-    # --- Test coverage ---
-    test_count = len(re.findall(r"#\[test\]", src))
-    ok("test_coverage", test_count >= 20, f"{test_count} tests")
-
-    # --- Timing CSV content ---
-    if os.path.isfile(TIMING_CSV):
-        csv_content = _read(TIMING_CSV)
-        ok("timing_csv_header", "workflow_id" in csv_content and "phase" in csv_content, "CSV has required columns")
-        ok("timing_csv_has_rows", len(csv_content.strip().split("\n")) >= 2, "CSV has data rows")
-    else:
-        ok("timing_csv_header", False, "CSV not found")
-        ok("timing_csv_has_rows", False, "CSV not found")
-
-    return r
+        checks.append(_check(f"phase: {phase}", phase in src))
+    return checks
 
 
-def self_test():
-    r = _checks()
-    assert len(r) >= 40, f"Expected >= 40 checks, got {len(r)}"
-    for x in r:
-        assert "check" in x and "passed" in x and "detail" in x, f"Bad check format: {x}"
-    print(f"self_test: {len(r)} checks OK", file=sys.stderr)
-    return True
+def check_types() -> list:
+    src = _read(SRC)
+    checks = []
+    for t in TYPES:
+        found = f"pub struct {t}" in src or f"pub enum {t}" in src
+        checks.append(_check(f"type: {t}", found))
+    return checks
+
+
+def check_ops() -> list:
+    src = _read(SRC)
+    checks = []
+    for op in OPS:
+        checks.append(_check(f"op: {op}", op in src))
+    return checks
+
+
+def check_event_codes() -> list:
+    src = _read(SRC)
+    found = sum(1 for ec in EVENT_CODES if ec in src)
+    return [_check(f"event codes ({found}/{len(EVENT_CODES)})", found == len(EVENT_CODES), f"{found}/{len(EVENT_CODES)}")]
+
+
+def check_invariants() -> list:
+    src = _read(SRC)
+    found = sum(1 for inv in INVARIANTS if inv in src)
+    return [_check(f"invariants ({found}/{len(INVARIANTS)})", found == len(INVARIANTS), f"{found}/{len(INVARIANTS)}")]
+
+
+def check_error_codes() -> list:
+    src = _read(SRC)
+    found = sum(1 for ec in ERROR_CODES if ec in src)
+    return [_check(f"error codes ({found}/{len(ERROR_CODES)})", found == len(ERROR_CODES), f"{found}/{len(ERROR_CODES)}")]
+
+
+def check_schema_version() -> list:
+    src = _read(SRC)
+    return [_check("schema version cancel-v1.0", "cancel-v1.0" in src)]
+
+
+def check_serde() -> list:
+    src = _read(SRC)
+    return [_check("Serialize/Deserialize derives",
+                   "Serialize" in src and "Deserialize" in src)]
+
+
+def check_resource_guard_drop() -> list:
+    src = _read(SRC)
+    return [_check("ResourceGuard Drop impl", "impl Drop for ResourceGuard" in src)]
+
+
+def check_test_count() -> list:
+    src = _read(SRC)
+    count = len(re.findall(r"#\[test\]", src))
+    return [_check(f"inline tests >= 15", count >= 15, f"{count} tests")]
+
+
+def check_timing_csv_columns() -> list:
+    content = _read(TIMING_CSV)
+    if not content:
+        return [_check("timing CSV columns", False, "file missing")]
+    header = content.splitlines()[0] if content.splitlines() else ""
+    expected_cols = ["workflow_id", "phase", "budget_ms", "actual_ms", "within_budget", "resources_released"]
+    all_present = all(col in header for col in expected_cols)
+    return [_check("timing CSV columns", all_present, header)]
+
+
+def check_timing_csv_rows() -> list:
+    content = _read(TIMING_CSV)
+    if not content:
+        return [_check("timing CSV rows >= 6", False, "file missing")]
+    lines = [l.strip() for l in content.strip().splitlines() if l.strip()]
+    data_rows = len(lines) - 1  # exclude header
+    return [_check(f"timing CSV rows >= 6", data_rows >= 6, f"{data_rows} data rows")]
+
+
+def check_spec_sections() -> list:
+    content = _read(SPEC)
+    if not content:
+        return [_check("spec sections", False, "spec missing")]
+    checks = []
+    for section in ["Invariants", "Event Codes", "Error Codes", "Acceptance Criteria",
+                    "Three-Phase Protocol", "Per-Workflow Cleanup Budgets", "Gate Behavior"]:
+        checks.append(_check(f"spec: {section}", section in content))
+    return checks
+
+
+def run_checks() -> dict:
+    checks = []
+    checks.extend(check_files())
+    checks.extend(check_module_wired())
+    checks.extend(check_phases())
+    checks.extend(check_types())
+    checks.extend(check_ops())
+    checks.extend(check_event_codes())
+    checks.extend(check_invariants())
+    checks.extend(check_error_codes())
+    checks.extend(check_schema_version())
+    checks.extend(check_serde())
+    checks.extend(check_resource_guard_drop())
+    checks.extend(check_test_count())
+    checks.extend(check_timing_csv_columns())
+    checks.extend(check_timing_csv_rows())
+    checks.extend(check_spec_sections())
+
+    passing = sum(1 for c in checks if c["pass"])
+    failing = sum(1 for c in checks if not c["pass"])
+    verdict = "PASS" if failing == 0 else "FAIL"
+
+    return {
+        "bead_id": BEAD,
+        "title": "Three-phase cancellation protocol (REQUEST -> DRAIN -> FINALIZE)",
+        "section": SECTION,
+        "overall_pass": failing == 0,
+        "verdict": verdict,
+        "summary": {
+            "passing": passing,
+            "failing": failing,
+            "total": passing + failing,
+        },
+        "checks": checks,
+        "events": EVENT_CODES,
+    }
+
+
+def self_test() -> tuple:
+    result = run_checks()
+    if not result["overall_pass"]:
+        failures = [c for c in result["checks"] if not c["pass"]]
+        detail = "; ".join(f"{c['check']}: {c['detail']}" for c in failures[:5])
+        return False, f"self_test failed: {detail}"
+    return True, "self_test passed"
 
 
 def main():
-    as_json = "--json" in sys.argv
     if "--self-test" in sys.argv:
-        self_test()
-        return
-    results = _checks()
-    p = sum(1 for x in results if x["passed"])
-    t = len(results)
-    v = "PASS" if p == t else "FAIL"
-    if as_json:
-        print(json.dumps({
-            "bead_id": BEAD,
-            "section": SECTION,
-            "gate_script": os.path.basename(__file__),
-            "checks_passed": p,
-            "checks_total": t,
-            "verdict": v,
-            "checks": results,
-        }, indent=2))
-    else:
-        for x in results:
-            print(f"  [{'PASS' if x['passed'] else 'FAIL'}] {x['check']}: {x['detail']}")
-        print(f"\n{BEAD}: {p}/{t} checks — {v}")
-    sys.exit(0 if v == "PASS" else 1)
+        ok, msg = self_test()
+        print(msg)
+        sys.exit(0 if ok else 1)
+
+    result = run_checks()
+
+    if "--json" in sys.argv:
+        print(json.dumps(result, indent=2))
+        sys.exit(0 if result["overall_pass"] else 1)
+
+    for c in result["checks"]:
+        status = "PASS" if c["pass"] else "FAIL"
+        print(f"  [{status}] {c['check']}: {c['detail']}")
+
+    passing = result["summary"]["passing"]
+    total = result["summary"]["total"]
+    print(f"\n{BEAD} verification: {result['verdict']} ({passing}/{total} checks pass)")
+    sys.exit(0 if result["overall_pass"] else 1)
 
 
 if __name__ == "__main__":

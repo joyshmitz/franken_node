@@ -25,6 +25,9 @@ pub const SCHEMA_VERSION: &str = "obl-v1.0";
 /// Default leak timeout in seconds.
 pub const DEFAULT_LEAK_TIMEOUT_SECS: u64 = 30;
 
+/// Default per-flow budget for concurrent reservations. INV-OBL-BUDGET-BOUND
+pub const DEFAULT_FLOW_BUDGET: usize = 256;
+
 // ── Event codes ──────────────────────────────────────────────────────────────
 
 pub mod event_codes {
@@ -48,6 +51,7 @@ pub mod error_codes {
     pub const ERR_OBL_NOT_FOUND: &str = "ERR_OBL_NOT_FOUND";
     pub const ERR_OBL_LEAK_TIMEOUT: &str = "ERR_OBL_LEAK_TIMEOUT";
     pub const ERR_OBL_DUPLICATE_RESERVE: &str = "ERR_OBL_DUPLICATE_RESERVE";
+    pub const ERR_OBL_BUDGET_EXCEEDED: &str = "ERR_OBL_BUDGET_EXCEEDED";
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -115,6 +119,8 @@ pub enum ObligationState {
     Committed,
     /// Phase 2b: tentative resources released.
     RolledBack,
+    /// Detected by leak oracle and force-rolled-back.
+    Leaked,
 }
 
 impl fmt::Display for ObligationState {
@@ -123,6 +129,7 @@ impl fmt::Display for ObligationState {
             Self::Reserved => write!(f, "Reserved"),
             Self::Committed => write!(f, "Committed"),
             Self::RolledBack => write!(f, "RolledBack"),
+            Self::Leaked => write!(f, "Leaked"),
         }
     }
 }
@@ -180,6 +187,21 @@ pub struct LeakScanResult {
     pub schema_version: String,
 }
 
+/// Per-flow obligation counts for the leak oracle report.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowObligationCounts {
+    /// Flow name.
+    pub flow: String,
+    /// Number of obligations reserved in this flow.
+    pub reserved: usize,
+    /// Number of obligations committed in this flow.
+    pub committed: usize,
+    /// Number of obligations rolled back in this flow.
+    pub rolled_back: usize,
+    /// Number of obligations leaked in this flow.
+    pub leaked: usize,
+}
+
 /// Report aggregating leak scan results for the oracle artifact.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LeakOracleReport {
@@ -191,6 +213,8 @@ pub struct LeakOracleReport {
     pub total_scans: usize,
     /// Total leaks detected across all scans.
     pub total_leaks: usize,
+    /// Per-flow obligation counts.
+    pub per_flow_counts: Vec<FlowObligationCounts>,
     /// Per-scan results.
     pub scans: Vec<LeakScanResult>,
     /// Overall verdict.
@@ -205,6 +229,8 @@ pub struct ObligationTracker {
     next_id: u64,
     leak_timeout_secs: u64,
     scan_results: Vec<LeakScanResult>,
+    /// Per-flow budget for concurrent reservations. INV-OBL-BUDGET-BOUND
+    flow_budget: usize,
 }
 
 impl ObligationTracker {
@@ -216,6 +242,7 @@ impl ObligationTracker {
             next_id: 1,
             leak_timeout_secs: DEFAULT_LEAK_TIMEOUT_SECS,
             scan_results: Vec::new(),
+            flow_budget: DEFAULT_FLOW_BUDGET,
         }
     }
 
@@ -224,6 +251,21 @@ impl ObligationTracker {
         let mut t = Self::new();
         t.leak_timeout_secs = leak_timeout_secs;
         t
+    }
+
+    /// Create a tracker with a custom per-flow budget. INV-OBL-BUDGET-BOUND
+    pub fn with_flow_budget(flow_budget: usize) -> Self {
+        let mut t = Self::new();
+        t.flow_budget = flow_budget;
+        t
+    }
+
+    /// Count of currently reserved obligations for a specific flow.
+    fn reserved_count_for_flow(&self, flow: &ObligationFlow) -> usize {
+        self.obligations
+            .values()
+            .filter(|o| o.state == ObligationState::Reserved && &o.flow == flow)
+            .count()
     }
 
     /// Reserve an obligation slot (phase 1). INV-OBL-AUDIT-COMPLETE
@@ -264,6 +306,22 @@ impl ObligationTracker {
         id
     }
 
+    /// Reserve with budget enforcement. INV-OBL-BUDGET-BOUND
+    ///
+    /// Like `reserve()`, but returns an error if the per-flow budget is exceeded.
+    pub fn try_reserve(
+        &mut self,
+        flow: ObligationFlow,
+        payload: Vec<u8>,
+        now_ms: u64,
+        trace_id: &str,
+    ) -> Result<ObligationId, String> {
+        if self.reserved_count_for_flow(&flow) >= self.flow_budget {
+            return Err(error_codes::ERR_OBL_BUDGET_EXCEEDED.to_string());
+        }
+        Ok(self.reserve(flow, payload, now_ms, trace_id))
+    }
+
     /// Commit an obligation (phase 2a). INV-OBL-ATOMIC-COMMIT
     ///
     /// # Errors
@@ -281,7 +339,7 @@ impl ObligationTracker {
             ObligationState::Committed => {
                 return Err(error_codes::ERR_OBL_ALREADY_COMMITTED.to_string());
             }
-            ObligationState::RolledBack => {
+            ObligationState::RolledBack | ObligationState::Leaked => {
                 return Err(error_codes::ERR_OBL_ALREADY_ROLLED_BACK.to_string());
             }
         }
@@ -324,7 +382,7 @@ impl ObligationTracker {
 
         match obligation.state {
             ObligationState::Reserved => {}
-            ObligationState::RolledBack => {
+            ObligationState::RolledBack | ObligationState::Leaked => {
                 // Idempotent: already rolled back
                 return Ok(());
             }
@@ -372,7 +430,7 @@ impl ObligationTracker {
 
         for key in &keys {
             if let Some(obligation) = self.obligations.get_mut(key) {
-                obligation.state = ObligationState::RolledBack;
+                obligation.state = ObligationState::Leaked;
                 obligation.resolved_at_ms = Some(now_ms);
                 leaked_ids.push(key.clone());
 
@@ -382,7 +440,7 @@ impl ObligationTracker {
                     event_code: event_codes::OBL_LEAK_DETECTED.to_string(),
                     obligation_id: key.clone(),
                     flow: flow_str,
-                    state: "RolledBack".to_string(),
+                    state: "Leaked".to_string(),
                     trace_id: trace_id.to_string(),
                     schema_version: SCHEMA_VERSION.to_string(),
                     detail: format!(
@@ -445,6 +503,40 @@ impl ObligationTracker {
             .join("\n")
     }
 
+    /// Compute per-flow obligation counts for the oracle report.
+    pub fn per_flow_counts(&self) -> Vec<FlowObligationCounts> {
+        ObligationFlow::all()
+            .iter()
+            .map(|flow| {
+                let obligations_for_flow: Vec<&Obligation> = self
+                    .obligations
+                    .values()
+                    .filter(|o| &o.flow == flow)
+                    .collect();
+
+                FlowObligationCounts {
+                    flow: flow.as_str().to_string(),
+                    reserved: obligations_for_flow
+                        .iter()
+                        .filter(|o| o.state == ObligationState::Reserved)
+                        .count(),
+                    committed: obligations_for_flow
+                        .iter()
+                        .filter(|o| o.state == ObligationState::Committed)
+                        .count(),
+                    rolled_back: obligations_for_flow
+                        .iter()
+                        .filter(|o| o.state == ObligationState::RolledBack)
+                        .count(),
+                    leaked: obligations_for_flow
+                        .iter()
+                        .filter(|o| o.state == ObligationState::Leaked)
+                        .count(),
+                }
+            })
+            .collect()
+    }
+
     /// Generate the leak oracle report artifact.
     pub fn generate_leak_oracle_report(&self) -> LeakOracleReport {
         let total_leaks: usize = self.scan_results.iter().map(|s| s.leaked).sum();
@@ -455,6 +547,7 @@ impl ObligationTracker {
             schema_version: SCHEMA_VERSION.to_string(),
             total_scans: self.scan_results.len(),
             total_leaks,
+            per_flow_counts: self.per_flow_counts(),
             scans: self.scan_results.clone(),
             verdict,
         }
@@ -469,6 +562,11 @@ impl ObligationTracker {
     /// Get the configured leak timeout in seconds.
     pub fn leak_timeout_secs(&self) -> u64 {
         self.leak_timeout_secs
+    }
+
+    /// Get the configured per-flow budget.
+    pub fn flow_budget(&self) -> usize {
+        self.flow_budget
     }
 
     /// Count of audit log entries.
@@ -564,6 +662,7 @@ mod tests {
         let t = ObligationTracker::default();
         assert_eq!(t.total_obligations(), 0);
         assert_eq!(t.leak_timeout_secs(), DEFAULT_LEAK_TIMEOUT_SECS);
+        assert_eq!(t.flow_budget(), DEFAULT_FLOW_BUDGET);
     }
 
     // 2. reserve returns unique ID
@@ -676,9 +775,9 @@ mod tests {
         let result = t.run_leak_scan(4000, "scan1");
         assert_eq!(result.leaked, 1);
         assert!(result.leaked_ids.contains(&id.0));
-        // Obligation should be force-rolled-back
+        // Obligation should be marked as Leaked
         let o = t.get_obligation(&id).unwrap();
-        assert_eq!(o.state, ObligationState::RolledBack);
+        assert_eq!(o.state, ObligationState::Leaked);
     }
 
     // 12. leak scan does not touch committed/rolledback
@@ -732,12 +831,13 @@ mod tests {
         assert_eq!(ObligationFlow::Fencing.to_string(), "fencing");
     }
 
-    // 16. obligation state display
+    // 16. obligation state display (including Leaked)
     #[test]
     fn test_state_display() {
         assert_eq!(ObligationState::Reserved.to_string(), "Reserved");
         assert_eq!(ObligationState::Committed.to_string(), "Committed");
         assert_eq!(ObligationState::RolledBack.to_string(), "RolledBack");
+        assert_eq!(ObligationState::Leaked.to_string(), "Leaked");
     }
 
     // 17. audit log captures reserve events
@@ -959,5 +1059,82 @@ mod tests {
         let src = include_str!("obligation_tracker.rs");
         assert!(src.contains("impl Drop for ObligationGuard"));
         assert!(src.contains("INV-OBL-DROP-SAFE"));
+    }
+
+    // 37. per_flow_counts returns counts for all flows
+    #[test]
+    fn test_per_flow_counts() {
+        let mut t = make_tracker();
+        let id1 = t.reserve(ObligationFlow::Publish, vec![], 1000, "t1");
+        let _id2 = t.reserve(ObligationFlow::Publish, vec![], 1001, "t2");
+        let id3 = t.reserve(ObligationFlow::Revoke, vec![], 1002, "t3");
+        t.commit(&id1, 1050, "t4").unwrap();
+        t.rollback(&id3, 1050, "t5").unwrap();
+
+        let counts = t.per_flow_counts();
+        assert_eq!(counts.len(), 5); // one per flow
+
+        let publish = counts.iter().find(|c| c.flow == "publish").unwrap();
+        assert_eq!(publish.committed, 1);
+        assert_eq!(publish.reserved, 1);
+
+        let revoke = counts.iter().find(|c| c.flow == "revoke").unwrap();
+        assert_eq!(revoke.rolled_back, 1);
+    }
+
+    // 38. Leaked state in counts
+    #[test]
+    fn test_leaked_state_count() {
+        let mut t = ObligationTracker::with_leak_timeout(1);
+        t.reserve(ObligationFlow::Publish, vec![], 1000, "t1");
+        t.run_leak_scan(5000, "scan1");
+        assert_eq!(t.count_in_state(ObligationState::Leaked), 1);
+
+        let counts = t.per_flow_counts();
+        let publish = counts.iter().find(|c| c.flow == "publish").unwrap();
+        assert_eq!(publish.leaked, 1);
+    }
+
+    // 39. budget enforcement via try_reserve (INV-OBL-BUDGET-BOUND)
+    #[test]
+    fn test_try_reserve_budget_enforcement() {
+        let mut t = ObligationTracker::with_flow_budget(2);
+        t.try_reserve(ObligationFlow::Publish, vec![], 1000, "t1").unwrap();
+        t.try_reserve(ObligationFlow::Publish, vec![], 1001, "t2").unwrap();
+        // Third reservation should fail
+        let err = t
+            .try_reserve(ObligationFlow::Publish, vec![], 1002, "t3")
+            .unwrap_err();
+        assert_eq!(err, error_codes::ERR_OBL_BUDGET_EXCEEDED);
+        // Different flow should still work
+        t.try_reserve(ObligationFlow::Revoke, vec![], 1003, "t4").unwrap();
+    }
+
+    // 40. budget is per-flow, not global
+    #[test]
+    fn test_budget_per_flow() {
+        let mut t = ObligationTracker::with_flow_budget(1);
+        t.try_reserve(ObligationFlow::Publish, vec![], 1000, "t1").unwrap();
+        t.try_reserve(ObligationFlow::Revoke, vec![], 1001, "t2").unwrap();
+        t.try_reserve(ObligationFlow::Quarantine, vec![], 1002, "t3").unwrap();
+        assert_eq!(t.total_obligations(), 3);
+    }
+
+    // 41. leak oracle report includes per_flow_counts
+    #[test]
+    fn test_leak_oracle_report_has_per_flow_counts() {
+        let mut t = make_tracker();
+        t.reserve(ObligationFlow::Publish, vec![], 1000, "t1");
+        t.run_leak_scan(1500, "scan1");
+        let report = t.generate_leak_oracle_report();
+        assert_eq!(report.per_flow_counts.len(), 5);
+        let json = t.export_leak_oracle_report_json();
+        assert!(json.contains("per_flow_counts"));
+    }
+
+    // 42. error code for budget exceeded is defined
+    #[test]
+    fn test_budget_exceeded_error_code() {
+        assert!(!error_codes::ERR_OBL_BUDGET_EXCEEDED.is_empty());
     }
 }

@@ -70,7 +70,7 @@
     {
       "check": "report generated_at_utc RFC3339",
       "pass": true,
-      "detail": "2026-02-22T02:55:27.232933Z"
+      "detail": "2026-02-22T02:57:50.489767Z"
     },
     {
       "check": "artifact_statuses list",

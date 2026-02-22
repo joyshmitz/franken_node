@@ -1,0 +1,76 @@
+{
+  "bead_id": "bd-s6y",
+  "section": "10.7",
+  "title": "Adopt canonical trust protocol vectors from 10.13 + 10.14 and enforce release/publication gates",
+  "generated_at": "2026-02-22T02:58:56Z",
+  "verdict": "PASS",
+  "verification_results": {
+    "gate_json": {
+      "verdict": "PASS",
+      "detail": "scripts/check_canonical_vectors.py --json returned verdict PASS with 17/17 checks passing, 4/4 sources passing, 8/8 vector sets passing"
+    },
+    "gate_self_test": {
+      "verdict": "PASS",
+      "detail": "scripts/check_canonical_vectors.py --self-test completed successfully with temp-directory-based positive and negative test cases"
+    },
+    "unit_tests": {
+      "verdict": "PASS",
+      "detail": "python3 -m pytest tests/test_check_canonical_vectors.py -v ran 11 tests, all passed"
+    }
+  },
+  "summary": {
+    "sources_total": 4,
+    "sources_passed": 4,
+    "vector_sets_total": 8,
+    "vector_sets_passed": 8,
+    "total_entries": 172,
+    "checks_passed": 17,
+    "checks_total": 17,
+    "unit_tests_passed": 11,
+    "unit_tests_total": 11
+  },
+  "sources_verified": [
+    {
+      "source_id": "10.13-golden-vectors",
+      "section": "10.13",
+      "status": "PASS",
+      "vector_count": 6,
+      "path": "vectors/fnode_trust_vectors_v1.json"
+    },
+    {
+      "source_id": "10.13-interop-vectors",
+      "section": "10.13",
+      "status": "PASS",
+      "vector_count": 5,
+      "path": "fixtures/interop/interop_test_vectors.json"
+    },
+    {
+      "source_id": "10.13-fuzz-corpus",
+      "section": "10.13",
+      "status": "PASS",
+      "vector_count": 100,
+      "paths": ["fuzz/corpus/migration", "fuzz/corpus/shim"]
+    },
+    {
+      "source_id": "10.14-vector-artifacts",
+      "section": "10.14",
+      "status": "PASS",
+      "vector_count": 61,
+      "paths": [
+        "artifacts/10.14/epoch_key_vectors.json",
+        "artifacts/10.14/idempotency_vectors.json",
+        "artifacts/10.14/mmr_proof_vectors.json",
+        "artifacts/10.14/seed_derivation_vectors.json"
+      ]
+    }
+  ],
+  "artifacts_produced": [
+    "vectors/canonical_manifest.toml",
+    "vectors/CHANGELOG.md",
+    "scripts/check_canonical_vectors.py",
+    "tests/test_check_canonical_vectors.py",
+    "docs/specs/section_10_7/bd-s6y_contract.md",
+    "artifacts/section_10_7/bd-s6y/verification_evidence.json",
+    "artifacts/section_10_7/bd-s6y/verification_summary.md"
+  ]
+}

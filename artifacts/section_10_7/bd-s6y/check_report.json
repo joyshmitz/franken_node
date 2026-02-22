@@ -1,0 +1,941 @@
+{
+  "bead_id": "bd-s6y",
+  "section": "10.7",
+  "manifest": "vectors/canonical_manifest.toml",
+  "changelog": "vectors/CHANGELOG.md",
+  "generated_at": "2026-02-22T02:59:12Z",
+  "checks": [
+    {
+      "check": "manifest_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/vectors/canonical_manifest.toml"
+    },
+    {
+      "check": "manifest_parse",
+      "passed": true,
+      "detail": "Parsed TOML manifest"
+    },
+    {
+      "check": "manifest_sources_present",
+      "passed": true,
+      "detail": "sources=4"
+    },
+    {
+      "check": "changelog_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/vectors/CHANGELOG.md"
+    },
+    {
+      "check": "changelog_has_manifest_version",
+      "passed": true,
+      "detail": "version=1.0.0"
+    },
+    {
+      "check": "changelog_mentions_source:10.13-fuzz-corpus",
+      "passed": true,
+      "detail": "10.13-fuzz-corpus present in changelog"
+    },
+    {
+      "check": "changelog_mentions_source:10.13-golden-vectors",
+      "passed": true,
+      "detail": "10.13-golden-vectors present in changelog"
+    },
+    {
+      "check": "changelog_mentions_source:10.13-interop-vectors",
+      "passed": true,
+      "detail": "10.13-interop-vectors present in changelog"
+    },
+    {
+      "check": "changelog_mentions_source:10.14-vector-artifacts",
+      "passed": true,
+      "detail": "10.14-vector-artifacts present in changelog"
+    },
+    {
+      "check": "changelog_mentions_path:artifacts/10.14/epoch_key_vectors.json",
+      "passed": true,
+      "detail": "artifacts/10.14/epoch_key_vectors.json present in changelog"
+    },
+    {
+      "check": "changelog_mentions_path:artifacts/10.14/idempotency_vectors.json",
+      "passed": true,
+      "detail": "artifacts/10.14/idempotency_vectors.json present in changelog"
+    },
+    {
+      "check": "changelog_mentions_path:artifacts/10.14/mmr_proof_vectors.json",
+      "passed": true,
+      "detail": "artifacts/10.14/mmr_proof_vectors.json present in changelog"
+    },
+    {
+      "check": "changelog_mentions_path:artifacts/10.14/seed_derivation_vectors.json",
+      "passed": true,
+      "detail": "artifacts/10.14/seed_derivation_vectors.json present in changelog"
+    },
+    {
+      "check": "changelog_mentions_path:fixtures/interop/interop_test_vectors.json",
+      "passed": true,
+      "detail": "fixtures/interop/interop_test_vectors.json present in changelog"
+    },
+    {
+      "check": "changelog_mentions_path:fuzz/corpus/migration",
+      "passed": true,
+      "detail": "fuzz/corpus/migration present in changelog"
+    },
+    {
+      "check": "changelog_mentions_path:fuzz/corpus/shim",
+      "passed": true,
+      "detail": "fuzz/corpus/shim present in changelog"
+    },
+    {
+      "check": "changelog_mentions_path:vectors/fnode_trust_vectors_v1.json",
+      "passed": true,
+      "detail": "vectors/fnode_trust_vectors_v1.json present in changelog"
+    }
+  ],
+  "sources": [
+    {
+      "source_id": "10.13-golden-vectors",
+      "section": "10.13",
+      "suite_kind": "json_vectors",
+      "required": true,
+      "publication_tag": "trust-protocol",
+      "status": "PASS",
+      "verified_at": "2026-02-22T02:59:12Z",
+      "discovered_count": 1,
+      "passed_count": 1,
+      "failed_count": 0,
+      "checks": [
+        {
+          "check": "discovery_non_empty",
+          "passed": true,
+          "detail": "discovered=1"
+        }
+      ],
+      "targets": [
+        {
+          "source_id": "10.13-golden-vectors",
+          "source_section": "10.13",
+          "path": "vectors/fnode_trust_vectors_v1.json",
+          "suite_kind": "json_vectors",
+          "status": "PASS",
+          "required": true,
+          "source_bead_id": "bd-3n2u",
+          "source_version": "1.0.0",
+          "entry_count": 6,
+          "verified_at": "2026-02-22T02:59:12Z",
+          "cross_runtime": {
+            "applicable": false,
+            "status": "NOT_APPLICABLE",
+            "targets": [
+              "native",
+              "node",
+              "bun"
+            ],
+            "observed_implementations": [],
+            "detail": "No runtime implementation metadata in vector payload"
+          },
+          "checks": [
+            {
+              "check": "exists",
+              "passed": true,
+              "detail": "vectors/fnode_trust_vectors_v1.json"
+            },
+            {
+              "check": "json_parse",
+              "passed": true,
+              "detail": "Parsed JSON successfully"
+            },
+            {
+              "check": "required_key:schema_version",
+              "passed": true,
+              "detail": "schema_version present"
+            },
+            {
+              "check": "required_key:vectors",
+              "passed": true,
+              "detail": "vectors present"
+            },
+            {
+              "check": "minimum_entries",
+              "passed": true,
+              "detail": "entries=6 minimum=1"
+            },
+            {
+              "check": "traceability",
+              "passed": true,
+              "detail": "source_bead_id=bd-3n2u source_version=1.0.0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "10.13-interop-vectors",
+      "section": "10.13",
+      "suite_kind": "json_vectors",
+      "required": true,
+      "publication_tag": "interop",
+      "status": "PASS",
+      "verified_at": "2026-02-22T02:59:12Z",
+      "discovered_count": 1,
+      "passed_count": 1,
+      "failed_count": 0,
+      "checks": [
+        {
+          "check": "discovery_non_empty",
+          "passed": true,
+          "detail": "discovered=1"
+        }
+      ],
+      "targets": [
+        {
+          "source_id": "10.13-interop-vectors",
+          "source_section": "10.13",
+          "path": "fixtures/interop/interop_test_vectors.json",
+          "suite_kind": "json_vectors",
+          "status": "PASS",
+          "required": true,
+          "source_bead_id": "bd-35by",
+          "source_version": "1.0.0",
+          "entry_count": 5,
+          "verified_at": "2026-02-22T02:59:12Z",
+          "cross_runtime": {
+            "applicable": true,
+            "status": "NOT_APPLICABLE",
+            "targets": [
+              "native",
+              "node",
+              "bun"
+            ],
+            "observed_implementations": [
+              "reference"
+            ],
+            "detail": "Observed runtime metadata but missing target(s): bun, native, node"
+          },
+          "checks": [
+            {
+              "check": "exists",
+              "passed": true,
+              "detail": "fixtures/interop/interop_test_vectors.json"
+            },
+            {
+              "check": "json_parse",
+              "passed": true,
+              "detail": "Parsed JSON successfully"
+            },
+            {
+              "check": "required_key:test_vectors",
+              "passed": true,
+              "detail": "test_vectors present"
+            },
+            {
+              "check": "minimum_entries",
+              "passed": true,
+              "detail": "entries=5 minimum=1"
+            },
+            {
+              "check": "traceability",
+              "passed": true,
+              "detail": "source_bead_id=bd-35by source_version=1.0.0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "10.13-fuzz-corpus",
+      "section": "10.13",
+      "suite_kind": "directory_corpus",
+      "required": true,
+      "publication_tag": "fuzz-corpus",
+      "status": "PASS",
+      "verified_at": "2026-02-22T02:59:12Z",
+      "discovered_count": 2,
+      "passed_count": 2,
+      "failed_count": 0,
+      "checks": [
+        {
+          "check": "discovery_non_empty",
+          "passed": true,
+          "detail": "discovered=2"
+        }
+      ],
+      "targets": [
+        {
+          "source_id": "10.13-fuzz-corpus",
+          "source_section": "10.13",
+          "path": "fuzz/corpus/migration",
+          "suite_kind": "directory_corpus",
+          "status": "PASS",
+          "required": true,
+          "source_bead_id": "bd-29ct",
+          "source_version": "1.0.0",
+          "entry_count": 50,
+          "verified_at": "2026-02-22T02:59:12Z",
+          "cross_runtime": {
+            "applicable": false,
+            "status": "NOT_APPLICABLE",
+            "targets": [],
+            "observed_implementations": [],
+            "detail": "Directory corpus suite"
+          },
+          "checks": [
+            {
+              "check": "exists",
+              "passed": true,
+              "detail": "fuzz/corpus/migration"
+            },
+            {
+              "check": "is_directory",
+              "passed": true,
+              "detail": "fuzz/corpus/migration"
+            },
+            {
+              "check": "minimum_entries",
+              "passed": true,
+              "detail": "files=50 minimum=10"
+            },
+            {
+              "check": "traceability",
+              "passed": true,
+              "detail": "source_bead_id=bd-29ct source_version=1.0.0"
+            }
+          ]
+        },
+        {
+          "source_id": "10.13-fuzz-corpus",
+          "source_section": "10.13",
+          "path": "fuzz/corpus/shim",
+          "suite_kind": "directory_corpus",
+          "status": "PASS",
+          "required": true,
+          "source_bead_id": "bd-29ct",
+          "source_version": "1.0.0",
+          "entry_count": 50,
+          "verified_at": "2026-02-22T02:59:12Z",
+          "cross_runtime": {
+            "applicable": false,
+            "status": "NOT_APPLICABLE",
+            "targets": [],
+            "observed_implementations": [],
+            "detail": "Directory corpus suite"
+          },
+          "checks": [
+            {
+              "check": "exists",
+              "passed": true,
+              "detail": "fuzz/corpus/shim"
+            },
+            {
+              "check": "is_directory",
+              "passed": true,
+              "detail": "fuzz/corpus/shim"
+            },
+            {
+              "check": "minimum_entries",
+              "passed": true,
+              "detail": "files=50 minimum=10"
+            },
+            {
+              "check": "traceability",
+              "passed": true,
+              "detail": "source_bead_id=bd-29ct source_version=1.0.0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "10.14-vector-artifacts",
+      "section": "10.14",
+      "suite_kind": "json_vectors",
+      "required": true,
+      "publication_tag": "control-plane-vectors",
+      "status": "PASS",
+      "verified_at": "2026-02-22T02:59:12Z",
+      "discovered_count": 4,
+      "passed_count": 4,
+      "failed_count": 0,
+      "checks": [
+        {
+          "check": "discovery_non_empty",
+          "passed": true,
+          "detail": "discovered=4"
+        }
+      ],
+      "targets": [
+        {
+          "source_id": "10.14-vector-artifacts",
+          "source_section": "10.14",
+          "path": "artifacts/10.14/epoch_key_vectors.json",
+          "suite_kind": "json_vectors",
+          "status": "PASS",
+          "required": true,
+          "source_bead_id": "bd-3cs3",
+          "source_version": "1.0.0",
+          "entry_count": 10,
+          "verified_at": "2026-02-22T02:59:12Z",
+          "cross_runtime": {
+            "applicable": false,
+            "status": "NOT_APPLICABLE",
+            "targets": [
+              "native",
+              "node",
+              "bun"
+            ],
+            "observed_implementations": [],
+            "detail": "No runtime implementation metadata in vector payload"
+          },
+          "checks": [
+            {
+              "check": "exists",
+              "passed": true,
+              "detail": "artifacts/10.14/epoch_key_vectors.json"
+            },
+            {
+              "check": "json_parse",
+              "passed": true,
+              "detail": "Parsed JSON successfully"
+            },
+            {
+              "check": "minimum_entries",
+              "passed": true,
+              "detail": "entries=10 minimum=1"
+            },
+            {
+              "check": "traceability",
+              "passed": true,
+              "detail": "source_bead_id=bd-3cs3 source_version=1.0.0"
+            }
+          ]
+        },
+        {
+          "source_id": "10.14-vector-artifacts",
+          "source_section": "10.14",
+          "path": "artifacts/10.14/idempotency_vectors.json",
+          "suite_kind": "json_vectors",
+          "status": "PASS",
+          "required": true,
+          "source_bead_id": "bd-12n3",
+          "source_version": "1.0.0",
+          "entry_count": 24,
+          "verified_at": "2026-02-22T02:59:12Z",
+          "cross_runtime": {
+            "applicable": false,
+            "status": "NOT_APPLICABLE",
+            "targets": [
+              "native",
+              "node",
+              "bun"
+            ],
+            "observed_implementations": [],
+            "detail": "No runtime implementation metadata in vector payload"
+          },
+          "checks": [
+            {
+              "check": "exists",
+              "passed": true,
+              "detail": "artifacts/10.14/idempotency_vectors.json"
+            },
+            {
+              "check": "json_parse",
+              "passed": true,
+              "detail": "Parsed JSON successfully"
+            },
+            {
+              "check": "minimum_entries",
+              "passed": true,
+              "detail": "entries=24 minimum=1"
+            },
+            {
+              "check": "traceability",
+              "passed": true,
+              "detail": "source_bead_id=bd-12n3 source_version=1.0.0"
+            }
+          ]
+        },
+        {
+          "source_id": "10.14-vector-artifacts",
+          "source_section": "10.14",
+          "path": "artifacts/10.14/mmr_proof_vectors.json",
+          "suite_kind": "json_vectors",
+          "status": "PASS",
+          "required": true,
+          "source_bead_id": "bd-1dar",
+          "source_version": "1.0.0",
+          "entry_count": 15,
+          "verified_at": "2026-02-22T02:59:12Z",
+          "cross_runtime": {
+            "applicable": false,
+            "status": "NOT_APPLICABLE",
+            "targets": [
+              "native",
+              "node",
+              "bun"
+            ],
+            "observed_implementations": [],
+            "detail": "No runtime implementation metadata in vector payload"
+          },
+          "checks": [
+            {
+              "check": "exists",
+              "passed": true,
+              "detail": "artifacts/10.14/mmr_proof_vectors.json"
+            },
+            {
+              "check": "json_parse",
+              "passed": true,
+              "detail": "Parsed JSON successfully"
+            },
+            {
+              "check": "minimum_entries",
+              "passed": true,
+              "detail": "entries=15 minimum=1"
+            },
+            {
+              "check": "traceability",
+              "passed": true,
+              "detail": "source_bead_id=bd-1dar source_version=1.0.0"
+            }
+          ]
+        },
+        {
+          "source_id": "10.14-vector-artifacts",
+          "source_section": "10.14",
+          "path": "artifacts/10.14/seed_derivation_vectors.json",
+          "suite_kind": "json_vectors",
+          "status": "PASS",
+          "required": true,
+          "source_bead_id": "bd-29r6",
+          "source_version": "1.0.0",
+          "entry_count": 12,
+          "verified_at": "2026-02-22T02:59:12Z",
+          "cross_runtime": {
+            "applicable": false,
+            "status": "NOT_APPLICABLE",
+            "targets": [
+              "native",
+              "node",
+              "bun"
+            ],
+            "observed_implementations": [],
+            "detail": "No runtime implementation metadata in vector payload"
+          },
+          "checks": [
+            {
+              "check": "exists",
+              "passed": true,
+              "detail": "artifacts/10.14/seed_derivation_vectors.json"
+            },
+            {
+              "check": "json_parse",
+              "passed": true,
+              "detail": "Parsed JSON successfully"
+            },
+            {
+              "check": "minimum_entries",
+              "passed": true,
+              "detail": "entries=12 minimum=1"
+            },
+            {
+              "check": "traceability",
+              "passed": true,
+              "detail": "source_bead_id=bd-29r6 source_version=1.0.0"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "vector_sets": [
+    {
+      "source_id": "10.13-golden-vectors",
+      "source_section": "10.13",
+      "path": "vectors/fnode_trust_vectors_v1.json",
+      "suite_kind": "json_vectors",
+      "status": "PASS",
+      "required": true,
+      "source_bead_id": "bd-3n2u",
+      "source_version": "1.0.0",
+      "entry_count": 6,
+      "verified_at": "2026-02-22T02:59:12Z",
+      "cross_runtime": {
+        "applicable": false,
+        "status": "NOT_APPLICABLE",
+        "targets": [
+          "native",
+          "node",
+          "bun"
+        ],
+        "observed_implementations": [],
+        "detail": "No runtime implementation metadata in vector payload"
+      },
+      "checks": [
+        {
+          "check": "exists",
+          "passed": true,
+          "detail": "vectors/fnode_trust_vectors_v1.json"
+        },
+        {
+          "check": "json_parse",
+          "passed": true,
+          "detail": "Parsed JSON successfully"
+        },
+        {
+          "check": "required_key:schema_version",
+          "passed": true,
+          "detail": "schema_version present"
+        },
+        {
+          "check": "required_key:vectors",
+          "passed": true,
+          "detail": "vectors present"
+        },
+        {
+          "check": "minimum_entries",
+          "passed": true,
+          "detail": "entries=6 minimum=1"
+        },
+        {
+          "check": "traceability",
+          "passed": true,
+          "detail": "source_bead_id=bd-3n2u source_version=1.0.0"
+        }
+      ]
+    },
+    {
+      "source_id": "10.13-interop-vectors",
+      "source_section": "10.13",
+      "path": "fixtures/interop/interop_test_vectors.json",
+      "suite_kind": "json_vectors",
+      "status": "PASS",
+      "required": true,
+      "source_bead_id": "bd-35by",
+      "source_version": "1.0.0",
+      "entry_count": 5,
+      "verified_at": "2026-02-22T02:59:12Z",
+      "cross_runtime": {
+        "applicable": true,
+        "status": "NOT_APPLICABLE",
+        "targets": [
+          "native",
+          "node",
+          "bun"
+        ],
+        "observed_implementations": [
+          "reference"
+        ],
+        "detail": "Observed runtime metadata but missing target(s): bun, native, node"
+      },
+      "checks": [
+        {
+          "check": "exists",
+          "passed": true,
+          "detail": "fixtures/interop/interop_test_vectors.json"
+        },
+        {
+          "check": "json_parse",
+          "passed": true,
+          "detail": "Parsed JSON successfully"
+        },
+        {
+          "check": "required_key:test_vectors",
+          "passed": true,
+          "detail": "test_vectors present"
+        },
+        {
+          "check": "minimum_entries",
+          "passed": true,
+          "detail": "entries=5 minimum=1"
+        },
+        {
+          "check": "traceability",
+          "passed": true,
+          "detail": "source_bead_id=bd-35by source_version=1.0.0"
+        }
+      ]
+    },
+    {
+      "source_id": "10.13-fuzz-corpus",
+      "source_section": "10.13",
+      "path": "fuzz/corpus/migration",
+      "suite_kind": "directory_corpus",
+      "status": "PASS",
+      "required": true,
+      "source_bead_id": "bd-29ct",
+      "source_version": "1.0.0",
+      "entry_count": 50,
+      "verified_at": "2026-02-22T02:59:12Z",
+      "cross_runtime": {
+        "applicable": false,
+        "status": "NOT_APPLICABLE",
+        "targets": [],
+        "observed_implementations": [],
+        "detail": "Directory corpus suite"
+      },
+      "checks": [
+        {
+          "check": "exists",
+          "passed": true,
+          "detail": "fuzz/corpus/migration"
+        },
+        {
+          "check": "is_directory",
+          "passed": true,
+          "detail": "fuzz/corpus/migration"
+        },
+        {
+          "check": "minimum_entries",
+          "passed": true,
+          "detail": "files=50 minimum=10"
+        },
+        {
+          "check": "traceability",
+          "passed": true,
+          "detail": "source_bead_id=bd-29ct source_version=1.0.0"
+        }
+      ]
+    },
+    {
+      "source_id": "10.13-fuzz-corpus",
+      "source_section": "10.13",
+      "path": "fuzz/corpus/shim",
+      "suite_kind": "directory_corpus",
+      "status": "PASS",
+      "required": true,
+      "source_bead_id": "bd-29ct",
+      "source_version": "1.0.0",
+      "entry_count": 50,
+      "verified_at": "2026-02-22T02:59:12Z",
+      "cross_runtime": {
+        "applicable": false,
+        "status": "NOT_APPLICABLE",
+        "targets": [],
+        "observed_implementations": [],
+        "detail": "Directory corpus suite"
+      },
+      "checks": [
+        {
+          "check": "exists",
+          "passed": true,
+          "detail": "fuzz/corpus/shim"
+        },
+        {
+          "check": "is_directory",
+          "passed": true,
+          "detail": "fuzz/corpus/shim"
+        },
+        {
+          "check": "minimum_entries",
+          "passed": true,
+          "detail": "files=50 minimum=10"
+        },
+        {
+          "check": "traceability",
+          "passed": true,
+          "detail": "source_bead_id=bd-29ct source_version=1.0.0"
+        }
+      ]
+    },
+    {
+      "source_id": "10.14-vector-artifacts",
+      "source_section": "10.14",
+      "path": "artifacts/10.14/epoch_key_vectors.json",
+      "suite_kind": "json_vectors",
+      "status": "PASS",
+      "required": true,
+      "source_bead_id": "bd-3cs3",
+      "source_version": "1.0.0",
+      "entry_count": 10,
+      "verified_at": "2026-02-22T02:59:12Z",
+      "cross_runtime": {
+        "applicable": false,
+        "status": "NOT_APPLICABLE",
+        "targets": [
+          "native",
+          "node",
+          "bun"
+        ],
+        "observed_implementations": [],
+        "detail": "No runtime implementation metadata in vector payload"
+      },
+      "checks": [
+        {
+          "check": "exists",
+          "passed": true,
+          "detail": "artifacts/10.14/epoch_key_vectors.json"
+        },
+        {
+          "check": "json_parse",
+          "passed": true,
+          "detail": "Parsed JSON successfully"
+        },
+        {
+          "check": "minimum_entries",
+          "passed": true,
+          "detail": "entries=10 minimum=1"
+        },
+        {
+          "check": "traceability",
+          "passed": true,
+          "detail": "source_bead_id=bd-3cs3 source_version=1.0.0"
+        }
+      ]
+    },
+    {
+      "source_id": "10.14-vector-artifacts",
+      "source_section": "10.14",
+      "path": "artifacts/10.14/idempotency_vectors.json",
+      "suite_kind": "json_vectors",
+      "status": "PASS",
+      "required": true,
+      "source_bead_id": "bd-12n3",
+      "source_version": "1.0.0",
+      "entry_count": 24,
+      "verified_at": "2026-02-22T02:59:12Z",
+      "cross_runtime": {
+        "applicable": false,
+        "status": "NOT_APPLICABLE",
+        "targets": [
+          "native",
+          "node",
+          "bun"
+        ],
+        "observed_implementations": [],
+        "detail": "No runtime implementation metadata in vector payload"
+      },
+      "checks": [
+        {
+          "check": "exists",
+          "passed": true,
+          "detail": "artifacts/10.14/idempotency_vectors.json"
+        },
+        {
+          "check": "json_parse",
+          "passed": true,
+          "detail": "Parsed JSON successfully"
+        },
+        {
+          "check": "minimum_entries",
+          "passed": true,
+          "detail": "entries=24 minimum=1"
+        },
+        {
+          "check": "traceability",
+          "passed": true,
+          "detail": "source_bead_id=bd-12n3 source_version=1.0.0"
+        }
+      ]
+    },
+    {
+      "source_id": "10.14-vector-artifacts",
+      "source_section": "10.14",
+      "path": "artifacts/10.14/mmr_proof_vectors.json",
+      "suite_kind": "json_vectors",
+      "status": "PASS",
+      "required": true,
+      "source_bead_id": "bd-1dar",
+      "source_version": "1.0.0",
+      "entry_count": 15,
+      "verified_at": "2026-02-22T02:59:12Z",
+      "cross_runtime": {
+        "applicable": false,
+        "status": "NOT_APPLICABLE",
+        "targets": [
+          "native",
+          "node",
+          "bun"
+        ],
+        "observed_implementations": [],
+        "detail": "No runtime implementation metadata in vector payload"
+      },
+      "checks": [
+        {
+          "check": "exists",
+          "passed": true,
+          "detail": "artifacts/10.14/mmr_proof_vectors.json"
+        },
+        {
+          "check": "json_parse",
+          "passed": true,
+          "detail": "Parsed JSON successfully"
+        },
+        {
+          "check": "minimum_entries",
+          "passed": true,
+          "detail": "entries=15 minimum=1"
+        },
+        {
+          "check": "traceability",
+          "passed": true,
+          "detail": "source_bead_id=bd-1dar source_version=1.0.0"
+        }
+      ]
+    },
+    {
+      "source_id": "10.14-vector-artifacts",
+      "source_section": "10.14",
+      "path": "artifacts/10.14/seed_derivation_vectors.json",
+      "suite_kind": "json_vectors",
+      "status": "PASS",
+      "required": true,
+      "source_bead_id": "bd-29r6",
+      "source_version": "1.0.0",
+      "entry_count": 12,
+      "verified_at": "2026-02-22T02:59:12Z",
+      "cross_runtime": {
+        "applicable": false,
+        "status": "NOT_APPLICABLE",
+        "targets": [
+          "native",
+          "node",
+          "bun"
+        ],
+        "observed_implementations": [],
+        "detail": "No runtime implementation metadata in vector payload"
+      },
+      "checks": [
+        {
+          "check": "exists",
+          "passed": true,
+          "detail": "artifacts/10.14/seed_derivation_vectors.json"
+        },
+        {
+          "check": "json_parse",
+          "passed": true,
+          "detail": "Parsed JSON successfully"
+        },
+        {
+          "check": "minimum_entries",
+          "passed": true,
+          "detail": "entries=12 minimum=1"
+        },
+        {
+          "check": "traceability",
+          "passed": true,
+          "detail": "source_bead_id=bd-29r6 source_version=1.0.0"
+        }
+      ]
+    }
+  ],
+  "release_gate": {
+    "verdict": "PASS",
+    "blocked_release": false,
+    "blockers": []
+  },
+  "publication_gate": {
+    "verdict": "PASS",
+    "blocked_publication": false,
+    "reason": "All required canonical vector suites verified in current run"
+  },
+  "summary": {
+    "sources_total": 4,
+    "sources_passed": 4,
+    "vector_sets_total": 8,
+    "vector_sets_passed": 8,
+    "checks_passed": 17,
+    "checks_total": 17
+  },
+  "checks_passed": 17,
+  "checks_total": 17,
+  "verdict": "PASS"
+}

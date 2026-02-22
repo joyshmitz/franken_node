@@ -1,0 +1,53 @@
+name: Canonical Vector Gate
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/canonical-vector-gate.yml"
+      - "vectors/canonical_manifest.toml"
+      - "vectors/CHANGELOG.md"
+      - "vectors/fnode_trust_vectors*.json"
+      - "fixtures/interop/*vectors*.json"
+      - "artifacts/10.14/*_vectors.json"
+      - "fuzz/corpus/**"
+      - "scripts/check_canonical_vectors.py"
+      - "tests/test_check_canonical_vectors.py"
+      - "docs/specs/section_10_7/bd-s6y_contract.md"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/canonical-vector-gate.yml"
+      - "vectors/canonical_manifest.toml"
+      - "vectors/CHANGELOG.md"
+      - "vectors/fnode_trust_vectors*.json"
+      - "fixtures/interop/*vectors*.json"
+      - "artifacts/10.14/*_vectors.json"
+      - "fuzz/corpus/**"
+      - "scripts/check_canonical_vectors.py"
+      - "tests/test_check_canonical_vectors.py"
+      - "docs/specs/section_10_7/bd-s6y_contract.md"
+
+jobs:
+  canonical-vector-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run canonical vector gate self-test
+        run: |
+          python3 scripts/check_canonical_vectors.py --self-test
+
+      - name: Run canonical vector gate
+        run: |
+          python3 scripts/check_canonical_vectors.py --json > /tmp/canonical_vector_gate_report.json
+
+      - name: Run unit tests
+        run: |
+          python3 -m unittest tests/test_check_canonical_vectors.py
+
+      - name: Upload gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-vector-gate
+          path: /tmp/canonical_vector_gate_report.json

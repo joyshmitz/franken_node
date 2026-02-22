@@ -1,0 +1,66 @@
+{
+  "generated_at": "2026-02-22T02:58:11Z",
+  "plan": {
+    "tracks": [
+      {
+        "track_id": "track-A",
+        "items": [
+          {
+            "id": "bd-1cs7",
+            "title": "[10.15] Implement request -\u003e drain -\u003e finalize cancellation protocol across high-impact workflows.",
+            "priority": 1,
+            "status": "in_progress",
+            "unblocks": [
+              "bd-7om"
+            ]
+          },
+          {
+            "id": "bd-721z",
+            "title": "[10.15] Add ambient-authority audit gate for control-plane modules.",
+            "priority": 1,
+            "status": "blocked",
+            "unblocks": null
+          },
+          {
+            "id": "bd-1hf",
+            "title": "[PLAN 10.10] FCP-Inspired Hardening + Interop Integration Track",
+            "priority": 2,
+            "status": "in_progress",
+            "unblocks": [
+              "bd-c4f"
+            ]
+          },
+          {
+            "id": "bd-2ah",
+            "title": "[10.11] Adopt canonical obligation-tracked two-phase channel contracts (from `10.15`) for critical flows.",
+            "priority": 2,
+            "status": "open",
+            "unblocks": null
+          },
+          {
+            "id": "bd-3ex",
+            "title": "[10.7] Add verifier CLI conformance contract tests.",
+            "priority": 2,
+            "status": "in_progress",
+            "unblocks": null
+          },
+          {
+            "id": "bd-s6y",
+            "title": "[10.7] Adopt canonical trust protocol vectors from `10.13` + `10.14` and enforce release/publication gates on those vectors.",
+            "priority": 2,
+            "status": "in_progress",
+            "unblocks": null
+          }
+        ],
+        "reason": "Independent work stream"
+      }
+    ],
+    "total_actionable": 6,
+    "total_blocked": 107,
+    "summary": {
+      "highest_impact": "bd-1cs7",
+      "impact_reason": "Unblocks 1 task",
+      "unblocks_count": 1
+    }
+  }
+}

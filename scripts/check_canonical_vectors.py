@@ -1,540 +1,706 @@
 #!/usr/bin/env python3
-"""Canonical trust protocol vector release gate (bd-s6y).
-
-Adopts golden vectors from sections 10.13 and 10.14, enforces release/publication
-gates, validates schema conformance, checks changelog discipline, and reports
-cross-implementation parity status.
-
-Event codes: CVG-001 through CVG-006.
-"""
+"""bd-s6y verifier: canonical trust vectors release/publication gate."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
-import time
+import tempfile
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 try:
-    import tomllib  # Python 3.11+
-except ModuleNotFoundError:
-    try:
-        import tomli as tomllib  # type: ignore[no-redef]
-    except ModuleNotFoundError:
-        tomllib = None  # type: ignore[assignment]
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python <3.11 fallback
+    import tomli as tomllib  # type: ignore[no-redef]
 
 ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_MANIFEST = ROOT / "vectors" / "canonical_manifest.toml"
+DEFAULT_CHANGELOG = ROOT / "vectors" / "CHANGELOG.md"
 
 BEAD_ID = "bd-s6y"
 SECTION = "10.7"
-TITLE = "Adopt canonical trust protocol vectors and enforce release gates"
-
-MANIFEST_PATH = ROOT / "vectors" / "canonical_manifest.toml"
-CHANGELOG_PATH = ROOT / "vectors" / "CHANGELOG.md"
-SPEC_PATH = ROOT / "docs" / "specs" / "section_10_7" / "bd-s6y_contract.md"
-EVIDENCE_PATH = ROOT / "artifacts" / "section_10_7" / "bd-s6y" / "verification_evidence.json"
-SUMMARY_PATH = ROOT / "artifacts" / "section_10_7" / "bd-s6y" / "verification_summary.md"
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class SourceSpec:
+    source_id: str
+    section: str
+    source_bead_id: str
+    source_version: str
+    suite_kind: str
+    required: bool
+    globs: tuple[str, ...]
+    paths: tuple[str, ...]
+    entry_keys: tuple[str, ...]
+    required_keys: tuple[str, ...]
+    minimum_entries: int
+    parity_targets: tuple[str, ...]
+    publication_tag: str
 
-def _read(path: Path) -> str:
+
+def _now_rfc3339() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _load_json(path: Path) -> Any:
+    with path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _load_manifest(path: Path) -> dict[str, Any]:
+    with path.open("rb") as handle:
+        return tomllib.load(handle)
+
+
+def _relative(path: Path, root: Path) -> str:
     try:
-        return path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return ""
-
-
-def _load_json(path: Path) -> Any | None:
-    text = _read(path)
-    if not text:
-        return None
-    try:
-        return json.loads(text)
-    except (json.JSONDecodeError, ValueError):
-        return None
-
-
-def _load_manifest() -> dict[str, Any] | None:
-    """Load and parse canonical_manifest.toml."""
-    text = _read(MANIFEST_PATH)
-    if not text:
-        return None
-    if tomllib is not None:
-        try:
-            return tomllib.loads(text)
-        except Exception:
-            return None
-    # Fallback: lightweight TOML-subset parser for the manifest structure.
-    return _fallback_parse_manifest(text)
-
-
-def _fallback_parse_manifest(text: str) -> dict[str, Any] | None:
-    """Minimal TOML parser sufficient for canonical_manifest.toml.
-
-    Handles top-level [manifest] section and [[suites]] array-of-tables.
-    """
-    import re
-
-    manifest: dict[str, Any] = {}
-    suites: list[dict[str, Any]] = []
-    current: dict[str, Any] | None = None
-    current_section: str | None = None
-
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-
-        # Array-of-tables header
-        if line == "[[suites]]":
-            current = {}
-            suites.append(current)
-            current_section = "suites"
-            continue
-
-        # Table header
-        m = re.match(r"^\[(\w+)\]$", line)
-        if m:
-            current_section = m.group(1)
-            if current_section == "manifest":
-                current = manifest.setdefault("manifest", {})
-            continue
-
-        # Key-value
-        kv = re.match(r'^(\w+)\s*=\s*(.+)$', line)
-        if kv and current is not None:
-            key = kv.group(1)
-            val_raw = kv.group(2).strip()
-            current[key] = _parse_toml_value(val_raw)
-
-    manifest["suites"] = suites
-    return manifest
-
-
-def _parse_toml_value(raw: str) -> Any:
-    """Parse a simple TOML value (string, bool, int, array of strings)."""
-    if raw.startswith('"') and raw.endswith('"'):
-        return raw[1:-1]
-    if raw.lower() == "true":
-        return True
-    if raw.lower() == "false":
-        return False
-    try:
-        return int(raw)
+        return path.relative_to(root).as_posix()
     except ValueError:
-        pass
-    if raw.startswith("[") and raw.endswith("]"):
-        import re
-        return re.findall(r'"([^"]*)"', raw)
-    return raw
+        return path.as_posix()
 
 
-def _validate_vector_schema(data: Any, suite_name: str) -> tuple[bool, str]:
-    """Basic schema validation: check that vector data has expected structure."""
-    if data is None:
-        return False, f"{suite_name}: file missing or unparseable"
-    if not isinstance(data, dict):
-        return False, f"{suite_name}: root must be an object"
+def _parse_sources(manifest: dict[str, Any]) -> list[SourceSpec]:
+    raw_sources = manifest.get("sources")
+    if not isinstance(raw_sources, list):
+        return []
 
-    # Every vector file should have some form of vectors/cases/test_vectors list
-    has_vectors = False
-    for key in ("vectors", "test_vectors", "inclusion_cases", "prefix_cases"):
-        val = data.get(key)
-        if isinstance(val, list) and len(val) > 0:
-            has_vectors = True
-            break
-    if not has_vectors:
-        return False, f"{suite_name}: no vector array found (expected 'vectors', 'test_vectors', 'inclusion_cases', or 'prefix_cases')"
+    policy = manifest.get("policy", {})
+    default_targets = tuple(str(t) for t in policy.get("default_parity_targets", []))
 
-    return True, f"{suite_name}: schema valid"
-
-
-def _count_vectors(data: dict[str, Any]) -> int:
-    """Count the number of individual vectors in a vector file."""
-    count = 0
-    for key in ("vectors", "test_vectors", "inclusion_cases", "prefix_cases"):
-        val = data.get(key)
-        if isinstance(val, list):
-            count += len(val)
-    return count
-
-
-# ---------------------------------------------------------------------------
-# Checks
-# ---------------------------------------------------------------------------
-
-def _checks() -> list[dict[str, Any]]:
-    """Run all verification checks and return results."""
-    results: list[dict[str, Any]] = []
-    manifest = _load_manifest()
-
-    # 1. Manifest exists
-    ok = MANIFEST_PATH.is_file()
-    results.append({
-        "check": "manifest_exists",
-        "passed": ok,
-        "detail": f"canonical_manifest.toml {'exists' if ok else 'MISSING'} at vectors/canonical_manifest.toml",
-    })
-
-    # 2. Manifest parseable
-    ok = manifest is not None
-    results.append({
-        "check": "manifest_parseable",
-        "passed": ok,
-        "detail": f"canonical_manifest.toml {'parsed successfully' if ok else 'PARSE FAILED'}",
-    })
-
-    # 3. Manifest has suites
-    suites = manifest.get("suites", []) if manifest else []
-    ok = len(suites) >= 1
-    results.append({
-        "check": "manifest_has_suites",
-        "passed": ok,
-        "detail": f"{len(suites)} suites registered (>= 1 required)",
-    })
-
-    # 4. Manifest has both 10.13 and 10.14 sources
-    source_sections = set()
-    for s in suites:
-        src = s.get("source_section", "")
-        source_sections.add(src)
-    has_1013 = "10.13" in source_sections
-    has_1014 = "10.14" in source_sections
-    ok = has_1013 and has_1014
-    results.append({
-        "check": "manifest_adopts_1013_and_1014",
-        "passed": ok,
-        "detail": f"Sources: {sorted(source_sections)} ({'both 10.13 and 10.14 present' if ok else 'MISSING one or both'})",
-    })
-
-    # 5. All required suites have required=true
-    required_count = sum(1 for s in suites if s.get("required", False))
-    ok = required_count >= 1
-    results.append({
-        "check": "required_suites_flagged",
-        "passed": ok,
-        "detail": f"{required_count} suites marked required (>= 1 needed)",
-    })
-
-    # 6. All suite vector files exist
-    missing_files: list[str] = []
-    for s in suites:
-        vf = ROOT / s.get("vector_file", "NOFILE")
-        if not vf.is_file():
-            missing_files.append(s.get("suite_name", "?"))
-    ok = len(missing_files) == 0
-    results.append({
-        "check": "vector_files_exist",
-        "passed": ok,
-        "detail": "All vector files present" if ok else f"Missing: {', '.join(missing_files)}",
-    })
-
-    # 7. All vector files are valid JSON with schema conformance
-    schema_errors: list[str] = []
-    total_vector_count = 0
-    suite_results: list[dict[str, Any]] = []
-    for s in suites:
-        vf = ROOT / s.get("vector_file", "NOFILE")
-        data = _load_json(vf)
-        valid, msg = _validate_vector_schema(data, s.get("suite_name", "?"))
-        if not valid:
-            schema_errors.append(msg)
-        vc = _count_vectors(data) if data else 0
-        total_vector_count += vc
-        suite_results.append({
-            "suite_name": s.get("suite_name", "?"),
-            "vector_count": vc,
-            "schema_valid": valid,
-            "source_section": s.get("source_section", "?"),
-            "required": s.get("required", False),
-        })
-    ok = len(schema_errors) == 0
-    results.append({
-        "check": "schema_validation",
-        "passed": ok,
-        "detail": f"All {len(suites)} suites pass schema validation ({total_vector_count} total vectors)"
-            if ok else f"Schema errors: {'; '.join(schema_errors)}",
-    })
-
-    # 8. Changelog exists
-    ok = CHANGELOG_PATH.is_file()
-    results.append({
-        "check": "changelog_exists",
-        "passed": ok,
-        "detail": f"CHANGELOG.md {'exists' if ok else 'MISSING'} at vectors/CHANGELOG.md",
-    })
-
-    # 9. Changelog references the manifest version
-    changelog_text = _read(CHANGELOG_PATH)
-    ok = "1.0.0" in changelog_text and "canonical_manifest" in changelog_text.lower().replace(" ", "_").replace("-", "_")
-    results.append({
-        "check": "changelog_references_manifest",
-        "passed": ok,
-        "detail": f"CHANGELOG.md {'references' if ok else 'DOES NOT reference'} canonical_manifest and version 1.0.0",
-    })
-
-    # 10. Changelog documents all vector files
-    changelog_lower = changelog_text.lower()
-    undocumented: list[str] = []
-    for s in suites:
-        vf = s.get("vector_file", "")
-        # Check if the vector file basename is mentioned in the changelog
-        basename = Path(vf).name.lower()
-        if basename not in changelog_lower:
-            undocumented.append(s.get("suite_name", "?"))
-    ok = len(undocumented) == 0
-    results.append({
-        "check": "changelog_documents_all_vectors",
-        "passed": ok,
-        "detail": "All vector files documented in CHANGELOG.md"
-            if ok else f"Undocumented: {', '.join(undocumented)}",
-    })
-
-    # 11. Spec contract exists
-    ok = SPEC_PATH.is_file()
-    results.append({
-        "check": "spec_contract_exists",
-        "passed": ok,
-        "detail": f"Spec contract {'exists' if ok else 'MISSING'} at docs/specs/section_10_7/bd-s6y_contract.md",
-    })
-
-    # 12. Release gate output structure
-    # Validate that we can produce structured JSON output
-    gate_output = _build_gate_output(suites, suite_results, total_vector_count)
-    required_keys = {"suites", "total_vectors", "overall_status"}
-    ok = all(k in gate_output for k in required_keys)
-    results.append({
-        "check": "gate_output_structured",
-        "passed": ok,
-        "detail": f"Gate output contains required keys: {sorted(required_keys)}" if ok
-            else f"Gate output missing keys: {sorted(required_keys - set(gate_output.keys()))}",
-    })
-
-    # 13. Cross-implementation parity readiness
-    # Check that at least the native implementation vectors exist
-    ok = total_vector_count > 0
-    results.append({
-        "check": "cross_impl_parity_ready",
-        "passed": ok,
-        "detail": f"{total_vector_count} vectors available for cross-implementation parity checks"
-            if ok else "No vectors available for parity checking",
-    })
-
-    # 14. Every suite has required fields
-    suite_field_errors: list[str] = []
-    required_suite_fields = ["suite_name", "source_section", "vector_file", "schema_version", "required", "categories"]
-    for s in suites:
-        for field in required_suite_fields:
-            if field not in s:
-                suite_field_errors.append(f"{s.get('suite_name', '?')}.{field}")
-    ok = len(suite_field_errors) == 0
-    results.append({
-        "check": "suite_fields_complete",
-        "passed": ok,
-        "detail": "All suites have required fields" if ok
-            else f"Missing fields: {', '.join(suite_field_errors)}",
-    })
-
-    # 15. Manifest metadata present
-    meta = manifest.get("manifest", {}) if manifest else {}
-    ok = bool(meta.get("schema_version")) and bool(meta.get("bead_id"))
-    results.append({
-        "check": "manifest_metadata",
-        "passed": ok,
-        "detail": f"Manifest metadata present (schema_version={meta.get('schema_version', 'N/A')}, bead_id={meta.get('bead_id', 'N/A')})"
-            if ok else "Manifest metadata incomplete",
-    })
-
-    return results
+    parsed: list[SourceSpec] = []
+    for source in raw_sources:
+        if not isinstance(source, dict):
+            continue
+        parsed.append(
+            SourceSpec(
+                source_id=str(source.get("source_id", "")).strip(),
+                section=str(source.get("section", "")).strip(),
+                source_bead_id=str(source.get("source_bead_id", "")).strip(),
+                source_version=str(source.get("source_version", "")).strip(),
+                suite_kind=str(source.get("suite_kind", "json_vectors")).strip(),
+                required=bool(source.get("required", True)),
+                globs=tuple(str(x) for x in source.get("globs", [])),
+                paths=tuple(str(x) for x in source.get("paths", [])),
+                entry_keys=tuple(str(x) for x in source.get("entry_keys", [])),
+                required_keys=tuple(str(x) for x in source.get("required_keys", [])),
+                minimum_entries=int(source.get("minimum_entries", 1)),
+                parity_targets=tuple(
+                    str(x) for x in source.get("parity_targets", default_targets)
+                ),
+                publication_tag=str(source.get("publication_tag", "")).strip(),
+            )
+        )
+    return parsed
 
 
-def _build_gate_output(
-    suites: list[dict[str, Any]],
-    suite_results: list[dict[str, Any]],
-    total_vectors: int,
-) -> dict[str, Any]:
-    """Build structured gate output for CI consumption."""
-    all_pass = all(sr.get("schema_valid", False) for sr in suite_results)
+def _parse_overrides(manifest: dict[str, Any]) -> dict[str, dict[str, str]]:
+    raw = manifest.get("metadata_overrides", {})
+    if not isinstance(raw, dict):
+        return {}
+
+    parsed: dict[str, dict[str, str]] = {}
+    for key, value in raw.items():
+        if not isinstance(value, dict):
+            continue
+        parsed[str(key)] = {
+            "source_bead_id": str(value.get("source_bead_id", "")).strip(),
+            "source_version": str(value.get("source_version", "")).strip(),
+        }
+    return parsed
+
+
+def _discover_targets(source: SourceSpec, root: Path) -> list[Path]:
+    found: dict[str, Path] = {}
+
+    for rel_path in source.paths:
+        candidate = (root / rel_path).resolve()
+        found[_relative(candidate, root)] = candidate
+
+    for pattern in source.globs:
+        for candidate in sorted(root.glob(pattern)):
+            resolved = candidate.resolve()
+            found[_relative(resolved, root)] = resolved
+
+    return [found[key] for key in sorted(found)]
+
+
+def _entry_count(payload: Any, entry_keys: tuple[str, ...]) -> int:
+    if isinstance(payload, list):
+        return len(payload)
+    if not isinstance(payload, dict):
+        return 0
+
+    counts: list[int] = []
+    for key in entry_keys:
+        value = payload.get(key)
+        if isinstance(value, list):
+            counts.append(len(value))
+
+    if counts:
+        return sum(counts)
+    return 0
+
+
+def _extract_traceability(
+    rel_path: str,
+    payload: Any,
+    source: SourceSpec,
+    overrides: dict[str, dict[str, str]],
+) -> tuple[str, str]:
+    if source.source_bead_id != "auto" and source.source_version != "auto":
+        return source.source_bead_id, source.source_version
+
+    override = overrides.get(rel_path)
+    if override:
+        bead = override.get("source_bead_id", "")
+        version = override.get("source_version", "")
+        if bead and version:
+            return bead, version
+
+    if isinstance(payload, dict):
+        bead = (
+            payload.get("bead_id")
+            or payload.get("source_bead_id")
+            or payload.get("bead")
+            or ""
+        )
+        version = (
+            payload.get("source_version")
+            or payload.get("version")
+            or payload.get("schema_version")
+            or ""
+        )
+        bead_str = str(bead).strip()
+        version_str = str(version).strip()
+        if bead_str and version_str:
+            return bead_str, version_str
+
+    return "", ""
+
+
+def _cross_runtime_summary(payload: Any, targets: tuple[str, ...]) -> dict[str, Any]:
+    if not targets:
+        return {
+            "applicable": False,
+            "status": "NOT_APPLICABLE",
+            "targets": [],
+            "observed_implementations": [],
+            "detail": "No parity targets configured for source",
+        }
+
+    observed: set[str] = set()
+    if isinstance(payload, dict):
+        runtime_results = payload.get("runtime_results")
+        if isinstance(runtime_results, dict):
+            observed.update(str(k) for k in runtime_results.keys())
+
+        for key in ("vectors", "test_vectors", "cases", "inclusion_cases", "prefix_cases"):
+            rows = payload.get(key)
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                for impl_field in ("implementation", "runtime", "engine"):
+                    value = row.get(impl_field)
+                    if isinstance(value, str) and value.strip():
+                        observed.add(value.strip())
+
+    if not observed:
+        return {
+            "applicable": False,
+            "status": "NOT_APPLICABLE",
+            "targets": list(targets),
+            "observed_implementations": [],
+            "detail": "No runtime implementation metadata in vector payload",
+        }
+
+    missing_targets = sorted(set(targets) - observed)
+    if missing_targets:
+        return {
+            "applicable": True,
+            "status": "NOT_APPLICABLE",
+            "targets": list(targets),
+            "observed_implementations": sorted(observed),
+            "detail": f"Observed runtime metadata but missing target(s): {', '.join(missing_targets)}",
+        }
+
     return {
-        "suites": [
-            {
-                "suite_name": sr["suite_name"],
-                "vector_count": sr["vector_count"],
-                "pass_count": sr["vector_count"] if sr["schema_valid"] else 0,
-                "fail_count": 0 if sr["schema_valid"] else sr["vector_count"],
-                "status": "PASS" if sr["schema_valid"] else "FAIL",
-                "source_section": sr["source_section"],
-                "required": sr["required"],
-            }
-            for sr in suite_results
-        ],
-        "total_vectors": total_vectors,
-        "total_suites": len(suite_results),
-        "passing_suites": sum(1 for sr in suite_results if sr["schema_valid"]),
-        "failing_suites": sum(1 for sr in suite_results if not sr["schema_valid"]),
-        "overall_status": "PASS" if all_pass else "FAIL",
+        "applicable": True,
+        "status": "PASS",
+        "targets": list(targets),
+        "observed_implementations": sorted(observed),
+        "detail": "Runtime metadata covers all parity targets",
     }
 
 
-# ---------------------------------------------------------------------------
-# run_all / self_test / main
-# ---------------------------------------------------------------------------
+def _validate_json_target(
+    target: Path,
+    source: SourceSpec,
+    root: Path,
+    overrides: dict[str, dict[str, str]],
+) -> dict[str, Any]:
+    checks: list[dict[str, Any]] = []
+    rel_path = _relative(target, root)
+    verified_at = _now_rfc3339()
 
-def run_all() -> dict[str, Any]:
-    """Execute all checks and return structured result."""
-    t0 = time.monotonic()
-    checks = _checks()
-    elapsed = round(time.monotonic() - t0, 4)
+    def add_check(name: str, passed: bool, detail: str) -> None:
+        checks.append({"check": name, "passed": passed, "detail": detail})
 
-    passed = sum(1 for c in checks if c["passed"])
-    failed = sum(1 for c in checks if not c["passed"])
-    total = len(checks)
-    verdict = "PASS" if failed == 0 else "FAIL"
+    add_check("exists", target.is_file(), rel_path)
+    payload: Any = None
+    if target.is_file():
+        try:
+            payload = _load_json(target)
+            add_check("json_parse", True, "Parsed JSON successfully")
+        except json.JSONDecodeError as exc:
+            add_check("json_parse", False, f"JSON parse failure: {exc}")
+    else:
+        add_check("json_parse", False, "Path is not a file")
+
+    if payload is not None:
+        for key in source.required_keys:
+            add_check(f"required_key:{key}", isinstance(payload, dict) and key in payload, f"{key} present")
+
+        entry_count = _entry_count(payload, source.entry_keys)
+        add_check(
+            "minimum_entries",
+            entry_count >= source.minimum_entries,
+            f"entries={entry_count} minimum={source.minimum_entries}",
+        )
+    else:
+        entry_count = 0
+        add_check("minimum_entries", False, "No payload available")
+
+    bead_id, source_version = _extract_traceability(rel_path, payload, source, overrides)
+    add_check(
+        "traceability",
+        bool(bead_id and source_version),
+        f"source_bead_id={bead_id or '<missing>'} source_version={source_version or '<missing>'}",
+    )
+
+    cross_runtime = _cross_runtime_summary(payload, source.parity_targets) if payload is not None else {
+        "applicable": False,
+        "status": "NOT_APPLICABLE",
+        "targets": list(source.parity_targets),
+        "observed_implementations": [],
+        "detail": "No payload available",
+    }
+
+    passed = all(check["passed"] for check in checks)
+    return {
+        "source_id": source.source_id,
+        "source_section": source.section,
+        "path": rel_path,
+        "suite_kind": source.suite_kind,
+        "status": "PASS" if passed else "FAIL",
+        "required": source.required,
+        "source_bead_id": bead_id,
+        "source_version": source_version,
+        "entry_count": entry_count,
+        "verified_at": verified_at,
+        "cross_runtime": cross_runtime,
+        "checks": checks,
+    }
+
+
+def _validate_directory_target(target: Path, source: SourceSpec, root: Path) -> dict[str, Any]:
+    rel_path = _relative(target, root)
+    checks: list[dict[str, Any]] = []
+    verified_at = _now_rfc3339()
+
+    def add_check(name: str, passed: bool, detail: str) -> None:
+        checks.append({"check": name, "passed": passed, "detail": detail})
+
+    add_check("exists", target.exists(), rel_path)
+    add_check("is_directory", target.is_dir(), rel_path)
+
+    file_count = 0
+    if target.is_dir():
+        file_count = sum(1 for path in target.rglob("*") if path.is_file())
+    add_check(
+        "minimum_entries",
+        file_count >= source.minimum_entries,
+        f"files={file_count} minimum={source.minimum_entries}",
+    )
+
+    add_check(
+        "traceability",
+        bool(source.source_bead_id and source.source_version),
+        f"source_bead_id={source.source_bead_id or '<missing>'} source_version={source.source_version or '<missing>'}",
+    )
+
+    passed = all(check["passed"] for check in checks)
+    return {
+        "source_id": source.source_id,
+        "source_section": source.section,
+        "path": rel_path,
+        "suite_kind": source.suite_kind,
+        "status": "PASS" if passed else "FAIL",
+        "required": source.required,
+        "source_bead_id": source.source_bead_id,
+        "source_version": source.source_version,
+        "entry_count": file_count,
+        "verified_at": verified_at,
+        "cross_runtime": {
+            "applicable": False,
+            "status": "NOT_APPLICABLE",
+            "targets": [],
+            "observed_implementations": [],
+            "detail": "Directory corpus suite",
+        },
+        "checks": checks,
+    }
+
+
+def _validate_changelog(
+    changelog_path: Path,
+    manifest_version: str,
+    discovered_paths: list[str],
+    source_ids: list[str],
+) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+
+    def add_check(name: str, passed: bool, detail: str) -> None:
+        checks.append({"check": name, "passed": passed, "detail": detail})
+
+    add_check("changelog_exists", changelog_path.is_file(), str(changelog_path))
+    if not changelog_path.is_file():
+        return checks
+
+    text = _read_text(changelog_path)
+    add_check(
+        "changelog_has_manifest_version",
+        manifest_version in text,
+        f"version={manifest_version}",
+    )
+
+    for source_id in sorted(set(source_ids)):
+        add_check(
+            f"changelog_mentions_source:{source_id}",
+            source_id in text,
+            f"{source_id} present in changelog",
+        )
+
+    for rel_path in sorted(set(discovered_paths)):
+        add_check(
+            f"changelog_mentions_path:{rel_path}",
+            rel_path in text,
+            f"{rel_path} present in changelog",
+        )
+
+    return checks
+
+
+def run_gate(
+    manifest_path: Path = DEFAULT_MANIFEST,
+    changelog_path: Path = DEFAULT_CHANGELOG,
+    *,
+    root: Path = ROOT,
+) -> dict[str, Any]:
+    checks: list[dict[str, Any]] = []
+
+    def add_check(name: str, passed: bool, detail: str) -> None:
+        checks.append({"check": name, "passed": passed, "detail": detail})
+
+    add_check("manifest_exists", manifest_path.is_file(), str(manifest_path))
+    if not manifest_path.is_file():
+        return {
+            "bead_id": BEAD_ID,
+            "section": SECTION,
+            "generated_at": _now_rfc3339(),
+            "checks": checks,
+            "sources": [],
+            "vector_sets": [],
+            "release_gate": {
+                "verdict": "FAIL",
+                "blocked_release": True,
+                "blockers": ["ERR_CVG_MANIFEST_MISSING"],
+            },
+            "publication_gate": {
+                "verdict": "FAIL",
+                "blocked_publication": True,
+                "reason": "Manifest missing",
+            },
+            "summary": {
+                "sources_total": 0,
+                "sources_passed": 0,
+                "vector_sets_total": 0,
+                "vector_sets_passed": 0,
+                "checks_passed": sum(1 for c in checks if c["passed"]),
+                "checks_total": len(checks),
+            },
+            "verdict": "FAIL",
+            "checks_passed": sum(1 for c in checks if c["passed"]),
+            "checks_total": len(checks),
+        }
+
+    try:
+        manifest = _load_manifest(manifest_path)
+        add_check("manifest_parse", True, "Parsed TOML manifest")
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        add_check("manifest_parse", False, f"TOML parse failure: {exc}")
+        return {
+            "bead_id": BEAD_ID,
+            "section": SECTION,
+            "generated_at": _now_rfc3339(),
+            "checks": checks,
+            "sources": [],
+            "vector_sets": [],
+            "release_gate": {
+                "verdict": "FAIL",
+                "blocked_release": True,
+                "blockers": ["ERR_CVG_MANIFEST_INVALID"],
+            },
+            "publication_gate": {
+                "verdict": "FAIL",
+                "blocked_publication": True,
+                "reason": "Manifest invalid",
+            },
+            "summary": {
+                "sources_total": 0,
+                "sources_passed": 0,
+                "vector_sets_total": 0,
+                "vector_sets_passed": 0,
+                "checks_passed": sum(1 for c in checks if c["passed"]),
+                "checks_total": len(checks),
+            },
+            "verdict": "FAIL",
+            "checks_passed": sum(1 for c in checks if c["passed"]),
+            "checks_total": len(checks),
+        }
+
+    parsed_sources = _parse_sources(manifest)
+    add_check(
+        "manifest_sources_present",
+        len(parsed_sources) > 0,
+        f"sources={len(parsed_sources)}",
+    )
+    overrides = _parse_overrides(manifest)
+
+    source_results: list[dict[str, Any]] = []
+    vector_sets: list[dict[str, Any]] = []
+    discovered_paths: list[str] = []
+    source_ids: list[str] = []
+
+    for source in parsed_sources:
+        source_ids.append(source.source_id)
+        targets = _discover_targets(source, root)
+        discovered_rel_paths = [_relative(path, root) for path in targets]
+        discovered_paths.extend(discovered_rel_paths)
+
+        source_checks: list[dict[str, Any]] = []
+
+        def add_source_check(name: str, passed: bool, detail: str) -> None:
+            source_checks.append({"check": name, "passed": passed, "detail": detail})
+
+        add_source_check(
+            "discovery_non_empty",
+            len(targets) > 0,
+            f"discovered={len(targets)}",
+        )
+
+        target_results: list[dict[str, Any]] = []
+        for target in targets:
+            if source.suite_kind == "directory_corpus":
+                result = _validate_directory_target(target, source, root)
+            else:
+                result = _validate_json_target(target, source, root, overrides)
+            target_results.append(result)
+            vector_sets.append(result)
+
+        passed_targets = sum(1 for item in target_results if item["status"] == "PASS")
+        source_passed = bool(target_results) and passed_targets == len(target_results) and all(
+            check["passed"] for check in source_checks
+        )
+        source_results.append(
+            {
+                "source_id": source.source_id,
+                "section": source.section,
+                "suite_kind": source.suite_kind,
+                "required": source.required,
+                "publication_tag": source.publication_tag,
+                "status": "PASS" if source_passed else "FAIL",
+                "verified_at": _now_rfc3339(),
+                "discovered_count": len(target_results),
+                "passed_count": passed_targets,
+                "failed_count": len(target_results) - passed_targets,
+                "checks": source_checks,
+                "targets": target_results,
+            }
+        )
+
+    changelog_checks = _validate_changelog(
+        changelog_path=changelog_path,
+        manifest_version=str(manifest.get("version", "")).strip(),
+        discovered_paths=discovered_paths,
+        source_ids=source_ids,
+    )
+    checks.extend(changelog_checks)
+
+    failing_required_sources = [
+        source["source_id"]
+        for source in source_results
+        if source["required"] and source["status"] != "PASS"
+    ]
+    changelog_failures = [check["check"] for check in changelog_checks if not check["passed"]]
+
+    blockers = []
+    blockers.extend(f"source:{item}" for item in failing_required_sources)
+    blockers.extend(changelog_failures)
+
+    release_pass = len(blockers) == 0
+    release_gate = {
+        "verdict": "PASS" if release_pass else "FAIL",
+        "blocked_release": not release_pass,
+        "blockers": blockers,
+    }
+    publication_gate = {
+        "verdict": "PASS" if release_pass else "FAIL",
+        "blocked_publication": not release_pass,
+        "reason": (
+            "All required canonical vector suites verified in current run"
+            if release_pass
+            else "Blocked by release gate failure"
+        ),
+    }
+
+    checks_passed = sum(1 for check in checks if check["passed"])
+    checks_total = len(checks)
+
+    summary = {
+        "sources_total": len(source_results),
+        "sources_passed": sum(1 for source in source_results if source["status"] == "PASS"),
+        "vector_sets_total": len(vector_sets),
+        "vector_sets_passed": sum(1 for item in vector_sets if item["status"] == "PASS"),
+        "checks_passed": checks_passed,
+        "checks_total": checks_total,
+    }
 
     return {
         "bead_id": BEAD_ID,
         "section": SECTION,
-        "title": TITLE,
+        "manifest": _relative(manifest_path.resolve(), root),
+        "changelog": _relative(changelog_path.resolve(), root),
+        "generated_at": _now_rfc3339(),
         "checks": checks,
-        "passed": passed,
-        "failed": failed,
-        "total": total,
-        "verdict": verdict,
-        "all_passed": failed == 0,
-        "status": "pass" if failed == 0 else "fail",
-        "elapsed_s": elapsed,
+        "sources": source_results,
+        "vector_sets": vector_sets,
+        "release_gate": release_gate,
+        "publication_gate": publication_gate,
+        "summary": summary,
+        "checks_passed": checks_passed,
+        "checks_total": checks_total,
+        "verdict": "PASS" if release_pass else "FAIL",
     }
 
 
 def self_test() -> bool:
-    """Run self-test validating internal helpers and the full pipeline."""
-    result = run_all()
-    assert isinstance(result, dict), "run_all must return a dict"
-    assert "checks" in result, "result must contain 'checks'"
-    assert "verdict" in result, "result must contain 'verdict'"
-    assert isinstance(result["checks"], list), "'checks' must be a list"
-    assert len(result["checks"]) >= 10, f"Expected >= 10 checks, got {len(result['checks'])}"
-    assert all(
-        "check" in c and "passed" in c and "detail" in c
-        for c in result["checks"]
-    ), "Each check must have 'check', 'passed', 'detail' keys"
+    temp_dir = Path(tempfile.mkdtemp(prefix="canonical-vectors-self-test-"))
+    try:
+        (temp_dir / "vectors").mkdir(parents=True, exist_ok=True)
+        manifest_path = temp_dir / "vectors" / "canonical_manifest.toml"
+        changelog_path = temp_dir / "vectors" / "CHANGELOG.md"
+        vector_path = temp_dir / "vectors" / "sample_vectors.json"
 
-    # Validate helper functions
-    ok, msg = _validate_vector_schema({"vectors": [{"id": "test"}]}, "test-suite")
-    assert ok, f"_validate_vector_schema should pass for valid data: {msg}"
-    ok, msg = _validate_vector_schema({}, "empty-suite")
-    assert not ok, "_validate_vector_schema should fail for empty data"
-    ok, msg = _validate_vector_schema(None, "none-suite")
-    assert not ok, "_validate_vector_schema should fail for None"
+        vector_path.write_text(
+            json.dumps(
+                {
+                    "bead_id": "bd-test",
+                    "version": "1.0.0",
+                    "vectors": [{"id": "v1", "implementation": "native"}],
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
-    assert _count_vectors({"vectors": [1, 2, 3]}) == 3
-    assert _count_vectors({"test_vectors": [1], "inclusion_cases": [2, 3]}) == 3
-    assert _count_vectors({}) == 0
+        manifest_path.write_text(
+            """
+version = "1.0.0"
 
-    # Validate gate output builder
-    gate_out = _build_gate_output(
-        [{"suite_name": "test", "source_section": "10.13", "required": True}],
-        [{"suite_name": "test", "vector_count": 5, "schema_valid": True,
-          "source_section": "10.13", "required": True}],
-        5,
-    )
-    assert gate_out["overall_status"] == "PASS"
-    assert gate_out["total_vectors"] == 5
-
-    # Validate fallback TOML parser
-    if tomllib is None or True:  # always test fallback
-        test_toml = '''
-[manifest]
-schema_version = "1.0.0"
-bead_id = "bd-test"
-
-[[suites]]
-suite_name = "Test Suite"
-source_section = "10.13"
-vector_file = "test.json"
+[[sources]]
+source_id = "test-source"
+section = "10.test"
+source_bead_id = "auto"
+source_version = "auto"
+suite_kind = "json_vectors"
 required = true
-categories = ["cat1", "cat2"]
-'''
-        parsed = _fallback_parse_manifest(test_toml)
-        assert parsed is not None, "Fallback parser should succeed"
-        assert parsed["manifest"]["schema_version"] == "1.0.0"
-        assert len(parsed["suites"]) == 1
-        assert parsed["suites"][0]["suite_name"] == "Test Suite"
-        assert parsed["suites"][0]["required"] is True
-        assert parsed["suites"][0]["categories"] == ["cat1", "cat2"]
+globs = ["vectors/*_vectors.json"]
+entry_keys = ["vectors"]
+required_keys = ["vectors"]
+minimum_entries = 1
+parity_targets = ["native"]
+publication_tag = "test"
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
 
-    return True
+        changelog_path.write_text(
+            """
+## [1.0.0] - 2026-02-22
+- Source `test-source`: `vectors/sample_vectors.json`
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
 
+        result = run_gate(manifest_path, changelog_path, root=temp_dir)
+        assert result["verdict"] == "PASS", "self-test pass fixture should pass"
 
-def _write_evidence(result: dict[str, Any]) -> None:
-    """Write verification evidence JSON."""
-    EVIDENCE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    EVIDENCE_PATH.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-
-
-def _write_summary(result: dict[str, Any]) -> None:
-    """Write human-readable verification summary."""
-    lines = [
-        f"# bd-s6y Verification Summary",
-        "",
-        f"- Section: `{SECTION}`",
-        f"- Title: {TITLE}",
-        f"- Verdict: `{result['verdict']}`",
-        f"- Checks: `{result['passed']}/{result['total']}` passed",
-        f"- Elapsed: `{result.get('elapsed_s', 'N/A')}s`",
-        "",
-        "## Checks",
-        "",
-        "| Check | Status | Detail |",
-        "|-------|--------|--------|",
-    ]
-    for c in result["checks"]:
-        status = "PASS" if c["passed"] else "FAIL"
-        lines.append(f"| {c['check']} | {status} | {c['detail']} |")
-    lines.append("")
-
-    SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    SUMMARY_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        changelog_path.write_text("## [1.0.0] - 2026-02-22\n", encoding="utf-8")
+        failing = run_gate(manifest_path, changelog_path, root=temp_dir)
+        assert failing["verdict"] == "FAIL", "self-test changelog mutation should fail"
+        return True
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=f"Verify {BEAD_ID}: {TITLE}")
-    parser.add_argument("--json", action="store_true", help="Output JSON")
-    parser.add_argument("--self-test", action="store_true", help="Run self-test")
-    parser.add_argument("--no-write", action="store_true", help="Skip writing output files")
+    parser = argparse.ArgumentParser(description="Verify canonical trust vector gate (bd-s6y)")
+    parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
+    parser.add_argument("--changelog", type=Path, default=DEFAULT_CHANGELOG)
+    parser.add_argument("--root", type=Path, default=ROOT)
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
     if args.self_test:
-        try:
-            ok = self_test()
-        except AssertionError as exc:
-            print(f"self_test FAILED: {exc}")
-            return 1
-        print("self_test passed")
-        return 0
+        ok = self_test()
+        print(f"self_test: {'PASS' if ok else 'FAIL'}", file=sys.stderr)
+        return 0 if ok else 1
 
-    result = run_all()
-
-    if not args.no_write:
-        _write_evidence(result)
-        _write_summary(result)
-
+    result = run_gate(args.manifest, args.changelog, root=args.root)
     if args.json:
         print(json.dumps(result, indent=2))
     else:
-        print(f"{BEAD_ID} Canonical Vectors Gate -- {result['verdict']}"
-              f" ({result['passed']}/{result['total']})")
-        for c in result["checks"]:
-            mark = "PASS" if c["passed"] else "FAIL"
-            print(f"  [{mark}] {c['check']}: {c['detail']}")
+        print(
+            f"{BEAD_ID} canonical vector gate: {result['verdict']} "
+            f"({result['summary']['vector_sets_passed']}/{result['summary']['vector_sets_total']} vector sets)"
+        )
+        for source in result["sources"]:
+            print(
+                f"  [{source['status']}] {source['source_id']} "
+                f"{source['passed_count']}/{source['discovered_count']}"
+            )
+        if result["release_gate"]["blocked_release"]:
+            print("  blockers:")
+            for blocker in result["release_gate"]["blockers"]:
+                print(f"    - {blocker}")
 
-    return 0 if result["all_passed"] else 1
+    return 0 if result["verdict"] == "PASS" else 1
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

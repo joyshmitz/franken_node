@@ -1,0 +1,91 @@
+{
+  "bead_id": "bd-h93z",
+  "section": "10.15",
+  "title": "Asupersync-backed release gate for high-impact features",
+  "generated_at": "2026-02-22T02:57:50Z",
+  "status": "completed_with_baseline_workspace_failures",
+  "checks": [
+    {
+      "name": "workflow_gate_definition_exists",
+      "command": "test -f .github/workflows/asupersync-integration-gate.yml",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "conformance_doc_exists",
+      "command": "test -f docs/conformance/asupersync_release_gate.md",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "release_gate_report_exists",
+      "command": "test -f artifacts/10.15/release_gate_report.json",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "gate_checker_json",
+      "command": "python3 scripts/check_release_gate.py --json",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_15/bd-h93z/check_report_release_gate.json",
+      "summary": {
+        "verdict": "PASS",
+        "checks_passed": 28,
+        "checks_total": 28
+      }
+    },
+    {
+      "name": "gate_checker_self_test",
+      "command": "python3 scripts/check_release_gate.py --self-test",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_15/bd-h93z/check_release_gate_self_test.log"
+    },
+    {
+      "name": "pytest_gate_tests",
+      "command": "pytest -q tests/test_check_release_gate.py",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_15/bd-h93z/pytest_check_release_gate.log",
+      "summary": {
+        "tests_passed": 5,
+        "tests_total": 5
+      }
+    },
+    {
+      "name": "cargo_check_all_targets_via_rch",
+      "command": "timeout 45 rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_15/bd-h93z/rch_cargo_check_all_targets_timeout.log",
+      "note": "Remote worker manifest/path-dependency failure outside bd-h93z scope."
+    },
+    {
+      "name": "cargo_clippy_all_targets_via_rch",
+      "command": "timeout 45 rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_15/bd-h93z/rch_cargo_clippy_all_targets_timeout.log",
+      "note": "Remote worker manifest/path-dependency failure outside bd-h93z scope."
+    },
+    {
+      "name": "cargo_fmt_check_via_rch",
+      "command": "timeout 45 rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_15/bd-h93z/rch_cargo_fmt_check_timeout.log",
+      "note": "Workspace formatting drift baseline outside bd-h93z scope."
+    }
+  ],
+  "contract_surface": {
+    "spec_contract": "docs/specs/section_10_15/bd-h93z_contract.md",
+    "workflow": ".github/workflows/asupersync-integration-gate.yml",
+    "conformance_doc": "docs/conformance/asupersync_release_gate.md",
+    "check_script": "scripts/check_release_gate.py",
+    "test_suite": "tests/test_check_release_gate.py",
+    "gate_report": "artifacts/10.15/release_gate_report.json",
+    "evidence": "artifacts/section_10_15/bd-h93z/verification_evidence.json",
+    "summary": "artifacts/section_10_15/bd-h93z/verification_summary.md"
+  }
+}

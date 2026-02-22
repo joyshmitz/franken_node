@@ -1,0 +1,112 @@
+{
+  "bead_id": "bd-3ex",
+  "section": "10.7",
+  "title": "Verifier CLI conformance contract tests",
+  "generated_at_utc": "2026-02-22T02:58:13Z",
+  "verdict": "PASS",
+  "status": "implemented_with_rch_worker_path_dependency_blockers",
+  "implementation": {
+    "rust_cli_surface": [
+      "crates/franken-node/src/cli.rs",
+      "crates/franken-node/src/main.rs"
+    ],
+    "contract_spec": "spec/verifier_cli_contract.toml",
+    "snapshot_dir": "tests/contract/snapshots",
+    "gate_script": "scripts/check_verifier_contract.py",
+    "gate_tests": "tests/test_check_verifier_contract.py"
+  },
+  "contract_gate": {
+    "report_path": "artifacts/section_10_7/bd-3ex/check_report.json",
+    "verdict": "PASS",
+    "checks_passed": 26,
+    "checks_total": 26,
+    "snapshot_diff_count": 5
+  },
+  "validation_runs": [
+    {
+      "name": "py_compile",
+      "command": "python3 -m py_compile scripts/check_verifier_contract.py tests/test_check_verifier_contract.py",
+      "exit_code": 0,
+      "result": "pass"
+    },
+    {
+      "name": "gate_self_test",
+      "command": "python3 scripts/check_verifier_contract.py --self-test",
+      "exit_code": 0,
+      "result": "pass",
+      "artifact": "artifacts/section_10_7/bd-3ex/check_self_test.txt"
+    },
+    {
+      "name": "gate_unit_tests",
+      "command": "python3 -m unittest tests/test_check_verifier_contract.py",
+      "exit_code": 0,
+      "result": "pass",
+      "artifact": "artifacts/section_10_7/bd-3ex/unit_tests.txt"
+    },
+    {
+      "name": "gate_json_report",
+      "command": "python3 scripts/check_verifier_contract.py --json",
+      "exit_code": 0,
+      "result": "pass",
+      "artifact": "artifacts/section_10_7/bd-3ex/check_report.json"
+    }
+  ],
+  "rch_quality": {
+    "commands": [
+      {
+        "name": "cargo fmt --check",
+        "runner": "rch exec --",
+        "exit_code": 1,
+        "status": "fail",
+        "log": "artifacts/section_10_7/bd-3ex/rch_cargo_fmt_check.log"
+      },
+      {
+        "name": "cargo check --all-targets",
+        "runner": "rch exec -- env CARGO_TARGET_DIR=/tmp/rch_target_franken_node_bd3ex_check_<ts>",
+        "exit_code": 101,
+        "status": "fail",
+        "log": "artifacts/section_10_7/bd-3ex/rch_cargo_check.log",
+        "notable_error": "failed to read /data/tmp/rch_bolddesert/franken_node/franken_engine/crates/franken-engine/Cargo.toml"
+      },
+      {
+        "name": "cargo clippy --all-targets -- -D warnings",
+        "runner": "rch exec -- env CARGO_TARGET_DIR=/tmp/rch_target_franken_node_bd3ex_clippy_<ts>",
+        "exit_code": 101,
+        "status": "fail",
+        "log": "artifacts/section_10_7/bd-3ex/rch_cargo_clippy.log",
+        "notable_error": "failed to read /data/tmp/rch_bolddesert/franken_node/franken_engine/crates/franken-engine/Cargo.toml"
+      }
+    ]
+  },
+  "acceptance_coverage": [
+    {
+      "criterion": "Verifier CLI exposes at least verify-module/verify-migration/verify-compatibility/verify-corpus subcommands.",
+      "status": "pass",
+      "evidence": [
+        "crates/franken-node/src/cli.rs VerifyCommand variants Module/Migration/Compatibility/Corpus",
+        "crates/franken-node/src/main.rs routes all four variants"
+      ]
+    },
+    {
+      "criterion": "Machine-readable contract and contract-driven checker/tests exist.",
+      "status": "pass",
+      "evidence": [
+        "spec/verifier_cli_contract.toml",
+        "scripts/check_verifier_contract.py",
+        "tests/test_check_verifier_contract.py"
+      ]
+    },
+    {
+      "criterion": "Snapshot compatibility policy supports additive-field updates and breaking-change detection.",
+      "status": "pass",
+      "evidence": [
+        "check_verifier_contract.py --update-snapshots support",
+        "tests/test_check_verifier_contract.py additive + breaking scenarios"
+      ]
+    }
+  ],
+  "notes": [
+    "Contract gate is green and deterministic for bd-3ex scope.",
+    "rch cargo check/clippy failures are worker path-dependency environment blockers (missing franken_engine path on remote workspace sync), not checker logic regressions."
+  ]
+}
