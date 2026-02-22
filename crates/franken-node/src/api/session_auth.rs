@@ -312,7 +312,12 @@ impl std::fmt::Display for SessionError {
             Self::NoSession { session_id } => {
                 write!(f, "no active session: {session_id}")
             }
-            Self::SequenceViolation { session_id, direction, expected_min, got } => {
+            Self::SequenceViolation {
+                session_id,
+                direction,
+                expected_min,
+                got,
+            } => {
                 write!(
                     f,
                     "sequence violation on {}: session={session_id} expected>={expected_min} got={got}",
@@ -322,7 +327,11 @@ impl std::fmt::Display for SessionError {
             Self::SessionTerminated { session_id } => {
                 write!(f, "session terminated: {session_id}")
             }
-            Self::RoleMismatch { session_id, expected_role, actual_role } => {
+            Self::RoleMismatch {
+                session_id,
+                expected_role,
+                actual_role,
+            } => {
                 write!(
                     f,
                     "role mismatch: session={session_id} expected={expected_role} actual={actual_role}"
@@ -334,7 +343,11 @@ impl std::fmt::Display for SessionError {
             Self::MaxSessionsReached { limit } => {
                 write!(f, "max sessions reached: limit={limit}")
             }
-            Self::ReplayDetected { session_id, direction, sequence } => {
+            Self::ReplayDetected {
+                session_id,
+                direction,
+                sequence,
+            } => {
                 write!(
                     f,
                     "replay detected: session={session_id} direction={} seq={sequence}",
@@ -478,11 +491,12 @@ impl SessionManager {
         trace_id: &str,
     ) -> Result<AuthenticatedMessage, SessionError> {
         // INV-SCC-SESSION-AUTH: session must exist
-        let session = self.sessions.get(session_id).ok_or_else(|| {
-            SessionError::NoSession {
+        let session = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| SessionError::NoSession {
                 session_id: session_id.to_string(),
-            }
-        })?;
+            })?;
 
         // INV-SCC-TERMINATED: terminated sessions reject all messages
         if session.state == SessionState::Terminated {
@@ -537,9 +551,7 @@ impl SessionManager {
                     event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
                     session_id: session_id.to_string(),
                     trace_id: trace_id.to_string(),
-                    detail: format!(
-                        "sequence violation: expected={expected_seq} got={sequence}"
-                    ),
+                    detail: format!("sequence violation: expected={expected_seq} got={sequence}"),
                     timestamp,
                 });
                 return Err(SessionError::SequenceViolation {
@@ -563,9 +575,7 @@ impl SessionManager {
                     event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
                     session_id: session_id.to_string(),
                     trace_id: trace_id.to_string(),
-                    detail: format!(
-                        "sequence regress: floor={floor} got={sequence}"
-                    ),
+                    detail: format!("sequence regress: floor={floor} got={sequence}"),
                     timestamp,
                 });
                 return Err(SessionError::SequenceViolation {
@@ -627,10 +637,7 @@ impl SessionManager {
             event_code: event_codes::SCC_MESSAGE_ACCEPTED.to_string(),
             session_id: session_id.to_string(),
             trace_id: trace_id.to_string(),
-            detail: format!(
-                "message accepted: dir={} seq={sequence}",
-                direction.label()
-            ),
+            detail: format!("message accepted: dir={} seq={sequence}", direction.label()),
             timestamp,
         });
 
@@ -648,17 +655,17 @@ impl SessionManager {
         timestamp: u64,
         trace_id: &str,
     ) -> Result<(), SessionError> {
-        let session = self.sessions.get_mut(session_id).ok_or_else(|| {
-            SessionError::NoSession {
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| SessionError::NoSession {
                 session_id: session_id.to_string(),
-            }
-        })?;
+            })?;
 
         session.terminate();
 
         // Clean up replay windows
-        self.replay_windows
-            .retain(|key, _| key.0 != session_id);
+        self.replay_windows.retain(|key, _| key.0 != session_id);
 
         self.events.push(SessionEvent {
             event_code: event_codes::SCC_SESSION_TERMINATED.to_string(),
@@ -876,7 +883,12 @@ mod tests {
     #[test]
     fn test_session_new_is_establishing() {
         let s = AuthenticatedSession::new(
-            "s1".into(), "c".into(), "sv".into(), "e".into(), "sg".into(), 0,
+            "s1".into(),
+            "c".into(),
+            "sv".into(),
+            "e".into(),
+            "sg".into(),
+            0,
         );
         assert_eq!(s.state, SessionState::Establishing);
         assert_eq!(s.send_seq, 0);
@@ -886,7 +898,12 @@ mod tests {
     #[test]
     fn test_session_activate() {
         let mut s = AuthenticatedSession::new(
-            "s1".into(), "c".into(), "sv".into(), "e".into(), "sg".into(), 0,
+            "s1".into(),
+            "c".into(),
+            "sv".into(),
+            "e".into(),
+            "sg".into(),
+            0,
         );
         s.activate(42);
         assert_eq!(s.state, SessionState::Active);
@@ -896,7 +913,12 @@ mod tests {
     #[test]
     fn test_session_lifecycle_transitions() {
         let mut s = AuthenticatedSession::new(
-            "s1".into(), "c".into(), "sv".into(), "e".into(), "sg".into(), 0,
+            "s1".into(),
+            "c".into(),
+            "sv".into(),
+            "e".into(),
+            "sg".into(),
+            0,
         );
         s.activate(1);
         assert_eq!(s.state, SessionState::Active);
@@ -909,7 +931,12 @@ mod tests {
     #[test]
     fn test_next_send_seq_monotonic() {
         let mut s = AuthenticatedSession::new(
-            "s1".into(), "c".into(), "sv".into(), "e".into(), "sg".into(), 0,
+            "s1".into(),
+            "c".into(),
+            "sv".into(),
+            "e".into(),
+            "sg".into(),
+            0,
         );
         assert_eq!(s.next_send_seq(), 0);
         assert_eq!(s.next_send_seq(), 1);
@@ -919,7 +946,12 @@ mod tests {
     #[test]
     fn test_next_recv_seq_monotonic() {
         let mut s = AuthenticatedSession::new(
-            "s1".into(), "c".into(), "sv".into(), "e".into(), "sg".into(), 0,
+            "s1".into(),
+            "c".into(),
+            "sv".into(),
+            "e".into(),
+            "sg".into(),
+            0,
         );
         assert_eq!(s.next_recv_seq(), 0);
         assert_eq!(s.next_recv_seq(), 1);
@@ -949,7 +981,9 @@ mod tests {
 
     #[test]
     fn test_error_codes() {
-        let e1 = SessionError::NoSession { session_id: "s".into() };
+        let e1 = SessionError::NoSession {
+            session_id: "s".into(),
+        };
         assert_eq!(e1.code(), "ERR_SCC_NO_SESSION");
 
         let e2 = SessionError::SequenceViolation {
@@ -960,7 +994,9 @@ mod tests {
         };
         assert_eq!(e2.code(), "ERR_SCC_SEQUENCE_VIOLATION");
 
-        let e3 = SessionError::SessionTerminated { session_id: "s".into() };
+        let e3 = SessionError::SessionTerminated {
+            session_id: "s".into(),
+        };
         assert_eq!(e3.code(), "ERR_SCC_SESSION_TERMINATED");
 
         let e4 = SessionError::RoleMismatch {
@@ -982,7 +1018,9 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        let e = SessionError::NoSession { session_id: "s1".into() };
+        let e = SessionError::NoSession {
+            session_id: "s1".into(),
+        };
         assert!(e.to_string().contains("s1"));
 
         let e = SessionError::MaxSessionsReached { limit: 42 };
@@ -995,8 +1033,13 @@ mod tests {
     fn test_establish_session() {
         let mut mgr = default_manager();
         let result = mgr.establish_session(
-            "s1".into(), "c".into(), "sv".into(), "ek".into(), "sk".into(),
-            1000, "t1".into(),
+            "s1".into(),
+            "c".into(),
+            "sv".into(),
+            "ek".into(),
+            "sk".into(),
+            1000,
+            "t1".into(),
         );
         assert!(result.is_ok());
         let s = result.unwrap();
@@ -1008,8 +1051,13 @@ mod tests {
     fn test_establish_session_emits_event() {
         let mut mgr = default_manager();
         let _ = mgr.establish_session(
-            "s1".into(), "c".into(), "sv".into(), "ek".into(), "sk".into(),
-            1000, "t1".into(),
+            "s1".into(),
+            "c".into(),
+            "sv".into(),
+            "ek".into(),
+            "sk".into(),
+            1000,
+            "t1".into(),
         );
         let events = mgr.events();
         assert!(!events.is_empty());
@@ -1025,13 +1073,33 @@ mod tests {
         };
         let mut mgr = SessionManager::new(config);
         mgr.establish_session(
-            "s1".into(), "c".into(), "sv".into(), "e".into(), "s".into(), 1, "t".into(),
-        ).unwrap();
+            "s1".into(),
+            "c".into(),
+            "sv".into(),
+            "e".into(),
+            "s".into(),
+            1,
+            "t".into(),
+        )
+        .unwrap();
         mgr.establish_session(
-            "s2".into(), "c".into(), "sv".into(), "e".into(), "s".into(), 2, "t".into(),
-        ).unwrap();
+            "s2".into(),
+            "c".into(),
+            "sv".into(),
+            "e".into(),
+            "s".into(),
+            2,
+            "t".into(),
+        )
+        .unwrap();
         let result = mgr.establish_session(
-            "s3".into(), "c".into(), "sv".into(), "e".into(), "s".into(), 3, "t".into(),
+            "s3".into(),
+            "c".into(),
+            "sv".into(),
+            "e".into(),
+            "s".into(),
+            3,
+            "t".into(),
         );
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -1047,20 +1115,14 @@ mod tests {
         let mut mgr = default_manager();
         establish_test_session(&mut mgr, "s1");
 
-        let r0 = mgr.process_message(
-            "s1", MessageDirection::Send, 0, "h0", "sig0", 2000, "t",
-        );
+        let r0 = mgr.process_message("s1", MessageDirection::Send, 0, "h0", "sig0", 2000, "t");
         assert!(r0.is_ok());
 
-        let r1 = mgr.process_message(
-            "s1", MessageDirection::Send, 1, "h1", "sig1", 3000, "t",
-        );
+        let r1 = mgr.process_message("s1", MessageDirection::Send, 1, "h1", "sig1", 3000, "t");
         assert!(r1.is_ok());
 
         // seq 1 again should fail (expected 2)
-        let r_dup = mgr.process_message(
-            "s1", MessageDirection::Send, 1, "h1", "sig1", 4000, "t",
-        );
+        let r_dup = mgr.process_message("s1", MessageDirection::Send, 1, "h1", "sig1", 4000, "t");
         assert!(r_dup.is_err());
     }
 
@@ -1069,15 +1131,11 @@ mod tests {
         let mut mgr = default_manager();
         establish_test_session(&mut mgr, "s1");
 
-        let r0 = mgr.process_message(
-            "s1", MessageDirection::Receive, 0, "h0", "sig0", 2000, "t",
-        );
+        let r0 = mgr.process_message("s1", MessageDirection::Receive, 0, "h0", "sig0", 2000, "t");
         assert!(r0.is_ok());
 
         // Skip seq 1 — should fail
-        let r2 = mgr.process_message(
-            "s1", MessageDirection::Receive, 2, "h2", "sig2", 3000, "t",
-        );
+        let r2 = mgr.process_message("s1", MessageDirection::Receive, 2, "h2", "sig2", 3000, "t");
         assert!(r2.is_err());
     }
 
@@ -1087,32 +1145,35 @@ mod tests {
         establish_test_session(&mut mgr, "s1");
 
         // Send seq 0
-        assert!(mgr.process_message(
-            "s1", MessageDirection::Send, 0, "h", "s", 1, "t",
-        ).is_ok());
+        assert!(
+            mgr.process_message("s1", MessageDirection::Send, 0, "h", "s", 1, "t",)
+                .is_ok()
+        );
 
         // Recv seq 0 — independent counter
-        assert!(mgr.process_message(
-            "s1", MessageDirection::Receive, 0, "h", "s", 2, "t",
-        ).is_ok());
+        assert!(
+            mgr.process_message("s1", MessageDirection::Receive, 0, "h", "s", 2, "t",)
+                .is_ok()
+        );
 
         // Send seq 1
-        assert!(mgr.process_message(
-            "s1", MessageDirection::Send, 1, "h", "s", 3, "t",
-        ).is_ok());
+        assert!(
+            mgr.process_message("s1", MessageDirection::Send, 1, "h", "s", 3, "t",)
+                .is_ok()
+        );
 
         // Recv seq 1
-        assert!(mgr.process_message(
-            "s1", MessageDirection::Receive, 1, "h", "s", 4, "t",
-        ).is_ok());
+        assert!(
+            mgr.process_message("s1", MessageDirection::Receive, 1, "h", "s", 4, "t",)
+                .is_ok()
+        );
     }
 
     #[test]
     fn test_no_session_rejected() {
         let mut mgr = default_manager();
-        let result = mgr.process_message(
-            "nonexistent", MessageDirection::Send, 0, "h", "s", 1, "t",
-        );
+        let result =
+            mgr.process_message("nonexistent", MessageDirection::Send, 0, "h", "s", 1, "t");
         assert!(result.is_err());
         match result.unwrap_err() {
             SessionError::NoSession { session_id } => {
@@ -1130,9 +1191,7 @@ mod tests {
         establish_test_session(&mut mgr, "s1");
         mgr.terminate_session("s1", 5000, "t").unwrap();
 
-        let result = mgr.process_message(
-            "s1", MessageDirection::Send, 0, "h", "s", 6000, "t",
-        );
+        let result = mgr.process_message("s1", MessageDirection::Send, 0, "h", "s", 6000, "t");
         assert!(result.is_err());
         match result.unwrap_err() {
             SessionError::SessionTerminated { session_id } => {
@@ -1176,19 +1235,22 @@ mod tests {
         establish_test_session(&mut mgr, "s1");
 
         // seq 0 ok
-        assert!(mgr.process_message(
-            "s1", MessageDirection::Send, 0, "h", "s", 1, "t",
-        ).is_ok());
+        assert!(
+            mgr.process_message("s1", MessageDirection::Send, 0, "h", "s", 1, "t",)
+                .is_ok()
+        );
 
         // seq 2 ok (skip 1)
-        assert!(mgr.process_message(
-            "s1", MessageDirection::Send, 2, "h", "s", 2, "t",
-        ).is_ok());
+        assert!(
+            mgr.process_message("s1", MessageDirection::Send, 2, "h", "s", 2, "t",)
+                .is_ok()
+        );
 
         // seq 1 ok (within window)
-        assert!(mgr.process_message(
-            "s1", MessageDirection::Send, 1, "h", "s", 3, "t",
-        ).is_ok());
+        assert!(
+            mgr.process_message("s1", MessageDirection::Send, 1, "h", "s", 3, "t",)
+                .is_ok()
+        );
     }
 
     #[test]
@@ -1201,14 +1263,13 @@ mod tests {
         let mut mgr = SessionManager::new(config);
         establish_test_session(&mut mgr, "s1");
 
-        assert!(mgr.process_message(
-            "s1", MessageDirection::Send, 0, "h", "s", 1, "t",
-        ).is_ok());
+        assert!(
+            mgr.process_message("s1", MessageDirection::Send, 0, "h", "s", 1, "t",)
+                .is_ok()
+        );
 
         // Replay seq 0
-        let result = mgr.process_message(
-            "s1", MessageDirection::Send, 0, "h", "s", 2, "t",
-        );
+        let result = mgr.process_message("s1", MessageDirection::Send, 0, "h", "s", 2, "t");
         assert!(result.is_err());
         match result.unwrap_err() {
             SessionError::ReplayDetected { sequence, .. } => assert_eq!(sequence, 0),
@@ -1228,15 +1289,14 @@ mod tests {
 
         // Advance to seq 5
         for seq in 0..6 {
-            assert!(mgr.process_message(
-                "s1", MessageDirection::Send, seq, "h", "s", 100 + seq, "t",
-            ).is_ok());
+            assert!(
+                mgr.process_message("s1", MessageDirection::Send, seq, "h", "s", 100 + seq, "t",)
+                    .is_ok()
+            );
         }
 
         // Seq 2 should be rejected (below floor = 6)
-        let result = mgr.process_message(
-            "s1", MessageDirection::Send, 2, "h", "s", 200, "t",
-        );
+        let result = mgr.process_message("s1", MessageDirection::Send, 2, "h", "s", 200, "t");
         assert!(result.is_err());
     }
 
@@ -1244,19 +1304,13 @@ mod tests {
 
     #[test]
     fn test_validate_key_roles_ok() {
-        let result = SessionManager::validate_key_roles(
-            KeyRole::Encryption,
-            KeyRole::Signing,
-        );
+        let result = SessionManager::validate_key_roles(KeyRole::Encryption, KeyRole::Signing);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_validate_key_roles_wrong_encryption() {
-        let result = SessionManager::validate_key_roles(
-            KeyRole::Signing,
-            KeyRole::Signing,
-        );
+        let result = SessionManager::validate_key_roles(KeyRole::Signing, KeyRole::Signing);
         assert!(result.is_err());
         match result.unwrap_err() {
             SessionError::RoleMismatch { expected_role, .. } => {
@@ -1268,10 +1322,7 @@ mod tests {
 
     #[test]
     fn test_validate_key_roles_wrong_signing() {
-        let result = SessionManager::validate_key_roles(
-            KeyRole::Encryption,
-            KeyRole::Issuance,
-        );
+        let result = SessionManager::validate_key_roles(KeyRole::Encryption, KeyRole::Issuance);
         assert!(result.is_err());
         match result.unwrap_err() {
             SessionError::RoleMismatch { expected_role, .. } => {
@@ -1351,18 +1402,21 @@ mod tests {
         establish_test_session(&mut mgr, "s2");
 
         // Both can send seq 0 independently
-        assert!(mgr.process_message(
-            "s1", MessageDirection::Send, 0, "h", "s", 1, "t",
-        ).is_ok());
-        assert!(mgr.process_message(
-            "s2", MessageDirection::Send, 0, "h", "s", 2, "t",
-        ).is_ok());
+        assert!(
+            mgr.process_message("s1", MessageDirection::Send, 0, "h", "s", 1, "t",)
+                .is_ok()
+        );
+        assert!(
+            mgr.process_message("s2", MessageDirection::Send, 0, "h", "s", 2, "t",)
+                .is_ok()
+        );
 
         // Terminating s1 doesn't affect s2
         mgr.terminate_session("s1", 100, "t").unwrap();
-        assert!(mgr.process_message(
-            "s2", MessageDirection::Send, 1, "h", "s", 3, "t",
-        ).is_ok());
+        assert!(
+            mgr.process_message("s2", MessageDirection::Send, 1, "h", "s", 3, "t",)
+                .is_ok()
+        );
     }
 
     // ── AuthenticatedMessage fields ─────────────────────────────────
@@ -1372,9 +1426,17 @@ mod tests {
         let mut mgr = default_manager();
         establish_test_session(&mut mgr, "s1");
 
-        let msg = mgr.process_message(
-            "s1", MessageDirection::Send, 0, "hash123", "sig456", 1000, "t",
-        ).unwrap();
+        let msg = mgr
+            .process_message(
+                "s1",
+                MessageDirection::Send,
+                0,
+                "hash123",
+                "sig456",
+                1000,
+                "t",
+            )
+            .unwrap();
 
         assert_eq!(msg.session_id, "s1");
         assert_eq!(msg.sequence, 0);
@@ -1402,9 +1464,7 @@ mod tests {
         establish_test_session(&mut mgr, "s1");
 
         // Skip seq 0, try seq 5
-        let _ = mgr.process_message(
-            "s1", MessageDirection::Send, 5, "h", "s", 1, "t",
-        );
+        let _ = mgr.process_message("s1", MessageDirection::Send, 5, "h", "s", 1, "t");
 
         let reject_events: Vec<_> = mgr
             .events()
@@ -1435,7 +1495,12 @@ mod tests {
     #[test]
     fn test_authenticated_session_serde() {
         let mut s = AuthenticatedSession::new(
-            "s1".into(), "c".into(), "sv".into(), "e".into(), "sg".into(), 0,
+            "s1".into(),
+            "c".into(),
+            "sv".into(),
+            "e".into(),
+            "sg".into(),
+            0,
         );
         s.activate(42);
         let json = serde_json::to_string(&s).unwrap();

@@ -359,14 +359,40 @@ pub struct CancelAuditRecord {
 /// Errors from the cancellation injection framework.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CancelError {
-    LeakDetected { workflow: String, point: usize, delta: ResourceDelta },
-    HalfCommit { workflow: String, point: usize, changes: Vec<String> },
-    MatrixIncomplete { total: usize, required: usize },
-    UnknownWorkflow { name: String },
-    InvalidPoint { workflow: String, point: usize, max: usize },
-    FrameworkError { detail: String },
-    StateMismatch { expected: String, actual: String },
-    Timeout { workflow: String, point: usize, elapsed_ms: u64 },
+    LeakDetected {
+        workflow: String,
+        point: usize,
+        delta: ResourceDelta,
+    },
+    HalfCommit {
+        workflow: String,
+        point: usize,
+        changes: Vec<String>,
+    },
+    MatrixIncomplete {
+        total: usize,
+        required: usize,
+    },
+    UnknownWorkflow {
+        name: String,
+    },
+    InvalidPoint {
+        workflow: String,
+        point: usize,
+        max: usize,
+    },
+    FrameworkError {
+        detail: String,
+    },
+    StateMismatch {
+        expected: String,
+        actual: String,
+    },
+    Timeout {
+        workflow: String,
+        point: usize,
+        elapsed_ms: u64,
+    },
 }
 
 impl CancelError {
@@ -387,11 +413,33 @@ impl CancelError {
 impl fmt::Display for CancelError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::LeakDetected { workflow, point, delta } => {
-                write!(f, "{}: {}@{} delta={:?}", self.code(), workflow, point, delta)
+            Self::LeakDetected {
+                workflow,
+                point,
+                delta,
+            } => {
+                write!(
+                    f,
+                    "{}: {}@{} delta={:?}",
+                    self.code(),
+                    workflow,
+                    point,
+                    delta
+                )
             }
-            Self::HalfCommit { workflow, point, changes } => {
-                write!(f, "{}: {}@{} changes={}", self.code(), workflow, point, changes.join("; "))
+            Self::HalfCommit {
+                workflow,
+                point,
+                changes,
+            } => {
+                write!(
+                    f,
+                    "{}: {}@{} changes={}",
+                    self.code(),
+                    workflow,
+                    point,
+                    changes.join("; ")
+                )
             }
             Self::MatrixIncomplete { total, required } => {
                 write!(f, "{}: {}/{} cases", self.code(), total, required)
@@ -399,8 +447,19 @@ impl fmt::Display for CancelError {
             Self::UnknownWorkflow { name } => {
                 write!(f, "{}: unknown workflow {}", self.code(), name)
             }
-            Self::InvalidPoint { workflow, point, max } => {
-                write!(f, "{}: {}@{} exceeds max {}", self.code(), workflow, point, max)
+            Self::InvalidPoint {
+                workflow,
+                point,
+                max,
+            } => {
+                write!(
+                    f,
+                    "{}: {}@{} exceeds max {}",
+                    self.code(),
+                    workflow,
+                    point,
+                    max
+                )
             }
             Self::FrameworkError { detail } => {
                 write!(f, "{}: {}", self.code(), detail)
@@ -408,8 +467,19 @@ impl fmt::Display for CancelError {
             Self::StateMismatch { expected, actual } => {
                 write!(f, "{}: expected {} got {}", self.code(), expected, actual)
             }
-            Self::Timeout { workflow, point, elapsed_ms } => {
-                write!(f, "{}: {}@{} after {}ms", self.code(), workflow, point, elapsed_ms)
+            Self::Timeout {
+                workflow,
+                point,
+                elapsed_ms,
+            } => {
+                write!(
+                    f,
+                    "{}: {}@{} after {}ms",
+                    self.code(),
+                    workflow,
+                    point,
+                    elapsed_ms
+                )
             }
         }
     }
@@ -471,9 +541,12 @@ impl CancellationInjectionFramework {
         elapsed_ms: u64,
         trace_id: &str,
     ) -> Result<CancelTestOutcome, CancelError> {
-        let wf = self.workflows.get(workflow_name).ok_or_else(|| CancelError::UnknownWorkflow {
-            name: workflow_name.to_string(),
-        })?;
+        let wf = self
+            .workflows
+            .get(workflow_name)
+            .ok_or_else(|| CancelError::UnknownWorkflow {
+                name: workflow_name.to_string(),
+            })?;
 
         if await_point_index >= wf.await_points.len() {
             return Err(CancelError::InvalidPoint {
@@ -488,20 +561,49 @@ impl CancellationInjectionFramework {
         // INV-CANCEL-LEAK-FREE
         let delta = resource_before.delta(resource_after);
         if delta.has_leaks() {
-            let outcome = CancelTestOutcome::LeakDetected { delta: delta.clone() };
-            self.record_entry(workflow_name, await_point_index, &label, &outcome, &delta, false, elapsed_ms, trace_id);
+            let outcome = CancelTestOutcome::LeakDetected {
+                delta: delta.clone(),
+            };
+            self.record_entry(
+                workflow_name,
+                await_point_index,
+                &label,
+                &outcome,
+                &delta,
+                false,
+                elapsed_ms,
+                trace_id,
+            );
             return Ok(outcome);
         }
 
         // INV-CANCEL-HALFCOMMIT-FREE
         if let Some(detection) = state_before.detect_halfcommit(state_after) {
             let outcome = CancelTestOutcome::HalfCommitDetected { detection };
-            self.record_entry(workflow_name, await_point_index, &label, &outcome, &delta, true, elapsed_ms, trace_id);
+            self.record_entry(
+                workflow_name,
+                await_point_index,
+                &label,
+                &outcome,
+                &delta,
+                true,
+                elapsed_ms,
+                trace_id,
+            );
             return Ok(outcome);
         }
 
         let outcome = CancelTestOutcome::Passed;
-        self.record_entry(workflow_name, await_point_index, &label, &outcome, &delta, false, elapsed_ms, trace_id);
+        self.record_entry(
+            workflow_name,
+            await_point_index,
+            &label,
+            &outcome,
+            &delta,
+            false,
+            elapsed_ms,
+            trace_id,
+        );
         Ok(outcome)
     }
 
@@ -570,12 +672,42 @@ impl CancellationInjectionFramework {
         self.register_workflow(WorkflowRegistration {
             id: WorkflowId::EpochTransitionBarrier,
             await_points: vec![
-                AwaitPoint::new(WorkflowId::EpochTransitionBarrier, 0, "propose_start", "Before barrier propose"),
-                AwaitPoint::new(WorkflowId::EpochTransitionBarrier, 1, "drain_broadcast", "After sending drain requests"),
-                AwaitPoint::new(WorkflowId::EpochTransitionBarrier, 2, "drain_ack_collect", "While collecting drain ACKs"),
-                AwaitPoint::new(WorkflowId::EpochTransitionBarrier, 3, "commit_prepare", "Before epoch commit"),
-                AwaitPoint::new(WorkflowId::EpochTransitionBarrier, 4, "commit_notify", "After epoch advance, notifying participants"),
-                AwaitPoint::new(WorkflowId::EpochTransitionBarrier, 5, "transcript_write", "Writing barrier transcript"),
+                AwaitPoint::new(
+                    WorkflowId::EpochTransitionBarrier,
+                    0,
+                    "propose_start",
+                    "Before barrier propose",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::EpochTransitionBarrier,
+                    1,
+                    "drain_broadcast",
+                    "After sending drain requests",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::EpochTransitionBarrier,
+                    2,
+                    "drain_ack_collect",
+                    "While collecting drain ACKs",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::EpochTransitionBarrier,
+                    3,
+                    "commit_prepare",
+                    "Before epoch commit",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::EpochTransitionBarrier,
+                    4,
+                    "commit_notify",
+                    "After epoch advance, notifying participants",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::EpochTransitionBarrier,
+                    5,
+                    "transcript_write",
+                    "Writing barrier transcript",
+                ),
             ],
             description: "Epoch transition barrier protocol".to_string(),
         });
@@ -584,10 +716,30 @@ impl CancellationInjectionFramework {
         self.register_workflow(WorkflowRegistration {
             id: WorkflowId::MarkerStreamAppend,
             await_points: vec![
-                AwaitPoint::new(WorkflowId::MarkerStreamAppend, 0, "marker_create", "Before marker creation"),
-                AwaitPoint::new(WorkflowId::MarkerStreamAppend, 1, "marker_sign", "After marker creation, before signing"),
-                AwaitPoint::new(WorkflowId::MarkerStreamAppend, 2, "marker_append", "After signing, before append to stream"),
-                AwaitPoint::new(WorkflowId::MarkerStreamAppend, 3, "marker_confirm", "After append, before confirmation"),
+                AwaitPoint::new(
+                    WorkflowId::MarkerStreamAppend,
+                    0,
+                    "marker_create",
+                    "Before marker creation",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::MarkerStreamAppend,
+                    1,
+                    "marker_sign",
+                    "After marker creation, before signing",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::MarkerStreamAppend,
+                    2,
+                    "marker_append",
+                    "After signing, before append to stream",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::MarkerStreamAppend,
+                    3,
+                    "marker_confirm",
+                    "After append, before confirmation",
+                ),
             ],
             description: "Marker stream append workflow".to_string(),
         });
@@ -596,10 +748,30 @@ impl CancellationInjectionFramework {
         self.register_workflow(WorkflowRegistration {
             id: WorkflowId::RootPointerPublication,
             await_points: vec![
-                AwaitPoint::new(WorkflowId::RootPointerPublication, 0, "root_compute", "Before root computation"),
-                AwaitPoint::new(WorkflowId::RootPointerPublication, 1, "root_sign", "After computation, before signing"),
-                AwaitPoint::new(WorkflowId::RootPointerPublication, 2, "root_publish", "After signing, before publication"),
-                AwaitPoint::new(WorkflowId::RootPointerPublication, 3, "root_confirm", "After publication, before confirmation"),
+                AwaitPoint::new(
+                    WorkflowId::RootPointerPublication,
+                    0,
+                    "root_compute",
+                    "Before root computation",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::RootPointerPublication,
+                    1,
+                    "root_sign",
+                    "After computation, before signing",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::RootPointerPublication,
+                    2,
+                    "root_publish",
+                    "After signing, before publication",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::RootPointerPublication,
+                    3,
+                    "root_confirm",
+                    "After publication, before confirmation",
+                ),
             ],
             description: "Root pointer publication workflow".to_string(),
         });
@@ -608,10 +780,30 @@ impl CancellationInjectionFramework {
         self.register_workflow(WorkflowRegistration {
             id: WorkflowId::EvidenceCommit,
             await_points: vec![
-                AwaitPoint::new(WorkflowId::EvidenceCommit, 0, "evidence_prepare", "Before evidence preparation"),
-                AwaitPoint::new(WorkflowId::EvidenceCommit, 1, "evidence_validate", "After preparation, before validation"),
-                AwaitPoint::new(WorkflowId::EvidenceCommit, 2, "evidence_commit", "After validation, before commit"),
-                AwaitPoint::new(WorkflowId::EvidenceCommit, 3, "evidence_confirm", "After commit, before confirmation"),
+                AwaitPoint::new(
+                    WorkflowId::EvidenceCommit,
+                    0,
+                    "evidence_prepare",
+                    "Before evidence preparation",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::EvidenceCommit,
+                    1,
+                    "evidence_validate",
+                    "After preparation, before validation",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::EvidenceCommit,
+                    2,
+                    "evidence_commit",
+                    "After validation, before commit",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::EvidenceCommit,
+                    3,
+                    "evidence_confirm",
+                    "After commit, before confirmation",
+                ),
             ],
             description: "Evidence commit workflow".to_string(),
         });
@@ -620,12 +812,42 @@ impl CancellationInjectionFramework {
         self.register_workflow(WorkflowRegistration {
             id: WorkflowId::EvictionSaga,
             await_points: vec![
-                AwaitPoint::new(WorkflowId::EvictionSaga, 0, "saga_begin", "Before saga begin"),
-                AwaitPoint::new(WorkflowId::EvictionSaga, 1, "saga_upload", "During L2->L3 upload"),
-                AwaitPoint::new(WorkflowId::EvictionSaga, 2, "saga_verify", "During L3 verification"),
-                AwaitPoint::new(WorkflowId::EvictionSaga, 3, "saga_retire", "During L2 retirement"),
-                AwaitPoint::new(WorkflowId::EvictionSaga, 4, "saga_compensate", "During compensation"),
-                AwaitPoint::new(WorkflowId::EvictionSaga, 5, "saga_complete", "Before completion commit"),
+                AwaitPoint::new(
+                    WorkflowId::EvictionSaga,
+                    0,
+                    "saga_begin",
+                    "Before saga begin",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::EvictionSaga,
+                    1,
+                    "saga_upload",
+                    "During L2->L3 upload",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::EvictionSaga,
+                    2,
+                    "saga_verify",
+                    "During L3 verification",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::EvictionSaga,
+                    3,
+                    "saga_retire",
+                    "During L2 retirement",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::EvictionSaga,
+                    4,
+                    "saga_compensate",
+                    "During compensation",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::EvictionSaga,
+                    5,
+                    "saga_complete",
+                    "Before completion commit",
+                ),
             ],
             description: "Cancel-safe eviction saga".to_string(),
         });
@@ -648,7 +870,14 @@ mod tests {
         f
     }
 
-    fn clean_snapshots(ts: u64) -> (ResourceSnapshot, ResourceSnapshot, StateSnapshot, StateSnapshot) {
+    fn clean_snapshots(
+        ts: u64,
+    ) -> (
+        ResourceSnapshot,
+        ResourceSnapshot,
+        StateSnapshot,
+        StateSnapshot,
+    ) {
         let rb = ResourceSnapshot::empty(ts);
         let ra = ResourceSnapshot::empty(ts + 100);
         let sb = StateSnapshot::new(5, ts);
@@ -678,9 +907,9 @@ mod tests {
     fn clean_cancel_passes() {
         let mut f = make_framework();
         let (rb, ra, sb, sa) = clean_snapshots(1000);
-        let outcome = f.run_cancel_case(
-            "epoch_transition_barrier", 0, &rb, &ra, &sb, &sa, 50, "t1",
-        ).unwrap();
+        let outcome = f
+            .run_cancel_case("epoch_transition_barrier", 0, &rb, &ra, &sb, &sa, 50, "t1")
+            .unwrap();
         assert!(outcome.is_pass());
     }
 
@@ -695,9 +924,9 @@ mod tests {
         let sb = StateSnapshot::new(5, 1000);
         let sa = StateSnapshot::new(5, 1100);
 
-        let outcome = f.run_cancel_case(
-            "epoch_transition_barrier", 1, &rb, &ra, &sb, &sa, 50, "t2",
-        ).unwrap();
+        let outcome = f
+            .run_cancel_case("epoch_transition_barrier", 1, &rb, &ra, &sb, &sa, 50, "t2")
+            .unwrap();
         assert!(!outcome.is_pass());
         assert!(matches!(outcome, CancelTestOutcome::LeakDetected { .. }));
     }
@@ -712,11 +941,14 @@ mod tests {
         let sb = StateSnapshot::new(5, 1000);
         let sa = StateSnapshot::new(6, 1100); // epoch advanced!
 
-        let outcome = f.run_cancel_case(
-            "epoch_transition_barrier", 2, &rb, &ra, &sb, &sa, 50, "t3",
-        ).unwrap();
+        let outcome = f
+            .run_cancel_case("epoch_transition_barrier", 2, &rb, &ra, &sb, &sa, 50, "t3")
+            .unwrap();
         assert!(!outcome.is_pass());
-        assert!(matches!(outcome, CancelTestOutcome::HalfCommitDetected { .. }));
+        assert!(matches!(
+            outcome,
+            CancelTestOutcome::HalfCommitDetected { .. }
+        ));
     }
 
     #[test]
@@ -729,9 +961,9 @@ mod tests {
         let mut sa = StateSnapshot::new(5, 1100);
         sa.marker_head = Some("head-2".to_string()); // marker changed!
 
-        let outcome = f.run_cancel_case(
-            "marker_stream_append", 2, &rb, &ra, &sb, &sa, 50, "t4",
-        ).unwrap();
+        let outcome = f
+            .run_cancel_case("marker_stream_append", 2, &rb, &ra, &sb, &sa, 50, "t4")
+            .unwrap();
         assert!(!outcome.is_pass());
     }
 
@@ -741,9 +973,9 @@ mod tests {
     fn unknown_workflow_rejected() {
         let mut f = make_framework();
         let (rb, ra, sb, sa) = clean_snapshots(1000);
-        let err = f.run_cancel_case(
-            "nonexistent", 0, &rb, &ra, &sb, &sa, 50, "t5",
-        ).unwrap_err();
+        let err = f
+            .run_cancel_case("nonexistent", 0, &rb, &ra, &sb, &sa, 50, "t5")
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CANCEL_UNKNOWN_WORKFLOW);
     }
 
@@ -753,9 +985,9 @@ mod tests {
     fn invalid_await_point_rejected() {
         let mut f = make_framework();
         let (rb, ra, sb, sa) = clean_snapshots(1000);
-        let err = f.run_cancel_case(
-            "epoch_transition_barrier", 99, &rb, &ra, &sb, &sa, 50, "t6",
-        ).unwrap_err();
+        let err = f
+            .run_cancel_case("epoch_transition_barrier", 99, &rb, &ra, &sb, &sa, 50, "t6")
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CANCEL_INVALID_POINT);
     }
 
@@ -767,12 +999,23 @@ mod tests {
         let (rb, ra, sb, sa) = clean_snapshots(1000);
 
         // Pass case
-        f.run_cancel_case("epoch_transition_barrier", 0, &rb, &ra, &sb, &sa, 50, "t1").unwrap();
+        f.run_cancel_case("epoch_transition_barrier", 0, &rb, &ra, &sb, &sa, 50, "t1")
+            .unwrap();
 
         // Fail case (leak)
         let mut ra_leak = rb.clone();
         ra_leak.locks_held = 1;
-        f.run_cancel_case("epoch_transition_barrier", 1, &rb, &ra_leak, &sb, &sa, 50, "t2").unwrap();
+        f.run_cancel_case(
+            "epoch_transition_barrier",
+            1,
+            &rb,
+            &ra_leak,
+            &sb,
+            &sa,
+            50,
+            "t2",
+        )
+        .unwrap();
 
         let m = f.matrix();
         assert_eq!(m.total_cases, 2);
@@ -829,8 +1072,20 @@ mod tests {
             workflow: "test".to_string(),
             await_point_index: 0,
             await_point_label: "p0".to_string(),
-            outcome: CancelTestOutcome::LeakDetected { delta: ResourceDelta { file_handles: 1, locks_held: 0, memory_allocations: 0, temp_files: 0 } },
-            resource_delta: ResourceDelta { file_handles: 1, locks_held: 0, memory_allocations: 0, temp_files: 0 },
+            outcome: CancelTestOutcome::LeakDetected {
+                delta: ResourceDelta {
+                    file_handles: 1,
+                    locks_held: 0,
+                    memory_allocations: 0,
+                    temp_files: 0,
+                },
+            },
+            resource_delta: ResourceDelta {
+                file_handles: 1,
+                locks_held: 0,
+                memory_allocations: 0,
+                temp_files: 0,
+            },
             halfcommit_detected: false,
             elapsed_ms: 10,
             trace_id: "t0".to_string(),
@@ -843,13 +1098,32 @@ mod tests {
     #[test]
     fn full_matrix_all_clean() {
         let mut f = make_framework();
-        let workflows: Vec<String> = f.registered_workflows().iter().map(|w| w.id.to_string()).collect();
-        let point_counts: Vec<usize> = f.registered_workflows().iter().map(|w| w.await_points.len()).collect();
+        let workflows: Vec<String> = f
+            .registered_workflows()
+            .iter()
+            .map(|w| w.id.to_string())
+            .collect();
+        let point_counts: Vec<usize> = f
+            .registered_workflows()
+            .iter()
+            .map(|w| w.await_points.len())
+            .collect();
 
         for (wf, count) in workflows.iter().zip(point_counts.iter()) {
             for point in 0..*count {
                 let (rb, ra, sb, sa) = clean_snapshots(1000 + point as u64 * 100);
-                let outcome = f.run_cancel_case(wf, point, &rb, &ra, &sb, &sa, 50, &format!("t-{wf}-{point}")).unwrap();
+                let outcome = f
+                    .run_cancel_case(
+                        wf,
+                        point,
+                        &rb,
+                        &ra,
+                        &sb,
+                        &sa,
+                        50,
+                        &format!("t-{wf}-{point}"),
+                    )
+                    .unwrap();
                 assert!(outcome.is_pass(), "Failed at {}@{}", wf, point);
             }
         }
@@ -905,7 +1179,8 @@ mod tests {
     fn audit_log_records_events() {
         let mut f = make_framework();
         let (rb, ra, sb, sa) = clean_snapshots(1000);
-        f.run_cancel_case("epoch_transition_barrier", 0, &rb, &ra, &sb, &sa, 50, "t1").unwrap();
+        f.run_cancel_case("epoch_transition_barrier", 0, &rb, &ra, &sb, &sa, 50, "t1")
+            .unwrap();
         assert_eq!(f.audit_log().len(), 1);
         assert_eq!(f.audit_log()[0].event_code, event_codes::CANCEL_CASE_PASSED);
     }
@@ -914,10 +1189,12 @@ mod tests {
     fn export_audit_jsonl() {
         let mut f = make_framework();
         let (rb, ra, sb, sa) = clean_snapshots(1000);
-        f.run_cancel_case("epoch_transition_barrier", 0, &rb, &ra, &sb, &sa, 50, "t1").unwrap();
+        f.run_cancel_case("epoch_transition_barrier", 0, &rb, &ra, &sb, &sa, 50, "t1")
+            .unwrap();
         let jsonl = f.export_audit_log_jsonl();
         assert!(!jsonl.is_empty());
-        let parsed: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert_eq!(parsed["schema_version"], SCHEMA_VERSION);
     }
 
@@ -925,8 +1202,14 @@ mod tests {
 
     #[test]
     fn workflow_id_display() {
-        assert_eq!(WorkflowId::EpochTransitionBarrier.to_string(), "epoch_transition_barrier");
-        assert_eq!(WorkflowId::MarkerStreamAppend.to_string(), "marker_stream_append");
+        assert_eq!(
+            WorkflowId::EpochTransitionBarrier.to_string(),
+            "epoch_transition_barrier"
+        );
+        assert_eq!(
+            WorkflowId::MarkerStreamAppend.to_string(),
+            "marker_stream_append"
+        );
         assert_eq!(WorkflowId::EvictionSaga.to_string(), "eviction_saga");
         assert_eq!(WorkflowId::Custom("foo".into()).to_string(), "custom:foo");
     }
@@ -936,7 +1219,13 @@ mod tests {
     #[test]
     fn outcome_display() {
         assert_eq!(CancelTestOutcome::Passed.to_string(), "PASSED");
-        assert!(!CancelTestOutcome::FrameworkError { detail: "err".into() }.to_string().is_empty());
+        assert!(
+            !CancelTestOutcome::FrameworkError {
+                detail: "err".into()
+            }
+            .to_string()
+            .is_empty()
+        );
     }
 
     // ---- Error display ----
@@ -944,14 +1233,38 @@ mod tests {
     #[test]
     fn error_display_all_variants() {
         let errors: Vec<CancelError> = vec![
-            CancelError::LeakDetected { workflow: "w".into(), point: 0, delta: ResourceDelta::zero() },
-            CancelError::HalfCommit { workflow: "w".into(), point: 0, changes: vec!["c".into()] },
-            CancelError::MatrixIncomplete { total: 5, required: 20 },
+            CancelError::LeakDetected {
+                workflow: "w".into(),
+                point: 0,
+                delta: ResourceDelta::zero(),
+            },
+            CancelError::HalfCommit {
+                workflow: "w".into(),
+                point: 0,
+                changes: vec!["c".into()],
+            },
+            CancelError::MatrixIncomplete {
+                total: 5,
+                required: 20,
+            },
             CancelError::UnknownWorkflow { name: "x".into() },
-            CancelError::InvalidPoint { workflow: "w".into(), point: 99, max: 5 },
-            CancelError::FrameworkError { detail: "err".into() },
-            CancelError::StateMismatch { expected: "a".into(), actual: "b".into() },
-            CancelError::Timeout { workflow: "w".into(), point: 0, elapsed_ms: 5000 },
+            CancelError::InvalidPoint {
+                workflow: "w".into(),
+                point: 99,
+                max: 5,
+            },
+            CancelError::FrameworkError {
+                detail: "err".into(),
+            },
+            CancelError::StateMismatch {
+                expected: "a".into(),
+                actual: "b".into(),
+            },
+            CancelError::Timeout {
+                workflow: "w".into(),
+                point: 0,
+                elapsed_ms: 5000,
+            },
         ];
         for e in &errors {
             let s = e.to_string();

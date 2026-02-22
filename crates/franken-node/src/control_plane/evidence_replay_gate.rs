@@ -338,7 +338,10 @@ impl EvidenceReplayGate {
             results.push(result);
         }
 
-        let reproduced = results.iter().filter(|r| r.verdict == ReplayVerdict::Reproduced).count();
+        let reproduced = results
+            .iter()
+            .filter(|r| r.verdict == ReplayVerdict::Reproduced)
+            .count();
         let diverged = results
             .iter()
             .filter(|r| matches!(r.verdict, ReplayVerdict::Diverged { .. }))
@@ -601,7 +604,10 @@ mod tests {
         gate.evaluate_gate("2026-01-15T01:00:00Z");
 
         let log = gate.replay_log();
-        let gate_entries: Vec<_> = log.iter().filter(|e| e.event_code == RPL_005_GATE_DECISION).collect();
+        let gate_entries: Vec<_> = log
+            .iter()
+            .filter(|e| e.event_code == RPL_005_GATE_DECISION)
+            .collect();
         assert_eq!(gate_entries.len(), 1);
     }
 }

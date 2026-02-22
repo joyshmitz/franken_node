@@ -242,16 +242,30 @@ impl std::fmt::Display for VerifierSdkError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidClaim(msg) => write!(f, "{}: {msg}", error_codes::ERR_VER_INVALID_CLAIM),
-            Self::EvidenceMissing(msg) => write!(f, "{}: {msg}", error_codes::ERR_VER_EVIDENCE_MISSING),
-            Self::SignatureInvalid(msg) => write!(f, "{}: {msg}", error_codes::ERR_VER_SIGNATURE_INVALID),
+            Self::EvidenceMissing(msg) => {
+                write!(f, "{}: {msg}", error_codes::ERR_VER_EVIDENCE_MISSING)
+            }
+            Self::SignatureInvalid(msg) => {
+                write!(f, "{}: {msg}", error_codes::ERR_VER_SIGNATURE_INVALID)
+            }
             Self::HashMismatch { expected, actual } => {
-                write!(f, "{}: expected={expected}, actual={actual}", error_codes::ERR_VER_HASH_MISMATCH)
+                write!(
+                    f,
+                    "{}: expected={expected}, actual={actual}",
+                    error_codes::ERR_VER_HASH_MISMATCH
+                )
             }
             Self::ReplayDiverged { expected, actual } => {
-                write!(f, "{}: expected={expected}, actual={actual}", error_codes::ERR_VER_REPLAY_DIVERGED)
+                write!(
+                    f,
+                    "{}: expected={expected}, actual={actual}",
+                    error_codes::ERR_VER_REPLAY_DIVERGED
+                )
             }
             Self::AnchorUnknown(msg) => write!(f, "{}: {msg}", error_codes::ERR_VER_ANCHOR_UNKNOWN),
-            Self::BundleIncomplete(msg) => write!(f, "{}: {msg}", error_codes::ERR_VER_BUNDLE_INCOMPLETE),
+            Self::BundleIncomplete(msg) => {
+                write!(f, "{}: {msg}", error_codes::ERR_VER_BUNDLE_INCOMPLETE)
+            }
         }
     }
 }
@@ -314,9 +328,8 @@ pub fn verify_claim(
     let mut assertions = Vec::new();
 
     // Check claim validity
-    let claim_valid = !claim.claim_id.is_empty()
-        && !claim.assertion.is_empty()
-        && !claim.subject.is_empty();
+    let claim_valid =
+        !claim.claim_id.is_empty() && !claim.assertion.is_empty() && !claim.subject.is_empty();
     assertions.push(AssertionResult {
         assertion: "claim_fields_present".to_string(),
         passed: claim_valid,
@@ -356,10 +369,7 @@ pub fn verify_claim(
             detail: if refs_match {
                 "references correct claim".to_string()
             } else {
-                format!(
-                    "claim_ref={} != claim_id={}",
-                    ev.claim_ref, claim.claim_id
-                )
+                format!("claim_ref={} != claim_id={}", ev.claim_ref, claim.claim_id)
             },
         });
         if !refs_match {
@@ -395,7 +405,11 @@ pub fn verify_claim(
         }
     }
 
-    let verdict = if all_pass { Verdict::Pass } else { Verdict::Fail };
+    let verdict = if all_pass {
+        Verdict::Pass
+    } else {
+        Verdict::Fail
+    };
     let confidence = if all_pass { 1.0 } else { 0.0 };
     let binding_hash = compute_binding_hash(claim, evidence);
     let signature = deterministic_hash(&format!("{verifier_identity}|{binding_hash}"));
@@ -422,21 +436,35 @@ pub fn verify_migration_artifact(
     let mut assertions = Vec::new();
 
     // Check schema_version
-    let sv = artifact.get("schema_version").and_then(|v| v.as_str()).unwrap_or("");
+    let sv = artifact
+        .get("schema_version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let sv_ok = !sv.is_empty();
     assertions.push(AssertionResult {
         assertion: "schema_version_present".to_string(),
         passed: sv_ok,
-        detail: if sv_ok { format!("schema_version={sv}") } else { "missing".to_string() },
+        detail: if sv_ok {
+            format!("schema_version={sv}")
+        } else {
+            "missing".to_string()
+        },
     });
 
     // Check signature
-    let sig = artifact.get("signature").and_then(|v| v.as_str()).unwrap_or("");
+    let sig = artifact
+        .get("signature")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let sig_ok = !sig.is_empty();
     assertions.push(AssertionResult {
         assertion: "signature_present".to_string(),
         passed: sig_ok,
-        detail: if sig_ok { "signature present".to_string() } else { "missing".to_string() },
+        detail: if sig_ok {
+            "signature present".to_string()
+        } else {
+            "missing".to_string()
+        },
     });
 
     // Check rollback_receipt
@@ -445,7 +473,11 @@ pub fn verify_migration_artifact(
     assertions.push(AssertionResult {
         assertion: "rollback_receipt_present".to_string(),
         passed: rb_ok,
-        detail: if rb_ok { "rollback receipt present".to_string() } else { "missing".to_string() },
+        detail: if rb_ok {
+            "rollback receipt present".to_string()
+        } else {
+            "missing".to_string()
+        },
     });
 
     // Check preconditions
@@ -454,11 +486,18 @@ pub fn verify_migration_artifact(
     assertions.push(AssertionResult {
         assertion: "preconditions_present".to_string(),
         passed: pre_ok,
-        detail: if pre_ok { "preconditions present".to_string() } else { "missing".to_string() },
+        detail: if pre_ok {
+            "preconditions present".to_string()
+        } else {
+            "missing".to_string()
+        },
     });
 
     // Check content_hash
-    let ch = artifact.get("content_hash").and_then(|v| v.as_str()).unwrap_or("");
+    let ch = artifact
+        .get("content_hash")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let ch_ok = ch.len() == 64;
     assertions.push(AssertionResult {
         assertion: "content_hash_valid".to_string(),
@@ -471,7 +510,11 @@ pub fn verify_migration_artifact(
     });
 
     let all_pass = assertions.iter().all(|a| a.passed);
-    let verdict = if all_pass { Verdict::Pass } else { Verdict::Fail };
+    let verdict = if all_pass {
+        Verdict::Pass
+    } else {
+        Verdict::Fail
+    };
     let confidence = if all_pass { 1.0 } else { 0.0 };
     let canonical = serde_json::to_string(artifact).unwrap_or_default();
     let binding_hash = deterministic_hash(&canonical);
@@ -544,7 +587,11 @@ pub fn verify_trust_state(
     }
 
     let all_pass = state_ok && chain_ok;
-    let verdict = if all_pass { Verdict::Pass } else { Verdict::Fail };
+    let verdict = if all_pass {
+        Verdict::Pass
+    } else {
+        Verdict::Fail
+    };
     let confidence = if all_pass { 1.0 } else { 0.0 };
 
     let mut parts = Vec::new();
@@ -572,16 +619,17 @@ pub fn verify_trust_state(
 ///
 /// INV-VER-OFFLINE-CAPABLE: replay is local.
 /// INV-VER-DETERMINISTIC: same capsule produces the same result.
-pub fn replay_capsule(
-    capsule_data: &str,
-    expected_output_hash: &str,
-) -> ReplayResult {
+pub fn replay_capsule(capsule_data: &str, expected_output_hash: &str) -> ReplayResult {
     // Compute deterministic hash of capsule data as actual output
     let actual_hash = deterministic_hash(capsule_data);
     let matches = actual_hash == expected_output_hash;
 
     ReplayResult {
-        verdict: if matches { Verdict::Pass } else { Verdict::Fail },
+        verdict: if matches {
+            Verdict::Pass
+        } else {
+            Verdict::Fail
+        },
         expected_output_hash: expected_output_hash.to_string(),
         actual_output_hash: actual_hash,
         replay_duration_ms: 0,
@@ -700,18 +748,12 @@ pub fn generate_reference_claim() -> Claim {
 pub fn generate_reference_evidence() -> Vec<Evidence> {
     let mut artifacts_1 = BTreeMap::new();
     artifacts_1.insert("signature".to_string(), "sig_abc123".to_string());
-    artifacts_1.insert(
-        "hash".to_string(),
-        "aa".repeat(32),
-    );
+    artifacts_1.insert("hash".to_string(), "aa".repeat(32));
     artifacts_1.insert("timestamp".to_string(), "2026-02-21T00:00:00Z".to_string());
 
     let mut artifacts_2 = BTreeMap::new();
     artifacts_2.insert("signature".to_string(), "sig_def456".to_string());
-    artifacts_2.insert(
-        "hash".to_string(),
-        "bb".repeat(32),
-    );
+    artifacts_2.insert("hash".to_string(), "bb".repeat(32));
     artifacts_2.insert("timestamp".to_string(), "2026-02-21T00:00:00Z".to_string());
 
     vec![
@@ -719,7 +761,8 @@ pub fn generate_reference_evidence() -> Vec<Evidence> {
             evidence_id: "ev-ref-001".to_string(),
             claim_ref: "claim-ref-001".to_string(),
             artifacts: artifacts_1,
-            verification_procedure: "Check signature against operator key and compare hash".to_string(),
+            verification_procedure: "Check signature against operator key and compare hash"
+                .to_string(),
         },
         Evidence {
             evidence_id: "ev-ref-002".to_string(),
@@ -902,9 +945,15 @@ mod tests {
         let mut artifact = BTreeMap::new();
         artifact.insert("schema_version".to_string(), serde_json::json!("ma-v1.0"));
         artifact.insert("signature".to_string(), serde_json::json!("sig_abc"));
-        artifact.insert("rollback_receipt".to_string(), serde_json::json!({"key": "val"}));
+        artifact.insert(
+            "rollback_receipt".to_string(),
+            serde_json::json!({"key": "val"}),
+        );
         artifact.insert("preconditions".to_string(), serde_json::json!(["pre1"]));
-        artifact.insert("content_hash".to_string(), serde_json::json!("aa".repeat(32)));
+        artifact.insert(
+            "content_hash".to_string(),
+            serde_json::json!("aa".repeat(32)),
+        );
         let result = verify_migration_artifact(&artifact, "v1").unwrap();
         assert_eq!(result.verdict, Verdict::Pass);
     }
@@ -913,9 +962,15 @@ mod tests {
     fn test_verify_migration_artifact_missing_signature() {
         let mut artifact = BTreeMap::new();
         artifact.insert("schema_version".to_string(), serde_json::json!("ma-v1.0"));
-        artifact.insert("rollback_receipt".to_string(), serde_json::json!({"key": "val"}));
+        artifact.insert(
+            "rollback_receipt".to_string(),
+            serde_json::json!({"key": "val"}),
+        );
         artifact.insert("preconditions".to_string(), serde_json::json!(["pre1"]));
-        artifact.insert("content_hash".to_string(), serde_json::json!("aa".repeat(32)));
+        artifact.insert(
+            "content_hash".to_string(),
+            serde_json::json!("aa".repeat(32)),
+        );
         let result = verify_migration_artifact(&artifact, "v1").unwrap();
         assert_eq!(result.verdict, Verdict::Fail);
     }
@@ -928,7 +983,10 @@ mod tests {
         artifact.insert("signature".to_string(), serde_json::json!("sig"));
         artifact.insert("rollback_receipt".to_string(), serde_json::json!({}));
         artifact.insert("preconditions".to_string(), serde_json::json!([]));
-        artifact.insert("content_hash".to_string(), serde_json::json!("cc".repeat(32)));
+        artifact.insert(
+            "content_hash".to_string(),
+            serde_json::json!("cc".repeat(32)),
+        );
         let r1 = verify_migration_artifact(&artifact, "v1").unwrap();
         let r2 = verify_migration_artifact(&artifact, "v1").unwrap();
         assert_eq!(r1.artifact_binding_hash, r2.artifact_binding_hash);
@@ -1096,8 +1154,7 @@ mod tests {
     #[test]
     fn test_execute_workflow_compliance() {
         let bundle = generate_reference_bundle();
-        let result =
-            execute_workflow(&ValidationWorkflow::ComplianceAudit, &bundle, "v1").unwrap();
+        let result = execute_workflow(&ValidationWorkflow::ComplianceAudit, &bundle, "v1").unwrap();
         assert_eq!(result.verdict, Verdict::Pass);
     }
 
@@ -1207,12 +1264,27 @@ mod tests {
     #[test]
     fn test_error_codes_defined() {
         assert_eq!(error_codes::ERR_VER_INVALID_CLAIM, "ERR_VER_INVALID_CLAIM");
-        assert_eq!(error_codes::ERR_VER_EVIDENCE_MISSING, "ERR_VER_EVIDENCE_MISSING");
-        assert_eq!(error_codes::ERR_VER_SIGNATURE_INVALID, "ERR_VER_SIGNATURE_INVALID");
+        assert_eq!(
+            error_codes::ERR_VER_EVIDENCE_MISSING,
+            "ERR_VER_EVIDENCE_MISSING"
+        );
+        assert_eq!(
+            error_codes::ERR_VER_SIGNATURE_INVALID,
+            "ERR_VER_SIGNATURE_INVALID"
+        );
         assert_eq!(error_codes::ERR_VER_HASH_MISMATCH, "ERR_VER_HASH_MISMATCH");
-        assert_eq!(error_codes::ERR_VER_REPLAY_DIVERGED, "ERR_VER_REPLAY_DIVERGED");
-        assert_eq!(error_codes::ERR_VER_ANCHOR_UNKNOWN, "ERR_VER_ANCHOR_UNKNOWN");
-        assert_eq!(error_codes::ERR_VER_BUNDLE_INCOMPLETE, "ERR_VER_BUNDLE_INCOMPLETE");
+        assert_eq!(
+            error_codes::ERR_VER_REPLAY_DIVERGED,
+            "ERR_VER_REPLAY_DIVERGED"
+        );
+        assert_eq!(
+            error_codes::ERR_VER_ANCHOR_UNKNOWN,
+            "ERR_VER_ANCHOR_UNKNOWN"
+        );
+        assert_eq!(
+            error_codes::ERR_VER_BUNDLE_INCOMPLETE,
+            "ERR_VER_BUNDLE_INCOMPLETE"
+        );
     }
 
     // ── invariants ──────────────────────────────────────────────────
@@ -1220,10 +1292,16 @@ mod tests {
     #[test]
     fn test_invariants_defined() {
         assert_eq!(invariants::INV_VER_DETERMINISTIC, "INV-VER-DETERMINISTIC");
-        assert_eq!(invariants::INV_VER_OFFLINE_CAPABLE, "INV-VER-OFFLINE-CAPABLE");
+        assert_eq!(
+            invariants::INV_VER_OFFLINE_CAPABLE,
+            "INV-VER-OFFLINE-CAPABLE"
+        );
         assert_eq!(invariants::INV_VER_EVIDENCE_BOUND, "INV-VER-EVIDENCE-BOUND");
         assert_eq!(invariants::INV_VER_RESULT_SIGNED, "INV-VER-RESULT-SIGNED");
-        assert_eq!(invariants::INV_VER_TRANSPARENCY_APPEND, "INV-VER-TRANSPARENCY-APPEND");
+        assert_eq!(
+            invariants::INV_VER_TRANSPARENCY_APPEND,
+            "INV-VER-TRANSPARENCY-APPEND"
+        );
     }
 
     // ── schema version ──────────────────────────────────────────────

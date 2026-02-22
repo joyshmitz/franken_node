@@ -406,10 +406,7 @@ impl OverheadGate {
             self.emit_event(
                 event_codes::PRF_003_OVER_BUDGET,
                 result.hot_path,
-                format!(
-                    "Over budget: {} violation(s)",
-                    violations.len()
-                ),
+                format!("Over budget: {} violation(s)", violations.len()),
                 Some(result.overhead_p95_pct),
                 &trace_id,
             );
@@ -421,17 +418,13 @@ impl OverheadGate {
     }
 
     /// Evaluate a batch of measurements.
-    pub fn evaluate_batch(
-        &mut self,
-        results: Vec<MeasurementResult>,
-    ) -> Vec<GateDecision> {
+    pub fn evaluate_batch(&mut self, results: Vec<MeasurementResult>) -> Vec<GateDecision> {
         results.into_iter().map(|r| self.evaluate(r)).collect()
     }
 
     /// Check if the gate passes (all measurements within budget).
     pub fn gate_pass(&self) -> bool {
-        !self.results.is_empty()
-            && self.results.iter().all(|r| r.within_budget)
+        !self.results.is_empty() && self.results.iter().all(|r| r.within_budget)
     }
 
     /// Summary of results.
@@ -439,11 +432,7 @@ impl OverheadGate {
         OverheadGateSummary {
             total: self.results.len(),
             within_budget: self.results.iter().filter(|r| r.within_budget).count(),
-            over_budget: self
-                .results
-                .iter()
-                .filter(|r| !r.within_budget)
-                .count(),
+            over_budget: self.results.iter().filter(|r| !r.within_budget).count(),
         }
     }
 
@@ -539,9 +528,13 @@ mod tests {
             .unwrap_or(default_budget());
         MeasurementResult::from_measurements(
             hot_path,
-            100.0, 110.0, 120.0,  // baseline
-            105.0, 118.0, 130.0,  // integrated (small overhead)
-            15.0,                  // cold start
+            100.0,
+            110.0,
+            120.0, // baseline
+            105.0,
+            118.0,
+            130.0, // integrated (small overhead)
+            15.0,  // cold start
             &budget,
             Some("flamegraph.svg".into()),
         )
@@ -554,9 +547,13 @@ mod tests {
             .unwrap_or(default_budget());
         MeasurementResult::from_measurements(
             hot_path,
-            100.0, 100.0, 100.0,  // baseline
-            200.0, 200.0, 200.0,  // integrated (100% overhead)
-            100.0,                 // cold start way over
+            100.0,
+            100.0,
+            100.0, // baseline
+            200.0,
+            200.0,
+            200.0, // integrated (100% overhead)
+            100.0, // cold start way over
             &budget,
             Some("flamegraph.svg".into()),
         )
@@ -572,14 +569,20 @@ mod tests {
     #[test]
     fn test_hot_path_labels() {
         assert_eq!(HotPath::LifecycleTransition.label(), "lifecycle_transition");
-        assert_eq!(HotPath::HealthGateEvaluation.label(), "health_gate_evaluation");
+        assert_eq!(
+            HotPath::HealthGateEvaluation.label(),
+            "health_gate_evaluation"
+        );
         assert_eq!(HotPath::RolloutStateChange.label(), "rollout_state_change");
         assert_eq!(HotPath::FencingTokenOp.label(), "fencing_token_op");
     }
 
     #[test]
     fn test_hot_path_display() {
-        assert_eq!(format!("{}", HotPath::LifecycleTransition), "lifecycle_transition");
+        assert_eq!(
+            format!("{}", HotPath::LifecycleTransition),
+            "lifecycle_transition"
+        );
     }
 
     #[test]
@@ -597,7 +600,11 @@ mod tests {
     fn test_default_policy_has_all_paths() {
         let policy = BudgetPolicy::default_policy();
         for hp in HotPath::all() {
-            assert!(policy.budget_for(*hp).is_some(), "Missing budget for {}", hp);
+            assert!(
+                policy.budget_for(*hp).is_some(),
+                "Missing budget for {}",
+                hp
+            );
         }
     }
 
@@ -651,8 +658,12 @@ mod tests {
         let budget = default_budget();
         let r = MeasurementResult::from_measurements(
             HotPath::HealthGateEvaluation,
-            100.0, 100.0, 100.0,
-            100.0, 110.0, 120.0,
+            100.0,
+            100.0,
+            100.0,
+            100.0,
+            110.0,
+            120.0,
             10.0,
             &budget,
             None,
@@ -666,8 +677,12 @@ mod tests {
         let budget = default_budget();
         let r = MeasurementResult::from_measurements(
             HotPath::HealthGateEvaluation,
-            0.0, 0.0, 0.0,
-            10.0, 10.0, 10.0,
+            0.0,
+            0.0,
+            0.0,
+            10.0,
+            10.0,
+            10.0,
             5.0,
             &budget,
             None,
@@ -702,8 +717,12 @@ mod tests {
         };
         let r = MeasurementResult::from_measurements(
             HotPath::HealthGateEvaluation,
-            100.0, 100.0, 100.0,
-            100.0, 100.0, 100.0,
+            100.0,
+            100.0,
+            100.0,
+            100.0,
+            100.0,
+            100.0,
             10.0,
             &budget,
             None,
@@ -904,8 +923,12 @@ mod tests {
         let budget = default_budget();
         let r = MeasurementResult::from_measurements(
             HotPath::HealthGateEvaluation,
-            100.0, 110.0, 120.0,
-            105.0, 118.0, 130.0,
+            100.0,
+            110.0,
+            120.0,
+            105.0,
+            118.0,
+            130.0,
             15.0,
             &budget,
             None,
@@ -1018,12 +1041,7 @@ mod tests {
                 cold_start_ms: 0.0,
             };
             let r = MeasurementResult::from_measurements(
-                *hp,
-                100.0, 100.0, 100.0,
-                101.0, 101.0, 101.0,
-                1.0,
-                &budget,
-                None,
+                *hp, 100.0, 100.0, 100.0, 101.0, 101.0, 101.0, 1.0, &budget, None,
             );
             let d = gate.evaluate(r);
             assert!(d.is_fail(), "Zero budget should fail for {}", hp);
@@ -1053,12 +1071,7 @@ mod tests {
                 cold_start_ms: f64::INFINITY,
             };
             let r = MeasurementResult::from_measurements(
-                *hp,
-                100.0, 100.0, 100.0,
-                10000.0, 10000.0, 10000.0,
-                10000.0,
-                &budget,
-                None,
+                *hp, 100.0, 100.0, 100.0, 10000.0, 10000.0, 10000.0, 10000.0, &budget, None,
             );
             let d = gate.evaluate(r);
             assert!(d.is_pass(), "Infinity budget should pass for {}", hp);
@@ -1072,8 +1085,12 @@ mod tests {
         let budget = default_budget();
         let r = MeasurementResult::from_measurements(
             HotPath::HealthGateEvaluation,
-            100.0, 110.0, 120.0,
-            105.0, 118.0, 130.0,
+            100.0,
+            110.0,
+            120.0,
+            105.0,
+            118.0,
+            130.0,
             15.0,
             &budget,
             None,
@@ -1154,15 +1171,27 @@ mod tests {
         let budget = default_budget();
         let r1 = MeasurementResult::from_measurements(
             HotPath::HealthGateEvaluation,
-            100.0, 100.0, 100.0,
-            110.0, 110.0, 110.0,
-            10.0, &budget, None,
+            100.0,
+            100.0,
+            100.0,
+            110.0,
+            110.0,
+            110.0,
+            10.0,
+            &budget,
+            None,
         );
         let r2 = MeasurementResult::from_measurements(
             HotPath::HealthGateEvaluation,
-            100.0, 100.0, 100.0,
-            110.0, 110.0, 110.0,
-            10.0, &budget, None,
+            100.0,
+            100.0,
+            100.0,
+            110.0,
+            110.0,
+            110.0,
+            10.0,
+            &budget,
+            None,
         );
         assert_eq!(r1.within_budget, r2.within_budget);
         assert_eq!(r1.overhead_p95_pct, r2.overhead_p95_pct);

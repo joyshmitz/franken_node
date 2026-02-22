@@ -1099,24 +1099,30 @@ mod tests {
     #[test]
     fn test_try_reserve_budget_enforcement() {
         let mut t = ObligationTracker::with_flow_budget(2);
-        t.try_reserve(ObligationFlow::Publish, vec![], 1000, "t1").unwrap();
-        t.try_reserve(ObligationFlow::Publish, vec![], 1001, "t2").unwrap();
+        t.try_reserve(ObligationFlow::Publish, vec![], 1000, "t1")
+            .unwrap();
+        t.try_reserve(ObligationFlow::Publish, vec![], 1001, "t2")
+            .unwrap();
         // Third reservation should fail
         let err = t
             .try_reserve(ObligationFlow::Publish, vec![], 1002, "t3")
             .unwrap_err();
         assert_eq!(err, error_codes::ERR_OBL_BUDGET_EXCEEDED);
         // Different flow should still work
-        t.try_reserve(ObligationFlow::Revoke, vec![], 1003, "t4").unwrap();
+        t.try_reserve(ObligationFlow::Revoke, vec![], 1003, "t4")
+            .unwrap();
     }
 
     // 40. budget is per-flow, not global
     #[test]
     fn test_budget_per_flow() {
         let mut t = ObligationTracker::with_flow_budget(1);
-        t.try_reserve(ObligationFlow::Publish, vec![], 1000, "t1").unwrap();
-        t.try_reserve(ObligationFlow::Revoke, vec![], 1001, "t2").unwrap();
-        t.try_reserve(ObligationFlow::Quarantine, vec![], 1002, "t3").unwrap();
+        t.try_reserve(ObligationFlow::Publish, vec![], 1000, "t1")
+            .unwrap();
+        t.try_reserve(ObligationFlow::Revoke, vec![], 1001, "t2")
+            .unwrap();
+        t.try_reserve(ObligationFlow::Quarantine, vec![], 1002, "t3")
+            .unwrap();
         assert_eq!(t.total_obligations(), 3);
     }
 

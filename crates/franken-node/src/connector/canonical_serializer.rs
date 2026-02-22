@@ -208,11 +208,25 @@ pub struct SerializerEvent {
 /// Errors from canonical serialization operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SerializerError {
-    NonCanonicalInput { object_type: String, reason: String },
-    SchemaNotFound { object_type: String },
-    FloatingPointRejected { object_type: String, field: String },
-    PreimageConstructionFailed { reason: String },
-    RoundTripDivergence { object_type: String, original_len: usize, round_trip_len: usize },
+    NonCanonicalInput {
+        object_type: String,
+        reason: String,
+    },
+    SchemaNotFound {
+        object_type: String,
+    },
+    FloatingPointRejected {
+        object_type: String,
+        field: String,
+    },
+    PreimageConstructionFailed {
+        reason: String,
+    },
+    RoundTripDivergence {
+        object_type: String,
+        original_len: usize,
+        round_trip_len: usize,
+    },
 }
 
 impl SerializerError {
@@ -230,7 +244,10 @@ impl SerializerError {
 impl std::fmt::Display for SerializerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NonCanonicalInput { object_type, reason } => {
+            Self::NonCanonicalInput {
+                object_type,
+                reason,
+            } => {
                 write!(f, "non-canonical input for {object_type}: {reason}")
             }
             Self::SchemaNotFound { object_type } => {
@@ -242,7 +259,11 @@ impl std::fmt::Display for SerializerError {
             Self::PreimageConstructionFailed { reason } => {
                 write!(f, "preimage construction failed: {reason}")
             }
-            Self::RoundTripDivergence { object_type, original_len, round_trip_len } => {
+            Self::RoundTripDivergence {
+                object_type,
+                original_len,
+                round_trip_len,
+            } => {
                 write!(
                     f,
                     "round-trip divergence for {object_type}: orig={original_len} rt={round_trip_len}"
@@ -322,11 +343,12 @@ impl CanonicalSerializer {
         payload: &[u8],
         trace_id: &str,
     ) -> Result<Vec<u8>, SerializerError> {
-        let schema = self.schemas.get(&object_type).ok_or_else(|| {
-            SerializerError::SchemaNotFound {
-                object_type: object_type.label().to_string(),
-            }
-        })?;
+        let schema =
+            self.schemas
+                .get(&object_type)
+                .ok_or_else(|| SerializerError::SchemaNotFound {
+                    object_type: object_type.label().to_string(),
+                })?;
 
         // INV-CAN-NO-FLOAT: reject payloads containing float indicators
         if contains_float_marker(payload) {
@@ -356,7 +378,11 @@ impl CanonicalSerializer {
             byte_length: canonical.len(),
             content_hash_prefix: hash_prefix,
             trace_id: trace_id.to_string(),
-            detail: format!("serialized {} ({} bytes)", object_type.label(), canonical.len()),
+            detail: format!(
+                "serialized {} ({} bytes)",
+                object_type.label(),
+                canonical.len()
+            ),
         });
 
         Ok(canonical)
@@ -415,11 +441,12 @@ impl CanonicalSerializer {
         payload: &[u8],
         trace_id: &str,
     ) -> Result<SignaturePreimage, SerializerError> {
-        let schema = self.schemas.get(&object_type).ok_or_else(|| {
-            SerializerError::SchemaNotFound {
-                object_type: object_type.label().to_string(),
-            }
-        })?;
+        let schema =
+            self.schemas
+                .get(&object_type)
+                .ok_or_else(|| SerializerError::SchemaNotFound {
+                    object_type: object_type.label().to_string(),
+                })?;
 
         let version = schema.version;
         let domain_tag = schema.domain_tag;
@@ -458,22 +485,46 @@ impl Default for CanonicalSerializer {
 fn default_schema(object_type: TrustObjectType) -> CanonicalSchema {
     let field_order = match object_type {
         TrustObjectType::PolicyCheckpoint => {
-            vec!["checkpoint_id", "epoch", "sequence", "policy_hash", "timestamp"]
+            vec![
+                "checkpoint_id",
+                "epoch",
+                "sequence",
+                "policy_hash",
+                "timestamp",
+            ]
         }
         TrustObjectType::DelegationToken => {
             vec!["token_id", "issuer", "delegate", "scope", "expiry"]
         }
         TrustObjectType::RevocationAssertion => {
-            vec!["assertion_id", "target_id", "reason", "effective_at", "evidence_hash"]
+            vec![
+                "assertion_id",
+                "target_id",
+                "reason",
+                "effective_at",
+                "evidence_hash",
+            ]
         }
         TrustObjectType::SessionTicket => {
             vec!["session_id", "client_id", "server_id", "issued_at", "ttl"]
         }
         TrustObjectType::ZoneBoundaryClaim => {
-            vec!["zone_id", "boundary_type", "peer_zone", "trust_level", "established_at"]
+            vec![
+                "zone_id",
+                "boundary_type",
+                "peer_zone",
+                "trust_level",
+                "established_at",
+            ]
         }
         TrustObjectType::OperatorReceipt => {
-            vec!["receipt_id", "operator_id", "action", "artifact_hash", "timestamp"]
+            vec![
+                "receipt_id",
+                "operator_id",
+                "action",
+                "artifact_hash",
+                "timestamp",
+            ]
         }
     };
 
@@ -590,7 +641,10 @@ mod tests {
 
     #[test]
     fn test_domain_tags_unique() {
-        let tags: Vec<[u8; 2]> = TrustObjectType::all().iter().map(|t| t.domain_tag()).collect();
+        let tags: Vec<[u8; 2]> = TrustObjectType::all()
+            .iter()
+            .map(|t| t.domain_tag())
+            .collect();
         let unique: std::collections::HashSet<[u8; 2]> = tags.iter().copied().collect();
         assert_eq!(tags.len(), unique.len());
     }
@@ -627,12 +681,7 @@ mod tests {
     fn test_schema_field_orders_have_5_fields() {
         for t in TrustObjectType::all() {
             let schema = default_schema(*t);
-            assert_eq!(
-                schema.field_order.len(),
-                5,
-                "{:?} should have 5 fields",
-                t
-            );
+            assert_eq!(schema.field_order.len(), 5, "{:?} should have 5 fields", t);
         }
     }
 
@@ -796,22 +845,14 @@ mod tests {
     #[test]
     fn test_serialize_success() {
         let mut s = CanonicalSerializer::with_all_schemas();
-        let result = s.serialize(
-            TrustObjectType::PolicyCheckpoint,
-            b"test-payload",
-            "t1",
-        );
+        let result = s.serialize(TrustObjectType::PolicyCheckpoint, b"test-payload", "t1");
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_serialize_unknown_schema() {
         let mut s = CanonicalSerializer::new();
-        let result = s.serialize(
-            TrustObjectType::PolicyCheckpoint,
-            b"test",
-            "t1",
-        );
+        let result = s.serialize(TrustObjectType::PolicyCheckpoint, b"test", "t1");
         assert!(result.is_err());
         match result.unwrap_err() {
             SerializerError::SchemaNotFound { .. } => {}
@@ -842,20 +883,24 @@ mod tests {
     #[test]
     fn test_serialize_deterministic() {
         let mut s = CanonicalSerializer::with_all_schemas();
-        let r1 = s.serialize(TrustObjectType::PolicyCheckpoint, b"same", "t1").unwrap();
-        let r2 = s.serialize(TrustObjectType::PolicyCheckpoint, b"same", "t2").unwrap();
+        let r1 = s
+            .serialize(TrustObjectType::PolicyCheckpoint, b"same", "t1")
+            .unwrap();
+        let r2 = s
+            .serialize(TrustObjectType::PolicyCheckpoint, b"same", "t2")
+            .unwrap();
         assert_eq!(r1, r2);
     }
 
     #[test]
     fn test_deserialize_success() {
         let mut s = CanonicalSerializer::with_all_schemas();
-        let serialized = s.serialize(
-            TrustObjectType::PolicyCheckpoint,
-            b"payload",
-            "t1",
-        ).unwrap();
-        let deserialized = s.deserialize(TrustObjectType::PolicyCheckpoint, &serialized).unwrap();
+        let serialized = s
+            .serialize(TrustObjectType::PolicyCheckpoint, b"payload", "t1")
+            .unwrap();
+        let deserialized = s
+            .deserialize(TrustObjectType::PolicyCheckpoint, &serialized)
+            .unwrap();
         assert_eq!(deserialized, b"payload");
     }
 
@@ -881,11 +926,7 @@ mod tests {
     #[test]
     fn test_round_trip_empty_payload() {
         let mut s = CanonicalSerializer::with_all_schemas();
-        let result = s.round_trip_canonical(
-            TrustObjectType::OperatorReceipt,
-            b"",
-            "rt-empty",
-        );
+        let result = s.round_trip_canonical(TrustObjectType::OperatorReceipt, b"", "rt-empty");
         assert!(result.is_ok());
     }
 
@@ -893,11 +934,7 @@ mod tests {
     fn test_round_trip_large_payload() {
         let mut s = CanonicalSerializer::with_all_schemas();
         let large = vec![0x42u8; 10_000];
-        let result = s.round_trip_canonical(
-            TrustObjectType::SessionTicket,
-            &large,
-            "rt-large",
-        );
+        let result = s.round_trip_canonical(TrustObjectType::SessionTicket, &large, "rt-large");
         assert!(result.is_ok());
     }
 
@@ -906,11 +943,7 @@ mod tests {
     #[test]
     fn test_build_preimage_success() {
         let mut s = CanonicalSerializer::with_all_schemas();
-        let result = s.build_preimage(
-            TrustObjectType::PolicyCheckpoint,
-            b"test",
-            "pi-test",
-        );
+        let result = s.build_preimage(TrustObjectType::PolicyCheckpoint, b"test", "pi-test");
         assert!(result.is_ok());
         let pi = result.unwrap();
         assert_eq!(pi.version, 1);
@@ -930,11 +963,7 @@ mod tests {
     #[test]
     fn test_build_preimage_emits_event() {
         let mut s = CanonicalSerializer::with_all_schemas();
-        let _ = s.build_preimage(
-            TrustObjectType::DelegationToken,
-            b"token",
-            "pi-evt",
-        );
+        let _ = s.build_preimage(TrustObjectType::DelegationToken, b"token", "pi-evt");
         let preimage_events: Vec<_> = s
             .events()
             .iter()
@@ -946,16 +975,12 @@ mod tests {
     #[test]
     fn test_build_preimage_deterministic() {
         let mut s = CanonicalSerializer::with_all_schemas();
-        let pi1 = s.build_preimage(
-            TrustObjectType::PolicyCheckpoint,
-            b"same",
-            "t1",
-        ).unwrap();
-        let pi2 = s.build_preimage(
-            TrustObjectType::PolicyCheckpoint,
-            b"same",
-            "t2",
-        ).unwrap();
+        let pi1 = s
+            .build_preimage(TrustObjectType::PolicyCheckpoint, b"same", "t1")
+            .unwrap();
+        let pi2 = s
+            .build_preimage(TrustObjectType::PolicyCheckpoint, b"same", "t2")
+            .unwrap();
         assert_eq!(pi1.to_bytes(), pi2.to_bytes());
     }
 
@@ -964,15 +989,19 @@ mod tests {
     #[test]
     fn test_error_codes() {
         let e1 = SerializerError::NonCanonicalInput {
-            object_type: "t".into(), reason: "r".into(),
+            object_type: "t".into(),
+            reason: "r".into(),
         };
         assert_eq!(e1.code(), "ERR_CAN_NON_CANONICAL");
 
-        let e2 = SerializerError::SchemaNotFound { object_type: "t".into() };
+        let e2 = SerializerError::SchemaNotFound {
+            object_type: "t".into(),
+        };
         assert_eq!(e2.code(), "ERR_CAN_SCHEMA_NOT_FOUND");
 
         let e3 = SerializerError::FloatingPointRejected {
-            object_type: "t".into(), field: "f".into(),
+            object_type: "t".into(),
+            field: "f".into(),
         };
         assert_eq!(e3.code(), "ERR_CAN_FLOAT_REJECTED");
 
@@ -980,14 +1009,18 @@ mod tests {
         assert_eq!(e4.code(), "ERR_CAN_PREIMAGE_FAILED");
 
         let e5 = SerializerError::RoundTripDivergence {
-            object_type: "t".into(), original_len: 10, round_trip_len: 12,
+            object_type: "t".into(),
+            original_len: 10,
+            round_trip_len: 12,
         };
         assert_eq!(e5.code(), "ERR_CAN_ROUND_TRIP_DIVERGENCE");
     }
 
     #[test]
     fn test_error_display() {
-        let e = SerializerError::SchemaNotFound { object_type: "foo".into() };
+        let e = SerializerError::SchemaNotFound {
+            object_type: "foo".into(),
+        };
         assert!(e.to_string().contains("foo"));
     }
 

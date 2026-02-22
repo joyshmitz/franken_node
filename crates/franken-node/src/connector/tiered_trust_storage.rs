@@ -274,11 +274,7 @@ impl AuthorityMap {
     }
 
     /// Attempt to change the mapping — always fails after construction.
-    pub fn try_update(
-        &mut self,
-        _class: ObjectClass,
-        _tier: Tier,
-    ) -> Result<(), StorageError> {
+    pub fn try_update(&mut self, _class: ObjectClass, _tier: Tier) -> Result<(), StorageError> {
         // INV-TIER-IMMUTABLE: authority map is frozen at construction.
         Err(StorageError::authority_map_immutable())
     }
@@ -398,7 +394,12 @@ impl TieredTrustStorage {
             events: Vec::new(),
         };
         for tier in Tier::all() {
-            storage.emit(TS_TIER_INITIALIZED, *tier, None, format!("Tier {} initialized", tier));
+            storage.emit(
+                TS_TIER_INITIALIZED,
+                *tier,
+                None,
+                format!("Tier {} initialized", tier),
+            );
         }
         storage
     }
@@ -559,8 +560,7 @@ impl TieredTrustStorage {
         let artifact = source.clone();
 
         // Store the recovered copy in the target tier.
-        self.tier_store_mut(target_tier)
-            .store(artifact);
+        self.tier_store_mut(target_tier).store(artifact);
 
         self.emit(
             TS_RECOVERY_COMPLETE,
@@ -1031,12 +1031,18 @@ mod tests {
         assert_eq!(ObjectClass::CriticalMarker.as_str(), "critical_marker");
         assert_eq!(ObjectClass::TrustReceipt.as_str(), "trust_receipt");
         assert_eq!(ObjectClass::ReplayBundle.as_str(), "replay_bundle");
-        assert_eq!(ObjectClass::TelemetryArtifact.as_str(), "telemetry_artifact");
+        assert_eq!(
+            ObjectClass::TelemetryArtifact.as_str(),
+            "telemetry_artifact"
+        );
     }
 
     #[test]
     fn test_object_class_display() {
-        assert_eq!(format!("{}", ObjectClass::CriticalMarker), "critical_marker");
+        assert_eq!(
+            format!("{}", ObjectClass::CriticalMarker),
+            "critical_marker"
+        );
     }
 
     // -- Tier enum --------------------------------------------------------
@@ -1196,9 +1202,15 @@ mod tests {
     fn test_tier_count_increments() {
         let mut storage = TieredTrustStorage::with_defaults();
         assert_eq!(storage.tier_count(Tier::L1Local), 0);
-        storage.store(Tier::L1Local, make_artifact("tc1", ObjectClass::CriticalMarker));
+        storage.store(
+            Tier::L1Local,
+            make_artifact("tc1", ObjectClass::CriticalMarker),
+        );
         assert_eq!(storage.tier_count(Tier::L1Local), 1);
-        storage.store(Tier::L1Local, make_artifact("tc2", ObjectClass::CriticalMarker));
+        storage.store(
+            Tier::L1Local,
+            make_artifact("tc2", ObjectClass::CriticalMarker),
+        );
         assert_eq!(storage.tier_count(Tier::L1Local), 2);
     }
 }

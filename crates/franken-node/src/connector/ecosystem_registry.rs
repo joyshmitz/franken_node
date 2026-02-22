@@ -177,20 +177,34 @@ impl EcosystemRegistry {
         // Sybil check: reject duplicate publisher keys from different publishers.
         if let Some(existing_pub) = self.publisher_keys.get(&metadata.publisher_key) {
             if existing_pub != &metadata.publisher_id {
-                self.emit_event(ENE_011_SYBIL_REJECT, &metadata.extension_id,
-                    &format!("duplicate key {} from publisher {}", metadata.publisher_key, metadata.publisher_id),
-                    timestamp, trace_id);
-                return Err(RegistryError::SybilDuplicate(metadata.publisher_key.clone()));
+                self.emit_event(
+                    ENE_011_SYBIL_REJECT,
+                    &metadata.extension_id,
+                    &format!(
+                        "duplicate key {} from publisher {}",
+                        metadata.publisher_key, metadata.publisher_id
+                    ),
+                    timestamp,
+                    trace_id,
+                );
+                return Err(RegistryError::SybilDuplicate(
+                    metadata.publisher_key.clone(),
+                ));
             }
         }
 
         // Duplicate extension check.
         if self.extensions.contains_key(&metadata.extension_id) {
-            return Err(RegistryError::DuplicateRegistration(metadata.extension_id.clone()));
+            return Err(RegistryError::DuplicateRegistration(
+                metadata.extension_id.clone(),
+            ));
         }
 
         let ext_id = metadata.extension_id.clone();
-        self.publisher_keys.insert(metadata.publisher_key.clone(), metadata.publisher_id.clone());
+        self.publisher_keys.insert(
+            metadata.publisher_key.clone(),
+            metadata.publisher_id.clone(),
+        );
 
         let initial_lineage = VersionLineageEntry {
             version: metadata.version.clone(),
@@ -206,24 +220,60 @@ impl EcosystemRegistry {
         };
 
         self.extensions.insert(ext_id.clone(), record);
-        self.append_audit_entry(&ext_id, ENE_001_REGISTRY_MUTATION, "extension_registered",
-            &format!("Extension {} registered", ext_id), timestamp);
-        self.emit_event(ENE_001_REGISTRY_MUTATION, &ext_id, "registered", timestamp, trace_id);
+        self.append_audit_entry(
+            &ext_id,
+            ENE_001_REGISTRY_MUTATION,
+            "extension_registered",
+            &format!("Extension {} registered", ext_id),
+            timestamp,
+        );
+        self.emit_event(
+            ENE_001_REGISTRY_MUTATION,
+            &ext_id,
+            "registered",
+            timestamp,
+            trace_id,
+        );
 
         Ok(&self.extensions[&ext_id])
     }
 
     /// Get an extension by ID.
-    pub fn get_extension(&mut self, extension_id: &str, timestamp: &str, trace_id: &str) -> Result<&ExtensionRecord, RegistryError> {
-        self.emit_event(ENE_002_REGISTRY_QUERY, extension_id, "get_extension", timestamp, trace_id);
-        self.extensions.get(extension_id)
+    pub fn get_extension(
+        &mut self,
+        extension_id: &str,
+        timestamp: &str,
+        trace_id: &str,
+    ) -> Result<&ExtensionRecord, RegistryError> {
+        self.emit_event(
+            ENE_002_REGISTRY_QUERY,
+            extension_id,
+            "get_extension",
+            timestamp,
+            trace_id,
+        );
+        self.extensions
+            .get(extension_id)
             .ok_or_else(|| RegistryError::NotFound(extension_id.to_owned()))
     }
 
     /// Get version lineage for an extension.
-    pub fn get_lineage(&mut self, extension_id: &str, timestamp: &str, trace_id: &str) -> Result<&[VersionLineageEntry], RegistryError> {
-        self.emit_event(ENE_002_REGISTRY_QUERY, extension_id, "get_lineage", timestamp, trace_id);
-        let record = self.extensions.get(extension_id)
+    pub fn get_lineage(
+        &mut self,
+        extension_id: &str,
+        timestamp: &str,
+        trace_id: &str,
+    ) -> Result<&[VersionLineageEntry], RegistryError> {
+        self.emit_event(
+            ENE_002_REGISTRY_QUERY,
+            extension_id,
+            "get_lineage",
+            timestamp,
+            trace_id,
+        );
+        let record = self
+            .extensions
+            .get(extension_id)
             .ok_or_else(|| RegistryError::NotFound(extension_id.to_owned()))?;
         Ok(&record.lineage)
     }
@@ -236,7 +286,9 @@ impl EcosystemRegistry {
         timestamp: &str,
         trace_id: &str,
     ) -> Result<(), RegistryError> {
-        let record = self.extensions.get_mut(extension_id)
+        let record = self
+            .extensions
+            .get_mut(extension_id)
             .ok_or_else(|| RegistryError::NotFound(extension_id.to_owned()))?;
         if record.metadata.status == ExtensionStatus::Revoked {
             return Err(RegistryError::Revoked(extension_id.to_owned()));
@@ -244,9 +296,20 @@ impl EcosystemRegistry {
         record.metadata.version = entry.version.clone();
         record.metadata.updated_at = timestamp.to_owned();
         record.lineage.push(entry);
-        self.append_audit_entry(extension_id, ENE_001_REGISTRY_MUTATION, "version_added",
-            &format!("Version added to {}", extension_id), timestamp);
-        self.emit_event(ENE_001_REGISTRY_MUTATION, extension_id, "version_added", timestamp, trace_id);
+        self.append_audit_entry(
+            extension_id,
+            ENE_001_REGISTRY_MUTATION,
+            "version_added",
+            &format!("Version added to {}", extension_id),
+            timestamp,
+        );
+        self.emit_event(
+            ENE_001_REGISTRY_MUTATION,
+            extension_id,
+            "version_added",
+            timestamp,
+            trace_id,
+        );
         Ok(())
     }
 
@@ -257,8 +320,16 @@ impl EcosystemRegistry {
         timestamp: &str,
         trace_id: &str,
     ) -> Result<&[CompatibilityEntry], RegistryError> {
-        self.emit_event(ENE_002_REGISTRY_QUERY, extension_id, "get_compatibility", timestamp, trace_id);
-        let record = self.extensions.get(extension_id)
+        self.emit_event(
+            ENE_002_REGISTRY_QUERY,
+            extension_id,
+            "get_compatibility",
+            timestamp,
+            trace_id,
+        );
+        let record = self
+            .extensions
+            .get(extension_id)
             .ok_or_else(|| RegistryError::NotFound(extension_id.to_owned()))?;
         Ok(&record.compatibility)
     }
@@ -271,12 +342,25 @@ impl EcosystemRegistry {
         timestamp: &str,
         trace_id: &str,
     ) -> Result<(), RegistryError> {
-        let record = self.extensions.get_mut(extension_id)
+        let record = self
+            .extensions
+            .get_mut(extension_id)
             .ok_or_else(|| RegistryError::NotFound(extension_id.to_owned()))?;
         record.compatibility.push(entry);
-        self.append_audit_entry(extension_id, ENE_001_REGISTRY_MUTATION, "compat_added",
-            &format!("Compatibility entry added for {}", extension_id), timestamp);
-        self.emit_event(ENE_001_REGISTRY_MUTATION, extension_id, "compat_added", timestamp, trace_id);
+        self.append_audit_entry(
+            extension_id,
+            ENE_001_REGISTRY_MUTATION,
+            "compat_added",
+            &format!("Compatibility entry added for {}", extension_id),
+            timestamp,
+        );
+        self.emit_event(
+            ENE_001_REGISTRY_MUTATION,
+            extension_id,
+            "compat_added",
+            timestamp,
+            trace_id,
+        );
         Ok(())
     }
 
@@ -287,13 +371,26 @@ impl EcosystemRegistry {
         timestamp: &str,
         trace_id: &str,
     ) -> Result<(), RegistryError> {
-        let record = self.extensions.get_mut(extension_id)
+        let record = self
+            .extensions
+            .get_mut(extension_id)
             .ok_or_else(|| RegistryError::NotFound(extension_id.to_owned()))?;
         record.metadata.status = ExtensionStatus::Deprecated;
         record.metadata.updated_at = timestamp.to_owned();
-        self.append_audit_entry(extension_id, ENE_001_REGISTRY_MUTATION, "deprecated",
-            &format!("Extension {} deprecated", extension_id), timestamp);
-        self.emit_event(ENE_001_REGISTRY_MUTATION, extension_id, "deprecated", timestamp, trace_id);
+        self.append_audit_entry(
+            extension_id,
+            ENE_001_REGISTRY_MUTATION,
+            "deprecated",
+            &format!("Extension {} deprecated", extension_id),
+            timestamp,
+        );
+        self.emit_event(
+            ENE_001_REGISTRY_MUTATION,
+            extension_id,
+            "deprecated",
+            timestamp,
+            trace_id,
+        );
         Ok(())
     }
 
@@ -305,14 +402,26 @@ impl EcosystemRegistry {
         timestamp: &str,
         trace_id: &str,
     ) -> Result<(), RegistryError> {
-        let record = self.extensions.get_mut(extension_id)
+        let record = self
+            .extensions
+            .get_mut(extension_id)
             .ok_or_else(|| RegistryError::NotFound(extension_id.to_owned()))?;
         record.metadata.status = ExtensionStatus::Revoked;
         record.metadata.updated_at = timestamp.to_owned();
-        self.append_audit_entry(extension_id, ENE_001_REGISTRY_MUTATION, "revoked",
-            &format!("Extension {} revoked: {}", extension_id, reason), timestamp);
-        self.emit_event(ENE_001_REGISTRY_MUTATION, extension_id,
-            &format!("revoked: {}", reason), timestamp, trace_id);
+        self.append_audit_entry(
+            extension_id,
+            ENE_001_REGISTRY_MUTATION,
+            "revoked",
+            &format!("Extension {} revoked: {}", extension_id, reason),
+            timestamp,
+        );
+        self.emit_event(
+            ENE_001_REGISTRY_MUTATION,
+            extension_id,
+            &format!("revoked: {}", reason),
+            timestamp,
+            trace_id,
+        );
         Ok(())
     }
 
@@ -377,7 +486,9 @@ impl EcosystemRegistry {
         detail: &str,
         timestamp: &str,
     ) {
-        let prev_hash = self.audit_trail.last()
+        let prev_hash = self
+            .audit_trail
+            .last()
             .map_or(String::new(), |e| e.entry_hash.clone());
         let sequence = self.next_sequence;
         self.next_sequence += 1;
@@ -471,7 +582,10 @@ mod tests {
         let meta = make_metadata("ext-1", "pub-1", "key-1");
         reg.register_extension(meta.clone(), &ts(1), "t").unwrap();
         let result = reg.register_extension(meta, &ts(2), "t");
-        assert!(matches!(result, Err(RegistryError::DuplicateRegistration(_))));
+        assert!(matches!(
+            result,
+            Err(RegistryError::DuplicateRegistration(_))
+        ));
     }
 
     #[test]
@@ -543,7 +657,8 @@ mod tests {
         let mut reg = EcosystemRegistry::new();
         let meta = make_metadata("ext-1", "pub-1", "key-1");
         reg.register_extension(meta, &ts(1), "t").unwrap();
-        reg.revoke_extension("ext-1", "malicious", &ts(2), "t").unwrap();
+        reg.revoke_extension("ext-1", "malicious", &ts(2), "t")
+            .unwrap();
         let entry = VersionLineageEntry {
             version: "2.0.0".to_owned(),
             published_at: ts(3),
@@ -595,7 +710,8 @@ mod tests {
         let mut reg = EcosystemRegistry::new();
         let meta = make_metadata("ext-1", "pub-1", "key-1");
         reg.register_extension(meta, &ts(1), "t").unwrap();
-        reg.revoke_extension("ext-1", "compromise", &ts(2), "t").unwrap();
+        reg.revoke_extension("ext-1", "compromise", &ts(2), "t")
+            .unwrap();
         let record = reg.get_extension("ext-1", &ts(3), "t").unwrap();
         assert_eq!(record.metadata.status, ExtensionStatus::Revoked);
     }
@@ -647,7 +763,11 @@ mod tests {
         reg.take_events(); // drain registration events
         let _ = reg.get_extension("ext-1", &ts(2), "trace-q");
         let events = reg.take_events();
-        assert!(events.iter().any(|e| e.event_code == ENE_002_REGISTRY_QUERY));
+        assert!(
+            events
+                .iter()
+                .any(|e| e.event_code == ENE_002_REGISTRY_QUERY)
+        );
     }
 
     #[test]

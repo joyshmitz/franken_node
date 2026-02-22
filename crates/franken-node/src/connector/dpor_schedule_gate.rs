@@ -251,21 +251,25 @@ fn build_epoch_lease_interleave() -> ProtocolModel {
         ProtocolModelId::Custom(SCENARIO_EPOCH_LEASE_INTERLEAVE.into()),
         "Epoch transitions racing with lease renewals",
     );
-    m.add_operation(Operation::new("epoch-propose", "leader", "Propose epoch transition"));
-    m.add_operation(
-        Operation::new("lease-request", "tenant", "Request lease renewal"),
-    );
+    m.add_operation(Operation::new(
+        "epoch-propose",
+        "leader",
+        "Propose epoch transition",
+    ));
+    m.add_operation(Operation::new(
+        "lease-request",
+        "tenant",
+        "Request lease renewal",
+    ));
     m.add_operation(
         Operation::new("epoch-drain", "leader", "Drain in-flight for epoch")
             .with_dep("epoch-propose"),
     );
     m.add_operation(
-        Operation::new("lease-grant", "coordinator", "Grant lease")
-            .with_dep("lease-request"),
+        Operation::new("lease-grant", "coordinator", "Grant lease").with_dep("lease-request"),
     );
     m.add_operation(
-        Operation::new("epoch-commit", "leader", "Commit epoch advance")
-            .with_dep("epoch-drain"),
+        Operation::new("epoch-commit", "leader", "Commit epoch advance").with_dep("epoch-drain"),
     );
     m.add_operation(
         Operation::new("lease-activate", "tenant", "Activate renewed lease")
@@ -293,14 +297,20 @@ fn build_remote_evidence_race() -> ProtocolModel {
         ProtocolModelId::Custom(SCENARIO_REMOTE_EVIDENCE_RACE.into()),
         "Remote computation completion racing with evidence emission",
     );
-    m.add_operation(Operation::new("remote-acquire", "client", "Acquire remote capability"));
+    m.add_operation(Operation::new(
+        "remote-acquire",
+        "client",
+        "Acquire remote capability",
+    ));
     m.add_operation(
         Operation::new("remote-execute", "client", "Execute remote operation")
             .with_dep("remote-acquire"),
     );
-    m.add_operation(
-        Operation::new("evidence-begin", "verifier", "Begin evidence emission"),
-    );
+    m.add_operation(Operation::new(
+        "evidence-begin",
+        "verifier",
+        "Begin evidence emission",
+    ));
     m.add_operation(
         Operation::new("remote-complete", "client", "Complete remote computation")
             .with_dep("remote-execute"),
@@ -335,11 +345,21 @@ fn build_lease_remote_conflict() -> ProtocolModel {
         ProtocolModelId::Custom(SCENARIO_LEASE_REMOTE_CONFLICT.into()),
         "Lease acquisition conflicting with remote capability operations",
     );
-    m.add_operation(Operation::new("lease-req-a", "tenant-a", "Tenant A requests lease"));
-    m.add_operation(Operation::new("lease-req-b", "tenant-b", "Tenant B requests lease"));
-    m.add_operation(
-        Operation::new("remote-cap-check", "coordinator", "Check remote capability state"),
-    );
+    m.add_operation(Operation::new(
+        "lease-req-a",
+        "tenant-a",
+        "Tenant A requests lease",
+    ));
+    m.add_operation(Operation::new(
+        "lease-req-b",
+        "tenant-b",
+        "Tenant B requests lease",
+    ));
+    m.add_operation(Operation::new(
+        "remote-cap-check",
+        "coordinator",
+        "Check remote capability state",
+    ));
     m.add_operation(
         Operation::new("lease-resolve", "coordinator", "Resolve lease conflict")
             .with_dep("lease-req-a")
@@ -368,8 +388,16 @@ fn build_evidence_epoch_barrier() -> ProtocolModel {
         ProtocolModelId::Custom(SCENARIO_EVIDENCE_EPOCH_BARRIER.into()),
         "Evidence emission blocked by epoch barrier transitions",
     );
-    m.add_operation(Operation::new("evidence-prepare", "verifier", "Prepare evidence payload"));
-    m.add_operation(Operation::new("epoch-barrier-raise", "leader", "Raise epoch barrier"));
+    m.add_operation(Operation::new(
+        "evidence-prepare",
+        "verifier",
+        "Prepare evidence payload",
+    ));
+    m.add_operation(Operation::new(
+        "epoch-barrier-raise",
+        "leader",
+        "Raise epoch barrier",
+    ));
     m.add_operation(
         Operation::new("evidence-submit", "verifier", "Submit evidence to log")
             .with_dep("evidence-prepare"),
@@ -387,8 +415,12 @@ fn build_evidence_epoch_barrier() -> ProtocolModel {
             .with_dep("epoch-barrier-drain"),
     );
     m.add_operation(
-        Operation::new("evidence-confirm", "verifier", "Confirm evidence visible post-barrier")
-            .with_dep("evidence-finalize"),
+        Operation::new(
+            "evidence-confirm",
+            "verifier",
+            "Confirm evidence visible post-barrier",
+        )
+        .with_dep("evidence-finalize"),
     );
 
     m.add_safety_property(SafetyProperty::new(
@@ -408,10 +440,16 @@ fn build_epoch_remote_fence() -> ProtocolModel {
         ProtocolModelId::Custom(SCENARIO_EPOCH_REMOTE_FENCE.into()),
         "Epoch fencing token interactions with remote capability lifecycle",
     );
-    m.add_operation(Operation::new("fence-issue", "leader", "Issue fencing token"));
-    m.add_operation(
-        Operation::new("remote-acquire", "client", "Acquire remote capability"),
-    );
+    m.add_operation(Operation::new(
+        "fence-issue",
+        "leader",
+        "Issue fencing token",
+    ));
+    m.add_operation(Operation::new(
+        "remote-acquire",
+        "client",
+        "Acquire remote capability",
+    ));
     m.add_operation(
         Operation::new("fence-validate", "coordinator", "Validate fencing token")
             .with_dep("fence-issue"),
@@ -421,8 +459,12 @@ fn build_epoch_remote_fence() -> ProtocolModel {
             .with_dep("remote-acquire"),
     );
     m.add_operation(
-        Operation::new("fence-epoch-check", "coordinator", "Check fence epoch matches")
-            .with_dep("fence-validate"),
+        Operation::new(
+            "fence-epoch-check",
+            "coordinator",
+            "Check fence epoch matches",
+        )
+        .with_dep("fence-validate"),
     );
     m.add_operation(
         Operation::new("remote-release", "client", "Release remote capability")
@@ -455,24 +497,28 @@ fn build_lease_evidence_sync() -> ProtocolModel {
         "Lease lifecycle synchronized with evidence log operations",
     );
     m.add_operation(Operation::new("lease-acquire", "tenant", "Acquire lease"));
+    m.add_operation(Operation::new(
+        "evidence-log-open",
+        "verifier",
+        "Open evidence log session",
+    ));
     m.add_operation(
-        Operation::new("evidence-log-open", "verifier", "Open evidence log session"),
-    );
-    m.add_operation(
-        Operation::new("lease-use", "tenant", "Use leased resource")
-            .with_dep("lease-acquire"),
+        Operation::new("lease-use", "tenant", "Use leased resource").with_dep("lease-acquire"),
     );
     m.add_operation(
         Operation::new("evidence-append", "verifier", "Append evidence entry")
             .with_dep("evidence-log-open"),
     );
     m.add_operation(
-        Operation::new("lease-release", "tenant", "Release lease")
-            .with_dep("lease-use"),
+        Operation::new("lease-release", "tenant", "Release lease").with_dep("lease-use"),
     );
     m.add_operation(
-        Operation::new("evidence-log-close", "verifier", "Close evidence log session")
-            .with_dep("evidence-append"),
+        Operation::new(
+            "evidence-log-close",
+            "verifier",
+            "Close evidence log session",
+        )
+        .with_dep("evidence-append"),
     );
 
     m.add_safety_property(SafetyProperty::new(
@@ -557,10 +603,16 @@ impl DporScheduleGate {
     /// Register all six canonical scenarios as exploration targets.
     pub fn register_all_scenarios(&mut self) -> Result<(), DporScheduleGateError> {
         let builders: Vec<(&str, fn() -> ProtocolModel)> = vec![
-            (SCENARIO_EPOCH_LEASE_INTERLEAVE, build_epoch_lease_interleave),
+            (
+                SCENARIO_EPOCH_LEASE_INTERLEAVE,
+                build_epoch_lease_interleave,
+            ),
             (SCENARIO_REMOTE_EVIDENCE_RACE, build_remote_evidence_race),
             (SCENARIO_LEASE_REMOTE_CONFLICT, build_lease_remote_conflict),
-            (SCENARIO_EVIDENCE_EPOCH_BARRIER, build_evidence_epoch_barrier),
+            (
+                SCENARIO_EVIDENCE_EPOCH_BARRIER,
+                build_evidence_epoch_barrier,
+            ),
             (SCENARIO_EPOCH_REMOTE_FENCE, build_epoch_remote_fence),
             (SCENARIO_LEASE_EVIDENCE_SYNC, build_lease_evidence_sync),
         ];
@@ -682,7 +734,10 @@ impl DporScheduleGate {
 
         self.events.push(GateEvent::new(
             event_codes::DSG_006,
-            &format!("full gate run: {} scenarios", self.registered_scenarios.len()),
+            &format!(
+                "full gate run: {} scenarios",
+                self.registered_scenarios.len()
+            ),
         ));
 
         let scenario_names: Vec<String> = self.registered_scenarios.clone();
@@ -989,8 +1044,14 @@ mod tests {
 
     #[test]
     fn event_descriptions_valid() {
-        assert_eq!(event_description(event_codes::DSG_001), "schedule gate initialized");
-        assert_eq!(event_description(event_codes::DSG_005), "violation found — counterexample emitted");
+        assert_eq!(
+            event_description(event_codes::DSG_001),
+            "schedule gate initialized"
+        );
+        assert_eq!(
+            event_description(event_codes::DSG_005),
+            "violation found — counterexample emitted"
+        );
         assert_eq!(event_description("unknown"), "unknown event code");
     }
 

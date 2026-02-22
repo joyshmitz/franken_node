@@ -293,7 +293,11 @@ mod tests {
     fn route_metadata_has_five_endpoints() {
         let routes = route_metadata();
         assert_eq!(routes.len(), 5);
-        assert!(routes.iter().all(|r| r.group == EndpointGroup::FleetControl));
+        assert!(
+            routes
+                .iter()
+                .all(|r| r.group == EndpointGroup::FleetControl)
+        );
     }
 
     #[test]
@@ -306,7 +310,10 @@ mod tests {
     #[test]
     fn coordinate_is_experimental() {
         let routes = route_metadata();
-        let coord = routes.iter().find(|r| r.path.contains("coordinate")).unwrap();
+        let coord = routes
+            .iter()
+            .find(|r| r.path.contains("coordinate"))
+            .unwrap();
         assert_eq!(coord.lifecycle, EndpointLifecycle::Experimental);
     }
 
@@ -382,7 +389,10 @@ mod tests {
             .collect();
         for route in mutation_routes {
             assert!(
-                route.policy_hook.required_roles.contains(&"fleet-admin".to_string()),
+                route
+                    .policy_hook
+                    .required_roles
+                    .contains(&"fleet-admin".to_string()),
                 "mutation route {} requires fleet-admin role",
                 route.path
             );

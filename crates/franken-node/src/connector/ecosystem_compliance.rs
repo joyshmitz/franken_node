@@ -195,7 +195,9 @@ impl ComplianceEvidenceStore {
         timestamp: &str,
         trace_id: &str,
     ) -> Result<&ComplianceEvidence, ComplianceError> {
-        let evidence = self.artifacts.get(content_hash)
+        let evidence = self
+            .artifacts
+            .get(content_hash)
             .ok_or_else(|| ComplianceError::NotFound(content_hash.to_owned()))?;
 
         // Tamper-evidence check: recompute hash and verify.
@@ -204,7 +206,10 @@ impl ComplianceEvidenceStore {
             self.events.push(ComplianceEvent {
                 event_code: ENE_008_COMPLIANCE_TAMPER_CHECK_FAIL.to_owned(),
                 content_hash: content_hash.to_owned(),
-                detail: format!("tamper detected: expected {}, got {}", evidence.content_hash, recomputed),
+                detail: format!(
+                    "tamper detected: expected {}, got {}",
+                    evidence.content_hash, recomputed
+                ),
                 timestamp: timestamp.to_owned(),
                 trace_id: trace_id.to_owned(),
             });
@@ -237,7 +242,9 @@ impl ComplianceEvidenceStore {
         timestamp: &str,
         trace_id: &str,
     ) -> Result<bool, ComplianceError> {
-        let evidence = self.artifacts.get(content_hash)
+        let evidence = self
+            .artifacts
+            .get(content_hash)
             .ok_or_else(|| ComplianceError::NotFound(content_hash.to_owned()))?;
 
         let recomputed = Self::compute_content_hash(&evidence.content);
@@ -252,7 +259,10 @@ impl ComplianceEvidenceStore {
         self.events.push(ComplianceEvent {
             event_code: event_code.to_owned(),
             content_hash: content_hash.to_owned(),
-            detail: format!("tamper verification: {}", if valid { "pass" } else { "fail" }),
+            detail: format!(
+                "tamper verification: {}",
+                if valid { "pass" } else { "fail" }
+            ),
             timestamp: timestamp.to_owned(),
             trace_id: trace_id.to_owned(),
         });
@@ -263,7 +273,8 @@ impl ComplianceEvidenceStore {
     /// Search the evidence index by source.
     #[must_use]
     pub fn search_by_source(&self, source: EvidenceSource) -> Vec<ComplianceIndexEntry> {
-        self.artifacts.values()
+        self.artifacts
+            .values()
             .filter(|e| e.source == source)
             .map(|e| ComplianceIndexEntry {
                 content_hash: e.content_hash.clone(),
@@ -279,7 +290,8 @@ impl ComplianceEvidenceStore {
     /// Search the evidence index by publisher.
     #[must_use]
     pub fn search_by_publisher(&self, publisher_id: &str) -> Vec<ComplianceIndexEntry> {
-        self.artifacts.values()
+        self.artifacts
+            .values()
             .filter(|e| e.publisher_id == publisher_id)
             .map(|e| ComplianceIndexEntry {
                 content_hash: e.content_hash.clone(),
@@ -295,7 +307,8 @@ impl ComplianceEvidenceStore {
     /// Search the evidence index by tag.
     #[must_use]
     pub fn search_by_tag(&self, tag: &str) -> Vec<ComplianceIndexEntry> {
-        self.artifacts.values()
+        self.artifacts
+            .values()
             .filter(|e| e.tags.iter().any(|t| t == tag))
             .map(|e| ComplianceIndexEntry {
                 content_hash: e.content_hash.clone(),
@@ -317,7 +330,8 @@ impl ComplianceEvidenceStore {
     /// List all evidence artifacts (index view).
     #[must_use]
     pub fn list_evidence(&self) -> Vec<ComplianceIndexEntry> {
-        self.artifacts.values()
+        self.artifacts
+            .values()
             .map(|e| ComplianceIndexEntry {
                 content_hash: e.content_hash.clone(),
                 publisher_id: e.publisher_id.clone(),
@@ -369,11 +383,18 @@ mod tests {
     #[test]
     fn test_store_evidence() {
         let mut store = ComplianceEvidenceStore::new();
-        let hash = store.store_evidence(
-            "pub-1", EvidenceSource::MigrationSingularity,
-            "Migration Test", r#"{"pass": true}"#,
-            None, &["migration".to_owned()], &ts(1), "trace-1",
-        ).unwrap();
+        let hash = store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::MigrationSingularity,
+                "Migration Test",
+                r#"{"pass": true}"#,
+                None,
+                &["migration".to_owned()],
+                &ts(1),
+                "trace-1",
+            )
+            .unwrap();
         assert!(hash.starts_with("sha256:"));
         assert_eq!(store.evidence_count(), 1);
     }
@@ -381,15 +402,27 @@ mod tests {
     #[test]
     fn test_store_duplicate_rejected() {
         let mut store = ComplianceEvidenceStore::new();
-        store.store_evidence(
-            "pub-1", EvidenceSource::TrustFabric,
-            "Evidence A", "same content",
-            None, &[], &ts(1), "t",
-        ).unwrap();
+        store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::TrustFabric,
+                "Evidence A",
+                "same content",
+                None,
+                &[],
+                &ts(1),
+                "t",
+            )
+            .unwrap();
         let result = store.store_evidence(
-            "pub-2", EvidenceSource::TrustFabric,
-            "Evidence B", "same content",
-            None, &[], &ts(2), "t",
+            "pub-2",
+            EvidenceSource::TrustFabric,
+            "Evidence B",
+            "same content",
+            None,
+            &[],
+            &ts(2),
+            "t",
         );
         assert!(matches!(result, Err(ComplianceError::DuplicateEvidence(_))));
     }
@@ -397,11 +430,18 @@ mod tests {
     #[test]
     fn test_retrieve_evidence() {
         let mut store = ComplianceEvidenceStore::new();
-        let hash = store.store_evidence(
-            "pub-1", EvidenceSource::MigrationSingularity,
-            "Test Evidence", "test payload",
-            Some("signed-attestation"), &["test".to_owned()], &ts(1), "t",
-        ).unwrap();
+        let hash = store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::MigrationSingularity,
+                "Test Evidence",
+                "test payload",
+                Some("signed-attestation"),
+                &["test".to_owned()],
+                &ts(1),
+                "t",
+            )
+            .unwrap();
         let evidence = store.retrieve_evidence(&hash, &ts(2), "t").unwrap();
         assert_eq!(evidence.publisher_id, "pub-1");
         assert_eq!(evidence.content, "test payload");
@@ -418,11 +458,18 @@ mod tests {
     #[test]
     fn test_tamper_evidence_verification_pass() {
         let mut store = ComplianceEvidenceStore::new();
-        let hash = store.store_evidence(
-            "pub-1", EvidenceSource::TrustFabric,
-            "Evidence", "content",
-            None, &[], &ts(1), "t",
-        ).unwrap();
+        let hash = store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::TrustFabric,
+                "Evidence",
+                "content",
+                None,
+                &[],
+                &ts(1),
+                "t",
+            )
+            .unwrap();
         let valid = store.verify_tamper_evidence(&hash, &ts(2), "t").unwrap();
         assert!(valid);
     }
@@ -437,16 +484,30 @@ mod tests {
     #[test]
     fn test_search_by_source() {
         let mut store = ComplianceEvidenceStore::new();
-        store.store_evidence(
-            "pub-1", EvidenceSource::MigrationSingularity,
-            "Migration Ev", "m1",
-            None, &[], &ts(1), "t",
-        ).unwrap();
-        store.store_evidence(
-            "pub-1", EvidenceSource::TrustFabric,
-            "Trust Ev", "t1",
-            None, &[], &ts(2), "t",
-        ).unwrap();
+        store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::MigrationSingularity,
+                "Migration Ev",
+                "m1",
+                None,
+                &[],
+                &ts(1),
+                "t",
+            )
+            .unwrap();
+        store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::TrustFabric,
+                "Trust Ev",
+                "t1",
+                None,
+                &[],
+                &ts(2),
+                "t",
+            )
+            .unwrap();
         let results = store.search_by_source(EvidenceSource::MigrationSingularity);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].title, "Migration Ev");
@@ -455,16 +516,30 @@ mod tests {
     #[test]
     fn test_search_by_publisher() {
         let mut store = ComplianceEvidenceStore::new();
-        store.store_evidence(
-            "pub-1", EvidenceSource::External,
-            "Ev A", "a",
-            None, &[], &ts(1), "t",
-        ).unwrap();
-        store.store_evidence(
-            "pub-2", EvidenceSource::External,
-            "Ev B", "b",
-            None, &[], &ts(2), "t",
-        ).unwrap();
+        store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::External,
+                "Ev A",
+                "a",
+                None,
+                &[],
+                &ts(1),
+                "t",
+            )
+            .unwrap();
+        store
+            .store_evidence(
+                "pub-2",
+                EvidenceSource::External,
+                "Ev B",
+                "b",
+                None,
+                &[],
+                &ts(2),
+                "t",
+            )
+            .unwrap();
         let results = store.search_by_publisher("pub-1");
         assert_eq!(results.len(), 1);
     }
@@ -472,11 +547,18 @@ mod tests {
     #[test]
     fn test_search_by_tag() {
         let mut store = ComplianceEvidenceStore::new();
-        store.store_evidence(
-            "pub-1", EvidenceSource::External,
-            "Tagged", "content",
-            None, &["security".to_owned(), "audit".to_owned()], &ts(1), "t",
-        ).unwrap();
+        store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::External,
+                "Tagged",
+                "content",
+                None,
+                &["security".to_owned(), "audit".to_owned()],
+                &ts(1),
+                "t",
+            )
+            .unwrap();
         let results = store.search_by_tag("security");
         assert_eq!(results.len(), 1);
         let results2 = store.search_by_tag("nonexistent");
@@ -486,52 +568,101 @@ mod tests {
     #[test]
     fn test_list_evidence() {
         let mut store = ComplianceEvidenceStore::new();
-        store.store_evidence(
-            "pub-1", EvidenceSource::External,
-            "A", "a", None, &[], &ts(1), "t",
-        ).unwrap();
-        store.store_evidence(
-            "pub-2", EvidenceSource::External,
-            "B", "b", None, &[], &ts(2), "t",
-        ).unwrap();
+        store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::External,
+                "A",
+                "a",
+                None,
+                &[],
+                &ts(1),
+                "t",
+            )
+            .unwrap();
+        store
+            .store_evidence(
+                "pub-2",
+                EvidenceSource::External,
+                "B",
+                "b",
+                None,
+                &[],
+                &ts(2),
+                "t",
+            )
+            .unwrap();
         assert_eq!(store.list_evidence().len(), 2);
     }
 
     #[test]
     fn test_events_emitted_on_store() {
         let mut store = ComplianceEvidenceStore::new();
-        store.store_evidence(
-            "pub-1", EvidenceSource::External,
-            "Test", "content",
-            None, &[], &ts(1), "trace-s",
-        ).unwrap();
+        store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::External,
+                "Test",
+                "content",
+                None,
+                &[],
+                &ts(1),
+                "trace-s",
+            )
+            .unwrap();
         let events = store.take_events();
-        assert!(events.iter().any(|e| e.event_code == ENE_005_COMPLIANCE_EVIDENCE_STORED));
+        assert!(
+            events
+                .iter()
+                .any(|e| e.event_code == ENE_005_COMPLIANCE_EVIDENCE_STORED)
+        );
     }
 
     #[test]
     fn test_events_emitted_on_retrieve() {
         let mut store = ComplianceEvidenceStore::new();
-        let hash = store.store_evidence(
-            "pub-1", EvidenceSource::External,
-            "Test", "content",
-            None, &[], &ts(1), "t",
-        ).unwrap();
+        let hash = store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::External,
+                "Test",
+                "content",
+                None,
+                &[],
+                &ts(1),
+                "t",
+            )
+            .unwrap();
         store.take_events(); // drain store events
         store.retrieve_evidence(&hash, &ts(2), "t").unwrap();
         let events = store.take_events();
-        assert!(events.iter().any(|e| e.event_code == ENE_007_COMPLIANCE_TAMPER_CHECK_PASS));
-        assert!(events.iter().any(|e| e.event_code == ENE_006_COMPLIANCE_EVIDENCE_RETRIEVED));
+        assert!(
+            events
+                .iter()
+                .any(|e| e.event_code == ENE_007_COMPLIANCE_TAMPER_CHECK_PASS)
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| e.event_code == ENE_006_COMPLIANCE_EVIDENCE_RETRIEVED)
+        );
     }
 
     #[test]
     fn test_take_events_drains() {
         let mut store = ComplianceEvidenceStore::new();
-        store.store_evidence(
-            "pub-1", EvidenceSource::External,
-            "Test", "content",
-            None, &[], &ts(1), "t",
-        ).unwrap();
+        store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::External,
+                "Test",
+                "content",
+                None,
+                &[],
+                &ts(1),
+                "t",
+            )
+            .unwrap();
         let e1 = store.take_events();
         assert!(!e1.is_empty());
         let e2 = store.take_events();
@@ -546,10 +677,19 @@ mod tests {
 
     #[test]
     fn test_evidence_source_display() {
-        assert_eq!(EvidenceSource::MigrationSingularity.to_string(), "migration_singularity");
+        assert_eq!(
+            EvidenceSource::MigrationSingularity.to_string(),
+            "migration_singularity"
+        );
         assert_eq!(EvidenceSource::TrustFabric.to_string(), "trust_fabric");
-        assert_eq!(EvidenceSource::VerifierEconomy.to_string(), "verifier_economy");
-        assert_eq!(EvidenceSource::CompatibilityCore.to_string(), "compatibility_core");
+        assert_eq!(
+            EvidenceSource::VerifierEconomy.to_string(),
+            "verifier_economy"
+        );
+        assert_eq!(
+            EvidenceSource::CompatibilityCore.to_string(),
+            "compatibility_core"
+        );
         assert_eq!(EvidenceSource::SecurityAudit.to_string(), "security_audit");
         assert_eq!(EvidenceSource::External.to_string(), "external");
     }
@@ -575,15 +715,18 @@ mod tests {
     #[test]
     fn test_cross_program_migration_singularity_evidence() {
         let mut store = ComplianceEvidenceStore::new();
-        let hash = store.store_evidence(
-            "migration-system",
-            EvidenceSource::MigrationSingularity,
-            "Migration Run Results",
-            r#"{"migration_id":"m-001","success":true,"pass_rate":0.98}"#,
-            Some("signed-by-migration-system"),
-            &["migration".to_owned(), "10.3".to_owned()],
-            &ts(1), "t",
-        ).unwrap();
+        let hash = store
+            .store_evidence(
+                "migration-system",
+                EvidenceSource::MigrationSingularity,
+                "Migration Run Results",
+                r#"{"migration_id":"m-001","success":true,"pass_rate":0.98}"#,
+                Some("signed-by-migration-system"),
+                &["migration".to_owned(), "10.3".to_owned()],
+                &ts(1),
+                "t",
+            )
+            .unwrap();
         let evidence = store.retrieve_evidence(&hash, &ts(2), "t").unwrap();
         assert_eq!(evidence.source, EvidenceSource::MigrationSingularity);
         assert!(evidence.content.contains("migration_id"));
@@ -592,15 +735,18 @@ mod tests {
     #[test]
     fn test_cross_program_trust_fabric_evidence() {
         let mut store = ComplianceEvidenceStore::new();
-        let hash = store.store_evidence(
-            "trust-fabric",
-            EvidenceSource::TrustFabric,
-            "Trust Artifact Validity Report",
-            r#"{"fabric_id":"tf-001","valid_artifacts":42,"total_artifacts":45}"#,
-            Some("signed-by-trust-fabric"),
-            &["trust".to_owned(), "10.13".to_owned()],
-            &ts(1), "t",
-        ).unwrap();
+        let hash = store
+            .store_evidence(
+                "trust-fabric",
+                EvidenceSource::TrustFabric,
+                "Trust Artifact Validity Report",
+                r#"{"fabric_id":"tf-001","valid_artifacts":42,"total_artifacts":45}"#,
+                Some("signed-by-trust-fabric"),
+                &["trust".to_owned(), "10.13".to_owned()],
+                &ts(1),
+                "t",
+            )
+            .unwrap();
         let evidence = store.retrieve_evidence(&hash, &ts(2), "t").unwrap();
         assert_eq!(evidence.source, EvidenceSource::TrustFabric);
         assert!(evidence.content.contains("fabric_id"));
@@ -609,13 +755,22 @@ mod tests {
     #[test]
     fn test_store_with_attestation() {
         let mut store = ComplianceEvidenceStore::new();
-        let hash = store.store_evidence(
-            "pub-1", EvidenceSource::SecurityAudit,
-            "Audit Report", "audit data",
-            Some("attestation-signature-abc"),
-            &["audit".to_owned()], &ts(1), "t",
-        ).unwrap();
+        let hash = store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::SecurityAudit,
+                "Audit Report",
+                "audit data",
+                Some("attestation-signature-abc"),
+                &["audit".to_owned()],
+                &ts(1),
+                "t",
+            )
+            .unwrap();
         let evidence = store.retrieve_evidence(&hash, &ts(2), "t").unwrap();
-        assert_eq!(evidence.attestation.as_deref(), Some("attestation-signature-abc"));
+        assert_eq!(
+            evidence.attestation.as_deref(),
+            Some("attestation-signature-abc")
+        );
     }
 }

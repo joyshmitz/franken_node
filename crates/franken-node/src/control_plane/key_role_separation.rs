@@ -369,12 +369,12 @@ impl KeyRoleRegistry {
         authority: &str,
         trace_id: &str,
     ) -> Result<KeyRoleBinding, KeyRoleSeparationError> {
-        let binding = self
-            .active
-            .remove(key_id)
-            .ok_or_else(|| KeyRoleSeparationError::KeyNotFound {
-                key_id: key_id.to_string(),
-            })?;
+        let binding =
+            self.active
+                .remove(key_id)
+                .ok_or_else(|| KeyRoleSeparationError::KeyNotFound {
+                    key_id: key_id.to_string(),
+                })?;
 
         self.events.push(KeyRoleEvent::revoked(
             key_id,
@@ -657,7 +657,15 @@ mod tests {
     #[test]
     fn bind_signing_key() {
         let mut reg = KeyRoleRegistry::new();
-        let result = reg.bind("k-sign", KeyRole::Signing, pub_key(1), "auth-root", 100, 3600, &tid(1));
+        let result = reg.bind(
+            "k-sign",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth-root",
+            100,
+            3600,
+            &tid(1),
+        );
         assert!(result.is_ok());
         let b = result.unwrap();
         assert_eq!(b.role, KeyRole::Signing);
@@ -667,7 +675,15 @@ mod tests {
     #[test]
     fn bind_encryption_key() {
         let mut reg = KeyRoleRegistry::new();
-        let result = reg.bind("k-enc", KeyRole::Encryption, pub_key(2), "auth-root", 100, 3600, &tid(1));
+        let result = reg.bind(
+            "k-enc",
+            KeyRole::Encryption,
+            pub_key(2),
+            "auth-root",
+            100,
+            3600,
+            &tid(1),
+        );
         assert!(result.is_ok());
         assert_eq!(reg.active_count(), 1);
     }
@@ -675,7 +691,15 @@ mod tests {
     #[test]
     fn bind_issuance_key() {
         let mut reg = KeyRoleRegistry::new();
-        let result = reg.bind("k-iss", KeyRole::Issuance, pub_key(3), "auth-root", 100, 3600, &tid(1));
+        let result = reg.bind(
+            "k-iss",
+            KeyRole::Issuance,
+            pub_key(3),
+            "auth-root",
+            100,
+            3600,
+            &tid(1),
+        );
         assert!(result.is_ok());
         assert_eq!(reg.active_count(), 1);
     }
@@ -683,7 +707,15 @@ mod tests {
     #[test]
     fn bind_attestation_key() {
         let mut reg = KeyRoleRegistry::new();
-        let result = reg.bind("k-att", KeyRole::Attestation, pub_key(4), "auth-root", 100, 3600, &tid(1));
+        let result = reg.bind(
+            "k-att",
+            KeyRole::Attestation,
+            pub_key(4),
+            "auth-root",
+            100,
+            3600,
+            &tid(1),
+        );
         assert!(result.is_ok());
         assert_eq!(reg.active_count(), 1);
     }
@@ -693,7 +725,16 @@ mod tests {
         let mut reg = KeyRoleRegistry::new();
         for (i, role) in KeyRole::all().iter().enumerate() {
             let kid = format!("k-{i}");
-            reg.bind(&kid, *role, pub_key(i as u8), "auth", 100, 3600, &tid(i as u32)).unwrap();
+            reg.bind(
+                &kid,
+                *role,
+                pub_key(i as u8),
+                "auth",
+                100,
+                3600,
+                &tid(i as u32),
+            )
+            .unwrap();
         }
         assert_eq!(reg.active_count(), 4);
     }
@@ -701,9 +742,26 @@ mod tests {
     #[test]
     fn bind_idempotent_same_role() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-1", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
+        reg.bind(
+            "k-1",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
         // Re-binding same key to same role is idempotent.
-        let result = reg.bind("k-1", KeyRole::Signing, pub_key(1), "auth", 200, 7200, &tid(2));
+        let result = reg.bind(
+            "k-1",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            200,
+            7200,
+            &tid(2),
+        );
         assert!(result.is_ok());
         assert_eq!(reg.active_count(), 1);
     }
@@ -713,8 +771,26 @@ mod tests {
     #[test]
     fn role_exclusivity_violation() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-shared", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
-        let err = reg.bind("k-shared", KeyRole::Encryption, pub_key(1), "auth", 200, 3600, &tid(2))
+        reg.bind(
+            "k-shared",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
+        let err = reg
+            .bind(
+                "k-shared",
+                KeyRole::Encryption,
+                pub_key(1),
+                "auth",
+                200,
+                3600,
+                &tid(2),
+            )
             .unwrap_err();
         assert_eq!(err.code(), "KRS_ROLE_SEPARATION_VIOLATION");
         match err {
@@ -742,8 +818,11 @@ mod tests {
                 }
                 let mut reg = KeyRoleRegistry::new();
                 let kid = format!("k-pair-{i}-{j}");
-                reg.bind(&kid, *r1, pub_key(i as u8), "auth", 100, 3600, &tid(1)).unwrap();
-                let err = reg.bind(&kid, *r2, pub_key(i as u8), "auth", 200, 3600, &tid(2)).unwrap_err();
+                reg.bind(&kid, *r1, pub_key(i as u8), "auth", 100, 3600, &tid(1))
+                    .unwrap();
+                let err = reg
+                    .bind(&kid, *r2, pub_key(i as u8), "auth", 200, 3600, &tid(2))
+                    .unwrap_err();
                 assert_eq!(err.code(), "KRS_ROLE_SEPARATION_VIOLATION");
             }
         }
@@ -754,7 +833,16 @@ mod tests {
     #[test]
     fn lookup_existing_key() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-look", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
+        reg.bind(
+            "k-look",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
         let binding = reg.lookup("k-look");
         assert!(binding.is_some());
         assert_eq!(binding.unwrap().role, KeyRole::Signing);
@@ -769,8 +857,26 @@ mod tests {
     #[test]
     fn lookup_by_role_returns_matching() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-s1", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
-        reg.bind("k-e1", KeyRole::Encryption, pub_key(2), "auth", 100, 3600, &tid(2)).unwrap();
+        reg.bind(
+            "k-s1",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
+        reg.bind(
+            "k-e1",
+            KeyRole::Encryption,
+            pub_key(2),
+            "auth",
+            100,
+            3600,
+            &tid(2),
+        )
+        .unwrap();
 
         let signing_keys = reg.lookup_by_role(KeyRole::Signing);
         assert_eq!(signing_keys.len(), 1);
@@ -784,7 +890,16 @@ mod tests {
     #[test]
     fn lookup_by_role_empty_for_unbound_role() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-s1", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
+        reg.bind(
+            "k-s1",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
         assert_eq!(reg.lookup_by_role(KeyRole::Issuance).len(), 0);
     }
 
@@ -793,7 +908,16 @@ mod tests {
     #[test]
     fn revoke_active_key() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-rev", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
+        reg.bind(
+            "k-rev",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
         let revoked = reg.revoke("k-rev", "auth-admin", &tid(2)).unwrap();
         assert_eq!(revoked.key_id, "k-rev");
         assert_eq!(revoked.role, KeyRole::Signing);
@@ -812,7 +936,16 @@ mod tests {
     #[test]
     fn revoke_and_relookup_returns_none() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-rr", KeyRole::Encryption, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
+        reg.bind(
+            "k-rr",
+            KeyRole::Encryption,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
         reg.revoke("k-rr", "auth", &tid(2)).unwrap();
         assert!(reg.lookup("k-rr").is_none());
         assert_eq!(reg.lookup_by_role(KeyRole::Encryption).len(), 0);
@@ -821,8 +954,26 @@ mod tests {
     #[test]
     fn revoke_preserves_other_bindings() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-a", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
-        reg.bind("k-b", KeyRole::Encryption, pub_key(2), "auth", 100, 3600, &tid(2)).unwrap();
+        reg.bind(
+            "k-a",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
+        reg.bind(
+            "k-b",
+            KeyRole::Encryption,
+            pub_key(2),
+            "auth",
+            100,
+            3600,
+            &tid(2),
+        )
+        .unwrap();
         reg.revoke("k-a", "auth", &tid(3)).unwrap();
         assert!(reg.lookup("k-a").is_none());
         assert!(reg.lookup("k-b").is_some());
@@ -834,9 +985,25 @@ mod tests {
     #[test]
     fn rotate_key_successfully() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-old", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
+        reg.bind(
+            "k-old",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
         let result = reg.rotate(
-            KeyRole::Signing, "k-old", "k-new", pub_key(2), "auth-admin", 200, 7200, &tid(2),
+            KeyRole::Signing,
+            "k-old",
+            "k-new",
+            pub_key(2),
+            "auth-admin",
+            200,
+            7200,
+            &tid(2),
         );
         assert!(result.is_ok());
         // Old key revoked.
@@ -852,14 +1019,35 @@ mod tests {
     #[test]
     fn rotation_atomicity_old_revoked_new_bound() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-old-atom", KeyRole::Encryption, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
+        reg.bind(
+            "k-old-atom",
+            KeyRole::Encryption,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
         reg.rotate(
-            KeyRole::Encryption, "k-old-atom", "k-new-atom", pub_key(2), "auth", 200, 7200, &tid(2),
-        ).unwrap();
+            KeyRole::Encryption,
+            "k-old-atom",
+            "k-new-atom",
+            pub_key(2),
+            "auth",
+            200,
+            7200,
+            &tid(2),
+        )
+        .unwrap();
 
         // Verify atomicity: old is in revoked set.
         assert!(reg.lookup("k-old-atom").is_none());
-        assert!(reg.revoked_bindings().iter().any(|b| b.key_id == "k-old-atom"));
+        assert!(
+            reg.revoked_bindings()
+                .iter()
+                .any(|b| b.key_id == "k-old-atom")
+        );
         // New is in active set.
         assert!(reg.lookup("k-new-atom").is_some());
     }
@@ -867,19 +1055,46 @@ mod tests {
     #[test]
     fn rotate_nonexistent_old_key_fails() {
         let mut reg = KeyRoleRegistry::new();
-        let err = reg.rotate(
-            KeyRole::Signing, "no-such-key", "k-new", pub_key(1), "auth", 100, 3600, &tid(1),
-        ).unwrap_err();
+        let err = reg
+            .rotate(
+                KeyRole::Signing,
+                "no-such-key",
+                "k-new",
+                pub_key(1),
+                "auth",
+                100,
+                3600,
+                &tid(1),
+            )
+            .unwrap_err();
         assert_eq!(err.code(), "KRS_ROTATION_FAILED");
     }
 
     #[test]
     fn rotate_wrong_role_fails() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-wr", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
-        let err = reg.rotate(
-            KeyRole::Encryption, "k-wr", "k-new", pub_key(2), "auth", 200, 3600, &tid(2),
-        ).unwrap_err();
+        reg.bind(
+            "k-wr",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
+        let err = reg
+            .rotate(
+                KeyRole::Encryption,
+                "k-wr",
+                "k-new",
+                pub_key(2),
+                "auth",
+                200,
+                3600,
+                &tid(2),
+            )
+            .unwrap_err();
         assert_eq!(err.code(), "KRS_ROTATION_FAILED");
         // Original binding unchanged.
         assert!(reg.lookup("k-wr").is_some());
@@ -888,11 +1103,38 @@ mod tests {
     #[test]
     fn rotate_new_key_already_bound_different_role() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-old-r", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
-        reg.bind("k-new-r", KeyRole::Encryption, pub_key(2), "auth", 100, 3600, &tid(2)).unwrap();
-        let err = reg.rotate(
-            KeyRole::Signing, "k-old-r", "k-new-r", pub_key(3), "auth", 200, 3600, &tid(3),
-        ).unwrap_err();
+        reg.bind(
+            "k-old-r",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
+        reg.bind(
+            "k-new-r",
+            KeyRole::Encryption,
+            pub_key(2),
+            "auth",
+            100,
+            3600,
+            &tid(2),
+        )
+        .unwrap();
+        let err = reg
+            .rotate(
+                KeyRole::Signing,
+                "k-old-r",
+                "k-new-r",
+                pub_key(3),
+                "auth",
+                200,
+                3600,
+                &tid(3),
+            )
+            .unwrap_err();
         assert_eq!(err.code(), "KRS_ROLE_SEPARATION_VIOLATION");
         // Both original bindings unchanged.
         assert!(reg.lookup("k-old-r").is_some());
@@ -904,7 +1146,16 @@ mod tests {
     #[test]
     fn verify_role_pass() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-vr", KeyRole::Issuance, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
+        reg.bind(
+            "k-vr",
+            KeyRole::Issuance,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
         let result = reg.verify_role("k-vr", KeyRole::Issuance, &tid(2));
         assert!(result.is_ok());
     }
@@ -912,8 +1163,19 @@ mod tests {
     #[test]
     fn verify_role_mismatch() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-mm", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
-        let err = reg.verify_role("k-mm", KeyRole::Encryption, &tid(2)).unwrap_err();
+        reg.bind(
+            "k-mm",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
+        let err = reg
+            .verify_role("k-mm", KeyRole::Encryption, &tid(2))
+            .unwrap_err();
         assert_eq!(err.code(), "KRS_KEY_ROLE_MISMATCH");
         match err {
             KeyRoleSeparationError::KeyRoleMismatch {
@@ -932,7 +1194,9 @@ mod tests {
     #[test]
     fn verify_role_not_found() {
         let mut reg = KeyRoleRegistry::new();
-        let err = reg.verify_role("no-key", KeyRole::Signing, &tid(1)).unwrap_err();
+        let err = reg
+            .verify_role("no-key", KeyRole::Signing, &tid(1))
+            .unwrap_err();
         assert_eq!(err.code(), "KRS_KEY_NOT_FOUND");
     }
 
@@ -941,7 +1205,16 @@ mod tests {
         let mut reg = KeyRoleRegistry::new();
         for (i, role) in KeyRole::all().iter().enumerate() {
             let kid = format!("k-vr-{i}");
-            reg.bind(&kid, *role, pub_key(i as u8), "auth", 100, 3600, &tid(i as u32)).unwrap();
+            reg.bind(
+                &kid,
+                *role,
+                pub_key(i as u8),
+                "auth",
+                100,
+                3600,
+                &tid(i as u32),
+            )
+            .unwrap();
         }
         for (i, role) in KeyRole::all().iter().enumerate() {
             let kid = format!("k-vr-{i}");
@@ -952,7 +1225,16 @@ mod tests {
     #[test]
     fn verify_role_cross_role_rejected() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-cross", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
+        reg.bind(
+            "k-cross",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
         for role in [KeyRole::Encryption, KeyRole::Issuance, KeyRole::Attestation] {
             let err = reg.verify_role("k-cross", role, &tid(2)).unwrap_err();
             assert_eq!(err.code(), "KRS_KEY_ROLE_MISMATCH");
@@ -964,7 +1246,16 @@ mod tests {
     #[test]
     fn bind_emits_event() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-ev", KeyRole::Signing, pub_key(1), "auth-root", 100, 3600, &tid(1)).unwrap();
+        reg.bind(
+            "k-ev",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth-root",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
         assert_eq!(reg.event_count(), 1);
         let ev = &reg.events()[0];
         assert_eq!(ev.event_code, event_codes::KRS_KEY_ROLE_BOUND);
@@ -976,7 +1267,16 @@ mod tests {
     #[test]
     fn revoke_emits_event() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-re", KeyRole::Encryption, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
+        reg.bind(
+            "k-re",
+            KeyRole::Encryption,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
         reg.revoke("k-re", "auth-admin", &tid(2)).unwrap();
         assert_eq!(reg.event_count(), 2);
         let ev = &reg.events()[1];
@@ -987,10 +1287,27 @@ mod tests {
     #[test]
     fn rotate_emits_event() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-rot-old", KeyRole::Issuance, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
+        reg.bind(
+            "k-rot-old",
+            KeyRole::Issuance,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
         reg.rotate(
-            KeyRole::Issuance, "k-rot-old", "k-rot-new", pub_key(2), "auth", 200, 7200, &tid(2),
-        ).unwrap();
+            KeyRole::Issuance,
+            "k-rot-old",
+            "k-rot-new",
+            pub_key(2),
+            "auth",
+            200,
+            7200,
+            &tid(2),
+        )
+        .unwrap();
         // bind + rotate = 2 events
         assert!(reg.event_count() >= 2);
         let last = reg.events().last().unwrap();
@@ -1002,7 +1319,16 @@ mod tests {
     #[test]
     fn violation_emits_critical_event() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-viol", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
+        reg.bind(
+            "k-viol",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
         let _ = reg.verify_role("k-viol", KeyRole::Encryption, &tid(2));
         let violation_events: Vec<_> = reg
             .events()
@@ -1016,7 +1342,16 @@ mod tests {
     #[test]
     fn events_contain_trace_id() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-tid", KeyRole::Attestation, pub_key(1), "auth", 100, 3600, "trace-special").unwrap();
+        reg.bind(
+            "k-tid",
+            KeyRole::Attestation,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            "trace-special",
+        )
+        .unwrap();
         assert_eq!(reg.events()[0].trace_id, "trace-special");
     }
 
@@ -1117,10 +1452,46 @@ mod tests {
         let mut reg = KeyRoleRegistry::new();
 
         // Bind 4 keys for 4 roles.
-        reg.bind("k-s", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
-        reg.bind("k-e", KeyRole::Encryption, pub_key(2), "auth", 100, 3600, &tid(2)).unwrap();
-        reg.bind("k-i", KeyRole::Issuance, pub_key(3), "auth", 100, 3600, &tid(3)).unwrap();
-        reg.bind("k-a", KeyRole::Attestation, pub_key(4), "auth", 100, 3600, &tid(4)).unwrap();
+        reg.bind(
+            "k-s",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
+        reg.bind(
+            "k-e",
+            KeyRole::Encryption,
+            pub_key(2),
+            "auth",
+            100,
+            3600,
+            &tid(2),
+        )
+        .unwrap();
+        reg.bind(
+            "k-i",
+            KeyRole::Issuance,
+            pub_key(3),
+            "auth",
+            100,
+            3600,
+            &tid(3),
+        )
+        .unwrap();
+        reg.bind(
+            "k-a",
+            KeyRole::Attestation,
+            pub_key(4),
+            "auth",
+            100,
+            3600,
+            &tid(4),
+        )
+        .unwrap();
         assert_eq!(reg.active_count(), 4);
 
         // Verify roles.
@@ -1128,10 +1499,23 @@ mod tests {
         assert!(reg.verify_role("k-e", KeyRole::Encryption, &tid(6)).is_ok());
 
         // Cross-role is rejected.
-        assert!(reg.verify_role("k-s", KeyRole::Encryption, &tid(7)).is_err());
+        assert!(
+            reg.verify_role("k-s", KeyRole::Encryption, &tid(7))
+                .is_err()
+        );
 
         // Rotate signing key.
-        reg.rotate(KeyRole::Signing, "k-s", "k-s2", pub_key(5), "auth", 200, 7200, &tid(8)).unwrap();
+        reg.rotate(
+            KeyRole::Signing,
+            "k-s",
+            "k-s2",
+            pub_key(5),
+            "auth",
+            200,
+            7200,
+            &tid(8),
+        )
+        .unwrap();
         assert!(reg.lookup("k-s").is_none());
         assert!(reg.lookup("k-s2").is_some());
 
@@ -1146,7 +1530,16 @@ mod tests {
     #[test]
     fn double_revoke_returns_not_found() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-dr", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
+        reg.bind(
+            "k-dr",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
         reg.revoke("k-dr", "auth", &tid(2)).unwrap();
         let err = reg.revoke("k-dr", "auth", &tid(3)).unwrap_err();
         assert_eq!(err.code(), "KRS_KEY_NOT_FOUND");
@@ -1155,10 +1548,27 @@ mod tests {
     #[test]
     fn rebind_after_revoke_succeeds() {
         let mut reg = KeyRoleRegistry::new();
-        reg.bind("k-rb", KeyRole::Signing, pub_key(1), "auth", 100, 3600, &tid(1)).unwrap();
+        reg.bind(
+            "k-rb",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
         reg.revoke("k-rb", "auth", &tid(2)).unwrap();
         // Can rebind the same key_id after revocation.
-        let result = reg.bind("k-rb", KeyRole::Encryption, pub_key(1), "auth", 200, 3600, &tid(3));
+        let result = reg.bind(
+            "k-rb",
+            KeyRole::Encryption,
+            pub_key(1),
+            "auth",
+            200,
+            3600,
+            &tid(3),
+        );
         assert!(result.is_ok());
         assert_eq!(reg.lookup("k-rb").unwrap().role, KeyRole::Encryption);
     }
@@ -1191,7 +1601,8 @@ mod tests {
 
     #[test]
     fn event_violation_construction() {
-        let ev = KeyRoleEvent::violation("k-bad", KeyRole::Encryption, KeyRole::Signing, "trace-004");
+        let ev =
+            KeyRoleEvent::violation("k-bad", KeyRole::Encryption, KeyRole::Signing, "trace-004");
         assert_eq!(ev.event_code, event_codes::KRS_ROLE_VIOLATION_ATTEMPT);
         assert_eq!(ev.severity, "CRITICAL");
     }

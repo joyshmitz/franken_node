@@ -274,14 +274,18 @@ impl TrustObjectId {
         // Try context-addressed: <epoch>:<sequence>:<digest>
         let parts: Vec<&str> = rest.splitn(3, ':').collect();
         if parts.len() == 3 {
-            let epoch = parts[0].parse::<u64>().map_err(|_| IdError::InvalidFormat {
-                input: s.to_string(),
-                reason: "epoch is not a valid u64".to_string(),
-            })?;
-            let sequence = parts[1].parse::<u64>().map_err(|_| IdError::InvalidFormat {
-                input: s.to_string(),
-                reason: "sequence is not a valid u64".to_string(),
-            })?;
+            let epoch = parts[0]
+                .parse::<u64>()
+                .map_err(|_| IdError::InvalidFormat {
+                    input: s.to_string(),
+                    reason: "epoch is not a valid u64".to_string(),
+                })?;
+            let sequence = parts[1]
+                .parse::<u64>()
+                .map_err(|_| IdError::InvalidFormat {
+                    input: s.to_string(),
+                    reason: "sequence is not a valid u64".to_string(),
+                })?;
             let digest = parts[2];
             validate_hex_digest(digest)?;
             return Ok(Self {
@@ -500,12 +504,7 @@ pub fn demo_trust_object_ids() -> Vec<IdEvent> {
     // Context-addressed examples
     for (i, domain) in DomainPrefix::all().iter().enumerate() {
         let data = format!("ctx-sample-{}", domain.label());
-        let id = TrustObjectId::derive_context_addressed(
-            *domain,
-            100,
-            i as u64,
-            data.as_bytes(),
-        );
+        let id = TrustObjectId::derive_context_addressed(*domain, 100, i as u64, data.as_bytes());
         events.push(IdEvent {
             event_code: event_codes::TOI_DERIVED.to_string(),
             domain: domain.label().to_string(),
@@ -571,18 +570,21 @@ mod tests {
 
     #[test]
     fn test_derivation_mode_labels() {
-        assert_eq!(DerivationMode::ContentAddressed.label(), "content_addressed");
-        assert_eq!(DerivationMode::ContextAddressed.label(), "context_addressed");
+        assert_eq!(
+            DerivationMode::ContentAddressed.label(),
+            "content_addressed"
+        );
+        assert_eq!(
+            DerivationMode::ContextAddressed.label(),
+            "context_addressed"
+        );
     }
 
     // ── TrustObjectId: content-addressed ────────────────────────────
 
     #[test]
     fn test_derive_content_addressed() {
-        let id = TrustObjectId::derive_content_addressed(
-            DomainPrefix::Extension,
-            b"hello world",
-        );
+        let id = TrustObjectId::derive_content_addressed(DomainPrefix::Extension, b"hello world");
         assert_eq!(id.domain, DomainPrefix::Extension);
         assert_eq!(id.hash_algorithm, "sha256");
         assert_eq!(id.derivation_mode, DerivationMode::ContentAddressed);
@@ -642,42 +644,35 @@ mod tests {
 
     #[test]
     fn test_context_addressed_deterministic() {
-        let id1 = TrustObjectId::derive_context_addressed(
-            DomainPrefix::PolicyCheckpoint, 1, 2, b"d",
-        );
-        let id2 = TrustObjectId::derive_context_addressed(
-            DomainPrefix::PolicyCheckpoint, 1, 2, b"d",
-        );
+        let id1 =
+            TrustObjectId::derive_context_addressed(DomainPrefix::PolicyCheckpoint, 1, 2, b"d");
+        let id2 =
+            TrustObjectId::derive_context_addressed(DomainPrefix::PolicyCheckpoint, 1, 2, b"d");
         assert_eq!(id1, id2);
     }
 
     #[test]
     fn test_context_addressed_different_epoch() {
-        let id1 = TrustObjectId::derive_context_addressed(
-            DomainPrefix::PolicyCheckpoint, 1, 0, b"d",
-        );
-        let id2 = TrustObjectId::derive_context_addressed(
-            DomainPrefix::PolicyCheckpoint, 2, 0, b"d",
-        );
+        let id1 =
+            TrustObjectId::derive_context_addressed(DomainPrefix::PolicyCheckpoint, 1, 0, b"d");
+        let id2 =
+            TrustObjectId::derive_context_addressed(DomainPrefix::PolicyCheckpoint, 2, 0, b"d");
         assert_ne!(id1.digest, id2.digest);
     }
 
     #[test]
     fn test_context_addressed_different_sequence() {
-        let id1 = TrustObjectId::derive_context_addressed(
-            DomainPrefix::PolicyCheckpoint, 1, 0, b"d",
-        );
-        let id2 = TrustObjectId::derive_context_addressed(
-            DomainPrefix::PolicyCheckpoint, 1, 1, b"d",
-        );
+        let id1 =
+            TrustObjectId::derive_context_addressed(DomainPrefix::PolicyCheckpoint, 1, 0, b"d");
+        let id2 =
+            TrustObjectId::derive_context_addressed(DomainPrefix::PolicyCheckpoint, 1, 1, b"d");
         assert_ne!(id1.digest, id2.digest);
     }
 
     #[test]
     fn test_context_addressed_full_form() {
-        let id = TrustObjectId::derive_context_addressed(
-            DomainPrefix::MigrationArtifact, 10, 3, b"mig",
-        );
+        let id =
+            TrustObjectId::derive_context_addressed(DomainPrefix::MigrationArtifact, 10, 3, b"mig");
         let full = id.full_form();
         assert!(full.starts_with("migr:10:3:"));
     }
@@ -716,9 +711,8 @@ mod tests {
 
     #[test]
     fn test_parse_context_addressed() {
-        let id = TrustObjectId::derive_context_addressed(
-            DomainPrefix::PolicyCheckpoint, 42, 7, b"data",
-        );
+        let id =
+            TrustObjectId::derive_context_addressed(DomainPrefix::PolicyCheckpoint, 42, 7, b"data");
         let full = id.full_form();
         let parsed = TrustObjectId::parse(&full).unwrap();
         assert_eq!(parsed.domain, DomainPrefix::PolicyCheckpoint);
@@ -742,9 +736,7 @@ mod tests {
     #[test]
     fn test_parse_round_trip_all_domains_context() {
         for (i, domain) in DomainPrefix::all().iter().enumerate() {
-            let id = TrustObjectId::derive_context_addressed(
-                *domain, 100, i as u64, b"ctx-data",
-            );
+            let id = TrustObjectId::derive_context_addressed(*domain, 100, i as u64, b"ctx-data");
             let full = id.full_form();
             let parsed = TrustObjectId::parse(&full).unwrap();
             assert_eq!(parsed.domain, *domain);
@@ -825,9 +817,15 @@ mod tests {
     fn test_error_codes() {
         let e1 = IdError::InvalidPrefix { input: "x".into() };
         assert_eq!(e1.code(), "ERR_TOI_INVALID_PREFIX");
-        let e2 = IdError::MalformedDigest { input: "x".into(), reason: "r".into() };
+        let e2 = IdError::MalformedDigest {
+            input: "x".into(),
+            reason: "r".into(),
+        };
         assert_eq!(e2.code(), "ERR_TOI_MALFORMED_DIGEST");
-        let e3 = IdError::InvalidFormat { input: "x".into(), reason: "r".into() };
+        let e3 = IdError::InvalidFormat {
+            input: "x".into(),
+            reason: "r".into(),
+        };
         assert_eq!(e3.code(), "ERR_TOI_INVALID_FORMAT");
         let e4 = IdError::UnknownDomain { domain: "x".into() };
         assert_eq!(e4.code(), "ERR_TOI_UNKNOWN_DOMAIN");
@@ -835,7 +833,9 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        let e = IdError::InvalidPrefix { input: "bad:id".into() };
+        let e = IdError::InvalidPrefix {
+            input: "bad:id".into(),
+        };
         assert!(e.to_string().contains("bad:id"));
     }
 
@@ -944,10 +944,8 @@ mod tests {
         let mut digests = std::collections::HashSet::new();
         for i in 0..1000 {
             let data = format!("random-input-{i}");
-            let id = TrustObjectId::derive_content_addressed(
-                DomainPrefix::Extension,
-                data.as_bytes(),
-            );
+            let id =
+                TrustObjectId::derive_content_addressed(DomainPrefix::Extension, data.as_bytes());
             digests.insert(id.digest);
         }
         assert_eq!(digests.len(), 1000);

@@ -204,7 +204,10 @@ pub enum SupervisionEvent {
     /// SUP-003: supervisor.child_restarted
     ChildRestarted { name: String },
     /// SUP-004: supervisor.budget_exhausted
-    BudgetExhausted { restart_count: u32, max_restarts: u32 },
+    BudgetExhausted {
+        restart_count: u32,
+        max_restarts: u32,
+    },
     /// SUP-005: supervisor.escalation
     Escalation { depth: u32, max_depth: u32 },
     /// SUP-006: supervisor.shutdown_started
@@ -228,7 +231,10 @@ pub enum SupervisionError {
     ChildNotFound { name: String },
     /// ERR_SUP_BUDGET_EXHAUSTED
     #[serde(rename = "ERR_SUP_BUDGET_EXHAUSTED")]
-    BudgetExhausted { restart_count: u32, max_restarts: u32 },
+    BudgetExhausted {
+        restart_count: u32,
+        max_restarts: u32,
+    },
     /// ERR_SUP_MAX_ESCALATION
     #[serde(rename = "ERR_SUP_MAX_ESCALATION")]
     MaxEscalation { depth: u32, max_depth: u32 },
@@ -244,31 +250,50 @@ impl fmt::Display for SupervisionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ChildNotFound { name } => {
-                write!(f, "{}: child '{}' not found", error_codes::ERR_SUP_CHILD_NOT_FOUND, name)
+                write!(
+                    f,
+                    "{}: child '{}' not found",
+                    error_codes::ERR_SUP_CHILD_NOT_FOUND,
+                    name
+                )
             }
-            Self::BudgetExhausted { restart_count, max_restarts } => {
+            Self::BudgetExhausted {
+                restart_count,
+                max_restarts,
+            } => {
                 write!(
                     f,
                     "{}: {} restarts in window (max {})",
-                    error_codes::ERR_SUP_BUDGET_EXHAUSTED, restart_count, max_restarts
+                    error_codes::ERR_SUP_BUDGET_EXHAUSTED,
+                    restart_count,
+                    max_restarts
                 )
             }
             Self::MaxEscalation { depth, max_depth } => {
                 write!(
                     f,
                     "{}: escalation depth {} exceeds max {}",
-                    error_codes::ERR_SUP_MAX_ESCALATION, depth, max_depth
+                    error_codes::ERR_SUP_MAX_ESCALATION,
+                    depth,
+                    max_depth
                 )
             }
             Self::ShutdownTimeout { name, timeout_ms } => {
                 write!(
                     f,
                     "{}: child '{}' did not stop within {}ms",
-                    error_codes::ERR_SUP_SHUTDOWN_TIMEOUT, name, timeout_ms
+                    error_codes::ERR_SUP_SHUTDOWN_TIMEOUT,
+                    name,
+                    timeout_ms
                 )
             }
             Self::DuplicateChild { name } => {
-                write!(f, "{}: child '{}' already exists", error_codes::ERR_SUP_DUPLICATE_CHILD, name)
+                write!(
+                    f,
+                    "{}: child '{}' already exists",
+                    error_codes::ERR_SUP_DUPLICATE_CHILD,
+                    name
+                )
             }
         }
     }
@@ -375,7 +400,10 @@ impl Supervisor {
     /// Enforces `INV-SUP-BUDGET-BOUND` (sliding window budget) and
     /// `INV-SUP-ESCALATION-BOUNDED` (max escalation depth).
     /// `INV-SUP-STRATEGY-DETERMINISTIC` is guaranteed by the match on strategy.
-    pub fn handle_failure(&mut self, child_name: &str) -> Result<SupervisionAction, SupervisionError> {
+    pub fn handle_failure(
+        &mut self,
+        child_name: &str,
+    ) -> Result<SupervisionAction, SupervisionError> {
         // Verify child exists.
         if !self.children.contains_key(child_name) {
             return Err(SupervisionError::ChildNotFound {
@@ -442,9 +470,7 @@ impl Supervisor {
             SupervisionStrategy::OneForOne => {
                 vec![child_name.to_string()]
             }
-            SupervisionStrategy::OneForAll => {
-                self.children.keys().cloned().collect()
-            }
+            SupervisionStrategy::OneForAll => self.children.keys().cloned().collect(),
             SupervisionStrategy::RestForOne => {
                 let failed_order = self.children[child_name].start_order;
                 let mut to_restart: Vec<(u64, String)> = self
@@ -470,9 +496,8 @@ impl Supervisor {
             if let Some(record) = self.children.get_mut(name) {
                 record.state = ChildState::Running;
             }
-            self.events.push(SupervisionEvent::ChildRestarted {
-                name: name.clone(),
-            });
+            self.events
+                .push(SupervisionEvent::ChildRestarted { name: name.clone() });
         }
 
         Ok(SupervisionAction::Restart {
@@ -485,11 +510,13 @@ impl Supervisor {
     /// Enforces `INV-SUP-SHUTDOWN-ORDER` and `INV-SUP-TIMEOUT-ENFORCED`.
     pub fn shutdown(&mut self) -> ShutdownReport {
         let child_count = self.children.len() as u32;
-        self.events.push(SupervisionEvent::ShutdownStarted { child_count });
+        self.events
+            .push(SupervisionEvent::ShutdownStarted { child_count });
 
         // INV-SUP-SHUTDOWN-ORDER: sort children by start_order descending.
         let keys: Vec<String> = self.children.keys().cloned().collect();
-        let mut ordered: Vec<(String, ChildRecord)> = keys.into_iter()
+        let mut ordered: Vec<(String, ChildRecord)> = keys
+            .into_iter()
             .filter_map(|k| self.children.remove(&k).map(|v| (k, v)))
             .collect();
         ordered.sort_by(|a, b| b.1.start_order.cmp(&a.1.start_order));
@@ -800,7 +827,10 @@ mod tests {
         assert_eq!(INV_SUP_ESCALATION_BOUNDED, "INV-SUP-ESCALATION-BOUNDED");
         assert_eq!(INV_SUP_SHUTDOWN_ORDER, "INV-SUP-SHUTDOWN-ORDER");
         assert_eq!(INV_SUP_TIMEOUT_ENFORCED, "INV-SUP-TIMEOUT-ENFORCED");
-        assert_eq!(INV_SUP_STRATEGY_DETERMINISTIC, "INV-SUP-STRATEGY-DETERMINISTIC");
+        assert_eq!(
+            INV_SUP_STRATEGY_DETERMINISTIC,
+            "INV-SUP-STRATEGY-DETERMINISTIC"
+        );
     }
 
     #[test]

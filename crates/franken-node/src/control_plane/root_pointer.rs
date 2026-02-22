@@ -468,7 +468,7 @@ fn publish_root_internal(
     }
 
     let payload = serde_json::to_vec_pretty(root).map_err(RootPointerError::Serialize)?;
-    
+
     let manifest_hash = hash_hex(&payload);
     let auth_record = RootAuthRecord {
         root_format_version: ROOT_POINTER_FORMAT_VERSION.to_string(),
@@ -477,11 +477,16 @@ fn publish_root_internal(
         issued_at: Utc::now().to_rfc3339(),
         mac: sign_payload(&manifest_hash, signing_key),
     };
-    let auth_payload = serde_json::to_vec_pretty(&auth_record).map_err(RootPointerError::Serialize)?;
+    let auth_payload =
+        serde_json::to_vec_pretty(&auth_record).map_err(RootPointerError::Serialize)?;
 
     let mut trace = PublishTrace::default();
 
-    let temp_auth_path = dir.join(format!(".{}.tmp.{}", ROOT_POINTER_AUTH_FILE, Uuid::now_v7()));
+    let temp_auth_path = dir.join(format!(
+        ".{}.tmp.{}",
+        ROOT_POINTER_AUTH_FILE,
+        Uuid::now_v7()
+    ));
     let auth_path = root_auth_path(dir);
 
     let mut temp_file = OpenOptions::new()
@@ -523,11 +528,13 @@ fn publish_root_internal(
             path: temp_auth_path.display().to_string(),
             source,
         })?;
-    temp_auth_file.flush().map_err(|source| RootPointerError::Io {
-        step: "write_root_auth_temp",
-        path: temp_auth_path.display().to_string(),
-        source,
-    })?;
+    temp_auth_file
+        .flush()
+        .map_err(|source| RootPointerError::Io {
+            step: "write_root_auth_temp",
+            path: temp_auth_path.display().to_string(),
+            source,
+        })?;
 
     trace.steps.push(PublishStep::WriteTemp);
     maybe_crash(options.crash_after, PublishStep::WriteTemp)?;

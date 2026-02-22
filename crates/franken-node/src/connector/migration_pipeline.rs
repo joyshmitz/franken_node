@@ -469,10 +469,7 @@ pub fn advance(mut state: PipelineState) -> Result<PipelineState, PipelineError>
     let current = state.current_stage;
     let next = current.next().ok_or_else(|| PipelineError {
         code: error_codes::ERR_PIPE_INVALID_TRANSITION.to_string(),
-        message: format!(
-            "Cannot advance from terminal stage {}",
-            current.label()
-        ),
+        message: format!("Cannot advance from terminal stage {}", current.label()),
     })?;
 
     // Stage-specific processing
@@ -487,10 +484,13 @@ pub fn advance(mut state: PipelineState) -> Result<PipelineState, PipelineError>
         }
         PipelineStage::PlanGeneration => {
             // Generate migration plan from compatibility report
-            let report = state.compatibility_report.as_ref().ok_or_else(|| PipelineError {
-                code: error_codes::ERR_PIPE_INVALID_TRANSITION.to_string(),
-                message: "Cannot generate plan without compatibility report".to_string(),
-            })?;
+            let report = state
+                .compatibility_report
+                .as_ref()
+                .ok_or_else(|| PipelineError {
+                    code: error_codes::ERR_PIPE_INVALID_TRANSITION.to_string(),
+                    message: "Cannot generate plan without compatibility report".to_string(),
+                })?;
             let plan = generate_plan(&state.extensions, report);
             state.migration_plan = Some(plan);
         }
@@ -554,10 +554,7 @@ pub fn rollback(mut state: PipelineState) -> Result<PipelineState, PipelineError
     if !state.current_stage.can_rollback() {
         return Err(PipelineError {
             code: error_codes::ERR_PIPE_ROLLBACK_FAILED.to_string(),
-            message: format!(
-                "Cannot rollback from stage {}",
-                state.current_stage.label()
-            ),
+            message: format!("Cannot rollback from stage {}", state.current_stage.label()),
         });
     }
 
@@ -807,9 +804,7 @@ pub fn compute_cohort_summary(state: &PipelineState) -> CohortSummary {
 ///
 /// # INV-PIPE-DETERMINISTIC
 /// Same cohort input produces identical pipeline traces.
-pub fn run_full_pipeline(
-    cohort: &CohortDefinition,
-) -> Result<PipelineState, PipelineError> {
+pub fn run_full_pipeline(cohort: &CohortDefinition) -> Result<PipelineState, PipelineError> {
     let mut state = new(cohort)?;
     // Advance through all stages until Complete
     while state.current_stage != PipelineStage::Complete {
@@ -1352,12 +1347,30 @@ mod tests {
 
     #[test]
     fn test_error_codes_defined() {
-        assert_eq!(error_codes::ERR_PIPE_INVALID_TRANSITION, "ERR_PIPE_INVALID_TRANSITION");
-        assert_eq!(error_codes::ERR_PIPE_VERIFICATION_FAILED, "ERR_PIPE_VERIFICATION_FAILED");
-        assert_eq!(error_codes::ERR_PIPE_IDEMPOTENCY_VIOLATED, "ERR_PIPE_IDEMPOTENCY_VIOLATED");
-        assert_eq!(error_codes::ERR_PIPE_ROLLBACK_FAILED, "ERR_PIPE_ROLLBACK_FAILED");
-        assert_eq!(error_codes::ERR_PIPE_THRESHOLD_NOT_MET, "ERR_PIPE_THRESHOLD_NOT_MET");
-        assert_eq!(error_codes::ERR_PIPE_DUPLICATE_EXTENSION, "ERR_PIPE_DUPLICATE_EXTENSION");
+        assert_eq!(
+            error_codes::ERR_PIPE_INVALID_TRANSITION,
+            "ERR_PIPE_INVALID_TRANSITION"
+        );
+        assert_eq!(
+            error_codes::ERR_PIPE_VERIFICATION_FAILED,
+            "ERR_PIPE_VERIFICATION_FAILED"
+        );
+        assert_eq!(
+            error_codes::ERR_PIPE_IDEMPOTENCY_VIOLATED,
+            "ERR_PIPE_IDEMPOTENCY_VIOLATED"
+        );
+        assert_eq!(
+            error_codes::ERR_PIPE_ROLLBACK_FAILED,
+            "ERR_PIPE_ROLLBACK_FAILED"
+        );
+        assert_eq!(
+            error_codes::ERR_PIPE_THRESHOLD_NOT_MET,
+            "ERR_PIPE_THRESHOLD_NOT_MET"
+        );
+        assert_eq!(
+            error_codes::ERR_PIPE_DUPLICATE_EXTENSION,
+            "ERR_PIPE_DUPLICATE_EXTENSION"
+        );
     }
 
     // ── Invariants ──────────────────────────────────────────────────────
@@ -1366,10 +1379,22 @@ mod tests {
     fn test_invariants_defined() {
         assert_eq!(invariants::INV_PIPE_DETERMINISTIC, "INV-PIPE-DETERMINISTIC");
         assert_eq!(invariants::INV_PIPE_IDEMPOTENT, "INV-PIPE-IDEMPOTENT");
-        assert_eq!(invariants::INV_PIPE_THRESHOLD_ENFORCED, "INV-PIPE-THRESHOLD-ENFORCED");
-        assert_eq!(invariants::INV_PIPE_ROLLBACK_ANY_STAGE, "INV-PIPE-ROLLBACK-ANY-STAGE");
-        assert_eq!(invariants::INV_PIPE_RECEIPT_SIGNED, "INV-PIPE-RECEIPT-SIGNED");
-        assert_eq!(invariants::INV_PIPE_STAGE_MONOTONIC, "INV-PIPE-STAGE-MONOTONIC");
+        assert_eq!(
+            invariants::INV_PIPE_THRESHOLD_ENFORCED,
+            "INV-PIPE-THRESHOLD-ENFORCED"
+        );
+        assert_eq!(
+            invariants::INV_PIPE_ROLLBACK_ANY_STAGE,
+            "INV-PIPE-ROLLBACK-ANY-STAGE"
+        );
+        assert_eq!(
+            invariants::INV_PIPE_RECEIPT_SIGNED,
+            "INV-PIPE-RECEIPT-SIGNED"
+        );
+        assert_eq!(
+            invariants::INV_PIPE_STAGE_MONOTONIC,
+            "INV-PIPE-STAGE-MONOTONIC"
+        );
     }
 
     // ── Schema version ──────────────────────────────────────────────────

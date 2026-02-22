@@ -115,13 +115,9 @@ pub enum FleetAction {
         scope: RevocationScope,
     },
     /// Release a quarantine incident.
-    Release {
-        incident_id: String,
-    },
+    Release { incident_id: String },
     /// Query fleet status for a zone.
-    Status {
-        zone_id: String,
-    },
+    Status { zone_id: String },
     /// Reconcile fleet state across zones.
     Reconcile,
 }
@@ -241,20 +237,11 @@ pub enum IncidentStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FleetControlError {
     /// Scope validation failed.
-    ScopeInvalid {
-        code: String,
-        detail: String,
-    },
+    ScopeInvalid { code: String, detail: String },
     /// Target zone is unreachable.
-    ZoneUnreachable {
-        code: String,
-        zone_id: String,
-    },
+    ZoneUnreachable { code: String, zone_id: String },
     /// Convergence timed out.
-    ConvergenceTimeout {
-        code: String,
-        elapsed_seconds: u32,
-    },
+    ConvergenceTimeout { code: String, elapsed_seconds: u32 },
     /// Rollback failed during release.
     RollbackFailed {
         code: String,
@@ -262,9 +249,7 @@ pub enum FleetControlError {
         detail: String,
     },
     /// API not activated (safe-start mode).
-    NotActivated {
-        code: String,
-    },
+    NotActivated { code: String },
 }
 
 impl FleetControlError {
@@ -335,11 +320,7 @@ pub struct FleetControlEvent {
 }
 
 impl FleetControlEvent {
-    pub fn quarantine_initiated(
-        trace_id: &str,
-        zone_id: &str,
-        extension_id: &str,
-    ) -> Self {
+    pub fn quarantine_initiated(trace_id: &str, zone_id: &str, extension_id: &str) -> Self {
         Self {
             event_code: FLEET_QUARANTINE_INITIATED.to_string(),
             event_name: "FLEET_QUARANTINE_INITIATED".to_string(),
@@ -351,11 +332,7 @@ impl FleetControlEvent {
         }
     }
 
-    pub fn revocation_issued(
-        trace_id: &str,
-        zone_id: &str,
-        extension_id: &str,
-    ) -> Self {
+    pub fn revocation_issued(trace_id: &str, zone_id: &str, extension_id: &str) -> Self {
         Self {
             event_code: FLEET_REVOCATION_ISSUED.to_string(),
             event_name: "FLEET_REVOCATION_ISSUED".to_string(),
@@ -367,11 +344,7 @@ impl FleetControlEvent {
         }
     }
 
-    pub fn convergence_progress(
-        trace_id: &str,
-        zone_id: &str,
-        progress_pct: u8,
-    ) -> Self {
+    pub fn convergence_progress(trace_id: &str, zone_id: &str, progress_pct: u8) -> Self {
         let mut metadata = HashMap::new();
         metadata.insert("progress_pct".to_string(), progress_pct.to_string());
         Self {
@@ -385,11 +358,7 @@ impl FleetControlEvent {
         }
     }
 
-    pub fn fleet_released(
-        trace_id: &str,
-        zone_id: &str,
-        incident_id: &str,
-    ) -> Self {
+    pub fn fleet_released(trace_id: &str, zone_id: &str, incident_id: &str) -> Self {
         let mut metadata = HashMap::new();
         metadata.insert("incident_id".to_string(), incident_id.to_string());
         Self {
@@ -620,9 +589,7 @@ impl FleetControlManager {
         let incident = self
             .incidents
             .get_mut(incident_id)
-            .ok_or_else(|| {
-                FleetControlError::rollback_failed(incident_id, "incident not found")
-            })?;
+            .ok_or_else(|| FleetControlError::rollback_failed(incident_id, "incident not found"))?;
 
         if incident.status == IncidentStatus::Released {
             return Err(FleetControlError::rollback_failed(
@@ -702,7 +669,8 @@ impl FleetControlManager {
         let zone_count = self.zone_status.len();
 
         // Clean up released incidents
-        self.incidents.retain(|_, inc| inc.status != IncidentStatus::Released);
+        self.incidents
+            .retain(|_, inc| inc.status != IncidentStatus::Released);
 
         let receipt = self.build_receipt(&op_id, &identity.principal, "all", &now);
 
@@ -942,11 +910,17 @@ pub fn handle_release(
 ) -> Result<ApiResponse<FleetActionResult>, ApiError> {
     // In a real system this would look up the incident from persistent state
     let result = FleetActionResult {
-        operation_id: format!("fleet-op-release-{}", &trace.trace_id[..trace.trace_id.len().min(8)]),
+        operation_id: format!(
+            "fleet-op-release-{}",
+            &trace.trace_id[..trace.trace_id.len().min(8)]
+        ),
         action_type: "release".to_string(),
         success: true,
         receipt: DecisionReceipt {
-            receipt_id: format!("rcpt-release-{}", &trace.trace_id[..trace.trace_id.len().min(8)]),
+            receipt_id: format!(
+                "rcpt-release-{}",
+                &trace.trace_id[..trace.trace_id.len().min(8)]
+            ),
             issuer: identity.principal.clone(),
             issued_at: chrono::Utc::now().to_rfc3339(),
             zone_id: "pending-lookup".to_string(),
@@ -1075,7 +1049,9 @@ mod tests {
         let scope = test_quarantine_scope();
         let identity = admin_identity();
         let trace = test_trace();
-        let err = mgr.quarantine("ext-1", &scope, &identity, &trace).unwrap_err();
+        let err = mgr
+            .quarantine("ext-1", &scope, &identity, &trace)
+            .unwrap_err();
         assert_eq!(err.error_code(), FLEET_NOT_ACTIVATED);
     }
 
@@ -1110,7 +1086,9 @@ mod tests {
     #[test]
     fn status_allowed_before_activation() {
         let mgr = FleetControlManager::new();
-        let status = mgr.status("zone-1").expect("status should work in safe-start");
+        let status = mgr
+            .status("zone-1")
+            .expect("status should work in safe-start");
         assert!(!status.activated);
     }
 
@@ -1314,7 +1292,11 @@ mod tests {
             .expect("quarantine");
         assert_eq!(mgr.incident_count(), 1);
 
-        let incidents: Vec<_> = mgr.active_incidents().iter().map(|i| i.incident_id.clone()).collect();
+        let incidents: Vec<_> = mgr
+            .active_incidents()
+            .iter()
+            .map(|i| i.incident_id.clone())
+            .collect();
         let result = mgr
             .release(&incidents[0], &admin_identity(), &test_trace())
             .expect("release should succeed");
@@ -1333,7 +1315,11 @@ mod tests {
         let status = mgr.status("zone-us-east-1").expect("status");
         assert_eq!(status.active_quarantines, 1);
 
-        let incidents: Vec<_> = mgr.active_incidents().iter().map(|i| i.incident_id.clone()).collect();
+        let incidents: Vec<_> = mgr
+            .active_incidents()
+            .iter()
+            .map(|i| i.incident_id.clone())
+            .collect();
         mgr.release(&incidents[0], &admin_identity(), &test_trace())
             .expect("release");
         let status = mgr.status("zone-us-east-1").expect("status");
@@ -1382,7 +1368,11 @@ mod tests {
         let scope = test_quarantine_scope();
         mgr.quarantine("ext-1", &scope, &admin_identity(), &test_trace())
             .expect("quarantine");
-        let incidents: Vec<_> = mgr.active_incidents().iter().map(|i| i.incident_id.clone()).collect();
+        let incidents: Vec<_> = mgr
+            .active_incidents()
+            .iter()
+            .map(|i| i.incident_id.clone())
+            .collect();
         mgr.release(&incidents[0], &admin_identity(), &test_trace())
             .expect("release");
 
@@ -1513,16 +1503,17 @@ mod tests {
     fn route_metadata_has_five_endpoints() {
         let routes = quarantine_route_metadata();
         assert_eq!(routes.len(), 5);
-        assert!(routes.iter().all(|r| r.group == EndpointGroup::FleetControl));
+        assert!(
+            routes
+                .iter()
+                .all(|r| r.group == EndpointGroup::FleetControl)
+        );
     }
 
     #[test]
     fn mutation_routes_require_mtls() {
         let routes = quarantine_route_metadata();
-        let mutations: Vec<_> = routes
-            .iter()
-            .filter(|r| r.method == "POST")
-            .collect();
+        let mutations: Vec<_> = routes.iter().filter(|r| r.method == "POST").collect();
         for route in mutations {
             assert_eq!(
                 route.auth_method,
@@ -1571,24 +1562,23 @@ mod tests {
             extension_id: "ext-1".to_string(),
             scope: test_revocation_scope(),
         };
-        let result = handle_revoke(&admin_identity(), &test_trace(), &request)
-            .expect("handle revoke");
+        let result =
+            handle_revoke(&admin_identity(), &test_trace(), &request).expect("handle revoke");
         assert!(result.ok);
         assert_eq!(result.data.action_type, "revoke");
     }
 
     #[test]
     fn handle_status_succeeds() {
-        let result = handle_status(&admin_identity(), &test_trace(), "zone-1")
-            .expect("handle status");
+        let result =
+            handle_status(&admin_identity(), &test_trace(), "zone-1").expect("handle status");
         assert!(result.ok);
         assert_eq!(result.data.zone_id, "zone-1");
     }
 
     #[test]
     fn handle_reconcile_succeeds() {
-        let result = handle_reconcile(&admin_identity(), &test_trace())
-            .expect("handle reconcile");
+        let result = handle_reconcile(&admin_identity(), &test_trace()).expect("handle reconcile");
         assert!(result.ok);
         assert_eq!(result.data.action_type, "reconcile");
     }
@@ -1616,7 +1606,12 @@ mod tests {
         let mut mgr = FleetControlManager::new();
         mgr.activate();
         let result = mgr
-            .quarantine("ext-1", &test_quarantine_scope(), &admin_identity(), &test_trace())
+            .quarantine(
+                "ext-1",
+                &test_quarantine_scope(),
+                &admin_identity(),
+                &test_trace(),
+            )
             .expect("quarantine");
         let json = serde_json::to_string(&result).expect("serialize");
         let decoded: FleetActionResult = serde_json::from_str(&json).expect("deserialize");
@@ -1714,7 +1709,11 @@ mod tests {
         assert_eq!(mgr.zones().len(), 2);
         assert_eq!(mgr.incident_count(), 2);
 
-        let incidents: Vec<_> = mgr.active_incidents().iter().map(|i| i.incident_id.clone()).collect();
+        let incidents: Vec<_> = mgr
+            .active_incidents()
+            .iter()
+            .map(|i| i.incident_id.clone())
+            .collect();
         mgr.release(&incidents[0], &admin_identity(), &test_trace())
             .expect("release");
         assert_eq!(mgr.active_incidents().len(), 1);

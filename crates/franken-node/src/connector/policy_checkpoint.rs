@@ -106,20 +106,14 @@ impl fmt::Display for ReleaseChannel {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CheckpointChainError {
     /// Sequence number is non-monotonic or has a gap.
-    SequenceViolation {
-        expected: u64,
-        actual: u64,
-    },
+    SequenceViolation { expected: u64, actual: u64 },
     /// parent_hash does not match current chain head.
     ParentMismatch {
         expected: Option<String>,
         actual: Option<String>,
     },
     /// Hash chain integrity break detected during verification.
-    HashChainBreak {
-        index: usize,
-        reason: String,
-    },
+    HashChainBreak { index: usize, reason: String },
     /// Operation requires a non-empty chain.
     EmptyChain,
     /// Canonical serialization failure.
@@ -160,11 +154,7 @@ impl fmt::Display for CheckpointChainError {
                 )
             }
             Self::HashChainBreak { index, reason } => {
-                write!(
-                    f,
-                    "{}: chain break at index {index}: {reason}",
-                    self.code()
-                )
+                write!(f, "{}: chain break at index {index}: {reason}", self.code())
             }
             Self::EmptyChain => write!(f, "{}: chain is empty", self.code()),
             Self::SerializationFailure(detail) => {
@@ -485,10 +475,7 @@ impl PolicyCheckpointChain {
                     i,
                     CheckpointChainError::HashChainBreak {
                         index: i,
-                        reason: format!(
-                            "sequence mismatch: expected {}, got {}",
-                            i, cp.sequence
-                        ),
+                        reason: format!("sequence mismatch: expected {}, got {}", i, cp.sequence),
                     },
                 ));
             }
@@ -552,8 +539,7 @@ impl PolicyCheckpointChain {
             let key = cp.channel.label();
             frontier.insert(key, (cp.channel.clone(), cp));
         }
-        let mut result: Vec<(ReleaseChannel, &PolicyCheckpoint)> =
-            frontier.into_values().collect();
+        let mut result: Vec<(ReleaseChannel, &PolicyCheckpoint)> = frontier.into_values().collect();
         result.sort_by_key(|(_, cp)| cp.sequence);
         result
     }
@@ -777,42 +763,35 @@ mod tests {
 
     #[test]
     fn test_checkpoint_hash_varies_with_sequence() {
-        let h1 = PolicyCheckpoint::compute_hash(
-            0, 1, &ReleaseChannel::Stable, "abc", None, 1000, "a",
-        );
-        let h2 = PolicyCheckpoint::compute_hash(
-            1, 1, &ReleaseChannel::Stable, "abc", None, 1000, "a",
-        );
+        let h1 =
+            PolicyCheckpoint::compute_hash(0, 1, &ReleaseChannel::Stable, "abc", None, 1000, "a");
+        let h2 =
+            PolicyCheckpoint::compute_hash(1, 1, &ReleaseChannel::Stable, "abc", None, 1000, "a");
         assert_ne!(h1, h2);
     }
 
     #[test]
     fn test_checkpoint_hash_varies_with_channel() {
-        let h1 = PolicyCheckpoint::compute_hash(
-            0, 1, &ReleaseChannel::Stable, "abc", None, 1000, "a",
-        );
-        let h2 = PolicyCheckpoint::compute_hash(
-            0, 1, &ReleaseChannel::Beta, "abc", None, 1000, "a",
-        );
+        let h1 =
+            PolicyCheckpoint::compute_hash(0, 1, &ReleaseChannel::Stable, "abc", None, 1000, "a");
+        let h2 =
+            PolicyCheckpoint::compute_hash(0, 1, &ReleaseChannel::Beta, "abc", None, 1000, "a");
         assert_ne!(h1, h2);
     }
 
     #[test]
     fn test_checkpoint_hash_varies_with_policy_hash() {
-        let h1 = PolicyCheckpoint::compute_hash(
-            0, 1, &ReleaseChannel::Stable, "aaa", None, 1000, "a",
-        );
-        let h2 = PolicyCheckpoint::compute_hash(
-            0, 1, &ReleaseChannel::Stable, "bbb", None, 1000, "a",
-        );
+        let h1 =
+            PolicyCheckpoint::compute_hash(0, 1, &ReleaseChannel::Stable, "aaa", None, 1000, "a");
+        let h2 =
+            PolicyCheckpoint::compute_hash(0, 1, &ReleaseChannel::Stable, "bbb", None, 1000, "a");
         assert_ne!(h1, h2);
     }
 
     #[test]
     fn test_checkpoint_hash_varies_with_parent() {
-        let h1 = PolicyCheckpoint::compute_hash(
-            0, 1, &ReleaseChannel::Stable, "abc", None, 1000, "a",
-        );
+        let h1 =
+            PolicyCheckpoint::compute_hash(0, 1, &ReleaseChannel::Stable, "abc", None, 1000, "a");
         let h2 = PolicyCheckpoint::compute_hash(
             0,
             1,
@@ -828,11 +807,16 @@ mod tests {
     #[test]
     fn test_checkpoint_hash_varies_with_signer() {
         let h1 = PolicyCheckpoint::compute_hash(
-            0, 1, &ReleaseChannel::Stable, "abc", None, 1000, "alice",
+            0,
+            1,
+            &ReleaseChannel::Stable,
+            "abc",
+            None,
+            1000,
+            "alice",
         );
-        let h2 = PolicyCheckpoint::compute_hash(
-            0, 1, &ReleaseChannel::Stable, "abc", None, 1000, "bob",
-        );
+        let h2 =
+            PolicyCheckpoint::compute_hash(0, 1, &ReleaseChannel::Stable, "abc", None, 1000, "bob");
         assert_ne!(h1, h2);
     }
 
@@ -947,7 +931,10 @@ mod tests {
 
         assert_eq!(cp0.sequence, 0);
         assert_eq!(cp1.sequence, 1);
-        assert_eq!(cp1.parent_hash.as_deref(), Some(cp0.checkpoint_hash.as_str()));
+        assert_eq!(
+            cp1.parent_hash.as_deref(),
+            Some(cp0.checkpoint_hash.as_str())
+        );
         assert_eq!(chain.len(), 2);
         assert_eq!(chain.next_seq(), 2);
     }
@@ -1178,9 +1165,11 @@ mod tests {
         let latest_canary = chain.latest_for_channel(&ReleaseChannel::Canary).unwrap();
         assert_eq!(latest_canary.sequence, 3);
 
-        assert!(chain
-            .latest_for_channel(&ReleaseChannel::Custom("nightly".into()))
-            .is_none());
+        assert!(
+            chain
+                .latest_for_channel(&ReleaseChannel::Custom("nightly".into()))
+                .is_none()
+        );
     }
 
     // ── policy_frontier ──────────────────────────────────────────────
@@ -1237,13 +1226,7 @@ mod tests {
             .create_checkpoint(1, ReleaseChannel::Stable, "s0", "a", "t")
             .unwrap();
         chain
-            .create_checkpoint(
-                1,
-                ReleaseChannel::Custom("nightly".into()),
-                "n0",
-                "a",
-                "t",
-            )
+            .create_checkpoint(1, ReleaseChannel::Custom("nightly".into()), "n0", "a", "t")
             .unwrap();
 
         let frontier = chain.policy_frontier();

@@ -59,7 +59,10 @@ pub enum TransitionAbortReason {
     /// Explicit cancellation by operator or system.
     Cancellation { source: String },
     /// A participant failed during drain.
-    ParticipantFailure { participant_id: String, detail: String },
+    ParticipantFailure {
+        participant_id: String,
+        detail: String,
+    },
 }
 
 impl fmt::Display for TransitionAbortReason {
@@ -67,7 +70,10 @@ impl fmt::Display for TransitionAbortReason {
         match self {
             Self::Timeout { elapsed_ms } => write!(f, "timeout after {}ms", elapsed_ms),
             Self::Cancellation { source } => write!(f, "cancelled by {}", source),
-            Self::ParticipantFailure { participant_id, detail } => {
+            Self::ParticipantFailure {
+                participant_id,
+                detail,
+            } => {
                 write!(f, "participant {} failed: {}", participant_id, detail)
             }
         }
@@ -240,19 +246,36 @@ impl fmt::Display for AbortError {
             Self::NoOperator => write!(f, "{}: force policy missing operator_id", self.code()),
             Self::NoReason => write!(f, "{}: force policy missing audit_reason", self.code()),
             Self::OverLimit { skipped, max } => {
-                write!(f, "{}: skipped {} exceeds max {}", self.code(), skipped, max)
+                write!(
+                    f,
+                    "{}: skipped {} exceeds max {}",
+                    self.code(),
+                    skipped,
+                    max
+                )
             }
             Self::UnknownParticipant { participant_id } => {
                 write!(f, "{}: unknown participant {}", self.code(), participant_id)
             }
             Self::AlreadyTerminal { barrier_id } => {
-                write!(f, "{}: barrier {} already terminal", self.code(), barrier_id)
+                write!(
+                    f,
+                    "{}: barrier {} already terminal",
+                    self.code(),
+                    barrier_id
+                )
             }
             Self::AllSkipped { total } => {
                 write!(f, "{}: cannot skip all {} participants", self.code(), total)
             }
             Self::InvalidEpoch { expected, actual } => {
-                write!(f, "{}: expected epoch {} but got {}", self.code(), expected, actual)
+                write!(
+                    f,
+                    "{}: expected epoch {} but got {}",
+                    self.code(),
+                    expected,
+                    actual
+                )
             }
         }
     }
@@ -422,7 +445,10 @@ impl TransitionAbortManager {
             pre_epoch,
             proposed_epoch: target_epoch,
             outcome: "FORCE_COMMITTED".to_string(),
-            reason: format!("operator={}, reason={}", policy.operator_id, policy.audit_reason),
+            reason: format!(
+                "operator={}, reason={}",
+                policy.operator_id, policy.audit_reason
+            ),
             timestamp_ms,
             trace_id: trace_id.to_string(),
             schema_version: SCHEMA_VERSION.to_string(),
@@ -520,7 +546,9 @@ mod tests {
     fn abort_event_verify_no_partial_state_passes() {
         let event = TransitionAbortEvent::new(
             "b1",
-            TransitionAbortReason::Cancellation { source: "test".into() },
+            TransitionAbortReason::Cancellation {
+                source: "test".into(),
+            },
             5,
             6,
             make_states(5, &[], &["svc-a", "svc-b"]),
@@ -571,7 +599,9 @@ mod tests {
     fn abort_reason_display_variants() {
         let reasons = vec![
             TransitionAbortReason::Timeout { elapsed_ms: 5000 },
-            TransitionAbortReason::Cancellation { source: "operator".into() },
+            TransitionAbortReason::Cancellation {
+                source: "operator".into(),
+            },
             TransitionAbortReason::ParticipantFailure {
                 participant_id: "svc-a".into(),
                 detail: "connection refused".into(),
@@ -692,7 +722,10 @@ mod tests {
         assert_eq!(event.barrier_id, "barrier-001");
         assert_eq!(mgr.abort_count(), 1);
         assert_eq!(mgr.audit_log().len(), 1);
-        assert_eq!(mgr.audit_log()[0].event_code, event_codes::TRANSITION_ABORTED);
+        assert_eq!(
+            mgr.audit_log()[0].event_code,
+            event_codes::TRANSITION_ABORTED
+        );
     }
 
     #[test]
@@ -715,7 +748,10 @@ mod tests {
         assert!(!event.policy_hash.is_empty());
         assert_eq!(mgr.force_count(), 1);
         assert_eq!(mgr.audit_log().len(), 1);
-        assert_eq!(mgr.audit_log()[0].event_code, event_codes::FORCE_TRANSITION_APPLIED);
+        assert_eq!(
+            mgr.audit_log()[0].event_code,
+            event_codes::FORCE_TRANSITION_APPLIED
+        );
     }
 
     #[test]
@@ -723,7 +759,9 @@ mod tests {
         let mut mgr = TransitionAbortManager::new();
         mgr.record_abort(
             "b1",
-            TransitionAbortReason::Cancellation { source: "test".into() },
+            TransitionAbortReason::Cancellation {
+                source: "test".into(),
+            },
             5,
             6,
             vec![],
@@ -769,10 +807,17 @@ mod tests {
             AbortError::NoOperator,
             AbortError::NoReason,
             AbortError::OverLimit { skipped: 3, max: 1 },
-            AbortError::UnknownParticipant { participant_id: "x".into() },
-            AbortError::AlreadyTerminal { barrier_id: "b".into() },
+            AbortError::UnknownParticipant {
+                participant_id: "x".into(),
+            },
+            AbortError::AlreadyTerminal {
+                barrier_id: "b".into(),
+            },
             AbortError::AllSkipped { total: 3 },
-            AbortError::InvalidEpoch { expected: 5, actual: 3 },
+            AbortError::InvalidEpoch {
+                expected: 5,
+                actual: 3,
+            },
         ];
         for e in &errors {
             let s = e.to_string();

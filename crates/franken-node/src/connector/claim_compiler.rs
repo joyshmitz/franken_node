@@ -180,14 +180,33 @@ pub struct ScoreboardSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClaimCompilerError {
-    EmptyClaimText { claim_id: String },
-    MissingSource { claim_id: String },
-    NoEvidenceLinks { claim_id: String },
-    InvalidEvidenceLink { claim_id: String, label: String, detail: String },
-    DuplicateClaimId { claim_id: String },
-    ScoreboardFull { capacity: usize },
-    DigestMismatch { expected: String, actual: String },
-    SchemaUnknown { version: String },
+    EmptyClaimText {
+        claim_id: String,
+    },
+    MissingSource {
+        claim_id: String,
+    },
+    NoEvidenceLinks {
+        claim_id: String,
+    },
+    InvalidEvidenceLink {
+        claim_id: String,
+        label: String,
+        detail: String,
+    },
+    DuplicateClaimId {
+        claim_id: String,
+    },
+    ScoreboardFull {
+        capacity: usize,
+    },
+    DigestMismatch {
+        expected: String,
+        actual: String,
+    },
+    SchemaUnknown {
+        version: String,
+    },
 }
 
 impl ClaimCompilerError {
@@ -219,8 +238,16 @@ impl std::fmt::Display for ClaimCompilerError {
             Self::NoEvidenceLinks { claim_id } => {
                 write!(f, "{}: claim_id={claim_id}", self.code())
             }
-            Self::InvalidEvidenceLink { claim_id, label, detail } => {
-                write!(f, "{}: claim_id={claim_id} label={label} {detail}", self.code())
+            Self::InvalidEvidenceLink {
+                claim_id,
+                label,
+                detail,
+            } => {
+                write!(
+                    f,
+                    "{}: claim_id={claim_id} label={label} {detail}",
+                    self.code()
+                )
             }
             Self::DuplicateClaimId { claim_id } => {
                 write!(f, "{}: claim_id={claim_id}", self.code())
@@ -319,7 +346,9 @@ impl ClaimCompiler {
     /// Current scoreboard capacity remaining.
     #[must_use]
     pub fn capacity_remaining(&self) -> usize {
-        self.config.scoreboard_capacity.saturating_sub(self.entries.len())
+        self.config
+            .scoreboard_capacity
+            .saturating_sub(self.entries.len())
     }
 
     // -----------------------------------------------------------------------
@@ -336,7 +365,12 @@ impl ClaimCompiler {
     /// Enforces INV-CLMC-SCHEMA-VERSIONED: schema version is validated.
     pub fn compile_claim(&mut self, raw: &RawClaim) -> Result<CompiledClaim, ClaimCompilerError> {
         // Emit submission event (INV-CLMC-AUDIT-COMPLETE)
-        self.emit(event_codes::CLMC_001, &raw.claim_id, "claim submitted", &raw.trace_id);
+        self.emit(
+            event_codes::CLMC_001,
+            &raw.claim_id,
+            "claim submitted",
+            &raw.trace_id,
+        );
 
         // Schema validation (INV-CLMC-SCHEMA-VERSIONED)
         if raw.schema_version != SCHEMA_VERSION {
@@ -451,13 +485,26 @@ impl ClaimCompiler {
         &mut self,
         claims: &[CompiledClaim],
     ) -> Result<ScoreboardSnapshot, ClaimCompilerError> {
-        let trace_id = claims.first().map_or("batch", |c| c.trace_id.as_str()).to_string();
+        let trace_id = claims
+            .first()
+            .map_or("batch", |c| c.trace_id.as_str())
+            .to_string();
 
-        self.emit(event_codes::CLMC_004, "*", "scoreboard update started", &trace_id);
+        self.emit(
+            event_codes::CLMC_004,
+            "*",
+            "scoreboard update started",
+            &trace_id,
+        );
 
         // Pre-validate the entire batch before mutating (INV-CLMC-SCOREBOARD-ATOMIC)
         if self.entries.len() + claims.len() > self.config.scoreboard_capacity {
-            self.emit(event_codes::CLMC_006, "*", "scoreboard full, rolled back", &trace_id);
+            self.emit(
+                event_codes::CLMC_006,
+                "*",
+                "scoreboard full, rolled back",
+                &trace_id,
+            );
             return Err(ClaimCompilerError::ScoreboardFull {
                 capacity: self.config.scoreboard_capacity,
             });
@@ -515,7 +562,12 @@ impl ClaimCompiler {
         }
 
         self.sequence += 1;
-        self.emit(event_codes::CLMC_005, "*", "scoreboard update committed", &trace_id);
+        self.emit(
+            event_codes::CLMC_005,
+            "*",
+            "scoreboard update committed",
+            &trace_id,
+        );
 
         self.snapshot_inner(&trace_id)
     }
@@ -528,8 +580,18 @@ impl ClaimCompiler {
     fn snapshot_inner(&mut self, trace_id: &str) -> Result<ScoreboardSnapshot, ClaimCompilerError> {
         let digest = compute_scoreboard_digest(&self.entries);
 
-        self.emit(event_codes::CLMC_009, "*", "scoreboard snapshot signed", trace_id);
-        self.emit(event_codes::CLMC_010, "*", "scoreboard digest verified", trace_id);
+        self.emit(
+            event_codes::CLMC_009,
+            "*",
+            "scoreboard snapshot signed",
+            trace_id,
+        );
+        self.emit(
+            event_codes::CLMC_010,
+            "*",
+            "scoreboard digest verified",
+            trace_id,
+        );
 
         Ok(ScoreboardSnapshot {
             schema_version: SCHEMA_VERSION.to_string(),
@@ -844,8 +906,12 @@ mod tests {
     #[test]
     fn reject_duplicate_within_batch() {
         let mut compiler = make_compiler();
-        let c1 = compiler.compile_claim(&valid_raw_claim("intra-dup")).unwrap();
-        let c2 = compiler.compile_claim(&valid_raw_claim("intra-dup")).unwrap();
+        let c1 = compiler
+            .compile_claim(&valid_raw_claim("intra-dup"))
+            .unwrap();
+        let c2 = compiler
+            .compile_claim(&valid_raw_claim("intra-dup"))
+            .unwrap();
         let err = compiler.publish_batch(&[c1, c2]).unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CLMC_DUPLICATE_CLAIM_ID);
     }
@@ -871,11 +937,17 @@ mod tests {
     #[test]
     fn atomic_rollback_on_duplicate() {
         let mut compiler = make_compiler();
-        let c1 = compiler.compile_claim(&valid_raw_claim("atomic-1")).unwrap();
+        let c1 = compiler
+            .compile_claim(&valid_raw_claim("atomic-1"))
+            .unwrap();
         compiler.publish_batch(&[c1]).unwrap();
 
-        let c2 = compiler.compile_claim(&valid_raw_claim("atomic-2")).unwrap();
-        let c3 = compiler.compile_claim(&valid_raw_claim("atomic-1")).unwrap(); // duplicate
+        let c2 = compiler
+            .compile_claim(&valid_raw_claim("atomic-2"))
+            .unwrap();
+        let c3 = compiler
+            .compile_claim(&valid_raw_claim("atomic-1"))
+            .unwrap(); // duplicate
         let _ = compiler.publish_batch(&[c2, c3]); // fails
 
         // atomic-2 should NOT be in the scoreboard
@@ -889,7 +961,9 @@ mod tests {
     #[test]
     fn snapshot_digest_is_verifiable() {
         let mut compiler = make_compiler();
-        let c1 = compiler.compile_claim(&valid_raw_claim("verify-1")).unwrap();
+        let c1 = compiler
+            .compile_claim(&valid_raw_claim("verify-1"))
+            .unwrap();
         let snapshot = compiler.publish_batch(&[c1]).unwrap();
         assert!(compiler.verify_snapshot_digest(&snapshot).unwrap());
     }
@@ -897,7 +971,9 @@ mod tests {
     #[test]
     fn tampered_snapshot_fails_verification() {
         let mut compiler = make_compiler();
-        let c1 = compiler.compile_claim(&valid_raw_claim("tamper-1")).unwrap();
+        let c1 = compiler
+            .compile_claim(&valid_raw_claim("tamper-1"))
+            .unwrap();
         let mut snapshot = compiler.publish_batch(&[c1]).unwrap();
         snapshot.snapshot_digest = "tampered-digest".to_string();
         let err = compiler.verify_snapshot_digest(&snapshot).unwrap_err();
@@ -937,7 +1013,11 @@ mod tests {
         let mut compiler = make_compiler();
         let raw = valid_raw_claim("audit-ok");
         let _ = compiler.compile_claim(&raw).unwrap();
-        let codes: Vec<&str> = compiler.events().iter().map(|e| e.event_code.as_str()).collect();
+        let codes: Vec<&str> = compiler
+            .events()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::CLMC_001));
         assert!(codes.contains(&event_codes::CLMC_002));
         assert!(codes.contains(&event_codes::CLMC_007));
@@ -949,7 +1029,11 @@ mod tests {
         let mut raw = valid_raw_claim("audit-fail");
         raw.claim_text = "".to_string();
         let _ = compiler.compile_claim(&raw);
-        let codes: Vec<&str> = compiler.events().iter().map(|e| e.event_code.as_str()).collect();
+        let codes: Vec<&str> = compiler
+            .events()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::CLMC_001));
         assert!(codes.contains(&event_codes::CLMC_003));
     }
@@ -957,9 +1041,15 @@ mod tests {
     #[test]
     fn audit_events_emitted_on_publish() {
         let mut compiler = make_compiler();
-        let c = compiler.compile_claim(&valid_raw_claim("audit-pub")).unwrap();
+        let c = compiler
+            .compile_claim(&valid_raw_claim("audit-pub"))
+            .unwrap();
         let _ = compiler.publish_batch(&[c]).unwrap();
-        let codes: Vec<&str> = compiler.events().iter().map(|e| e.event_code.as_str()).collect();
+        let codes: Vec<&str> = compiler
+            .events()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::CLMC_004));
         assert!(codes.contains(&event_codes::CLMC_005));
         assert!(codes.contains(&event_codes::CLMC_009));
@@ -1028,7 +1118,9 @@ mod tests {
         };
         let mut compiler = ClaimCompiler::new(config);
         assert_eq!(compiler.capacity_remaining(), 5);
-        let c = compiler.compile_claim(&valid_raw_claim("cap-rem-1")).unwrap();
+        let c = compiler
+            .compile_claim(&valid_raw_claim("cap-rem-1"))
+            .unwrap();
         compiler.publish_batch(&[c]).unwrap();
         assert_eq!(compiler.capacity_remaining(), 4);
     }

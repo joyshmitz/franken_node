@@ -85,8 +85,8 @@ impl ProblemDetail {
         instance: &str,
         trace_id: &str,
     ) -> Self {
-        let status = code_to_status(&entry.code)
-            .unwrap_or_else(|| severity_to_status(entry.severity));
+        let status =
+            code_to_status(&entry.code).unwrap_or_else(|| severity_to_status(entry.severity));
 
         let retryable = if entry.recovery.retryable {
             Some(true)
@@ -155,9 +155,17 @@ pub enum ApiError {
     /// Authentication failed (401).
     AuthFailed { detail: String, trace_id: String },
     /// Authorization denied by policy hook (403).
-    PolicyDenied { detail: String, trace_id: String, policy_hook: String },
+    PolicyDenied {
+        detail: String,
+        trace_id: String,
+        policy_hook: String,
+    },
     /// Rate limit exceeded (429).
-    RateLimited { detail: String, trace_id: String, retry_after_ms: u64 },
+    RateLimited {
+        detail: String,
+        trace_id: String,
+        retry_after_ms: u64,
+    },
     /// Resource not found (404).
     NotFound { detail: String, trace_id: String },
     /// Lease or fencing conflict (409).
@@ -182,7 +190,11 @@ impl ApiError {
                 instance,
                 trace_id,
             ),
-            ApiError::PolicyDenied { detail, trace_id, policy_hook } => {
+            ApiError::PolicyDenied {
+                detail,
+                trace_id,
+                policy_hook,
+            } => {
                 let mut p = ProblemDetail::new(
                     "FASTAPI_POLICY_DENY",
                     "Policy denied",
@@ -194,7 +206,11 @@ impl ApiError {
                 p.recovery_hint = Some(format!("policy hook: {policy_hook}"));
                 p
             }
-            ApiError::RateLimited { detail, trace_id, retry_after_ms } => {
+            ApiError::RateLimited {
+                detail,
+                trace_id,
+                retry_after_ms,
+            } => {
                 let mut p = ProblemDetail::new(
                     "FASTAPI_RATE_LIMITED",
                     "Rate limit exceeded",
@@ -391,7 +407,10 @@ mod tests {
         assert_eq!(code_to_status("FRANKEN_CONNECTOR_POLICY_DENY"), Some(403));
         assert_eq!(code_to_status("FRANKEN_EGRESS_RATE_LIMITED"), Some(429));
         assert_eq!(code_to_status("FRANKEN_CAPABILITY_NOT_FOUND"), Some(404));
-        assert_eq!(code_to_status("FRANKEN_CONNECTOR_LEASE_CONFLICT"), Some(409));
+        assert_eq!(
+            code_to_status("FRANKEN_CONNECTOR_LEASE_CONFLICT"),
+            Some(409)
+        );
         assert_eq!(code_to_status("FRANKEN_PROTOCOL_INVALID_INPUT"), Some(400));
         assert_eq!(code_to_status("FRANKEN_RUNTIME_INIT"), None);
     }

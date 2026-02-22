@@ -515,12 +515,8 @@ impl CancellationProtocol {
                     error: None,
                 })
             }
-            CancellationPhase::Completed => {
-                Err(error_codes::ERR_CANCEL_ALREADY_FINAL.to_string())
-            }
-            _ => {
-                Err(error_codes::ERR_CANCEL_INVALID_PHASE.to_string())
-            }
+            CancellationPhase::Completed => Err(error_codes::ERR_CANCEL_ALREADY_FINAL.to_string()),
+            _ => Err(error_codes::ERR_CANCEL_INVALID_PHASE.to_string()),
         }
     }
 
@@ -564,12 +560,8 @@ impl CancellationProtocol {
                     error: None,
                 })
             }
-            CancellationPhase::Completed => {
-                Err(error_codes::ERR_CANCEL_ALREADY_FINAL.to_string())
-            }
-            _ => {
-                Err(error_codes::ERR_CANCEL_INVALID_PHASE.to_string())
-            }
+            CancellationPhase::Completed => Err(error_codes::ERR_CANCEL_ALREADY_FINAL.to_string()),
+            _ => Err(error_codes::ERR_CANCEL_INVALID_PHASE.to_string()),
         }
     }
 
@@ -591,7 +583,10 @@ impl CancellationProtocol {
                 if had_leaks {
                     self.emit_event(
                         event_codes::CAN_006,
-                        &format!("resource leak detected: {} resources force-released", released),
+                        &format!(
+                            "resource leak detected: {} resources force-released",
+                            released
+                        ),
                     );
                 }
 
@@ -610,12 +605,8 @@ impl CancellationProtocol {
                     },
                 })
             }
-            CancellationPhase::Completed => {
-                Err(error_codes::ERR_CANCEL_ALREADY_FINAL.to_string())
-            }
-            _ => {
-                Err(error_codes::ERR_CANCEL_INVALID_PHASE.to_string())
-            }
+            CancellationPhase::Completed => Err(error_codes::ERR_CANCEL_ALREADY_FINAL.to_string()),
+            _ => Err(error_codes::ERR_CANCEL_INVALID_PHASE.to_string()),
         }
     }
 
@@ -696,7 +687,8 @@ pub struct TimingRow {
 
 /// Generate a timing report from protocol execution results.
 pub fn generate_timing_csv(rows: &[TimingRow]) -> String {
-    let mut csv = String::from("workflow_id,phase,budget_ms,actual_ms,within_budget,resources_released\n");
+    let mut csv =
+        String::from("workflow_id,phase,budget_ms,actual_ms,within_budget,resources_released\n");
     for row in rows {
         csv.push_str(&format!(
             "{},{},{},{},{},{}\n",
@@ -718,10 +710,7 @@ mod tests {
     use super::*;
 
     fn make_protocol(workflow: &str, timeout_ms: u64) -> CancellationProtocol {
-        CancellationProtocol::new(
-            CancellationBudget::new(workflow, timeout_ms),
-            "test-trace",
-        )
+        CancellationProtocol::new(CancellationBudget::new(workflow, timeout_ms), "test-trace")
     }
 
     // ── Phase enum ───────────────────────────────────────────────────────
@@ -969,7 +958,8 @@ mod tests {
         let mut proto = make_protocol("test", 3000);
         proto.request().unwrap();
         let jsonl = proto.export_audit_log_jsonl();
-        let parsed: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert_eq!(parsed["event_code"], "CAN-001");
         assert_eq!(parsed["schema_version"], SCHEMA_VERSION);
     }
@@ -978,16 +968,14 @@ mod tests {
 
     #[test]
     fn timing_csv_generation() {
-        let rows = vec![
-            TimingRow {
-                workflow_id: "lifecycle".into(),
-                phase: "drain".into(),
-                budget_ms: 5000,
-                actual_ms: 1200,
-                within_budget: true,
-                resources_released: 3,
-            },
-        ];
+        let rows = vec![TimingRow {
+            workflow_id: "lifecycle".into(),
+            phase: "drain".into(),
+            budget_ms: 5000,
+            actual_ms: 1200,
+            within_budget: true,
+            resources_released: 3,
+        }];
         let csv = generate_timing_csv(&rows);
         assert!(csv.contains("workflow_id,phase,budget_ms"));
         assert!(csv.contains("lifecycle,drain,5000,1200,true,3"));

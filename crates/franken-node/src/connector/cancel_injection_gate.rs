@@ -21,11 +21,9 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::control_plane::cancellation_injection::{
-    CancelAuditRecord, CancelInjectionMatrix, CancelMatrixEntry, CancelTestOutcome,
-    CancellationInjectionFramework, ResourceDelta, ResourceSnapshot, StateSnapshot,
-    WorkflowId, WorkflowRegistration, AwaitPoint,
-    event_codes as upstream_events,
-    error_codes as upstream_errors,
+    AwaitPoint, CancelAuditRecord, CancelInjectionMatrix, CancelMatrixEntry, CancelTestOutcome,
+    CancellationInjectionFramework, ResourceDelta, ResourceSnapshot, StateSnapshot, WorkflowId,
+    WorkflowRegistration, error_codes as upstream_errors, event_codes as upstream_events,
 };
 
 /// Schema version for the control-plane cancellation injection gate.
@@ -206,10 +204,30 @@ impl CancelInjectionGate {
         self.register_control_workflow(
             ControlWorkflow::ConnectorLifecycle,
             vec![
-                AwaitPoint::new(WorkflowId::Custom("connector_lifecycle".into()), 0, "init_start", "Before connector initialization"),
-                AwaitPoint::new(WorkflowId::Custom("connector_lifecycle".into()), 1, "health_probe", "During initial health probe"),
-                AwaitPoint::new(WorkflowId::Custom("connector_lifecycle".into()), 2, "state_load", "Loading persisted state"),
-                AwaitPoint::new(WorkflowId::Custom("connector_lifecycle".into()), 3, "ready_signal", "Before signaling ready"),
+                AwaitPoint::new(
+                    WorkflowId::Custom("connector_lifecycle".into()),
+                    0,
+                    "init_start",
+                    "Before connector initialization",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("connector_lifecycle".into()),
+                    1,
+                    "health_probe",
+                    "During initial health probe",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("connector_lifecycle".into()),
+                    2,
+                    "state_load",
+                    "Loading persisted state",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("connector_lifecycle".into()),
+                    3,
+                    "ready_signal",
+                    "Before signaling ready",
+                ),
             ],
             trace_id,
         );
@@ -218,10 +236,30 @@ impl CancelInjectionGate {
         self.register_control_workflow(
             ControlWorkflow::RolloutTransition,
             vec![
-                AwaitPoint::new(WorkflowId::Custom("rollout_transition".into()), 0, "canary_check", "Before canary evaluation"),
-                AwaitPoint::new(WorkflowId::Custom("rollout_transition".into()), 1, "promote_prepare", "Preparing promotion"),
-                AwaitPoint::new(WorkflowId::Custom("rollout_transition".into()), 2, "state_commit", "Committing rollout state"),
-                AwaitPoint::new(WorkflowId::Custom("rollout_transition".into()), 3, "notify_peers", "Notifying peer nodes"),
+                AwaitPoint::new(
+                    WorkflowId::Custom("rollout_transition".into()),
+                    0,
+                    "canary_check",
+                    "Before canary evaluation",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("rollout_transition".into()),
+                    1,
+                    "promote_prepare",
+                    "Preparing promotion",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("rollout_transition".into()),
+                    2,
+                    "state_commit",
+                    "Committing rollout state",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("rollout_transition".into()),
+                    3,
+                    "notify_peers",
+                    "Notifying peer nodes",
+                ),
             ],
             trace_id,
         );
@@ -230,9 +268,24 @@ impl CancelInjectionGate {
         self.register_control_workflow(
             ControlWorkflow::QuarantinePromotion,
             vec![
-                AwaitPoint::new(WorkflowId::Custom("quarantine_promotion".into()), 0, "quarantine_check", "Evaluating quarantine status"),
-                AwaitPoint::new(WorkflowId::Custom("quarantine_promotion".into()), 1, "trust_verify", "Verifying trust score"),
-                AwaitPoint::new(WorkflowId::Custom("quarantine_promotion".into()), 2, "promotion_commit", "Committing promotion"),
+                AwaitPoint::new(
+                    WorkflowId::Custom("quarantine_promotion".into()),
+                    0,
+                    "quarantine_check",
+                    "Evaluating quarantine status",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("quarantine_promotion".into()),
+                    1,
+                    "trust_verify",
+                    "Verifying trust score",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("quarantine_promotion".into()),
+                    2,
+                    "promotion_commit",
+                    "Committing promotion",
+                ),
             ],
             trace_id,
         );
@@ -241,10 +294,30 @@ impl CancelInjectionGate {
         self.register_control_workflow(
             ControlWorkflow::MigrationOrchestration,
             vec![
-                AwaitPoint::new(WorkflowId::Custom("migration_orchestration".into()), 0, "schema_check", "Checking schema compatibility"),
-                AwaitPoint::new(WorkflowId::Custom("migration_orchestration".into()), 1, "data_migrate", "Migrating data"),
-                AwaitPoint::new(WorkflowId::Custom("migration_orchestration".into()), 2, "validate_result", "Validating migration"),
-                AwaitPoint::new(WorkflowId::Custom("migration_orchestration".into()), 3, "finalize", "Finalizing migration"),
+                AwaitPoint::new(
+                    WorkflowId::Custom("migration_orchestration".into()),
+                    0,
+                    "schema_check",
+                    "Checking schema compatibility",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("migration_orchestration".into()),
+                    1,
+                    "data_migrate",
+                    "Migrating data",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("migration_orchestration".into()),
+                    2,
+                    "validate_result",
+                    "Validating migration",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("migration_orchestration".into()),
+                    3,
+                    "finalize",
+                    "Finalizing migration",
+                ),
             ],
             trace_id,
         );
@@ -253,9 +326,24 @@ impl CancelInjectionGate {
         self.register_control_workflow(
             ControlWorkflow::FencingAcquire,
             vec![
-                AwaitPoint::new(WorkflowId::Custom("fencing_acquire".into()), 0, "token_request", "Requesting fencing token"),
-                AwaitPoint::new(WorkflowId::Custom("fencing_acquire".into()), 1, "epoch_validate", "Validating epoch binding"),
-                AwaitPoint::new(WorkflowId::Custom("fencing_acquire".into()), 2, "token_commit", "Committing token acquisition"),
+                AwaitPoint::new(
+                    WorkflowId::Custom("fencing_acquire".into()),
+                    0,
+                    "token_request",
+                    "Requesting fencing token",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("fencing_acquire".into()),
+                    1,
+                    "epoch_validate",
+                    "Validating epoch binding",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("fencing_acquire".into()),
+                    2,
+                    "token_commit",
+                    "Committing token acquisition",
+                ),
             ],
             trace_id,
         );
@@ -264,9 +352,24 @@ impl CancelInjectionGate {
         self.register_control_workflow(
             ControlWorkflow::HealthGateEvaluation,
             vec![
-                AwaitPoint::new(WorkflowId::Custom("health_gate_evaluation".into()), 0, "probe_collect", "Collecting health probes"),
-                AwaitPoint::new(WorkflowId::Custom("health_gate_evaluation".into()), 1, "score_compute", "Computing health score"),
-                AwaitPoint::new(WorkflowId::Custom("health_gate_evaluation".into()), 2, "verdict_emit", "Emitting health verdict"),
+                AwaitPoint::new(
+                    WorkflowId::Custom("health_gate_evaluation".into()),
+                    0,
+                    "probe_collect",
+                    "Collecting health probes",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("health_gate_evaluation".into()),
+                    1,
+                    "score_compute",
+                    "Computing health score",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("health_gate_evaluation".into()),
+                    2,
+                    "verdict_emit",
+                    "Emitting health verdict",
+                ),
             ],
             trace_id,
         );
@@ -479,12 +582,30 @@ mod tests {
 
     #[test]
     fn control_workflow_display() {
-        assert_eq!(ControlWorkflow::ConnectorLifecycle.to_string(), "connector_lifecycle");
-        assert_eq!(ControlWorkflow::RolloutTransition.to_string(), "rollout_transition");
-        assert_eq!(ControlWorkflow::QuarantinePromotion.to_string(), "quarantine_promotion");
-        assert_eq!(ControlWorkflow::MigrationOrchestration.to_string(), "migration_orchestration");
-        assert_eq!(ControlWorkflow::FencingAcquire.to_string(), "fencing_acquire");
-        assert_eq!(ControlWorkflow::HealthGateEvaluation.to_string(), "health_gate_evaluation");
+        assert_eq!(
+            ControlWorkflow::ConnectorLifecycle.to_string(),
+            "connector_lifecycle"
+        );
+        assert_eq!(
+            ControlWorkflow::RolloutTransition.to_string(),
+            "rollout_transition"
+        );
+        assert_eq!(
+            ControlWorkflow::QuarantinePromotion.to_string(),
+            "quarantine_promotion"
+        );
+        assert_eq!(
+            ControlWorkflow::MigrationOrchestration.to_string(),
+            "migration_orchestration"
+        );
+        assert_eq!(
+            ControlWorkflow::FencingAcquire.to_string(),
+            "fencing_acquire"
+        );
+        assert_eq!(
+            ControlWorkflow::HealthGateEvaluation.to_string(),
+            "health_gate_evaluation"
+        );
     }
 
     // ---- Gate execution ----
@@ -536,7 +657,9 @@ mod tests {
     fn lifecycle_workflow_points() {
         let mut gate = make_gate();
         let report = gate.run_full_gate("test");
-        let lifecycle = report.workflow_results.iter()
+        let lifecycle = report
+            .workflow_results
+            .iter()
             .find(|r| r.workflow == "connector_lifecycle")
             .unwrap();
         assert_eq!(lifecycle.total_points, 4);
@@ -599,9 +722,9 @@ mod tests {
         let sb = StateSnapshot::new(5, 1000);
         let sa = StateSnapshot::new(5, 1050);
 
-        let outcome = gate.run_injection_case(
-            "connector_lifecycle", 0, &rb, &ra, &sb, &sa, 50, "t1",
-        ).unwrap();
+        let outcome = gate
+            .run_injection_case("connector_lifecycle", 0, &rb, &ra, &sb, &sa, 50, "t1")
+            .unwrap();
         assert!(outcome.is_pass());
     }
 

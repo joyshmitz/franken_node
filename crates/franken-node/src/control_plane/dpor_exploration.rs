@@ -290,14 +290,37 @@ pub struct DporAuditRecord {
 /// Errors from the DPOR exploration framework.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DporError {
-    BudgetExceeded { model: String, explored: u64, budget_sec: u64 },
-    MemoryExceeded { model: String, used_bytes: u64, budget_bytes: u64 },
-    UnknownModel { name: String },
-    InvalidOperation { model: String, detail: String },
-    SafetyViolation { model: String, property: String },
-    CycleDetected { model: String, cycle: Vec<String> },
-    EmptyModel { model: String },
-    NoProperties { model: String },
+    BudgetExceeded {
+        model: String,
+        explored: u64,
+        budget_sec: u64,
+    },
+    MemoryExceeded {
+        model: String,
+        used_bytes: u64,
+        budget_bytes: u64,
+    },
+    UnknownModel {
+        name: String,
+    },
+    InvalidOperation {
+        model: String,
+        detail: String,
+    },
+    SafetyViolation {
+        model: String,
+        property: String,
+    },
+    CycleDetected {
+        model: String,
+        cycle: Vec<String>,
+    },
+    EmptyModel {
+        model: String,
+    },
+    NoProperties {
+        model: String,
+    },
 }
 
 impl DporError {
@@ -318,11 +341,33 @@ impl DporError {
 impl fmt::Display for DporError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::BudgetExceeded { model, explored, budget_sec } => {
-                write!(f, "{}: {} explored {} in {}s", self.code(), model, explored, budget_sec)
+            Self::BudgetExceeded {
+                model,
+                explored,
+                budget_sec,
+            } => {
+                write!(
+                    f,
+                    "{}: {} explored {} in {}s",
+                    self.code(),
+                    model,
+                    explored,
+                    budget_sec
+                )
             }
-            Self::MemoryExceeded { model, used_bytes, budget_bytes } => {
-                write!(f, "{}: {} used {} of {} bytes", self.code(), model, used_bytes, budget_bytes)
+            Self::MemoryExceeded {
+                model,
+                used_bytes,
+                budget_bytes,
+            } => {
+                write!(
+                    f,
+                    "{}: {} used {} of {} bytes",
+                    self.code(),
+                    model,
+                    used_bytes,
+                    budget_bytes
+                )
             }
             Self::UnknownModel { name } => write!(f, "{}: {}", self.code(), name),
             Self::InvalidOperation { model, detail } => {
@@ -384,9 +429,12 @@ impl DporExplorer {
         check_fn: &dyn Fn(&[&Operation]) -> Option<(String, Vec<CounterexampleStep>)>,
         trace_id: &str,
     ) -> Result<ExplorationResult, DporError> {
-        let model = self.models.get(model_name).ok_or_else(|| DporError::UnknownModel {
-            name: model_name.to_string(),
-        })?;
+        let model = self
+            .models
+            .get(model_name)
+            .ok_or_else(|| DporError::UnknownModel {
+                name: model_name.to_string(),
+            })?;
 
         let estimated = model.estimated_schedules();
         let op_count = model.operations.len();
@@ -409,7 +457,11 @@ impl DporExplorer {
 
         for schedule in &schedules {
             // Compute schedule hash for DPOR pruning
-            let hash = schedule.iter().map(|op| op.id.as_str()).collect::<Vec<_>>().join(",");
+            let hash = schedule
+                .iter()
+                .map(|op| op.id.as_str())
+                .collect::<Vec<_>>()
+                .join(",");
             if seen_hashes.contains(&hash) {
                 pruned += 1;
                 continue;
@@ -454,8 +506,10 @@ impl DporExplorer {
             model_name: model_name.to_string(),
             detail: format!(
                 "explored {}, pruned {}, violations {}, coverage {:.1}%",
-                result.explored_count, result.pruned_count,
-                result.violations.len(), result.coverage_pct
+                result.explored_count,
+                result.pruned_count,
+                result.violations.len(),
+                result.coverage_pct
             ),
             trace_id: trace_id.to_string(),
             timestamp_ms: 0,
@@ -520,10 +574,20 @@ impl DporExplorer {
             ProtocolModelId::EpochBarrierCoordination,
             "Epoch barrier: propose/drain/commit across participants",
         );
-        m1.add_operation(Operation::new("propose", "leader", "Propose epoch transition"));
-        m1.add_operation(Operation::new("drain-a", "svc-a", "Drain in-flight work").with_dep("propose"));
-        m1.add_operation(Operation::new("drain-b", "svc-b", "Drain in-flight work").with_dep("propose"));
-        m1.add_operation(Operation::new("drain-c", "svc-c", "Drain in-flight work").with_dep("propose"));
+        m1.add_operation(Operation::new(
+            "propose",
+            "leader",
+            "Propose epoch transition",
+        ));
+        m1.add_operation(
+            Operation::new("drain-a", "svc-a", "Drain in-flight work").with_dep("propose"),
+        );
+        m1.add_operation(
+            Operation::new("drain-b", "svc-b", "Drain in-flight work").with_dep("propose"),
+        );
+        m1.add_operation(
+            Operation::new("drain-c", "svc-c", "Drain in-flight work").with_dep("propose"),
+        );
         m1.add_operation(
             Operation::new("commit", "leader", "Commit epoch advance")
                 .with_dep("drain-a")
@@ -545,10 +609,23 @@ impl DporExplorer {
             ProtocolModelId::RemoteCapabilityOps,
             "Remote capability: acquire/execute/release with concurrent epoch transitions",
         );
-        m2.add_operation(Operation::new("acquire-cap", "client", "Acquire remote capability"));
-        m2.add_operation(Operation::new("execute-op", "client", "Execute remote operation").with_dep("acquire-cap"));
-        m2.add_operation(Operation::new("release-cap", "client", "Release capability").with_dep("execute-op"));
-        m2.add_operation(Operation::new("epoch-transition", "leader", "Concurrent epoch transition"));
+        m2.add_operation(Operation::new(
+            "acquire-cap",
+            "client",
+            "Acquire remote capability",
+        ));
+        m2.add_operation(
+            Operation::new("execute-op", "client", "Execute remote operation")
+                .with_dep("acquire-cap"),
+        );
+        m2.add_operation(
+            Operation::new("release-cap", "client", "Release capability").with_dep("execute-op"),
+        );
+        m2.add_operation(Operation::new(
+            "epoch-transition",
+            "leader",
+            "Concurrent epoch transition",
+        ));
         m2.add_safety_property(SafetyProperty::new(
             "no_execute_without_cap",
             "No remote operation executes without valid capability",
@@ -645,7 +722,9 @@ mod tests {
     #[test]
     fn explore_epoch_barrier_no_violations() {
         let mut e = make_explorer();
-        let result = e.explore("epoch_barrier_coordination", &no_violations, "t1").unwrap();
+        let result = e
+            .explore("epoch_barrier_coordination", &no_violations, "t1")
+            .unwrap();
         assert!(result.is_pass());
         assert!(result.explored_count > 0);
         assert_eq!(result.verdict, "PASS");
@@ -654,7 +733,9 @@ mod tests {
     #[test]
     fn explore_remote_capability_no_violations() {
         let mut e = make_explorer();
-        let result = e.explore("remote_capability_ops", &no_violations, "t2").unwrap();
+        let result = e
+            .explore("remote_capability_ops", &no_violations, "t2")
+            .unwrap();
         assert!(result.is_pass());
         assert!(result.explored_count > 0);
     }
@@ -662,7 +743,9 @@ mod tests {
     #[test]
     fn explore_marker_stream_no_violations() {
         let mut e = make_explorer();
-        let result = e.explore("marker_stream_mutations", &no_violations, "t3").unwrap();
+        let result = e
+            .explore("marker_stream_mutations", &no_violations, "t3")
+            .unwrap();
         assert!(result.is_pass());
         assert!(result.explored_count > 0);
     }
@@ -673,14 +756,19 @@ mod tests {
     fn explore_with_deliberate_violation() {
         let mut e = make_explorer();
         let violator = |_ops: &[&Operation]| -> Option<(String, Vec<CounterexampleStep>)> {
-            Some(("test_property".to_string(), vec![CounterexampleStep {
-                step_index: 0,
-                operation_id: "op-1".to_string(),
-                actor: "test".to_string(),
-                state_summary: "violated".to_string(),
-            }]))
+            Some((
+                "test_property".to_string(),
+                vec![CounterexampleStep {
+                    step_index: 0,
+                    operation_id: "op-1".to_string(),
+                    actor: "test".to_string(),
+                    state_summary: "violated".to_string(),
+                }],
+            ))
         };
-        let result = e.explore("epoch_barrier_coordination", &violator, "t4").unwrap();
+        let result = e
+            .explore("epoch_barrier_coordination", &violator, "t4")
+            .unwrap();
         assert!(!result.is_pass());
         assert!(!result.violations.is_empty());
         assert_eq!(result.verdict, "FAIL");
@@ -691,8 +779,18 @@ mod tests {
     #[test]
     fn counterexample_has_required_fields() {
         let steps = vec![
-            CounterexampleStep { step_index: 0, operation_id: "propose".into(), actor: "leader".into(), state_summary: "proposed".into() },
-            CounterexampleStep { step_index: 1, operation_id: "commit".into(), actor: "leader".into(), state_summary: "committed without drain".into() },
+            CounterexampleStep {
+                step_index: 0,
+                operation_id: "propose".into(),
+                actor: "leader".into(),
+                state_summary: "proposed".into(),
+            },
+            CounterexampleStep {
+                step_index: 1,
+                operation_id: "commit".into(),
+                actor: "leader".into(),
+                state_summary: "committed without drain".into(),
+            },
         ];
         let ce = Counterexample::new("test_model", "no_dual_epoch", steps);
         assert_eq!(ce.length, 2);
@@ -714,14 +812,20 @@ mod tests {
     #[test]
     fn empty_model_rejected() {
         let m = ProtocolModel::new(ProtocolModelId::Custom("empty".into()), "empty");
-        assert_eq!(m.validate().unwrap_err().code(), error_codes::ERR_DPOR_EMPTY_MODEL);
+        assert_eq!(
+            m.validate().unwrap_err().code(),
+            error_codes::ERR_DPOR_EMPTY_MODEL
+        );
     }
 
     #[test]
     fn model_without_properties_rejected() {
         let mut m = ProtocolModel::new(ProtocolModelId::Custom("no-props".into()), "test");
         m.add_operation(Operation::new("op1", "actor", "label"));
-        assert_eq!(m.validate().unwrap_err().code(), error_codes::ERR_DPOR_NO_PROPERTIES);
+        assert_eq!(
+            m.validate().unwrap_err().code(),
+            error_codes::ERR_DPOR_NO_PROPERTIES
+        );
     }
 
     #[test]
@@ -729,7 +833,10 @@ mod tests {
         let mut m = ProtocolModel::new(ProtocolModelId::Custom("bad-dep".into()), "test");
         m.add_operation(Operation::new("op1", "actor", "label").with_dep("nonexistent"));
         m.add_safety_property(SafetyProperty::new("prop", "desc"));
-        assert_eq!(m.validate().unwrap_err().code(), error_codes::ERR_DPOR_INVALID_OPERATION);
+        assert_eq!(
+            m.validate().unwrap_err().code(),
+            error_codes::ERR_DPOR_INVALID_OPERATION
+        );
     }
 
     // ---- Estimated schedules ----
@@ -749,7 +856,9 @@ mod tests {
     #[test]
     fn coverage_percentage_reported() {
         let mut e = make_explorer();
-        let result = e.explore("marker_stream_mutations", &no_violations, "t6").unwrap();
+        let result = e
+            .explore("marker_stream_mutations", &no_violations, "t6")
+            .unwrap();
         assert!(result.coverage_pct > 0.0);
         assert!(result.coverage_pct <= 100.0);
     }
@@ -759,7 +868,8 @@ mod tests {
     #[test]
     fn audit_log_records_start_and_complete() {
         let mut e = make_explorer();
-        e.explore("epoch_barrier_coordination", &no_violations, "t7").unwrap();
+        e.explore("epoch_barrier_coordination", &no_violations, "t7")
+            .unwrap();
         let log = e.audit_log();
         let codes: Vec<&str> = log.iter().map(|r| r.event_code.as_str()).collect();
         assert!(codes.contains(&event_codes::DPOR_EXPLORATION_START));
@@ -769,10 +879,12 @@ mod tests {
     #[test]
     fn export_audit_jsonl() {
         let mut e = make_explorer();
-        e.explore("epoch_barrier_coordination", &no_violations, "t8").unwrap();
+        e.explore("epoch_barrier_coordination", &no_violations, "t8")
+            .unwrap();
         let jsonl = e.export_audit_log_jsonl();
         assert!(!jsonl.is_empty());
-        let parsed: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert_eq!(parsed["schema_version"], SCHEMA_VERSION);
     }
 
@@ -780,10 +892,22 @@ mod tests {
 
     #[test]
     fn model_id_display() {
-        assert_eq!(ProtocolModelId::EpochBarrierCoordination.to_string(), "epoch_barrier_coordination");
-        assert_eq!(ProtocolModelId::RemoteCapabilityOps.to_string(), "remote_capability_ops");
-        assert_eq!(ProtocolModelId::MarkerStreamMutations.to_string(), "marker_stream_mutations");
-        assert_eq!(ProtocolModelId::Custom("foo".into()).to_string(), "custom:foo");
+        assert_eq!(
+            ProtocolModelId::EpochBarrierCoordination.to_string(),
+            "epoch_barrier_coordination"
+        );
+        assert_eq!(
+            ProtocolModelId::RemoteCapabilityOps.to_string(),
+            "remote_capability_ops"
+        );
+        assert_eq!(
+            ProtocolModelId::MarkerStreamMutations.to_string(),
+            "marker_stream_mutations"
+        );
+        assert_eq!(
+            ProtocolModelId::Custom("foo".into()).to_string(),
+            "custom:foo"
+        );
     }
 
     // ---- Schedule result ----
@@ -808,12 +932,29 @@ mod tests {
     #[test]
     fn error_display_all_variants() {
         let errors: Vec<DporError> = vec![
-            DporError::BudgetExceeded { model: "m".into(), explored: 100, budget_sec: 60 },
-            DporError::MemoryExceeded { model: "m".into(), used_bytes: 2_000_000_000, budget_bytes: 1_000_000_000 },
+            DporError::BudgetExceeded {
+                model: "m".into(),
+                explored: 100,
+                budget_sec: 60,
+            },
+            DporError::MemoryExceeded {
+                model: "m".into(),
+                used_bytes: 2_000_000_000,
+                budget_bytes: 1_000_000_000,
+            },
             DporError::UnknownModel { name: "x".into() },
-            DporError::InvalidOperation { model: "m".into(), detail: "bad".into() },
-            DporError::SafetyViolation { model: "m".into(), property: "p".into() },
-            DporError::CycleDetected { model: "m".into(), cycle: vec!["a".into(), "b".into()] },
+            DporError::InvalidOperation {
+                model: "m".into(),
+                detail: "bad".into(),
+            },
+            DporError::SafetyViolation {
+                model: "m".into(),
+                property: "p".into(),
+            },
+            DporError::CycleDetected {
+                model: "m".into(),
+                cycle: vec!["a".into(), "b".into()],
+            },
             DporError::EmptyModel { model: "m".into() },
             DporError::NoProperties { model: "m".into() },
         ];
@@ -858,9 +999,15 @@ mod tests {
     #[test]
     fn explore_all_default_models() {
         let mut e = make_explorer();
-        let model_names: Vec<String> = e.registered_models().iter().map(|m| m.id.to_string()).collect();
+        let model_names: Vec<String> = e
+            .registered_models()
+            .iter()
+            .map(|m| m.id.to_string())
+            .collect();
         for name in &model_names {
-            let result = e.explore(name, &no_violations, &format!("t-{name}")).unwrap();
+            let result = e
+                .explore(name, &no_violations, &format!("t-{name}"))
+                .unwrap();
             assert!(result.is_pass(), "Model {} should pass", name);
         }
         assert_eq!(e.results().len(), 3);

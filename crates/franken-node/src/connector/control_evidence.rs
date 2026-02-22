@@ -238,10 +238,7 @@ pub struct ControlEvidenceEmitter {
 
 impl ControlEvidenceEmitter {
     pub fn new() -> Self {
-        let coverage = DecisionType::all()
-            .iter()
-            .map(|dt| (*dt, false))
-            .collect();
+        let coverage = DecisionType::all().iter().map(|dt| (*dt, false)).collect();
         ControlEvidenceEmitter {
             entries: Vec::new(),
             events: Vec::new(),
@@ -253,10 +250,7 @@ impl ControlEvidenceEmitter {
     ///
     /// Validates the entry schema, appends it to the ledger,
     /// and emits appropriate events.
-    pub fn emit_evidence(
-        &mut self,
-        entry: ControlEvidenceEntry,
-    ) -> Result<(), ConformanceError> {
+    pub fn emit_evidence(&mut self, entry: ControlEvidenceEntry) -> Result<(), ConformanceError> {
         // Validate schema
         entry.validate().map_err(|e| {
             self.emit_event(
@@ -463,15 +457,24 @@ mod tests {
     #[test]
     fn test_decision_type_labels() {
         assert_eq!(DecisionType::HealthGateEval.label(), "health_gate_eval");
-        assert_eq!(DecisionType::RolloutTransition.label(), "rollout_transition");
+        assert_eq!(
+            DecisionType::RolloutTransition.label(),
+            "rollout_transition"
+        );
         assert_eq!(DecisionType::QuarantineAction.label(), "quarantine_action");
         assert_eq!(DecisionType::FencingDecision.label(), "fencing_decision");
-        assert_eq!(DecisionType::MigrationDecision.label(), "migration_decision");
+        assert_eq!(
+            DecisionType::MigrationDecision.label(),
+            "migration_decision"
+        );
     }
 
     #[test]
     fn test_decision_type_display() {
-        assert_eq!(format!("{}", DecisionType::HealthGateEval), "health_gate_eval");
+        assert_eq!(
+            format!("{}", DecisionType::HealthGateEval),
+            "health_gate_eval"
+        );
     }
 
     // -- DecisionKind ---------------------------------------------------
@@ -578,13 +581,23 @@ mod tests {
 
     #[test]
     fn test_entry_validate_valid() {
-        let entry = make_entry(DecisionType::HealthGateEval, DecisionOutcome::Pass, "d1", 100);
+        let entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
         assert!(entry.validate().is_ok());
     }
 
     #[test]
     fn test_entry_validate_bad_schema_version() {
-        let mut entry = make_entry(DecisionType::HealthGateEval, DecisionOutcome::Pass, "d1", 100);
+        let mut entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
         entry.schema_version = "2.0".to_string();
         let err = entry.validate().unwrap_err();
         assert!(matches!(err, ConformanceError::SchemaInvalid(_)));
@@ -592,7 +605,12 @@ mod tests {
 
     #[test]
     fn test_entry_validate_empty_decision_id() {
-        let mut entry = make_entry(DecisionType::HealthGateEval, DecisionOutcome::Pass, "d1", 100);
+        let mut entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
         entry.decision_id = String::new();
         let err = entry.validate().unwrap_err();
         assert!(matches!(err, ConformanceError::SchemaInvalid(_)));
@@ -600,7 +618,12 @@ mod tests {
 
     #[test]
     fn test_entry_validate_empty_trace_id() {
-        let mut entry = make_entry(DecisionType::HealthGateEval, DecisionOutcome::Pass, "d1", 100);
+        let mut entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
         entry.trace_id = String::new();
         let err = entry.validate().unwrap_err();
         assert!(matches!(err, ConformanceError::SchemaInvalid(_)));
@@ -608,7 +631,12 @@ mod tests {
 
     #[test]
     fn test_entry_validate_empty_action() {
-        let mut entry = make_entry(DecisionType::HealthGateEval, DecisionOutcome::Pass, "d1", 100);
+        let mut entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
         entry.chosen_action = String::new();
         let err = entry.validate().unwrap_err();
         assert!(matches!(err, ConformanceError::SchemaInvalid(_)));
@@ -619,7 +647,12 @@ mod tests {
     #[test]
     fn test_emit_valid_evidence() {
         let mut emitter = ControlEvidenceEmitter::new();
-        let entry = make_entry(DecisionType::HealthGateEval, DecisionOutcome::Pass, "d1", 100);
+        let entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
         assert!(emitter.emit_evidence(entry).is_ok());
         assert_eq!(emitter.entries().len(), 1);
     }
@@ -627,7 +660,12 @@ mod tests {
     #[test]
     fn test_emit_invalid_evidence_rejected() {
         let mut emitter = ControlEvidenceEmitter::new();
-        let mut entry = make_entry(DecisionType::HealthGateEval, DecisionOutcome::Pass, "d1", 100);
+        let mut entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
         entry.schema_version = "bad".to_string();
         assert!(emitter.emit_evidence(entry).is_err());
         assert_eq!(emitter.entries().len(), 0);
@@ -636,7 +674,12 @@ mod tests {
     #[test]
     fn test_emit_emits_evd001_event() {
         let mut emitter = ControlEvidenceEmitter::new();
-        let entry = make_entry(DecisionType::HealthGateEval, DecisionOutcome::Pass, "d1", 100);
+        let entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
         emitter.emit_evidence(entry).unwrap();
         let emitted: Vec<_> = emitter
             .events()
@@ -649,7 +692,12 @@ mod tests {
     #[test]
     fn test_emit_emits_evd003_event() {
         let mut emitter = ControlEvidenceEmitter::new();
-        let entry = make_entry(DecisionType::HealthGateEval, DecisionOutcome::Pass, "d1", 100);
+        let entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
         emitter.emit_evidence(entry).unwrap();
         let validated: Vec<_> = emitter
             .events()
@@ -662,7 +710,12 @@ mod tests {
     #[test]
     fn test_emit_invalid_emits_evd004_event() {
         let mut emitter = ControlEvidenceEmitter::new();
-        let mut entry = make_entry(DecisionType::HealthGateEval, DecisionOutcome::Pass, "d1", 100);
+        let mut entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
         entry.schema_version = "bad".to_string();
         let _ = emitter.emit_evidence(entry);
         let invalid: Vec<_> = emitter
@@ -678,7 +731,12 @@ mod tests {
     #[test]
     fn test_execute_with_evidence_success() {
         let mut emitter = ControlEvidenceEmitter::new();
-        let entry = make_entry(DecisionType::HealthGateEval, DecisionOutcome::Pass, "d1", 100);
+        let entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
         let result = emitter.execute_with_evidence(DecisionType::HealthGateEval, Some(entry));
         assert!(result.is_ok());
     }
@@ -688,7 +746,10 @@ mod tests {
         let mut emitter = ControlEvidenceEmitter::new();
         let result = emitter.execute_with_evidence(DecisionType::HealthGateEval, None);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ConformanceError::MissingEvidence(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ConformanceError::MissingEvidence(_)
+        ));
     }
 
     #[test]
@@ -706,9 +767,17 @@ mod tests {
     #[test]
     fn test_execute_with_wrong_type_fails() {
         let mut emitter = ControlEvidenceEmitter::new();
-        let entry = make_entry(DecisionType::FencingDecision, DecisionOutcome::Grant, "d1", 100);
+        let entry = make_entry(
+            DecisionType::FencingDecision,
+            DecisionOutcome::Grant,
+            "d1",
+            100,
+        );
         let result = emitter.execute_with_evidence(DecisionType::HealthGateEval, Some(entry));
-        assert!(matches!(result.unwrap_err(), ConformanceError::DecisionMismatch(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ConformanceError::DecisionMismatch(_)
+        ));
     }
 
     // -- Ordering verification ------------------------------------------
@@ -756,7 +825,10 @@ mod tests {
             ))
             .unwrap();
         let result = emitter.verify_ordering();
-        assert!(matches!(result, Err(ConformanceError::OrderingViolation(_))));
+        assert!(matches!(
+            result,
+            Err(ConformanceError::OrderingViolation(_))
+        ));
     }
 
     #[test]
@@ -819,7 +891,12 @@ mod tests {
                 _ => DecisionOutcome::Pass,
             };
             emitter
-                .emit_evidence(make_entry(*dt, outcome, &format!("d{}", i), (i as u64 + 1) * 100))
+                .emit_evidence(make_entry(
+                    *dt,
+                    outcome,
+                    &format!("d{}", i),
+                    (i as u64 + 1) * 100,
+                ))
                 .unwrap();
         }
         assert!(emitter.uncovered_types().is_empty());
@@ -832,7 +909,12 @@ mod tests {
         let mut e1 = ControlEvidenceEmitter::new();
         let mut e2 = ControlEvidenceEmitter::new();
 
-        let entry = make_entry(DecisionType::HealthGateEval, DecisionOutcome::Pass, "d1", 100);
+        let entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
         e1.emit_evidence(entry.clone()).unwrap();
         e2.emit_evidence(entry).unwrap();
 
@@ -844,7 +926,12 @@ mod tests {
         let mut e1 = ControlEvidenceEmitter::new();
         let mut e2 = ControlEvidenceEmitter::new();
 
-        let entry = make_entry(DecisionType::HealthGateEval, DecisionOutcome::Pass, "d1", 100);
+        let entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
         e1.emit_evidence(entry.clone()).unwrap();
         e2.emit_evidence(entry).unwrap();
 
@@ -943,7 +1030,12 @@ mod tests {
 
     #[test]
     fn test_entry_serde_roundtrip() {
-        let entry = make_entry(DecisionType::HealthGateEval, DecisionOutcome::Pass, "d1", 100);
+        let entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
         let json = serde_json::to_string(&entry).unwrap();
         let parsed: ControlEvidenceEntry = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, entry);

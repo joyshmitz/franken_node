@@ -514,7 +514,10 @@ pub fn seal_session(session: &mut VerificationSession) -> Result<CapsuleVerdict,
         return Ok(CapsuleVerdict::Inconclusive);
     }
 
-    let all_pass = session.steps.iter().all(|s| s.verdict == CapsuleVerdict::Pass);
+    let all_pass = session
+        .steps
+        .iter()
+        .all(|s| s.verdict == CapsuleVerdict::Pass);
     let verdict = if all_pass {
         CapsuleVerdict::Pass
     } else {

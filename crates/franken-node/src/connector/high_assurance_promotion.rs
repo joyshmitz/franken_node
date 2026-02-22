@@ -215,13 +215,26 @@ impl PromotionDenialReason {
 impl fmt::Display for PromotionDenialReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ProofBundleMissing { artifact_id, object_class } => {
-                write!(f, "{}: artifact={artifact_id}, class={object_class}",
-                    self.code())
+            Self::ProofBundleMissing {
+                artifact_id,
+                object_class,
+            } => {
+                write!(
+                    f,
+                    "{}: artifact={artifact_id}, class={object_class}",
+                    self.code()
+                )
             }
-            Self::ProofBundleInsufficient { artifact_id, object_class, required } => {
-                write!(f, "{}: artifact={artifact_id}, class={object_class}, required={required}",
-                    self.code())
+            Self::ProofBundleInsufficient {
+                artifact_id,
+                object_class,
+                required,
+            } => {
+                write!(
+                    f,
+                    "{}: artifact={artifact_id}, class={object_class}, required={required}",
+                    self.code()
+                )
             }
             Self::UnauthorizedModeDowngrade { from, to } => {
                 write!(f, "{}: from={from}, to={to}", self.code())
@@ -465,10 +478,22 @@ mod tests {
 
     #[test]
     fn proof_requirement_mapping() {
-        assert_eq!(proof_requirement_for(ObjectClass::CriticalMarker), ProofRequirement::FullProofChain);
-        assert_eq!(proof_requirement_for(ObjectClass::StateObject), ProofRequirement::IntegrityProof);
-        assert_eq!(proof_requirement_for(ObjectClass::TelemetryArtifact), ProofRequirement::IntegrityHash);
-        assert_eq!(proof_requirement_for(ObjectClass::ConfigObject), ProofRequirement::SchemaProof);
+        assert_eq!(
+            proof_requirement_for(ObjectClass::CriticalMarker),
+            ProofRequirement::FullProofChain
+        );
+        assert_eq!(
+            proof_requirement_for(ObjectClass::StateObject),
+            ProofRequirement::IntegrityProof
+        );
+        assert_eq!(
+            proof_requirement_for(ObjectClass::TelemetryArtifact),
+            ProofRequirement::IntegrityHash
+        );
+        assert_eq!(
+            proof_requirement_for(ObjectClass::ConfigObject),
+            ProofRequirement::SchemaProof
+        );
     }
 
     // ── ProofBundle ──
@@ -547,7 +572,10 @@ mod tests {
         // CriticalMarker requires FullProofChain
         let result = gate.evaluate("art-1", ObjectClass::CriticalMarker, Some(&bundle));
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code(), "PROMOTION_DENIED_PROOF_INSUFFICIENT");
+        assert_eq!(
+            result.unwrap_err().code(),
+            "PROMOTION_DENIED_PROOF_INSUFFICIENT"
+        );
     }
 
     #[test]
@@ -570,7 +598,10 @@ mod tests {
             has_integrity_hash: true,
             has_schema_proof: false,
         };
-        assert!(gate.evaluate("tel-1", ObjectClass::TelemetryArtifact, Some(&bundle)).is_ok());
+        assert!(
+            gate.evaluate("tel-1", ObjectClass::TelemetryArtifact, Some(&bundle))
+                .is_ok()
+        );
 
         // StateObject needs IntegrityProof
         let bundle2 = ProofBundle {
@@ -579,7 +610,10 @@ mod tests {
             has_integrity_hash: true,
             has_schema_proof: false,
         };
-        assert!(gate.evaluate("state-1", ObjectClass::StateObject, Some(&bundle2)).is_ok());
+        assert!(
+            gate.evaluate("state-1", ObjectClass::StateObject, Some(&bundle2))
+                .is_ok()
+        );
 
         // ConfigObject needs SchemaProof
         let bundle3 = ProofBundle {
@@ -588,7 +622,10 @@ mod tests {
             has_integrity_hash: false,
             has_schema_proof: true,
         };
-        assert!(gate.evaluate("cfg-1", ObjectClass::ConfigObject, Some(&bundle3)).is_ok());
+        assert!(
+            gate.evaluate("cfg-1", ObjectClass::ConfigObject, Some(&bundle3))
+                .is_ok()
+        );
     }
 
     #[test]
@@ -649,8 +686,10 @@ mod tests {
         let mut gate = HighAssuranceGate::high_assurance();
         let bundle = ProofBundle::full();
 
-        gate.evaluate("a1", ObjectClass::CriticalMarker, Some(&bundle)).unwrap();
-        gate.evaluate("a2", ObjectClass::CriticalMarker, Some(&bundle)).unwrap();
+        gate.evaluate("a1", ObjectClass::CriticalMarker, Some(&bundle))
+            .unwrap();
+        gate.evaluate("a2", ObjectClass::CriticalMarker, Some(&bundle))
+            .unwrap();
         let _ = gate.evaluate("a3", ObjectClass::CriticalMarker, None);
 
         assert_eq!(gate.approvals(), 2);
@@ -686,17 +725,41 @@ mod tests {
         let gate = HighAssuranceGate::high_assurance();
         let matrix = gate.promotion_matrix();
 
-        let critical = matrix.iter().find(|e| e.object_class == ObjectClass::CriticalMarker).unwrap();
-        assert_eq!(critical.proof_requirement, Some(ProofRequirement::FullProofChain));
+        let critical = matrix
+            .iter()
+            .find(|e| e.object_class == ObjectClass::CriticalMarker)
+            .unwrap();
+        assert_eq!(
+            critical.proof_requirement,
+            Some(ProofRequirement::FullProofChain)
+        );
 
-        let state = matrix.iter().find(|e| e.object_class == ObjectClass::StateObject).unwrap();
-        assert_eq!(state.proof_requirement, Some(ProofRequirement::IntegrityProof));
+        let state = matrix
+            .iter()
+            .find(|e| e.object_class == ObjectClass::StateObject)
+            .unwrap();
+        assert_eq!(
+            state.proof_requirement,
+            Some(ProofRequirement::IntegrityProof)
+        );
 
-        let telemetry = matrix.iter().find(|e| e.object_class == ObjectClass::TelemetryArtifact).unwrap();
-        assert_eq!(telemetry.proof_requirement, Some(ProofRequirement::IntegrityHash));
+        let telemetry = matrix
+            .iter()
+            .find(|e| e.object_class == ObjectClass::TelemetryArtifact)
+            .unwrap();
+        assert_eq!(
+            telemetry.proof_requirement,
+            Some(ProofRequirement::IntegrityHash)
+        );
 
-        let config = matrix.iter().find(|e| e.object_class == ObjectClass::ConfigObject).unwrap();
-        assert_eq!(config.proof_requirement, Some(ProofRequirement::SchemaProof));
+        let config = matrix
+            .iter()
+            .find(|e| e.object_class == ObjectClass::ConfigObject)
+            .unwrap();
+        assert_eq!(
+            config.proof_requirement,
+            Some(ProofRequirement::SchemaProof)
+        );
     }
 
     #[test]
@@ -760,7 +823,10 @@ mod tests {
             has_integrity_hash: true,
             has_schema_proof: true,
         };
-        assert!(gate.evaluate("crit-1", ObjectClass::CriticalMarker, Some(&bundle)).is_err());
+        assert!(
+            gate.evaluate("crit-1", ObjectClass::CriticalMarker, Some(&bundle))
+                .is_err()
+        );
     }
 
     #[test]

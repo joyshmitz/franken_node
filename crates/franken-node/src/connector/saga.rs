@@ -336,9 +336,10 @@ impl SagaExecutor {
         }
 
         // Check that no step failed
-        let has_failure = saga.records.iter().any(|r| {
-            r.action == "forward" && matches!(r.outcome, StepOutcome::Failed { .. })
-        });
+        let has_failure = saga
+            .records
+            .iter()
+            .any(|r| r.action == "forward" && matches!(r.outcome, StepOutcome::Failed { .. }));
         if has_failure {
             return Err(format!(
                 "saga {saga_id} has failed steps; must compensate, not commit"
@@ -401,9 +402,7 @@ impl SagaExecutor {
         let succeeded_indices: Vec<usize> = saga
             .records
             .iter()
-            .filter(|r| {
-                r.action == "forward" && matches!(r.outcome, StepOutcome::Success { .. })
-            })
+            .filter(|r| r.action == "forward" && matches!(r.outcome, StepOutcome::Success { .. }))
             .map(|r| r.step_index)
             .collect();
 
@@ -731,7 +730,11 @@ mod tests {
         // All 3 steps succeeded, so all 3 should be compensated
         assert_eq!(trace.compensated_steps.len(), 3);
         // Verify all recorded in the trace
-        let indices: Vec<usize> = trace.compensated_steps.iter().map(|r| r.step_index).collect();
+        let indices: Vec<usize> = trace
+            .compensated_steps
+            .iter()
+            .map(|r| r.step_index)
+            .collect();
         assert_eq!(indices, vec![2, 1, 0]); // reverse order
     }
 
@@ -740,9 +743,10 @@ mod tests {
     fn test_saga_not_found() {
         let mut exec = SagaExecutor::new();
 
-        assert!(exec
-            .execute_step("nonexistent", success_outcome(), 1, "t")
-            .is_err());
+        assert!(
+            exec.execute_step("nonexistent", success_outcome(), 1, "t")
+                .is_err()
+        );
         assert!(exec.commit("nonexistent", "t").is_err());
         assert!(exec.compensate("nonexistent", "t").is_err());
         assert!(exec.get_saga("nonexistent").is_none());
@@ -776,7 +780,11 @@ mod tests {
         let jsonl = exec.export_audit_log_jsonl();
         let lines: Vec<&str> = jsonl.lines().collect();
         // At minimum: SAG_SAGA_STARTED, SAG_STEP_FORWARD, SAG_SAGA_COMMITTED
-        assert!(lines.len() >= 3, "Expected >= 3 audit lines, got {}", lines.len());
+        assert!(
+            lines.len() >= 3,
+            "Expected >= 3 audit lines, got {}",
+            lines.len()
+        );
 
         // Each line should be valid JSON
         for line in &lines {
@@ -811,9 +819,7 @@ mod tests {
         assert!(exec.compensate(&id, "t").is_err());
 
         // Cannot execute more steps on a committed saga
-        assert!(exec
-            .execute_step(&id, success_outcome(), 1, "t")
-            .is_err());
+        assert!(exec.execute_step(&id, success_outcome(), 1, "t").is_err());
     }
 
     // 14. test_step_with_remote_computation
@@ -848,10 +854,7 @@ mod tests {
             saga.steps[1].computation_name.as_deref(),
             Some("matrix_multiply")
         );
-        assert_eq!(
-            saga.steps[1].idempotency_key.as_deref(),
-            Some("idem-123")
-        );
+        assert_eq!(saga.steps[1].idempotency_key.as_deref(), Some("idem-123"));
 
         // Execute all steps
         exec.execute_step(&id, success_outcome(), 1, "t").unwrap();
@@ -987,21 +990,11 @@ mod tests {
     fn test_step_outcome_display() {
         assert_eq!(format!("{}", success_outcome()), "Success");
         assert_eq!(
-            format!(
-                "{}",
-                StepOutcome::Failed {
-                    reason: "x".into()
-                }
-            ),
+            format!("{}", StepOutcome::Failed { reason: "x".into() }),
             "Failed(x)"
         );
         assert_eq!(
-            format!(
-                "{}",
-                StepOutcome::Skipped {
-                    reason: "y".into()
-                }
-            ),
+            format!("{}", StepOutcome::Skipped { reason: "y".into() }),
             "Skipped(y)"
         );
         assert_eq!(format!("{}", StepOutcome::Compensated), "Compensated");

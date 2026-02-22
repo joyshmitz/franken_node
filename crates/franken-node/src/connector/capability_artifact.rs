@@ -135,7 +135,10 @@ pub const ALLOWED_CAPABILITIES: &[&str] = &[
 
 /// Return the allowed capabilities as a deterministic BTreeSet.
 pub fn allowed_capability_set() -> BTreeSet<String> {
-    ALLOWED_CAPABILITIES.iter().map(|s| (*s).to_string()).collect()
+    ALLOWED_CAPABILITIES
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -328,11 +331,17 @@ pub enum ArtifactError {
     /// Digest does not match artifact identity.
     DigestMismatch { artifact_id: String },
     /// Envelope requests capabilities beyond maximum scope.
-    OverScoped { artifact_id: String, out_of_scope: Vec<String> },
+    OverScoped {
+        artifact_id: String,
+        out_of_scope: Vec<String>,
+    },
     /// Runtime drift detected.
     DriftDetected { artifact_id: String, detail: String },
     /// Unknown schema version.
-    SchemaUnknown { artifact_id: String, version: String },
+    SchemaUnknown {
+        artifact_id: String,
+        version: String,
+    },
     /// Envelope declares zero capabilities.
     EmptyCapabilities { artifact_id: String },
     /// Artifact ID already admitted.
@@ -361,23 +370,41 @@ impl fmt::Display for ArtifactError {
             Self::MissingEnvelope { artifact_id } => {
                 write!(f, "artifact {artifact_id} has no capability envelope")
             }
-            Self::InvalidEnvelope { artifact_id, detail } => {
+            Self::InvalidEnvelope {
+                artifact_id,
+                detail,
+            } => {
                 write!(f, "artifact {artifact_id} envelope invalid: {detail}")
             }
             Self::DigestMismatch { artifact_id } => {
-                write!(f, "artifact {artifact_id} envelope digest does not match identity")
+                write!(
+                    f,
+                    "artifact {artifact_id} envelope digest does not match identity"
+                )
             }
-            Self::OverScoped { artifact_id, out_of_scope } => {
+            Self::OverScoped {
+                artifact_id,
+                out_of_scope,
+            } => {
                 write!(
                     f,
                     "artifact {artifact_id} requests out-of-scope capabilities: {out_of_scope:?}"
                 )
             }
-            Self::DriftDetected { artifact_id, detail } => {
+            Self::DriftDetected {
+                artifact_id,
+                detail,
+            } => {
                 write!(f, "artifact {artifact_id} runtime drift: {detail}")
             }
-            Self::SchemaUnknown { artifact_id, version } => {
-                write!(f, "artifact {artifact_id} has unknown schema version: {version}")
+            Self::SchemaUnknown {
+                artifact_id,
+                version,
+            } => {
+                write!(
+                    f,
+                    "artifact {artifact_id} has unknown schema version: {version}"
+                )
             }
             Self::EmptyCapabilities { artifact_id } => {
                 write!(f, "artifact {artifact_id} declares zero capabilities")
@@ -532,10 +559,8 @@ impl AdmissionGate {
 
         // Check scope: all requested capabilities must be in allowed_scope
         let requested: BTreeSet<String> = envelope.requirements.keys().cloned().collect();
-        let out_of_scope: Vec<String> = requested
-            .difference(&self.allowed_scope)
-            .cloned()
-            .collect();
+        let out_of_scope: Vec<String> =
+            requested.difference(&self.allowed_scope).cloned().collect();
         if !out_of_scope.is_empty() {
             self.log_rejection(
                 aid,
@@ -598,7 +623,11 @@ impl AdmissionGate {
             artifact_id: aid.clone(),
             timestamp: timestamp.to_string(),
             outcome: "admitted".to_string(),
-            detail: format!("artifact {} admitted with {} capabilities", aid, envelope.capability_count()),
+            detail: format!(
+                "artifact {} admitted with {} capabilities",
+                aid,
+                envelope.capability_count()
+            ),
         });
 
         Ok(())
@@ -801,10 +830,7 @@ impl AdmissionReport {
 // ---------------------------------------------------------------------------
 
 /// Build a well-formed extension artifact for testing/demonstration.
-pub fn build_test_artifact(
-    artifact_id: &str,
-    capabilities: &[(&str, &str)],
-) -> ExtensionArtifact {
+pub fn build_test_artifact(artifact_id: &str, capabilities: &[(&str, &str)]) -> ExtensionArtifact {
     let identity = ArtifactIdentity::new(artifact_id, "test-author", "2026-02-21T00:00:00Z");
     let mut envelope = CapabilityEnvelope::new();
     for (cap, justification) in capabilities {
@@ -842,14 +868,35 @@ mod tests {
 
     #[test]
     fn test_error_codes_defined() {
-        assert_eq!(error_codes::ERR_CART_MISSING_ENVELOPE, "ERR_CART_MISSING_ENVELOPE");
-        assert_eq!(error_codes::ERR_CART_INVALID_ENVELOPE, "ERR_CART_INVALID_ENVELOPE");
-        assert_eq!(error_codes::ERR_CART_DIGEST_MISMATCH, "ERR_CART_DIGEST_MISMATCH");
+        assert_eq!(
+            error_codes::ERR_CART_MISSING_ENVELOPE,
+            "ERR_CART_MISSING_ENVELOPE"
+        );
+        assert_eq!(
+            error_codes::ERR_CART_INVALID_ENVELOPE,
+            "ERR_CART_INVALID_ENVELOPE"
+        );
+        assert_eq!(
+            error_codes::ERR_CART_DIGEST_MISMATCH,
+            "ERR_CART_DIGEST_MISMATCH"
+        );
         assert_eq!(error_codes::ERR_CART_OVER_SCOPED, "ERR_CART_OVER_SCOPED");
-        assert_eq!(error_codes::ERR_CART_DRIFT_DETECTED, "ERR_CART_DRIFT_DETECTED");
-        assert_eq!(error_codes::ERR_CART_SCHEMA_UNKNOWN, "ERR_CART_SCHEMA_UNKNOWN");
-        assert_eq!(error_codes::ERR_CART_EMPTY_CAPABILITIES, "ERR_CART_EMPTY_CAPABILITIES");
-        assert_eq!(error_codes::ERR_CART_DUPLICATE_ARTIFACT, "ERR_CART_DUPLICATE_ARTIFACT");
+        assert_eq!(
+            error_codes::ERR_CART_DRIFT_DETECTED,
+            "ERR_CART_DRIFT_DETECTED"
+        );
+        assert_eq!(
+            error_codes::ERR_CART_SCHEMA_UNKNOWN,
+            "ERR_CART_SCHEMA_UNKNOWN"
+        );
+        assert_eq!(
+            error_codes::ERR_CART_EMPTY_CAPABILITIES,
+            "ERR_CART_EMPTY_CAPABILITIES"
+        );
+        assert_eq!(
+            error_codes::ERR_CART_DUPLICATE_ARTIFACT,
+            "ERR_CART_DUPLICATE_ARTIFACT"
+        );
     }
 
     // ── Invariants ───────────────────────────────────────────────────
@@ -857,11 +904,20 @@ mod tests {
     #[test]
     fn test_invariants_defined() {
         assert_eq!(invariants::INV_CART_FAIL_CLOSED, "INV-CART-FAIL-CLOSED");
-        assert_eq!(invariants::INV_CART_ENVELOPE_MATCH, "INV-CART-ENVELOPE-MATCH");
-        assert_eq!(invariants::INV_CART_SCHEMA_VERSIONED, "INV-CART-SCHEMA-VERSIONED");
+        assert_eq!(
+            invariants::INV_CART_ENVELOPE_MATCH,
+            "INV-CART-ENVELOPE-MATCH"
+        );
+        assert_eq!(
+            invariants::INV_CART_SCHEMA_VERSIONED,
+            "INV-CART-SCHEMA-VERSIONED"
+        );
         assert_eq!(invariants::INV_CART_DIGEST_BOUND, "INV-CART-DIGEST-BOUND");
         assert_eq!(invariants::INV_CART_DETERMINISTIC, "INV-CART-DETERMINISTIC");
-        assert_eq!(invariants::INV_CART_AUDIT_COMPLETE, "INV-CART-AUDIT-COMPLETE");
+        assert_eq!(
+            invariants::INV_CART_AUDIT_COMPLETE,
+            "INV-CART-AUDIT-COMPLETE"
+        );
     }
 
     // ── Schema version ───────────────────────────────────────────────
@@ -926,7 +982,11 @@ mod tests {
     #[test]
     fn test_envelope_add_requirement() {
         let mut env = CapabilityEnvelope::new();
-        env.add_requirement(CapabilityRequirement::new("cap:fs:read", "read config", true));
+        env.add_requirement(CapabilityRequirement::new(
+            "cap:fs:read",
+            "read config",
+            true,
+        ));
         assert_eq!(env.capability_count(), 1);
         assert!(env.capability_names().contains(&"cap:fs:read".to_string()));
     }
@@ -936,7 +996,11 @@ mod tests {
         let mut env = CapabilityEnvelope::new();
         env.add_requirement(CapabilityRequirement::new("cap:trust:write", "write", true));
         env.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
-        env.add_requirement(CapabilityRequirement::new("cap:network:connect", "connect", true));
+        env.add_requirement(CapabilityRequirement::new(
+            "cap:network:connect",
+            "connect",
+            true,
+        ));
         let names = env.capability_names();
         let mut sorted = names.clone();
         sorted.sort();
@@ -996,7 +1060,10 @@ mod tests {
         let mut gate = AdmissionGate::new();
         let artifact = build_test_artifact(
             "ext-1",
-            &[("cap:fs:read", "read config"), ("cap:crypto:verify", "verify sigs")],
+            &[
+                ("cap:fs:read", "read config"),
+                ("cap:crypto:verify", "verify sigs"),
+            ],
         );
         let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
         assert!(result.is_ok());
@@ -1011,7 +1078,11 @@ mod tests {
         // At least: submission, schema-ok, digest-ok, envelope-ok, admitted
         assert!(gate.audit_log().len() >= 4);
         // Should include CART-002 (admitted)
-        assert!(gate.audit_log().iter().any(|e| e.event_code == event_codes::CART_002));
+        assert!(
+            gate.audit_log()
+                .iter()
+                .any(|e| e.event_code == event_codes::CART_002)
+        );
     }
 
     // ── AdmissionGate: fail-closed ──────────────────────────────────
@@ -1023,7 +1094,10 @@ mod tests {
         let artifact = ExtensionArtifact::new(identity, None);
         let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code(), error_codes::ERR_CART_MISSING_ENVELOPE);
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_MISSING_ENVELOPE
+        );
         assert_eq!(gate.admitted_count(), 0);
     }
 
@@ -1036,7 +1110,10 @@ mod tests {
         let artifact = ExtensionArtifact::new(identity, Some(envelope));
         let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code(), error_codes::ERR_CART_EMPTY_CAPABILITIES);
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_EMPTY_CAPABILITIES
+        );
     }
 
     #[test]
@@ -1050,7 +1127,10 @@ mod tests {
         let artifact = ExtensionArtifact::new(identity, Some(envelope));
         let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code(), error_codes::ERR_CART_SCHEMA_UNKNOWN);
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_SCHEMA_UNKNOWN
+        );
     }
 
     #[test]
@@ -1088,7 +1168,10 @@ mod tests {
         let artifact = ExtensionArtifact::new(identity, Some(envelope));
         let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code(), error_codes::ERR_CART_DIGEST_MISMATCH);
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_DIGEST_MISMATCH
+        );
     }
 
     #[test]
@@ -1098,7 +1181,10 @@ mod tests {
         gate.admit(&artifact, "2026-02-21T00:00:00Z").unwrap();
         let result = gate.admit(&artifact, "2026-02-21T00:01:00Z");
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code(), error_codes::ERR_CART_DUPLICATE_ARTIFACT);
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_DUPLICATE_ARTIFACT
+        );
     }
 
     // ── EnvelopeEnforcer ─────────────────────────────────────────────
@@ -1119,7 +1205,10 @@ mod tests {
         let mut enforcer = EnvelopeEnforcer::from_envelope("ext-1", &env);
         let result = enforcer.check_capability("cap:process:spawn", "2026-02-21T00:00:00Z");
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code(), error_codes::ERR_CART_DRIFT_DETECTED);
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_DRIFT_DETECTED
+        );
     }
 
     #[test]
@@ -1130,7 +1219,10 @@ mod tests {
         enforcer.revoke_capability("cap:fs:read");
         let result = enforcer.check_capability("cap:fs:read", "2026-02-21T00:00:00Z");
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code(), error_codes::ERR_CART_DRIFT_DETECTED);
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_DRIFT_DETECTED
+        );
     }
 
     #[test]
@@ -1139,7 +1231,9 @@ mod tests {
         env.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
         let mut enforcer = EnvelopeEnforcer::from_envelope("ext-1", &env);
         // Force-insert an undeclared capability into used set
-        enforcer.used_capabilities.insert("cap:trust:write".to_string());
+        enforcer
+            .used_capabilities
+            .insert("cap:trust:write".to_string());
         let drifts = enforcer.detect_drift();
         assert!(!drifts.is_empty());
         assert!(drifts.iter().any(|d| d.contains("undeclared")));
@@ -1154,8 +1248,18 @@ mod tests {
         let _ = enforcer.check_capability("cap:fs:write", "t2");
         assert_eq!(enforcer.enforcement_log().len(), 2);
         // One pass (CART-006), one drift (CART-007)
-        assert!(enforcer.enforcement_log().iter().any(|e| e.event_code == event_codes::CART_006));
-        assert!(enforcer.enforcement_log().iter().any(|e| e.event_code == event_codes::CART_007));
+        assert!(
+            enforcer
+                .enforcement_log()
+                .iter()
+                .any(|e| e.event_code == event_codes::CART_006)
+        );
+        assert!(
+            enforcer
+                .enforcement_log()
+                .iter()
+                .any(|e| e.event_code == event_codes::CART_007)
+        );
     }
 
     // ── ArtifactError ────────────────────────────────────────────────
@@ -1163,42 +1267,72 @@ mod tests {
     #[test]
     fn test_error_codes_mapping() {
         assert_eq!(
-            ArtifactError::MissingEnvelope { artifact_id: "x".into() }.code(),
+            ArtifactError::MissingEnvelope {
+                artifact_id: "x".into()
+            }
+            .code(),
             "ERR_CART_MISSING_ENVELOPE"
         );
         assert_eq!(
-            ArtifactError::InvalidEnvelope { artifact_id: "x".into(), detail: "bad".into() }.code(),
+            ArtifactError::InvalidEnvelope {
+                artifact_id: "x".into(),
+                detail: "bad".into()
+            }
+            .code(),
             "ERR_CART_INVALID_ENVELOPE"
         );
         assert_eq!(
-            ArtifactError::DigestMismatch { artifact_id: "x".into() }.code(),
+            ArtifactError::DigestMismatch {
+                artifact_id: "x".into()
+            }
+            .code(),
             "ERR_CART_DIGEST_MISMATCH"
         );
         assert_eq!(
-            ArtifactError::OverScoped { artifact_id: "x".into(), out_of_scope: vec![] }.code(),
+            ArtifactError::OverScoped {
+                artifact_id: "x".into(),
+                out_of_scope: vec![]
+            }
+            .code(),
             "ERR_CART_OVER_SCOPED"
         );
         assert_eq!(
-            ArtifactError::DriftDetected { artifact_id: "x".into(), detail: "d".into() }.code(),
+            ArtifactError::DriftDetected {
+                artifact_id: "x".into(),
+                detail: "d".into()
+            }
+            .code(),
             "ERR_CART_DRIFT_DETECTED"
         );
         assert_eq!(
-            ArtifactError::SchemaUnknown { artifact_id: "x".into(), version: "v".into() }.code(),
+            ArtifactError::SchemaUnknown {
+                artifact_id: "x".into(),
+                version: "v".into()
+            }
+            .code(),
             "ERR_CART_SCHEMA_UNKNOWN"
         );
         assert_eq!(
-            ArtifactError::EmptyCapabilities { artifact_id: "x".into() }.code(),
+            ArtifactError::EmptyCapabilities {
+                artifact_id: "x".into()
+            }
+            .code(),
             "ERR_CART_EMPTY_CAPABILITIES"
         );
         assert_eq!(
-            ArtifactError::DuplicateArtifact { artifact_id: "x".into() }.code(),
+            ArtifactError::DuplicateArtifact {
+                artifact_id: "x".into()
+            }
+            .code(),
             "ERR_CART_DUPLICATE_ARTIFACT"
         );
     }
 
     #[test]
     fn test_error_display() {
-        let e = ArtifactError::MissingEnvelope { artifact_id: "ext-1".into() };
+        let e = ArtifactError::MissingEnvelope {
+            artifact_id: "ext-1".into(),
+        };
         let s = format!("{e}");
         assert!(s.contains("ext-1"));
         assert!(s.contains("no capability envelope"));
@@ -1216,7 +1350,9 @@ mod tests {
 
     #[test]
     fn test_admission_report_fail() {
-        let err = ArtifactError::MissingEnvelope { artifact_id: "ext-1".into() };
+        let err = ArtifactError::MissingEnvelope {
+            artifact_id: "ext-1".into(),
+        };
         let report = AdmissionReport::fail("ext-1", &err);
         assert_eq!(report.verdict, "FAIL");
         assert!(report.detail.contains("no capability envelope"));

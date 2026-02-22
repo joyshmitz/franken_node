@@ -80,9 +80,7 @@ impl RecommendationConfig {
             ));
         }
         if self.risk_budget <= 0.0 {
-            return Err(OIError::InvalidConfig(
-                "risk_budget must be > 0".into(),
-            ));
+            return Err(OIError::InvalidConfig("risk_budget must be > 0".into()));
         }
         if !(0.0..=1.0).contains(&self.degraded_confidence_penalty) {
             return Err(OIError::InvalidConfig(
@@ -113,11 +111,17 @@ impl std::fmt::Display for OIError {
             Self::InvalidConfig(msg) => write!(f, "{ERR_OIR_INVALID_CONFIG}: {msg}"),
             Self::NoContext(msg) => write!(f, "{ERR_OIR_NO_CONTEXT}: {msg}"),
             Self::ScoreOverflow { cumulative, budget } => {
-                write!(f, "{ERR_OIR_SCORE_OVERFLOW}: cumulative {cumulative} > budget {budget}")
+                write!(
+                    f,
+                    "{ERR_OIR_SCORE_OVERFLOW}: cumulative {cumulative} > budget {budget}"
+                )
             }
             Self::RollbackFailed(msg) => write!(f, "{ERR_OIR_ROLLBACK_FAILED}: {msg}"),
             Self::ReplayMismatch { expected, actual } => {
-                write!(f, "{ERR_OIR_REPLAY_MISMATCH}: expected={expected}, actual={actual}")
+                write!(
+                    f,
+                    "{ERR_OIR_REPLAY_MISMATCH}: expected={expected}, actual={actual}"
+                )
             }
             Self::Degraded(msg) => write!(f, "{ERR_OIR_DEGRADED}: {msg}"),
         }
@@ -154,7 +158,9 @@ impl OperatorContext {
             || !(0.0..=1.0).contains(&self.trust_valid)
             || !(0.0..=1.0).contains(&self.error_rate)
         {
-            return Err(OIError::NoContext("rate values must be in [0.0, 1.0]".into()));
+            return Err(OIError::NoContext(
+                "rate values must be in [0.0, 1.0]".into(),
+            ));
         }
         Ok(())
     }
@@ -231,7 +237,9 @@ impl RollbackProof {
             return Err(OIError::RollbackFailed("empty rollback spec".into()));
         }
         if self.pre_state_hash == self.post_state_hash {
-            return Err(OIError::RollbackFailed("pre and post states identical".into()));
+            return Err(OIError::RollbackFailed(
+                "pre and post states identical".into(),
+            ));
         }
         Ok(true)
     }
@@ -525,7 +533,12 @@ impl RecommendationEngine {
         self.cumulative_loss = new_cumulative;
 
         // Update audit trail entry.
-        if let Some(entry) = self.audit_trail.iter_mut().rev().find(|e| e.recommendation_id == rec.id) {
+        if let Some(entry) = self
+            .audit_trail
+            .iter_mut()
+            .rev()
+            .find(|e| e.recommendation_id == rec.id)
+        {
             entry.accepted = true;
         }
 
@@ -596,7 +609,10 @@ impl RecommendationEngine {
         });
         self.events.push(OIEvent {
             code: EVT_ROLLBACK_EXECUTED.to_string(),
-            detail: format!("restored to pre-state hash {:?}", &proof.pre_state_hash[..proof.pre_state_hash.len().min(4)]),
+            detail: format!(
+                "restored to pre-state hash {:?}",
+                &proof.pre_state_hash[..proof.pre_state_hash.len().min(4)]
+            ),
         });
         Ok(())
     }
@@ -865,7 +881,10 @@ mod tests {
         let ctx = test_context();
         let recs = engine.recommend(&ctx, 1000).unwrap();
         engine.reject_recommendation(&recs[0]);
-        let has_reject = engine.events().iter().any(|e| e.code == EVT_RECOMMENDATION_REJECTED);
+        let has_reject = engine
+            .events()
+            .iter()
+            .any(|e| e.code == EVT_RECOMMENDATION_REJECTED);
         assert!(has_reject);
     }
 
@@ -956,8 +975,14 @@ mod tests {
             rollback_spec: "rollback".into(),
         };
         assert!(engine.execute_rollback(&proof).is_ok());
-        let has_verified = engine.events().iter().any(|e| e.code == EVT_ROLLBACK_PROOF_VERIFIED);
-        let has_executed = engine.events().iter().any(|e| e.code == EVT_ROLLBACK_EXECUTED);
+        let has_verified = engine
+            .events()
+            .iter()
+            .any(|e| e.code == EVT_ROLLBACK_PROOF_VERIFIED);
+        let has_executed = engine
+            .events()
+            .iter()
+            .any(|e| e.code == EVT_ROLLBACK_EXECUTED);
         assert!(has_verified);
         assert!(has_executed);
     }
@@ -971,7 +996,9 @@ mod tests {
         let recs = engine.recommend(&ctx, 1000).unwrap();
         let rec = &recs[0];
         engine.accept_recommendation(rec, 1001).unwrap();
-        let (_, replay) = engine.execute_recommendation(rec, [1u8; 32], [2u8; 32]).unwrap();
+        let (_, replay) = engine
+            .execute_recommendation(rec, [1u8; 32], [2u8; 32])
+            .unwrap();
         assert_eq!(replay.recommendation_id, rec.id);
         assert!(replay.rollback_proof.is_some());
     }
@@ -1037,7 +1064,10 @@ mod tests {
         let mut engine = make_engine();
         let ctx = test_context();
         let _ = engine.recommend(&ctx, 1000).unwrap();
-        let has_gen = engine.events().iter().any(|e| e.code == EVT_RECOMMENDATION_GENERATED);
+        let has_gen = engine
+            .events()
+            .iter()
+            .any(|e| e.code == EVT_RECOMMENDATION_GENERATED);
         assert!(has_gen);
     }
 
@@ -1051,13 +1081,19 @@ mod tests {
         let err = OIError::NoContext("missing".into());
         assert!(format!("{err}").contains(ERR_OIR_NO_CONTEXT));
 
-        let err = OIError::ScoreOverflow { cumulative: 150.0, budget: 100.0 };
+        let err = OIError::ScoreOverflow {
+            cumulative: 150.0,
+            budget: 100.0,
+        };
         assert!(format!("{err}").contains(ERR_OIR_SCORE_OVERFLOW));
 
         let err = OIError::RollbackFailed("bad proof".into());
         assert!(format!("{err}").contains(ERR_OIR_ROLLBACK_FAILED));
 
-        let err = OIError::ReplayMismatch { expected: "a".into(), actual: "b".into() };
+        let err = OIError::ReplayMismatch {
+            expected: "a".into(),
+            actual: "b".into(),
+        };
         assert!(format!("{err}").contains(ERR_OIR_REPLAY_MISMATCH));
 
         let err = OIError::Degraded("source down".into());

@@ -440,9 +440,7 @@ pub fn generate_reference_artifact() -> MigrationArtifact {
                 "capsule://migration/plan-ref-001/run-2".to_string(),
             ],
             expected_state_hashes,
-            assertion_schemas: vec![
-                "schema://migration-artifact/ma-v1.0".to_string(),
-            ],
+            assertion_schemas: vec!["schema://migration-artifact/ma-v1.0".to_string()],
             verification_procedures: vec![
                 "Replay capsule run-1 and compare post-state hashes".to_string(),
                 "Verify rollback receipt signature against operator key".to_string(),
@@ -554,7 +552,12 @@ mod tests {
         artifact.signature = String::new();
         let result = validate_artifact(&artifact);
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.contains("ERR_MA_SIGNATURE_INVALID")));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("ERR_MA_SIGNATURE_INVALID"))
+        );
     }
 
     #[test]
@@ -563,7 +566,12 @@ mod tests {
         artifact.rollback_receipt.original_state_ref = String::new();
         let result = validate_artifact(&artifact);
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.contains("ERR_MA_MISSING_ROLLBACK")));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("ERR_MA_MISSING_ROLLBACK"))
+        );
     }
 
     #[test]
@@ -572,7 +580,12 @@ mod tests {
         artifact.confidence_interval.probability = 1.5;
         let result = validate_artifact(&artifact);
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.contains("ERR_MA_CONFIDENCE_LOW")));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("ERR_MA_CONFIDENCE_LOW"))
+        );
     }
 
     #[test]
@@ -581,7 +594,12 @@ mod tests {
         artifact.schema_version = "ma-v99.0".to_string();
         let result = validate_artifact(&artifact);
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.contains("ERR_MA_VERSION_UNSUPPORTED")));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("ERR_MA_VERSION_UNSUPPORTED"))
+        );
     }
 
     #[test]
@@ -590,7 +608,12 @@ mod tests {
         artifact.verifier_metadata.replay_capsule_refs.clear();
         let result = validate_artifact(&artifact);
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.contains("ERR_MA_INVALID_SCHEMA")));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("ERR_MA_INVALID_SCHEMA"))
+        );
     }
 
     #[test]
@@ -599,7 +622,12 @@ mod tests {
         artifact.verifier_metadata.expected_state_hashes.clear();
         let result = validate_artifact(&artifact);
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.contains("ERR_MA_INVALID_SCHEMA")));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("ERR_MA_INVALID_SCHEMA"))
+        );
     }
 
     // ── Determinism ───────────────────────────────────────────────────
@@ -846,10 +874,19 @@ mod tests {
     #[test]
     fn test_error_codes_defined() {
         assert_eq!(error_codes::ERR_MA_INVALID_SCHEMA, "ERR_MA_INVALID_SCHEMA");
-        assert_eq!(error_codes::ERR_MA_SIGNATURE_INVALID, "ERR_MA_SIGNATURE_INVALID");
-        assert_eq!(error_codes::ERR_MA_MISSING_ROLLBACK, "ERR_MA_MISSING_ROLLBACK");
+        assert_eq!(
+            error_codes::ERR_MA_SIGNATURE_INVALID,
+            "ERR_MA_SIGNATURE_INVALID"
+        );
+        assert_eq!(
+            error_codes::ERR_MA_MISSING_ROLLBACK,
+            "ERR_MA_MISSING_ROLLBACK"
+        );
         assert_eq!(error_codes::ERR_MA_CONFIDENCE_LOW, "ERR_MA_CONFIDENCE_LOW");
-        assert_eq!(error_codes::ERR_MA_VERSION_UNSUPPORTED, "ERR_MA_VERSION_UNSUPPORTED");
+        assert_eq!(
+            error_codes::ERR_MA_VERSION_UNSUPPORTED,
+            "ERR_MA_VERSION_UNSUPPORTED"
+        );
     }
 
     // ── Invariants ────────────────────────────────────────────────────
@@ -857,10 +894,19 @@ mod tests {
     #[test]
     fn test_invariants_defined() {
         assert_eq!(invariants::INV_MA_SIGNED, "INV-MA-SIGNED");
-        assert_eq!(invariants::INV_MA_ROLLBACK_PRESENT, "INV-MA-ROLLBACK-PRESENT");
-        assert_eq!(invariants::INV_MA_CONFIDENCE_CALIBRATED, "INV-MA-CONFIDENCE-CALIBRATED");
+        assert_eq!(
+            invariants::INV_MA_ROLLBACK_PRESENT,
+            "INV-MA-ROLLBACK-PRESENT"
+        );
+        assert_eq!(
+            invariants::INV_MA_CONFIDENCE_CALIBRATED,
+            "INV-MA-CONFIDENCE-CALIBRATED"
+        );
         assert_eq!(invariants::INV_MA_VERSIONED, "INV-MA-VERSIONED");
-        assert_eq!(invariants::INV_MA_VERIFIER_COMPLETE, "INV-MA-VERIFIER-COMPLETE");
+        assert_eq!(
+            invariants::INV_MA_VERIFIER_COMPLETE,
+            "INV-MA-VERIFIER-COMPLETE"
+        );
         assert_eq!(invariants::INV_MA_DETERMINISTIC, "INV-MA-DETERMINISTIC");
     }
 

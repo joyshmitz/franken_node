@@ -101,7 +101,11 @@ pub enum WriteOutcome {
     /// Quorum acknowledged by M of N replicas.
     QuorumAcked { acked: u32, total: u32 },
     /// Quorum failed: insufficient acks.
-    QuorumFailed { acked: u32, required: u32, total: u32 },
+    QuorumFailed {
+        acked: u32,
+        required: u32,
+        total: u32,
+    },
 }
 
 impl WriteOutcome {
@@ -132,7 +136,14 @@ impl DurabilityClaim {
             (DurabilityMode::Quorum { min_acks }, WriteOutcome::QuorumAcked { acked, total }) => {
                 format!("quorum-{}-of-{}-acked(min={})", acked, total, min_acks)
             }
-            (DurabilityMode::Quorum { min_acks }, WriteOutcome::QuorumFailed { acked, required, total }) => {
+            (
+                DurabilityMode::Quorum { min_acks },
+                WriteOutcome::QuorumFailed {
+                    acked,
+                    required,
+                    total,
+                },
+            ) => {
                 format!(
                     "quorum-failed-{}-of-{}-acked(required={},min={})",
                     acked, total, required, min_acks
@@ -306,7 +317,11 @@ pub struct DurabilityController {
 
 impl DurabilityController {
     /// Create a controller for an artifact class with the given mode.
-    pub fn new(class_id: impl Into<String>, mode: DurabilityMode, policy: ModeSwitchPolicy) -> Self {
+    pub fn new(
+        class_id: impl Into<String>,
+        mode: DurabilityMode,
+        policy: ModeSwitchPolicy,
+    ) -> Self {
         let class_id = class_id.into();
         let mut ctrl = DurabilityController {
             class_id: class_id.clone(),
@@ -317,7 +332,10 @@ impl DurabilityController {
         ctrl.emit(
             DM_MODE_INITIALIZED,
             &mode,
-            format!("Durability mode {} initialized for class {}", mode, class_id),
+            format!(
+                "Durability mode {} initialized for class {}",
+                mode, class_id
+            ),
         );
         ctrl
     }
@@ -365,7 +383,10 @@ impl DurabilityController {
                     current_mode, new_mode, self.class_id
                 ),
             );
-            return Err(DurabilityError::mode_switch_denied(&current_mode, &new_mode));
+            return Err(DurabilityError::mode_switch_denied(
+                &current_mode,
+                &new_mode,
+            ));
         }
 
         self.mode = new_mode.clone();
@@ -629,10 +650,7 @@ mod tests {
 
     #[test]
     fn test_outcome_quorum_acked_is_success() {
-        let outcome = WriteOutcome::QuorumAcked {
-            acked: 3,
-            total: 5,
-        };
+        let outcome = WriteOutcome::QuorumAcked { acked: 3, total: 5 };
         assert!(outcome.is_success());
     }
 
@@ -650,10 +668,8 @@ mod tests {
 
     #[test]
     fn test_claim_local_fsync() {
-        let claim = DurabilityClaim::derive(
-            &DurabilityMode::Local,
-            &WriteOutcome::LocalFsyncConfirmed,
-        );
+        let claim =
+            DurabilityClaim::derive(&DurabilityMode::Local, &WriteOutcome::LocalFsyncConfirmed);
         assert_eq!(claim.claim_string, "local-fsync-confirmed");
         assert!(claim.deterministic);
     }
@@ -662,10 +678,7 @@ mod tests {
     fn test_claim_quorum_acked() {
         let claim = DurabilityClaim::derive(
             &DurabilityMode::Quorum { min_acks: 3 },
-            &WriteOutcome::QuorumAcked {
-                acked: 3,
-                total: 5,
-            },
+            &WriteOutcome::QuorumAcked { acked: 3, total: 5 },
         );
         assert_eq!(claim.claim_string, "quorum-3-of-5-acked(min=3)");
     }
@@ -690,10 +703,7 @@ mod tests {
     fn test_claim_determinism() {
         // INV-DUR-CLAIM-DETERMINISTIC: same inputs → same claim.
         let mode = DurabilityMode::Quorum { min_acks: 3 };
-        let outcome = WriteOutcome::QuorumAcked {
-            acked: 3,
-            total: 5,
-        };
+        let outcome = WriteOutcome::QuorumAcked { acked: 3, total: 5 };
         let c1 = DurabilityClaim::derive(&mode, &outcome);
         let c2 = DurabilityClaim::derive(&mode, &outcome);
         assert_eq!(c1.claim_string, c2.claim_string);
@@ -701,10 +711,8 @@ mod tests {
 
     #[test]
     fn test_claim_serde_roundtrip() {
-        let claim = DurabilityClaim::derive(
-            &DurabilityMode::Local,
-            &WriteOutcome::LocalFsyncConfirmed,
-        );
+        let claim =
+            DurabilityClaim::derive(&DurabilityMode::Local, &WriteOutcome::LocalFsyncConfirmed);
         let json = serde_json::to_string(&claim).unwrap();
         let parsed: DurabilityClaim = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, claim);
@@ -881,9 +889,7 @@ mod tests {
     #[test]
     fn test_switch_quorum_to_local_denied_without_auth() {
         let mut ctrl = DurabilityController::quorum("test", 3);
-        let err = ctrl
-            .switch_mode(DurabilityMode::Local, false)
-            .unwrap_err();
+        let err = ctrl.switch_mode(DurabilityMode::Local, false).unwrap_err();
         assert_eq!(err.code, ERR_MODE_SWITCH_DENIED);
     }
 

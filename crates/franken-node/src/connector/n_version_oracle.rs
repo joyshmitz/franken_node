@@ -300,8 +300,10 @@ pub fn run_harness(
     }
 
     // Build receipt index
-    let receipt_index: BTreeMap<&str, &PolicyReceipt> =
-        receipts.iter().map(|r| (r.divergence_id.as_str(), r)).collect();
+    let receipt_index: BTreeMap<&str, &PolicyReceipt> = receipts
+        .iter()
+        .map(|r| (r.divergence_id.as_str(), r))
+        .collect();
 
     let mut block_reasons: Vec<ReleaseBlockReason> = Vec::new();
     let mut high_risk_unresolved = Vec::new();
@@ -464,10 +466,11 @@ mod tests {
         let result = run_harness(&cfg, &[diverging_sample()], &[]);
         match &result.verdict {
             ReleaseVerdict::Blocked { reasons } => {
-                assert!(reasons.iter().any(|r| matches!(
-                    r,
-                    ReleaseBlockReason::HighRiskUnresolved { .. }
-                )));
+                assert!(
+                    reasons
+                        .iter()
+                        .any(|r| matches!(r, ReleaseBlockReason::HighRiskUnresolved { .. }))
+                );
             }
             _ => panic!("expected blocked verdict"),
         }
@@ -485,9 +488,11 @@ mod tests {
         let result = run_harness(&cfg, &[low_risk_sample()], &[]);
         match &result.verdict {
             ReleaseVerdict::Blocked { reasons } => {
-                assert!(reasons
-                    .iter()
-                    .any(|r| matches!(r, ReleaseBlockReason::MissingReceipt { .. })));
+                assert!(
+                    reasons
+                        .iter()
+                        .any(|r| matches!(r, ReleaseBlockReason::MissingReceipt { .. }))
+                );
             }
             _ => panic!("expected blocked verdict for missing receipt"),
         }
@@ -541,9 +546,11 @@ mod tests {
         let result = run_harness(&cfg, &samples, &[receipt]);
         match &result.verdict {
             ReleaseVerdict::Blocked { reasons } => {
-                assert!(reasons
-                    .iter()
-                    .any(|r| matches!(r, ReleaseBlockReason::L1LinkBroken { .. })));
+                assert!(
+                    reasons
+                        .iter()
+                        .any(|r| matches!(r, ReleaseBlockReason::L1LinkBroken { .. }))
+                );
             }
             _ => panic!("expected blocked verdict for broken L1 link"),
         }
@@ -555,9 +562,11 @@ mod tests {
         let result = run_harness(&cfg, &[matching_sample()], &[]);
         match &result.verdict {
             ReleaseVerdict::Blocked { reasons } => {
-                assert!(reasons
-                    .iter()
-                    .any(|r| matches!(r, ReleaseBlockReason::ReferenceUnavailable { .. })));
+                assert!(
+                    reasons
+                        .iter()
+                        .any(|r| matches!(r, ReleaseBlockReason::ReferenceUnavailable { .. }))
+                );
             }
             _ => panic!("expected blocked when no references configured"),
         }

@@ -102,13 +102,22 @@ impl std::fmt::Display for VefClaimError {
         match self {
             Self::InvalidConfig(msg) => write!(f, "{ERR_VEF_CLAIM_INVALID_CONFIG}: {msg}"),
             Self::CoverageLow { actual, required } => {
-                write!(f, "{ERR_VEF_CLAIM_COVERAGE_LOW}: {actual:.2}% < {required:.2}%")
+                write!(
+                    f,
+                    "{ERR_VEF_CLAIM_COVERAGE_LOW}: {actual:.2}% < {required:.2}%"
+                )
             }
             Self::ValidityLow { actual, required } => {
-                write!(f, "{ERR_VEF_CLAIM_VALIDITY_LOW}: {actual:.2} < {required:.2}")
+                write!(
+                    f,
+                    "{ERR_VEF_CLAIM_VALIDITY_LOW}: {actual:.2} < {required:.2}"
+                )
             }
             Self::ProofStale { age_secs, max_secs } => {
-                write!(f, "{ERR_VEF_CLAIM_PROOF_STALE}: age {age_secs}s > max {max_secs}s")
+                write!(
+                    f,
+                    "{ERR_VEF_CLAIM_PROOF_STALE}: age {age_secs}s > max {max_secs}s"
+                )
             }
             Self::NoEvidence(msg) => write!(f, "{ERR_VEF_CLAIM_NO_EVIDENCE}: {msg}"),
         }
@@ -377,10 +386,7 @@ impl VefClaimIntegration {
     }
 
     /// Check proof freshness against max age.
-    pub fn check_proof_freshness(
-        &self,
-        proof_age_secs: u64,
-    ) -> Result<(), VefClaimError> {
+    pub fn check_proof_freshness(&self, proof_age_secs: u64) -> Result<(), VefClaimError> {
         if proof_age_secs > self.config.max_proof_age_secs {
             return Err(VefClaimError::ProofStale {
                 age_secs: proof_age_secs,
@@ -621,14 +627,12 @@ mod tests {
     fn test_scoreboard_publish() {
         let mut engine = make_engine();
         let metrics = good_metrics();
-        let links = vec![
-            EvidenceLink {
-                proof_id: "proof-1".into(),
-                action_class: "fs_write".into(),
-                verification_time: 100,
-                valid: true,
-            },
-        ];
+        let links = vec![EvidenceLink {
+            proof_id: "proof-1".into(),
+            action_class: "fs_write".into(),
+            verification_time: 100,
+            valid: true,
+        }];
         let entry = engine.publish_scoreboard(&metrics, links, 1000);
         assert_eq!(entry.timestamp, 1000);
         assert!(!entry.evidence_links.is_empty());
@@ -640,14 +644,12 @@ mod tests {
         let mut engine1 = make_engine();
         let mut engine2 = make_engine();
         let metrics = good_metrics();
-        let links = vec![
-            EvidenceLink {
-                proof_id: "proof-1".into(),
-                action_class: "fs_write".into(),
-                verification_time: 100,
-                valid: true,
-            },
-        ];
+        let links = vec![EvidenceLink {
+            proof_id: "proof-1".into(),
+            action_class: "fs_write".into(),
+            verification_time: 100,
+            valid: true,
+        }];
         let e1 = engine1.publish_scoreboard(&metrics, links.clone(), 1000);
         let e2 = engine2.publish_scoreboard(&metrics, links, 1000);
         assert_eq!(e1.signed_digest, e2.signed_digest);
@@ -749,7 +751,10 @@ mod tests {
     fn test_events_contain_initiated() {
         let mut engine = make_engine();
         engine.evaluate_claim(&test_claim(), &good_metrics());
-        let has = engine.events().iter().any(|e| e.code == EVT_CLAIM_CHECK_INITIATED);
+        let has = engine
+            .events()
+            .iter()
+            .any(|e| e.code == EVT_CLAIM_CHECK_INITIATED);
         assert!(has);
     }
 
@@ -773,7 +778,10 @@ mod tests {
     fn test_events_contain_scoreboard_updated() {
         let mut engine = make_engine();
         engine.publish_scoreboard(&good_metrics(), vec![], 1000);
-        let has = engine.events().iter().any(|e| e.code == EVT_SCOREBOARD_UPDATED);
+        let has = engine
+            .events()
+            .iter()
+            .any(|e| e.code == EVT_SCOREBOARD_UPDATED);
         assert!(has);
     }
 
@@ -784,13 +792,22 @@ mod tests {
         let err = VefClaimError::InvalidConfig("bad".into());
         assert!(format!("{err}").contains(ERR_VEF_CLAIM_INVALID_CONFIG));
 
-        let err = VefClaimError::CoverageLow { actual: 0.5, required: 0.8 };
+        let err = VefClaimError::CoverageLow {
+            actual: 0.5,
+            required: 0.8,
+        };
         assert!(format!("{err}").contains(ERR_VEF_CLAIM_COVERAGE_LOW));
 
-        let err = VefClaimError::ValidityLow { actual: 0.8, required: 0.95 };
+        let err = VefClaimError::ValidityLow {
+            actual: 0.8,
+            required: 0.95,
+        };
         assert!(format!("{err}").contains(ERR_VEF_CLAIM_VALIDITY_LOW));
 
-        let err = VefClaimError::ProofStale { age_secs: 7200, max_secs: 3600 };
+        let err = VefClaimError::ProofStale {
+            age_secs: 7200,
+            max_secs: 3600,
+        };
         assert!(format!("{err}").contains(ERR_VEF_CLAIM_PROOF_STALE));
 
         let err = VefClaimError::NoEvidence("missing".into());

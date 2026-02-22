@@ -328,21 +328,27 @@ impl ControlLanePolicy {
             let lane = Self::canonical_lane(*tc);
             let timeout_ms = Self::canonical_timeout(*tc);
             let preemptible = matches!(lane, ControlLane::Ready);
-            assignments.insert(*tc, LaneAssignment {
-                task_class: *tc,
-                lane,
-                timeout_ms,
-                preemptible,
-            });
+            assignments.insert(
+                *tc,
+                LaneAssignment {
+                    task_class: *tc,
+                    lane,
+                    timeout_ms,
+                    preemptible,
+                },
+            );
         }
 
         // Wire budgets
         for lane in ControlLane::all() {
-            budgets.insert(*lane, LaneBudget {
-                lane: *lane,
-                min_pct: lane.min_budget_pct(),
-                max_starve_ticks: lane.max_starve_ticks(),
-            });
+            budgets.insert(
+                *lane,
+                LaneBudget {
+                    lane: *lane,
+                    min_pct: lane.min_budget_pct(),
+                    max_starve_ticks: lane.max_starve_ticks(),
+                },
+            );
         }
 
         let mut lane_consecutive_zero = BTreeMap::new();
@@ -398,9 +404,9 @@ impl ControlLanePolicy {
     /// Canonical timeout for each task class (None = no timeout).
     pub fn canonical_timeout(tc: ControlTaskClass) -> Option<u64> {
         match Self::canonical_lane(tc) {
-            ControlLane::Cancel => Some(5_000),   // 5 second hard limit
-            ControlLane::Timed => Some(30_000),   // 30 second deadline
-            ControlLane::Ready => None,           // best-effort, no deadline
+            ControlLane::Cancel => Some(5_000), // 5 second hard limit
+            ControlLane::Timed => Some(30_000), // 30 second deadline
+            ControlLane::Ready => None,         // best-effort, no deadline
         }
     }
 
@@ -411,7 +417,9 @@ impl ControlLanePolicy {
 
     /// Check that every task class has a lane assignment (INV-CLP-LANE-ASSIGNED).
     pub fn verify_all_assigned(&self) -> bool {
-        ControlTaskClass::all().iter().all(|tc| self.assignments.contains_key(tc))
+        ControlTaskClass::all()
+            .iter()
+            .all(|tc| self.assignments.contains_key(tc))
     }
 
     /// Check that budgets sum to 100% (INV-CLP-BUDGET-SUM).
@@ -426,9 +434,20 @@ impl ControlLanePolicy {
     }
 
     /// Assign a task to a lane with audit logging.
-    pub fn assign_task(&mut self, tc: ControlTaskClass, task_id: &str, trace_id: &str, timestamp_ms: u64) -> Result<ControlLane, String> {
-        let assignment = self.assignments.get(&tc)
-            .ok_or_else(|| format!("{}: unknown task class {:?}", error_codes::ERR_CLP_UNKNOWN_TASK, tc))?;
+    pub fn assign_task(
+        &mut self,
+        tc: ControlTaskClass,
+        task_id: &str,
+        trace_id: &str,
+        timestamp_ms: u64,
+    ) -> Result<ControlLane, String> {
+        let assignment = self.assignments.get(&tc).ok_or_else(|| {
+            format!(
+                "{}: unknown task class {:?}",
+                error_codes::ERR_CLP_UNKNOWN_TASK,
+                tc
+            )
+        })?;
         let lane = assignment.lane;
 
         self.audit_log.push(LanePolicyAuditRecord {
@@ -447,13 +466,22 @@ impl ControlLanePolicy {
 
     /// Simulate one scheduling tick: processes pending tasks by lane priority,
     /// enforces budgets, and detects starvation.
-    pub fn tick(&mut self, cancel_pending: u32, timed_pending: u32, ready_pending: u32, total_slots: u32, trace_id: &str) -> LaneTickMetrics {
+    pub fn tick(
+        &mut self,
+        cancel_pending: u32,
+        timed_pending: u32,
+        ready_pending: u32,
+        total_slots: u32,
+        trace_id: &str,
+    ) -> LaneTickMetrics {
         self.current_tick += 1;
 
         // Allocate slots by budget
         let cancel_slots = (total_slots as u64 * CANCEL_LANE_BUDGET_PCT as u64 / 100) as u32;
         let timed_slots = (total_slots as u64 * TIMED_LANE_BUDGET_PCT as u64 / 100) as u32;
-        let ready_slots = total_slots.saturating_sub(cancel_slots).saturating_sub(timed_slots);
+        let ready_slots = total_slots
+            .saturating_sub(cancel_slots)
+            .saturating_sub(timed_slots);
 
         // Schedule: Cancel first (priority), then Timed, then Ready
         let cancel_run = cancel_pending.min(cancel_slots.max(1)); // at least 1 if pending
@@ -474,7 +502,11 @@ impl ControlLanePolicy {
             let counter = self.lane_consecutive_zero.entry(lane).or_insert(0);
             if starved {
                 *counter += 1;
-                let threshold = self.budgets.get(&lane).map(|b| b.max_starve_ticks).unwrap_or(DEFAULT_STARVATION_THRESHOLD_TICKS);
+                let threshold = self
+                    .budgets
+                    .get(&lane)
+                    .map(|b| b.max_starve_ticks)
+                    .unwrap_or(DEFAULT_STARVATION_THRESHOLD_TICKS);
                 if *counter >= threshold {
                     self.starvation_events.push(StarvationEvent {
                         lane,
@@ -488,7 +520,11 @@ impl ControlLanePolicy {
                 self.starvation_events.push(StarvationEvent {
                     lane,
                     consecutive_zero_ticks: *counter,
-                    threshold: self.budgets.get(&lane).map(|b| b.max_starve_ticks).unwrap_or(DEFAULT_STARVATION_THRESHOLD_TICKS),
+                    threshold: self
+                        .budgets
+                        .get(&lane)
+                        .map(|b| b.max_starve_ticks)
+                        .unwrap_or(DEFAULT_STARVATION_THRESHOLD_TICKS),
                     event_code: event_codes::LAN_004.to_string(),
                     trace_id: trace_id.to_string(),
                 });
@@ -511,7 +547,13 @@ impl ControlLanePolicy {
     }
 
     /// Preempt a task for lane budget enforcement.
-    pub fn preempt_task(&mut self, task_id: &str, lane: ControlLane, budget_remaining_ms: u64, trace_id: &str) -> PreemptionEvent {
+    pub fn preempt_task(
+        &mut self,
+        task_id: &str,
+        lane: ControlLane,
+        budget_remaining_ms: u64,
+        trace_id: &str,
+    ) -> PreemptionEvent {
         let event = PreemptionEvent {
             task_id: task_id.to_string(),
             lane,
@@ -714,9 +756,18 @@ mod tests {
     #[test]
     fn test_cancel_priority_before_ready() {
         // INV-CLP-CANCEL-PRIORITY
-        assert!(ControlLanePolicy::has_priority(ControlLane::Cancel, ControlLane::Ready));
-        assert!(ControlLanePolicy::has_priority(ControlLane::Cancel, ControlLane::Timed));
-        assert!(ControlLanePolicy::has_priority(ControlLane::Timed, ControlLane::Ready));
+        assert!(ControlLanePolicy::has_priority(
+            ControlLane::Cancel,
+            ControlLane::Ready
+        ));
+        assert!(ControlLanePolicy::has_priority(
+            ControlLane::Cancel,
+            ControlLane::Timed
+        ));
+        assert!(ControlLanePolicy::has_priority(
+            ControlLane::Timed,
+            ControlLane::Ready
+        ));
     }
 
     #[test]
@@ -774,7 +825,9 @@ mod tests {
             policy.tick(5, 5, 5, 0, &format!("trace-starve-{}", i));
         }
         // All lanes should experience starvation since total_slots=0
-        let starved = policy.starvation_events().iter()
+        let starved = policy
+            .starvation_events()
+            .iter()
             .filter(|e| e.event_code == event_codes::LAN_003)
             .count();
         assert!(starved > 0, "At least one starvation event expected");
@@ -796,7 +849,11 @@ mod tests {
         // Flood: heavy ready-lane load, but cancel should still be served
         for i in 0..50 {
             let m = policy.tick(1, 0, 1000, 10, &format!("trace-flood-{}", i));
-            assert!(m.cancel_lane_tasks_run >= 1, "Cancel must run on tick {}", i);
+            assert!(
+                m.cancel_lane_tasks_run >= 1,
+                "Cancel must run on tick {}",
+                i
+            );
         }
     }
 
@@ -812,7 +869,9 @@ mod tests {
     #[test]
     fn test_assign_task_audit_log() {
         let mut policy = ControlLanePolicy::new();
-        let lane = policy.assign_task(ControlTaskClass::HealthCheck, "task-1", "trace-a", 1000).unwrap();
+        let lane = policy
+            .assign_task(ControlTaskClass::HealthCheck, "task-1", "trace-a", 1000)
+            .unwrap();
         assert_eq!(lane, ControlLane::Timed);
         assert_eq!(policy.audit_log().len(), 1);
         assert_eq!(policy.audit_log()[0].event_code, event_codes::LAN_001);
@@ -887,8 +946,14 @@ mod tests {
 
     #[test]
     fn test_starvation_threshold_others() {
-        assert_eq!(ControlLane::Timed.max_starve_ticks(), DEFAULT_STARVATION_THRESHOLD_TICKS);
-        assert_eq!(ControlLane::Ready.max_starve_ticks(), DEFAULT_STARVATION_THRESHOLD_TICKS);
+        assert_eq!(
+            ControlLane::Timed.max_starve_ticks(),
+            DEFAULT_STARVATION_THRESHOLD_TICKS
+        );
+        assert_eq!(
+            ControlLane::Ready.max_starve_ticks(),
+            DEFAULT_STARVATION_THRESHOLD_TICKS
+        );
     }
 
     #[test]

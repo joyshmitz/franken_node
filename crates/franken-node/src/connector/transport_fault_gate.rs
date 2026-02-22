@@ -15,8 +15,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::remote::virtual_transport_faults::{
-    self, CampaignResult, FaultClass, FaultConfig, FaultSchedule,
-    VirtualTransportFaultHarness,
+    self, CampaignResult, FaultClass, FaultConfig, FaultSchedule, VirtualTransportFaultHarness,
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -418,12 +417,7 @@ impl TransportFaultGate {
         fault_mode: &FaultMode,
         seed: u64,
     ) -> FaultTestResult {
-        let trace_id = format!(
-            "tfg-{}-{}-{}",
-            protocol.name(),
-            fault_mode,
-            seed
-        );
+        let trace_id = format!("tfg-{}-{}-{}", protocol.name(), fault_mode, seed);
 
         self.log_audit(
             event_codes::TFG_001,
@@ -697,9 +691,7 @@ impl TransportFaultGate {
 
     /// Total test combinations: protocols x fault_modes x seeds.
     pub fn total_combinations(&self) -> usize {
-        self.config.protocols.len()
-            * self.config.fault_modes.len()
-            * self.config.seeds.len()
+        self.config.protocols.len() * self.config.fault_modes.len() * self.config.seeds.len()
     }
 
     /// Export the audit log as JSONL.
@@ -715,12 +707,14 @@ impl TransportFaultGate {
     pub fn summarize_by_protocol(results: &[FaultTestResult]) -> BTreeMap<String, ProtocolSummary> {
         let mut map: BTreeMap<String, ProtocolSummary> = BTreeMap::new();
         for r in results {
-            let entry = map.entry(r.protocol.clone()).or_insert_with(|| ProtocolSummary {
-                protocol: r.protocol.clone(),
-                total: 0,
-                passed: 0,
-                failed: 0,
-            });
+            let entry = map
+                .entry(r.protocol.clone())
+                .or_insert_with(|| ProtocolSummary {
+                    protocol: r.protocol.clone(),
+                    total: 0,
+                    passed: 0,
+                    failed: 0,
+                });
             entry.total += 1;
             if r.outcome.is_acceptable() {
                 entry.passed += 1;
@@ -896,11 +890,7 @@ mod tests {
     #[test]
     fn test_seed_stability() {
         let mut gate = TransportFaultGate::new();
-        let res = gate.check_seed_stability(
-            ControlProtocol::EpochTransition,
-            &FaultMode::Drop,
-            42,
-        );
+        let res = gate.check_seed_stability(ControlProtocol::EpochTransition, &FaultMode::Drop, 42);
         assert!(res.is_ok());
     }
 
@@ -930,7 +920,10 @@ mod tests {
         let config = TransportFaultGateConfig {
             seeds: vec![42, 137],
             messages_per_run: 50,
-            protocols: vec![ControlProtocol::HealthCheck, ControlProtocol::EpochTransition],
+            protocols: vec![
+                ControlProtocol::HealthCheck,
+                ControlProtocol::EpochTransition,
+            ],
             fault_modes: vec![FaultMode::None, FaultMode::Drop],
         };
         let mut gate = TransportFaultGate::with_config(config).unwrap();
@@ -954,14 +947,18 @@ mod tests {
     #[test]
     fn test_outcome_acceptability() {
         assert!(ProtocolOutcome::CorrectCompletion.is_acceptable());
-        assert!(ProtocolOutcome::DeterministicFailure {
-            reason: "test".into()
-        }
-        .is_acceptable());
-        assert!(!ProtocolOutcome::IncorrectResult {
-            detail: "bad".into()
-        }
-        .is_acceptable());
+        assert!(
+            ProtocolOutcome::DeterministicFailure {
+                reason: "test".into()
+            }
+            .is_acceptable()
+        );
+        assert!(
+            !ProtocolOutcome::IncorrectResult {
+                detail: "bad".into()
+            }
+            .is_acceptable()
+        );
     }
 
     // -- Test 19: fault_mode_to_upstream_class mapping

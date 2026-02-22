@@ -297,7 +297,11 @@ impl CompatGateService {
     /// Query all registered shims, optionally filtered by scope.
     pub fn query_shims(&self, scope: Option<&str>) -> Vec<&ShimMetadata> {
         match scope {
-            Some(s) => self.shims.iter().filter(|shim| shim.scope == s || shim.scope == "*").collect(),
+            Some(s) => self
+                .shims
+                .iter()
+                .filter(|shim| shim.scope == s || shim.scope == "*")
+                .collect(),
             None => self.shims.iter().collect(),
         }
     }
@@ -329,10 +333,7 @@ impl CompatGateService {
             ),
             GateDecision::Deny => format!(
                 "package '{}' denied: requested {} exceeds scope '{}' risk level ({})",
-                request.package_id,
-                request.requested_mode,
-                request.scope,
-                scope_mode
+                request.package_id, request.requested_mode, request.scope, scope_mode
             ),
             GateDecision::Audit => format!(
                 "package '{}' allowed with audit under {} mode in scope '{}'",
@@ -490,9 +491,10 @@ impl CompatGateService {
     /// Gate pass: all invariants hold.
     pub fn gate_pass(&self) -> bool {
         // INV-PCG-VISIBLE: events exist for gate checks
-        let visible = self.events.iter().any(|e| {
-            e.code == PCG_001_GATE_PASSED || e.code == PCG_002_GATE_FAILED
-        });
+        let visible = self
+            .events
+            .iter()
+            .any(|e| e.code == PCG_001_GATE_PASSED || e.code == PCG_002_GATE_FAILED);
 
         // INV-PCG-AUDITABLE: all events have trace IDs
         let auditable = self.events.iter().all(|e| !e.trace_id.is_empty());
@@ -641,7 +643,11 @@ mod tests {
 
     #[test]
     fn compat_mode_serde_roundtrip() {
-        for mode in [CompatMode::Strict, CompatMode::Balanced, CompatMode::LegacyRisky] {
+        for mode in [
+            CompatMode::Strict,
+            CompatMode::Balanced,
+            CompatMode::LegacyRisky,
+        ] {
             let json = serde_json::to_string(&mode).unwrap();
             let parsed: CompatMode = serde_json::from_str(&json).unwrap();
             assert_eq!(parsed, mode);
@@ -790,7 +796,11 @@ mod tests {
             justification: String::new(),
             requestor: "admin".into(),
         });
-        assert!(svc.events().iter().any(|e| e.code == PCG_003_TRANSITION_APPROVED));
+        assert!(
+            svc.events()
+                .iter()
+                .any(|e| e.code == PCG_003_TRANSITION_APPROVED)
+        );
     }
 
     #[test]
@@ -803,7 +813,10 @@ mod tests {
             justification: String::new(),
             requestor: "admin".into(),
         });
-        assert_eq!(svc.query_mode("project-1").unwrap().mode, CompatMode::Strict);
+        assert_eq!(
+            svc.query_mode("project-1").unwrap().mode,
+            CompatMode::Strict
+        );
     }
 
     // ── Divergence receipts ───────────────────────────────────────────────
@@ -820,7 +833,11 @@ mod tests {
     fn divergence_receipt_emits_pcg_004() {
         let mut svc = make_service_with_scope();
         svc.issue_divergence_receipt("project-1", "medium");
-        assert!(svc.events().iter().any(|e| e.code == PCG_004_RECEIPT_ISSUED));
+        assert!(
+            svc.events()
+                .iter()
+                .any(|e| e.code == PCG_004_RECEIPT_ISSUED)
+        );
     }
 
     // ── Shim query ────────────────────────────────────────────────────────

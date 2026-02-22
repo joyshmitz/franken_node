@@ -288,9 +288,7 @@ impl TokenChain {
                 "Root token has zero or negative validity window",
             ));
         }
-        Ok(Self {
-            tokens: vec![root],
-        })
+        Ok(Self { tokens: vec![root] })
     }
 
     /// Append a delegated token to the chain, enforcing attenuation invariants.
@@ -1139,7 +1137,8 @@ mod tests {
         let mut chain = TokenChain::new(root).unwrap();
         chain.append(child).unwrap();
 
-        v.verify_chain(&chain, "kernel-A", 50_000, "trace-1").unwrap();
+        v.verify_chain(&chain, "kernel-A", 50_000, "trace-1")
+            .unwrap();
         assert_eq!(v.tokens_verified(), 1);
     }
 
@@ -1149,7 +1148,9 @@ mod tests {
         let root = root_token("root-1", 0);
         let chain = TokenChain::new(root).unwrap();
 
-        let err = v.verify_chain(&chain, "kernel-C", 50_000, "trace-1").unwrap_err();
+        let err = v
+            .verify_chain(&chain, "kernel-C", 50_000, "trace-1")
+            .unwrap_err();
         assert_eq!(err.code, ERR_ABT_AUDIENCE_MISMATCH);
         assert_eq!(v.tokens_rejected(), 1);
     }
@@ -1160,7 +1161,9 @@ mod tests {
         let root = root_token("root-1", 0);
         let chain = TokenChain::new(root).unwrap();
 
-        let err = v.verify_chain(&chain, "kernel-A", 200_000, "trace-1").unwrap_err();
+        let err = v
+            .verify_chain(&chain, "kernel-A", 200_000, "trace-1")
+            .unwrap_err();
         assert_eq!(err.code, ERR_ABT_TOKEN_EXPIRED);
         assert_eq!(v.tokens_rejected(), 1);
     }
@@ -1180,7 +1183,9 @@ mod tests {
         let mut chain = TokenChain::new(root).unwrap();
         chain.append(child).unwrap();
 
-        let err = v.verify_chain(&chain, "kernel-A", 5000, "trace-1").unwrap_err();
+        let err = v
+            .verify_chain(&chain, "kernel-A", 5000, "trace-1")
+            .unwrap_err();
         assert_eq!(err.code, ERR_ABT_TOKEN_EXPIRED);
     }
 
@@ -1190,12 +1195,15 @@ mod tests {
         let root = root_token("root-1", 0);
         let chain = TokenChain::new(root).unwrap();
 
-        v.verify_chain(&chain, "kernel-A", 50_000, "trace-1").unwrap();
+        v.verify_chain(&chain, "kernel-A", 50_000, "trace-1")
+            .unwrap();
 
         // Same chain again => nonce replay.
         let root2 = root_token("root-1", 0); // same nonce
         let chain2 = TokenChain::new(root2).unwrap();
-        let err = v.verify_chain(&chain2, "kernel-A", 50_000, "trace-2").unwrap_err();
+        let err = v
+            .verify_chain(&chain2, "kernel-A", 50_000, "trace-2")
+            .unwrap_err();
         assert_eq!(err.code, ERR_ABT_REPLAY_DETECTED);
     }
 
@@ -1204,7 +1212,8 @@ mod tests {
         let mut v = TokenValidator::new(1);
         let root = root_token("root-1", 0);
         let chain = TokenChain::new(root).unwrap();
-        v.verify_chain(&chain, "kernel-A", 50_000, "trace-1").unwrap();
+        v.verify_chain(&chain, "kernel-A", 50_000, "trace-1")
+            .unwrap();
 
         v.advance_epoch(2);
         assert_eq!(v.epoch_id(), 2);
@@ -1213,7 +1222,8 @@ mod tests {
         // Same nonce now allowed in new epoch.
         let root2 = root_token("root-1", 0);
         let chain2 = TokenChain::new(root2).unwrap();
-        v.verify_chain(&chain2, "kernel-A", 50_000, "trace-2").unwrap();
+        v.verify_chain(&chain2, "kernel-A", 50_000, "trace-2")
+            .unwrap();
     }
 
     #[test]
@@ -1260,7 +1270,9 @@ mod tests {
             tokens: vec![root, child],
         };
 
-        let err = v.verify_chain(&chain, "kernel-A", 50_000, "trace-1").unwrap_err();
+        let err = v
+            .verify_chain(&chain, "kernel-A", 50_000, "trace-1")
+            .unwrap_err();
         assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
     }
 
@@ -1280,7 +1292,8 @@ mod tests {
             chain.append(child.clone()).unwrap();
             prev = child;
         }
-        v.verify_chain(&chain, "kernel-A", 50_000, "trace-1").unwrap();
+        v.verify_chain(&chain, "kernel-A", 50_000, "trace-1")
+            .unwrap();
         assert_eq!(v.tokens_verified(), 1);
     }
 
@@ -1394,7 +1407,9 @@ mod tests {
         chain.append(child).unwrap();
 
         // kernel-B is in root audience but not in leaf
-        let err = v.verify_chain(&chain, "kernel-B", 50_000, "trace-1").unwrap_err();
+        let err = v
+            .verify_chain(&chain, "kernel-B", 50_000, "trace-1")
+            .unwrap_err();
         assert_eq!(err.code, ERR_ABT_AUDIENCE_MISMATCH);
     }
 
@@ -1405,12 +1420,15 @@ mod tests {
         // First: verify for kernel-A
         let root = root_token("root-1", 0);
         let chain = TokenChain::new(root).unwrap();
-        v.verify_chain(&chain, "kernel-A", 50_000, "trace-1").unwrap();
+        v.verify_chain(&chain, "kernel-A", 50_000, "trace-1")
+            .unwrap();
 
         // Same token replay for kernel-B
         let root2 = root_token("root-1", 0); // same nonce
         let chain2 = TokenChain::new(root2).unwrap();
-        let err = v.verify_chain(&chain2, "kernel-B", 50_000, "trace-2").unwrap_err();
+        let err = v
+            .verify_chain(&chain2, "kernel-B", 50_000, "trace-2")
+            .unwrap_err();
         assert_eq!(err.code, ERR_ABT_REPLAY_DETECTED);
     }
 }

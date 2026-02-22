@@ -209,11 +209,7 @@ impl VefBudgetPolicy {
     }
 
     /// Look up the budget for a specific hot path and mode.
-    pub fn budget_for(
-        &self,
-        hot_path: VefHotPath,
-        mode: VefBudgetMode,
-    ) -> Option<&VefPathBudget> {
+    pub fn budget_for(&self, hot_path: VefHotPath, mode: VefBudgetMode) -> Option<&VefPathBudget> {
         self.budgets
             .iter()
             .find(|b| b.hot_path == hot_path && b.mode == mode)
@@ -329,8 +325,9 @@ impl VefOverheadGate {
                 ),
             });
 
-            let Some(effective) =
-                self.policy.effective_budget(measurement.hot_path, measurement.mode)
+            let Some(effective) = self
+                .policy
+                .effective_budget(measurement.hot_path, measurement.mode)
             else {
                 events.push(VefPerfEvent {
                     code: event_codes::VEF_PERF_ERR_001.to_string(),
@@ -362,7 +359,11 @@ impl VefOverheadGate {
                     code: event_codes::VEF_PERF_ERR_002.to_string(),
                     hot_path: measurement.hot_path.label().to_string(),
                     mode: measurement.mode.label().to_string(),
-                    detail: format!("cv={:.3} exceeds max {:.3}", measurement.cv, self.policy.max_cv_pct / 100.0),
+                    detail: format!(
+                        "cv={:.3} exceeds max {:.3}",
+                        measurement.cv,
+                        self.policy.max_cv_pct / 100.0
+                    ),
                 });
             }
 
@@ -381,10 +382,7 @@ impl VefOverheadGate {
                     code: event_codes::VEF_PERF_006_MODE_BUDGET.to_string(),
                     hot_path: measurement.hot_path.label().to_string(),
                     mode: measurement.mode.label().to_string(),
-                    detail: format!(
-                        "multiplier={:.1}x",
-                        measurement.mode.budget_multiplier()
-                    ),
+                    detail: format!("multiplier={:.1}x", measurement.mode.budget_multiplier()),
                 });
             }
 
@@ -545,9 +543,7 @@ mod tests {
         let effective = policy
             .effective_budget(VefHotPath::ChainAppend, VefBudgetMode::Normal)
             .unwrap();
-        assert!(
-            (effective.p95_overhead_ms - raw.p95_overhead_ms * 1.1).abs() < 1e-9
-        );
+        assert!((effective.p95_overhead_ms - raw.p95_overhead_ms * 1.1).abs() < 1e-9);
     }
 
     #[test]
@@ -740,7 +736,11 @@ mod tests {
             .iter()
             .filter(|e| e.code == event_codes::VEF_PERF_006_MODE_BUDGET)
             .collect();
-        assert_eq!(mode_events.len(), 1, "mode budget event emitted for quarantine");
+        assert_eq!(
+            mode_events.len(),
+            1,
+            "mode budget event emitted for quarantine"
+        );
         assert!(mode_events[0].detail.contains("2.0x"));
     }
 
@@ -750,8 +750,8 @@ mod tests {
         let measurements = vec![VefMeasurement {
             hot_path: VefHotPath::CheckpointComputation,
             mode: VefBudgetMode::Normal,
-            p95_ms: 1.0,   // well within budget
-            p99_ms: 2.0,   // well within budget
+            p95_ms: 1.0,          // well within budget
+            p99_ms: 2.0,          // well within budget
             cold_start_ms: 999.0, // way over budget
             cv: 0.05,
             iterations: 1000,
@@ -788,9 +788,21 @@ mod tests {
     fn test_all_normal_budgets_are_positive() {
         let policy = VefBudgetPolicy::default_policy();
         for budget in &policy.budgets {
-            assert!(budget.p95_overhead_ms > 0.0, "{} p95 must be positive", budget.hot_path);
-            assert!(budget.p99_overhead_ms > 0.0, "{} p99 must be positive", budget.hot_path);
-            assert!(budget.cold_start_ms > 0.0, "{} cold_start must be positive", budget.hot_path);
+            assert!(
+                budget.p95_overhead_ms > 0.0,
+                "{} p95 must be positive",
+                budget.hot_path
+            );
+            assert!(
+                budget.p99_overhead_ms > 0.0,
+                "{} p99 must be positive",
+                budget.hot_path
+            );
+            assert!(
+                budget.cold_start_ms > 0.0,
+                "{} cold_start must be positive",
+                budget.hot_path
+            );
             assert!(
                 budget.p99_overhead_ms >= budget.p95_overhead_ms,
                 "{} p99 must be >= p95",

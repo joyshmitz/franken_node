@@ -117,24 +117,52 @@ pub mod task_classes {
     use super::ControlTaskClass;
 
     // Cancel lane
-    pub fn cancellation_handler() -> ControlTaskClass { ControlTaskClass::new("cancellation_handler") }
-    pub fn drain_operation() -> ControlTaskClass { ControlTaskClass::new("drain_operation") }
-    pub fn region_close() -> ControlTaskClass { ControlTaskClass::new("region_close") }
-    pub fn shutdown_handler() -> ControlTaskClass { ControlTaskClass::new("shutdown_handler") }
+    pub fn cancellation_handler() -> ControlTaskClass {
+        ControlTaskClass::new("cancellation_handler")
+    }
+    pub fn drain_operation() -> ControlTaskClass {
+        ControlTaskClass::new("drain_operation")
+    }
+    pub fn region_close() -> ControlTaskClass {
+        ControlTaskClass::new("region_close")
+    }
+    pub fn shutdown_handler() -> ControlTaskClass {
+        ControlTaskClass::new("shutdown_handler")
+    }
 
     // Timed lane
-    pub fn health_check() -> ControlTaskClass { ControlTaskClass::new("health_check") }
-    pub fn lease_renewal() -> ControlTaskClass { ControlTaskClass::new("lease_renewal") }
-    pub fn epoch_transition() -> ControlTaskClass { ControlTaskClass::new("epoch_transition") }
-    pub fn barrier_coordination() -> ControlTaskClass { ControlTaskClass::new("barrier_coordination") }
-    pub fn marker_append() -> ControlTaskClass { ControlTaskClass::new("marker_append") }
+    pub fn health_check() -> ControlTaskClass {
+        ControlTaskClass::new("health_check")
+    }
+    pub fn lease_renewal() -> ControlTaskClass {
+        ControlTaskClass::new("lease_renewal")
+    }
+    pub fn epoch_transition() -> ControlTaskClass {
+        ControlTaskClass::new("epoch_transition")
+    }
+    pub fn barrier_coordination() -> ControlTaskClass {
+        ControlTaskClass::new("barrier_coordination")
+    }
+    pub fn marker_append() -> ControlTaskClass {
+        ControlTaskClass::new("marker_append")
+    }
 
     // Ready lane
-    pub fn telemetry_flush() -> ControlTaskClass { ControlTaskClass::new("telemetry_flush") }
-    pub fn evidence_archival() -> ControlTaskClass { ControlTaskClass::new("evidence_archival") }
-    pub fn compaction() -> ControlTaskClass { ControlTaskClass::new("compaction") }
-    pub fn garbage_collection() -> ControlTaskClass { ControlTaskClass::new("garbage_collection") }
-    pub fn log_rotation() -> ControlTaskClass { ControlTaskClass::new("log_rotation") }
+    pub fn telemetry_flush() -> ControlTaskClass {
+        ControlTaskClass::new("telemetry_flush")
+    }
+    pub fn evidence_archival() -> ControlTaskClass {
+        ControlTaskClass::new("evidence_archival")
+    }
+    pub fn compaction() -> ControlTaskClass {
+        ControlTaskClass::new("compaction")
+    }
+    pub fn garbage_collection() -> ControlTaskClass {
+        ControlTaskClass::new("garbage_collection")
+    }
+    pub fn log_rotation() -> ControlTaskClass {
+        ControlTaskClass::new("log_rotation")
+    }
 }
 
 /// Budget allocation for a lane (percentage).
@@ -162,12 +190,14 @@ impl ControlLanePolicy {
 
     /// Assign a task class to a lane.
     pub fn assign(&mut self, task_class: &ControlTaskClass, lane: ControlLane) {
-        self.assignments.insert(task_class.as_str().to_string(), lane);
+        self.assignments
+            .insert(task_class.as_str().to_string(), lane);
     }
 
     /// Set budget for a lane.
     pub fn set_budget(&mut self, budget: LaneBudget) {
-        self.budgets.insert(budget.lane.as_str().to_string(), budget);
+        self.budgets
+            .insert(budget.lane.as_str().to_string(), budget);
     }
 
     /// Resolve a task class to its lane.
@@ -188,7 +218,9 @@ impl ControlLanePolicy {
         // Check budget sum
         let total: u32 = self.budgets.values().map(|b| b.min_percent).sum();
         if total > 100 {
-            return Err(ControlLanePolicyError::BudgetOverflow { total_percent: total });
+            return Err(ControlLanePolicyError::BudgetOverflow {
+                total_percent: total,
+            });
         }
 
         // INV-CLM-CANCEL-MIN-BUDGET
@@ -302,12 +334,26 @@ pub struct StarvationMetrics {
 /// Policy errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ControlLanePolicyError {
-    UnknownTask { task_class: String },
-    BudgetOverflow { total_percent: u32 },
-    Starvation { lane: ControlLane, consecutive_ticks: u32 },
-    InvalidBudget { lane: ControlLane, detail: String },
-    DuplicateTask { task_class: String },
-    IncompleteMap { detail: String },
+    UnknownTask {
+        task_class: String,
+    },
+    BudgetOverflow {
+        total_percent: u32,
+    },
+    Starvation {
+        lane: ControlLane,
+        consecutive_ticks: u32,
+    },
+    InvalidBudget {
+        lane: ControlLane,
+        detail: String,
+    },
+    DuplicateTask {
+        task_class: String,
+    },
+    IncompleteMap {
+        detail: String,
+    },
 }
 
 impl ControlLanePolicyError {
@@ -332,8 +378,17 @@ impl fmt::Display for ControlLanePolicyError {
             Self::BudgetOverflow { total_percent } => {
                 write!(f, "{}: total={}%", self.code(), total_percent)
             }
-            Self::Starvation { lane, consecutive_ticks } => {
-                write!(f, "{}: {} starved for {} ticks", self.code(), lane, consecutive_ticks)
+            Self::Starvation {
+                lane,
+                consecutive_ticks,
+            } => {
+                write!(
+                    f,
+                    "{}: {} starved for {} ticks",
+                    self.code(),
+                    lane,
+                    consecutive_ticks
+                )
             }
             Self::InvalidBudget { lane, detail } => {
                 write!(f, "{}: {} {}", self.code(), lane, detail)
@@ -394,11 +449,12 @@ impl ControlLaneScheduler {
         timestamp_ms: u64,
         trace_id: &str,
     ) -> Result<ControlLane, ControlLanePolicyError> {
-        let lane = self.policy.resolve(task_class).ok_or_else(|| {
-            ControlLanePolicyError::UnknownTask {
-                task_class: task_class.to_string(),
-            }
-        })?;
+        let lane =
+            self.policy
+                .resolve(task_class)
+                .ok_or_else(|| ControlLanePolicyError::UnknownTask {
+                    task_class: task_class.to_string(),
+                })?;
 
         let counters = self.counters.get_mut(lane.as_str()).unwrap();
         counters.tasks_run += 1;
@@ -469,12 +525,24 @@ impl ControlLaneScheduler {
         let timed = &self.counters["timed"];
         let ready = &self.counters["ready"];
 
-        let cancel_thresh = self.policy.budgets.get("cancel")
-            .map(|b| b.starvation_threshold_ticks).unwrap_or(1);
-        let timed_thresh = self.policy.budgets.get("timed")
-            .map(|b| b.starvation_threshold_ticks).unwrap_or(2);
-        let ready_thresh = self.policy.budgets.get("ready")
-            .map(|b| b.starvation_threshold_ticks).unwrap_or(3);
+        let cancel_thresh = self
+            .policy
+            .budgets
+            .get("cancel")
+            .map(|b| b.starvation_threshold_ticks)
+            .unwrap_or(1);
+        let timed_thresh = self
+            .policy
+            .budgets
+            .get("timed")
+            .map(|b| b.starvation_threshold_ticks)
+            .unwrap_or(2);
+        let ready_thresh = self
+            .policy
+            .budgets
+            .get("ready")
+            .map(|b| b.starvation_threshold_ticks)
+            .unwrap_or(3);
 
         StarvationMetrics {
             tick: self.current_tick,
@@ -490,10 +558,15 @@ impl ControlLaneScheduler {
     /// Export starvation metrics as CSV row.
     pub fn starvation_metrics_csv_row(&self) -> String {
         let m = self.starvation_metrics();
-        format!("{},{},{},{},{},{},{}",
+        format!(
+            "{},{},{},{},{},{},{}",
             m.tick,
-            m.cancel_tasks_run, m.timed_tasks_run, m.ready_tasks_run,
-            m.cancel_starved as u8, m.timed_starved as u8, m.ready_starved as u8,
+            m.cancel_tasks_run,
+            m.timed_tasks_run,
+            m.ready_tasks_run,
+            m.cancel_starved as u8,
+            m.timed_starved as u8,
+            m.ready_starved as u8,
         )
     }
 
@@ -623,30 +696,72 @@ mod tests {
     #[test]
     fn cancel_tasks_map_correctly() {
         let p = default_control_lane_policy();
-        assert_eq!(p.resolve(&task_classes::cancellation_handler()), Some(ControlLane::Cancel));
-        assert_eq!(p.resolve(&task_classes::drain_operation()), Some(ControlLane::Cancel));
-        assert_eq!(p.resolve(&task_classes::region_close()), Some(ControlLane::Cancel));
-        assert_eq!(p.resolve(&task_classes::shutdown_handler()), Some(ControlLane::Cancel));
+        assert_eq!(
+            p.resolve(&task_classes::cancellation_handler()),
+            Some(ControlLane::Cancel)
+        );
+        assert_eq!(
+            p.resolve(&task_classes::drain_operation()),
+            Some(ControlLane::Cancel)
+        );
+        assert_eq!(
+            p.resolve(&task_classes::region_close()),
+            Some(ControlLane::Cancel)
+        );
+        assert_eq!(
+            p.resolve(&task_classes::shutdown_handler()),
+            Some(ControlLane::Cancel)
+        );
     }
 
     #[test]
     fn timed_tasks_map_correctly() {
         let p = default_control_lane_policy();
-        assert_eq!(p.resolve(&task_classes::health_check()), Some(ControlLane::Timed));
-        assert_eq!(p.resolve(&task_classes::lease_renewal()), Some(ControlLane::Timed));
-        assert_eq!(p.resolve(&task_classes::epoch_transition()), Some(ControlLane::Timed));
-        assert_eq!(p.resolve(&task_classes::barrier_coordination()), Some(ControlLane::Timed));
-        assert_eq!(p.resolve(&task_classes::marker_append()), Some(ControlLane::Timed));
+        assert_eq!(
+            p.resolve(&task_classes::health_check()),
+            Some(ControlLane::Timed)
+        );
+        assert_eq!(
+            p.resolve(&task_classes::lease_renewal()),
+            Some(ControlLane::Timed)
+        );
+        assert_eq!(
+            p.resolve(&task_classes::epoch_transition()),
+            Some(ControlLane::Timed)
+        );
+        assert_eq!(
+            p.resolve(&task_classes::barrier_coordination()),
+            Some(ControlLane::Timed)
+        );
+        assert_eq!(
+            p.resolve(&task_classes::marker_append()),
+            Some(ControlLane::Timed)
+        );
     }
 
     #[test]
     fn ready_tasks_map_correctly() {
         let p = default_control_lane_policy();
-        assert_eq!(p.resolve(&task_classes::telemetry_flush()), Some(ControlLane::Ready));
-        assert_eq!(p.resolve(&task_classes::evidence_archival()), Some(ControlLane::Ready));
-        assert_eq!(p.resolve(&task_classes::compaction()), Some(ControlLane::Ready));
-        assert_eq!(p.resolve(&task_classes::garbage_collection()), Some(ControlLane::Ready));
-        assert_eq!(p.resolve(&task_classes::log_rotation()), Some(ControlLane::Ready));
+        assert_eq!(
+            p.resolve(&task_classes::telemetry_flush()),
+            Some(ControlLane::Ready)
+        );
+        assert_eq!(
+            p.resolve(&task_classes::evidence_archival()),
+            Some(ControlLane::Ready)
+        );
+        assert_eq!(
+            p.resolve(&task_classes::compaction()),
+            Some(ControlLane::Ready)
+        );
+        assert_eq!(
+            p.resolve(&task_classes::garbage_collection()),
+            Some(ControlLane::Ready)
+        );
+        assert_eq!(
+            p.resolve(&task_classes::log_rotation()),
+            Some(ControlLane::Ready)
+        );
     }
 
     #[test]
@@ -667,8 +782,16 @@ mod tests {
     fn budget_overflow_detected() {
         let mut p = ControlLanePolicy::new();
         p.assign(&task_classes::cancellation_handler(), ControlLane::Cancel);
-        p.set_budget(LaneBudget { lane: ControlLane::Cancel, min_percent: 60, starvation_threshold_ticks: 1 });
-        p.set_budget(LaneBudget { lane: ControlLane::Timed, min_percent: 50, starvation_threshold_ticks: 2 });
+        p.set_budget(LaneBudget {
+            lane: ControlLane::Cancel,
+            min_percent: 60,
+            starvation_threshold_ticks: 1,
+        });
+        p.set_budget(LaneBudget {
+            lane: ControlLane::Timed,
+            min_percent: 50,
+            starvation_threshold_ticks: 2,
+        });
         let err = p.validate().unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CLM_BUDGET_OVERFLOW);
     }
@@ -677,7 +800,11 @@ mod tests {
     fn cancel_below_20_percent_rejected() {
         let mut p = ControlLanePolicy::new();
         p.assign(&task_classes::cancellation_handler(), ControlLane::Cancel);
-        p.set_budget(LaneBudget { lane: ControlLane::Cancel, min_percent: 10, starvation_threshold_ticks: 1 });
+        p.set_budget(LaneBudget {
+            lane: ControlLane::Cancel,
+            min_percent: 10,
+            starvation_threshold_ticks: 1,
+        });
         let err = p.validate().unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CLM_INVALID_BUDGET);
     }
@@ -686,8 +813,16 @@ mod tests {
     fn timed_below_30_percent_rejected() {
         let mut p = ControlLanePolicy::new();
         p.assign(&task_classes::cancellation_handler(), ControlLane::Cancel);
-        p.set_budget(LaneBudget { lane: ControlLane::Cancel, min_percent: 20, starvation_threshold_ticks: 1 });
-        p.set_budget(LaneBudget { lane: ControlLane::Timed, min_percent: 20, starvation_threshold_ticks: 2 });
+        p.set_budget(LaneBudget {
+            lane: ControlLane::Cancel,
+            min_percent: 20,
+            starvation_threshold_ticks: 1,
+        });
+        p.set_budget(LaneBudget {
+            lane: ControlLane::Timed,
+            min_percent: 20,
+            starvation_threshold_ticks: 2,
+        });
         let err = p.validate().unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CLM_INVALID_BUDGET);
     }
@@ -697,14 +832,18 @@ mod tests {
     #[test]
     fn scheduler_assigns_cancel_task() {
         let mut s = make_scheduler();
-        let lane = s.assign_task(&task_classes::cancellation_handler(), 1000, "t1").unwrap();
+        let lane = s
+            .assign_task(&task_classes::cancellation_handler(), 1000, "t1")
+            .unwrap();
         assert_eq!(lane, ControlLane::Cancel);
     }
 
     #[test]
     fn scheduler_rejects_unknown_task() {
         let mut s = make_scheduler();
-        let err = s.assign_task(&ControlTaskClass::new("unknown"), 1000, "t1").unwrap_err();
+        let err = s
+            .assign_task(&ControlTaskClass::new("unknown"), 1000, "t1")
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CLM_UNKNOWN_TASK);
     }
 
@@ -778,7 +917,8 @@ mod tests {
     #[test]
     fn audit_records_assignment() {
         let mut s = make_scheduler();
-        s.assign_task(&task_classes::cancellation_handler(), 1000, "t1").unwrap();
+        s.assign_task(&task_classes::cancellation_handler(), 1000, "t1")
+            .unwrap();
         assert_eq!(s.audit_log().len(), 1);
         assert_eq!(s.audit_log()[0].event_code, event_codes::CLM_TASK_ASSIGNED);
     }
@@ -786,9 +926,11 @@ mod tests {
     #[test]
     fn audit_export_jsonl() {
         let mut s = make_scheduler();
-        s.assign_task(&task_classes::cancellation_handler(), 1000, "t1").unwrap();
+        s.assign_task(&task_classes::cancellation_handler(), 1000, "t1")
+            .unwrap();
         let jsonl = s.export_audit_log_jsonl();
-        let parsed: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert_eq!(parsed["schema_version"], SCHEMA_VERSION);
     }
 
@@ -797,12 +939,24 @@ mod tests {
     #[test]
     fn error_display_all_variants() {
         let errors: Vec<ControlLanePolicyError> = vec![
-            ControlLanePolicyError::UnknownTask { task_class: "x".into() },
+            ControlLanePolicyError::UnknownTask {
+                task_class: "x".into(),
+            },
             ControlLanePolicyError::BudgetOverflow { total_percent: 110 },
-            ControlLanePolicyError::Starvation { lane: ControlLane::Cancel, consecutive_ticks: 5 },
-            ControlLanePolicyError::InvalidBudget { lane: ControlLane::Timed, detail: "bad".into() },
-            ControlLanePolicyError::DuplicateTask { task_class: "x".into() },
-            ControlLanePolicyError::IncompleteMap { detail: "bad".into() },
+            ControlLanePolicyError::Starvation {
+                lane: ControlLane::Cancel,
+                consecutive_ticks: 5,
+            },
+            ControlLanePolicyError::InvalidBudget {
+                lane: ControlLane::Timed,
+                detail: "bad".into(),
+            },
+            ControlLanePolicyError::DuplicateTask {
+                task_class: "x".into(),
+            },
+            ControlLanePolicyError::IncompleteMap {
+                detail: "bad".into(),
+            },
         ];
         for e in &errors {
             let s = e.to_string();

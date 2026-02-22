@@ -122,9 +122,7 @@ pub fn check_middleware_coverage() -> MiddlewareCoverage {
         .iter()
         .all(|r| !format!("{:?}", r.auth_method).is_empty());
 
-    let policy_hook_coverage = routes
-        .iter()
-        .all(|r| !r.policy_hook.hook_id.is_empty());
+    let policy_hook_coverage = routes.iter().all(|r| !r.policy_hook.hook_id.is_empty());
 
     let tracing_coverage = routes.iter().all(|r| r.trace_propagation);
 
@@ -275,9 +273,18 @@ mod tests {
     #[test]
     fn all_route_metadata_collects_all_groups() {
         let routes = all_route_metadata();
-        let operator_count = routes.iter().filter(|r| r.group == EndpointGroup::Operator).count();
-        let verifier_count = routes.iter().filter(|r| r.group == EndpointGroup::Verifier).count();
-        let fleet_count = routes.iter().filter(|r| r.group == EndpointGroup::FleetControl).count();
+        let operator_count = routes
+            .iter()
+            .filter(|r| r.group == EndpointGroup::Operator)
+            .count();
+        let verifier_count = routes
+            .iter()
+            .filter(|r| r.group == EndpointGroup::Verifier)
+            .count();
+        let fleet_count = routes
+            .iter()
+            .filter(|r| r.group == EndpointGroup::FleetControl)
+            .count();
 
         assert_eq!(operator_count, 4);
         assert_eq!(verifier_count, 3);

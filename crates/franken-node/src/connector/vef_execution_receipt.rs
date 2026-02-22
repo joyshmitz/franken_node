@@ -215,7 +215,10 @@ pub fn receipt_hash_sha256(receipt: &ExecutionReceipt) -> Result<String, Executi
     Ok(format!("sha256:{digest:x}"))
 }
 
-pub fn verify_hash(receipt: &ExecutionReceipt, expected_hash: &str) -> Result<(), ExecutionReceiptError> {
+pub fn verify_hash(
+    receipt: &ExecutionReceipt,
+    expected_hash: &str,
+) -> Result<(), ExecutionReceiptError> {
     let computed = receipt_hash_sha256(receipt)?;
     if computed == expected_hash {
         return Ok(());

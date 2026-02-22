@@ -65,17 +65,11 @@ pub enum RollbackBundleError {
 
     /// ERR-RRB-HEALTH-FAILED: One or more post-rollback health checks failed.
     #[serde(rename = "ERR-RRB-HEALTH-FAILED")]
-    HealthCheckFailed {
-        check_name: String,
-        reason: String,
-    },
+    HealthCheckFailed { check_name: String, reason: String },
 
     /// ERR-RRB-VERSION-MISMATCH: Bundle targets a different version.
     #[serde(rename = "ERR-RRB-VERSION-MISMATCH")]
-    VersionMismatch {
-        expected: String,
-        actual: String,
-    },
+    VersionMismatch { expected: String, actual: String },
 }
 
 impl fmt::Display for RollbackBundleError {
@@ -338,7 +332,10 @@ impl RollbackBundle {
                 .iter()
                 .find(|c| c.name == mc.name)
                 .ok_or_else(|| RollbackBundleError::ManifestInvalid {
-                    reason: format!("component '{}' listed in manifest but not in bundle", mc.name),
+                    reason: format!(
+                        "component '{}' listed in manifest but not in bundle",
+                        mc.name
+                    ),
                 })?;
             if !component.verify_checksum() {
                 return Err(RollbackBundleError::ChecksumMismatch {
@@ -359,10 +356,7 @@ impl RollbackBundle {
     }
 
     /// Check that this bundle is compatible with the given current version.
-    pub fn check_compatibility(
-        &self,
-        current_version: &str,
-    ) -> Result<(), RollbackBundleError> {
+    pub fn check_compatibility(&self, current_version: &str) -> Result<(), RollbackBundleError> {
         if self.manifest.compatibility.rollback_from != current_version {
             return Err(RollbackBundleError::VersionMismatch {
                 expected: self.manifest.compatibility.rollback_from.clone(),
@@ -660,10 +654,7 @@ impl BundleStore {
                 source_version: bundle.manifest.source_version.clone(),
                 target_version: bundle.manifest.target_version.clone(),
                 outcome: "failed".to_string(),
-                detail: format!(
-                    "{} health checks failed",
-                    errors.len()
-                ),
+                detail: format!("{} health checks failed", errors.len()),
             });
         }
 
@@ -864,7 +855,10 @@ mod tests {
 
     #[test]
     fn test_health_check_kind_display() {
-        assert_eq!(format!("{}", HealthCheckKind::BinaryVersion), "binary_version");
+        assert_eq!(
+            format!("{}", HealthCheckKind::BinaryVersion),
+            "binary_version"
+        );
         assert_eq!(format!("{}", HealthCheckKind::SmokeTest), "smoke_test");
     }
 
@@ -937,7 +931,11 @@ mod tests {
         assert_eq!(bundle.manifest.target_version, "1.4.1");
         assert_eq!(bundle.components.len(), 3);
         assert!(!bundle.integrity_hash.is_empty());
-        assert!(store.events().contains(&event_codes::RRB_001_BUNDLE_CREATED.to_string()));
+        assert!(
+            store
+                .events()
+                .contains(&event_codes::RRB_001_BUNDLE_CREATED.to_string())
+        );
     }
 
     #[test]
@@ -1229,7 +1227,12 @@ mod tests {
         for i in 0..5 {
             let ver = format!("1.0.{i}");
             let components = vec![BundleComponent::new("ref", 1, ver.as_bytes().to_vec())];
-            store.create_bundle(&format!("1.0.{}", i + 1), &ver, "2026-02-20T12:00:00Z", components);
+            store.create_bundle(
+                &format!("1.0.{}", i + 1),
+                &ver,
+                "2026-02-20T12:00:00Z",
+                components,
+            );
         }
         assert_eq!(store.list_bundles().len(), 5);
         store.prune(3);
@@ -1462,8 +1465,18 @@ mod tests {
     fn test_manifest_health_checks_populated() {
         let (_store, bundle) = make_store_and_bundle();
         assert_eq!(bundle.manifest.health_checks.len(), 4);
-        assert!(bundle.manifest.health_checks.contains(&"binary_version".to_string()));
-        assert!(bundle.manifest.health_checks.contains(&"smoke_test".to_string()));
+        assert!(
+            bundle
+                .manifest
+                .health_checks
+                .contains(&"binary_version".to_string())
+        );
+        assert!(
+            bundle
+                .manifest
+                .health_checks
+                .contains(&"smoke_test".to_string())
+        );
     }
 
     #[test]

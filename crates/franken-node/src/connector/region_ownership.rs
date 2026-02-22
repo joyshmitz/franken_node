@@ -146,7 +146,10 @@ impl fmt::Display for RegionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::AlreadyClosed { region_id } => {
-                write!(f, "RGN_ALREADY_CLOSED: region {region_id} is already closed")
+                write!(
+                    f,
+                    "RGN_ALREADY_CLOSED: region {region_id} is already closed"
+                )
             }
             Self::ChildStillOpen {
                 region_id,
@@ -155,10 +158,7 @@ impl fmt::Display for RegionError {
                 f,
                 "RGN_CHILD_STILL_OPEN: region {region_id} has open child {child_region_id}"
             ),
-            Self::TaskNotFound {
-                region_id,
-                task_id,
-            } => write!(
+            Self::TaskNotFound { region_id, task_id } => write!(
                 f,
                 "RGN_TASK_NOT_FOUND: task {task_id} not found in region {region_id}"
             ),
@@ -199,11 +199,7 @@ impl Region {
     }
 
     /// Create a child region nested under this region.
-    pub fn open_child(
-        &mut self,
-        kind: RegionKind,
-        quiescence_budget_ms: u64,
-    ) -> Region {
+    pub fn open_child(&mut self, kind: RegionKind, quiescence_budget_ms: u64) -> Region {
         let child = Region {
             id: next_region_id(),
             kind,
@@ -392,9 +388,9 @@ impl Region {
 
     /// Returns true if all tasks are in a terminal state (completed or force-terminated).
     pub fn is_quiescent(&self) -> bool {
-        self.tasks.iter().all(|t| {
-            matches!(t.state, TaskState::Completed | TaskState::ForceTerminated)
-        })
+        self.tasks
+            .iter()
+            .all(|t| matches!(t.state, TaskState::Completed | TaskState::ForceTerminated))
     }
 
     /// Returns the number of active (non-terminal) tasks.

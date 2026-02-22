@@ -16,12 +16,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use crate::connector::control_evidence::{
-    ControlEvidenceEntry, DecisionKind, DecisionType,
-};
-use crate::observability::evidence_ledger::{
-    DecisionKind as LedgerDecisionKind, EvidenceEntry,
-};
+use crate::connector::control_evidence::{ControlEvidenceEntry, DecisionKind, DecisionType};
+use crate::observability::evidence_ledger::{DecisionKind as LedgerDecisionKind, EvidenceEntry};
 use crate::tools::evidence_replay_validator::{
     Candidate, Constraint, EvidenceReplayValidator, ReplayContext, ReplayResult,
 };
@@ -190,7 +186,11 @@ impl fmt::Display for ReplayVerdict {
                 diff_summary,
                 diff_field_count,
             } => {
-                write!(f, "DIVERGED ({} fields): {}", diff_field_count, diff_summary)
+                write!(
+                    f,
+                    "DIVERGED ({} fields): {}",
+                    diff_field_count, diff_summary
+                )
             }
             Self::Error { reason } => write!(f, "ERROR: {}", reason),
         }
@@ -386,8 +386,7 @@ impl ControlReplayGate {
 
     /// Check if the gate passes (all verdicts are REPRODUCED).
     pub fn gate_pass(&self) -> bool {
-        !self.verdicts.is_empty()
-            && self.verdicts.iter().all(|(_, _, v)| v.is_reproduced())
+        !self.verdicts.is_empty() && self.verdicts.iter().all(|(_, _, v)| v.is_reproduced())
     }
 
     /// Summary of replay results.
@@ -499,9 +498,7 @@ impl Default for ControlReplayGate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connector::control_evidence::{
-        map_decision_kind, DecisionOutcome,
-    };
+    use crate::connector::control_evidence::{DecisionOutcome, map_decision_kind};
 
     fn make_entry(
         decision_type: DecisionType,
@@ -515,10 +512,7 @@ mod tests {
             decision_type,
             decision_kind: map_decision_kind(decision_type, outcome),
             policy_inputs: vec!["input-1".to_string()],
-            candidates_considered: vec![
-                "candidate-a".to_string(),
-                "candidate-b".to_string(),
-            ],
+            candidates_considered: vec!["candidate-a".to_string(), "candidate-b".to_string()],
             chosen_action: format!("{:?}", outcome),
             rejection_reasons: vec![],
             epoch: 42,
@@ -613,10 +607,7 @@ mod tests {
             2000,
         );
         let ledger = to_ledger_entry(&entry);
-        assert_eq!(
-            ledger.payload["decision_type"],
-            "fencing_decision"
-        );
+        assert_eq!(ledger.payload["decision_type"], "fencing_decision");
     }
 
     // ── Bridge: build_replay_context ──────────────────────────────
@@ -1163,8 +1154,7 @@ mod tests {
                 DecisionType::FencingDecision => DecisionOutcome::Grant,
                 _ => DecisionOutcome::Pass,
             };
-            let entry =
-                make_entry(*dt, outcome, &format!("DEC-{i:03}"), (i as u64 + 1) * 100);
+            let entry = make_entry(*dt, outcome, &format!("DEC-{i:03}"), (i as u64 + 1) * 100);
             gate.verify_from_entry(&entry, "snap-001");
         }
         assert!(gate.gate_pass());
@@ -1388,8 +1378,7 @@ mod tests {
                 DecisionType::FencingDecision => DecisionOutcome::Grant,
                 _ => DecisionOutcome::Pass,
             };
-            let entry =
-                make_entry(*dt, outcome, &format!("DEC-{i:03}"), (i as u64 + 1) * 100);
+            let entry = make_entry(*dt, outcome, &format!("DEC-{i:03}"), (i as u64 + 1) * 100);
             gate.verify_from_entry(&entry, "snap-001");
         }
         let report = gate.to_report();
@@ -1543,8 +1532,7 @@ mod tests {
             (DecisionType::MigrationDecision, DecisionOutcome::Proceed),
         ];
         for (i, (dt, outcome)) in outcomes.iter().enumerate() {
-            let entry =
-                make_entry(*dt, *outcome, &format!("DEC-{i:03}"), (i as u64 + 1) * 100);
+            let entry = make_entry(*dt, *outcome, &format!("DEC-{i:03}"), (i as u64 + 1) * 100);
             let v = gate.verify_from_entry(&entry, "snap-001");
             assert!(
                 v.is_reproduced(),

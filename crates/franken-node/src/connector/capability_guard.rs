@@ -263,7 +263,10 @@ pub fn capability_taxonomy() -> BTreeMap<String, CapabilityTaxonomyEntry> {
 
 /// All capability names in the taxonomy.
 pub fn all_capability_names() -> Vec<String> {
-    CAPABILITY_TAXONOMY.iter().map(|e| e.name.to_string()).collect()
+    CAPABILITY_TAXONOMY
+        .iter()
+        .map(|e| e.name.to_string())
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -394,12 +397,16 @@ impl ProfileChange {
         if old.version == new.version && old.capabilities == new.capabilities {
             return None;
         }
-        let old_caps: std::collections::BTreeSet<&String> =
-            old.capabilities.keys().collect();
-        let new_caps: std::collections::BTreeSet<&String> =
-            new.capabilities.keys().collect();
-        let added: Vec<String> = new_caps.difference(&old_caps).map(|s| (*s).clone()).collect();
-        let removed: Vec<String> = old_caps.difference(&new_caps).map(|s| (*s).clone()).collect();
+        let old_caps: std::collections::BTreeSet<&String> = old.capabilities.keys().collect();
+        let new_caps: std::collections::BTreeSet<&String> = new.capabilities.keys().collect();
+        let added: Vec<String> = new_caps
+            .difference(&old_caps)
+            .map(|s| (*s).clone())
+            .collect();
+        let removed: Vec<String> = old_caps
+            .difference(&new_caps)
+            .map(|s| (*s).clone())
+            .collect();
         let requires_review = !added.is_empty() || !removed.is_empty();
         Some(Self {
             subsystem: new.subsystem.clone(),
@@ -649,9 +656,7 @@ impl CapabilityGuard {
                 timestamp: timestamp.to_string(),
                 outcome: "denied".to_string(),
                 event_code: event_codes::CAP_002.to_string(),
-                detail: format!(
-                    "capability {capability} not declared in profile for {subsystem}"
-                ),
+                detail: format!("capability {capability} not declared in profile for {subsystem}"),
             };
             self.audit_trail.push(entry);
             self.events.push(CapabilityGuardEvent {
@@ -803,10 +808,7 @@ pub fn default_profiles() -> Vec<CapabilityProfile> {
 
     // trust_fabric
     let mut tf = CapabilityProfile::new("trust_fabric", "1.0.0", RiskLevel::High);
-    tf.add_capability(
-        "cap:trust:read",
-        "Reads trust state for convergence checks",
-    );
+    tf.add_capability("cap:trust:read", "Reads trust state for convergence checks");
     tf.add_capability(
         "cap:trust:write",
         "Writes updated trust state after convergence",
@@ -829,30 +831,15 @@ pub fn default_profiles() -> Vec<CapabilityProfile> {
 
     // epoch_guard
     let mut eg = CapabilityProfile::new("epoch_guard", "1.0.0", RiskLevel::Critical);
-    eg.add_capability(
-        "cap:crypto:sign",
-        "Signs epoch transition attestations",
-    );
-    eg.add_capability(
-        "cap:crypto:verify",
-        "Verifies prior epoch signatures",
-    );
-    eg.add_capability(
-        "cap:trust:read",
-        "Reads trust state for epoch validation",
-    );
+    eg.add_capability("cap:crypto:sign", "Signs epoch transition attestations");
+    eg.add_capability("cap:crypto:verify", "Verifies prior epoch signatures");
+    eg.add_capability("cap:trust:read", "Reads trust state for epoch validation");
     profiles.push(eg);
 
     // artifact_signing
     let mut as_ = CapabilityProfile::new("artifact_signing", "1.0.0", RiskLevel::Critical);
-    as_.add_capability(
-        "cap:crypto:sign",
-        "Signs build and release artifacts",
-    );
-    as_.add_capability(
-        "cap:crypto:derive",
-        "Derives per-artifact signing keys",
-    );
+    as_.add_capability("cap:crypto:sign", "Signs build and release artifacts");
+    as_.add_capability("cap:crypto:derive", "Derives per-artifact signing keys");
     profiles.push(as_);
 
     // network_guard
@@ -898,7 +885,10 @@ mod tests {
     fn test_error_codes_defined() {
         assert_eq!(error_codes::ERR_CAP_UNDECLARED, "ERR_CAP_UNDECLARED");
         assert_eq!(error_codes::ERR_CAP_DENIED, "ERR_CAP_DENIED");
-        assert_eq!(error_codes::ERR_CAP_PROFILE_MISSING, "ERR_CAP_PROFILE_MISSING");
+        assert_eq!(
+            error_codes::ERR_CAP_PROFILE_MISSING,
+            "ERR_CAP_PROFILE_MISSING"
+        );
         assert_eq!(error_codes::ERR_CAP_INVALID_LEVEL, "ERR_CAP_INVALID_LEVEL");
         assert_eq!(error_codes::ERR_CAP_AUDIT_FAILURE, "ERR_CAP_AUDIT_FAILURE");
     }
@@ -907,10 +897,16 @@ mod tests {
 
     #[test]
     fn test_invariants_defined() {
-        assert_eq!(invariants::INV_CAP_LEAST_PRIVILEGE, "INV-CAP-LEAST-PRIVILEGE");
+        assert_eq!(
+            invariants::INV_CAP_LEAST_PRIVILEGE,
+            "INV-CAP-LEAST-PRIVILEGE"
+        );
         assert_eq!(invariants::INV_CAP_DENY_DEFAULT, "INV-CAP-DENY-DEFAULT");
         assert_eq!(invariants::INV_CAP_AUDIT_COMPLETE, "INV-CAP-AUDIT-COMPLETE");
-        assert_eq!(invariants::INV_CAP_PROFILE_VERSIONED, "INV-CAP-PROFILE-VERSIONED");
+        assert_eq!(
+            invariants::INV_CAP_PROFILE_VERSIONED,
+            "INV-CAP-PROFILE-VERSIONED"
+        );
         assert_eq!(invariants::INV_CAP_DETERMINISTIC, "INV-CAP-DETERMINISTIC");
     }
 
@@ -1154,11 +1150,8 @@ mod tests {
         profile.add_capability("cap:trust:read", "read trust");
         guard.register_profile(profile);
 
-        let result = guard.check_capability(
-            "trust_fabric",
-            "cap:trust:read",
-            "2026-02-21T00:00:00Z",
-        );
+        let result =
+            guard.check_capability("trust_fabric", "cap:trust:read", "2026-02-21T00:00:00Z");
         assert!(result.is_ok());
         assert_eq!(guard.audit_trail().len(), 1);
         assert_eq!(guard.audit_trail()[0].outcome, "granted");
@@ -1172,11 +1165,8 @@ mod tests {
         guard.register_profile(profile);
 
         // INV-CAP-DENY-DEFAULT: cap:trust:write not in profile => denied
-        let result = guard.check_capability(
-            "trust_fabric",
-            "cap:trust:write",
-            "2026-02-21T00:00:00Z",
-        );
+        let result =
+            guard.check_capability("trust_fabric", "cap:trust:write", "2026-02-21T00:00:00Z");
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CAP_DENIED);
@@ -1186,11 +1176,8 @@ mod tests {
     #[test]
     fn test_guard_check_capability_denied_no_profile() {
         let mut guard = CapabilityGuard::new();
-        let result = guard.check_capability(
-            "unknown_subsystem",
-            "cap:fs:read",
-            "2026-02-21T00:00:00Z",
-        );
+        let result =
+            guard.check_capability("unknown_subsystem", "cap:fs:read", "2026-02-21T00:00:00Z");
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CAP_PROFILE_MISSING);
@@ -1260,10 +1247,12 @@ mod tests {
     #[test]
     fn test_guard_events_include_init() {
         let guard = CapabilityGuard::new();
-        assert!(guard
-            .events()
-            .iter()
-            .any(|e| e.event_code == event_codes::CAP_006));
+        assert!(
+            guard
+                .events()
+                .iter()
+                .any(|e| e.event_code == event_codes::CAP_006)
+        );
     }
 
     // ── Default profiles ─────────────────────────────────────────────
@@ -1322,13 +1311,9 @@ mod tests {
             subsystem: "s".into(),
         };
         assert_eq!(e3.code(), "ERR_CAP_PROFILE_MISSING");
-        let e4 = CapabilityGuardError::InvalidLevel {
-            level: "x".into(),
-        };
+        let e4 = CapabilityGuardError::InvalidLevel { level: "x".into() };
         assert_eq!(e4.code(), "ERR_CAP_INVALID_LEVEL");
-        let e5 = CapabilityGuardError::AuditFailure {
-            detail: "d".into(),
-        };
+        let e5 = CapabilityGuardError::AuditFailure { detail: "d".into() };
         assert_eq!(e5.code(), "ERR_CAP_AUDIT_FAILURE");
     }
 

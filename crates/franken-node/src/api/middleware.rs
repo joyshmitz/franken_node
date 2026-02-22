@@ -66,7 +66,10 @@ impl TraceContext {
 
     /// Serialize to a W3C `traceparent` header value.
     pub fn to_traceparent(&self) -> String {
-        format!("00-{}-{}-{:02x}", self.trace_id, self.span_id, self.trace_flags)
+        format!(
+            "00-{}-{}-{:02x}",
+            self.trace_id, self.span_id, self.trace_flags
+        )
     }
 }
 
@@ -125,10 +128,12 @@ pub fn authenticate(
                 detail: "missing Authorization header".to_string(),
                 trace_id: trace_id.to_string(),
             })?;
-            let key = header.strip_prefix("ApiKey ").ok_or_else(|| ApiError::AuthFailed {
-                detail: "expected Authorization: ApiKey <key>".to_string(),
-                trace_id: trace_id.to_string(),
-            })?;
+            let key = header
+                .strip_prefix("ApiKey ")
+                .ok_or_else(|| ApiError::AuthFailed {
+                    detail: "expected Authorization: ApiKey <key>".to_string(),
+                    trace_id: trace_id.to_string(),
+                })?;
             if key.is_empty() {
                 return Err(ApiError::AuthFailed {
                     detail: "empty API key".to_string(),
@@ -146,10 +151,12 @@ pub fn authenticate(
                 detail: "missing Authorization header".to_string(),
                 trace_id: trace_id.to_string(),
             })?;
-            let token = header.strip_prefix("Bearer ").ok_or_else(|| ApiError::AuthFailed {
-                detail: "expected Authorization: Bearer <token>".to_string(),
-                trace_id: trace_id.to_string(),
-            })?;
+            let token = header
+                .strip_prefix("Bearer ")
+                .ok_or_else(|| ApiError::AuthFailed {
+                    detail: "expected Authorization: Bearer <token>".to_string(),
+                    trace_id: trace_id.to_string(),
+                })?;
             if token.is_empty() {
                 return Err(ApiError::AuthFailed {
                     detail: "empty bearer token".to_string(),
@@ -172,7 +179,11 @@ pub fn authenticate(
             Ok(AuthIdentity {
                 principal: format!("mtls:{header}"),
                 method: AuthMethod::MtlsClientCert,
-                roles: vec!["operator".to_string(), "verifier".to_string(), "fleet-admin".to_string()],
+                roles: vec![
+                    "operator".to_string(),
+                    "verifier".to_string(),
+                    "fleet-admin".to_string(),
+                ],
             })
         }
     }
@@ -301,10 +312,7 @@ impl RateLimiter {
 }
 
 /// Check rate limit, returning an `ApiError` if exceeded.
-pub fn check_rate_limit(
-    limiter: &mut RateLimiter,
-    trace_id: &str,
-) -> Result<(), ApiError> {
+pub fn check_rate_limit(limiter: &mut RateLimiter, trace_id: &str) -> Result<(), ApiError> {
     match limiter.check() {
         Ok(()) => Ok(()),
         Err(retry_after_ms) => Err(ApiError::RateLimited {
@@ -623,11 +631,7 @@ mod tests {
 
     #[test]
     fn authenticate_bearer_token() {
-        let result = authenticate(
-            Some("Bearer mytoken-abc"),
-            &AuthMethod::BearerToken,
-            "t-3",
-        );
+        let result = authenticate(Some("Bearer mytoken-abc"), &AuthMethod::BearerToken, "t-3");
         let identity = result.expect("auth bearer");
         assert!(identity.principal.starts_with("token:"));
     }

@@ -109,9 +109,14 @@ pub struct DrainAck {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AbortReason {
     /// One or more participants timed out during drain.
-    Timeout { missing_participants: Vec<ParticipantId> },
+    Timeout {
+        missing_participants: Vec<ParticipantId>,
+    },
     /// A participant's drain operation failed.
-    DrainFailed { participant_id: ParticipantId, detail: String },
+    DrainFailed {
+        participant_id: ParticipantId,
+        detail: String,
+    },
     /// Explicit cancellation by the leader.
     Cancelled { detail: String },
 }
@@ -119,10 +124,19 @@ pub enum AbortReason {
 impl fmt::Display for AbortReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Timeout { missing_participants } => {
-                write!(f, "timeout: missing ACKs from {}", missing_participants.join(", "))
+            Self::Timeout {
+                missing_participants,
+            } => {
+                write!(
+                    f,
+                    "timeout: missing ACKs from {}",
+                    missing_participants.join(", ")
+                )
             }
-            Self::DrainFailed { participant_id, detail } => {
+            Self::DrainFailed {
+                participant_id,
+                detail,
+            } => {
                 write!(f, "drain failed: {participant_id}: {detail}")
             }
             Self::Cancelled { detail } => write!(f, "cancelled: {detail}"),
@@ -182,10 +196,19 @@ impl fmt::Display for BarrierError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ConcurrentBarrier { active_barrier_id } => {
-                write!(f, "{}: barrier {} already active", self.code(), active_barrier_id)
+                write!(
+                    f,
+                    "{}: barrier {} already active",
+                    self.code(),
+                    active_barrier_id
+                )
             }
             Self::NoParticipants => write!(f, "{}: no participants registered", self.code()),
-            Self::Timeout { barrier_id, missing, elapsed_ms } => {
+            Self::Timeout {
+                barrier_id,
+                missing,
+                elapsed_ms,
+            } => {
                 write!(
                     f,
                     "{}: barrier {} timed out after {}ms, missing: {}",
@@ -195,7 +218,11 @@ impl fmt::Display for BarrierError {
                     missing.join(", ")
                 )
             }
-            Self::DrainFailed { barrier_id, participant_id, detail } => {
+            Self::DrainFailed {
+                barrier_id,
+                participant_id,
+                detail,
+            } => {
                 write!(
                     f,
                     "{}: barrier {} participant {} drain failed: {}",
@@ -206,9 +233,18 @@ impl fmt::Display for BarrierError {
                 )
             }
             Self::AlreadyComplete { barrier_id } => {
-                write!(f, "{}: barrier {} already complete", self.code(), barrier_id)
+                write!(
+                    f,
+                    "{}: barrier {} already complete",
+                    self.code(),
+                    barrier_id
+                )
             }
-            Self::InvalidPhase { barrier_id, current, attempted } => {
+            Self::InvalidPhase {
+                barrier_id,
+                current,
+                attempted,
+            } => {
                 write!(
                     f,
                     "{}: barrier {} cannot transition from {} to {}",
@@ -313,7 +349,12 @@ pub struct BarrierTranscript {
 }
 
 impl BarrierTranscript {
-    fn new(barrier_id: &str, current_epoch: u64, target_epoch: u64, participant_count: usize) -> Self {
+    fn new(
+        barrier_id: &str,
+        current_epoch: u64,
+        target_epoch: u64,
+        participant_count: usize,
+    ) -> Self {
         Self {
             barrier_id: barrier_id.to_string(),
             current_epoch,
@@ -435,12 +476,7 @@ impl EpochTransitionBarrier {
     pub fn unregister_participant(&mut self, participant_id: &str) -> Result<(), BarrierError> {
         if self.active_barrier.is_some() {
             return Err(BarrierError::ConcurrentBarrier {
-                active_barrier_id: self
-                    .active_barrier
-                    .as_ref()
-                    .unwrap()
-                    .barrier_id
-                    .clone(),
+                active_barrier_id: self.active_barrier.as_ref().unwrap().barrier_id.clone(),
             });
         }
         self.participants.remove(participant_id);
@@ -676,7 +712,10 @@ impl EpochTransitionBarrier {
         let reason_str = reason.to_string();
 
         // Record timeout event if applicable
-        if let AbortReason::Timeout { ref missing_participants } = reason {
+        if let AbortReason::Timeout {
+            ref missing_participants,
+        } = reason
+        {
             barrier.transcript.record(
                 event_codes::BARRIER_TIMEOUT,
                 &format!(
@@ -905,7 +944,8 @@ mod tests {
 
         for i in 0..3 {
             let pid = format!("svc-{}", i);
-            b.record_drain_ack(make_ack(&pid, "barrier-000001", 50 + i as u64)).unwrap();
+            b.record_drain_ack(make_ack(&pid, "barrier-000001", 50 + i as u64))
+                .unwrap();
         }
 
         let new_epoch = b.try_commit(1200, "t1").unwrap();
@@ -922,8 +962,10 @@ mod tests {
         b.propose(5, 6, 1000, "t1").unwrap();
 
         // Only 2 of 3 ACKs
-        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 50)).unwrap();
-        b.record_drain_ack(make_ack("svc-1", "barrier-000001", 60)).unwrap();
+        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 50))
+            .unwrap();
+        b.record_drain_ack(make_ack("svc-1", "barrier-000001", 60))
+            .unwrap();
 
         let err = b.try_commit(1100, "t1").unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_BARRIER_TIMEOUT);
@@ -936,11 +978,15 @@ mod tests {
         let mut b = make_barrier(2);
         b.propose(5, 6, 1000, "t1").unwrap();
 
-        let epoch = b.abort(
-            AbortReason::Cancelled { detail: "test".into() },
-            1500,
-            "t1",
-        ).unwrap();
+        let epoch = b
+            .abort(
+                AbortReason::Cancelled {
+                    detail: "test".into(),
+                },
+                1500,
+                "t1",
+            )
+            .unwrap();
 
         assert_eq!(epoch, 5); // current, not target
         assert_eq!(b.active_barrier().unwrap().phase, BarrierPhase::Aborted);
@@ -952,11 +998,14 @@ mod tests {
         let mut b = make_barrier(3);
         b.propose(5, 6, 1000, "t1").unwrap();
 
-        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 50)).unwrap();
+        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 50))
+            .unwrap();
         // svc-1 and svc-2 missing
 
         // Exceed global timeout
-        let epoch = b.try_commit(1000 + DEFAULT_BARRIER_TIMEOUT_MS, "t1").unwrap();
+        let epoch = b
+            .try_commit(1000 + DEFAULT_BARRIER_TIMEOUT_MS, "t1")
+            .unwrap();
         // try_commit triggers abort when timed out and returns current epoch
         // Actually, let me re-read the logic...
         // When not all acked and elapsed >= global_timeout, it calls self.abort()
@@ -971,7 +1020,9 @@ mod tests {
         let mut b = make_barrier(3);
         b.propose(5, 6, 1000, "t1").unwrap();
 
-        let epoch = b.record_drain_failure("svc-1", "connection reset", 1100, "t1").unwrap();
+        let epoch = b
+            .record_drain_failure("svc-1", "connection reset", 1100, "t1")
+            .unwrap();
         assert_eq!(epoch, 5);
         assert_eq!(b.active_barrier().unwrap().phase, BarrierPhase::Aborted);
     }
@@ -981,7 +1032,9 @@ mod tests {
         let mut b = make_barrier(2);
         b.propose(5, 6, 1000, "t1").unwrap();
 
-        let err = b.record_drain_failure("unknown-svc", "err", 1100, "t1").unwrap_err();
+        let err = b
+            .record_drain_failure("unknown-svc", "err", 1100, "t1")
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_BARRIER_UNKNOWN_PARTICIPANT);
     }
 
@@ -992,7 +1045,9 @@ mod tests {
         let mut b = make_barrier(2);
         b.propose(5, 6, 1000, "t1").unwrap();
 
-        let err = b.record_drain_ack(make_ack("unknown", "barrier-000001", 50)).unwrap_err();
+        let err = b
+            .record_drain_ack(make_ack("unknown", "barrier-000001", 50))
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_BARRIER_UNKNOWN_PARTICIPANT);
     }
 
@@ -1002,10 +1057,13 @@ mod tests {
     fn ack_on_committed_barrier_fails() {
         let mut b = make_barrier(1);
         b.propose(5, 6, 1000, "t1").unwrap();
-        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 50)).unwrap();
+        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 50))
+            .unwrap();
         b.try_commit(1100, "t1").unwrap();
 
-        let err = b.record_drain_ack(make_ack("svc-0", "barrier-000001", 100)).unwrap_err();
+        let err = b
+            .record_drain_ack(make_ack("svc-0", "barrier-000001", 100))
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_BARRIER_ALREADY_COMPLETE);
     }
 
@@ -1013,14 +1071,19 @@ mod tests {
     fn abort_on_committed_barrier_fails() {
         let mut b = make_barrier(1);
         b.propose(5, 6, 1000, "t1").unwrap();
-        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 50)).unwrap();
+        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 50))
+            .unwrap();
         b.try_commit(1100, "t1").unwrap();
 
-        let err = b.abort(
-            AbortReason::Cancelled { detail: "test".into() },
-            1200,
-            "t1",
-        ).unwrap_err();
+        let err = b
+            .abort(
+                AbortReason::Cancelled {
+                    detail: "test".into(),
+                },
+                1200,
+                "t1",
+            )
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_BARRIER_ALREADY_COMPLETE);
     }
 
@@ -1041,8 +1104,10 @@ mod tests {
     fn transcript_records_full_commit_sequence() {
         let mut b = make_barrier(2);
         b.propose(5, 6, 1000, "t1").unwrap();
-        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 50)).unwrap();
-        b.record_drain_ack(make_ack("svc-1", "barrier-000001", 60)).unwrap();
+        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 50))
+            .unwrap();
+        b.record_drain_ack(make_ack("svc-1", "barrier-000001", 60))
+            .unwrap();
         b.try_commit(1200, "t1").unwrap();
 
         let t = b.transcript().unwrap();
@@ -1056,7 +1121,8 @@ mod tests {
     fn transcript_records_abort_with_timeout() {
         let mut b = make_barrier(2);
         b.propose(5, 6, 1000, "t1").unwrap();
-        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 50)).unwrap();
+        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 50))
+            .unwrap();
 
         b.abort(
             AbortReason::Timeout {
@@ -1064,7 +1130,8 @@ mod tests {
             },
             2000,
             "t1",
-        ).unwrap();
+        )
+        .unwrap();
 
         let t = b.transcript().unwrap();
         let codes: Vec<&str> = t.entries.iter().map(|e| e.event_code.as_str()).collect();
@@ -1077,7 +1144,8 @@ mod tests {
     fn transcript_export_jsonl() {
         let mut b = make_barrier(1);
         b.propose(0, 1, 1000, "t1").unwrap();
-        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20)).unwrap();
+        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20))
+            .unwrap();
         b.try_commit(1100, "t1").unwrap();
 
         let jsonl = b.transcript().unwrap().export_jsonl();
@@ -1116,9 +1184,13 @@ mod tests {
     #[test]
     fn config_participant_timeout_override() {
         let mut cfg = BarrierConfig::default();
-        cfg.participant_timeouts.insert("slow-svc".to_string(), 5_000);
+        cfg.participant_timeouts
+            .insert("slow-svc".to_string(), 5_000);
         assert_eq!(cfg.drain_timeout_for("slow-svc"), 5_000);
-        assert_eq!(cfg.drain_timeout_for("normal-svc"), DEFAULT_DRAIN_TIMEOUT_MS);
+        assert_eq!(
+            cfg.drain_timeout_for("normal-svc"),
+            DEFAULT_DRAIN_TIMEOUT_MS
+        );
     }
 
     #[test]
@@ -1140,7 +1212,8 @@ mod tests {
         b.propose(5, 6, 1000, "t1").unwrap();
 
         // fast-svc ACKs quickly
-        b.record_drain_ack(make_ack("fast-svc", "barrier-000001", 20)).unwrap();
+        b.record_drain_ack(make_ack("fast-svc", "barrier-000001", 20))
+            .unwrap();
 
         // After 200ms, slow-svc has exceeded its 100ms timeout
         b.check_participant_timeouts(1200, "t1").unwrap();
@@ -1156,12 +1229,20 @@ mod tests {
 
         // First barrier: commit
         b.propose(0, 1, 1000, "t1").unwrap();
-        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20)).unwrap();
+        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20))
+            .unwrap();
         b.try_commit(1100, "t1").unwrap();
 
         // Second barrier: abort
         b.propose(1, 2, 2000, "t2").unwrap();
-        b.abort(AbortReason::Cancelled { detail: "test".into() }, 2500, "t2").unwrap();
+        b.abort(
+            AbortReason::Cancelled {
+                detail: "test".into(),
+            },
+            2500,
+            "t2",
+        )
+        .unwrap();
 
         assert_eq!(b.completed_barrier_count(), 2);
         assert_eq!(b.audit_history()[0].outcome, "COMMITTED");
@@ -1172,12 +1253,14 @@ mod tests {
     fn audit_export_jsonl_format() {
         let mut b = make_barrier(1);
         b.propose(0, 1, 1000, "t1").unwrap();
-        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20)).unwrap();
+        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20))
+            .unwrap();
         b.try_commit(1100, "t1").unwrap();
 
         let jsonl = b.export_audit_log_jsonl();
         assert!(!jsonl.is_empty());
-        let parsed: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert_eq!(parsed["outcome"], "COMMITTED");
         assert_eq!(parsed["schema_version"], SCHEMA_VERSION);
     }
@@ -1211,7 +1294,8 @@ mod tests {
 
         b.propose(0, 1, 1000, "t1").unwrap();
         assert_eq!(b.active_barrier().unwrap().barrier_id, "barrier-000001");
-        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20)).unwrap();
+        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20))
+            .unwrap();
         b.try_commit(1100, "t1").unwrap();
 
         b.propose(1, 2, 2000, "t2").unwrap();
@@ -1224,7 +1308,8 @@ mod tests {
     fn missing_acks_returns_unacked_participants() {
         let mut b = make_barrier(3);
         b.propose(5, 6, 1000, "t1").unwrap();
-        b.record_drain_ack(make_ack("svc-1", "barrier-000001", 50)).unwrap();
+        b.record_drain_ack(make_ack("svc-1", "barrier-000001", 50))
+            .unwrap();
 
         let missing = b.active_barrier().unwrap().missing_acks();
         assert_eq!(missing.len(), 2);
@@ -1237,7 +1322,9 @@ mod tests {
     #[test]
     fn error_display_all_variants() {
         let errors: Vec<BarrierError> = vec![
-            BarrierError::ConcurrentBarrier { active_barrier_id: "b1".into() },
+            BarrierError::ConcurrentBarrier {
+                active_barrier_id: "b1".into(),
+            },
             BarrierError::NoParticipants,
             BarrierError::Timeout {
                 barrier_id: "b2".into(),
@@ -1249,18 +1336,30 @@ mod tests {
                 participant_id: "svc-y".into(),
                 detail: "err".into(),
             },
-            BarrierError::AlreadyComplete { barrier_id: "b4".into() },
+            BarrierError::AlreadyComplete {
+                barrier_id: "b4".into(),
+            },
             BarrierError::InvalidPhase {
                 barrier_id: "b5".into(),
                 current: BarrierPhase::Committed,
                 attempted: BarrierPhase::Draining,
             },
-            BarrierError::UnknownParticipant { participant_id: "svc-z".into() },
-            BarrierError::EpochMismatch { expected: 6, provided: 8 },
+            BarrierError::UnknownParticipant {
+                participant_id: "svc-z".into(),
+            },
+            BarrierError::EpochMismatch {
+                expected: 6,
+                provided: 8,
+            },
         ];
         for e in &errors {
             let s = e.to_string();
-            assert!(s.contains(e.code()), "Display for {:?} should contain code {}", e, e.code());
+            assert!(
+                s.contains(e.code()),
+                "Display for {:?} should contain code {}",
+                e,
+                e.code()
+            );
         }
     }
 
@@ -1269,9 +1368,16 @@ mod tests {
     #[test]
     fn abort_reason_display() {
         let reasons = vec![
-            AbortReason::Timeout { missing_participants: vec!["a".into(), "b".into()] },
-            AbortReason::DrainFailed { participant_id: "svc".into(), detail: "err".into() },
-            AbortReason::Cancelled { detail: "test".into() },
+            AbortReason::Timeout {
+                missing_participants: vec!["a".into(), "b".into()],
+            },
+            AbortReason::DrainFailed {
+                participant_id: "svc".into(),
+                detail: "err".into(),
+            },
+            AbortReason::Cancelled {
+                detail: "test".into(),
+            },
         ];
         for r in &reasons {
             assert!(!r.to_string().is_empty());
@@ -1284,7 +1390,8 @@ mod tests {
     fn after_commit_barrier_is_terminal() {
         let mut b = make_barrier(1);
         b.propose(5, 6, 1000, "t1").unwrap();
-        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20)).unwrap();
+        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20))
+            .unwrap();
         b.try_commit(1100, "t1").unwrap();
 
         assert!(b.active_barrier().unwrap().is_terminal());
@@ -1295,7 +1402,14 @@ mod tests {
     fn after_abort_barrier_is_terminal() {
         let mut b = make_barrier(1);
         b.propose(5, 6, 1000, "t1").unwrap();
-        b.abort(AbortReason::Cancelled { detail: "test".into() }, 1100, "t1").unwrap();
+        b.abort(
+            AbortReason::Cancelled {
+                detail: "test".into(),
+            },
+            1100,
+            "t1",
+        )
+        .unwrap();
 
         assert!(b.active_barrier().unwrap().is_terminal());
         assert!(!b.is_barrier_active());
@@ -1307,7 +1421,8 @@ mod tests {
     fn can_propose_after_committed_barrier() {
         let mut b = make_barrier(1);
         b.propose(5, 6, 1000, "t1").unwrap();
-        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20)).unwrap();
+        b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20))
+            .unwrap();
         b.try_commit(1100, "t1").unwrap();
 
         // Should be able to propose new barrier
@@ -1319,7 +1434,14 @@ mod tests {
     fn can_propose_after_aborted_barrier() {
         let mut b = make_barrier(1);
         b.propose(5, 6, 1000, "t1").unwrap();
-        b.abort(AbortReason::Cancelled { detail: "test".into() }, 1500, "t1").unwrap();
+        b.abort(
+            AbortReason::Cancelled {
+                detail: "test".into(),
+            },
+            1500,
+            "t1",
+        )
+        .unwrap();
 
         b.propose(5, 6, 2000, "t2").unwrap();
         assert!(b.is_barrier_active());
@@ -1331,7 +1453,10 @@ mod tests {
     fn default_barrier_has_default_config() {
         let b = EpochTransitionBarrier::default();
         assert_eq!(b.config().global_timeout_ms, DEFAULT_BARRIER_TIMEOUT_MS);
-        assert_eq!(b.config().default_drain_timeout_ms, DEFAULT_DRAIN_TIMEOUT_MS);
+        assert_eq!(
+            b.config().default_drain_timeout_ms,
+            DEFAULT_DRAIN_TIMEOUT_MS
+        );
         assert!(!b.is_barrier_active());
         assert_eq!(b.completed_barrier_count(), 0);
     }

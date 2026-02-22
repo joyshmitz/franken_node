@@ -145,26 +145,45 @@ pub enum SegmentationError {
     /// Referenced zone does not exist.
     ZoneNotFound { zone_id: String },
     /// Delegation chain depth exceeds zone's configured limit.
-    DelegationDepthExceeded { zone_id: String, limit: u32, actual: u32 },
+    DelegationDepthExceeded {
+        zone_id: String,
+        limit: u32,
+        actual: u32,
+    },
     /// Action violates zone isolation level policy.
-    IsolationViolation { zone_id: String, level: IsolationLevel },
+    IsolationViolation {
+        zone_id: String,
+        level: IsolationLevel,
+    },
     /// Attempted to register a zone with an existing zone_id.
     DuplicateZone { zone_id: String },
     /// Tenant is already bound to a zone.
-    DuplicateTenant { tenant_id: String, existing_zone: String },
+    DuplicateTenant {
+        tenant_id: String,
+        existing_zone: String,
+    },
     /// Cross-zone bridge lacks dual-owner authorization.
     BridgeAuthIncomplete { detail: String },
     /// Zone deletion blocked -- freshness proof is stale.
     FreshnessStale { zone_id: String },
     /// Key not bound to the target zone.
-    KeyZoneMismatch { key_id: String, expected_zone: String },
+    KeyZoneMismatch {
+        key_id: String,
+        expected_zone: String,
+    },
 }
 
 impl fmt::Display for SegmentationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::CrossZoneViolation { source_zone, target_zone } => {
-                write!(f, "{ERR_ZTS_CROSS_ZONE_VIOLATION}: {source_zone} -> {target_zone}")
+            Self::CrossZoneViolation {
+                source_zone,
+                target_zone,
+            } => {
+                write!(
+                    f,
+                    "{ERR_ZTS_CROSS_ZONE_VIOLATION}: {source_zone} -> {target_zone}"
+                )
             }
             Self::TenantNotBound { tenant_id } => {
                 write!(f, "{ERR_ZTS_TENANT_NOT_BOUND}: {tenant_id}")
@@ -172,8 +191,15 @@ impl fmt::Display for SegmentationError {
             Self::ZoneNotFound { zone_id } => {
                 write!(f, "{ERR_ZTS_ZONE_NOT_FOUND}: {zone_id}")
             }
-            Self::DelegationDepthExceeded { zone_id, limit, actual } => {
-                write!(f, "{ERR_ZTS_DELEGATION_EXCEEDED}: {zone_id} limit={limit} actual={actual}")
+            Self::DelegationDepthExceeded {
+                zone_id,
+                limit,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "{ERR_ZTS_DELEGATION_EXCEEDED}: {zone_id} limit={limit} actual={actual}"
+                )
             }
             Self::IsolationViolation { zone_id, level } => {
                 write!(f, "{ERR_ZTS_ISOLATION_VIOLATION}: {zone_id} level={level}")
@@ -181,8 +207,14 @@ impl fmt::Display for SegmentationError {
             Self::DuplicateZone { zone_id } => {
                 write!(f, "{ERR_ZTS_DUPLICATE_ZONE}: {zone_id}")
             }
-            Self::DuplicateTenant { tenant_id, existing_zone } => {
-                write!(f, "{ERR_ZTS_DUPLICATE_TENANT}: {tenant_id} already in {existing_zone}")
+            Self::DuplicateTenant {
+                tenant_id,
+                existing_zone,
+            } => {
+                write!(
+                    f,
+                    "{ERR_ZTS_DUPLICATE_TENANT}: {tenant_id} already in {existing_zone}"
+                )
             }
             Self::BridgeAuthIncomplete { detail } => {
                 write!(f, "{ERR_ZTS_BRIDGE_INCOMPLETE}: {detail}")
@@ -190,8 +222,14 @@ impl fmt::Display for SegmentationError {
             Self::FreshnessStale { zone_id } => {
                 write!(f, "{ERR_ZTS_FRESHNESS_STALE}: {zone_id}")
             }
-            Self::KeyZoneMismatch { key_id, expected_zone } => {
-                write!(f, "{ERR_ZTS_KEY_ZONE_MISMATCH}: key={key_id} zone={expected_zone}")
+            Self::KeyZoneMismatch {
+                key_id,
+                expected_zone,
+            } => {
+                write!(
+                    f,
+                    "{ERR_ZTS_KEY_ZONE_MISMATCH}: key={key_id} zone={expected_zone}"
+                )
             }
         }
     }
@@ -271,16 +309,14 @@ impl ZoneSegmentationEngine {
     ///
     /// INV-ZTS-ISOLATE: Zone actions cannot affect other zones without explicit
     /// cross-zone authorization.
-    pub fn authorize_cross_zone(
-        &self,
-        req: &CrossZoneRequest,
-    ) -> Result<(), SegmentationError> {
+    pub fn authorize_cross_zone(&self, req: &CrossZoneRequest) -> Result<(), SegmentationError> {
         // Verify both zones exist.
-        let source = self.zones.get(&req.source_zone).ok_or_else(|| {
-            SegmentationError::ZoneNotFound {
-                zone_id: req.source_zone.clone(),
-            }
-        })?;
+        let source =
+            self.zones
+                .get(&req.source_zone)
+                .ok_or_else(|| SegmentationError::ZoneNotFound {
+                    zone_id: req.source_zone.clone(),
+                })?;
         if !self.zones.contains_key(&req.target_zone) {
             return Err(SegmentationError::ZoneNotFound {
                 zone_id: req.target_zone.clone(),
@@ -291,10 +327,7 @@ impl ZoneSegmentationEngine {
         match source.isolation_level {
             IsolationLevel::Strict => {
                 // Strict: requires explicit bridge.
-                if !source
-                    .allowed_cross_zone_targets
-                    .contains(&req.target_zone)
-                {
+                if !source.allowed_cross_zone_targets.contains(&req.target_zone) {
                     return Err(SegmentationError::IsolationViolation {
                         zone_id: req.source_zone.clone(),
                         level: IsolationLevel::Strict,
@@ -304,10 +337,7 @@ impl ZoneSegmentationEngine {
             IsolationLevel::Permissive => {
                 // Permissive: reads allowed, writes require bridge.
                 if req.action.contains("write") || req.action.contains("delete") {
-                    if !source
-                        .allowed_cross_zone_targets
-                        .contains(&req.target_zone)
-                    {
+                    if !source.allowed_cross_zone_targets.contains(&req.target_zone) {
                         return Err(SegmentationError::IsolationViolation {
                             zone_id: req.source_zone.clone(),
                             level: IsolationLevel::Permissive,
@@ -317,10 +347,7 @@ impl ZoneSegmentationEngine {
             }
             IsolationLevel::Custom => {
                 // Custom isolation: check bridge list for any action.
-                if !source
-                    .allowed_cross_zone_targets
-                    .contains(&req.target_zone)
-                {
+                if !source.allowed_cross_zone_targets.contains(&req.target_zone) {
                     return Err(SegmentationError::IsolationViolation {
                         zone_id: req.source_zone.clone(),
                         level: IsolationLevel::Custom,
@@ -351,10 +378,7 @@ impl ZoneSegmentationEngine {
     }
 
     /// Query isolation level for a zone.
-    pub fn check_isolation(
-        &self,
-        zone_id: &str,
-    ) -> Result<IsolationLevel, SegmentationError> {
+    pub fn check_isolation(&self, zone_id: &str) -> Result<IsolationLevel, SegmentationError> {
         self.zones
             .get(zone_id)
             .map(|z| z.isolation_level)
@@ -426,11 +450,12 @@ impl ZoneSegmentationEngine {
         zone_id: &str,
         depth: u32,
     ) -> Result<(), SegmentationError> {
-        let zone = self.zones.get(zone_id).ok_or_else(|| {
-            SegmentationError::ZoneNotFound {
+        let zone = self
+            .zones
+            .get(zone_id)
+            .ok_or_else(|| SegmentationError::ZoneNotFound {
                 zone_id: zone_id.to_string(),
-            }
-        })?;
+            })?;
         if depth > zone.delegation_depth_limit {
             return Err(SegmentationError::DelegationDepthExceeded {
                 zone_id: zone_id.to_string(),
@@ -445,16 +470,13 @@ impl ZoneSegmentationEngine {
     ///
     /// INV-ZTS-CEILING: No entity within a zone may exceed the zone's
     /// configured trust ceiling score.
-    pub fn check_trust_ceiling(
-        &self,
-        zone_id: &str,
-        score: u32,
-    ) -> Result<(), SegmentationError> {
-        let zone = self.zones.get(zone_id).ok_or_else(|| {
-            SegmentationError::ZoneNotFound {
+    pub fn check_trust_ceiling(&self, zone_id: &str, score: u32) -> Result<(), SegmentationError> {
+        let zone = self
+            .zones
+            .get(zone_id)
+            .ok_or_else(|| SegmentationError::ZoneNotFound {
                 zone_id: zone_id.to_string(),
-            }
-        })?;
+            })?;
         if score > zone.trust_ceiling {
             return Err(SegmentationError::IsolationViolation {
                 zone_id: zone_id.to_string(),
@@ -465,16 +487,13 @@ impl ZoneSegmentationEngine {
     }
 
     /// Verify a key is bound to the target zone.
-    pub fn check_key_binding(
-        &self,
-        zone_id: &str,
-        key_id: &str,
-    ) -> Result<(), SegmentationError> {
-        let zone = self.zones.get(zone_id).ok_or_else(|| {
-            SegmentationError::ZoneNotFound {
+    pub fn check_key_binding(&self, zone_id: &str, key_id: &str) -> Result<(), SegmentationError> {
+        let zone = self
+            .zones
+            .get(zone_id)
+            .ok_or_else(|| SegmentationError::ZoneNotFound {
                 zone_id: zone_id.to_string(),
-            }
-        })?;
+            })?;
         if !zone.key_bindings.contains(&key_id.to_string()) {
             return Err(SegmentationError::KeyZoneMismatch {
                 key_id: key_id.to_string(),
@@ -486,11 +505,11 @@ impl ZoneSegmentationEngine {
 
     /// Get tenant binding for a tenant.
     pub fn get_tenant(&self, tenant_id: &str) -> Result<&TenantBinding, SegmentationError> {
-        self.tenants.get(tenant_id).ok_or_else(|| {
-            SegmentationError::TenantNotBound {
+        self.tenants
+            .get(tenant_id)
+            .ok_or_else(|| SegmentationError::TenantNotBound {
                 tenant_id: tenant_id.to_string(),
-            }
-        })
+            })
     }
 
     /// Get all recorded events.
@@ -573,9 +592,11 @@ mod tests {
     fn test_bind_tenant() {
         let mut engine = make_engine();
         engine.register_zone(make_policy("zone-a")).unwrap();
-        assert!(engine
-            .bind_tenant(make_binding("team-alpha", "zone-a"))
-            .is_ok());
+        assert!(
+            engine
+                .bind_tenant(make_binding("team-alpha", "zone-a"))
+                .is_ok()
+        );
         assert_eq!(engine.tenant_count(), 1);
     }
 
@@ -583,7 +604,9 @@ mod tests {
     fn test_duplicate_tenant_rejected() {
         let mut engine = make_engine();
         engine.register_zone(make_policy("zone-a")).unwrap();
-        engine.bind_tenant(make_binding("team-alpha", "zone-a")).unwrap();
+        engine
+            .bind_tenant(make_binding("team-alpha", "zone-a"))
+            .unwrap();
         let err = engine
             .bind_tenant(make_binding("team-alpha", "zone-a"))
             .unwrap_err();
@@ -603,7 +626,9 @@ mod tests {
     fn test_get_tenant() {
         let mut engine = make_engine();
         engine.register_zone(make_policy("zone-a")).unwrap();
-        engine.bind_tenant(make_binding("team-alpha", "zone-a")).unwrap();
+        engine
+            .bind_tenant(make_binding("team-alpha", "zone-a"))
+            .unwrap();
         let tenant = engine.get_tenant("team-alpha").unwrap();
         assert_eq!(tenant.zone_id, "zone-a");
     }
@@ -668,7 +693,10 @@ mod tests {
             authorization_proof: String::new(),
         };
         let err = engine.authorize_cross_zone(&req).unwrap_err();
-        assert!(matches!(err, SegmentationError::BridgeAuthIncomplete { .. }));
+        assert!(matches!(
+            err,
+            SegmentationError::BridgeAuthIncomplete { .. }
+        ));
     }
 
     #[test]
@@ -687,7 +715,10 @@ mod tests {
             authorization_proof: "signed:zone-a".to_string(), // missing zone-b
         };
         let err = engine.authorize_cross_zone(&req).unwrap_err();
-        assert!(matches!(err, SegmentationError::BridgeAuthIncomplete { .. }));
+        assert!(matches!(
+            err,
+            SegmentationError::BridgeAuthIncomplete { .. }
+        ));
     }
 
     #[test]
@@ -785,7 +816,11 @@ mod tests {
         let err = engine.check_delegation_depth("zone-a", 4).unwrap_err();
         assert!(matches!(
             err,
-            SegmentationError::DelegationDepthExceeded { limit: 3, actual: 4, .. }
+            SegmentationError::DelegationDepthExceeded {
+                limit: 3,
+                actual: 4,
+                ..
+            }
         ));
     }
 
@@ -857,7 +892,11 @@ mod tests {
     fn test_delete_zone_with_proof() {
         let mut engine = make_engine();
         engine.register_zone(make_policy("zone-a")).unwrap();
-        assert!(engine.delete_zone("zone-a", Some("fresh-proof-123")).is_ok());
+        assert!(
+            engine
+                .delete_zone("zone-a", Some("fresh-proof-123"))
+                .is_ok()
+        );
         assert_eq!(engine.zone_count(), 0);
     }
 

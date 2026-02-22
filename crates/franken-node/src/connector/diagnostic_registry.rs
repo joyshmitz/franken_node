@@ -121,17 +121,21 @@ impl VoiConfig {
             return Err(VoiError::InvalidConfig("window_secs must be > 0".into()));
         }
         if self.storm_threshold <= 1.0 {
-            return Err(VoiError::InvalidConfig("storm_threshold must be > 1".into()));
+            return Err(VoiError::InvalidConfig(
+                "storm_threshold must be > 1".into(),
+            ));
         }
         if self.storm_windows == 0 {
             return Err(VoiError::InvalidConfig("storm_windows must be > 0".into()));
         }
-        let w = self.weight_staleness + self.weight_uncertainty
-            + self.weight_downstream + self.weight_historical;
+        let w = self.weight_staleness
+            + self.weight_uncertainty
+            + self.weight_downstream
+            + self.weight_historical;
         if (w - 1.0).abs() > 0.01 {
-            return Err(VoiError::InvalidConfig(
-                format!("weights must sum to 1.0, got {w:.3}"),
-            ));
+            return Err(VoiError::InvalidConfig(format!(
+                "weights must sum to 1.0, got {w:.3}"
+            )));
         }
         Ok(())
     }
@@ -295,7 +299,8 @@ impl VoiScheduler {
         if self.diagnostics.contains_key(&diag.name) {
             return Err(VoiError::DuplicateDiagnostic(diag.name.clone()));
         }
-        self.states.insert(diag.name.clone(), DiagnosticState::new());
+        self.states
+            .insert(diag.name.clone(), DiagnosticState::new());
         self.diagnostics.insert(diag.name.clone(), diag);
         Ok(())
     }
@@ -443,7 +448,11 @@ impl VoiScheduler {
                 continue;
             }
             let voi = self.compute_voi(name, now_ts)?;
-            let vpc = if diag.cost > 0.0 { voi / diag.cost } else { f64::MAX };
+            let vpc = if diag.cost > 0.0 {
+                voi / diag.cost
+            } else {
+                f64::MAX
+            };
             candidates.push(Candidate {
                 name: name.clone(),
                 voi,
@@ -456,9 +465,11 @@ impl VoiScheduler {
         // INV-VOI-PREEMPT: sort by priority (descending) then VOI/cost (descending).
         // INV-VOI-ORDER: within same priority class, descending VOI/cost.
         candidates.sort_by(|a, b| {
-            b.priority
-                .cmp(&a.priority)
-                .then(b.voi_per_cost.partial_cmp(&a.voi_per_cost).unwrap_or(std::cmp::Ordering::Equal))
+            b.priority.cmp(&a.priority).then(
+                b.voi_per_cost
+                    .partial_cmp(&a.voi_per_cost)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            )
         });
 
         // Greedy selection — INV-VOI-BUDGET.
@@ -516,7 +527,10 @@ impl VoiScheduler {
                     preempted_names.push(name.clone());
                     self.events.push(VoiEvent {
                         code: EVT_PREEMPTION.to_string(),
-                        detail: format!("{name} preempted (conservative mode, class={})", diag.priority_class),
+                        detail: format!(
+                            "{name} preempted (conservative mode, class={})",
+                            diag.priority_class
+                        ),
                     });
                 }
             }
@@ -947,11 +961,17 @@ mod tests {
 
         // First cycle — demand > 3x but only 1 window.
         let r1 = sched.schedule(100).unwrap();
-        assert!(!r1.conservative_mode, "Should not be conservative after 1 window");
+        assert!(
+            !r1.conservative_mode,
+            "Should not be conservative after 1 window"
+        );
 
         // Second cycle — demand still > 3x, 2 windows → storm.
         let r2 = sched.schedule(200).unwrap();
-        assert!(r2.conservative_mode, "Should be conservative after 2 windows");
+        assert!(
+            r2.conservative_mode,
+            "Should be conservative after 2 windows"
+        );
         assert!(r2.storm_active);
     }
 
@@ -1128,14 +1148,30 @@ mod tests {
     #[test]
     fn test_default_diagnostics_has_critical() {
         let diags = default_diagnostics();
-        assert!(diags.iter().any(|d| d.priority_class == PriorityClass::Critical));
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.priority_class == PriorityClass::Critical)
+        );
     }
 
     #[test]
     fn test_default_diagnostics_has_all_classes() {
         let diags = default_diagnostics();
-        assert!(diags.iter().any(|d| d.priority_class == PriorityClass::Critical));
-        assert!(diags.iter().any(|d| d.priority_class == PriorityClass::Standard));
-        assert!(diags.iter().any(|d| d.priority_class == PriorityClass::Background));
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.priority_class == PriorityClass::Critical)
+        );
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.priority_class == PriorityClass::Standard)
+        );
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.priority_class == PriorityClass::Background)
+        );
     }
 }

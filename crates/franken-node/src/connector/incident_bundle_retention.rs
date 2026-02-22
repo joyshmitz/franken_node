@@ -230,7 +230,11 @@ pub enum IncidentBundleError {
     /// Cannot delete archive-tier bundle automatically.
     ArchiveProtected { bundle_id: String },
     /// Integrity hash mismatch.
-    IntegrityFailure { bundle_id: String, expected: String, actual: String },
+    IntegrityFailure {
+        bundle_id: String,
+        expected: String,
+        actual: String,
+    },
     /// Storage capacity exceeded.
     StorageFull { current_bytes: u64, max_bytes: u64 },
     /// Invalid export format.
@@ -442,7 +446,10 @@ impl IncidentBundleStore {
             action: "create".into(),
             old_tier: None,
             new_tier: Some(bundle.retention_tier.label().into()),
-            reason: format!("classified as {} severity, {} tier", bundle.severity, bundle.retention_tier),
+            reason: format!(
+                "classified as {} severity, {} tier",
+                bundle.severity, bundle.retention_tier
+            ),
             timestamp: now,
             event_code: event_codes::IBR_001.into(),
         });
@@ -521,7 +528,11 @@ impl IncidentBundleStore {
             ExportFormat::Json => {
                 format!(
                     "{{\"bundle_id\":\"{}\",\"incident_id\":\"{}\",\"severity\":\"{}\",\"retention_tier\":\"{}\",\"integrity_hash\":\"{}\"}}",
-                    bundle.bundle_id, bundle.incident_id, bundle.severity, bundle.retention_tier, bundle.integrity_hash
+                    bundle.bundle_id,
+                    bundle.incident_id,
+                    bundle.severity,
+                    bundle.retention_tier,
+                    bundle.integrity_hash
                 )
             }
             ExportFormat::Csv => {
@@ -690,7 +701,13 @@ mod tests {
         }
     }
 
-    fn sample_bundle(id: &str, incident_id: &str, severity: Severity, tier: RetentionTier, epoch: u64) -> IncidentBundle {
+    fn sample_bundle(
+        id: &str,
+        incident_id: &str,
+        severity: Severity,
+        tier: RetentionTier,
+        epoch: u64,
+    ) -> IncidentBundle {
         let mut bundle = IncidentBundle {
             bundle_id: id.into(),
             incident_id: incident_id.into(),
@@ -743,7 +760,10 @@ mod tests {
     fn test_retention_tier_from_str() {
         assert_eq!(RetentionTier::from_str("hot"), Some(RetentionTier::Hot));
         assert_eq!(RetentionTier::from_str("cold"), Some(RetentionTier::Cold));
-        assert_eq!(RetentionTier::from_str("archive"), Some(RetentionTier::Archive));
+        assert_eq!(
+            RetentionTier::from_str("archive"),
+            Some(RetentionTier::Archive)
+        );
         assert_eq!(RetentionTier::from_str("unknown"), None);
     }
 
@@ -782,27 +802,63 @@ mod tests {
 
     #[test]
     fn test_compute_integrity_hash_deterministic() {
-        let b1 = sample_bundle("ibr-001", "INC-001", Severity::Critical, RetentionTier::Hot, 1000);
-        let b2 = sample_bundle("ibr-001", "INC-001", Severity::Critical, RetentionTier::Hot, 1000);
+        let b1 = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::Critical,
+            RetentionTier::Hot,
+            1000,
+        );
+        let b2 = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::Critical,
+            RetentionTier::Hot,
+            1000,
+        );
         assert_eq!(compute_integrity_hash(&b1), compute_integrity_hash(&b2));
     }
 
     #[test]
     fn test_compute_integrity_hash_varies() {
-        let b1 = sample_bundle("ibr-001", "INC-001", Severity::Critical, RetentionTier::Hot, 1000);
-        let b2 = sample_bundle("ibr-002", "INC-002", Severity::Low, RetentionTier::Cold, 2000);
+        let b1 = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::Critical,
+            RetentionTier::Hot,
+            1000,
+        );
+        let b2 = sample_bundle(
+            "ibr-002",
+            "INC-002",
+            Severity::Low,
+            RetentionTier::Cold,
+            2000,
+        );
         assert_ne!(compute_integrity_hash(&b1), compute_integrity_hash(&b2));
     }
 
     #[test]
     fn test_validate_complete_bundle() {
-        let bundle = sample_bundle("ibr-001", "INC-001", Severity::High, RetentionTier::Hot, 1000);
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
         assert!(validate_bundle_complete(&bundle).is_ok());
     }
 
     #[test]
     fn test_validate_incomplete_bundle_id() {
-        let mut bundle = sample_bundle("ibr-001", "INC-001", Severity::High, RetentionTier::Hot, 1000);
+        let mut bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
         bundle.bundle_id = String::new();
         let err = validate_bundle_complete(&bundle).unwrap_err();
         assert_eq!(err.code(), "IBR_INCOMPLETE");
@@ -810,7 +866,13 @@ mod tests {
 
     #[test]
     fn test_validate_incomplete_incident_id() {
-        let mut bundle = sample_bundle("ibr-001", "INC-001", Severity::High, RetentionTier::Hot, 1000);
+        let mut bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
         bundle.incident_id = String::new();
         let err = validate_bundle_complete(&bundle).unwrap_err();
         assert_eq!(err.code(), "IBR_INCOMPLETE");
@@ -819,7 +881,13 @@ mod tests {
     #[test]
     fn test_store_bundle() {
         let mut store = default_store();
-        let bundle = sample_bundle("ibr-001", "INC-001", Severity::Critical, RetentionTier::Hot, 1000);
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::Critical,
+            RetentionTier::Hot,
+            1000,
+        );
         store.store(bundle, 1000).unwrap();
         assert!(store.contains("ibr-001"));
         assert_eq!(store.bundle_count(), 1);
@@ -829,7 +897,13 @@ mod tests {
     #[test]
     fn test_store_rejects_bad_integrity() {
         let mut store = default_store();
-        let mut bundle = sample_bundle("ibr-001", "INC-001", Severity::Critical, RetentionTier::Hot, 1000);
+        let mut bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::Critical,
+            RetentionTier::Hot,
+            1000,
+        );
         bundle.integrity_hash = "bad_hash".into();
         let err = store.store(bundle, 1000).unwrap_err();
         assert_eq!(err.code(), "IBR_INTEGRITY_FAILURE");
@@ -838,7 +912,13 @@ mod tests {
     #[test]
     fn test_store_rejects_full() {
         let mut store = IncidentBundleStore::new(RetentionConfig::default(), 500).unwrap();
-        let bundle = sample_bundle("ibr-001", "INC-001", Severity::High, RetentionTier::Hot, 1000);
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
         let err = store.store(bundle, 1000).unwrap_err();
         assert_eq!(err.code(), "IBR_STORAGE_FULL");
     }
@@ -852,9 +932,17 @@ mod tests {
     #[test]
     fn test_export_json() {
         let mut store = default_store();
-        let bundle = sample_bundle("ibr-001", "INC-001", Severity::Critical, RetentionTier::Hot, 1000);
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::Critical,
+            RetentionTier::Hot,
+            1000,
+        );
         store.store(bundle, 1000).unwrap();
-        let output = store.export("ibr-001", ExportFormat::Json, "test-user", 1001).unwrap();
+        let output = store
+            .export("ibr-001", ExportFormat::Json, "test-user", 1001)
+            .unwrap();
         assert!(output.contains("ibr-001"));
         assert!(output.contains("integrity_hash"));
     }
@@ -862,9 +950,17 @@ mod tests {
     #[test]
     fn test_export_csv() {
         let mut store = default_store();
-        let bundle = sample_bundle("ibr-001", "INC-001", Severity::High, RetentionTier::Hot, 1000);
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
         store.store(bundle, 1000).unwrap();
-        let output = store.export("ibr-001", ExportFormat::Csv, "test-user", 1001).unwrap();
+        let output = store
+            .export("ibr-001", ExportFormat::Csv, "test-user", 1001)
+            .unwrap();
         assert!(output.contains("bundle_id"));
         assert!(output.contains("ibr-001"));
     }
@@ -872,9 +968,17 @@ mod tests {
     #[test]
     fn test_export_sarif() {
         let mut store = default_store();
-        let bundle = sample_bundle("ibr-001", "INC-001", Severity::Critical, RetentionTier::Hot, 1000);
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::Critical,
+            RetentionTier::Hot,
+            1000,
+        );
         store.store(bundle, 1000).unwrap();
-        let output = store.export("ibr-001", ExportFormat::Sarif, "test-user", 1001).unwrap();
+        let output = store
+            .export("ibr-001", ExportFormat::Sarif, "test-user", 1001)
+            .unwrap();
         assert!(output.contains("ibr-001"));
         assert!(output.contains("2.1.0"));
     }
@@ -882,27 +986,44 @@ mod tests {
     #[test]
     fn test_export_not_found() {
         let mut store = default_store();
-        let err = store.export("missing", ExportFormat::Json, "user", 1000).unwrap_err();
+        let err = store
+            .export("missing", ExportFormat::Json, "user", 1000)
+            .unwrap_err();
         assert_eq!(err.code(), "IBR_NOT_FOUND");
     }
 
     #[test]
     fn test_rotate_hot_to_cold() {
         let mut store = default_store();
-        let bundle = sample_bundle("ibr-001", "INC-001", Severity::High, RetentionTier::Hot, 1000);
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
         store.store(bundle, 1000).unwrap();
 
         let hot_seconds = 90 * 86400;
         let transitions = store.rotate_tiers(1000 + hot_seconds + 1);
         assert_eq!(transitions.len(), 1);
         assert_eq!(transitions[0].new_tier.as_deref(), Some("cold"));
-        assert_eq!(store.get("ibr-001").unwrap().retention_tier, RetentionTier::Cold);
+        assert_eq!(
+            store.get("ibr-001").unwrap().retention_tier,
+            RetentionTier::Cold
+        );
     }
 
     #[test]
     fn test_rotate_cold_to_archive() {
         let mut store = default_store();
-        let mut bundle = sample_bundle("ibr-001", "INC-001", Severity::High, RetentionTier::Cold, 1000);
+        let mut bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Cold,
+            1000,
+        );
         // Already cold, need to recalc hash after setting tier
         bundle.integrity_hash = compute_integrity_hash(&bundle);
         store.store(bundle, 1000).unwrap();
@@ -911,13 +1032,22 @@ mod tests {
         let transitions = store.rotate_tiers(1000 + total_seconds + 1);
         assert_eq!(transitions.len(), 1);
         assert_eq!(transitions[0].new_tier.as_deref(), Some("archive"));
-        assert_eq!(store.get("ibr-001").unwrap().retention_tier, RetentionTier::Archive);
+        assert_eq!(
+            store.get("ibr-001").unwrap().retention_tier,
+            RetentionTier::Archive
+        );
     }
 
     #[test]
     fn test_archive_protected_from_delete() {
         let mut store = default_store();
-        let mut bundle = sample_bundle("ibr-001", "INC-001", Severity::Critical, RetentionTier::Archive, 1000);
+        let mut bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::Critical,
+            RetentionTier::Archive,
+            1000,
+        );
         bundle.integrity_hash = compute_integrity_hash(&bundle);
         store.store(bundle, 1000).unwrap();
 
@@ -929,7 +1059,13 @@ mod tests {
     #[test]
     fn test_archive_force_delete() {
         let mut store = default_store();
-        let mut bundle = sample_bundle("ibr-001", "INC-001", Severity::Critical, RetentionTier::Archive, 1000);
+        let mut bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::Critical,
+            RetentionTier::Archive,
+            1000,
+        );
         bundle.integrity_hash = compute_integrity_hash(&bundle);
         store.store(bundle, 1000).unwrap();
 
@@ -947,7 +1083,13 @@ mod tests {
     #[test]
     fn test_cleanup_runs_rotation() {
         let mut store = default_store();
-        let bundle = sample_bundle("ibr-001", "INC-001", Severity::High, RetentionTier::Hot, 1000);
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
         store.store(bundle, 1000).unwrap();
 
         let hot_seconds = 90 * 86400;
@@ -958,10 +1100,21 @@ mod tests {
     #[test]
     fn test_decisions_recorded() {
         let mut store = default_store();
-        let bundle = sample_bundle("ibr-001", "INC-001", Severity::Critical, RetentionTier::Hot, 1000);
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::Critical,
+            RetentionTier::Hot,
+            1000,
+        );
         store.store(bundle, 1000).unwrap();
         assert!(!store.decisions().is_empty());
-        assert!(store.decisions().iter().any(|d| d.event_code == event_codes::IBR_001));
+        assert!(
+            store
+                .decisions()
+                .iter()
+                .any(|d| d.event_code == event_codes::IBR_001)
+        );
     }
 
     #[test]
@@ -969,7 +1122,13 @@ mod tests {
         let mut store = IncidentBundleStore::new(RetentionConfig::default(), 10000).unwrap();
         assert_eq!(store.utilization_percent(), 0);
 
-        let bundle = sample_bundle("ibr-001", "INC-001", Severity::High, RetentionTier::Hot, 1000);
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
         store.store(bundle, 1000).unwrap();
         assert_eq!(store.utilization_percent(), 10);
     }
@@ -977,7 +1136,13 @@ mod tests {
     #[test]
     fn test_warn_level() {
         let mut store = IncidentBundleStore::new(RetentionConfig::default(), 1400).unwrap();
-        let bundle = sample_bundle("ibr-001", "INC-001", Severity::High, RetentionTier::Hot, 1000);
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
         store.store(bundle, 1000).unwrap();
         // 1000/1400 = 71%
         assert!(store.is_warn_level());
@@ -987,7 +1152,13 @@ mod tests {
     #[test]
     fn test_critical_level() {
         let mut store = IncidentBundleStore::new(RetentionConfig::default(), 1170).unwrap();
-        let bundle = sample_bundle("ibr-001", "INC-001", Severity::High, RetentionTier::Hot, 1000);
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
         store.store(bundle, 1000).unwrap();
         // 1000/1170 = 85%
         assert!(store.is_critical_level());
@@ -997,10 +1168,28 @@ mod tests {
     fn test_bundles_by_tier() {
         let mut store = default_store();
 
-        let b1 = sample_bundle("ibr-001", "INC-001", Severity::High, RetentionTier::Hot, 1000);
-        let mut b2 = sample_bundle("ibr-002", "INC-002", Severity::Low, RetentionTier::Cold, 1000);
+        let b1 = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
+        let mut b2 = sample_bundle(
+            "ibr-002",
+            "INC-002",
+            Severity::Low,
+            RetentionTier::Cold,
+            1000,
+        );
         b2.integrity_hash = compute_integrity_hash(&b2);
-        let mut b3 = sample_bundle("ibr-003", "INC-003", Severity::Critical, RetentionTier::Archive, 1000);
+        let mut b3 = sample_bundle(
+            "ibr-003",
+            "INC-003",
+            Severity::Critical,
+            RetentionTier::Archive,
+            1000,
+        );
         b3.integrity_hash = compute_integrity_hash(&b3);
 
         store.store(b1, 1000).unwrap();
@@ -1023,7 +1212,13 @@ mod tests {
 
     #[test]
     fn test_export_csv_row() {
-        let bundle = sample_bundle("ibr-001", "INC-001", Severity::High, RetentionTier::Hot, 1000);
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
         let row = export_csv_row(&bundle);
         assert!(row.contains("ibr-001"));
         assert!(row.contains("INC-001"));
@@ -1033,7 +1228,13 @@ mod tests {
 
     #[test]
     fn test_export_sarif_fields() {
-        let bundle = sample_bundle("ibr-001", "INC-001", Severity::Critical, RetentionTier::Hot, 1000);
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::Critical,
+            RetentionTier::Hot,
+            1000,
+        );
         let sarif = export_sarif(&bundle);
         assert_eq!(sarif.get("version").unwrap(), "2.1.0");
         assert_eq!(sarif.get("bundle_id").unwrap(), "ibr-001");
@@ -1042,13 +1243,49 @@ mod tests {
 
     #[test]
     fn test_error_codes_all_present() {
-        assert_eq!(IncidentBundleError::Incomplete { field: "".into() }.code(), "IBR_INCOMPLETE");
-        assert_eq!(IncidentBundleError::NotFound { bundle_id: "".into() }.code(), "IBR_NOT_FOUND");
-        assert_eq!(IncidentBundleError::ArchiveProtected { bundle_id: "".into() }.code(), "IBR_ARCHIVE_PROTECTED");
-        assert_eq!(IncidentBundleError::IntegrityFailure { bundle_id: "".into(), expected: "".into(), actual: "".into() }.code(), "IBR_INTEGRITY_FAILURE");
-        assert_eq!(IncidentBundleError::StorageFull { current_bytes: 0, max_bytes: 0 }.code(), "IBR_STORAGE_FULL");
-        assert_eq!(IncidentBundleError::InvalidFormat { format: "".into() }.code(), "IBR_INVALID_FORMAT");
-        assert_eq!(IncidentBundleError::InvalidConfig { reason: "".into() }.code(), "IBR_INVALID_CONFIG");
+        assert_eq!(
+            IncidentBundleError::Incomplete { field: "".into() }.code(),
+            "IBR_INCOMPLETE"
+        );
+        assert_eq!(
+            IncidentBundleError::NotFound {
+                bundle_id: "".into()
+            }
+            .code(),
+            "IBR_NOT_FOUND"
+        );
+        assert_eq!(
+            IncidentBundleError::ArchiveProtected {
+                bundle_id: "".into()
+            }
+            .code(),
+            "IBR_ARCHIVE_PROTECTED"
+        );
+        assert_eq!(
+            IncidentBundleError::IntegrityFailure {
+                bundle_id: "".into(),
+                expected: "".into(),
+                actual: "".into()
+            }
+            .code(),
+            "IBR_INTEGRITY_FAILURE"
+        );
+        assert_eq!(
+            IncidentBundleError::StorageFull {
+                current_bytes: 0,
+                max_bytes: 0
+            }
+            .code(),
+            "IBR_STORAGE_FULL"
+        );
+        assert_eq!(
+            IncidentBundleError::InvalidFormat { format: "".into() }.code(),
+            "IBR_INVALID_FORMAT"
+        );
+        assert_eq!(
+            IncidentBundleError::InvalidConfig { reason: "".into() }.code(),
+            "IBR_INVALID_CONFIG"
+        );
     }
 
     #[test]

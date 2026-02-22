@@ -132,9 +132,16 @@ pub enum CancelProtocolError {
     /// Cancellation attempted on already-finalized workflow.
     AlreadyFinal { workflow_id: String },
     /// Drain exceeded configured timeout.
-    DrainTimeout { workflow_id: String, elapsed_ms: u64, timeout_ms: u64 },
+    DrainTimeout {
+        workflow_id: String,
+        elapsed_ms: u64,
+        timeout_ms: u64,
+    },
     /// Resources leaked during finalization.
-    ResourceLeak { workflow_id: String, leaked_resources: Vec<String> },
+    ResourceLeak {
+        workflow_id: String,
+        leaked_resources: Vec<String>,
+    },
 }
 
 impl CancelProtocolError {
@@ -152,19 +159,40 @@ impl fmt::Display for CancelProtocolError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidPhase { from, to } => {
-                write!(f, "{}: cannot transition from {} to {}", self.code(), from, to)
+                write!(
+                    f,
+                    "{}: cannot transition from {} to {}",
+                    self.code(),
+                    from,
+                    to
+                )
             }
             Self::AlreadyFinal { workflow_id } => {
-                write!(f, "{}: workflow {} already finalized", self.code(), workflow_id)
+                write!(
+                    f,
+                    "{}: workflow {} already finalized",
+                    self.code(),
+                    workflow_id
+                )
             }
-            Self::DrainTimeout { workflow_id, elapsed_ms, timeout_ms } => {
+            Self::DrainTimeout {
+                workflow_id,
+                elapsed_ms,
+                timeout_ms,
+            } => {
                 write!(
                     f,
                     "{}: workflow {} drain timeout after {}ms (limit {}ms)",
-                    self.code(), workflow_id, elapsed_ms, timeout_ms
+                    self.code(),
+                    workflow_id,
+                    elapsed_ms,
+                    timeout_ms
                 )
             }
-            Self::ResourceLeak { workflow_id, leaked_resources } => {
+            Self::ResourceLeak {
+                workflow_id,
+                leaked_resources,
+            } => {
                 write!(
                     f,
                     "{}: workflow {} leaked resources: {}",
@@ -368,7 +396,10 @@ impl CancellationProtocol {
         trace_id: &str,
     ) -> Result<&CancellationRecord, CancelProtocolError> {
         // Check if we already have a record for this workflow (use position to avoid prolonged borrow)
-        let existing_idx = self.records.iter().position(|r| r.workflow_id == workflow_id);
+        let existing_idx = self
+            .records
+            .iter()
+            .position(|r| r.workflow_id == workflow_id);
         if let Some(idx) = existing_idx {
             // INV-CANP-IDEMPOTENT: absorb duplicate requests
             let phase = self.records[idx].current_phase;
@@ -404,11 +435,8 @@ impl CancellationProtocol {
         }
 
         // Create new record
-        let mut record = CancellationRecord::new(
-            workflow_id,
-            self.default_drain_config.clone(),
-            trace_id,
-        );
+        let mut record =
+            CancellationRecord::new(workflow_id, self.default_drain_config.clone(), trace_id);
         record.current_phase = CancelPhase::CancelRequested;
         record.request_timestamp_ms = Some(timestamp_ms);
         record.in_flight_count = in_flight_count;
@@ -631,7 +659,9 @@ impl CancellationProtocol {
     pub fn active_count(&self) -> usize {
         self.records
             .iter()
-            .filter(|r| r.current_phase != CancelPhase::Finalized && r.current_phase != CancelPhase::Idle)
+            .filter(|r| {
+                r.current_phase != CancelPhase::Finalized && r.current_phase != CancelPhase::Idle
+            })
             .count()
     }
 
@@ -666,9 +696,10 @@ impl Default for CancellationProtocol {
 pub fn cancellation_readiness_check(protocol: &CancellationProtocol) -> bool {
     // The system is cancellation-ready if there are no stuck workflows
     // (i.e., no workflows in Draining phase that have timed out without completing)
-    protocol.records().iter().all(|r| {
-        r.current_phase != CancelPhase::Draining || !r.drain_timed_out
-    })
+    protocol
+        .records()
+        .iter()
+        .all(|r| r.current_phase != CancelPhase::Draining || !r.drain_timed_out)
 }
 
 /// Generate a timing report as CSV rows.
@@ -679,14 +710,21 @@ pub fn generate_timing_report(protocol: &CancellationProtocol) -> (String, Vec<S
         .records()
         .iter()
         .map(|r| {
-            let drain_dur = r.drain_duration_ms().map(|d| d.to_string()).unwrap_or_default();
+            let drain_dur = r
+                .drain_duration_ms()
+                .map(|d| d.to_string())
+                .unwrap_or_default();
             format!(
                 "{},{},{},{},{},{},{},{},{}",
                 r.workflow_id,
                 r.current_phase,
-                r.request_timestamp_ms.map(|t| t.to_string()).unwrap_or_default(),
+                r.request_timestamp_ms
+                    .map(|t| t.to_string())
+                    .unwrap_or_default(),
                 r.drain_start_ms.map(|t| t.to_string()).unwrap_or_default(),
-                r.drain_complete_ms.map(|t| t.to_string()).unwrap_or_default(),
+                r.drain_complete_ms
+                    .map(|t| t.to_string())
+                    .unwrap_or_default(),
                 r.finalize_ms.map(|t| t.to_string()).unwrap_or_default(),
                 drain_dur,
                 r.drain_timed_out,
@@ -807,7 +845,9 @@ mod tests {
         proto.request_cancel("wf-1", 0, 1000, "t1").unwrap();
         proto.start_drain("wf-1", 1100, "t1").unwrap();
         proto.complete_drain("wf-1", 1200, "t1").unwrap();
-        proto.finalize("wf-1", &ResourceTracker::empty(), 1300, "t1").unwrap();
+        proto
+            .finalize("wf-1", &ResourceTracker::empty(), 1300, "t1")
+            .unwrap();
 
         let err = proto.request_cancel("wf-1", 0, 1400, "t1").unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CANCEL_ALREADY_FINAL);
@@ -827,7 +867,9 @@ mod tests {
     fn finalize_without_drain_rejected() {
         let mut proto = CancellationProtocol::default();
         proto.request_cancel("wf-1", 0, 1000, "t1").unwrap();
-        let err = proto.finalize("wf-1", &ResourceTracker::empty(), 1100, "t1").unwrap_err();
+        let err = proto
+            .finalize("wf-1", &ResourceTracker::empty(), 1100, "t1")
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CANCEL_INVALID_PHASE);
     }
 
@@ -847,7 +889,9 @@ mod tests {
         assert_eq!(rec.current_phase, CancelPhase::DrainComplete);
 
         // Check CAN-004 was emitted
-        let timeout_events: Vec<_> = proto.audit_log().iter()
+        let timeout_events: Vec<_> = proto
+            .audit_log()
+            .iter()
             .filter(|e| e.event_code == event_codes::CAN_004)
             .collect();
         assert_eq!(timeout_events.len(), 1);
@@ -881,7 +925,9 @@ mod tests {
         assert_eq!(err.code(), error_codes::ERR_CANCEL_LEAK);
 
         // CAN-006 should be emitted
-        let leak_events: Vec<_> = proto.audit_log().iter()
+        let leak_events: Vec<_> = proto
+            .audit_log()
+            .iter()
             .filter(|e| e.event_code == event_codes::CAN_006)
             .collect();
         assert_eq!(leak_events.len(), 1);
@@ -944,7 +990,9 @@ mod tests {
         // Finalize wf-1
         proto.start_drain("wf-1", 1100, "t1").unwrap();
         proto.complete_drain("wf-1", 1200, "t1").unwrap();
-        proto.finalize("wf-1", &ResourceTracker::empty(), 1300, "t1").unwrap();
+        proto
+            .finalize("wf-1", &ResourceTracker::empty(), 1300, "t1")
+            .unwrap();
 
         assert_eq!(proto.active_count(), 1);
         assert_eq!(proto.finalized_count(), 1);
@@ -981,7 +1029,8 @@ mod tests {
         proto.request_cancel("wf-1", 0, 1000, "t1").unwrap();
         let jsonl = proto.export_audit_log_jsonl();
         assert!(!jsonl.is_empty());
-        let parsed: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert_eq!(parsed["event_code"], event_codes::CAN_001);
         assert_eq!(parsed["schema_version"], SCHEMA_VERSION);
     }
@@ -1030,7 +1079,9 @@ mod tests {
         proto.request_cancel("wf-1", 5, 1000, "t1").unwrap();
         proto.start_drain("wf-1", 1100, "t1").unwrap();
         proto.complete_drain("wf-1", 1500, "t1").unwrap();
-        proto.finalize("wf-1", &ResourceTracker::empty(), 1600, "t1").unwrap();
+        proto
+            .finalize("wf-1", &ResourceTracker::empty(), 1600, "t1")
+            .unwrap();
 
         let (header, rows) = generate_timing_report(&proto);
         assert!(header.contains("workflow_id"));
@@ -1050,7 +1101,10 @@ mod tests {
 
         proto.start_drain("wf-1", 1100, "t1").unwrap();
         assert_eq!(proto.current_phase("wf-1"), Some(CancelPhase::Draining));
-        assert_eq!(proto.current_phase("wf-2"), Some(CancelPhase::CancelRequested));
+        assert_eq!(
+            proto.current_phase("wf-2"),
+            Some(CancelPhase::CancelRequested)
+        );
     }
 
     // ---- Serde roundtrip ----
@@ -1122,9 +1176,13 @@ mod tests {
         proto.request_cancel("wf-1", 0, 1000, "t1").unwrap();
         proto.start_drain("wf-1", 1100, "t1").unwrap();
         proto.complete_drain("wf-1", 1200, "t1").unwrap();
-        proto.finalize("wf-1", &ResourceTracker::empty(), 1300, "t1").unwrap();
+        proto
+            .finalize("wf-1", &ResourceTracker::empty(), 1300, "t1")
+            .unwrap();
 
-        let err = proto.finalize("wf-1", &ResourceTracker::empty(), 1400, "t1").unwrap_err();
+        let err = proto
+            .finalize("wf-1", &ResourceTracker::empty(), 1400, "t1")
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CANCEL_ALREADY_FINAL);
     }
 }
