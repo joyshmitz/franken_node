@@ -1,0 +1,111 @@
+{
+  "bead_id": "bd-1jmq",
+  "title": "EV score and tier contract field",
+  "section": "11",
+  "verdict": "PASS",
+  "total": 20,
+  "passed": 20,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "file_exists: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_11/bd-1jmq_contract.md"
+    },
+    {
+      "check": "file_exists: policy document",
+      "pass": true,
+      "detail": "exists: docs/policy/ev_score_and_tier.md"
+    },
+    {
+      "check": "spec_keyword: 'EV score'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword: 'tier'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_tiers_defined",
+      "pass": true,
+      "detail": "all 5 tiers present"
+    },
+    {
+      "check": "spec_keyword: 'verification'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword: 'weighted'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_codes",
+      "pass": true,
+      "detail": "all 4 event codes present"
+    },
+    {
+      "check": "spec_invariants",
+      "pass": true,
+      "detail": "all 4 invariants present"
+    },
+    {
+      "check": "spec_tier_thresholds",
+      "pass": true,
+      "detail": "all 5 tier threshold ranges present"
+    },
+    {
+      "check": "spec_section: 'Upgrade Path'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_section: 'Downgrade Triggers'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_dimensions",
+      "pass": true,
+      "detail": "all 5 dimensions present"
+    },
+    {
+      "check": "policy_weights",
+      "pass": true,
+      "detail": "weight values found"
+    },
+    {
+      "check": "policy_section: 'Governance'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Appeal Process'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_tier_thresholds",
+      "pass": true,
+      "detail": "all 5 tier threshold ranges in policy"
+    },
+    {
+      "check": "policy_event_codes",
+      "pass": true,
+      "detail": "all 4 event codes in policy"
+    },
+    {
+      "check": "policy_invariants",
+      "pass": true,
+      "detail": "all 4 invariants in policy"
+    },
+    {
+      "check": "policy_section: 'Downgrade Triggers'",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

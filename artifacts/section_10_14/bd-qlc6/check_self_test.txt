@@ -1,0 +1,240 @@
+{
+  "bead_id": "bd-qlc6",
+  "section": "10.14",
+  "gate": "lane_scheduler",
+  "passed": 46,
+  "total": 46,
+  "ok": true,
+  "checks": [
+    {
+      "name": "source_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/runtime/lane_scheduler.rs"
+    },
+    {
+      "name": "mod_wired",
+      "passed": true,
+      "detail": "runtime/mod.rs must contain pub mod lane_scheduler"
+    },
+    {
+      "name": "lane_controlcritical",
+      "passed": true,
+      "detail": "SchedulerLane::ControlCritical"
+    },
+    {
+      "name": "lane_remoteeffect",
+      "passed": true,
+      "detail": "SchedulerLane::RemoteEffect"
+    },
+    {
+      "name": "lane_maintenance",
+      "passed": true,
+      "detail": "SchedulerLane::Maintenance"
+    },
+    {
+      "name": "lane_background",
+      "passed": true,
+      "detail": "SchedulerLane::Background"
+    },
+    {
+      "name": "lane_count_4",
+      "passed": true,
+      "detail": "SchedulerLane::all() with 4 lanes"
+    },
+    {
+      "name": "taskclass_epoch_transition",
+      "passed": true,
+      "detail": "task_classes::epoch_transition"
+    },
+    {
+      "name": "taskclass_barrier_coordination",
+      "passed": true,
+      "detail": "task_classes::barrier_coordination"
+    },
+    {
+      "name": "taskclass_marker_write",
+      "passed": true,
+      "detail": "task_classes::marker_write"
+    },
+    {
+      "name": "taskclass_remote_computation",
+      "passed": true,
+      "detail": "task_classes::remote_computation"
+    },
+    {
+      "name": "taskclass_artifact_upload",
+      "passed": true,
+      "detail": "task_classes::artifact_upload"
+    },
+    {
+      "name": "taskclass_artifact_eviction",
+      "passed": true,
+      "detail": "task_classes::artifact_eviction"
+    },
+    {
+      "name": "taskclass_garbage_collection",
+      "passed": true,
+      "detail": "task_classes::garbage_collection"
+    },
+    {
+      "name": "taskclass_compaction",
+      "passed": true,
+      "detail": "task_classes::compaction"
+    },
+    {
+      "name": "taskclass_telemetry_export",
+      "passed": true,
+      "detail": "task_classes::telemetry_export"
+    },
+    {
+      "name": "taskclass_log_rotation",
+      "passed": true,
+      "detail": "task_classes::log_rotation"
+    },
+    {
+      "name": "type_SchedulerLane",
+      "passed": true,
+      "detail": "type SchedulerLane"
+    },
+    {
+      "name": "type_TaskClass",
+      "passed": true,
+      "detail": "type TaskClass"
+    },
+    {
+      "name": "type_LaneConfig",
+      "passed": true,
+      "detail": "type LaneConfig"
+    },
+    {
+      "name": "type_MappingRule",
+      "passed": true,
+      "detail": "type MappingRule"
+    },
+    {
+      "name": "type_LaneMappingPolicy",
+      "passed": true,
+      "detail": "type LaneMappingPolicy"
+    },
+    {
+      "name": "type_LaneCounters",
+      "passed": true,
+      "detail": "type LaneCounters"
+    },
+    {
+      "name": "type_LaneSchedulerError",
+      "passed": true,
+      "detail": "type LaneSchedulerError"
+    },
+    {
+      "name": "type_TaskAssignment",
+      "passed": true,
+      "detail": "type TaskAssignment"
+    },
+    {
+      "name": "type_LaneAuditRecord",
+      "passed": true,
+      "detail": "type LaneAuditRecord"
+    },
+    {
+      "name": "type_LaneTelemetrySnapshot",
+      "passed": true,
+      "detail": "type LaneTelemetrySnapshot"
+    },
+    {
+      "name": "type_LaneScheduler",
+      "passed": true,
+      "detail": "type LaneScheduler"
+    },
+    {
+      "name": "op_assign_task",
+      "passed": true,
+      "detail": "operation assign_task"
+    },
+    {
+      "name": "op_complete_task",
+      "passed": true,
+      "detail": "operation complete_task"
+    },
+    {
+      "name": "op_check_starvation",
+      "passed": true,
+      "detail": "operation check_starvation"
+    },
+    {
+      "name": "op_reload_policy",
+      "passed": true,
+      "detail": "operation reload_policy"
+    },
+    {
+      "name": "op_telemetry_snapshot",
+      "passed": true,
+      "detail": "operation telemetry_snapshot"
+    },
+    {
+      "name": "op_export_audit_log_jsonl",
+      "passed": true,
+      "detail": "operation export_audit_log_jsonl"
+    },
+    {
+      "name": "event_codes_10",
+      "passed": true,
+      "detail": "10/10 event codes"
+    },
+    {
+      "name": "error_codes_8",
+      "passed": true,
+      "detail": "8/8 error codes"
+    },
+    {
+      "name": "invariants_6",
+      "passed": true,
+      "detail": "6/6 invariant markers"
+    },
+    {
+      "name": "schema_version",
+      "passed": true,
+      "detail": "SCHEMA_VERSION = ls-v1.0"
+    },
+    {
+      "name": "default_policy",
+      "passed": true,
+      "detail": "default_policy() function"
+    },
+    {
+      "name": "jsonl_export",
+      "passed": true,
+      "detail": "JSONL audit log export"
+    },
+    {
+      "name": "starvation_window",
+      "passed": true,
+      "detail": "configurable starvation window"
+    },
+    {
+      "name": "test_coverage",
+      "passed": true,
+      "detail": "31 inline tests (need >= 25)"
+    },
+    {
+      "name": "spec_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_14/bd-qlc6_contract.md"
+    },
+    {
+      "name": "spec_mentions_lanes",
+      "passed": true,
+      "detail": "spec references scheduler lanes"
+    },
+    {
+      "name": "serde_derives",
+      "passed": true,
+      "detail": "Serde derives for serialization"
+    },
+    {
+      "name": "policy_validation",
+      "passed": true,
+      "detail": "LaneMappingPolicy::validate()"
+    }
+  ]
+}

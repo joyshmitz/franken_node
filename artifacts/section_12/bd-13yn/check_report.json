@@ -1,0 +1,206 @@
+{
+  "bead_id": "bd-13yn",
+  "title": "signal poisoning and Sybil risk control",
+  "section": "12",
+  "verdict": "PASS",
+  "total": 39,
+  "passed": 39,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "spec_exists",
+      "pass": true,
+      "detail": "found: docs/specs/section_12/bd-13yn_contract.md"
+    },
+    {
+      "check": "policy_exists",
+      "pass": true,
+      "detail": "found: docs/policy/risk_signal_poisoning_sybil.md"
+    },
+    {
+      "check": "spec_bead_id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_section_12",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_SPS-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_SPS-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_SPS-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_SPS-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-SPS-AGGREGATION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-SPS-STAKE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-SPS-SYBIL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-SPS-ADVERSARIAL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_error_code_ERR_SPS_POISONED_SIGNAL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_error_code_ERR_SPS_SYBIL_DETECTED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_error_code_ERR_SPS_INSUFFICIENT_STAKE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_error_code_ERR_SPS_AGGREGATION_FAILED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_thresholds",
+      "pass": true,
+      "detail": "5%, 1%, and 10-scenario thresholds present"
+    },
+    {
+      "check": "spec_countermeasures",
+      "pass": true,
+      "detail": "all four countermeasures documented"
+    },
+    {
+      "check": "spec_acceptance_criteria",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_test_scenarios",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_risk_description",
+      "pass": true,
+      "detail": "risk description with signal poisoning and Sybil documented"
+    },
+    {
+      "check": "policy_impact",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_likelihood",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_countermeasures",
+      "pass": true,
+      "detail": "all four countermeasures documented"
+    },
+    {
+      "check": "policy_escalation",
+      "pass": true,
+      "detail": "escalation procedures with 60s SLA documented"
+    },
+    {
+      "check": "policy_evidence_requirements",
+      "pass": true,
+      "detail": "evidence requirements for review documented"
+    },
+    {
+      "check": "policy_thresholds",
+      "pass": true,
+      "detail": "quantitative thresholds (5%, 1%, 60s) present"
+    },
+    {
+      "check": "policy_invariant_INV-SPS-AGGREGATION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_invariant_INV-SPS-STAKE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_invariant_INV-SPS-SYBIL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_invariant_INV-SPS-ADVERSARIAL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_event_code_SPS-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_event_code_SPS-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_event_code_SPS-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_event_code_SPS-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "signal_provenance_coverage",
+      "pass": true,
+      "detail": "signal provenance with 100% coverage documented"
+    },
+    {
+      "check": "sybil_resistance_mechanisms",
+      "pass": true,
+      "detail": "Sybil detection, attenuation, and influence limits documented"
+    },
+    {
+      "check": "verification_evidence",
+      "pass": true,
+      "detail": "valid: artifacts/section_12/bd-13yn/verification_evidence.json"
+    },
+    {
+      "check": "verification_summary",
+      "pass": true,
+      "detail": "found: artifacts/section_12/bd-13yn/verification_summary.md"
+    }
+  ]
+}

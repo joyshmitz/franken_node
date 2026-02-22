@@ -1,0 +1,750 @@
+{
+  "bead_id": "bd-tyr2",
+  "title": "Evidence replay validator integration into control-plane gates",
+  "section": "10.15",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "test_count": "68",
+  "summary": {
+    "passing": 147,
+    "failing": 0,
+    "total": 147
+  },
+  "checks": [
+    {
+      "check": "file: implementation",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/connector/control_evidence_replay.rs"
+    },
+    {
+      "check": "file: conformance test",
+      "pass": true,
+      "detail": "exists: tests/conformance/control_evidence_replay.rs"
+    },
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_15/bd-tyr2_contract.md"
+    },
+    {
+      "check": "file: adoption document",
+      "pass": true,
+      "detail": "exists: docs/integration/control_evidence_replay_adoption.md"
+    },
+    {
+      "check": "file: replay report",
+      "pass": true,
+      "detail": "exists: artifacts/10.15/control_evidence_replay_report.json"
+    },
+    {
+      "check": "file: canonical validator (10.14)",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/tools/evidence_replay_validator.rs"
+    },
+    {
+      "check": "file: control evidence (10.15)",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/connector/control_evidence.rs"
+    },
+    {
+      "check": "module registered in mod.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl unit test count",
+      "pass": true,
+      "detail": "68 tests (minimum 50)"
+    },
+    {
+      "check": "conformance test count",
+      "pass": true,
+      "detail": "19 tests (minimum 15)"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "uses canonical 10.14 validator (no custom replay logic)",
+      "pass": true,
+      "detail": "canonical validator used"
+    },
+    {
+      "check": "type: pub enum ReplayVerdict",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct ControlReplayGate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct ReplayGateEvent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct ReplayGateSummary",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn verify(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn verify_from_entry(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn verify_batch(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn gate_pass(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn summary(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn to_report(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn take_events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn verdicts(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn map_to_ledger_kind(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn to_ledger_entry(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn build_replay_context(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: RPL-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: RPL-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: RPL-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: RPL-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: RPL-005",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-CRG-CANONICAL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-CRG-BLOCK-DIVERGED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-CRG-DETERMINISTIC",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-CRG-COMPLETE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_map_to_ledger_kind_admit",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_map_to_ledger_kind_deny",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_map_to_ledger_kind_quarantine",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_map_to_ledger_kind_release",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_map_to_ledger_kind_rollback",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_map_to_ledger_kind_throttle",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_map_to_ledger_kind_escalate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_to_ledger_entry_fields",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_to_ledger_entry_payload",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_build_replay_context_has_primary_candidate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_build_replay_context_epoch",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_build_replay_context_policy_snapshot",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_build_replay_context_is_valid",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_build_replay_context_constraint_satisfied",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verdict_reproduced_label",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verdict_diverged_label",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verdict_error_label",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verdict_is_reproduced",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verdict_is_diverged",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verdict_is_error",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verdict_display_reproduced",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verdict_display_diverged",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verdict_display_error",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verdict_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verdict_diverged_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_summary_gate_pass_all_reproduced",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_summary_gate_fail_on_diverged",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_summary_gate_fail_on_error",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_summary_gate_fail_empty",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_summary_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_summary_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_health_gate_reproduced",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_rollout_reproduced",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_quarantine_reproduced",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_fencing_reproduced",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_migration_reproduced",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_mismatch_diverged",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_kind_mismatch_diverged",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_invalid_context_error",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_epoch_mismatch_error",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_emits_rpl001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_reproduced_emits_rpl002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_diverged_emits_rpl003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_error_emits_rpl004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_emits_rpl005",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_block_emits_rpl005_block",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_gate_pass_all_reproduced",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_gate_fail_on_diverged",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_gate_fail_on_error",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_batch_all_reproduced",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verify_batch_mixed",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_determinism_identical_runs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_determinism_100_runs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_summary_all_reproduced",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_summary_with_diverged",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_report_json_structure",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_report_per_type_results",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_take_events_drains",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_event_trace_id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_default_gate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_verdicts_accumulate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_adversarial_wrong_epoch",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_adversarial_tampered_kind",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_adversarial_empty_candidates",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_all_decision_types_replay",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_event_codes_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_invariant_constants_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_replay_gate_event_serde",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_replay_health_gate_eval_admit",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_replay_health_gate_eval_deny",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_replay_rollout_transition_admit",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_replay_quarantine_action",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_replay_fencing_decision_admit",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_replay_migration_decision_admit",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_diverged_blocks_gate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_error_blocks_gate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_epoch_mismatch_detected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_replay_deterministic_across_runs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_batch_validation_all_decision_types",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_event_codes_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_replay_event_codes_from_validator",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_invariant_canonical_validator",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_invariant_deterministic",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_invariant_fail_closed",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_invariant_complete",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_summary_report_after_batch",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_gate_verdict_match_passes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "adoption doc: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "adoption doc: HealthGateEval documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "adoption doc: RolloutTransition documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "adoption doc: QuarantineAction documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "adoption doc: FencingDecision documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "adoption doc: MigrationDecision documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "adoption doc: verdict REPRODUCED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "adoption doc: verdict DIVERGED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "adoption doc: verdict ERROR",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: HealthGateEval documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: RolloutTransition documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: QuarantineAction documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: FencingDecision documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: MigrationDecision documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: verdict REPRODUCED documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: verdict DIVERGED documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: verdict ERROR documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "replay report: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "replay report: valid JSON",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "replay report: all decision types covered",
+      "pass": true,
+      "detail": "found 5 types"
+    },
+    {
+      "check": "replay report: adversarial tests",
+      "pass": true,
+      "detail": "3 scenarios"
+    },
+    {
+      "check": "replay report: determinism verified",
+      "pass": true,
+      "detail": "ALL_IDENTICAL"
+    },
+    {
+      "check": "replay report: gate behavior correct",
+      "pass": true,
+      "detail": "REPRODUCED=pass, DIVERGED/ERROR=fail"
+    }
+  ]
+}

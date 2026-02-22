@@ -1,0 +1,743 @@
+{
+  "bead_id": "bd-m8p",
+  "title": "Verifier economy portal and external attestation publishing flow",
+  "section": "10.9",
+  "timestamp": "2026-02-22T08:17:55.937298+00:00",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 146,
+  "passed": 146,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "file_exists: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_9/bd-m8p_contract.md"
+    },
+    {
+      "check": "file_exists: policy document",
+      "pass": true,
+      "detail": "exists: docs/policy/verifier_economy.md"
+    },
+    {
+      "check": "file_exists: rust implementation",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/verifier_economy/mod.rs"
+    },
+    {
+      "check": "main_rs: 'pub mod verifier_economy;'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_codes",
+      "pass": true,
+      "detail": "all 8 event codes present"
+    },
+    {
+      "check": "spec_invariants",
+      "pass": true,
+      "detail": "all 4 invariants present"
+    },
+    {
+      "check": "spec_error_codes",
+      "pass": true,
+      "detail": "all 5 error codes present"
+    },
+    {
+      "check": "spec_keyword: 'JSON-LD'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_section: 'Anti-Gaming'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_section: 'Replay Capsule'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_section: 'Reputation Scoring'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword: 'Dispute'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Publishing Flow'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_event_codes",
+      "pass": true,
+      "detail": "all 8 event codes in policy"
+    },
+    {
+      "check": "policy_invariants",
+      "pass": true,
+      "detail": "all 4 invariants in policy"
+    },
+    {
+      "check": "policy_reputation_tiers",
+      "pass": true,
+      "detail": "all 4 reputation tiers in policy"
+    },
+    {
+      "check": "policy_section: 'Governance'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Dispute Resolution'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Anti-Gaming'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Appeal Process'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Upgrade Path'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Downgrade Triggers'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub enum VerificationDimension'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub enum VerifierTier'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub enum ReputationTier'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub enum AttestationState'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub enum DisputeOutcome'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub struct AttestationClaim'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub struct AttestationEvidence'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub struct AttestationSignature'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub struct Attestation'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub struct AttestationSubmission'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub struct Verifier'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub struct VerifierRegistration'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub struct ReputationDimensions'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub struct Dispute'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub struct ReplayCapsule'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub struct ScoreboardEntry'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub struct TrustScoreboard'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub struct VerifierEconomyEvent'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub struct VepError'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_type: 'pub struct VerifierEconomyRegistry'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn register_verifier('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn get_verifier('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn list_verifiers('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn verifier_count('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn submit_attestation('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn review_attestation('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn publish_attestation('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn reject_attestation('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn get_attestation('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn list_attestations('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn published_attestations('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn attestation_count('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn verify_signature('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn compute_reputation('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn update_reputation('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn file_dispute('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn resolve_dispute('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn get_dispute('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn list_disputes('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn register_replay_capsule('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn access_replay_capsule('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn verify_capsule_integrity('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn build_scoreboard('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn check_selective_reporting('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn reset_submission_counts('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_method: 'pub fn reputation_tier_from_score('",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_event_code: 'VEP-001'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_event_code: 'VEP-002'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_event_code: 'VEP-003'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_event_code: 'VEP-004'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_event_code: 'VEP-005'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_event_code: 'VEP-006'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_event_code: 'VEP-007'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_event_code: 'VEP-008'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_invariant: 'INV-VEP-ATTESTATION'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_invariant: 'INV-VEP-SIGNATURE'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_invariant: 'INV-VEP-REPUTATION'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_invariant: 'INV-VEP-PUBLISH'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_error_code: 'ERR-VEP-INVALID-SIGNATURE'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_error_code: 'ERR-VEP-DUPLICATE-SUBMISSION'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_error_code: 'ERR-VEP-UNREGISTERED-VERIFIER'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_error_code: 'ERR-VEP-INCOMPLETE-PAYLOAD'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_error_code: 'ERR-VEP-ANTI-GAMING'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_register_verifier'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_register_emits_vep005'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_duplicate_public_key_rejected'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_verifier_count'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_get_verifier'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_list_verifiers'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_submit_attestation'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_submit_emits_vep001'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_submit_unregistered_verifier_rejected'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_submit_invalid_signature_rejected'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_submit_empty_statement_rejected'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_submit_empty_suite_id_rejected'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_submit_duplicate_rejected'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_publish_flow_submit_review_publish'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_publish_emits_vep002'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_cannot_publish_without_review'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_cannot_review_already_published'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_reject_attestation'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_reject_emits_vep008'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_compute_reputation_deterministic'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_compute_reputation_all_ones'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_compute_reputation_all_zeros'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_compute_reputation_mixed'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_update_reputation'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_update_reputation_emits_vep004'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_reputation_tier_novice'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_reputation_tier_active'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_reputation_tier_established'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_reputation_tier_trusted'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_file_dispute'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_file_dispute_emits_vep003'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_cannot_dispute_unpublished'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_resolve_dispute_upheld'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_resolve_dispute_rejected'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_register_and_access_capsule'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_access_capsule_emits_vep007'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_capsule_integrity_valid'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_capsule_integrity_invalid_empty_hash'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_empty_scoreboard'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_scoreboard_with_published_attestation'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_sybil_rate_limiting'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_sybil_rate_limit_emits_vep006'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_selective_reporting_check_passes'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_reset_submission_counts'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_take_events_drains'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_dimension_display'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_verifier_tier_display'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_reputation_tier_display'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_attestation_state_display'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_dispute_outcome_display'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_vep_error_display'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_verify_signature_valid'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_verify_signature_wrong_key'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_verify_signature_wrong_algorithm'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_verify_signature_empty_value'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_default_registry'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_published_attestations_filter'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_event_code_constants'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_invariant_constants'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: 'test_error_code_constants'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test_count",
+      "pass": true,
+      "detail": "60 tests (minimum 50)"
+    }
+  ]
+}

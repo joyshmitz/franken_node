@@ -1,0 +1,546 @@
+{
+  "bead_id": "bd-4jh9",
+  "title": "VEF degraded-mode policy for proof lag/outage with explicit SLOs",
+  "section": "10.18",
+  "verdict": "PASS",
+  "total": 107,
+  "passed": 107,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "implementation exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/security/vef_degraded_mode.rs"
+    },
+    {
+      "check": "module wired in mod.rs",
+      "pass": true,
+      "detail": "crates/franken-node/src/security/mod.rs"
+    },
+    {
+      "check": "spec document exists",
+      "pass": true,
+      "detail": "docs/specs/section_10_18/bd-4jh9_contract.md"
+    },
+    {
+      "check": "policy document exists",
+      "pass": true,
+      "detail": "docs/policy/vef_degraded_mode_policy.md"
+    },
+    {
+      "check": "evidence artifact exists",
+      "pass": true,
+      "detail": "artifacts/section_10_18/bd-4jh9/verification_evidence.json"
+    },
+    {
+      "check": "summary artifact exists",
+      "pass": true,
+      "detail": "artifacts/section_10_18/bd-4jh9/verification_summary.md"
+    },
+    {
+      "check": "type: pub enum VefMode",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "type: pub struct ProofLagSlo",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "type: pub struct VefDegradedModeConfig",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "type: pub struct ProofLagMetrics",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "type: pub enum ActionRisk",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "type: pub struct VefActionDecision",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "type: pub struct VefModeTransitionEvent",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "type: pub struct VefSloBreachEvent",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "type: pub struct VefRecoveryInitiatedEvent",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "type: pub struct VefRecoveryReceipt",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "type: pub enum VefDegradedModeEvent",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "type: pub struct VefTransitionErrorEvent",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "type: pub struct VefDegradedModeEngine",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code: VEF-DEGRADE-001",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code: VEF-DEGRADE-002",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code: VEF-DEGRADE-003",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code: VEF-DEGRADE-004",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code: VEF-DEGRADE-ERR-001",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "mode variant: Normal",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "mode variant: Restricted",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "mode variant: Quarantine",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "mode variant: Halt",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function: fn observe_metrics",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function: fn evaluate_action",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function: fn target_mode_for_metrics",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function: fn escalate",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function: fn maybe_deescalate",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function: fn find_breach_details",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "metric field: proof_lag_secs",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "metric field: backlog_depth",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "metric field: error_rate",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "metric field: heartbeat_age_secs",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "restricted SLO proof_lag default 300",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "quarantine SLO proof_lag default 900",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "halt multiplier 2.0",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "stabilization window 120",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec invariant: INV-VEF-DM-DETERMINISTIC",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec invariant: INV-VEF-DM-AUDIT",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec invariant: INV-VEF-DM-ESCALATE-IMMEDIATE",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec invariant: INV-VEF-DM-DEESCALATE-STABILIZED",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec invariant: INV-VEF-DM-RECOVERY-RECEIPT",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec: restricted tier",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec: quarantine tier",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec: halt tier",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec: SLO thresholds",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec: transition rules",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec: recovery receipts",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec: audit events",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: restricted tier",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: quarantine tier",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: halt tier",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: SLO thresholds",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: VEF-DEGRADE event codes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: recovery receipts",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: operator guidance",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Rust unit tests >= 20 (28)",
+      "pass": true,
+      "detail": "28 tests"
+    },
+    {
+      "check": "test: normal default",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: restricted breach",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: quarantine breach",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: halt critical lag",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: halt heartbeat",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: escalation path",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: skip-tier escalation",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: deescalation stabilization",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: deescalation reset",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: step-down through tiers",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: determinism",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: audit events",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: recovery receipt",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: transition fields",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: action normal",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: action quarantine",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: action halt",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: custom SLO",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: no silent transitions",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "INV: deterministic (comment)",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "INV: pure function target_mode",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "action: HighRisk variant",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "action: LowRisk variant",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "action: HealthCheck variant",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "action: VefActionDecision result",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "receipt: degraded_mode_duration_secs",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "receipt: actions_affected",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "receipt: recovery_trigger",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "receipt: pipeline_health_at_recovery",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "receipt: from_mode",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "receipt: to_mode",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "receipt: correlation_id",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: final mode is normal",
+      "pass": true,
+      "detail": "got normal"
+    },
+    {
+      "check": "sim: SLO breach events (VEF-DEGRADE-002)",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: mode transition events (VEF-DEGRADE-001)",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: recovery initiated (VEF-DEGRADE-003)",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: recovery receipts (VEF-DEGRADE-004)",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: high-risk blocked in quarantine",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: low-risk permitted in quarantine",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: actions affected tracked",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: deterministic target_mode",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: severity ordering",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: step-down halt->quarantine",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: step-down quarantine->restricted",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: step-down restricted->normal",
+      "pass": true,
+      "detail": "ok"
+    }
+  ]
+}

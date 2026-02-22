@@ -1,0 +1,138 @@
+{
+  "bead_id": "bd-1vp",
+  "section": "10.10",
+  "title": "Zone/Tenant Trust Segmentation Policies",
+  "verdict": "PASS",
+  "status": "pass",
+  "passed": 25,
+  "failed": 0,
+  "total": 25,
+  "all_passed": true,
+  "checks": [
+    {
+      "name": "spec_exists",
+      "passed": true,
+      "detail": "Spec file found: docs/specs/section_10_10/bd-1vp_contract.md"
+    },
+    {
+      "name": "spec_event_codes",
+      "passed": true,
+      "detail": "All event codes in spec"
+    },
+    {
+      "name": "spec_invariants",
+      "passed": true,
+      "detail": "All invariants in spec"
+    },
+    {
+      "name": "spec_error_codes",
+      "passed": true,
+      "detail": "All error codes in spec"
+    },
+    {
+      "name": "spec_threshold",
+      "passed": true,
+      "detail": "Zero-violation threshold documented"
+    },
+    {
+      "name": "spec_alert_pipeline",
+      "passed": true,
+      "detail": "Alert pipeline documented"
+    },
+    {
+      "name": "policy_exists",
+      "passed": true,
+      "detail": "Policy file found: docs/policy/zone_trust_segmentation.md"
+    },
+    {
+      "name": "policy_risk_documented",
+      "passed": true,
+      "detail": "Risk description, impact, and likelihood documented"
+    },
+    {
+      "name": "policy_countermeasures",
+      "passed": true,
+      "detail": "All countermeasures documented"
+    },
+    {
+      "name": "policy_escalation",
+      "passed": true,
+      "detail": "Escalation procedures documented"
+    },
+    {
+      "name": "policy_monitoring",
+      "passed": true,
+      "detail": "Monitoring with dashboards and velocity metrics"
+    },
+    {
+      "name": "policy_evidence_requirements",
+      "passed": true,
+      "detail": "Evidence requirements documented"
+    },
+    {
+      "name": "rust_module_exists",
+      "passed": true,
+      "detail": "Rust module found: crates/franken-node/src/security/trust_zone.rs"
+    },
+    {
+      "name": "rust_module_registered",
+      "passed": true,
+      "detail": "trust_zone in mod.rs"
+    },
+    {
+      "name": "rust_structs",
+      "passed": true,
+      "detail": "All 7 structs/enums found"
+    },
+    {
+      "name": "rust_methods",
+      "passed": true,
+      "detail": "All 9 methods found"
+    },
+    {
+      "name": "rust_event_codes",
+      "passed": true,
+      "detail": "All event codes in Rust source"
+    },
+    {
+      "name": "rust_invariants",
+      "passed": true,
+      "detail": "All invariants in Rust source"
+    },
+    {
+      "name": "rust_isolation_levels",
+      "passed": true,
+      "detail": "All isolation levels present"
+    },
+    {
+      "name": "rust_test_count",
+      "passed": true,
+      "detail": "63 #[test] annotations (need >= 25)"
+    },
+    {
+      "name": "rust_segmentation_errors",
+      "passed": true,
+      "detail": "All 10 error variants present"
+    },
+    {
+      "name": "rust_freshness_gate",
+      "passed": true,
+      "detail": "Freshness gate integration present"
+    },
+    {
+      "name": "rust_key_zone_binding",
+      "passed": true,
+      "detail": "Key-zone binding with mismatch detection"
+    },
+    {
+      "name": "verification_evidence",
+      "passed": true,
+      "detail": "Evidence file valid"
+    },
+    {
+      "name": "verification_summary",
+      "passed": true,
+      "detail": "Summary file found: artifacts/section_10_10/bd-1vp/verification_summary.md"
+    }
+  ]
+}

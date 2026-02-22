@@ -1,0 +1,377 @@
+{
+  "bead_id": "bd-3hm",
+  "title": "Migration Singularity Artifact Contract and Verifier Format",
+  "section": "10.12",
+  "verdict": "PASS",
+  "total": 66,
+  "passed": 66,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "Rust module exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/connector/migration_artifact.rs"
+    },
+    {
+      "check": "Wired into connector/mod.rs",
+      "passed": true,
+      "detail": "migration_artifact in mod.rs"
+    },
+    {
+      "check": "JSON schema exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/spec/migration_artifact_schema.json"
+    },
+    {
+      "check": "Reference vectors exist",
+      "passed": true,
+      "detail": "/data/projects/franken_node/vectors/migration_artifacts.json"
+    },
+    {
+      "check": "Spec contract exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_12/bd-3hm_contract.md"
+    },
+    {
+      "check": "Test file exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/tests/test_check_migration_artifacts.py"
+    },
+    {
+      "check": "Evidence exists with PASS verdict",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_12/bd-3hm/verification_evidence.json"
+    },
+    {
+      "check": "Event code MA-001 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code MA-002 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code MA-003 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code MA-004 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code MA-005 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code MA-006 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code MA-007 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code MA-008 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_MA_INVALID_SCHEMA defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_MA_SIGNATURE_INVALID defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_MA_MISSING_ROLLBACK defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_MA_CONFIDENCE_LOW defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_MA_VERSION_UNSUPPORTED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-MA-SIGNED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-MA-ROLLBACK-PRESENT defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-MA-CONFIDENCE-CALIBRATED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-MA-VERSIONED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-MA-VERIFIER-COMPLETE defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-MA-DETERMINISTIC defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum MigrationArtifact defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum MigrationStep defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum RollbackReceipt defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum ConfidenceInterval defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum VerifierMetadata defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum ArtifactVersion defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum ValidationResult defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum MigrationArtifactEvent defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema field 'schema_version'",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema field 'plan_id'",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema field 'plan_version'",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema field 'preconditions'",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema field 'steps'",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema field 'rollback_receipt'",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema field 'confidence_interval'",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema field 'verifier_metadata'",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema field 'signature'",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema field 'content_hash'",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema field 'created_at'",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema $def 'MigrationStep'",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema $def 'RollbackReceipt'",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema $def 'ConfidenceInterval'",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema $def 'VerifierMetadata'",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Reference vectors has artifacts",
+      "passed": true,
+      "detail": "2 artifacts"
+    },
+    {
+      "check": "Artifact 0 has required fields",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Artifact 0 rollback receipt complete",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Artifact 0 confidence interval complete",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Artifact 0 verifier metadata complete",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Artifact 1 has required fields",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Artifact 1 rollback receipt complete",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Artifact 1 confidence interval complete",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Artifact 1 verifier metadata complete",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema version ma-v1.0",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "BTreeMap usage for determinism",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Rust unit tests (42)",
+      "passed": true,
+      "detail": "42 tests found"
+    },
+    {
+      "check": "validate_artifact function",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "generate_reference_artifact function",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "compute_content_hash function",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Verification summary exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_12/bd-3hm/verification_summary.md"
+    }
+  ],
+  "events": [
+    {
+      "code": "MA-001",
+      "status": "defined"
+    },
+    {
+      "code": "MA-002",
+      "status": "defined"
+    },
+    {
+      "code": "MA-003",
+      "status": "defined"
+    },
+    {
+      "code": "MA-004",
+      "status": "defined"
+    },
+    {
+      "code": "MA-005",
+      "status": "defined"
+    },
+    {
+      "code": "MA-006",
+      "status": "defined"
+    },
+    {
+      "code": "MA-007",
+      "status": "defined"
+    },
+    {
+      "code": "MA-008",
+      "status": "defined"
+    }
+  ],
+  "summary": "bd-3hm: Migration Singularity Artifact Contract\nChecks: 66/66 passing\nVerdict: PASS",
+  "timestamp": "2026-02-22T08:17:54.297927+00:00"
+}

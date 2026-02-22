@@ -1,0 +1,314 @@
+{
+  "bead_id": "bd-8l9k",
+  "title": "Cross-Substrate Contract Tests: End-to-End Behavior Validation",
+  "section": "10.16",
+  "verdict": "PASS",
+  "total": 55,
+  "passed": 55,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "Rust E2E module exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/tests/e2e/adjacent_substrate_flow.rs"
+    },
+    {
+      "check": "Wired into tests/e2e/mod.rs",
+      "passed": true,
+      "detail": "adjacent_substrate_flow in mod.rs"
+    },
+    {
+      "check": "Spec contract exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_16/bd-8l9k_contract.md"
+    },
+    {
+      "check": "Report artifact exists and valid",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/10.16/adjacent_substrate_e2e_report.json"
+    },
+    {
+      "check": "Test file exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/tests/test_check_cross_substrate_e2e.py"
+    },
+    {
+      "check": "Evidence exists with PASS verdict",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_16/bd-8l9k/verification_evidence.json"
+    },
+    {
+      "check": "Verification summary exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_16/bd-8l9k/verification_summary.md"
+    },
+    {
+      "check": "Scenario 'operator_status' defined",
+      "passed": true,
+      "detail": "scenario_operator_status"
+    },
+    {
+      "check": "Scenario 'lease_management' defined",
+      "passed": true,
+      "detail": "scenario_lease_management"
+    },
+    {
+      "check": "Scenario 'audit_log' defined",
+      "passed": true,
+      "detail": "scenario_audit_log"
+    },
+    {
+      "check": "Scenario 'error_propagation' defined",
+      "passed": true,
+      "detail": "scenario_error_propagation"
+    },
+    {
+      "check": "Scenario 'concurrent_access' defined",
+      "passed": true,
+      "detail": "scenario_concurrent_access"
+    },
+    {
+      "check": "Trace propagation scenario defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Replay determinism scenario defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Trace orphan detection (find_orphans)",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Trace completeness check (is_complete)",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Replay determinism verification function",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code E2E_SCENARIO_START defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code E2E_SCENARIO_PASS defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code E2E_SCENARIO_FAIL defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code E2E_TRACE_ORPHAN_DETECTED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code E2E_REPLAY_MISMATCH defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code E2E_CONCURRENT_CONFLICT defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_E2E_SETUP_FAILED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_E2E_TRACE_BROKEN defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_E2E_REPLAY_DIVERGED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_E2E_PERSISTENCE_MISMATCH defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_E2E_SERVICE_ERROR defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_E2E_CONCURRENT_INCONSISTENT defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_E2E_TUI_RENDER_FAILED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_E2E_AUDIT_MISSING defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_E2E_FENCING_REJECTED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_E2E_SCHEMA_MISMATCH defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-E2E-TRACE defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-E2E-REPLAY defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-E2E-FENCING defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-E2E-AUDIT defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-E2E-ERROR-FIDELITY defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-E2E-SCHEMA-COMPAT defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-E2E-CONCURRENT-SAFETY defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariants module defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema version e2e-v1.0",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "BTreeMap usage for determinism",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Rust unit tests (54)",
+      "passed": true,
+      "detail": "54 tests found"
+    },
+    {
+      "check": "Substrate variant FrankenTui",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Substrate variant FastapiRust",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Substrate variant SqlmodelRust",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Substrate variant FrankenSqlite",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "MockClock defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "FencingToken type defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AuditLog with verify_chain",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "StructuredError type defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "ScenarioRunner defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "run_all_scenarios function",
+      "passed": true,
+      "detail": "ok"
+    }
+  ],
+  "events": [
+    {
+      "code": "E2E_SCENARIO_START",
+      "status": "defined"
+    },
+    {
+      "code": "E2E_SCENARIO_PASS",
+      "status": "defined"
+    },
+    {
+      "code": "E2E_SCENARIO_FAIL",
+      "status": "defined"
+    },
+    {
+      "code": "E2E_TRACE_ORPHAN_DETECTED",
+      "status": "defined"
+    },
+    {
+      "code": "E2E_REPLAY_MISMATCH",
+      "status": "defined"
+    },
+    {
+      "code": "E2E_CONCURRENT_CONFLICT",
+      "status": "defined"
+    }
+  ],
+  "summary": "bd-8l9k: Cross-Substrate Contract Tests E2E Validation\nChecks: 55/55 passing\nVerdict: PASS",
+  "timestamp": "2026-02-22T08:17:52.610739+00:00"
+}

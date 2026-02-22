@@ -1,0 +1,209 @@
+{
+  "bead_id": "bd-3gnh",
+  "title": "Observability dashboards for asupersync control health",
+  "section": "10.15",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 39,
+    "failing": 0,
+    "total": 39
+  },
+  "checks": [
+    {
+      "check": "file: dashboard documentation",
+      "pass": true,
+      "detail": "exists: docs/observability/asupersync_control_dashboards.md"
+    },
+    {
+      "check": "file: dashboard snapshot",
+      "pass": true,
+      "detail": "exists: artifacts/10.15/dashboard_snapshot.json"
+    },
+    {
+      "check": "file: alert policy map",
+      "pass": true,
+      "detail": "exists: artifacts/10.15/alert_policy_map.json"
+    },
+    {
+      "check": "doc: Region Health",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc: Obligation Health",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc: Lane Pressure",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc: Cancel Latency",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc: CRITICAL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc: WARNING",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc: bd-1f8m",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc event_code: OBS-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc event_code: OBS-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc event_code: OBS-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc event_code: OBS-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc invariant: INV-OBS-COMPLETE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc invariant: INV-OBS-ALERT-LINKED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc invariant: INV-OBS-STABLE-SCHEMA",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc invariant: INV-OBS-FAIL-VISIBLE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "snapshot: valid JSON",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "snapshot: schema_version",
+      "pass": true,
+      "detail": "1.0"
+    },
+    {
+      "check": "snapshot panel: region_health",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "snapshot panel: obligation_health",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "snapshot panel: lane_pressure",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "snapshot panel: cancel_latency",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "snapshot metrics: region_health",
+      "pass": true,
+      "detail": "4 metrics"
+    },
+    {
+      "check": "snapshot metrics: obligation_health",
+      "pass": true,
+      "detail": "4 metrics"
+    },
+    {
+      "check": "snapshot metrics: lane_pressure",
+      "pass": true,
+      "detail": "3 metrics"
+    },
+    {
+      "check": "snapshot metrics: cancel_latency",
+      "pass": true,
+      "detail": "4 metrics"
+    },
+    {
+      "check": "snapshot: all metric types valid",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "snapshot: fn_ metric prefix",
+      "pass": true,
+      "detail": "all metrics use fn_ prefix"
+    },
+    {
+      "check": "alert map: valid JSON",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "alert: RegionQuiescenceFailure",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "alert: ObligationLeak",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "alert: LaneStarvation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "alert: CancelLatencyBudgetExceeded",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "alert map: all alerts have runbook",
+      "pass": true,
+      "detail": "all linked"
+    },
+    {
+      "check": "alert map: all alerts have severity",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "alert map: all alerts have dashboard category",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "alert map: alert count",
+      "pass": true,
+      "detail": "6 alerts (minimum 4)"
+    }
+  ]
+}

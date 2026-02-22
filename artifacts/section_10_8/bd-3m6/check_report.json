@@ -1,0 +1,778 @@
+{
+  "bead_id": "bd-3m6",
+  "section": "10.8",
+  "title": "Disaster-recovery drills for control-plane failures",
+  "verdict": "PASS",
+  "status": "pass",
+  "passed": 153,
+  "failed": 0,
+  "total": 153,
+  "all_passed": true,
+  "checks": [
+    {
+      "name": "spec_exists",
+      "passed": true,
+      "detail": "Spec file found: docs/specs/section_10_8/bd-3m6_contract.md"
+    },
+    {
+      "name": "spec_scenarios",
+      "passed": true,
+      "detail": "All 5 scenarios documented"
+    },
+    {
+      "name": "spec_scenario_ids",
+      "passed": true,
+      "detail": "All 5 scenario IDs documented"
+    },
+    {
+      "name": "event_code_spec:DRD-001",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "event_code_spec:DRD-002",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "event_code_spec:DRD-003",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "event_code_spec:DRD-004",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "event_code_spec:DRD-005",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "event_code_spec:DRD-006",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "invariant_spec:INV-DRD-DETERMINISTIC",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "invariant_spec:INV-DRD-ISOLATED",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "invariant_spec:INV-DRD-MEASURED",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "invariant_spec:INV-DRD-EVIDENCE",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "invariant_spec:INV-DRD-ABORT-SAFE",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "schema_exists",
+      "passed": true,
+      "detail": "Schema file found: fixtures/drills/drill_schema.json"
+    },
+    {
+      "name": "schema_valid_json",
+      "passed": true,
+      "detail": "Valid JSON Schema structure"
+    },
+    {
+      "name": "schema_required_fields",
+      "passed": true,
+      "detail": "All required fields in schema"
+    },
+    {
+      "name": "schema_category_enum",
+      "passed": true,
+      "detail": "All 5 categories in schema enum"
+    },
+    {
+      "name": "json_exists:evidence_ledger_loss",
+      "passed": true,
+      "detail": "found: fixtures/drills/dr_001_evidence_ledger_loss.json"
+    },
+    {
+      "name": "json_exists:trust_artifact_corruption",
+      "passed": true,
+      "detail": "found: fixtures/drills/dr_002_trust_artifact_corruption.json"
+    },
+    {
+      "name": "json_exists:epoch_barrier_failure",
+      "passed": true,
+      "detail": "found: fixtures/drills/dr_003_epoch_barrier_failure.json"
+    },
+    {
+      "name": "json_exists:federation_partition",
+      "passed": true,
+      "detail": "found: fixtures/drills/dr_004_federation_partition.json"
+    },
+    {
+      "name": "json_exists:proof_pipeline_outage",
+      "passed": true,
+      "detail": "found: fixtures/drills/dr_005_proof_pipeline_outage.json"
+    },
+    {
+      "name": "json_field:evidence_ledger_loss:scenario_id",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:evidence_ledger_loss:title",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:evidence_ledger_loss:category",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:evidence_ledger_loss:severity",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:evidence_ledger_loss:slo_seconds",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:evidence_ledger_loss:drill_interval",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:evidence_ledger_loss:fault_description",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:evidence_ledger_loss:fault_injection_steps",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:evidence_ledger_loss:recovery_steps",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:evidence_ledger_loss:verification_steps",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:evidence_ledger_loss:abort_conditions",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:evidence_ledger_loss:related_runbook",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:evidence_ledger_loss:cross_references",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:trust_artifact_corruption:scenario_id",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:trust_artifact_corruption:title",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:trust_artifact_corruption:category",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:trust_artifact_corruption:severity",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:trust_artifact_corruption:slo_seconds",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:trust_artifact_corruption:drill_interval",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:trust_artifact_corruption:fault_description",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:trust_artifact_corruption:fault_injection_steps",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:trust_artifact_corruption:recovery_steps",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:trust_artifact_corruption:verification_steps",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:trust_artifact_corruption:abort_conditions",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:trust_artifact_corruption:related_runbook",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:trust_artifact_corruption:cross_references",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:epoch_barrier_failure:scenario_id",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:epoch_barrier_failure:title",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:epoch_barrier_failure:category",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:epoch_barrier_failure:severity",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:epoch_barrier_failure:slo_seconds",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:epoch_barrier_failure:drill_interval",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:epoch_barrier_failure:fault_description",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:epoch_barrier_failure:fault_injection_steps",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:epoch_barrier_failure:recovery_steps",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:epoch_barrier_failure:verification_steps",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:epoch_barrier_failure:abort_conditions",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:epoch_barrier_failure:related_runbook",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:epoch_barrier_failure:cross_references",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:federation_partition:scenario_id",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:federation_partition:title",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:federation_partition:category",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:federation_partition:severity",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:federation_partition:slo_seconds",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:federation_partition:drill_interval",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:federation_partition:fault_description",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:federation_partition:fault_injection_steps",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:federation_partition:recovery_steps",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:federation_partition:verification_steps",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:federation_partition:abort_conditions",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:federation_partition:related_runbook",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:federation_partition:cross_references",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:proof_pipeline_outage:scenario_id",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:proof_pipeline_outage:title",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:proof_pipeline_outage:category",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:proof_pipeline_outage:severity",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:proof_pipeline_outage:slo_seconds",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:proof_pipeline_outage:drill_interval",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:proof_pipeline_outage:fault_description",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:proof_pipeline_outage:fault_injection_steps",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:proof_pipeline_outage:recovery_steps",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:proof_pipeline_outage:verification_steps",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:proof_pipeline_outage:abort_conditions",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:proof_pipeline_outage:related_runbook",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_field:proof_pipeline_outage:cross_references",
+      "passed": true,
+      "detail": "present"
+    },
+    {
+      "name": "json_id:evidence_ledger_loss",
+      "passed": true,
+      "detail": "scenario_id=DR-001"
+    },
+    {
+      "name": "json_id:trust_artifact_corruption",
+      "passed": true,
+      "detail": "scenario_id=DR-002"
+    },
+    {
+      "name": "json_id:epoch_barrier_failure",
+      "passed": true,
+      "detail": "scenario_id=DR-003"
+    },
+    {
+      "name": "json_id:federation_partition",
+      "passed": true,
+      "detail": "scenario_id=DR-004"
+    },
+    {
+      "name": "json_id:proof_pipeline_outage",
+      "passed": true,
+      "detail": "scenario_id=DR-005"
+    },
+    {
+      "name": "json_category:evidence_ledger_loss",
+      "passed": true,
+      "detail": "category=evidence_ledger_loss"
+    },
+    {
+      "name": "json_category:trust_artifact_corruption",
+      "passed": true,
+      "detail": "category=trust_artifact_corruption"
+    },
+    {
+      "name": "json_category:epoch_barrier_failure",
+      "passed": true,
+      "detail": "category=epoch_barrier_failure"
+    },
+    {
+      "name": "json_category:federation_partition",
+      "passed": true,
+      "detail": "category=federation_partition"
+    },
+    {
+      "name": "json_category:proof_pipeline_outage",
+      "passed": true,
+      "detail": "category=proof_pipeline_outage"
+    },
+    {
+      "name": "json_severity:evidence_ledger_loss",
+      "passed": true,
+      "detail": "severity=high"
+    },
+    {
+      "name": "json_severity:trust_artifact_corruption",
+      "passed": true,
+      "detail": "severity=critical"
+    },
+    {
+      "name": "json_severity:epoch_barrier_failure",
+      "passed": true,
+      "detail": "severity=critical"
+    },
+    {
+      "name": "json_severity:federation_partition",
+      "passed": true,
+      "detail": "severity=high"
+    },
+    {
+      "name": "json_severity:proof_pipeline_outage",
+      "passed": true,
+      "detail": "severity=high"
+    },
+    {
+      "name": "json_slo:evidence_ledger_loss",
+      "passed": true,
+      "detail": "slo_seconds=300"
+    },
+    {
+      "name": "json_slo:trust_artifact_corruption",
+      "passed": true,
+      "detail": "slo_seconds=120"
+    },
+    {
+      "name": "json_slo:epoch_barrier_failure",
+      "passed": true,
+      "detail": "slo_seconds=180"
+    },
+    {
+      "name": "json_slo:federation_partition",
+      "passed": true,
+      "detail": "slo_seconds=600"
+    },
+    {
+      "name": "json_slo:proof_pipeline_outage",
+      "passed": true,
+      "detail": "slo_seconds=300"
+    },
+    {
+      "name": "json_interval:evidence_ledger_loss",
+      "passed": true,
+      "detail": "drill_interval=monthly"
+    },
+    {
+      "name": "json_interval:trust_artifact_corruption",
+      "passed": true,
+      "detail": "drill_interval=weekly"
+    },
+    {
+      "name": "json_interval:epoch_barrier_failure",
+      "passed": true,
+      "detail": "drill_interval=weekly"
+    },
+    {
+      "name": "json_interval:federation_partition",
+      "passed": true,
+      "detail": "drill_interval=monthly"
+    },
+    {
+      "name": "json_interval:proof_pipeline_outage",
+      "passed": true,
+      "detail": "drill_interval=monthly"
+    },
+    {
+      "name": "json_fault_steps:evidence_ledger_loss",
+      "passed": true,
+      "detail": "4 fault injection steps"
+    },
+    {
+      "name": "json_fault_steps:trust_artifact_corruption",
+      "passed": true,
+      "detail": "5 fault injection steps"
+    },
+    {
+      "name": "json_fault_steps:epoch_barrier_failure",
+      "passed": true,
+      "detail": "5 fault injection steps"
+    },
+    {
+      "name": "json_fault_steps:federation_partition",
+      "passed": true,
+      "detail": "4 fault injection steps"
+    },
+    {
+      "name": "json_fault_steps:proof_pipeline_outage",
+      "passed": true,
+      "detail": "4 fault injection steps"
+    },
+    {
+      "name": "json_recovery_steps:evidence_ledger_loss",
+      "passed": true,
+      "detail": "6 recovery steps"
+    },
+    {
+      "name": "json_recovery_steps:trust_artifact_corruption",
+      "passed": true,
+      "detail": "6 recovery steps"
+    },
+    {
+      "name": "json_recovery_steps:epoch_barrier_failure",
+      "passed": true,
+      "detail": "6 recovery steps"
+    },
+    {
+      "name": "json_recovery_steps:federation_partition",
+      "passed": true,
+      "detail": "6 recovery steps"
+    },
+    {
+      "name": "json_recovery_steps:proof_pipeline_outage",
+      "passed": true,
+      "detail": "6 recovery steps"
+    },
+    {
+      "name": "json_verification_steps:evidence_ledger_loss",
+      "passed": true,
+      "detail": "5 verification steps"
+    },
+    {
+      "name": "json_verification_steps:trust_artifact_corruption",
+      "passed": true,
+      "detail": "5 verification steps"
+    },
+    {
+      "name": "json_verification_steps:epoch_barrier_failure",
+      "passed": true,
+      "detail": "5 verification steps"
+    },
+    {
+      "name": "json_verification_steps:federation_partition",
+      "passed": true,
+      "detail": "5 verification steps"
+    },
+    {
+      "name": "json_verification_steps:proof_pipeline_outage",
+      "passed": true,
+      "detail": "5 verification steps"
+    },
+    {
+      "name": "json_abort:evidence_ledger_loss",
+      "passed": true,
+      "detail": "4 abort conditions"
+    },
+    {
+      "name": "json_abort:trust_artifact_corruption",
+      "passed": true,
+      "detail": "4 abort conditions"
+    },
+    {
+      "name": "json_abort:epoch_barrier_failure",
+      "passed": true,
+      "detail": "4 abort conditions"
+    },
+    {
+      "name": "json_abort:federation_partition",
+      "passed": true,
+      "detail": "4 abort conditions"
+    },
+    {
+      "name": "json_abort:proof_pipeline_outage",
+      "passed": true,
+      "detail": "4 abort conditions"
+    },
+    {
+      "name": "json_runbook:evidence_ledger_loss",
+      "passed": true,
+      "detail": "related_runbook=RB-005"
+    },
+    {
+      "name": "json_runbook:trust_artifact_corruption",
+      "passed": true,
+      "detail": "related_runbook=RB-001"
+    },
+    {
+      "name": "json_runbook:epoch_barrier_failure",
+      "passed": true,
+      "detail": "related_runbook=RB-004"
+    },
+    {
+      "name": "json_runbook:federation_partition",
+      "passed": true,
+      "detail": "related_runbook=RB-005"
+    },
+    {
+      "name": "json_runbook:proof_pipeline_outage",
+      "passed": true,
+      "detail": "related_runbook=RB-006"
+    },
+    {
+      "name": "json_cross_refs:evidence_ledger_loss",
+      "passed": true,
+      "detail": "4 cross-references"
+    },
+    {
+      "name": "json_cross_refs:trust_artifact_corruption",
+      "passed": true,
+      "detail": "4 cross-references"
+    },
+    {
+      "name": "json_cross_refs:epoch_barrier_failure",
+      "passed": true,
+      "detail": "4 cross-references"
+    },
+    {
+      "name": "json_cross_refs:federation_partition",
+      "passed": true,
+      "detail": "4 cross-references"
+    },
+    {
+      "name": "json_cross_refs:proof_pipeline_outage",
+      "passed": true,
+      "detail": "4 cross-references"
+    },
+    {
+      "name": "json_fault_desc:evidence_ledger_loss",
+      "passed": true,
+      "detail": "non-empty fault description"
+    },
+    {
+      "name": "json_fault_desc:trust_artifact_corruption",
+      "passed": true,
+      "detail": "non-empty fault description"
+    },
+    {
+      "name": "json_fault_desc:epoch_barrier_failure",
+      "passed": true,
+      "detail": "non-empty fault description"
+    },
+    {
+      "name": "json_fault_desc:federation_partition",
+      "passed": true,
+      "detail": "non-empty fault description"
+    },
+    {
+      "name": "json_fault_desc:proof_pipeline_outage",
+      "passed": true,
+      "detail": "non-empty fault description"
+    },
+    {
+      "name": "scenario_count",
+      "passed": true,
+      "detail": "5/5 drill scenario files present"
+    },
+    {
+      "name": "critical_weekly:trust_artifact_corruption",
+      "passed": true,
+      "detail": "critical scenario drilled weekly"
+    },
+    {
+      "name": "critical_weekly:epoch_barrier_failure",
+      "passed": true,
+      "detail": "critical scenario drilled weekly"
+    },
+    {
+      "name": "verification_evidence",
+      "passed": true,
+      "detail": "Evidence file valid"
+    },
+    {
+      "name": "verification_summary",
+      "passed": true,
+      "detail": "Summary file found: artifacts/section_10_8/bd-3m6/verification_summary.md"
+    }
+  ]
+}

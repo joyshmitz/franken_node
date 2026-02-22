@@ -1,0 +1,114 @@
+{
+  "bead_id": "bd-2fa",
+  "title": "Counterfactual replay mode for policy simulation",
+  "section": "10.5",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "summary": {
+    "passing": 20,
+    "failing": 0,
+    "total": 20
+  },
+  "checks": [
+    {
+      "check": "file: counterfactual replay implementation",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/tools/counterfactual_replay.rs"
+    },
+    {
+      "check": "file: contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_5/bd-2fa_contract.md"
+    },
+    {
+      "check": "impl: pub struct CounterfactualReplayEngine",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub trait SandboxedExecutor",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub enum SimulationMode",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct CounterfactualResult",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct DivergenceRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct SummaryStatistics",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: max_replay_steps",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: max_wall_clock_millis",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "module wiring: pub mod counterfactual_replay;",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cli wiring: incident counterfactual",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cli wiring: CounterfactualReplayEngine",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cli wiring: counterfactual summary:",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "fixture vectors",
+      "pass": true,
+      "detail": "vectors=5"
+    },
+    {
+      "check": "single policy swap divergence",
+      "pass": true,
+      "detail": "divergence_points=3"
+    },
+    {
+      "check": "single policy swap determinism",
+      "pass": true,
+      "detail": "result A == result B"
+    },
+    {
+      "check": "parameter sweep mode",
+      "pass": true,
+      "detail": "scenarios=3"
+    },
+    {
+      "check": "timeout guard",
+      "pass": true,
+      "detail": "raises bound-exceeded with partial result"
+    },
+    {
+      "check": "max-steps guard",
+      "pass": true,
+      "detail": "raises bound-exceeded with partial result"
+    }
+  ]
+}

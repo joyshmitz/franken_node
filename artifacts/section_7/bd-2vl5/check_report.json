@@ -1,0 +1,281 @@
+{
+  "bead_id": "bd-2vl5",
+  "title": "Performance and Developer Velocity Doctrine",
+  "section": "7",
+  "verdict": "PASS",
+  "total": 54,
+  "passed": 54,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "file_exists:doctrine_doc",
+      "pass": true,
+      "detail": "docs/doctrine/performance_and_velocity.md"
+    },
+    {
+      "name": "file_exists:spec_contract",
+      "pass": true,
+      "detail": "docs/specs/section_7/bd-2vl5_contract.md"
+    },
+    {
+      "name": "principle:PRF-01",
+      "pass": true,
+      "detail": "PRF-01: startup"
+    },
+    {
+      "name": "principle:PRF-02",
+      "pass": true,
+      "detail": "PRF-02: p99"
+    },
+    {
+      "name": "principle:PRF-03",
+      "pass": true,
+      "detail": "PRF-03: security"
+    },
+    {
+      "name": "principle:PRF-04",
+      "pass": true,
+      "detail": "PRF-04: migration"
+    },
+    {
+      "name": "target:cold_start",
+      "pass": true,
+      "detail": "target: 100ms"
+    },
+    {
+      "name": "target:security_overhead",
+      "pass": true,
+      "detail": "target: 5%"
+    },
+    {
+      "name": "target:diff_generation",
+      "pass": true,
+      "detail": "target: 500ms"
+    },
+    {
+      "name": "lever:LEV-01",
+      "pass": true,
+      "detail": "LEV-01: compatibility cache"
+    },
+    {
+      "name": "lever:LEV-02",
+      "pass": true,
+      "detail": "LEV-02: lockstep"
+    },
+    {
+      "name": "lever:LEV-03",
+      "pass": true,
+      "detail": "LEV-03: zero-copy"
+    },
+    {
+      "name": "lever:LEV-04",
+      "pass": true,
+      "detail": "LEV-04: batch policy"
+    },
+    {
+      "name": "lever:LEV-05",
+      "pass": true,
+      "detail": "LEV-05: multi-lane scheduler"
+    },
+    {
+      "name": "lever_detail:expected impact",
+      "pass": true,
+      "detail": "lever detail: expected impact"
+    },
+    {
+      "name": "lever_detail:risk",
+      "pass": true,
+      "detail": "lever detail: risk"
+    },
+    {
+      "name": "lever_detail:owner track",
+      "pass": true,
+      "detail": "lever detail: owner track"
+    },
+    {
+      "name": "artifact:ART-01",
+      "pass": true,
+      "detail": "ART-01: baseline"
+    },
+    {
+      "name": "artifact:ART-02",
+      "pass": true,
+      "detail": "ART-02: profile"
+    },
+    {
+      "name": "artifact:ART-03",
+      "pass": true,
+      "detail": "ART-03: before/after"
+    },
+    {
+      "name": "artifact:ART-04",
+      "pass": true,
+      "detail": "ART-04: compatibility correctness"
+    },
+    {
+      "name": "artifact:ART-05",
+      "pass": true,
+      "detail": "ART-05: tail-latency"
+    },
+    {
+      "name": "artifact_content:flamegraph",
+      "pass": true,
+      "detail": "artifact content: flamegraph"
+    },
+    {
+      "name": "artifact_content:p50",
+      "pass": true,
+      "detail": "artifact content: p50"
+    },
+    {
+      "name": "artifact_content:p95",
+      "pass": true,
+      "detail": "artifact content: p95"
+    },
+    {
+      "name": "artifact_content:p99",
+      "pass": true,
+      "detail": "artifact content: p99"
+    },
+    {
+      "name": "artifact_content:throughput",
+      "pass": true,
+      "detail": "artifact content: throughput"
+    },
+    {
+      "name": "artifact_content:memory",
+      "pass": true,
+      "detail": "artifact content: memory"
+    },
+    {
+      "name": "artifact_content:cold-start",
+      "pass": true,
+      "detail": "artifact content: cold-start"
+    },
+    {
+      "name": "artifact_content:reproducible",
+      "pass": true,
+      "detail": "artifact content: reproducible"
+    },
+    {
+      "name": "impl_mapping:10.6",
+      "pass": true,
+      "detail": "track: 10.6"
+    },
+    {
+      "name": "impl_mapping:10.15",
+      "pass": true,
+      "detail": "track: 10.15"
+    },
+    {
+      "name": "impl_mapping:10.18",
+      "pass": true,
+      "detail": "track: 10.18"
+    },
+    {
+      "name": "event_code:PRF-001",
+      "pass": true,
+      "detail": "PRF-001"
+    },
+    {
+      "name": "event_code:PRF-002",
+      "pass": true,
+      "detail": "PRF-002"
+    },
+    {
+      "name": "event_code:PRF-003",
+      "pass": true,
+      "detail": "PRF-003"
+    },
+    {
+      "name": "event_code:PRF-004",
+      "pass": true,
+      "detail": "PRF-004"
+    },
+    {
+      "name": "event_code:PRF-005",
+      "pass": true,
+      "detail": "PRF-005"
+    },
+    {
+      "name": "invariant:INV-PRF-PRINCIPLES",
+      "pass": true,
+      "detail": "INV-PRF-PRINCIPLES"
+    },
+    {
+      "name": "invariant:INV-PRF-ARTIFACTS",
+      "pass": true,
+      "detail": "INV-PRF-ARTIFACTS"
+    },
+    {
+      "name": "invariant:INV-PRF-PROFILED",
+      "pass": true,
+      "detail": "INV-PRF-PROFILED"
+    },
+    {
+      "name": "invariant:INV-PRF-COMPAT",
+      "pass": true,
+      "detail": "INV-PRF-COMPAT"
+    },
+    {
+      "name": "section:Core Principles",
+      "pass": true,
+      "detail": "section: Core Principles"
+    },
+    {
+      "name": "section:Optimization Levers",
+      "pass": true,
+      "detail": "section: Optimization Levers"
+    },
+    {
+      "name": "section:Required Performance Artifacts",
+      "pass": true,
+      "detail": "section: Required Performance Artifacts"
+    },
+    {
+      "name": "section:Implementation Mapping",
+      "pass": true,
+      "detail": "section: Implementation Mapping"
+    },
+    {
+      "name": "section:Event Codes",
+      "pass": true,
+      "detail": "section: Event Codes"
+    },
+    {
+      "name": "section:Invariants",
+      "pass": true,
+      "detail": "section: Invariants"
+    },
+    {
+      "name": "spec:bd-2vl5",
+      "pass": true,
+      "detail": "spec: bd-2vl5"
+    },
+    {
+      "name": "spec:PRF-01",
+      "pass": true,
+      "detail": "spec: PRF-01"
+    },
+    {
+      "name": "spec:LEV-01",
+      "pass": true,
+      "detail": "spec: LEV-01"
+    },
+    {
+      "name": "spec:ART-01",
+      "pass": true,
+      "detail": "spec: ART-01"
+    },
+    {
+      "name": "spec:PRF-001",
+      "pass": true,
+      "detail": "spec: PRF-001"
+    },
+    {
+      "name": "spec:INV-PRF",
+      "pass": true,
+      "detail": "spec: INV-PRF"
+    }
+  ]
+}

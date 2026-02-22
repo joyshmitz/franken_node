@@ -1,0 +1,517 @@
+{
+  "bead_id": "bd-28u0",
+  "title": "VEF proof-window selection and job scheduler with bounded latency budgets",
+  "section": "10.18",
+  "verdict": "PASS",
+  "total": 101,
+  "passed": 101,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "impl_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/vef/proof_scheduler.rs"
+    },
+    {
+      "check": "mod_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/vef/mod.rs"
+    },
+    {
+      "check": "unit_test_exists",
+      "pass": true,
+      "detail": "tests/test_check_vef_proof_scheduler.py"
+    },
+    {
+      "check": "evidence_exists",
+      "pass": true,
+      "detail": "artifacts/section_10_18/bd-28u0/verification_evidence.json"
+    },
+    {
+      "check": "summary_exists",
+      "pass": true,
+      "detail": "artifacts/section_10_18/bd-28u0/verification_summary.md"
+    },
+    {
+      "check": "impl_symbol_WorkloadTier",
+      "pass": true,
+      "detail": "pub enum WorkloadTier"
+    },
+    {
+      "check": "impl_symbol_SchedulerPolicy",
+      "pass": true,
+      "detail": "pub struct SchedulerPolicy"
+    },
+    {
+      "check": "impl_symbol_ProofWindow",
+      "pass": true,
+      "detail": "pub struct ProofWindow"
+    },
+    {
+      "check": "impl_symbol_ProofJob",
+      "pass": true,
+      "detail": "pub struct ProofJob"
+    },
+    {
+      "check": "impl_symbol_ProofJobStatus",
+      "pass": true,
+      "detail": "pub enum ProofJobStatus"
+    },
+    {
+      "check": "impl_symbol_SchedulerMetrics",
+      "pass": true,
+      "detail": "pub struct SchedulerMetrics"
+    },
+    {
+      "check": "impl_symbol_SchedulerEvent",
+      "pass": true,
+      "detail": "pub struct SchedulerEvent"
+    },
+    {
+      "check": "impl_symbol_SchedulerError",
+      "pass": true,
+      "detail": "pub struct SchedulerError"
+    },
+    {
+      "check": "impl_symbol_VefProofScheduler",
+      "pass": true,
+      "detail": "pub struct VefProofScheduler"
+    },
+    {
+      "check": "impl_symbol_select_windows",
+      "pass": true,
+      "detail": "pub fn select_windows"
+    },
+    {
+      "check": "impl_symbol_enqueue_windows",
+      "pass": true,
+      "detail": "pub fn enqueue_windows"
+    },
+    {
+      "check": "impl_symbol_dispatch_jobs",
+      "pass": true,
+      "detail": "pub fn dispatch_jobs"
+    },
+    {
+      "check": "impl_symbol_mark_completed",
+      "pass": true,
+      "detail": "pub fn mark_completed"
+    },
+    {
+      "check": "impl_symbol_enforce_deadlines",
+      "pass": true,
+      "detail": "pub fn enforce_deadlines"
+    },
+    {
+      "check": "impl_symbol_backlog_metrics",
+      "pass": true,
+      "detail": "pub fn backlog_metrics"
+    },
+    {
+      "check": "impl_workload_tier_Critical",
+      "pass": true,
+      "detail": "Critical"
+    },
+    {
+      "check": "impl_workload_tier_High",
+      "pass": true,
+      "detail": "High"
+    },
+    {
+      "check": "impl_workload_tier_Standard",
+      "pass": true,
+      "detail": "Standard"
+    },
+    {
+      "check": "impl_workload_tier_Background",
+      "pass": true,
+      "detail": "Background"
+    },
+    {
+      "check": "impl_job_status_Pending",
+      "pass": true,
+      "detail": "Pending"
+    },
+    {
+      "check": "impl_job_status_Dispatched",
+      "pass": true,
+      "detail": "Dispatched"
+    },
+    {
+      "check": "impl_job_status_Completed",
+      "pass": true,
+      "detail": "Completed"
+    },
+    {
+      "check": "impl_job_status_DeadlineExceeded",
+      "pass": true,
+      "detail": "DeadlineExceeded"
+    },
+    {
+      "check": "impl_policy_field_max_receipts_per_window",
+      "pass": true,
+      "detail": "max_receipts_per_window"
+    },
+    {
+      "check": "impl_policy_field_max_concurrent_jobs",
+      "pass": true,
+      "detail": "max_concurrent_jobs"
+    },
+    {
+      "check": "impl_policy_field_max_compute_millis_per_tick",
+      "pass": true,
+      "detail": "max_compute_millis_per_tick"
+    },
+    {
+      "check": "impl_policy_field_max_memory_mib_per_tick",
+      "pass": true,
+      "detail": "max_memory_mib_per_tick"
+    },
+    {
+      "check": "impl_policy_field_tier_deadline_millis",
+      "pass": true,
+      "detail": "tier_deadline_millis"
+    },
+    {
+      "check": "impl_window_field_window_id",
+      "pass": true,
+      "detail": "window_id"
+    },
+    {
+      "check": "impl_window_field_start_index",
+      "pass": true,
+      "detail": "start_index"
+    },
+    {
+      "check": "impl_window_field_end_index",
+      "pass": true,
+      "detail": "end_index"
+    },
+    {
+      "check": "impl_window_field_entry_count",
+      "pass": true,
+      "detail": "entry_count"
+    },
+    {
+      "check": "impl_window_field_aligned_checkpoint_id",
+      "pass": true,
+      "detail": "aligned_checkpoint_id"
+    },
+    {
+      "check": "impl_window_field_tier",
+      "pass": true,
+      "detail": "tier"
+    },
+    {
+      "check": "impl_window_field_created_at_millis",
+      "pass": true,
+      "detail": "created_at_millis"
+    },
+    {
+      "check": "impl_window_field_trace_id",
+      "pass": true,
+      "detail": "trace_id"
+    },
+    {
+      "check": "impl_job_field_job_id",
+      "pass": true,
+      "detail": "job_id"
+    },
+    {
+      "check": "impl_job_field_window_id",
+      "pass": true,
+      "detail": "window_id"
+    },
+    {
+      "check": "impl_job_field_tier",
+      "pass": true,
+      "detail": "tier"
+    },
+    {
+      "check": "impl_job_field_priority_score",
+      "pass": true,
+      "detail": "priority_score"
+    },
+    {
+      "check": "impl_job_field_deadline_millis",
+      "pass": true,
+      "detail": "deadline_millis"
+    },
+    {
+      "check": "impl_job_field_estimated_compute_millis",
+      "pass": true,
+      "detail": "estimated_compute_millis"
+    },
+    {
+      "check": "impl_job_field_estimated_memory_mib",
+      "pass": true,
+      "detail": "estimated_memory_mib"
+    },
+    {
+      "check": "impl_job_field_status",
+      "pass": true,
+      "detail": "status"
+    },
+    {
+      "check": "impl_job_field_created_at_millis",
+      "pass": true,
+      "detail": "created_at_millis"
+    },
+    {
+      "check": "impl_job_field_dispatched_at_millis",
+      "pass": true,
+      "detail": "dispatched_at_millis"
+    },
+    {
+      "check": "impl_job_field_completed_at_millis",
+      "pass": true,
+      "detail": "completed_at_millis"
+    },
+    {
+      "check": "impl_job_field_trace_id",
+      "pass": true,
+      "detail": "trace_id"
+    },
+    {
+      "check": "impl_metrics_field_pending_jobs",
+      "pass": true,
+      "detail": "pending_jobs"
+    },
+    {
+      "check": "impl_metrics_field_dispatched_jobs",
+      "pass": true,
+      "detail": "dispatched_jobs"
+    },
+    {
+      "check": "impl_metrics_field_completed_jobs",
+      "pass": true,
+      "detail": "completed_jobs"
+    },
+    {
+      "check": "impl_metrics_field_deadline_exceeded_jobs",
+      "pass": true,
+      "detail": "deadline_exceeded_jobs"
+    },
+    {
+      "check": "impl_metrics_field_oldest_pending_age_millis",
+      "pass": true,
+      "detail": "oldest_pending_age_millis"
+    },
+    {
+      "check": "impl_metrics_field_compute_budget_used_millis",
+      "pass": true,
+      "detail": "compute_budget_used_millis"
+    },
+    {
+      "check": "impl_metrics_field_memory_budget_used_mib",
+      "pass": true,
+      "detail": "memory_budget_used_mib"
+    },
+    {
+      "check": "impl_metrics_field_windows_observed",
+      "pass": true,
+      "detail": "windows_observed"
+    },
+    {
+      "check": "impl_event_VEF-SCHED-001",
+      "pass": true,
+      "detail": "VEF-SCHED-001"
+    },
+    {
+      "check": "impl_event_VEF-SCHED-002",
+      "pass": true,
+      "detail": "VEF-SCHED-002"
+    },
+    {
+      "check": "impl_event_VEF-SCHED-003",
+      "pass": true,
+      "detail": "VEF-SCHED-003"
+    },
+    {
+      "check": "impl_event_VEF-SCHED-004",
+      "pass": true,
+      "detail": "VEF-SCHED-004"
+    },
+    {
+      "check": "impl_error_event_VEF-SCHED-ERR-001",
+      "pass": true,
+      "detail": "VEF-SCHED-ERR-001"
+    },
+    {
+      "check": "impl_error_event_VEF-SCHED-ERR-002",
+      "pass": true,
+      "detail": "VEF-SCHED-ERR-002"
+    },
+    {
+      "check": "impl_error_event_VEF-SCHED-ERR-003",
+      "pass": true,
+      "detail": "VEF-SCHED-ERR-003"
+    },
+    {
+      "check": "impl_error_event_VEF-SCHED-ERR-004",
+      "pass": true,
+      "detail": "VEF-SCHED-ERR-004"
+    },
+    {
+      "check": "impl_error_ERR-VEF-SCHED-DEADLINE",
+      "pass": true,
+      "detail": "ERR-VEF-SCHED-DEADLINE"
+    },
+    {
+      "check": "impl_error_ERR-VEF-SCHED-BUDGET",
+      "pass": true,
+      "detail": "ERR-VEF-SCHED-BUDGET"
+    },
+    {
+      "check": "impl_error_ERR-VEF-SCHED-WINDOW",
+      "pass": true,
+      "detail": "ERR-VEF-SCHED-WINDOW"
+    },
+    {
+      "check": "impl_error_ERR-VEF-SCHED-INTERNAL",
+      "pass": true,
+      "detail": "ERR-VEF-SCHED-INTERNAL"
+    },
+    {
+      "check": "impl_schema_version",
+      "pass": true,
+      "detail": "vef-proof-scheduler-v1"
+    },
+    {
+      "check": "impl_uses_btreemap",
+      "pass": true,
+      "detail": "BTreeMap for deterministic ordering"
+    },
+    {
+      "check": "impl_uses_btreeset",
+      "pass": true,
+      "detail": "BTreeSet for dedup"
+    },
+    {
+      "check": "impl_serde_derive",
+      "pass": true,
+      "detail": "Serialize + Deserialize"
+    },
+    {
+      "check": "impl_uses_receipt_chain",
+      "pass": true,
+      "detail": "imports ReceiptChainEntry"
+    },
+    {
+      "check": "impl_uses_checkpoint",
+      "pass": true,
+      "detail": "imports ReceiptCheckpoint"
+    },
+    {
+      "check": "impl_priority_scoring",
+      "pass": true,
+      "detail": "priority-based dispatch"
+    },
+    {
+      "check": "impl_deadline_enforcement",
+      "pass": true,
+      "detail": "deadline enforcement"
+    },
+    {
+      "check": "impl_concurrent_budget",
+      "pass": true,
+      "detail": "concurrency budget"
+    },
+    {
+      "check": "impl_compute_budget",
+      "pass": true,
+      "detail": "compute budget"
+    },
+    {
+      "check": "impl_memory_budget",
+      "pass": true,
+      "detail": "memory budget"
+    },
+    {
+      "check": "impl_backlog_health",
+      "pass": true,
+      "detail": "backlog health reporting"
+    },
+    {
+      "check": "impl_window_alignment",
+      "pass": true,
+      "detail": "checkpoint-aligned windows"
+    },
+    {
+      "check": "impl_minimum_unit_tests",
+      "pass": true,
+      "detail": "7 tests"
+    },
+    {
+      "check": "vef_mod_wires_proof_scheduler",
+      "pass": true,
+      "detail": "pub mod proof_scheduler;"
+    },
+    {
+      "check": "contract_deterministic_windows",
+      "pass": true,
+      "detail": "deterministic window selection tested"
+    },
+    {
+      "check": "contract_priority_ordering",
+      "pass": true,
+      "detail": "priority-based sort with Reverse"
+    },
+    {
+      "check": "contract_deadline_escalation",
+      "pass": true,
+      "detail": "deadline exceeded tracking"
+    },
+    {
+      "check": "contract_concurrency_enforcement",
+      "pass": true,
+      "detail": "concurrent job limit check"
+    },
+    {
+      "check": "contract_resource_budget",
+      "pass": true,
+      "detail": "compute + memory budget enforcement"
+    },
+    {
+      "check": "contract_empty_stream",
+      "pass": true,
+      "detail": "empty receipt stream handled"
+    },
+    {
+      "check": "contract_event_tracing",
+      "pass": true,
+      "detail": "5 event emission points"
+    },
+    {
+      "check": "contract_trace_id_propagation",
+      "pass": true,
+      "detail": "20 trace_id references"
+    },
+    {
+      "check": "evidence_parseable_json",
+      "pass": true,
+      "detail": "valid JSON"
+    },
+    {
+      "check": "evidence_bead_id",
+      "pass": true,
+      "detail": "bd-28u0"
+    },
+    {
+      "check": "evidence_verdict_pass",
+      "pass": true,
+      "detail": "PASS"
+    },
+    {
+      "check": "summary_mentions_bead",
+      "pass": true,
+      "detail": "bd-28u0"
+    },
+    {
+      "check": "summary_mentions_pass",
+      "pass": true,
+      "detail": "PASS"
+    }
+  ],
+  "timestamp": "2026-02-22T06:42:11.295222+00:00"
+}

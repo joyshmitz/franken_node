@@ -1,0 +1,53 @@
+{
+  "bead_id": "bd-3qsp",
+  "section": "10.0",
+  "title": "Section 10.0 verification gate",
+  "generated_at": "2026-02-22T08:11:14Z",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "status": "all_bead_evidence_present",
+  "summary": {
+    "passed": 38,
+    "failed": 0,
+    "total": 38,
+    "missing_evidence_beads": []
+  },
+  "checks": [
+    {
+      "name": "gate_self_test",
+      "command": "python3 scripts/check_section_10_0_gate.py --self-test --json",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_0/bd-3qsp/check_self_test.txt"
+    },
+    {
+      "name": "gate_unit_tests",
+      "command": "python3 -m unittest tests/test_check_section_10_0_gate.py",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_0/bd-3qsp/unit_tests.txt",
+      "summary": "Ran 21 tests: OK"
+    },
+    {
+      "name": "gate_report",
+      "command": "python3 scripts/check_section_10_0_gate.py --json",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_0/bd-3qsp/check_report.json",
+      "summary": {
+        "verdict": "PASS",
+        "passed": 38,
+        "failed": 0,
+        "missing_evidence_beads": []
+      }
+    }
+  ],
+  "artifacts": {
+    "gate_script": "scripts/check_section_10_0_gate.py",
+    "gate_tests": "tests/test_check_section_10_0_gate.py",
+    "check_self_test": "artifacts/section_10_0/bd-3qsp/check_self_test.txt",
+    "check_report": "artifacts/section_10_0/bd-3qsp/check_report.json",
+    "verification_summary": "artifacts/section_10_0/bd-3qsp/verification_summary.md",
+    "verification_evidence": "artifacts/section_10_0/bd-3qsp/verification_evidence.json"
+  }
+}

@@ -1,0 +1,918 @@
+{
+  "bead_id": "bd-k6o",
+  "section": "10.8",
+  "title": "Deterministic safe-mode startup and operation flags",
+  "verdict": "PASS",
+  "status": "pass",
+  "passed": 181,
+  "failed": 0,
+  "total": 181,
+  "all_passed": true,
+  "checks": [
+    {
+      "name": "impl_exists",
+      "passed": true,
+      "detail": "Implementation found: crates/franken-node/src/runtime/safe_mode.rs"
+    },
+    {
+      "name": "spec_exists",
+      "passed": true,
+      "detail": "Spec file found: docs/specs/section_10_8/bd-k6o_contract.md"
+    },
+    {
+      "name": "policy_exists",
+      "passed": true,
+      "detail": "Policy file found: docs/policy/safe_mode_operations.md"
+    },
+    {
+      "name": "module_registered",
+      "passed": true,
+      "detail": "safe_mode registered in mod.rs"
+    },
+    {
+      "name": "event_code_impl:SMO-001",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "event_code_impl:SMO-002",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "event_code_impl:SMO-003",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "event_code_impl:SMO-004",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "event_code_spec:SMO-001",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "event_code_spec:SMO-002",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "event_code_spec:SMO-003",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "event_code_spec:SMO-004",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "invariant_impl:INV-SMO-DETERMINISTIC",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "invariant_impl:INV-SMO-RESTRICTED",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "invariant_impl:INV-SMO-FLAGPARSE",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "invariant_impl:INV-SMO-RECOVERY",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "invariant_spec:INV-SMO-DETERMINISTIC",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "invariant_spec:INV-SMO-RESTRICTED",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "invariant_spec:INV-SMO-FLAGPARSE",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "invariant_spec:INV-SMO-RECOVERY",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "type:pub enum SafeModeEntryReason",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "type:pub struct OperationFlags",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "type:pub enum Capability",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "type:pub enum EventSeverity",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "type:pub struct SafeModeEvent",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "type:pub enum SafeModeError",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "type:pub struct SafeModeConfig",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "type:pub struct SafeModeEntryReceipt",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "type:pub struct ExitVerification",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "type:pub struct SafeModeStatus",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "type:pub struct SafeModeAuditEntry",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "type:pub enum SafeModeAction",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "type:pub struct SafeModeController",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn none(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn safe_mode_only(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn parse_args(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn detect_conflicts(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn any_active(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn active_flag_names(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn enter_safe_mode(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn enter_degraded_state(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn exit_safe_mode(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn check_capability(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn is_active(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn entry_reason(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn set_flags(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn flags(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn entry_receipt(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn suspended_capabilities(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn status(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn events(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn take_events(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn audit_log(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn evaluate_triggers(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn check_crash_loop_trigger(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn check_epoch_mismatch_trigger(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn compute_restricted_capabilities(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn verify_trust_state(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn all_passed(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn failed_checks(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn label(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn all(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "method:fn to_json(",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "entry_reason:ExplicitFlag",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "entry_reason:EnvironmentVariable",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "entry_reason:ConfigField",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "entry_reason:TrustCorruption",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "entry_reason:CrashLoop",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "entry_reason:EpochMismatch",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "capability:ExtensionLoading",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "capability:TrustDelegations",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "capability:TrustLedgerWrites",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "capability:OutboundNetwork",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "capability:ScheduledTasks",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "capability:NonEssentialListeners",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "flag_spec:--safe-mode",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "flag_spec:--degraded",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "flag_spec:--read-only",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "flag_spec:--no-network",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "serde_derives",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_none",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_safe_mode_only",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_parse_empty",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_parse_safe_mode",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_parse_degraded",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_parse_read_only",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_parse_no_network",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_parse_all",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_parse_unknown_flag",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_deterministic_parsing",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_any_active",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_active_flag_names",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_detect_conflicts_safe_degraded",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_detect_no_conflicts",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_serde_roundtrip",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_default",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_capability_all",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_capability_labels",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_capability_display",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_capability_serde_roundtrip",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_entry_reason_display",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_entry_reason_crash_loop_display",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_entry_reason_epoch_mismatch_display",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_entry_reason_serde_roundtrip",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_config_default",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_config_serde_roundtrip",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_receipt_pass_when_no_inconsistencies",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_receipt_fail_when_inconsistencies",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_receipt_to_json",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_receipt_serde_roundtrip",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_exit_verification_all_passed",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_exit_verification_some_failed",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_exit_verification_failed_checks",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_status_inactive",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_status_to_json",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_status_serde_roundtrip",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_action_display",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_error_display_unknown_flag",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_error_display_capability_restricted",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_error_display_exit_precondition",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_error_display_trust_verification",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_error_serde_roundtrip",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_severity_display",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_new_inactive",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_enter_safe_mode",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_enter_emits_smo001",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_enter_emits_smo002_for_each_capability",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_entry_receipt_created",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_entry_receipt_with_inconsistencies",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_capability_restricted",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_capability_unrestricted_when_inactive",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_exit_success",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_exit_denied",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_exit_denied_audit_logged",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_exit_requires_confirmation",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_suspended_capabilities",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_status_when_active",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_status_when_inactive",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_audit_log_on_enter",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_audit_log_on_exit",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_set_flags_detects_conflicts",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_take_events_drains",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_controller_enter_degraded_state",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_evaluate_triggers_explicit_flag",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_evaluate_triggers_env_var",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_evaluate_triggers_env_var_true",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_evaluate_triggers_env_var_false",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_evaluate_triggers_config_field",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_evaluate_triggers_precedence_flag_over_env",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_evaluate_triggers_precedence_env_over_config",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_evaluate_triggers_none",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_crash_loop_trigger_above_threshold",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_crash_loop_trigger_below_threshold",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_epoch_mismatch_trigger",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_epoch_match_no_trigger",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_compute_restricted_safe_mode",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_compute_restricted_read_only",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_compute_restricted_no_network",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_compute_restricted_degraded",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_compute_restricted_none",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_compute_restricted_deterministic",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_verify_trust_state_pass",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_verify_trust_state_empty_evidence",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_verify_trust_state_empty_hash",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_event_codes_defined",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_invariant_constants_defined",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_full_lifecycle",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_drill_trust_corruption",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_drill_crash_loop",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_drill_epoch_mismatch",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_set_unresolved_incidents",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_config_accessor",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test:test_flags_accessor",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "test_count",
+      "passed": true,
+      "detail": "93 tests (minimum 80)"
+    },
+    {
+      "name": "determinism_contract",
+      "passed": true,
+      "detail": "Determinism requirements documented"
+    },
+    {
+      "name": "exit_protocol",
+      "passed": true,
+      "detail": "Exit protocol documented"
+    },
+    {
+      "name": "trust_reverification",
+      "passed": true,
+      "detail": "Trust re-verification documented"
+    },
+    {
+      "name": "policy_governance",
+      "passed": true,
+      "detail": "All governance sections present"
+    },
+    {
+      "name": "drill_tests",
+      "passed": true,
+      "detail": "All drill tests present"
+    },
+    {
+      "name": "verification_evidence",
+      "passed": true,
+      "detail": "Evidence file valid"
+    },
+    {
+      "name": "verification_summary",
+      "passed": true,
+      "detail": "Summary file found: artifacts/section_10_8/bd-k6o/verification_summary.md"
+    }
+  ]
+}

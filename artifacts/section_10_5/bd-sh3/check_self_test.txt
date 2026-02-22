@@ -1,0 +1,455 @@
+{
+  "bead_id": "bd-sh3",
+  "title": "Policy change approval workflows with cryptographic audit trail",
+  "section": "10.5",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "test_count": "20",
+  "summary": {
+    "passing": 88,
+    "failing": 0,
+    "total": 88
+  },
+  "checks": [
+    {
+      "check": "file: implementation",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/policy/approval_workflow.rs"
+    },
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_5/bd-sh3_contract.md"
+    },
+    {
+      "check": "module registered in mod.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "unit test count",
+      "pass": true,
+      "detail": "20 tests (minimum 20)"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum RiskAssessment",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct PolicyDiffEntry",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct PolicyChangeProposal",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum ProposalState",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct ApprovalSignature",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct PolicyChangeAuditEntry",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct ProposalRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct ChangeEvidencePackage",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct PolicyChangeEngine",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct PolicyChangeError",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn propose(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn approve(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn reject(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn activate(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn rollback(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn get_proposal(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn audit_ledger(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn verify_audit_chain(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn query_audit_by_proposal(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn total_proposals(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn total_activated(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn total_rollbacks(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn min_quorum(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: POLICY_CHANGE_PROPOSED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: POLICY_CHANGE_REVIEWED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: POLICY_CHANGE_APPROVED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: POLICY_CHANGE_REJECTED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: POLICY_CHANGE_ACTIVATED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: POLICY_CHANGE_ROLLED_BACK",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: AUDIT_CHAIN_VERIFIED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: AUDIT_CHAIN_BROKEN",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_code: ERR_PROPOSAL_NOT_FOUND",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_code: ERR_SOLE_APPROVER",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_code: ERR_INVALID_SIGNATURE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_code: ERR_QUORUM_NOT_MET",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_code: ERR_INVALID_STATE_TRANSITION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_code: ERR_AUDIT_CHAIN_BROKEN",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_code: ERR_JUSTIFICATION_TOO_SHORT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "state: Proposed",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "state: UnderReview",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "state: Approved",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "state: Rejected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "state: Applied",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "state: RolledBack",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_propose_policy_change",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_justification_minimum_length",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_required_approvers_not_empty",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_approval_transitions_to_under_review",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_quorum_approval",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_sole_approver_rejected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_activate_approved_proposal",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_activate_without_approval_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_reject_proposal",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_rollback_creates_inverse_proposal",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_rollback_without_applied_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_audit_chain_integrity",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_audit_chain_tamper_detection",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_query_audit_by_proposal",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_rollback_command_stored",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_envelope_guarded_flag",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_risk_assessment_ordering",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_evidence_package_on_activation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_proposal_state_machine_full_lifecycle",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_large_audit_chain_verification",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-POL-MULTI-PARTY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-POL-ROLE-SEP",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-POL-HASH-CHAIN",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-POL-ROLLBACK",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-POL-EVIDENCE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-POL-JUSTIFICATION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-POL-ENVELOPE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-POL-LIFECYCLE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "hash chain: SHA-256",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "hash chain: prev_hash linkage",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "hash chain: compute_entry_hash",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "hash chain: verify_audit_chain",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "role separation: sole approver check",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "role separation: proposer identity tracking",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "role separation: non-proposer counting",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rollback: function exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rollback: inverse diff computation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rollback: original proposal reference",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rollback: deterministic rollback command",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

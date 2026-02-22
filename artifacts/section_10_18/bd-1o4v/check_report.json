@@ -1,0 +1,342 @@
+{
+  "bead_id": "bd-1o4v",
+  "title": "VEF proof-verification gate API for control-plane trust decisions",
+  "section": "10.18",
+  "verdict": "PASS",
+  "total": 66,
+  "passed": 66,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "impl_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/vef/proof_verifier.rs"
+    },
+    {
+      "check": "mod_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/vef/mod.rs"
+    },
+    {
+      "check": "mod_wires_proof_verifier",
+      "pass": true,
+      "detail": "pub mod proof_verifier;"
+    },
+    {
+      "check": "impl_symbol_TrustDecision",
+      "pass": true,
+      "detail": "pub enum TrustDecision"
+    },
+    {
+      "check": "impl_symbol_PolicyPredicate",
+      "pass": true,
+      "detail": "pub struct PolicyPredicate"
+    },
+    {
+      "check": "impl_symbol_ComplianceProof",
+      "pass": true,
+      "detail": "pub struct ComplianceProof"
+    },
+    {
+      "check": "impl_symbol_VerificationRequest",
+      "pass": true,
+      "detail": "pub struct VerificationRequest"
+    },
+    {
+      "check": "impl_symbol_PredicateEvidence",
+      "pass": true,
+      "detail": "pub struct PredicateEvidence"
+    },
+    {
+      "check": "impl_symbol_VerificationReport",
+      "pass": true,
+      "detail": "pub struct VerificationReport"
+    },
+    {
+      "check": "impl_symbol_VerifierEvent",
+      "pass": true,
+      "detail": "pub struct VerifierEvent"
+    },
+    {
+      "check": "impl_symbol_VerifierError",
+      "pass": true,
+      "detail": "pub struct VerifierError"
+    },
+    {
+      "check": "impl_symbol_VerificationGateConfig",
+      "pass": true,
+      "detail": "pub struct VerificationGateConfig"
+    },
+    {
+      "check": "impl_symbol_ProofVerifier",
+      "pass": true,
+      "detail": "pub struct ProofVerifier"
+    },
+    {
+      "check": "impl_symbol_VerificationGate",
+      "pass": true,
+      "detail": "pub struct VerificationGate"
+    },
+    {
+      "check": "impl_symbol_DecisionSummary",
+      "pass": true,
+      "detail": "pub struct DecisionSummary"
+    },
+    {
+      "check": "impl_symbol_validate_proof",
+      "pass": true,
+      "detail": "pub fn validate_proof"
+    },
+    {
+      "check": "impl_symbol_register_predicate",
+      "pass": true,
+      "detail": "pub fn register_predicate"
+    },
+    {
+      "check": "impl_symbol_remove_predicate",
+      "pass": true,
+      "detail": "pub fn remove_predicate"
+    },
+    {
+      "check": "impl_symbol_verify",
+      "pass": true,
+      "detail": "pub fn verify"
+    },
+    {
+      "check": "impl_symbol_verify_batch",
+      "pass": true,
+      "detail": "pub fn verify_batch"
+    },
+    {
+      "check": "impl_symbol_decision_summary",
+      "pass": true,
+      "detail": "pub fn decision_summary"
+    },
+    {
+      "check": "impl_symbol_events",
+      "pass": true,
+      "detail": "pub fn events"
+    },
+    {
+      "check": "impl_symbol_reports",
+      "pass": true,
+      "detail": "pub fn reports"
+    },
+    {
+      "check": "impl_symbol_predicates",
+      "pass": true,
+      "detail": "pub fn predicates"
+    },
+    {
+      "check": "decision_Allow",
+      "pass": true,
+      "detail": "Allow"
+    },
+    {
+      "check": "decision_Deny",
+      "pass": true,
+      "detail": "Deny"
+    },
+    {
+      "check": "decision_Degrade",
+      "pass": true,
+      "detail": "Degrade"
+    },
+    {
+      "check": "event_PVF-001",
+      "pass": true,
+      "detail": "PVF-001"
+    },
+    {
+      "check": "event_PVF-002",
+      "pass": true,
+      "detail": "PVF-002"
+    },
+    {
+      "check": "event_PVF-003",
+      "pass": true,
+      "detail": "PVF-003"
+    },
+    {
+      "check": "event_PVF-004",
+      "pass": true,
+      "detail": "PVF-004"
+    },
+    {
+      "check": "event_PVF-005",
+      "pass": true,
+      "detail": "PVF-005"
+    },
+    {
+      "check": "event_PVF-006",
+      "pass": true,
+      "detail": "PVF-006"
+    },
+    {
+      "check": "error_ERR-PVF-PROOF-EXPIRED",
+      "pass": true,
+      "detail": "ERR-PVF-PROOF-EXPIRED"
+    },
+    {
+      "check": "error_ERR-PVF-POLICY-MISSING",
+      "pass": true,
+      "detail": "ERR-PVF-POLICY-MISSING"
+    },
+    {
+      "check": "error_ERR-PVF-INVALID-FORMAT",
+      "pass": true,
+      "detail": "ERR-PVF-INVALID-FORMAT"
+    },
+    {
+      "check": "error_ERR-PVF-INTERNAL",
+      "pass": true,
+      "detail": "ERR-PVF-INTERNAL"
+    },
+    {
+      "check": "config_max_proof_age_millis",
+      "pass": true,
+      "detail": "max_proof_age_millis"
+    },
+    {
+      "check": "config_degrade_threshold",
+      "pass": true,
+      "detail": "degrade_threshold"
+    },
+    {
+      "check": "config_enforce_policy_version",
+      "pass": true,
+      "detail": "enforce_policy_version"
+    },
+    {
+      "check": "contract_deterministic",
+      "pass": true,
+      "detail": "deterministic invariant"
+    },
+    {
+      "check": "contract_deny_logged",
+      "pass": true,
+      "detail": "deny decisions logged"
+    },
+    {
+      "check": "contract_evidence_complete",
+      "pass": true,
+      "detail": "evidence completeness"
+    },
+    {
+      "check": "contract_fail_closed",
+      "pass": true,
+      "detail": "fail-closed on expired proofs"
+    },
+    {
+      "check": "contract_batch_verify",
+      "pass": true,
+      "detail": "batch verification support"
+    },
+    {
+      "check": "contract_decision_summary",
+      "pass": true,
+      "detail": "decision summary statistics"
+    },
+    {
+      "check": "contract_report_digest",
+      "pass": true,
+      "detail": "deterministic report digest"
+    },
+    {
+      "check": "contract_schema_version",
+      "pass": true,
+      "detail": "vef-proof-verifier-v1"
+    },
+    {
+      "check": "contract_trace_propagation",
+      "pass": true,
+      "detail": "37 trace_id references"
+    },
+    {
+      "check": "contract_serde_derive",
+      "pass": true,
+      "detail": "Serialize + Deserialize"
+    },
+    {
+      "check": "contract_btreemap",
+      "pass": true,
+      "detail": "BTreeMap for deterministic ordering"
+    },
+    {
+      "check": "contract_sha256_digest",
+      "pass": true,
+      "detail": "SHA-256 for report digest"
+    },
+    {
+      "check": "evidence_check_expiry",
+      "pass": true,
+      "detail": "evidence includes expiry check"
+    },
+    {
+      "check": "evidence_check_freshness",
+      "pass": true,
+      "detail": "evidence includes freshness check"
+    },
+    {
+      "check": "evidence_check_action_class",
+      "pass": true,
+      "detail": "evidence includes action_class check"
+    },
+    {
+      "check": "evidence_check_confidence",
+      "pass": true,
+      "detail": "evidence includes confidence check"
+    },
+    {
+      "check": "evidence_check_witness",
+      "pass": true,
+      "detail": "evidence includes witness check"
+    },
+    {
+      "check": "evidence_check_policy_version",
+      "pass": true,
+      "detail": "evidence includes policy_version check"
+    },
+    {
+      "check": "impl_minimum_unit_tests",
+      "pass": true,
+      "detail": "31 tests"
+    },
+    {
+      "check": "evidence_exists",
+      "pass": true,
+      "detail": "artifacts/section_10_18/bd-1o4v/verification_evidence.json"
+    },
+    {
+      "check": "evidence_parseable",
+      "pass": true,
+      "detail": "valid JSON"
+    },
+    {
+      "check": "evidence_bead_id",
+      "pass": true,
+      "detail": "bd-1o4v"
+    },
+    {
+      "check": "evidence_verdict",
+      "pass": true,
+      "detail": "PASS"
+    },
+    {
+      "check": "summary_exists",
+      "pass": true,
+      "detail": "artifacts/section_10_18/bd-1o4v/verification_summary.md"
+    },
+    {
+      "check": "summary_mentions_bead",
+      "pass": true,
+      "detail": "bd-1o4v"
+    },
+    {
+      "check": "summary_mentions_pass",
+      "pass": true,
+      "detail": "PASS"
+    }
+  ],
+  "timestamp": "2026-02-22T07:13:31.425347+00:00"
+}

@@ -1,0 +1,485 @@
+{
+  "bead_id": "bd-15j6",
+  "title": "Mandatory evidence emission for policy-influenced control decisions",
+  "section": "10.15",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "test_count": "51",
+  "summary": {
+    "passing": 94,
+    "failing": 0,
+    "total": 94
+  },
+  "checks": [
+    {
+      "check": "file: implementation",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/connector/control_evidence.rs"
+    },
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "exists: docs/integration/control_evidence_contract.md"
+    },
+    {
+      "check": "file: evidence samples JSONL",
+      "pass": true,
+      "detail": "exists: artifacts/10.15/control_evidence_samples.jsonl"
+    },
+    {
+      "check": "samples JSONL exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "samples JSONL: entry count",
+      "pass": true,
+      "detail": "10 entries (minimum 10)"
+    },
+    {
+      "check": "samples JSONL: all decision types",
+      "pass": true,
+      "detail": "found 5 types"
+    },
+    {
+      "check": "spec: HealthGateEval documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: RolloutTransition documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: QuarantineAction documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: FencingDecision documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: MigrationDecision documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "module registered in mod.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "unit test count",
+      "pass": true,
+      "detail": "51 tests (minimum 40)"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum DecisionType",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum DecisionKind",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum DecisionOutcome",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct ControlEvidenceEntry",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum ConformanceError",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct ControlEvidenceEvent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct ControlEvidenceEmitter",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn emit_evidence(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn execute_with_evidence(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn verify_ordering(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn uncovered_types(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn entries(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn take_events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn to_jsonl(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn validate(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn map_decision_kind(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn ordering_key(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn label(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn all(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: EVD-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: EVD-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: EVD-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: EVD-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: EVD-005",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-CE-MANDATORY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-CE-SCHEMA",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-CE-DETERMINISTIC",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-CE-FAIL-CLOSED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_decision_type_all",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_decision_type_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_decision_type_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_decision_kind_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_decision_kind_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_map_health_gate_pass",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_map_health_gate_fail",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_map_rollout_go",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_map_rollout_nogo",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_map_quarantine_promote",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_map_quarantine_demote",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_map_fencing_grant",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_map_fencing_deny",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_map_migration_proceed",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_map_migration_abort",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_entry_validate_valid",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_entry_validate_bad_schema_version",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_entry_validate_empty_decision_id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_entry_validate_empty_trace_id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_entry_validate_empty_action",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_emit_valid_evidence",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_emit_invalid_evidence_rejected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_emit_emits_evd001_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_emit_emits_evd003_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_emit_invalid_emits_evd004_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_execute_with_evidence_success",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_execute_without_evidence_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_execute_without_evidence_emits_evd002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_execute_with_wrong_type_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_ordering_valid",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_ordering_violation_detected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_ordering_violation_emits_evd005",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_coverage_starts_empty",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_coverage_tracks_emitted_types",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_full_coverage",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_deterministic_entries",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_deterministic_jsonl",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_jsonl_export",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_jsonl_multiple_entries",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_take_events_drains",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_conformance_error_display_missing",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_conformance_error_display_schema",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_conformance_error_display_ordering",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_conformance_error_display_mismatch",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_entry_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_decision_type_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_conformance_error_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_event_codes_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_invariant_constants_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_default_emitter",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_all_types_can_emit",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

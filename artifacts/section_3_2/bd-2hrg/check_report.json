@@ -1,0 +1,276 @@
+{
+  "bead_id": "bd-2hrg",
+  "title": "Impossible-by-Default Capability Index",
+  "section": "3.2",
+  "verdict": "PASS",
+  "total": 53,
+  "passed": 53,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "file_exists:capabilities_doc",
+      "pass": true,
+      "detail": "docs/doctrine/impossible_by_default_capabilities.md"
+    },
+    {
+      "name": "file_exists:spec_contract",
+      "pass": true,
+      "detail": "docs/specs/section_3_2/bd-2hrg_contract.md"
+    },
+    {
+      "name": "capability:IBD-01",
+      "pass": true,
+      "detail": "IBD-01: compatibility"
+    },
+    {
+      "name": "capability:IBD-02",
+      "pass": true,
+      "detail": "IBD-02: migration audit"
+    },
+    {
+      "name": "capability:IBD-03",
+      "pass": true,
+      "detail": "IBD-03: revocation"
+    },
+    {
+      "name": "capability:IBD-04",
+      "pass": true,
+      "detail": "IBD-04: deterministic"
+    },
+    {
+      "name": "capability:IBD-05",
+      "pass": true,
+      "detail": "IBD-05: quarantine"
+    },
+    {
+      "name": "capability:IBD-06",
+      "pass": true,
+      "detail": "IBD-06: trust card"
+    },
+    {
+      "name": "capability:IBD-07",
+      "pass": true,
+      "detail": "IBD-07: lockstep oracle"
+    },
+    {
+      "name": "capability:IBD-08",
+      "pass": true,
+      "detail": "IBD-08: expected-loss"
+    },
+    {
+      "name": "capability:IBD-09",
+      "pass": true,
+      "detail": "IBD-09: reputation graph"
+    },
+    {
+      "name": "capability:IBD-10",
+      "pass": true,
+      "detail": "IBD-10: verifier toolkit"
+    },
+    {
+      "name": "impossibility:rationale_count",
+      "pass": true,
+      "detail": "found 10 'why impossible' sections"
+    },
+    {
+      "name": "owner_track:10.2",
+      "pass": true,
+      "detail": "track: 10.2"
+    },
+    {
+      "name": "owner_track:10.3",
+      "pass": true,
+      "detail": "track: 10.3"
+    },
+    {
+      "name": "owner_track:10.4",
+      "pass": true,
+      "detail": "track: 10.4"
+    },
+    {
+      "name": "owner_track:10.5",
+      "pass": true,
+      "detail": "track: 10.5"
+    },
+    {
+      "name": "owner_track:10.8",
+      "pass": true,
+      "detail": "track: 10.8"
+    },
+    {
+      "name": "owner_track:10.10",
+      "pass": true,
+      "detail": "track: 10.10"
+    },
+    {
+      "name": "owner_track:10.12",
+      "pass": true,
+      "detail": "track: 10.12"
+    },
+    {
+      "name": "owner_track:10.13",
+      "pass": true,
+      "detail": "track: 10.13"
+    },
+    {
+      "name": "owner_track:10.14",
+      "pass": true,
+      "detail": "track: 10.14"
+    },
+    {
+      "name": "owner_track:10.17",
+      "pass": true,
+      "detail": "track: 10.17"
+    },
+    {
+      "name": "owner_track:10.19",
+      "pass": true,
+      "detail": "track: 10.19"
+    },
+    {
+      "name": "owner_track:10.20",
+      "pass": true,
+      "detail": "track: 10.20"
+    },
+    {
+      "name": "owner_track:10.21",
+      "pass": true,
+      "detail": "track: 10.21"
+    },
+    {
+      "name": "category_test:uniqueness",
+      "pass": true,
+      "detail": "test: uniqueness"
+    },
+    {
+      "name": "category_test:verifiability",
+      "pass": true,
+      "detail": "test: verifiability"
+    },
+    {
+      "name": "category_test:migration",
+      "pass": true,
+      "detail": "test: migration"
+    },
+    {
+      "name": "target:QT-01",
+      "pass": true,
+      "detail": "QT-01: 95%"
+    },
+    {
+      "name": "target:QT-02",
+      "pass": true,
+      "detail": "QT-02: 3x"
+    },
+    {
+      "name": "target:QT-03",
+      "pass": true,
+      "detail": "QT-03: 10x"
+    },
+    {
+      "name": "target:QT-04",
+      "pass": true,
+      "detail": "QT-04: 100%"
+    },
+    {
+      "name": "target:QT-05",
+      "pass": true,
+      "detail": "QT-05: 3"
+    },
+    {
+      "name": "event_code:IBD-001",
+      "pass": true,
+      "detail": "IBD-001"
+    },
+    {
+      "name": "event_code:IBD-002",
+      "pass": true,
+      "detail": "IBD-002"
+    },
+    {
+      "name": "event_code:IBD-003",
+      "pass": true,
+      "detail": "IBD-003"
+    },
+    {
+      "name": "event_code:IBD-004",
+      "pass": true,
+      "detail": "IBD-004"
+    },
+    {
+      "name": "invariant:INV-IBD-MAPPED",
+      "pass": true,
+      "detail": "INV-IBD-MAPPED"
+    },
+    {
+      "name": "invariant:INV-IBD-EVIDENCE",
+      "pass": true,
+      "detail": "INV-IBD-EVIDENCE"
+    },
+    {
+      "name": "invariant:INV-IBD-UNIQUE",
+      "pass": true,
+      "detail": "INV-IBD-UNIQUE"
+    },
+    {
+      "name": "invariant:INV-IBD-COMPLETE",
+      "pass": true,
+      "detail": "INV-IBD-COMPLETE"
+    },
+    {
+      "name": "section:10 Capabilities",
+      "pass": true,
+      "detail": "section: 10 Capabilities"
+    },
+    {
+      "name": "section:Category-Creation Test",
+      "pass": true,
+      "detail": "section: Category-Creation Test"
+    },
+    {
+      "name": "section:Quantitative Targets",
+      "pass": true,
+      "detail": "section: Quantitative Targets"
+    },
+    {
+      "name": "section:Event Codes",
+      "pass": true,
+      "detail": "section: Event Codes"
+    },
+    {
+      "name": "section:Invariants",
+      "pass": true,
+      "detail": "section: Invariants"
+    },
+    {
+      "name": "spec:bd-2hrg",
+      "pass": true,
+      "detail": "spec: bd-2hrg"
+    },
+    {
+      "name": "spec:IBD-01",
+      "pass": true,
+      "detail": "spec: IBD-01"
+    },
+    {
+      "name": "spec:IBD-10",
+      "pass": true,
+      "detail": "spec: IBD-10"
+    },
+    {
+      "name": "spec:QT-01",
+      "pass": true,
+      "detail": "spec: QT-01"
+    },
+    {
+      "name": "spec:IBD-001",
+      "pass": true,
+      "detail": "spec: IBD-001"
+    },
+    {
+      "name": "spec:INV-IBD",
+      "pass": true,
+      "detail": "spec: INV-IBD"
+    }
+  ]
+}

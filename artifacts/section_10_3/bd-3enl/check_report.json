@@ -1,0 +1,184 @@
+{
+  "bead_id": "bd-3enl",
+  "title": "Section 10.3 verification gate: Migration Analysis & Rollout Planning",
+  "section": "10.3",
+  "gate": true,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 32,
+  "passed": 32,
+  "failed": 0,
+  "section_beads": [
+    "bd-2a0",
+    "bd-33x",
+    "bd-2ew",
+    "bd-2st",
+    "bd-3dn",
+    "bd-12f",
+    "bd-hg1",
+    "bd-3f9"
+  ],
+  "checks": [
+    {
+      "check": "evidence_bd-2a0",
+      "pass": true,
+      "detail": "PASS: Project scanner"
+    },
+    {
+      "check": "evidence_bd-33x",
+      "pass": true,
+      "detail": "PASS: Risk scorer"
+    },
+    {
+      "check": "evidence_bd-2ew",
+      "pass": true,
+      "detail": "PASS: Rewrite engine"
+    },
+    {
+      "check": "evidence_bd-2st",
+      "pass": true,
+      "detail": "PASS: Migration validation"
+    },
+    {
+      "check": "evidence_bd-3dn",
+      "pass": true,
+      "detail": "PASS: Rollout planner"
+    },
+    {
+      "check": "evidence_bd-12f",
+      "pass": true,
+      "detail": "PASS: Confidence report"
+    },
+    {
+      "check": "evidence_bd-hg1",
+      "pass": true,
+      "detail": "PASS: Migrate report"
+    },
+    {
+      "check": "evidence_bd-3f9",
+      "pass": true,
+      "detail": "PASS: Failure replay"
+    },
+    {
+      "check": "summary_bd-2a0",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_3/bd-2a0/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-33x",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_3/bd-33x/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2ew",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_3/bd-2ew/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2st",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_3/bd-2st/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3dn",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_3/bd-3dn/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-12f",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_3/bd-12f/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-hg1",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_3/bd-hg1/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3f9",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_3/bd-3f9/verification_summary.md"
+    },
+    {
+      "check": "all_evidence_present",
+      "pass": true,
+      "detail": "8/8 beads have evidence"
+    },
+    {
+      "check": "all_verdicts_pass",
+      "pass": true,
+      "detail": "8/8 PASS"
+    },
+    {
+      "check": "gate_tests",
+      "pass": true,
+      "detail": "exists: tests/test_check_section_10_3_gate.py"
+    },
+    {
+      "check": "domain_project_scanner_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_risk_scorer_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_rewrite_engine_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_migration_validation_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_rollout_planner_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_confidence_report_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_migrate_report_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_failure_replay_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "pipeline_scan_to_risk",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_risk_to_rewrite",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_rewrite_to_validation",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_validation_to_rollout",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_rollout_to_report",
+      "pass": true,
+      "detail": "both have evidence"
+    }
+  ],
+  "timestamp": "2026-02-22T08:10:52.694218+00:00"
+}

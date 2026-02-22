@@ -1,0 +1,51 @@
+{
+  "bead_id": "bd-zm5b",
+  "mode": "self-test",
+  "verdict": "PASS",
+  "total": 8,
+  "passed": 8,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "section_bead_count",
+      "pass": true,
+      "detail": "16"
+    },
+    {
+      "check": "domain_group_count",
+      "pass": true,
+      "detail": "16"
+    },
+    {
+      "check": "gate_bead_set",
+      "pass": true,
+      "detail": "bd-zm5b"
+    },
+    {
+      "check": "section_set",
+      "pass": true,
+      "detail": "10.21"
+    },
+    {
+      "check": "run_all_is_dict",
+      "pass": true,
+      "detail": "dict"
+    },
+    {
+      "check": "run_all_has_checks",
+      "pass": true,
+      "detail": "checks list"
+    },
+    {
+      "check": "run_all_total_matches",
+      "pass": true,
+      "detail": "total vs checks"
+    },
+    {
+      "check": "run_all_has_section_beads",
+      "pass": true,
+      "detail": "16 beads"
+    }
+  ],
+  "timestamp": "2026-02-22T08:06:10.931724+00:00"
+}

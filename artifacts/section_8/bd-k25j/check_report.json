@@ -1,0 +1,271 @@
+{
+  "bead_id": "bd-k25j",
+  "title": "Architecture Blueprint",
+  "section": "8",
+  "verdict": "PASS",
+  "total": 52,
+  "passed": 52,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "file_exists:blueprint_doc",
+      "pass": true,
+      "detail": "docs/architecture/blueprint.md"
+    },
+    {
+      "name": "file_exists:spec_contract",
+      "pass": true,
+      "detail": "docs/specs/section_8/bd-k25j_contract.md"
+    },
+    {
+      "name": "kernel:execution",
+      "pass": true,
+      "detail": "execution: franken_engine"
+    },
+    {
+      "name": "kernel:correctness",
+      "pass": true,
+      "detail": "correctness: asupersync"
+    },
+    {
+      "name": "kernel:product",
+      "pass": true,
+      "detail": "product: franken_node"
+    },
+    {
+      "name": "product_plane:PP-01",
+      "pass": true,
+      "detail": "PP-01: Compatibility"
+    },
+    {
+      "name": "product_plane:PP-02",
+      "pass": true,
+      "detail": "PP-02: Migration"
+    },
+    {
+      "name": "product_plane:PP-03",
+      "pass": true,
+      "detail": "PP-03: Trust"
+    },
+    {
+      "name": "product_plane:PP-04",
+      "pass": true,
+      "detail": "PP-04: Ecosystem"
+    },
+    {
+      "name": "product_plane:PP-05",
+      "pass": true,
+      "detail": "PP-05: Operations"
+    },
+    {
+      "name": "control_plane:CP-01",
+      "pass": true,
+      "detail": "CP-01: Release"
+    },
+    {
+      "name": "control_plane:CP-02",
+      "pass": true,
+      "detail": "CP-02: Incident"
+    },
+    {
+      "name": "control_plane:CP-03",
+      "pass": true,
+      "detail": "CP-03: Economics"
+    },
+    {
+      "name": "hri:HRI-01",
+      "pass": true,
+      "detail": "HRI-01: Cx-first"
+    },
+    {
+      "name": "hri:HRI-02",
+      "pass": true,
+      "detail": "HRI-02: Region"
+    },
+    {
+      "name": "hri:HRI-03",
+      "pass": true,
+      "detail": "HRI-03: Cancellation"
+    },
+    {
+      "name": "hri:HRI-04",
+      "pass": true,
+      "detail": "HRI-04: Two-phase"
+    },
+    {
+      "name": "hri:HRI-05",
+      "pass": true,
+      "detail": "HRI-05: Scheduler lane"
+    },
+    {
+      "name": "hri:HRI-06",
+      "pass": true,
+      "detail": "HRI-06: Remote effects"
+    },
+    {
+      "name": "hri:HRI-07",
+      "pass": true,
+      "detail": "HRI-07: Epoch"
+    },
+    {
+      "name": "hri:HRI-08",
+      "pass": true,
+      "detail": "HRI-08: Evidence"
+    },
+    {
+      "name": "hri:HRI-09",
+      "pass": true,
+      "detail": "HRI-09: Deterministic"
+    },
+    {
+      "name": "hri:HRI-10",
+      "pass": true,
+      "detail": "HRI-10: No ambient"
+    },
+    {
+      "name": "alignment:AC-01",
+      "pass": true,
+      "detail": "AC-01: Scope"
+    },
+    {
+      "name": "alignment:AC-02",
+      "pass": true,
+      "detail": "AC-02: Terminology"
+    },
+    {
+      "name": "alignment:AC-03",
+      "pass": true,
+      "detail": "AC-03: Dual-Oracle"
+    },
+    {
+      "name": "alignment:AC-04",
+      "pass": true,
+      "detail": "AC-04: Path"
+    },
+    {
+      "name": "alignment:AC-05",
+      "pass": true,
+      "detail": "AC-05: KPI"
+    },
+    {
+      "name": "boundary:boundary rule",
+      "pass": true,
+      "detail": "boundary: boundary rule"
+    },
+    {
+      "name": "boundary:never reaches into",
+      "pass": true,
+      "detail": "boundary: never reaches into"
+    },
+    {
+      "name": "boundary:orchestrates and ver",
+      "pass": true,
+      "detail": "boundary: orchestrates and verifies"
+    },
+    {
+      "name": "event_code:ARC-001",
+      "pass": true,
+      "detail": "ARC-001"
+    },
+    {
+      "name": "event_code:ARC-002",
+      "pass": true,
+      "detail": "ARC-002"
+    },
+    {
+      "name": "event_code:ARC-003",
+      "pass": true,
+      "detail": "ARC-003"
+    },
+    {
+      "name": "event_code:ARC-004",
+      "pass": true,
+      "detail": "ARC-004"
+    },
+    {
+      "name": "invariant:INV-ARC-KERNEL",
+      "pass": true,
+      "detail": "INV-ARC-KERNEL"
+    },
+    {
+      "name": "invariant:INV-ARC-HRI",
+      "pass": true,
+      "detail": "INV-ARC-HRI"
+    },
+    {
+      "name": "invariant:INV-ARC-ALIGN",
+      "pass": true,
+      "detail": "INV-ARC-ALIGN"
+    },
+    {
+      "name": "invariant:INV-ARC-PLANE",
+      "pass": true,
+      "detail": "INV-ARC-PLANE"
+    },
+    {
+      "name": "section:Repository",
+      "pass": true,
+      "detail": "section: Repository"
+    },
+    {
+      "name": "section:Product Planes",
+      "pass": true,
+      "detail": "section: Product Planes"
+    },
+    {
+      "name": "section:Control Planes",
+      "pass": true,
+      "detail": "section: Control Planes"
+    },
+    {
+      "name": "section:Three-Kernel",
+      "pass": true,
+      "detail": "section: Three-Kernel"
+    },
+    {
+      "name": "section:Runtime Invariants",
+      "pass": true,
+      "detail": "section: Runtime Invariants"
+    },
+    {
+      "name": "section:Alignment Contracts",
+      "pass": true,
+      "detail": "section: Alignment Contracts"
+    },
+    {
+      "name": "spec:bd-k25j",
+      "pass": true,
+      "detail": "spec: bd-k25j"
+    },
+    {
+      "name": "spec:HRI-01",
+      "pass": true,
+      "detail": "spec: HRI-01"
+    },
+    {
+      "name": "spec:HRI-10",
+      "pass": true,
+      "detail": "spec: HRI-10"
+    },
+    {
+      "name": "spec:AC-01",
+      "pass": true,
+      "detail": "spec: AC-01"
+    },
+    {
+      "name": "spec:PP-01",
+      "pass": true,
+      "detail": "spec: PP-01"
+    },
+    {
+      "name": "spec:ARC-001",
+      "pass": true,
+      "detail": "spec: ARC-001"
+    },
+    {
+      "name": "spec:INV-ARC",
+      "pass": true,
+      "detail": "spec: INV-ARC"
+    }
+  ]
+}

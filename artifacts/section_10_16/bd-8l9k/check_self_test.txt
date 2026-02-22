@@ -1,0 +1,20 @@
+  [PASS] REQUIRED_EVENT_CODES == 6
+  [PASS] REQUIRED_ERROR_CODES == 10
+  [PASS] REQUIRED_INVARIANTS >= 5
+  [PASS] REQUIRED_SCENARIOS >= 5
+  [PASS] _checks returns list
+  [PASS] _checks returns dicts
+  [PASS] _checks >= 40 checks
+  [PASS] check 'Rust E2E module exists' has required keys
+  [PASS] check 'Wired into tests/e2e/mod.rs' has required keys
+  [PASS] check 'Spec contract exists' has required keys
+  [PASS] check 'Report artifact exists and valid' has required keys
+  [PASS] check 'Test file exists' has required keys
+  [PASS] run_all has bead_id
+  [PASS] run_all has section
+  [PASS] run_all has verdict
+  [PASS] run_all has events
+  [PASS] run_all has summary
+  [PASS] run_all has timestamp
+
+self-test: 18/18 PASS

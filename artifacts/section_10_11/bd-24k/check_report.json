@@ -1,0 +1,85 @@
+{
+  "bead_id": "bd-24k",
+  "ok": true,
+  "results": [
+    {
+      "detail": "/data/projects/franken_node/crates/franken-node/src/runtime/bounded_mask.rs",
+      "name": "impl_exists",
+      "passed": true
+    },
+    {
+      "detail": "/data/projects/franken_node/crates/franken-node/src/runtime/mod.rs",
+      "name": "module_exists",
+      "passed": true
+    },
+    {
+      "detail": "/data/projects/franken_node/docs/specs/section_10_11/bd-24k_contract.md",
+      "name": "spec_exists",
+      "passed": true
+    },
+    {
+      "detail": "/data/projects/franken_node/artifacts/section_10_11/bd-24k/verification_evidence.json",
+      "name": "evidence_exists",
+      "passed": true
+    },
+    {
+      "detail": "/data/projects/franken_node/artifacts/section_10_11/bd-24k/verification_summary.md",
+      "name": "summary_exists",
+      "passed": true
+    },
+    {
+      "detail": "ok",
+      "name": "required_constants",
+      "passed": true
+    },
+    {
+      "detail": "ok",
+      "name": "required_event_codes",
+      "passed": true
+    },
+    {
+      "detail": "ok",
+      "name": "required_types",
+      "passed": true
+    },
+    {
+      "detail": "ok",
+      "name": "required_functions",
+      "passed": true
+    },
+    {
+      "detail": "all expected function signatures present",
+      "name": "signature_patterns",
+      "passed": true
+    },
+    {
+      "detail": "ok",
+      "name": "unit_test_presence",
+      "passed": true
+    },
+    {
+      "detail": "runtime/mod.rs must export bounded_mask module",
+      "name": "runtime_mod_wiring",
+      "passed": true
+    },
+    {
+      "detail": "spec must include invariant table and cancellation deferral invariant",
+      "name": "spec_mentions_invariants",
+      "passed": true
+    },
+    {
+      "detail": "summary must mention full event-code span FN-BM-001..FN-BM-006",
+      "name": "summary_mentions_event_codes",
+      "passed": true
+    },
+    {
+      "detail": "ok",
+      "name": "evidence_metrics_fields",
+      "passed": true
+    }
+  ],
+  "summary": {
+    "passed": 15,
+    "total": 15
+  }
+}

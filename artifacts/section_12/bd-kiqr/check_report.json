@@ -1,0 +1,98 @@
+{
+  "bead_id": "bd-kiqr",
+  "section": "12",
+  "title": "Risk Control \u2014 Trust-System Complexity",
+  "verdict": "PASS",
+  "status": "pass",
+  "passed": 17,
+  "failed": 0,
+  "total": 17,
+  "all_passed": true,
+  "checks": [
+    {
+      "name": "spec_exists",
+      "passed": true,
+      "detail": "Spec file found: docs/specs/section_12/bd-kiqr_contract.md"
+    },
+    {
+      "name": "risk_policy_exists",
+      "passed": true,
+      "detail": "Risk policy found: docs/policy/risk_trust_complexity.md"
+    },
+    {
+      "name": "risk_documented",
+      "passed": true,
+      "detail": "Risk description, impact, and likelihood documented"
+    },
+    {
+      "name": "replay_mechanism",
+      "passed": true,
+      "detail": "Deterministic replay mechanism documented"
+    },
+    {
+      "name": "degraded_mode",
+      "passed": true,
+      "detail": "Degraded-mode contract with duration and safe-mode documented"
+    },
+    {
+      "name": "complexity_budget",
+      "passed": true,
+      "detail": "Complexity budget with depth limits documented"
+    },
+    {
+      "name": "countermeasures",
+      "passed": true,
+      "detail": "All countermeasures documented"
+    },
+    {
+      "name": "event_codes",
+      "passed": true,
+      "detail": "All event codes present"
+    },
+    {
+      "name": "invariants",
+      "passed": true,
+      "detail": "All invariants present"
+    },
+    {
+      "name": "spec_keywords",
+      "passed": true,
+      "detail": "All spec keywords present"
+    },
+    {
+      "name": "threshold",
+      "passed": true,
+      "detail": "Zero-divergence threshold present"
+    },
+    {
+      "name": "alert_pipeline",
+      "passed": true,
+      "detail": "Alert pipeline documented"
+    },
+    {
+      "name": "escalation",
+      "passed": true,
+      "detail": "Escalation procedures documented"
+    },
+    {
+      "name": "evidence_requirements",
+      "passed": true,
+      "detail": "Evidence requirements for review documented"
+    },
+    {
+      "name": "monitoring",
+      "passed": true,
+      "detail": "Monitoring with dashboards and velocity metrics documented"
+    },
+    {
+      "name": "verification_evidence",
+      "passed": true,
+      "detail": "Evidence file valid"
+    },
+    {
+      "name": "verification_summary",
+      "passed": true,
+      "detail": "Summary file found: artifacts/section_12/bd-kiqr/verification_summary.md"
+    }
+  ]
+}

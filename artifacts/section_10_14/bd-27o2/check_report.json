@@ -1,0 +1,505 @@
+{
+  "bead_id": "bd-27o2",
+  "title": "Profile tuning harness with signed policy updates",
+  "section": "10.14",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "test_count": "47",
+  "summary": {
+    "passing": 98,
+    "failing": 0,
+    "total": 98
+  },
+  "checks": [
+    {
+      "check": "file: implementation",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/tools/profile_tuning_harness.rs"
+    },
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_14/bd-27o2_contract.md"
+    },
+    {
+      "check": "file: signed bundle artifact",
+      "pass": true,
+      "detail": "exists: artifacts/10.14/signed_policy_update_bundle.json"
+    },
+    {
+      "check": "baseline CSV exists",
+      "pass": true,
+      "detail": "5 lines (minimum 5)"
+    },
+    {
+      "check": "signed bundle exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "bundle: version field",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "bundle: signature field",
+      "pass": "harness-signed-v1",
+      "detail": "found"
+    },
+    {
+      "check": "bundle: candidates count",
+      "pass": true,
+      "detail": "4 candidates (minimum 4)"
+    },
+    {
+      "check": "bundle: deltas count",
+      "pass": true,
+      "detail": "4 deltas (minimum 4)"
+    },
+    {
+      "check": "bundle: hardware fingerprint",
+      "pass": "a1b2c3d4e5f60718",
+      "detail": "found"
+    },
+    {
+      "check": "bundle: regression threshold",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "module registered in mod.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "unit test count",
+      "pass": true,
+      "detail": "47 tests (minimum 35)"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct BenchmarkResult",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct BaselineRow",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct CandidateUpdate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct PolicyDelta",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct HardwareFingerprint",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct SignedPolicyBundle",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct RegressionDiagnostic",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct HarnessEvent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct HarnessConfig",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct ProfileTuningHarness",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum HarnessOutcome",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn run(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn verify_bundle(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn sign_bundle(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn compute_deltas(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn check_regressions(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn take_events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn config(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn is_regression(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn signable_payload(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn bundle_hash(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn hmac_sign(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn hmac_verify(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn parse_baseline_csv(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn from_info(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn with_defaults(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: PT_HARNESS_START",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: PT_BENCHMARK_COMPLETE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: PT_CANDIDATE_COMPUTED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: PT_REGRESSION_REJECTED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: PT_BUNDLE_SIGNED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: PT_BUNDLE_VERIFIED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-PT-IDEMPOTENT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-PT-SIGNED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-PT-REGRESSION-SAFE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-PT-CHAIN",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_hmac_sign_deterministic",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_hmac_sign_different_key",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_hmac_sign_different_payload",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_hmac_verify_valid",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_hmac_verify_invalid",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_hmac_verify_wrong_key",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_hardware_fingerprint_deterministic",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_hardware_fingerprint_different_info",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_hardware_fingerprint_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_delta_no_regression",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_delta_encode_regression",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_delta_decode_regression",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_delta_at_exact_threshold_not_regression",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_regression_diagnostic_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_parse_baseline_csv",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_parse_baseline_csv_empty",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_parse_baseline_csv_skips_short_lines",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_harness_successful_run",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_harness_produces_signed_bundle",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_harness_bundle_has_candidates",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_harness_bundle_has_deltas",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_harness_bundle_has_provenance",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_harness_bundle_signature_verifies",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_harness_idempotent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_harness_rejects_regression",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_harness_regression_diagnostic_detail",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_harness_regression_emits_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_harness_emits_start_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_harness_emits_benchmark_complete",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_harness_emits_candidate_computed",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_harness_emits_bundle_signed",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_harness_emits_bundle_verified",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_take_events_drains",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_bundle_chain_first_has_no_previous",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_bundle_chain_second_references_first",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_bundle_hash_deterministic",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_default_config",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_custom_threshold",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_config_access",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_bundle_signable_payload_excludes_signature",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_bundle_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_event_codes_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_invariant_constants_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_verify_bundle_wrong_key",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_empty_benchmarks",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_delta_shows_old_and_new_values",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_delta_p99_change_zero_without_previous",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

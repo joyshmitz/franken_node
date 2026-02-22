@@ -1,0 +1,332 @@
+{
+  "bead_id": "bd-3pds",
+  "title": "VEF evidence capsule for verifier SDK replay",
+  "section": "10.18",
+  "verdict": "PASS",
+  "total": 64,
+  "passed": 64,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "impl_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/vef/evidence_capsule.rs"
+    },
+    {
+      "check": "mod_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/vef/mod.rs"
+    },
+    {
+      "check": "mod_wires_evidence_capsule",
+      "pass": true,
+      "detail": "pub mod evidence_capsule;"
+    },
+    {
+      "check": "impl_symbol_VefEvidence",
+      "pass": true,
+      "detail": "pub struct VefEvidence"
+    },
+    {
+      "check": "impl_symbol_EvidenceCapsule",
+      "pass": true,
+      "detail": "pub struct EvidenceCapsule"
+    },
+    {
+      "check": "impl_symbol_CapsuleVerificationResult",
+      "pass": true,
+      "detail": "pub struct CapsuleVerificationResult"
+    },
+    {
+      "check": "impl_symbol_ExternalVerifierEndpoint",
+      "pass": true,
+      "detail": "pub struct ExternalVerifierEndpoint"
+    },
+    {
+      "check": "impl_symbol_ExportManifest",
+      "pass": true,
+      "detail": "pub struct ExportManifest"
+    },
+    {
+      "check": "impl_symbol_VerifierRegistry",
+      "pass": true,
+      "detail": "pub struct VerifierRegistry"
+    },
+    {
+      "check": "impl_symbol_CapsuleError",
+      "pass": true,
+      "detail": "pub enum CapsuleError"
+    },
+    {
+      "check": "impl_symbol_new",
+      "pass": true,
+      "detail": "pub fn new"
+    },
+    {
+      "check": "impl_symbol_is_sealed",
+      "pass": true,
+      "detail": "pub fn is_sealed"
+    },
+    {
+      "check": "impl_symbol_add_evidence",
+      "pass": true,
+      "detail": "pub fn add_evidence"
+    },
+    {
+      "check": "impl_symbol_set_metadata",
+      "pass": true,
+      "detail": "pub fn set_metadata"
+    },
+    {
+      "check": "impl_symbol_seal",
+      "pass": true,
+      "detail": "pub fn seal"
+    },
+    {
+      "check": "impl_symbol_verify_all",
+      "pass": true,
+      "detail": "pub fn verify_all"
+    },
+    {
+      "check": "impl_symbol_evidence_count",
+      "pass": true,
+      "detail": "pub fn evidence_count"
+    },
+    {
+      "check": "impl_symbol_register",
+      "pass": true,
+      "detail": "pub fn register"
+    },
+    {
+      "check": "impl_symbol_export_capsule",
+      "pass": true,
+      "detail": "pub fn export_capsule"
+    },
+    {
+      "check": "impl_symbol_endpoints",
+      "pass": true,
+      "detail": "pub fn endpoints"
+    },
+    {
+      "check": "impl_symbol_audit_log",
+      "pass": true,
+      "detail": "pub fn audit_log"
+    },
+    {
+      "check": "event_EVIDENCE_CAPSULE_CREATED",
+      "pass": true,
+      "detail": "EVIDENCE_CAPSULE_CREATED"
+    },
+    {
+      "check": "event_EVIDENCE_CAPSULE_SEALED",
+      "pass": true,
+      "detail": "EVIDENCE_CAPSULE_SEALED"
+    },
+    {
+      "check": "event_EVIDENCE_CAPSULE_EXPORTED",
+      "pass": true,
+      "detail": "EVIDENCE_CAPSULE_EXPORTED"
+    },
+    {
+      "check": "event_EVIDENCE_CAPSULE_VERIFIED",
+      "pass": true,
+      "detail": "EVIDENCE_CAPSULE_VERIFIED"
+    },
+    {
+      "check": "event_EVIDENCE_CAPSULE_REJECTED",
+      "pass": true,
+      "detail": "EVIDENCE_CAPSULE_REJECTED"
+    },
+    {
+      "check": "error_code_ERR_CAPSULE_EMPTY_EVIDENCE",
+      "pass": true,
+      "detail": "ERR_CAPSULE_EMPTY_EVIDENCE"
+    },
+    {
+      "check": "error_code_ERR_CAPSULE_SEAL_FAILED",
+      "pass": true,
+      "detail": "ERR_CAPSULE_SEAL_FAILED"
+    },
+    {
+      "check": "error_code_ERR_CAPSULE_SCHEMA_MISMATCH",
+      "pass": true,
+      "detail": "ERR_CAPSULE_SCHEMA_MISMATCH"
+    },
+    {
+      "check": "error_code_ERR_CAPSULE_PROOF_MISSING",
+      "pass": true,
+      "detail": "ERR_CAPSULE_PROOF_MISSING"
+    },
+    {
+      "check": "error_code_ERR_CAPSULE_REPLAY_DIVERGED",
+      "pass": true,
+      "detail": "ERR_CAPSULE_REPLAY_DIVERGED"
+    },
+    {
+      "check": "error_code_ERR_CAPSULE_EXPORT_FAILED",
+      "pass": true,
+      "detail": "ERR_CAPSULE_EXPORT_FAILED"
+    },
+    {
+      "check": "error_variant_EmptyEvidence",
+      "pass": true,
+      "detail": "EmptyEvidence"
+    },
+    {
+      "check": "error_variant_AlreadySealed",
+      "pass": true,
+      "detail": "AlreadySealed"
+    },
+    {
+      "check": "error_variant_SchemaMismatch",
+      "pass": true,
+      "detail": "SchemaMismatch"
+    },
+    {
+      "check": "error_variant_ProofMissing",
+      "pass": true,
+      "detail": "ProofMissing"
+    },
+    {
+      "check": "error_variant_ReplayDiverged",
+      "pass": true,
+      "detail": "ReplayDiverged"
+    },
+    {
+      "check": "error_variant_ExportFailed",
+      "pass": true,
+      "detail": "ExportFailed"
+    },
+    {
+      "check": "invariant_INV-EVIDENCE-CAPSULE-COMPLETE",
+      "pass": true,
+      "detail": "INV-EVIDENCE-CAPSULE-COMPLETE"
+    },
+    {
+      "check": "invariant_INV-EVIDENCE-CAPSULE-SEALED",
+      "pass": true,
+      "detail": "INV-EVIDENCE-CAPSULE-SEALED"
+    },
+    {
+      "check": "invariant_INV-EVIDENCE-CAPSULE-VERIFIABLE",
+      "pass": true,
+      "detail": "INV-EVIDENCE-CAPSULE-VERIFIABLE"
+    },
+    {
+      "check": "invariant_INV-EVIDENCE-CAPSULE-SCHEMA-STABLE",
+      "pass": true,
+      "detail": "INV-EVIDENCE-CAPSULE-SCHEMA-STABLE"
+    },
+    {
+      "check": "contract_schema_version",
+      "pass": true,
+      "detail": "schema version present"
+    },
+    {
+      "check": "contract_btreemap",
+      "pass": true,
+      "detail": "BTreeMap for deterministic ordering"
+    },
+    {
+      "check": "contract_serde_derive",
+      "pass": true,
+      "detail": "Serialize + Deserialize"
+    },
+    {
+      "check": "contract_seal_immutability",
+      "pass": true,
+      "detail": "sealed capsules reject mutation"
+    },
+    {
+      "check": "contract_verify_all_logic",
+      "pass": true,
+      "detail": "verify_all returns structured result"
+    },
+    {
+      "check": "contract_export_manifest",
+      "pass": true,
+      "detail": "export produces manifest"
+    },
+    {
+      "check": "contract_audit_log",
+      "pass": true,
+      "detail": "audit log for exports"
+    },
+    {
+      "check": "contract_display_impl",
+      "pass": true,
+      "detail": "Display impl for CapsuleError"
+    },
+    {
+      "check": "contract_default_impl",
+      "pass": true,
+      "detail": "Default impl for VerifierRegistry"
+    },
+    {
+      "check": "contract_receipt_chain_commitment",
+      "pass": true,
+      "detail": "evidence links to receipt chain"
+    },
+    {
+      "check": "contract_proof_id_required",
+      "pass": true,
+      "detail": "evidence requires proof_id"
+    },
+    {
+      "check": "contract_window_bounds",
+      "pass": true,
+      "detail": "evidence has time window bounds"
+    },
+    {
+      "check": "contract_supported_schemas",
+      "pass": true,
+      "detail": "verifier endpoint declares supported schemas"
+    },
+    {
+      "check": "contract_schema_mismatch_check",
+      "pass": true,
+      "detail": "export validates schema compatibility"
+    },
+    {
+      "check": "impl_minimum_unit_tests",
+      "pass": true,
+      "detail": "22 tests"
+    },
+    {
+      "check": "evidence_exists",
+      "pass": true,
+      "detail": "artifacts/section_10_18/bd-3pds/verification_evidence.json"
+    },
+    {
+      "check": "evidence_parseable",
+      "pass": true,
+      "detail": "valid JSON"
+    },
+    {
+      "check": "evidence_bead_id",
+      "pass": true,
+      "detail": "bd-3pds"
+    },
+    {
+      "check": "evidence_verdict",
+      "pass": true,
+      "detail": "PASS"
+    },
+    {
+      "check": "summary_exists",
+      "pass": true,
+      "detail": "artifacts/section_10_18/bd-3pds/verification_summary.md"
+    },
+    {
+      "check": "summary_mentions_bead",
+      "pass": true,
+      "detail": "bd-3pds"
+    },
+    {
+      "check": "summary_mentions_pass",
+      "pass": true,
+      "detail": "PASS"
+    }
+  ],
+  "timestamp": "2026-02-22T07:16:10.810716+00:00"
+}

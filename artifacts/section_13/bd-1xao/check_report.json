@@ -1,0 +1,751 @@
+{
+  "bead_id": "bd-1xao",
+  "title": "Impossible-by-default adoption enforcement",
+  "section": "13",
+  "verdict": "PASS",
+  "total": 148,
+  "passed": 148,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "file: implementation",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/security/impossible_default.rs"
+    },
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_13/bd-1xao_contract.md"
+    },
+    {
+      "check": "file: policy document",
+      "pass": true,
+      "detail": "exists: docs/policy/impossible_by_default_adoption.md"
+    },
+    {
+      "check": "file: evidence artifact",
+      "pass": true,
+      "detail": "exists: artifacts/section_13/bd-1xao/verification_evidence.json"
+    },
+    {
+      "check": "file: verification summary",
+      "pass": true,
+      "detail": "exists: artifacts/section_13/bd-1xao/verification_summary.md"
+    },
+    {
+      "check": "module registered in mod.rs",
+      "pass": true,
+      "detail": "found: pub mod impossible_default;"
+    },
+    {
+      "check": "type: pub enum ImpossibleCapability",
+      "pass": true,
+      "detail": "found: pub enum ImpossibleCapability"
+    },
+    {
+      "check": "type: pub struct CapabilityToken",
+      "pass": true,
+      "detail": "found: pub struct CapabilityToken"
+    },
+    {
+      "check": "type: pub struct CapabilityEnforcer",
+      "pass": true,
+      "detail": "found: pub struct CapabilityEnforcer"
+    },
+    {
+      "check": "type: pub struct EnforcementReport",
+      "pass": true,
+      "detail": "found: pub struct EnforcementReport"
+    },
+    {
+      "check": "type: pub struct EnforcementError",
+      "pass": true,
+      "detail": "found: pub struct EnforcementError"
+    },
+    {
+      "check": "type: pub struct EnforcementAuditEntry",
+      "pass": true,
+      "detail": "found: pub struct EnforcementAuditEntry"
+    },
+    {
+      "check": "type: pub struct EnforcementMetrics",
+      "pass": true,
+      "detail": "found: pub struct EnforcementMetrics"
+    },
+    {
+      "check": "type: pub enum EnforcementStatus",
+      "pass": true,
+      "detail": "found: pub enum EnforcementStatus"
+    },
+    {
+      "check": "type: pub struct CapabilityReportEntry",
+      "pass": true,
+      "detail": "found: pub struct CapabilityReportEntry"
+    },
+    {
+      "check": "capability_variant: FsAccess",
+      "pass": true,
+      "detail": "found: FsAccess"
+    },
+    {
+      "check": "capability_variant: OutboundNetwork",
+      "pass": true,
+      "detail": "found: OutboundNetwork"
+    },
+    {
+      "check": "capability_variant: ChildProcessSpawn",
+      "pass": true,
+      "detail": "found: ChildProcessSpawn"
+    },
+    {
+      "check": "capability_variant: UnsignedExtension",
+      "pass": true,
+      "detail": "found: UnsignedExtension"
+    },
+    {
+      "check": "capability_variant: DisableHardening",
+      "pass": true,
+      "detail": "found: DisableHardening"
+    },
+    {
+      "check": "method: fn enforce(",
+      "pass": true,
+      "detail": "found: fn enforce("
+    },
+    {
+      "check": "method: fn opt_in(",
+      "pass": true,
+      "detail": "found: fn opt_in("
+    },
+    {
+      "check": "method: fn is_enabled(",
+      "pass": true,
+      "detail": "found: fn is_enabled("
+    },
+    {
+      "check": "method: fn attempt_silent_disable(",
+      "pass": true,
+      "detail": "found: fn attempt_silent_disable("
+    },
+    {
+      "check": "method: fn expire_tokens(",
+      "pass": true,
+      "detail": "found: fn expire_tokens("
+    },
+    {
+      "check": "method: fn generate_report(",
+      "pass": true,
+      "detail": "found: fn generate_report("
+    },
+    {
+      "check": "method: fn status(",
+      "pass": true,
+      "detail": "found: fn status("
+    },
+    {
+      "check": "method: fn metrics(",
+      "pass": true,
+      "detail": "found: fn metrics("
+    },
+    {
+      "check": "method: fn audit_log(",
+      "pass": true,
+      "detail": "found: fn audit_log("
+    },
+    {
+      "check": "method: fn record_deployment(",
+      "pass": true,
+      "detail": "found: fn record_deployment("
+    },
+    {
+      "check": "event_code_const: IBD_001_CAPABILITY_BLOCKED",
+      "pass": true,
+      "detail": "found: IBD_001_CAPABILITY_BLOCKED"
+    },
+    {
+      "check": "event_code_value: IBD-001",
+      "pass": true,
+      "detail": "found: \"IBD-001\""
+    },
+    {
+      "check": "event_code_const: IBD_002_OPT_IN_GRANTED",
+      "pass": true,
+      "detail": "found: IBD_002_OPT_IN_GRANTED"
+    },
+    {
+      "check": "event_code_value: IBD-002",
+      "pass": true,
+      "detail": "found: \"IBD-002\""
+    },
+    {
+      "check": "event_code_const: IBD_003_OPT_IN_EXPIRED",
+      "pass": true,
+      "detail": "found: IBD_003_OPT_IN_EXPIRED"
+    },
+    {
+      "check": "event_code_value: IBD-003",
+      "pass": true,
+      "detail": "found: \"IBD-003\""
+    },
+    {
+      "check": "event_code_const: IBD_004_SILENT_DISABLE_DETECTED",
+      "pass": true,
+      "detail": "found: IBD_004_SILENT_DISABLE_DETECTED"
+    },
+    {
+      "check": "event_code_value: IBD-004",
+      "pass": true,
+      "detail": "found: \"IBD-004\""
+    },
+    {
+      "check": "event_code_in_spec: IBD-001",
+      "pass": true,
+      "detail": "found: IBD-001"
+    },
+    {
+      "check": "event_code_in_spec: IBD-002",
+      "pass": true,
+      "detail": "found: IBD-002"
+    },
+    {
+      "check": "event_code_in_spec: IBD-003",
+      "pass": true,
+      "detail": "found: IBD-003"
+    },
+    {
+      "check": "event_code_in_spec: IBD-004",
+      "pass": true,
+      "detail": "found: IBD-004"
+    },
+    {
+      "check": "event_code_in_policy: IBD-001",
+      "pass": true,
+      "detail": "found: IBD-001"
+    },
+    {
+      "check": "event_code_in_policy: IBD-002",
+      "pass": true,
+      "detail": "found: IBD-002"
+    },
+    {
+      "check": "event_code_in_policy: IBD-003",
+      "pass": true,
+      "detail": "found: IBD-003"
+    },
+    {
+      "check": "event_code_in_policy: IBD-004",
+      "pass": true,
+      "detail": "found: IBD-004"
+    },
+    {
+      "check": "error_code: ERR_IBD_BLOCKED",
+      "pass": true,
+      "detail": "found: ERR_IBD_BLOCKED"
+    },
+    {
+      "check": "error_code: ERR_IBD_TOKEN_EXPIRED",
+      "pass": true,
+      "detail": "found: ERR_IBD_TOKEN_EXPIRED"
+    },
+    {
+      "check": "error_code: ERR_IBD_INVALID_SIGNATURE",
+      "pass": true,
+      "detail": "found: ERR_IBD_INVALID_SIGNATURE"
+    },
+    {
+      "check": "error_code: ERR_IBD_SILENT_DISABLE",
+      "pass": true,
+      "detail": "found: ERR_IBD_SILENT_DISABLE"
+    },
+    {
+      "check": "invariant_in_impl: INV-IBD-ENFORCE",
+      "pass": true,
+      "detail": "found: INV-IBD-ENFORCE"
+    },
+    {
+      "check": "invariant_in_impl: INV-IBD-TOKEN",
+      "pass": true,
+      "detail": "found: INV-IBD-TOKEN"
+    },
+    {
+      "check": "invariant_in_impl: INV-IBD-AUDIT",
+      "pass": true,
+      "detail": "found: INV-IBD-AUDIT"
+    },
+    {
+      "check": "invariant_in_impl: INV-IBD-ADOPTION",
+      "pass": true,
+      "detail": "found: INV-IBD-ADOPTION"
+    },
+    {
+      "check": "invariant_in_spec: INV-IBD-DEFAULT",
+      "pass": true,
+      "detail": "found: INV-IBD-DEFAULT"
+    },
+    {
+      "check": "invariant_in_spec: INV-IBD-AUTH",
+      "pass": true,
+      "detail": "found: INV-IBD-AUTH"
+    },
+    {
+      "check": "invariant_in_spec: INV-IBD-AUDIT",
+      "pass": true,
+      "detail": "found: INV-IBD-AUDIT"
+    },
+    {
+      "check": "invariant_in_spec: INV-IBD-COVERAGE",
+      "pass": true,
+      "detail": "found: INV-IBD-COVERAGE"
+    },
+    {
+      "check": "invariant_in_policy: INV-IBD-DEFAULT",
+      "pass": true,
+      "detail": "found: INV-IBD-DEFAULT"
+    },
+    {
+      "check": "invariant_in_policy: INV-IBD-AUTH",
+      "pass": true,
+      "detail": "found: INV-IBD-AUTH"
+    },
+    {
+      "check": "invariant_in_policy: INV-IBD-AUDIT",
+      "pass": true,
+      "detail": "found: INV-IBD-AUDIT"
+    },
+    {
+      "check": "invariant_in_policy: INV-IBD-COVERAGE",
+      "pass": true,
+      "detail": "found: INV-IBD-COVERAGE"
+    },
+    {
+      "check": "ac1: capabilities enumerated",
+      "pass": true,
+      "detail": "found: ImpossibleCapability::ALL"
+    },
+    {
+      "check": "ac1: five capabilities",
+      "pass": true,
+      "detail": "FsAccess, OutboundNetwork, ChildProcessSpawn, UnsignedExtension, DisableHardening"
+    },
+    {
+      "check": "ac2: blocked by default state",
+      "pass": true,
+      "detail": "found: EnforcementStatus::Blocked"
+    },
+    {
+      "check": "ac3: token expiry field",
+      "pass": true,
+      "detail": "found: expires_at_ms"
+    },
+    {
+      "check": "ac3: token signature field",
+      "pass": true,
+      "detail": "found: signature"
+    },
+    {
+      "check": "ac3: expiry check method",
+      "pass": true,
+      "detail": "found: fn is_expired("
+    },
+    {
+      "check": "ac4: actionable descriptions",
+      "pass": true,
+      "detail": "found: fn description("
+    },
+    {
+      "check": "ac4: blocked error constructor",
+      "pass": true,
+      "detail": "found: fn blocked("
+    },
+    {
+      "check": "ac5: adoption rate computation",
+      "pass": true,
+      "detail": "found: fn adoption_rate_pct("
+    },
+    {
+      "check": "ac5: deployment tracking",
+      "pass": true,
+      "detail": "found: deployments_enforced"
+    },
+    {
+      "check": "ac6: silent disable detection",
+      "pass": true,
+      "detail": "found: fn attempt_silent_disable("
+    },
+    {
+      "check": "ac6: IBD-004 event code used",
+      "pass": true,
+      "detail": "found: IBD_004_SILENT_DISABLE_DETECTED"
+    },
+    {
+      "check": "ac7: report generation",
+      "pass": true,
+      "detail": "found: fn generate_report("
+    },
+    {
+      "check": "ac7: per-capability report entry",
+      "pass": true,
+      "detail": "found: CapabilityReportEntry"
+    },
+    {
+      "check": "serde: Serialize",
+      "pass": true,
+      "detail": "found: Serialize"
+    },
+    {
+      "check": "serde: Deserialize",
+      "pass": true,
+      "detail": "found: Deserialize"
+    },
+    {
+      "check": "sha256: audit chain integrity",
+      "pass": true,
+      "detail": "found: Sha256"
+    },
+    {
+      "check": "trait: SignatureVerifier",
+      "pass": true,
+      "detail": "found: pub trait SignatureVerifier"
+    },
+    {
+      "check": "struct: HashSignatureVerifier",
+      "pass": true,
+      "detail": "found: pub struct HashSignatureVerifier"
+    },
+    {
+      "check": "test: test_five_capabilities_defined",
+      "pass": true,
+      "detail": "found: fn test_five_capabilities_defined("
+    },
+    {
+      "check": "test: test_capability_variants",
+      "pass": true,
+      "detail": "found: fn test_capability_variants("
+    },
+    {
+      "check": "test: test_capability_labels",
+      "pass": true,
+      "detail": "found: fn test_capability_labels("
+    },
+    {
+      "check": "test: test_capability_descriptions_actionable",
+      "pass": true,
+      "detail": "found: fn test_capability_descriptions_actionable("
+    },
+    {
+      "check": "test: test_capability_display",
+      "pass": true,
+      "detail": "found: fn test_capability_display("
+    },
+    {
+      "check": "test: test_all_blocked_by_default",
+      "pass": true,
+      "detail": "found: fn test_all_blocked_by_default("
+    },
+    {
+      "check": "test: test_enforce_blocked_returns_error",
+      "pass": true,
+      "detail": "found: fn test_enforce_blocked_returns_error("
+    },
+    {
+      "check": "test: test_blocked_error_is_actionable",
+      "pass": true,
+      "detail": "found: fn test_blocked_error_is_actionable("
+    },
+    {
+      "check": "test: test_opt_in_with_valid_token",
+      "pass": true,
+      "detail": "found: fn test_opt_in_with_valid_token("
+    },
+    {
+      "check": "test: test_enforce_after_opt_in_succeeds",
+      "pass": true,
+      "detail": "found: fn test_enforce_after_opt_in_succeeds("
+    },
+    {
+      "check": "test: test_opt_in_with_invalid_signature_rejected",
+      "pass": true,
+      "detail": "found: fn test_opt_in_with_invalid_signature_rejected("
+    },
+    {
+      "check": "test: test_opt_in_with_expired_token_rejected",
+      "pass": true,
+      "detail": "found: fn test_opt_in_with_expired_token_rejected("
+    },
+    {
+      "check": "test: test_token_expiry_blocks_enforce",
+      "pass": true,
+      "detail": "found: fn test_token_expiry_blocks_enforce("
+    },
+    {
+      "check": "test: test_blocked_error_contains_capability_name",
+      "pass": true,
+      "detail": "found: fn test_blocked_error_contains_capability_name("
+    },
+    {
+      "check": "test: test_expired_error_contains_token_id",
+      "pass": true,
+      "detail": "found: fn test_expired_error_contains_token_id("
+    },
+    {
+      "check": "test: test_invalid_sig_error_actionable",
+      "pass": true,
+      "detail": "found: fn test_invalid_sig_error_actionable("
+    },
+    {
+      "check": "test: test_silent_disable_error_actionable",
+      "pass": true,
+      "detail": "found: fn test_silent_disable_error_actionable("
+    },
+    {
+      "check": "test: test_error_display",
+      "pass": true,
+      "detail": "found: fn test_error_display("
+    },
+    {
+      "check": "test: test_adoption_rate_100_pct",
+      "pass": true,
+      "detail": "found: fn test_adoption_rate_100_pct("
+    },
+    {
+      "check": "test: test_adoption_rate_90_pct",
+      "pass": true,
+      "detail": "found: fn test_adoption_rate_90_pct("
+    },
+    {
+      "check": "test: test_adoption_rate_zero_deployments",
+      "pass": true,
+      "detail": "found: fn test_adoption_rate_zero_deployments("
+    },
+    {
+      "check": "test: test_record_deployment_enforced",
+      "pass": true,
+      "detail": "found: fn test_record_deployment_enforced("
+    },
+    {
+      "check": "test: test_silent_disable_blocked",
+      "pass": true,
+      "detail": "found: fn test_silent_disable_blocked("
+    },
+    {
+      "check": "test: test_silent_disable_logged",
+      "pass": true,
+      "detail": "found: fn test_silent_disable_logged("
+    },
+    {
+      "check": "test: test_silent_disable_increments_metric",
+      "pass": true,
+      "detail": "found: fn test_silent_disable_increments_metric("
+    },
+    {
+      "check": "test: test_generate_report_structure",
+      "pass": true,
+      "detail": "found: fn test_generate_report_structure("
+    },
+    {
+      "check": "test: test_report_all_blocked_by_default",
+      "pass": true,
+      "detail": "found: fn test_report_all_blocked_by_default("
+    },
+    {
+      "check": "test: test_report_after_opt_in",
+      "pass": true,
+      "detail": "found: fn test_report_after_opt_in("
+    },
+    {
+      "check": "test: test_enforce_blocked_creates_audit_entry",
+      "pass": true,
+      "detail": "found: fn test_enforce_blocked_creates_audit_entry("
+    },
+    {
+      "check": "test: test_opt_in_creates_audit_entry",
+      "pass": true,
+      "detail": "found: fn test_opt_in_creates_audit_entry("
+    },
+    {
+      "check": "test: test_audit_hash_chain",
+      "pass": true,
+      "detail": "found: fn test_audit_hash_chain("
+    },
+    {
+      "check": "test: test_audit_first_entry_has_zero_prev_hash",
+      "pass": true,
+      "detail": "found: fn test_audit_first_entry_has_zero_prev_hash("
+    },
+    {
+      "check": "test: test_token_is_expired",
+      "pass": true,
+      "detail": "found: fn test_token_is_expired("
+    },
+    {
+      "check": "test: test_token_content_hash_deterministic",
+      "pass": true,
+      "detail": "found: fn test_token_content_hash_deterministic("
+    },
+    {
+      "check": "test: test_token_content_hash_differs_for_different_caps",
+      "pass": true,
+      "detail": "found: fn test_token_content_hash_differs_for_different_caps("
+    },
+    {
+      "check": "test: test_expire_tokens_batch",
+      "pass": true,
+      "detail": "found: fn test_expire_tokens_batch("
+    },
+    {
+      "check": "test: test_expire_tokens_partial",
+      "pass": true,
+      "detail": "found: fn test_expire_tokens_partial("
+    },
+    {
+      "check": "test: test_metrics_blocked_total",
+      "pass": true,
+      "detail": "found: fn test_metrics_blocked_total("
+    },
+    {
+      "check": "test: test_metrics_opt_in_total",
+      "pass": true,
+      "detail": "found: fn test_metrics_opt_in_total("
+    },
+    {
+      "check": "test: test_event_codes_defined",
+      "pass": true,
+      "detail": "found: fn test_event_codes_defined("
+    },
+    {
+      "check": "test: test_error_codes_defined",
+      "pass": true,
+      "detail": "found: fn test_error_codes_defined("
+    },
+    {
+      "check": "test: test_invariant_tags_defined",
+      "pass": true,
+      "detail": "found: fn test_invariant_tags_defined("
+    },
+    {
+      "check": "test: test_enforcement_status_blocked",
+      "pass": true,
+      "detail": "found: fn test_enforcement_status_blocked("
+    },
+    {
+      "check": "test: test_enforcement_status_enabled",
+      "pass": true,
+      "detail": "found: fn test_enforcement_status_enabled("
+    },
+    {
+      "check": "test: test_capability_serde_roundtrip",
+      "pass": true,
+      "detail": "found: fn test_capability_serde_roundtrip("
+    },
+    {
+      "check": "test: test_token_serde_roundtrip",
+      "pass": true,
+      "detail": "found: fn test_token_serde_roundtrip("
+    },
+    {
+      "check": "test: test_enforcement_error_serde_roundtrip",
+      "pass": true,
+      "detail": "found: fn test_enforcement_error_serde_roundtrip("
+    },
+    {
+      "check": "test: test_enforcement_report_serde",
+      "pass": true,
+      "detail": "found: fn test_enforcement_report_serde("
+    },
+    {
+      "check": "test: test_metrics_serde_roundtrip",
+      "pass": true,
+      "detail": "found: fn test_metrics_serde_roundtrip("
+    },
+    {
+      "check": "test: test_full_lifecycle",
+      "pass": true,
+      "detail": "found: fn test_full_lifecycle("
+    },
+    {
+      "check": "unit test count",
+      "pass": true,
+      "detail": "50 tests (minimum 45)"
+    },
+    {
+      "check": "spec: mentions bd-1xao",
+      "pass": true,
+      "detail": "bd-1xao in spec"
+    },
+    {
+      "check": "spec: has acceptance criteria",
+      "pass": true,
+      "detail": "Acceptance Criteria section"
+    },
+    {
+      "check": "spec: has state machine",
+      "pass": true,
+      "detail": "state machine documented"
+    },
+    {
+      "check": "spec: has adoption tiers",
+      "pass": true,
+      "detail": "adoption tiers documented"
+    },
+    {
+      "check": "spec: has quantitative targets",
+      "pass": true,
+      "detail": "quantitative targets"
+    },
+    {
+      "check": "spec: has dangerous operations",
+      "pass": true,
+      "detail": "dangerous operations catalog"
+    },
+    {
+      "check": "policy: has risk description",
+      "pass": true,
+      "detail": "Risk section"
+    },
+    {
+      "check": "policy: has impact",
+      "pass": true,
+      "detail": "Impact section"
+    },
+    {
+      "check": "policy: has monitoring",
+      "pass": true,
+      "detail": "Monitoring section"
+    },
+    {
+      "check": "policy: has escalation",
+      "pass": true,
+      "detail": "Escalation section"
+    },
+    {
+      "check": "policy: has evidence requirements",
+      "pass": true,
+      "detail": "Evidence section"
+    },
+    {
+      "check": "evidence: valid JSON",
+      "pass": true,
+      "detail": "parsed successfully"
+    },
+    {
+      "check": "evidence: has bead_id",
+      "pass": true,
+      "detail": "bead_id=bd-1xao"
+    },
+    {
+      "check": "evidence: has section",
+      "pass": true,
+      "detail": "section=13"
+    },
+    {
+      "check": "evidence: has event_codes",
+      "pass": true,
+      "detail": "event_codes present"
+    },
+    {
+      "check": "evidence: has invariants",
+      "pass": true,
+      "detail": "invariants present"
+    }
+  ]
+}

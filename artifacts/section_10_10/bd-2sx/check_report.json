@@ -1,0 +1,341 @@
+{
+  "bead_id": "bd-2sx",
+  "title": "revocation freshness gate for risky product actions",
+  "section": "10.10",
+  "verdict": "PASS",
+  "total": 66,
+  "passed": 66,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "spec_exists",
+      "pass": true,
+      "detail": "found: docs/specs/section_10_10/bd-2sx_contract.md"
+    },
+    {
+      "check": "policy_exists",
+      "pass": true,
+      "detail": "found: docs/policy/revocation_freshness_gate.md"
+    },
+    {
+      "check": "impl_exists",
+      "pass": true,
+      "detail": "found: crates/franken-node/src/security/revocation_freshness_gate.rs"
+    },
+    {
+      "check": "mod_rs_registers",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_bead_id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_section_10_10",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_RFG-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_RFG-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_RFG-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_RFG-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-RFG-GATE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-RFG-PROOF",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-RFG-DEGRADE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-RFG-SESSION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_error_code_ERR_RFG_STALE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_error_code_ERR_RFG_SERVICE_DOWN",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_error_code_ERR_RFG_TAMPERED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_error_code_ERR_RFG_REPLAY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_error_code_ERR_RFG_UNAUTHENTICATED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_tiers",
+      "pass": true,
+      "detail": "all three tiers documented"
+    },
+    {
+      "check": "spec_epoch_thresholds",
+      "pass": true,
+      "detail": "epoch thresholds 1/5/10 present"
+    },
+    {
+      "check": "spec_acceptance_criteria",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_test_scenarios",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_graceful_degradation",
+      "pass": true,
+      "detail": "fail-closed, owner-bypass, proceed-with-warning documented"
+    },
+    {
+      "check": "impl_type_SafetyTier",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_type_FreshnessProof",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_type_RevocationFreshnessGate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_type_FreshnessError",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_type_GateDecision",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_method_check",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_method_classify_action",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_method_verify_proof",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_event_code_RFG-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_event_code_RFG-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_event_code_RFG-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_event_code_RFG-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_error_code_ERR_RFG_STALE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_error_code_ERR_RFG_SERVICE_DOWN",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_error_code_ERR_RFG_TAMPERED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_error_code_ERR_RFG_REPLAY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_error_code_ERR_RFG_UNAUTHENTICATED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_invariant_INV-RFG-GATE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_invariant_INV-RFG-PROOF",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_invariant_INV-RFG-DEGRADE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_invariant_INV-RFG-SESSION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_tiers",
+      "pass": true,
+      "detail": "all three tiers defined"
+    },
+    {
+      "check": "impl_unit_test_count",
+      "pass": true,
+      "detail": "37 tests found (>= 25 required)"
+    },
+    {
+      "check": "impl_replay_detection",
+      "pass": true,
+      "detail": "replay detection with nonce tracking found"
+    },
+    {
+      "check": "impl_signature_verification",
+      "pass": true,
+      "detail": "signature verification with tamper detection found"
+    },
+    {
+      "check": "policy_risk_description",
+      "pass": true,
+      "detail": "risk description documented"
+    },
+    {
+      "check": "policy_impact",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_likelihood",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_invariant_INV-RFG-GATE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_invariant_INV-RFG-PROOF",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_invariant_INV-RFG-DEGRADE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_invariant_INV-RFG-SESSION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_event_code_RFG-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_event_code_RFG-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_event_code_RFG-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_event_code_RFG-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_escalation",
+      "pass": true,
+      "detail": "escalation procedures with 60s SLA documented"
+    },
+    {
+      "check": "policy_evidence_requirements",
+      "pass": true,
+      "detail": "evidence requirements for review documented"
+    },
+    {
+      "check": "policy_countermeasures",
+      "pass": true,
+      "detail": "all four countermeasures documented"
+    },
+    {
+      "check": "unit_tests_exist",
+      "pass": true,
+      "detail": "found: tests/test_check_revocation_freshness.py"
+    },
+    {
+      "check": "verification_evidence",
+      "pass": true,
+      "detail": "valid: artifacts/section_10_10/bd-2sx/verification_evidence.json"
+    },
+    {
+      "check": "verification_summary",
+      "pass": true,
+      "detail": "found: artifacts/section_10_10/bd-2sx/verification_summary.md"
+    }
+  ]
+}

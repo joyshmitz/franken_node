@@ -1,0 +1,302 @@
+{
+  "bead_id": "bd-1u8m",
+  "title": "VEF backend-agnostic proof generation service",
+  "section": "10.18",
+  "verdict": "PASS",
+  "total": 58,
+  "passed": 58,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "impl_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/vef/proof_service.rs"
+    },
+    {
+      "check": "mod_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/vef/mod.rs"
+    },
+    {
+      "check": "integration_test_exists",
+      "pass": true,
+      "detail": "crates/franken-node/tests/vef_proof_service.rs"
+    },
+    {
+      "check": "doc_exists",
+      "pass": true,
+      "detail": "docs/specs/vef_proof_service_contract.md"
+    },
+    {
+      "check": "contract_exists",
+      "pass": true,
+      "detail": "docs/specs/section_10_18/bd-1u8m_contract.md"
+    },
+    {
+      "check": "matrix_exists",
+      "pass": true,
+      "detail": "artifacts/10.18/vef_proof_service_matrix.json"
+    },
+    {
+      "check": "evidence_exists",
+      "pass": true,
+      "detail": "artifacts/section_10_18/bd-1u8m/verification_evidence.json"
+    },
+    {
+      "check": "summary_exists",
+      "pass": true,
+      "detail": "artifacts/section_10_18/bd-1u8m/verification_summary.md"
+    },
+    {
+      "check": "checker_test_exists",
+      "pass": true,
+      "detail": "tests/test_check_vef_proof_service.py"
+    },
+    {
+      "check": "impl_symbol_pub struct ProofInputEnvelope",
+      "pass": true,
+      "detail": "pub struct ProofInputEnvelope"
+    },
+    {
+      "check": "impl_symbol_pub struct ProofOutputEnvelope",
+      "pass": true,
+      "detail": "pub struct ProofOutputEnvelope"
+    },
+    {
+      "check": "impl_symbol_pub struct ProofServiceConfig",
+      "pass": true,
+      "detail": "pub struct ProofServiceConfig"
+    },
+    {
+      "check": "impl_symbol_pub struct VefProofService",
+      "pass": true,
+      "detail": "pub struct VefProofService"
+    },
+    {
+      "check": "impl_symbol_pub struct ProofServiceError",
+      "pass": true,
+      "detail": "pub struct ProofServiceError"
+    },
+    {
+      "check": "impl_symbol_pub struct ProofServiceEvent",
+      "pass": true,
+      "detail": "pub struct ProofServiceEvent"
+    },
+    {
+      "check": "impl_symbol_pub enum ProofBackendId",
+      "pass": true,
+      "detail": "pub enum ProofBackendId"
+    },
+    {
+      "check": "impl_symbol_pub trait ProofBackend",
+      "pass": true,
+      "detail": "pub trait ProofBackend"
+    },
+    {
+      "check": "impl_symbol_pub fn from_scheduler_job",
+      "pass": true,
+      "detail": "pub fn from_scheduler_job"
+    },
+    {
+      "check": "impl_symbol_pub fn commitment_hash",
+      "pass": true,
+      "detail": "pub fn commitment_hash"
+    },
+    {
+      "check": "impl_symbol_pub fn validate_against",
+      "pass": true,
+      "detail": "pub fn validate_against"
+    },
+    {
+      "check": "impl_symbol_pub fn generate_proof",
+      "pass": true,
+      "detail": "pub fn generate_proof"
+    },
+    {
+      "check": "impl_symbol_pub fn verify_proof",
+      "pass": true,
+      "detail": "pub fn verify_proof"
+    },
+    {
+      "check": "impl_schema_version",
+      "pass": true,
+      "detail": "vef-proof-service-v1"
+    },
+    {
+      "check": "impl_has_reference_backends",
+      "pass": true,
+      "detail": "two reference backends"
+    },
+    {
+      "check": "impl_has_backend_swap_test_hint",
+      "pass": true,
+      "detail": "backend swap"
+    },
+    {
+      "check": "impl_has_simulated_failure_modes",
+      "pass": true,
+      "detail": "timeout/crash/malformed_output"
+    },
+    {
+      "check": "impl_event_VEF-PROOF-001",
+      "pass": true,
+      "detail": "VEF-PROOF-001"
+    },
+    {
+      "check": "impl_event_VEF-PROOF-002",
+      "pass": true,
+      "detail": "VEF-PROOF-002"
+    },
+    {
+      "check": "impl_event_VEF-PROOF-003",
+      "pass": true,
+      "detail": "VEF-PROOF-003"
+    },
+    {
+      "check": "impl_event_VEF-PROOF-ERR-001",
+      "pass": true,
+      "detail": "VEF-PROOF-ERR-001"
+    },
+    {
+      "check": "impl_event_VEF-PROOF-ERR-002",
+      "pass": true,
+      "detail": "VEF-PROOF-ERR-002"
+    },
+    {
+      "check": "impl_event_VEF-PROOF-ERR-003",
+      "pass": true,
+      "detail": "VEF-PROOF-ERR-003"
+    },
+    {
+      "check": "impl_event_VEF-PROOF-ERR-004",
+      "pass": true,
+      "detail": "VEF-PROOF-ERR-004"
+    },
+    {
+      "check": "impl_error_ERR-VEF-PROOF-TIMEOUT",
+      "pass": true,
+      "detail": "ERR-VEF-PROOF-TIMEOUT"
+    },
+    {
+      "check": "impl_error_ERR-VEF-PROOF-BACKEND-CRASH",
+      "pass": true,
+      "detail": "ERR-VEF-PROOF-BACKEND-CRASH"
+    },
+    {
+      "check": "impl_error_ERR-VEF-PROOF-MALFORMED-OUTPUT",
+      "pass": true,
+      "detail": "ERR-VEF-PROOF-MALFORMED-OUTPUT"
+    },
+    {
+      "check": "impl_error_ERR-VEF-PROOF-BACKEND-UNAVAILABLE",
+      "pass": true,
+      "detail": "ERR-VEF-PROOF-BACKEND-UNAVAILABLE"
+    },
+    {
+      "check": "impl_error_ERR-VEF-PROOF-INPUT",
+      "pass": true,
+      "detail": "ERR-VEF-PROOF-INPUT"
+    },
+    {
+      "check": "impl_error_ERR-VEF-PROOF-VERIFY",
+      "pass": true,
+      "detail": "ERR-VEF-PROOF-VERIFY"
+    },
+    {
+      "check": "impl_minimum_unit_tests",
+      "pass": true,
+      "detail": "10 tests"
+    },
+    {
+      "check": "mod_wires_proof_service",
+      "pass": true,
+      "detail": "pub mod proof_service;"
+    },
+    {
+      "check": "doc_mentions_bead",
+      "pass": true,
+      "detail": "bd-1u8m"
+    },
+    {
+      "check": "doc_mentions_backend_agnostic",
+      "pass": true,
+      "detail": "backend-agnostic"
+    },
+    {
+      "check": "doc_mentions_fail_closed",
+      "pass": true,
+      "detail": "fail-closed"
+    },
+    {
+      "check": "doc_mentions_trace",
+      "pass": true,
+      "detail": "trace"
+    },
+    {
+      "check": "contract_mentions_acceptance",
+      "pass": true,
+      "detail": "acceptance"
+    },
+    {
+      "check": "contract_mentions_validation",
+      "pass": true,
+      "detail": "validation"
+    },
+    {
+      "check": "matrix_parseable_json",
+      "pass": true,
+      "detail": "valid JSON"
+    },
+    {
+      "check": "matrix_bead_id",
+      "pass": true,
+      "detail": "bd-1u8m"
+    },
+    {
+      "check": "matrix_section",
+      "pass": true,
+      "detail": "10.18"
+    },
+    {
+      "check": "matrix_backends_list",
+      "pass": true,
+      "detail": "2"
+    },
+    {
+      "check": "matrix_backend_id_coverage",
+      "pass": true,
+      "detail": "['double_hash_attestation_v1', 'hash_attestation_v1']"
+    },
+    {
+      "check": "evidence_parseable_json",
+      "pass": true,
+      "detail": "valid JSON"
+    },
+    {
+      "check": "evidence_bead_id",
+      "pass": true,
+      "detail": "bd-1u8m"
+    },
+    {
+      "check": "evidence_verdict_domain",
+      "pass": true,
+      "detail": "PENDING"
+    },
+    {
+      "check": "evidence_checks_list",
+      "pass": true,
+      "detail": "checks list"
+    },
+    {
+      "check": "summary_mentions_bead",
+      "pass": true,
+      "detail": "bd-1u8m"
+    },
+    {
+      "check": "summary_mentions_verdict",
+      "pass": true,
+      "detail": "verdict"
+    }
+  ],
+  "timestamp": "2026-02-22T07:11:55.317360+00:00"
+}

@@ -1,0 +1,725 @@
+{
+  "bead_id": "bd-1xwz",
+  "title": "Performance budget guard for asupersync integration overhead",
+  "section": "10.15",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "test_count": "52",
+  "summary": {
+    "passing": 142,
+    "failing": 0,
+    "total": 142
+  },
+  "checks": [
+    {
+      "check": "file: implementation",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/connector/perf_budget_guard.rs"
+    },
+    {
+      "check": "file: conformance test",
+      "pass": true,
+      "detail": "exists: tests/conformance/perf_budget_guard.rs"
+    },
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_15/bd-1xwz_contract.md"
+    },
+    {
+      "check": "file: overhead CSV report",
+      "pass": true,
+      "detail": "exists: artifacts/10.15/integration_overhead_report.csv"
+    },
+    {
+      "check": "module registered in mod.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl unit test count",
+      "pass": true,
+      "detail": "52 tests (minimum 40)"
+    },
+    {
+      "check": "conformance test count",
+      "pass": true,
+      "detail": "20 tests (minimum 15)"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum HotPath",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct HotPathBudget",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct BudgetPolicy",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct MeasurementResult",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum GateDecision",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct OverheadEvent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct OverheadGateSummary",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct OverheadGate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn evaluate(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn evaluate_batch(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn gate_pass(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn summary(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn to_csv(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn to_report(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn to_csv_row(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn take_events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn results(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn policy(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn from_measurements(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn budget_for(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn default_policy(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn to_json(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn label(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn all(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn is_pass(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn is_fail(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn with_default_policy(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: PRF-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: PRF-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: PRF-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: PRF-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: PRF-005",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-PBG-BUDGET",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-PBG-GATE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-PBG-FLAMEGRAPH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-PBG-COLD-START",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "hot_path: LifecycleTransition",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "hot_path: HealthGateEvaluation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "hot_path: RolloutStateChange",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "hot_path: FencingTokenOp",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_hot_path_all",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_hot_path_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_hot_path_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_hot_path_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_default_policy_has_all_paths",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_budget_for_health_gate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_budget_for_missing",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_policy_to_json",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_policy_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_measurement_within_budget",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_measurement_over_budget",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_measurement_overhead_calculation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_measurement_zero_baseline",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_measurement_csv_row",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_measurement_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_measurement_cold_start_over_budget",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_gate_decision_pass",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_gate_decision_fail",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_gate_decision_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_gate_decision_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_summary_gate_pass",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_summary_gate_fail",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_summary_gate_fail_empty",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_summary_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_gate_evaluate_within_budget",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_gate_evaluate_over_budget",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_gate_pass_all_within",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_gate_fail_one_over",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_gate_evaluate_batch",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_gate_evaluate_batch_mixed",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_evaluate_emits_prf001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_evaluate_within_emits_prf002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_evaluate_over_emits_prf003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_evaluate_emits_prf004_with_flamegraph",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_evaluate_no_prf004_without_flamegraph",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_evaluate_emits_prf005",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_take_events_drains",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_csv_header",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_csv_with_results",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_report_structure",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_report_results",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_default_gate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_adversarial_zero_budgets",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_adversarial_infinity_budgets",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_adversarial_no_flamegraph",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_summary_all_within",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_summary_mixed",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_event_codes_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_invariant_constants_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_overhead_event_serde",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_determinism_identical_policy",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test: test_fail_has_violation_details",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_lifecycle_transition_within_budget",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_health_gate_evaluation_within_budget",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_rollout_state_change_within_budget",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_fencing_token_op_within_budget",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_over_budget_fails_gate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_over_budget_has_violations",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_cold_start_over_budget_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_batch_all_hot_paths_within",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_batch_mixed_results",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_event_codes_emitted",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_over_budget_emits_prf003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_flamegraph_emits_prf004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_invariant_budget_machine_readable",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_invariant_gate_blocks_violations",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_invariant_flamegraph_tracked",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_invariant_cold_start_separate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_summary_after_batch",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_csv_report_format",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_json_report_structure",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_test: test_deterministic_overhead_calculation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "overhead CSV: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "overhead CSV: valid header",
+      "pass": true,
+      "detail": "header present"
+    },
+    {
+      "check": "overhead CSV: all hot paths",
+      "pass": true,
+      "detail": "4 data rows (need 4)"
+    },
+    {
+      "check": "overhead CSV: lifecycle_transition row",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "overhead CSV: health_gate_evaluation row",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "overhead CSV: rollout_state_change row",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "overhead CSV: fencing_token_op row",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "overhead CSV: all within budget",
+      "pass": true,
+      "detail": "all within budget"
+    },
+    {
+      "check": "spec: LifecycleTransition documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: HealthGateEvaluation documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: RolloutStateChange documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: FencingTokenOp documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: event code PRF-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: event code PRF-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: event code PRF-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: event code PRF-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: event code PRF-005",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: invariant INV-PBG-BUDGET",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: invariant INV-PBG-GATE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: invariant INV-PBG-FLAMEGRAPH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: invariant INV-PBG-COLD-START",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

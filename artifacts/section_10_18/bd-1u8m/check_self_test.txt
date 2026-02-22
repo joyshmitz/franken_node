@@ -1,0 +1,41 @@
+{
+  "bead_id": "bd-1u8m",
+  "mode": "self-test",
+  "verdict": "PASS",
+  "total": 6,
+  "passed": 6,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "event_code_count",
+      "pass": true,
+      "detail": "7"
+    },
+    {
+      "check": "error_code_count",
+      "pass": true,
+      "detail": "6"
+    },
+    {
+      "check": "symbol_count",
+      "pass": true,
+      "detail": "13"
+    },
+    {
+      "check": "run_all_is_dict",
+      "pass": true,
+      "detail": "dict"
+    },
+    {
+      "check": "run_all_has_checks",
+      "pass": true,
+      "detail": "checks list"
+    },
+    {
+      "check": "run_all_total_matches",
+      "pass": true,
+      "detail": "total vs checks"
+    }
+  ],
+  "timestamp": "2026-02-22T08:18:13.579075+00:00"
+}

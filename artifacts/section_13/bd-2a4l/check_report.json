@@ -1,0 +1,231 @@
+{
+  "bead_id": "bd-2a4l",
+  "title": "Externally Verifiable Trust/Security Claims",
+  "section": "13",
+  "verdict": "PASS",
+  "total": 44,
+  "passed": 44,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "file_exists:spec",
+      "pass": true,
+      "detail": "spec at docs/specs/section_13/bd-2a4l_contract.md"
+    },
+    {
+      "name": "file_exists:policy",
+      "pass": true,
+      "detail": "policy at docs/policy/externally_verifiable_claims.md"
+    },
+    {
+      "name": "dimension:VD-01",
+      "pass": true,
+      "detail": "VD-01 in spec"
+    },
+    {
+      "name": "dimension:VD-02",
+      "pass": true,
+      "detail": "VD-02 in spec"
+    },
+    {
+      "name": "dimension:VD-03",
+      "pass": true,
+      "detail": "VD-03 in spec"
+    },
+    {
+      "name": "dimension:VD-04",
+      "pass": true,
+      "detail": "VD-04 in spec"
+    },
+    {
+      "name": "dimension:VD-05",
+      "pass": true,
+      "detail": "VD-05 in spec"
+    },
+    {
+      "name": "target:100%",
+      "pass": true,
+      "detail": "target 100% in spec"
+    },
+    {
+      "name": "target:95%",
+      "pass": true,
+      "detail": "target 95% in spec"
+    },
+    {
+      "name": "target:30 days",
+      "pass": true,
+      "detail": "target 30 days in spec"
+    },
+    {
+      "name": "target:sha-256",
+      "pass": true,
+      "detail": "target sha-256 in spec"
+    },
+    {
+      "name": "event_code:EVC-001",
+      "pass": true,
+      "detail": "EVC-001"
+    },
+    {
+      "name": "event_code:EVC-002",
+      "pass": true,
+      "detail": "EVC-002"
+    },
+    {
+      "name": "event_code:EVC-003",
+      "pass": true,
+      "detail": "EVC-003"
+    },
+    {
+      "name": "event_code:EVC-004",
+      "pass": true,
+      "detail": "EVC-004"
+    },
+    {
+      "name": "invariant:INV-EVC-COVERAGE",
+      "pass": true,
+      "detail": "INV-EVC-COVERAGE"
+    },
+    {
+      "name": "invariant:INV-EVC-REPRODUCE",
+      "pass": true,
+      "detail": "INV-EVC-REPRODUCE"
+    },
+    {
+      "name": "invariant:INV-EVC-DETERMINISM",
+      "pass": true,
+      "detail": "INV-EVC-DETERMINISM"
+    },
+    {
+      "name": "invariant:INV-EVC-INTEGRITY",
+      "pass": true,
+      "detail": "INV-EVC-INTEGRITY"
+    },
+    {
+      "name": "bundle:claim.json",
+      "pass": true,
+      "detail": "bundle format: claim.json"
+    },
+    {
+      "name": "bundle:procedure.md",
+      "pass": true,
+      "detail": "bundle format: procedure.md"
+    },
+    {
+      "name": "bundle:manifest.json",
+      "pass": true,
+      "detail": "bundle format: manifest.json"
+    },
+    {
+      "name": "bundle:sha-256",
+      "pass": true,
+      "detail": "bundle format: sha-256"
+    },
+    {
+      "name": "reproduction:reproduction",
+      "pass": true,
+      "detail": "reproduction: reproduction"
+    },
+    {
+      "name": "reproduction:external",
+      "pass": true,
+      "detail": "reproduction: external"
+    },
+    {
+      "name": "reproduction:determinism",
+      "pass": true,
+      "detail": "reproduction: determinism"
+    },
+    {
+      "name": "reproduction:timestamp",
+      "pass": true,
+      "detail": "reproduction: timestamp"
+    },
+    {
+      "name": "reproduction:non-determinism",
+      "pass": true,
+      "detail": "reproduction: non-determinism"
+    },
+    {
+      "name": "adversarial:corrupted",
+      "pass": true,
+      "detail": "adversarial: corrupted"
+    },
+    {
+      "name": "adversarial:truncated",
+      "pass": true,
+      "detail": "adversarial: truncated"
+    },
+    {
+      "name": "adversarial:tampered",
+      "pass": true,
+      "detail": "adversarial: tampered"
+    },
+    {
+      "name": "adversarial:replayed",
+      "pass": true,
+      "detail": "adversarial: replayed"
+    },
+    {
+      "name": "ci:release gate",
+      "pass": true,
+      "detail": "CI: release gate"
+    },
+    {
+      "name": "ci:freshness",
+      "pass": true,
+      "detail": "CI: freshness"
+    },
+    {
+      "name": "ci:nightly",
+      "pass": true,
+      "detail": "CI: nightly"
+    },
+    {
+      "name": "category:compatibility",
+      "pass": true,
+      "detail": "category: compatibility"
+    },
+    {
+      "name": "category:security",
+      "pass": true,
+      "detail": "category: security"
+    },
+    {
+      "name": "category:trust",
+      "pass": true,
+      "detail": "category: trust"
+    },
+    {
+      "name": "category:performance",
+      "pass": true,
+      "detail": "category: performance"
+    },
+    {
+      "name": "category:migration",
+      "pass": true,
+      "detail": "category: migration"
+    },
+    {
+      "name": "acceptance:claim registry",
+      "pass": true,
+      "detail": "acceptance: claim registry"
+    },
+    {
+      "name": "acceptance:content-addressed",
+      "pass": true,
+      "detail": "acceptance: content-addressed"
+    },
+    {
+      "name": "acceptance:external-reproduction",
+      "pass": true,
+      "detail": "acceptance: external-reproduction"
+    },
+    {
+      "name": "acceptance:adversarial",
+      "pass": true,
+      "detail": "acceptance: adversarial"
+    }
+  ]
+}

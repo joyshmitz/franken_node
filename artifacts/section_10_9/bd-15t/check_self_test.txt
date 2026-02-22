@@ -1,0 +1,430 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "check": "file: category_shift implementation",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/supply_chain/category_shift.rs"
+    },
+    {
+      "check": "file: supply_chain module",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/supply_chain/mod.rs"
+    },
+    {
+      "check": "file: bd-15t contract spec",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_9/bd-15t_contract.md"
+    },
+    {
+      "check": "file: category shift reporting policy",
+      "pass": true,
+      "detail": "exists: docs/policy/category_shift_reporting.md"
+    },
+    {
+      "check": "file: verification evidence",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_9/bd-15t/verification_evidence.json"
+    },
+    {
+      "check": "file: verification summary",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_9/bd-15t/verification_summary.md"
+    },
+    {
+      "check": "mod export: category_shift",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct CategoryShiftReport",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct ShiftEvidence",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct ReportingPipeline",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct ReportClaim",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct ThresholdResult",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct MoonshotBetEntry",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct ManifestEntry",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct DimensionData",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct ReportDiffEntry",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct PipelineEvent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct PipelineConfig",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct ClaimInput",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct EvidenceInput",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub enum ThresholdStatus",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub enum ReportDimension",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub enum BetStatus",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub enum FreshnessStatus",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub enum ClaimOutcome",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub enum CategoryShiftError",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: CSR_PIPELINE_STARTED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: CSR_DIMENSION_COLLECTED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: CSR_CLAIM_VERIFIED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: CSR_REPORT_GENERATED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_code: ERR_CSR_SOURCE_UNAVAILABLE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_code: ERR_CSR_CLAIM_STALE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_code: ERR_CSR_CLAIM_INVALID",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_code: ERR_CSR_HASH_MISMATCH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV_CSR_CLAIM_VALID",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV_CSR_MANIFEST",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV_CSR_REPRODUCE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV_CSR_IDEMPOTENT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "function: pub fn start(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "function: pub fn ingest_dimension(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "function: pub fn register_bet(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "function: pub fn generate_report(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "function: pub fn render_markdown(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "function: pub fn render_json(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "function: pub fn diff_reports(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "function: pub fn sha256_hex(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "function: pub fn demo_pipeline(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "threshold: THRESHOLD_COMPAT_PERCENT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "threshold: THRESHOLD_MIGRATION_VELOCITY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "threshold: THRESHOLD_COMPROMISE_REDUCTION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: ## Scope",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: ## Report Dimensions",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: ## Category-Defining Thresholds",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: ## Reproducibility Requirements",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: ## Output Formats",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: ## Event Codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: ## Error Codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: ## Invariants",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: ## Acceptance Criteria",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: ## 1. Overview",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: ## 2. Report Generation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: ## 3. Claim Integrity",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: ## 4. Category-Defining Thresholds",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: ## 5. Moonshot Bet Status",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: ## 6. Output Format Requirements",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: ## 7. Versioning and Retention",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: ## 8. Idempotency",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust unit test count",
+      "pass": true,
+      "detail": "34 tests found"
+    },
+    {
+      "check": "impl: #[cfg(test)]",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "simulation: 5 dimensions collected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "simulation: all claims verified",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "simulation: all claims have reproduce scripts",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "simulation: 3 thresholds evaluated",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "simulation: all thresholds met or exceeded",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "simulation: bet status entries present",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "simulation: manifest has entries",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "simulation: idempotent hash",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "simulation: JSON format supported",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "simulation: Markdown format supported",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_threshold: >= 95%",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_threshold: >= 3x",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_threshold: >= 10x",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "evidence: has bead_id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "evidence: has section",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "evidence: has verdict",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

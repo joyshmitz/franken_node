@@ -1,0 +1,364 @@
+{
+  "bead_id": "bd-pga7",
+  "title": "Deterministic incident containment and explanation",
+  "section": "13",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "summary": {
+    "passing": 70,
+    "failing": 0,
+    "total": 70
+  },
+  "checks": [
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_13/bd-pga7_contract.md"
+    },
+    {
+      "check": "file: policy document",
+      "pass": true,
+      "detail": "exists: docs/policy/deterministic_incident_containment.md"
+    },
+    {
+      "check": "spec containment: blast_radius_bound",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec containment: time_to_contain",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec containment: automated_actions",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec action: isolate_component",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec action: shed_load",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec action: revoke_credentials",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec action: disable_extension",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec action: snapshot_state",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec action: emit_alert",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec explanation: evidence_completeness",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec explanation: root_cause_reproducibility",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec explanation: explanation_latency",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "blast_radius target <= 3 components",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "time_to_contain target <= 60s",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "evidence_completeness target >= 95%",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event_code: DIC-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy event_code: DIC-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event_code: DIC-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy event_code: DIC-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event_code: DIC-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy event_code: DIC-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event_code: DIC-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy event_code: DIC-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-DIC-CONTAIN",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-DIC-EXPLAIN",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-DIC-BOUND",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec invariant: INV-DIC-COMPLETE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "quantitative targets: blast_radius",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "quantitative targets: time_to_contain",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "quantitative targets: evidence_completeness",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "quantitative targets: explanation_reproducibility",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "acceptance criteria section",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "acceptance: Spec contract exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "acceptance: Policy document exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "acceptance: event codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "acceptance: invariants",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "acceptance: blast_radius",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "acceptance: time_to_contain",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "acceptance: evidence_completeness",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "acceptance: explanation_reproducibility",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "acceptance: Containment determinism",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "acceptance: Explanation determinism",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "acceptance: Verification script passes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "acceptance: Evidence artifact",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy containment: Blast Radius",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy containment: Time Bounds",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy containment: Automated Actions",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy explanation: Evidence Capture",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy explanation: Reproducibility",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy explanation: Latency",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: Escalation Procedures",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy escalation: Containment Divergence",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy escalation: Explanation Divergence",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy escalation: Blast Radius Exceeded",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy escalation: Evidence Completeness Below",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: Monitoring",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy metric: dic_containment_time_p99",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy metric: dic_blast_radius_max",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy metric: dic_explanation_time_p99",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy metric: dic_evidence_completeness_min",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy metric: dic_containment_divergence_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy metric: dic_explanation_divergence_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: Evidence Requirements",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Containment Determinism",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Explanation Determinism",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec determinism: pure function",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "verification evidence",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "verification summary",
+      "pass": true,
+      "detail": "valid"
+    }
+  ]
+}

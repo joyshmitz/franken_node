@@ -1,0 +1,161 @@
+{
+  "bead_id": "bd-3o6",
+  "title": "Structured observability adoption across operational surfaces",
+  "section": "10.8",
+  "verdict": "PASS",
+  "total": 30,
+  "passed": 30,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "file_exists: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_8/bd-3o6_contract.md"
+    },
+    {
+      "check": "file_exists: policy document",
+      "pass": true,
+      "detail": "exists: docs/policy/structured_observability.md"
+    },
+    {
+      "check": "file_exists: telemetry namespace impl (10.13)",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/connector/telemetry_namespace.rs"
+    },
+    {
+      "check": "file_exists: error code registry impl (10.13)",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/connector/error_code_registry.rs"
+    },
+    {
+      "check": "file_exists: trace context impl",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/connector/trace_context.rs"
+    },
+    {
+      "check": "spec_event_codes",
+      "pass": true,
+      "detail": "all 4 event codes present"
+    },
+    {
+      "check": "spec_invariants",
+      "pass": true,
+      "detail": "all 4 invariants present"
+    },
+    {
+      "check": "spec_operational_surfaces",
+      "pass": true,
+      "detail": "all 6 surfaces listed"
+    },
+    {
+      "check": "spec_recovery_hint_schema",
+      "pass": true,
+      "detail": "all 4 hint fields documented"
+    },
+    {
+      "check": "spec_section: 'Backward Compatibility'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_section: 'Adoption Checklist'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Canonical Log Format'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Error Taxonomy'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_severity_levels",
+      "pass": true,
+      "detail": "all 3 severity levels present"
+    },
+    {
+      "check": "policy_field: 'trace_id'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_recovery_hints",
+      "pass": true,
+      "detail": "all 5 recovery actions documented"
+    },
+    {
+      "check": "policy_section: 'Operational Surface Inventory'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_event_codes",
+      "pass": true,
+      "detail": "all 4 event codes in policy"
+    },
+    {
+      "check": "policy_invariants",
+      "pass": true,
+      "detail": "all 4 invariants in policy"
+    },
+    {
+      "check": "policy_section: 'Deprecation Cycle'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_section: 'Governance'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "file_exists: telemetry namespace spec (10.13)",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_13/bd-1ugy_contract.md"
+    },
+    {
+      "check": "file_exists: error code registry spec (10.13)",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_13/bd-novi_contract.md"
+    },
+    {
+      "check": "telemetry_ns: 'struct SchemaRegistry'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_registry: 'struct RecoveryInfo'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "trace_ctx: 'struct TraceContext'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cli_surface: 'pub json: bool'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_canonical_prefixes",
+      "pass": true,
+      "detail": "all 4 canonical prefixes documented"
+    },
+    {
+      "check": "policy_canonical_prefixes",
+      "pass": true,
+      "detail": "canonical prefix pattern found"
+    },
+    {
+      "check": "spec_section: 'Dependencies'",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

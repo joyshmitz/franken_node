@@ -1,0 +1,434 @@
+{
+  "bead_id": "bd-28wj",
+  "title": "Non-Negotiable Constraints \u2014 13 hard guardrails",
+  "section": "4",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 84,
+    "failing": 0,
+    "total": 84
+  },
+  "checks": [
+    {
+      "check": "file: constraint doc",
+      "pass": true,
+      "detail": "exists: docs/governance/non_negotiable_constraints.md"
+    },
+    {
+      "check": "file: waiver registry",
+      "pass": true,
+      "detail": "exists: docs/governance/waiver_registry.json"
+    },
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_4/bd-28wj_contract.md"
+    },
+    {
+      "check": "doc section: Constraint Registry",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc section: Waiver Process",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "doc section: Quarterly Audit",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "constraint C-01 documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "constraint C-02 documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "constraint C-03 documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "constraint C-04 documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "constraint C-05 documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "constraint C-06 documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "constraint C-07 documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "constraint C-08 documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "constraint C-09 documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "constraint C-10 documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "constraint C-11 documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "constraint C-12 documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "constraint C-13 documented",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-01: keyword 'Engine'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-01: keyword 'franken_engine'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-01: keyword 'fork'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-02: keyword 'Asupersync'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-02: keyword 'Cx-first'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-02: keyword 'region-owned'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-03: keyword 'FrankenTUI'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-03: keyword 'frankentui'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-04: keyword 'FrankenSQLite'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-04: keyword 'frankensqlite'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-05: keyword 'SQLModel'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-05: keyword 'sqlmodel_rust'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-06: keyword 'FastAPI'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-06: keyword 'fastapi_rust'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-07: keyword 'Waiver'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-07: keyword 'rationale'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-07: keyword 'expiry'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-08: keyword 'Compatibility'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-08: keyword 'shim'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-08: keyword 'policy-visible'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-09: keyword 'line-by-line'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-09: keyword 'translation'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-09: keyword 'spec extraction'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-10: keyword 'Policy-gated'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-10: keyword 'dangerous'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-10: keyword 'auditable'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-11: keyword 'Evidence'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-11: keyword 'benchmark'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-11: keyword 'reproducible'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-12: keyword 'Deterministic'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-12: keyword 'migration'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-12: keyword 'replayable'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-13: keyword 'Safe defaults'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-13: keyword 'safe operation'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-01: violation code NNC-002:C-01",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-02: violation code NNC-002:C-02",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-03: violation code NNC-002:C-03",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-04: violation code NNC-002:C-04",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-05: violation code NNC-002:C-05",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-06: violation code NNC-002:C-06",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-07: violation code NNC-002:C-07",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-08: violation code NNC-002:C-08",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-09: violation code NNC-002:C-09",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-10: violation code NNC-002:C-10",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-11: violation code NNC-002:C-11",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-12: violation code NNC-002:C-12",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "C-13: violation code NNC-002:C-13",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "severity: HARD",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "severity: SOFT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "enforcement: CI gates referenced",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "enforcement: review gates referenced",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "fix instructions for all constraints",
+      "pass": true,
+      "detail": "13 fix instructions (need 13)"
+    },
+    {
+      "check": "waiver registry: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "waiver registry: valid JSON",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "waiver registry: schema_version",
+      "pass": true,
+      "detail": "1.0"
+    },
+    {
+      "check": "waiver registry: waivers array",
+      "pass": true,
+      "detail": "array present"
+    },
+    {
+      "check": "spec: event_code NNC-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: event_code NNC-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: event_code NNC-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: event_code NNC-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: invariant INV-NNC-COMPLETE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: invariant INV-NNC-ACTIONABLE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: invariant INV-NNC-AUDITABLE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: invariant INV-NNC-NO-SILENT-EROSION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: references 13 constraints",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

@@ -1,0 +1,305 @@
+{
+  "bead_id": "bd-1cs7",
+  "section": "10.15",
+  "gate_script": "check_cancellation_protocol.py",
+  "checks_passed": 59,
+  "checks_total": 59,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "source_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/connector/cancellation_protocol.rs"
+    },
+    {
+      "check": "module_wiring",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "check": "spec_contract_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_15/bd-1cs7_contract.md"
+    },
+    {
+      "check": "conformance_test_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/tests/conformance/cancel_drain_finalize.rs"
+    },
+    {
+      "check": "timing_csv_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/10.15/cancel_protocol_timing.csv"
+    },
+    {
+      "check": "evidence_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_15/bd-1cs7/verification_evidence.json"
+    },
+    {
+      "check": "summary_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_15/bd-1cs7/verification_summary.md"
+    },
+    {
+      "check": "phase_Idle",
+      "passed": true,
+      "detail": "Idle"
+    },
+    {
+      "check": "phase_Requested",
+      "passed": true,
+      "detail": "Requested"
+    },
+    {
+      "check": "phase_Draining",
+      "passed": true,
+      "detail": "Draining"
+    },
+    {
+      "check": "phase_Finalizing",
+      "passed": true,
+      "detail": "Finalizing"
+    },
+    {
+      "check": "phase_Completed",
+      "passed": true,
+      "detail": "Completed"
+    },
+    {
+      "check": "type_CancellationPhase",
+      "passed": true,
+      "detail": "CancellationPhase"
+    },
+    {
+      "check": "type_CancellationBudget",
+      "passed": true,
+      "detail": "CancellationBudget"
+    },
+    {
+      "check": "type_CancellationProtocol",
+      "passed": true,
+      "detail": "CancellationProtocol"
+    },
+    {
+      "check": "type_CancellationAuditEvent",
+      "passed": true,
+      "detail": "CancellationAuditEvent"
+    },
+    {
+      "check": "type_ResourceTracker",
+      "passed": true,
+      "detail": "ResourceTracker"
+    },
+    {
+      "check": "type_ResourceGuard",
+      "passed": true,
+      "detail": "ResourceGuard"
+    },
+    {
+      "check": "type_PhaseTransitionResult",
+      "passed": true,
+      "detail": "PhaseTransitionResult"
+    },
+    {
+      "check": "type_TimingRow",
+      "passed": true,
+      "detail": "TimingRow"
+    },
+    {
+      "check": "type_WorkflowKind",
+      "passed": true,
+      "detail": "WorkflowKind"
+    },
+    {
+      "check": "workflow_coverage",
+      "passed": true,
+      "detail": "6/6 workflows"
+    },
+    {
+      "check": "fn_request",
+      "passed": true,
+      "detail": "REQUEST phase"
+    },
+    {
+      "check": "fn_drain",
+      "passed": true,
+      "detail": "DRAIN phase"
+    },
+    {
+      "check": "fn_finalize",
+      "passed": true,
+      "detail": "FINALIZE phase"
+    },
+    {
+      "check": "fn_run_full",
+      "passed": true,
+      "detail": "Full three-phase execution"
+    },
+    {
+      "check": "fn_force_finalize",
+      "passed": true,
+      "detail": "Force-finalize"
+    },
+    {
+      "check": "budget_timeout_ms",
+      "passed": true,
+      "detail": "Per-workflow timeout field"
+    },
+    {
+      "check": "budget_is_exceeded",
+      "passed": true,
+      "detail": "Budget exceeded check"
+    },
+    {
+      "check": "budget_from_kind",
+      "passed": true,
+      "detail": "Budget from WorkflowKind"
+    },
+    {
+      "check": "resource_acquire",
+      "passed": true,
+      "detail": "Resource acquisition"
+    },
+    {
+      "check": "resource_release",
+      "passed": true,
+      "detail": "Resource release"
+    },
+    {
+      "check": "resource_has_leaks",
+      "passed": true,
+      "detail": "Leak detection"
+    },
+    {
+      "check": "resource_release_all",
+      "passed": true,
+      "detail": "Bulk resource release"
+    },
+    {
+      "check": "drop_safety",
+      "passed": true,
+      "detail": "Drop safety"
+    },
+    {
+      "check": "fn_register_child",
+      "passed": true,
+      "detail": "Child registration"
+    },
+    {
+      "check": "fn_complete_child",
+      "passed": true,
+      "detail": "Child completion"
+    },
+    {
+      "check": "audit_log",
+      "passed": true,
+      "detail": "JSONL audit export"
+    },
+    {
+      "check": "fn_generate_timing_csv",
+      "passed": true,
+      "detail": "Timing CSV generation"
+    },
+    {
+      "check": "event_codes",
+      "passed": true,
+      "detail": "6/6"
+    },
+    {
+      "check": "error_codes",
+      "passed": true,
+      "detail": "4/4"
+    },
+    {
+      "check": "invariants",
+      "passed": true,
+      "detail": "4/4"
+    },
+    {
+      "check": "schema_version",
+      "passed": true,
+      "detail": "cancel-v1.0"
+    },
+    {
+      "check": "bead_id",
+      "passed": true,
+      "detail": "bd-1cs7"
+    },
+    {
+      "check": "lifecycle_cancelling_state",
+      "passed": true,
+      "detail": "Cancelling state in lifecycle"
+    },
+    {
+      "check": "lifecycle_cancel_transition",
+      "passed": true,
+      "detail": "Cancel transition wiring"
+    },
+    {
+      "check": "rollout_cancel_phase",
+      "passed": true,
+      "detail": "cancel_phase field in rollout"
+    },
+    {
+      "check": "rollout_set_cancel",
+      "passed": true,
+      "detail": "set_cancel_phase method"
+    },
+    {
+      "check": "rollout_is_cancelling",
+      "passed": true,
+      "detail": "is_cancelling method"
+    },
+    {
+      "check": "rollout_imports_cancel",
+      "passed": true,
+      "detail": "imports CancellationPhase"
+    },
+    {
+      "check": "test_coverage",
+      "passed": true,
+      "detail": "34 tests"
+    },
+    {
+      "check": "timing_csv_header",
+      "passed": true,
+      "detail": "CSV header"
+    },
+    {
+      "check": "timing_csv_has_rows",
+      "passed": true,
+      "detail": "18 data rows"
+    },
+    {
+      "check": "spec_invariants",
+      "passed": true,
+      "detail": "Invariants"
+    },
+    {
+      "check": "spec_event_codes",
+      "passed": true,
+      "detail": "Event Codes"
+    },
+    {
+      "check": "spec_error_codes",
+      "passed": true,
+      "detail": "Error Codes"
+    },
+    {
+      "check": "spec_acceptance_criteria",
+      "passed": true,
+      "detail": "Acceptance Criteria"
+    },
+    {
+      "check": "spec_three_phase_protocol",
+      "passed": true,
+      "detail": "Three-Phase Protocol"
+    },
+    {
+      "check": "spec_gate_behavior",
+      "passed": true,
+      "detail": "Gate Behavior"
+    }
+  ]
+}

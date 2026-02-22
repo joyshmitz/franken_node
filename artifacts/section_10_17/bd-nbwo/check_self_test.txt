@@ -1,0 +1,21 @@
+  [PASS] REQUIRED_EVENT_CODES == 7
+  [PASS] REQUIRED_ERROR_CODES == 7
+  [PASS] REQUIRED_INVARIANTS == 5
+  [PASS] REQUIRED_TYPES >= 9
+  [PASS] CORE_OPERATIONS == 8
+  [PASS] _checks returns list
+  [PASS] _checks returns dicts
+  [PASS] _checks >= 25 checks
+  [PASS] check 'Rust module exists' has required keys
+  [PASS] check 'Wired into connector/mod.rs' has required keys
+  [PASS] check 'Spec contract exists' has required keys
+  [PASS] check 'Test file exists' has required keys
+  [PASS] check 'Evidence exists with PASS verdict' has required keys
+  [PASS] run_all has bead_id
+  [PASS] run_all has section
+  [PASS] run_all has verdict
+  [PASS] run_all has events
+  [PASS] run_all has summary
+  [PASS] run_all has timestamp
+
+self-test: 19/19 PASS

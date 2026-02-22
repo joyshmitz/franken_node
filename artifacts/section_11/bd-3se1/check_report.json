@@ -1,0 +1,21 @@
+{
+  "bead_id": "bd-3se1",
+  "changed_file_count": 0,
+  "changed_files_source": "git-diff",
+  "errors": [],
+  "events": [],
+  "example": "docs/change_summaries/example_change_summary.json",
+  "ok": true,
+  "required_event_codes": [
+    "CONTRACT_CHANGE_SUMMARY_VALIDATED",
+    "CONTRACT_INCOMPLETE",
+    "CONTRACT_MISSING"
+  ],
+  "requires_change_summary": false,
+  "subsystem_change_count": 0,
+  "summary_directory": "docs/change_summaries",
+  "summary_files_checked": [],
+  "template": "docs/templates/change_summary_template.md",
+  "validated_summaries": [],
+  "warnings": []
+}

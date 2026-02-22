@@ -1,0 +1,5 @@
+{
+  "metrics_check_ok": true,
+  "self_test": "passed",
+  "token_check_ok": true
+}

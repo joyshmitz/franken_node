@@ -1,0 +1,323 @@
+{
+  "bead_id": "bd-nbwo",
+  "title": "Universal Verifier SDK and Replay Capsule Format",
+  "section": "10.17",
+  "verdict": "PASS",
+  "total": 56,
+  "passed": 56,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "Rust module exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/connector/universal_verifier_sdk.rs"
+    },
+    {
+      "check": "Wired into connector/mod.rs",
+      "passed": true,
+      "detail": "universal_verifier_sdk in mod.rs"
+    },
+    {
+      "check": "Spec contract exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_17/bd-nbwo_contract.md"
+    },
+    {
+      "check": "Test file exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/tests/test_check_universal_verifier_sdk.py"
+    },
+    {
+      "check": "Evidence exists with PASS verdict",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_17/bd-nbwo/verification_evidence.json"
+    },
+    {
+      "check": "Verification summary exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_17/bd-nbwo/verification_summary.md"
+    },
+    {
+      "check": "Event code VSDK_001 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code VSDK_002 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code VSDK_003 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code VSDK_004 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code VSDK_005 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code VSDK_006 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code VSDK_007 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_VSDK_CAPSULE_INVALID defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_VSDK_SIGNATURE_MISMATCH defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_VSDK_SCHEMA_UNSUPPORTED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_VSDK_REPLAY_DIVERGED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_VSDK_SESSION_SEALED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_VSDK_MANIFEST_INCOMPLETE defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_VSDK_EMPTY_PAYLOAD defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-VSDK-CAPSULE-DETERMINISTIC defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-VSDK-NO-PRIVILEGE defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-VSDK-SCHEMA-VERSIONED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-VSDK-SESSION-MONOTONIC defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-VSDK-SIGNATURE-BOUND defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Core operation 'fn validate_manifest' defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Core operation 'fn verify_capsule_signature' defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Core operation 'fn sign_capsule' defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Core operation 'fn replay_capsule' defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Core operation 'fn create_session' defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Core operation 'fn record_session_step' defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Core operation 'fn seal_session' defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Core operation 'fn create_verifier_sdk' defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Type CapsuleVerdict defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Type CapsuleManifest defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Type ReplayCapsule defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Type ReplayResult defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Type SessionStep defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Type VerificationSession defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Type VerifierSdk defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Type VsdkEvent defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Type VsdkError defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema version vsdk-v1.0",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "BTreeMap usage for determinism",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Rust unit tests (52)",
+      "passed": true,
+      "detail": "52 tests found"
+    },
+    {
+      "check": "ReplayCapsule has signature field",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "CapsuleManifest has schema_version field",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "VerificationSession has sealed field",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "VerificationSession has final_verdict field",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "CapsuleManifest has expected_output_hash",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "No-privilege invariant documented",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Reference capsule builder exists",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Reference session builder exists",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Deterministic hash helper",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "VSDK_SCHEMA_VERSION constant",
+      "passed": true,
+      "detail": "ok"
+    }
+  ],
+  "events": [
+    {
+      "code": "VSDK_001",
+      "status": "defined"
+    },
+    {
+      "code": "VSDK_002",
+      "status": "defined"
+    },
+    {
+      "code": "VSDK_003",
+      "status": "defined"
+    },
+    {
+      "code": "VSDK_004",
+      "status": "defined"
+    },
+    {
+      "code": "VSDK_005",
+      "status": "defined"
+    },
+    {
+      "code": "VSDK_006",
+      "status": "defined"
+    },
+    {
+      "code": "VSDK_007",
+      "status": "defined"
+    }
+  ],
+  "summary": "bd-nbwo: Universal Verifier SDK and Replay Capsule Format\nChecks: 56/56 passing\nVerdict: PASS",
+  "timestamp": "2026-02-22T08:17:55.789250+00:00"
+}

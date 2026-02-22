@@ -1,0 +1,171 @@
+{
+  "bead_id": "bd-13q",
+  "title": "stable product error namespace adoption",
+  "section": "10.10",
+  "verdict": "PASS",
+  "total": 32,
+  "passed": 32,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "spec_exists",
+      "pass": true,
+      "detail": "docs/specs/section_10_10/bd-13q_contract.md"
+    },
+    {
+      "check": "spec_invariant_INV-ENS-REGISTRY-SOURCE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-ENS-APPEND-ONLY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-ENS-CATEGORY-STABLE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-ENS-TELEMETRY-DIMENSION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-ENS-RECOVERY-HINT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_ENS-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_ENS-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_ENS-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_ENS-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/connector/error_surface.rs"
+    },
+    {
+      "check": "impl_prefix_FN-CTRL-",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_prefix_FN-MIG-",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_prefix_FN-AUTH-",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_prefix_FN-POL-",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_prefix_FN-ZON-",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_prefix_FN-TOK-",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_symbol_struct ProductError",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_symbol_enum ProductSurface",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_symbol_struct ErrorCompatibilityPolicy",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_symbol_struct CompatibilityReport",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_symbol_fn telemetry_error_dimensions(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_symbol_macro_rules! product_error",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_symbol_error.code",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "mod_rs_registers_error_surface",
+      "pass": true,
+      "detail": "registered"
+    },
+    {
+      "check": "script_check_error_compat",
+      "pass": true,
+      "detail": "scripts/check_error_compat.py"
+    },
+    {
+      "check": "script_check_error_coverage",
+      "pass": true,
+      "detail": "scripts/check_error_coverage.py"
+    },
+    {
+      "check": "unit_tests_exist",
+      "pass": true,
+      "detail": "tests/test_check_error_namespace.py"
+    },
+    {
+      "check": "error_audit_exists",
+      "pass": true,
+      "detail": "artifacts/section_10_10/bd-13q/error_audit.json"
+    },
+    {
+      "check": "error_audit_unmapped_zero",
+      "pass": true,
+      "detail": "0 unmapped errors"
+    },
+    {
+      "check": "compatibility_policy",
+      "pass": true,
+      "detail": "verdict=PASS"
+    },
+    {
+      "check": "coverage_policy",
+      "pass": true,
+      "detail": "verdict=PASS"
+    }
+  ]
+}

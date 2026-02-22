@@ -1,0 +1,304 @@
+{
+  "bead_id": "bd-3hr2",
+  "title": "Section 10.19 verification gate: Adaptive Trust Consensus (ATC)",
+  "section": "10.19",
+  "gate": true,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 55,
+  "passed": 55,
+  "failed": 0,
+  "section_beads": [
+    "bd-293y",
+    "bd-3aqy",
+    "bd-1hj3",
+    "bd-ukh7",
+    "bd-3ps8",
+    "bd-2ozr",
+    "bd-253o",
+    "bd-1eot",
+    "bd-11rz",
+    "bd-24du",
+    "bd-2yvw",
+    "bd-2zip",
+    "bd-3gwi"
+  ],
+  "checks": [
+    {
+      "check": "evidence_bd-293y",
+      "pass": true,
+      "detail": "PASS: ATC federation trust model"
+    },
+    {
+      "check": "evidence_bd-3aqy",
+      "pass": true,
+      "detail": "PASS: Canonical federated signal schema"
+    },
+    {
+      "check": "evidence_bd-1hj3",
+      "pass": true,
+      "detail": "PASS: Local signal extraction pipeline"
+    },
+    {
+      "check": "evidence_bd-ukh7",
+      "pass": true,
+      "detail": "PASS: Privacy envelope layer"
+    },
+    {
+      "check": "evidence_bd-3ps8",
+      "pass": true,
+      "detail": "PASS: Mergeable sketch system"
+    },
+    {
+      "check": "evidence_bd-2ozr",
+      "pass": true,
+      "detail": "PASS: Poisoning-resilient aggregation"
+    },
+    {
+      "check": "evidence_bd-253o",
+      "pass": true,
+      "detail": "PASS: ATC global priors integration"
+    },
+    {
+      "check": "evidence_bd-1eot",
+      "pass": true,
+      "detail": "PASS: Privacy-preserving urgent routing"
+    },
+    {
+      "check": "evidence_bd-11rz",
+      "pass": true,
+      "detail": "PASS: ATC release claim gate"
+    },
+    {
+      "check": "evidence_bd-24du",
+      "pass": true,
+      "detail": "PASS: ATC partition fallback and degraded mode"
+    },
+    {
+      "check": "evidence_bd-2yvw",
+      "pass": true,
+      "detail": "PASS: Sybil-resistant participation weighting"
+    },
+    {
+      "check": "evidence_bd-2zip",
+      "pass": true,
+      "detail": "PASS: ATC verifier APIs and proof artifacts"
+    },
+    {
+      "check": "evidence_bd-3gwi",
+      "pass": true,
+      "detail": "PASS: Contribution-weighted intelligence access and reciprocity co"
+    },
+    {
+      "check": "summary_bd-293y",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_19/bd-293y/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3aqy",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_19/bd-3aqy/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1hj3",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_19/bd-1hj3/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-ukh7",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_19/bd-ukh7/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3ps8",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_19/bd-3ps8/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2ozr",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_19/bd-2ozr/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-253o",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_19/bd-253o/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1eot",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_19/bd-1eot/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-11rz",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_19/bd-11rz/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-24du",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_19/bd-24du/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2yvw",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_19/bd-2yvw/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2zip",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_19/bd-2zip/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3gwi",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_19/bd-3gwi/verification_summary.md"
+    },
+    {
+      "check": "all_evidence_present",
+      "pass": true,
+      "detail": "13/13 beads have evidence"
+    },
+    {
+      "check": "all_verdicts_pass",
+      "pass": true,
+      "detail": "13/13 PASS"
+    },
+    {
+      "check": "artifact_atc_release_gate_report",
+      "pass": true,
+      "detail": "exists: artifacts/10.19/atc_release_gate_report.json"
+    },
+    {
+      "check": "artifact_atc_weighting_audit_report",
+      "pass": true,
+      "detail": "exists: artifacts/10.19/atc_weighting_audit_report.json"
+    },
+    {
+      "check": "artifact_atc_verifier_report",
+      "pass": true,
+      "detail": "exists: artifacts/10.19/atc_verifier_report.json"
+    },
+    {
+      "check": "artifact_atc_reciprocity_matrix",
+      "pass": true,
+      "detail": "exists: artifacts/10.19/atc_reciprocity_matrix.json"
+    },
+    {
+      "check": "artifact_atc_degraded_mode_events",
+      "pass": true,
+      "detail": "exists: artifacts/10.19/atc_degraded_mode_events.jsonl"
+    },
+    {
+      "check": "gate_tests",
+      "pass": true,
+      "detail": "exists: tests/test_check_section_10_19_gate.py"
+    },
+    {
+      "check": "domain_federation_trust_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_signal_schema_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_signal_extraction_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_privacy_envelope_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_sketch_system_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_aggregation_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_global_priors_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_urgent_routing_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_release_gate_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_partition_fallback_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_participation_weighting_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_verifier_apis_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_reciprocity_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "pipeline_schema_to_extraction",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_extraction_to_aggregation",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_privacy_to_aggregation",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_sketch_to_aggregation",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_aggregation_to_priors",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_trust_to_participation",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_participation_to_reciprocity",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_verifier_to_release",
+      "pass": true,
+      "detail": "both have evidence"
+    }
+  ],
+  "timestamp": "2026-02-22T08:00:53.018478+00:00"
+}

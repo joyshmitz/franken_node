@@ -1,0 +1,21 @@
+  [PASS] REQUIRED_STRUCTS >= 8
+  [PASS] REQUIRED_EVENT_CODES == 8
+  [PASS] REQUIRED_ERROR_CODES == 5
+  [PASS] REQUIRED_INVARIANTS == 6
+  [PASS] SCHEMA_REQUIRED_FIELDS == 11
+  [PASS] _checks returns list
+  [PASS] _checks returns dicts
+  [PASS] _checks >= 30 checks
+  [PASS] check 'Rust module exists' has required keys
+  [PASS] check 'Wired into connector/mod.rs' has required keys
+  [PASS] check 'JSON schema exists' has required keys
+  [PASS] check 'Reference vectors exist' has required keys
+  [PASS] check 'Spec contract exists' has required keys
+  [PASS] run_all has bead_id
+  [PASS] run_all has section
+  [PASS] run_all has verdict
+  [PASS] run_all has events
+  [PASS] run_all has summary
+  [PASS] run_all has timestamp
+
+self-test: 19/19 PASS

@@ -1,0 +1,565 @@
+{
+  "bead_id": "bd-1v65",
+  "title": "sqlmodel_rust integration",
+  "section": "10.16",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "test_count": "42",
+  "summary": {
+    "passing": 110,
+    "failing": 0,
+    "total": 110
+  },
+  "checks": [
+    {
+      "check": "file: conformance test",
+      "pass": true,
+      "detail": "exists: tests/conformance/sqlmodel_contracts.rs"
+    },
+    {
+      "check": "file: integration domains CSV",
+      "pass": true,
+      "detail": "exists: artifacts/10.16/sqlmodel_integration_domains.csv"
+    },
+    {
+      "check": "file: policy matrix",
+      "pass": true,
+      "detail": "exists: artifacts/10.16/sqlmodel_policy_matrix.json"
+    },
+    {
+      "check": "file: spec doc",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_16/bd-1v65_contract.md"
+    },
+    {
+      "check": "conformance test count",
+      "pass": true,
+      "detail": "42 tests (minimum 35)"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum ModelClassification",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum ModelSource",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct TypedModel",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct DriftResult",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct RoundTripResult",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct SqlmodelEvent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct SqlmodelIntegrationGate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct IntegrationSummary",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn register_model(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn check_drift(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn check_round_trip(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn gate_pass(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn summary(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn models(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn take_events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn to_report(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn all(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn label(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn is_mandatory(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: SQLMODEL_SCHEMA_DRIFT_DETECTED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: SQLMODEL_ROUND_TRIP_PASS",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: SQLMODEL_ROUND_TRIP_FAIL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: SQLMODEL_MODEL_REGISTERED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: SQLMODEL_VERSION_COMPAT_FAIL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-SMI-DRIFT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-SMI-ROUNDTRIP",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-SMI-MANDATORY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-SMI-OWNERSHIP",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_classification_all_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_classification_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_classification_is_mandatory",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_classification_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_classification_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_model_source_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_model_source_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_model_source_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_total_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_mandatory_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_should_use_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_optional_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_unique_model_names",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_unique_domains",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_all_versioned",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_empty_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_all_registered_all_pass",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_drift_failure_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_round_trip_failure_mandatory_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_round_trip_failure_optional_passes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_register_model_emits_registered_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_check_drift_no_drift_no_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_check_drift_detected_emits_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_check_round_trip_pass_emits_pass_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_check_round_trip_fail_emits_fail_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_take_events_drains",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_event_has_model_name",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_summary_counts",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_summary_drift_failures",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_summary_round_trip_failures",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_structure",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_pass_verdict",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_fail_verdict_empty",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_models_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_invariant_constants_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_event_code_constants_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_determinism_same_input_same_report",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_typed_model_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_drift_result_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_round_trip_result_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_sqlmodel_event_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_integration_summary_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: row count",
+      "pass": true,
+      "detail": "21 rows"
+    },
+    {
+      "check": "CSV: all drift pass",
+      "pass": true,
+      "detail": "all pass"
+    },
+    {
+      "check": "CSV: all round-trip pass",
+      "pass": true,
+      "detail": "all pass"
+    },
+    {
+      "check": "CSV: mandatory count = 12",
+      "pass": true,
+      "detail": "12"
+    },
+    {
+      "check": "CSV: should_use count = 7",
+      "pass": true,
+      "detail": "7"
+    },
+    {
+      "check": "CSV: model FencingLeaseRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model LeaseServiceRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model LeaseQuorumRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model RolloutStateRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model HealthGatePolicyRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model ControlChannelStateRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model ArtifactJournalRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model TieredTrustArtifactRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model CanonicalStateRootRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model DurabilityModeRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model DurableClaimAuditRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model SchemaMigrationRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model SnapshotPolicyRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model CrdtMergeStateRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model QuarantineEntryRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model QuarantinePromotionRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model RetentionPolicyRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model RepairCycleAuditRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model LeaseConflictAuditRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model OfflineCoverageMetricRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "CSV: model LifecycleTransitionCacheRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: section 'Types'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: section 'Methods'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: section 'Event Codes'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: section 'Invariants'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: section 'Acceptance Criteria'",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

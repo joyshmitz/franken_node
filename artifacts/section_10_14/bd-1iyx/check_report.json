@@ -1,0 +1,296 @@
+{
+  "bead_id": "bd-1iyx",
+  "title": "Determinism conformance tests",
+  "section": "10.14",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "test_count": 19,
+  "fixture_count": 3,
+  "summary": {
+    "passing": 56,
+    "failing": 0,
+    "total": 56
+  },
+  "checks": [
+    {
+      "check": "file: conformance test",
+      "pass": true,
+      "detail": "exists: tests/conformance/replica_artifact_determinism.rs"
+    },
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_14/bd-1iyx_contract.md"
+    },
+    {
+      "check": "upstream: deterministic_seed.rs",
+      "pass": true,
+      "detail": "exists"
+    },
+    {
+      "check": "module registered: encoding/mod.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "encoding module in main.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "imports deterministic_seed types",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "unit test count",
+      "pass": true,
+      "detail": "19 tests (minimum 15)"
+    },
+    {
+      "check": "configurable replica count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "fixture: small_encoding.json",
+      "pass": true,
+      "detail": "exists"
+    },
+    {
+      "check": "fixture golden vectors: small_encoding.json",
+      "pass": true,
+      "detail": "has expected_seeds"
+    },
+    {
+      "check": "fixture: medium_multi_domain.json",
+      "pass": true,
+      "detail": "exists"
+    },
+    {
+      "check": "fixture golden vectors: medium_multi_domain.json",
+      "pass": true,
+      "detail": "has expected_seeds"
+    },
+    {
+      "check": "fixture: edge_case_minimal.json",
+      "pass": true,
+      "detail": "exists"
+    },
+    {
+      "check": "fixture golden vectors: edge_case_minimal.json",
+      "pass": true,
+      "detail": "has expected_seeds"
+    },
+    {
+      "check": "type: struct Divergence",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: struct Replica",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: struct FixtureResult",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "function: fn compare_artifacts(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "function: fn guess_root_cause(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "function: fn run_fixture(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "function: fn verify_expected_seeds(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "function: fn parse_domain(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: DETERMINISM_CHECK_STARTED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: DETERMINISM_CHECK_PASSED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: DETERMINISM_CHECK_FAILED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "divergence_field: artifact_name",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "divergence_field: first_mismatch_offset",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "divergence_field: replica_a",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "divergence_field: replica_b",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "divergence_field: context_hex_a",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "divergence_field: context_hex_b",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "divergence_field: root_cause",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: DomainTag::Encoding",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: DomainTag::Repair",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: DomainTag::Scheduling",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: DomainTag::Placement",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: DomainTag::Verification",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_small_encoding_replicas_identical",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_small_encoding_expected_seeds",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_medium_multi_domain_replicas_identical",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_medium_multi_domain_expected_seeds",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_edge_case_minimal_replicas_identical",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_edge_case_minimal_expected_seeds",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_ten_replicas_identical",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_divergence_detected_when_injected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_divergence_reports_correct_offset",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_divergence_length_mismatch",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_no_divergence_identical",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_timestamp_root_cause_hint",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_context_hex_dump_correct_length",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_event_codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_single_replica_always_passes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_all_fixtures_pass",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_divergence_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_parse_all_domains",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_parse_unknown_domain_panics",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

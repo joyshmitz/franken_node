@@ -1,0 +1,154 @@
+{
+  "bead_id": "bd-3nr",
+  "title": "Degraded-mode policy behavior with mandatory audit events",
+  "section": "10.5",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "summary": {
+    "passing": 28,
+    "failing": 0,
+    "total": 28
+  },
+  "checks": [
+    {
+      "check": "file: degraded mode policy implementation",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/security/degraded_mode_policy.rs"
+    },
+    {
+      "check": "file: contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_5/bd-3nr_contract.md"
+    },
+    {
+      "check": "impl: pub struct DegradedModePolicy",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub enum TriggerCondition",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct AuditEventSpec",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub enum RecoveryCriterion",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub enum DegradedModeState",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct DegradedModePolicyEngine",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub fn activate(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub fn evaluate_action(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub fn tick_mandatory_audits(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub fn observe_recovery(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub fn maybe_escalate_to_suspended(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: DEGRADED_MODE_ENTERED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: DEGRADED_MODE_EXITED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: DEGRADED_MODE_SUSPENDED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: DEGRADED_ACTION_BLOCKED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: DEGRADED_ACTION_ANNOTATED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: TRUST_INPUT_STALE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: TRUST_INPUT_REFRESHED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: AUDIT_EVENT_MISSED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "module wiring: pub mod degraded_mode_policy;",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event ordering: entered before action audit",
+      "pass": true,
+      "detail": "entered_idx=1, action_idx=2"
+    },
+    {
+      "check": "mandatory audit tick present",
+      "pass": true,
+      "detail": "expected mandatory periodic event"
+    },
+    {
+      "check": "missed audit alert present",
+      "pass": true,
+      "detail": "expected missed-event alert when interval skipped"
+    },
+    {
+      "check": "denied action path",
+      "pass": true,
+      "detail": "{'permitted': False, 'degraded_annotation': True, 'denial_reason': 'denied_actions.policy.change'}"
+    },
+    {
+      "check": "recovery stabilization window",
+      "pass": true,
+      "detail": "exited_idx=7, final_mode=normal"
+    },
+    {
+      "check": "trigger variants activate degraded mode",
+      "pass": true,
+      "detail": "variants=4"
+    }
+  ]
+}

@@ -1,0 +1,525 @@
+{
+  "bead_id": "bd-1xtf",
+  "title": "Frankentui surface migration",
+  "section": "10.16",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "test_count": "44",
+  "summary": {
+    "passing": 102,
+    "failing": 0,
+    "total": 102
+  },
+  "checks": [
+    {
+      "check": "file: integration test",
+      "pass": true,
+      "detail": "exists: tests/integration/frankentui_surface_migration.rs"
+    },
+    {
+      "check": "file: surface inventory CSV",
+      "pass": true,
+      "detail": "exists: artifacts/10.16/frankentui_surface_inventory.csv"
+    },
+    {
+      "check": "file: spec doc",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_16/bd-1xtf_contract.md"
+    },
+    {
+      "check": "integration test count",
+      "pass": true,
+      "detail": "44 tests (minimum 35)"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum FrankentuiComponent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum MigrationStatus",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum BoundaryType",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct SurfaceEntry",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct MigrationEvent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct FrankentuiMigrationGate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct MigrationSummary",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn register_surface(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn register_raw_output(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn gate_pass(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn summary(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn surfaces(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn take_events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn to_report(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn all(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn label(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn is_complete(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: FRANKENTUI_SURFACE_MIGRATED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: FRANKENTUI_RAW_OUTPUT_DETECTED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: FRANKENTUI_MIGRATION_INCOMPLETE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-FTM-COMPLETE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-FTM-NO-RAW",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-FTM-MAPPED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-FTM-SNAPSHOT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_component_all_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_component_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_component_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_component_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_status_complete_is_complete",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_status_in_progress_not_complete",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_status_not_started_not_complete",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_status_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_status_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_status_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_boundary_type_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_boundary_type_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_empty_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_all_complete_passes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_incomplete_surface_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_raw_output_detected_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_canonical_surfaces_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_canonical_all_complete",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_summary_all_complete",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_summary_with_incomplete",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_summary_with_raw_violations",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_register_complete_emits_migrated_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_register_incomplete_emits_incomplete_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_raw_output_emits_detected_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_take_events_drains",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_event_has_surface_name",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_structure",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_pass_verdict",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_fail_verdict",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_surfaces_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_invariant_constants_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_event_code_constants_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_covers_all_components",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_determinism_same_input_same_report",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_surface_entry_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_migration_event_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_has_all_boundary_types",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_covers_cli_module",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_covers_main_module",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_covers_correctness_envelope",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_covers_controller_boundary",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_covers_evidence_emission",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_covers_evidence_ledger",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_covers_replay_validator",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: row count",
+      "pass": true,
+      "detail": "12 rows (minimum 12)"
+    },
+    {
+      "check": "inventory CSV: all complete",
+      "pass": true,
+      "detail": "all complete"
+    },
+    {
+      "check": "inventory CSV: module src/cli.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: module src/main.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: module src/policy/correctness_envelope.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: module src/policy/controller_boundary_checks.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: module src/policy/evidence_emission.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: module src/observability/evidence_ledger.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: module src/tools/evidence_replay_validator.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: component CommandSurface",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: component Panel",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: component Table",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: component StatusBar",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: component AlertBanner",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: component DiffPanel",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: component LogStreamPanel",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: column module_path",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: column surface_name",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: column migration_status",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: column frankentui_component",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "inventory CSV: column notes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: section 'Types'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: section 'Methods'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: section 'Event Codes'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: section 'Invariants'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: section 'Acceptance Criteria'",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

@@ -1,0 +1,191 @@
+{
+  "bead_id": "bd-3u6o",
+  "title": "canonical virtual transport fault harness for distributed control protocols",
+  "section": "10.15",
+  "verdict": "PASS",
+  "total": 20,
+  "passed": 20,
+  "failed": 0,
+  "checks": [
+    {
+      "id": "CTF-001",
+      "check": "doc_exists",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "found: docs/testing/control_virtual_transport_faults.md"
+      }
+    },
+    {
+      "id": "CTF-002",
+      "check": "report_exists",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "found: artifacts/10.15/control_fault_harness_summary.json"
+      }
+    },
+    {
+      "id": "CTF-003",
+      "check": "report_valid",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "valid JSON with required fields"
+      }
+    },
+    {
+      "id": "CTF-004",
+      "check": "report_protocols",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "4/4 protocols"
+      }
+    },
+    {
+      "id": "CTF-005",
+      "check": "report_fault_classes",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "4/4 fault classes"
+      }
+    },
+    {
+      "id": "CTF-006",
+      "check": "report_summary",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "20/20 tests, 5 seeds"
+      }
+    },
+    {
+      "id": "CTF-007",
+      "check": "doc_protocols",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "all 4 protocols documented"
+      }
+    },
+    {
+      "id": "CTF-008",
+      "check": "doc_fault_classes",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "all 4 fault classes documented"
+      }
+    },
+    {
+      "id": "CTF-009",
+      "check": "doc_invariants",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "all 4 invariants documented"
+      }
+    },
+    {
+      "id": "CTF-010",
+      "check": "doc_seed_model",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "seed model with PRNG documented"
+      }
+    },
+    {
+      "id": "CTF-011",
+      "check": "upstream_harness_exists",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "found: crates/franken-node/src/remote/virtual_transport_faults.rs"
+      }
+    },
+    {
+      "id": "CTF-012",
+      "check": "spec_exists",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "found: docs/specs/section_10_15/bd-3u6o_contract.md"
+      }
+    },
+    {
+      "id": "CTF-013",
+      "check": "spec_bead_id",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "found"
+      }
+    },
+    {
+      "id": "CTF-014",
+      "check": "spec_section",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "found"
+      }
+    },
+    {
+      "id": "CTF-015",
+      "check": "spec_invariants",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "all 4 invariants in spec"
+      }
+    },
+    {
+      "id": "CTF-016",
+      "check": "spec_acceptance_criteria",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "found"
+      }
+    },
+    {
+      "id": "CTF-017",
+      "check": "unit_tests_exist",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "found: tests/test_check_control_transport_faults.py"
+      }
+    },
+    {
+      "id": "CTF-018",
+      "check": "verification_evidence",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "valid: artifacts/section_10_15/bd-3u6o/verification_evidence.json"
+      }
+    },
+    {
+      "id": "CTF-019",
+      "check": "verification_summary",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "found: artifacts/section_10_15/bd-3u6o/verification_summary.md"
+      }
+    },
+    {
+      "id": "CTF-020",
+      "check": "doc_expected_behaviors",
+      "status": "PASS",
+      "pass": true,
+      "details": {
+        "message": "retry, abort, compensate, fail-closed documented"
+      }
+    }
+  ]
+}

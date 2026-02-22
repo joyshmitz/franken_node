@@ -1,0 +1,275 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "check": "file_exists: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_7/bd-1ul_contract.md"
+    },
+    {
+      "check": "file_exists: fuzz policy document",
+      "pass": true,
+      "detail": "exists: docs/policy/fuzz_adversarial_testing.md"
+    },
+    {
+      "check": "file_exists: fuzz budget config",
+      "pass": true,
+      "detail": "exists: fuzz/config/fuzz_budget.toml"
+    },
+    {
+      "check": "budget_config: migration section",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "budget_config: shim section",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "budget_config: min_seconds_per_target",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "dir_exists: migration corpus directory",
+      "pass": true,
+      "detail": "exists: fuzz/corpus/migration"
+    },
+    {
+      "check": "corpus_migration: seed count >= 50",
+      "pass": true,
+      "detail": "50 seeds (minimum 50)"
+    },
+    {
+      "check": "dir_exists: shim corpus directory",
+      "pass": true,
+      "detail": "exists: fuzz/corpus/shim"
+    },
+    {
+      "check": "corpus_shim: seed count >= 50",
+      "pass": true,
+      "detail": "50 seeds (minimum 50)"
+    },
+    {
+      "check": "dir_exists: migration regression directory",
+      "pass": true,
+      "detail": "exists: fuzz/regression/migration"
+    },
+    {
+      "check": "regression_migration: seed count >= 1",
+      "pass": true,
+      "detail": "3 regression seeds"
+    },
+    {
+      "check": "dir_exists: shim regression directory",
+      "pass": true,
+      "detail": "exists: fuzz/regression/shim"
+    },
+    {
+      "check": "regression_shim: seed count >= 1",
+      "pass": true,
+      "detail": "2 regression seeds"
+    },
+    {
+      "check": "dir_exists: fuzz targets directory",
+      "pass": true,
+      "detail": "exists: fuzz/targets"
+    },
+    {
+      "check": "file_exists: target: migration_directory_scan.rs",
+      "pass": true,
+      "detail": "exists: fuzz/targets/migration_directory_scan.rs"
+    },
+    {
+      "check": "file_exists: target: migration_package_parse.rs",
+      "pass": true,
+      "detail": "exists: fuzz/targets/migration_package_parse.rs"
+    },
+    {
+      "check": "file_exists: target: migration_dependency_resolve.rs",
+      "pass": true,
+      "detail": "exists: fuzz/targets/migration_dependency_resolve.rs"
+    },
+    {
+      "check": "file_exists: target: shim_api_translation.rs",
+      "pass": true,
+      "detail": "exists: fuzz/targets/shim_api_translation.rs"
+    },
+    {
+      "check": "file_exists: target: shim_type_coercion.rs",
+      "pass": true,
+      "detail": "exists: fuzz/targets/shim_type_coercion.rs"
+    },
+    {
+      "check": "target_tests: migration_directory_scan.rs",
+      "pass": true,
+      "detail": "5 tests (minimum 2)"
+    },
+    {
+      "check": "target_tests: migration_package_parse.rs",
+      "pass": true,
+      "detail": "5 tests (minimum 2)"
+    },
+    {
+      "check": "target_tests: migration_dependency_resolve.rs",
+      "pass": true,
+      "detail": "4 tests (minimum 2)"
+    },
+    {
+      "check": "target_tests: shim_api_translation.rs",
+      "pass": true,
+      "detail": "5 tests (minimum 2)"
+    },
+    {
+      "check": "target_tests: shim_type_coercion.rs",
+      "pass": true,
+      "detail": "5 tests (minimum 2)"
+    },
+    {
+      "check": "file_exists: migration coverage report",
+      "pass": true,
+      "detail": "exists: fuzz/coverage/latest_migration.json"
+    },
+    {
+      "check": "file_exists: shim coverage report",
+      "pass": true,
+      "detail": "exists: fuzz/coverage/latest_shim.json"
+    },
+    {
+      "check": "coverage_migration: has event_code FZT-004",
+      "pass": true,
+      "detail": "event_code=FZT-004"
+    },
+    {
+      "check": "coverage_migration: coverage > 0%",
+      "pass": true,
+      "detail": "coverage_pct=79.2"
+    },
+    {
+      "check": "coverage_migration: crashes_found field",
+      "pass": true,
+      "detail": "field present"
+    },
+    {
+      "check": "coverage_shim: has event_code FZT-004",
+      "pass": true,
+      "detail": "event_code=FZT-004"
+    },
+    {
+      "check": "coverage_shim: coverage > 0%",
+      "pass": true,
+      "detail": "coverage_pct=78.8"
+    },
+    {
+      "check": "coverage_shim: crashes_found field",
+      "pass": true,
+      "detail": "field present"
+    },
+    {
+      "check": "spec_content: FZT-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_content: FZT-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_content: FZT-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_content: FZT-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_content: INV-FZT-CORPUS",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_content: INV-FZT-REGRESS",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_content: INV-FZT-BUDGET",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_content: INV-FZT-COVERAGE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_content: INV-FZT-TRIAGE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_content: fuzz_migration_directory_scan",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_content: fuzz_migration_package_parse",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_content: fuzz_migration_dependency_resolve",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_content: fuzz_shim_api_translation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_content: fuzz_shim_type_coercion",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_content: Corpus Management",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_content: Regression Seed",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_content: CI Gate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_content: Coverage Tracking",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_content: Structured Logging",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "file_exists: verification evidence",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_7/bd-1ul/verification_evidence.json"
+    },
+    {
+      "check": "file_exists: verification summary",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_7/bd-1ul/verification_summary.md"
+    }
+  ]
+}

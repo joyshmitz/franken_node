@@ -1,0 +1,371 @@
+{
+  "bead_id": "bd-22e7",
+  "title": "Method Stack Compliance \u2014 4 execution disciplines",
+  "section": "5",
+  "verdict": "PASS",
+  "total": 72,
+  "passed": 72,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "file_exists:method_stack_doc",
+      "pass": true,
+      "detail": "docs/methodology/method_stack_compliance.md"
+    },
+    {
+      "name": "file_exists:compliance_matrix",
+      "pass": true,
+      "detail": "docs/methodology/compliance_matrix.json"
+    },
+    {
+      "name": "file_exists:spec_contract",
+      "pass": true,
+      "detail": "docs/specs/section_5/bd-22e7_contract.md"
+    },
+    {
+      "name": "stack_documented:MS-01",
+      "pass": true,
+      "detail": "MS-01: extreme-software-optimization"
+    },
+    {
+      "name": "stack_documented:MS-02",
+      "pass": true,
+      "detail": "MS-02: alien-artifact-coding"
+    },
+    {
+      "name": "stack_documented:MS-03",
+      "pass": true,
+      "detail": "MS-03: alien-graveyard"
+    },
+    {
+      "name": "stack_documented:MS-04",
+      "pass": true,
+      "detail": "MS-04: porting-to-rust"
+    },
+    {
+      "name": "stack_domain:MS-01",
+      "pass": true,
+      "detail": "MS-01 domain: Performance"
+    },
+    {
+      "name": "stack_domain:MS-02",
+      "pass": true,
+      "detail": "MS-02 domain: Decision"
+    },
+    {
+      "name": "stack_domain:MS-03",
+      "pass": true,
+      "detail": "MS-03 domain: Primitive"
+    },
+    {
+      "name": "stack_domain:MS-04",
+      "pass": true,
+      "detail": "MS-04 domain: Compatibility"
+    },
+    {
+      "name": "artifact_keyword:MS-01:benchmark",
+      "pass": true,
+      "detail": "MS-01 artifact: benchmark"
+    },
+    {
+      "name": "artifact_keyword:MS-01:flamegraph",
+      "pass": true,
+      "detail": "MS-01 artifact: flamegraph"
+    },
+    {
+      "name": "artifact_keyword:MS-01:compatibility",
+      "pass": true,
+      "detail": "MS-01 artifact: compatibility"
+    },
+    {
+      "name": "artifact_keyword:MS-02:decision rationale",
+      "pass": true,
+      "detail": "MS-02 artifact: decision rationale"
+    },
+    {
+      "name": "artifact_keyword:MS-02:policy receipt",
+      "pass": true,
+      "detail": "MS-02 artifact: policy receipt"
+    },
+    {
+      "name": "artifact_keyword:MS-03:EV analysis",
+      "pass": true,
+      "detail": "MS-03 artifact: EV analysis"
+    },
+    {
+      "name": "artifact_keyword:MS-03:fallback contract",
+      "pass": true,
+      "detail": "MS-03 artifact: fallback contract"
+    },
+    {
+      "name": "artifact_keyword:MS-03:degraded",
+      "pass": true,
+      "detail": "MS-03 artifact: degraded"
+    },
+    {
+      "name": "artifact_keyword:MS-04:spec reference",
+      "pass": true,
+      "detail": "MS-04 artifact: spec reference"
+    },
+    {
+      "name": "artifact_keyword:MS-04:fixture",
+      "pass": true,
+      "detail": "MS-04 artifact: fixture"
+    },
+    {
+      "name": "artifact_keyword:MS-04:parity",
+      "pass": true,
+      "detail": "MS-04 artifact: parity"
+    },
+    {
+      "name": "compliance_check:MSC-001:MS-01",
+      "pass": true,
+      "detail": "MSC-001:MS-01"
+    },
+    {
+      "name": "compliance_check:MSC-001:MS-02",
+      "pass": true,
+      "detail": "MSC-001:MS-02"
+    },
+    {
+      "name": "compliance_check:MSC-001:MS-03",
+      "pass": true,
+      "detail": "MSC-001:MS-03"
+    },
+    {
+      "name": "compliance_check:MSC-001:MS-04",
+      "pass": true,
+      "detail": "MSC-001:MS-04"
+    },
+    {
+      "name": "event_code:MSC-001",
+      "pass": true,
+      "detail": "MSC-001: compliance check passed"
+    },
+    {
+      "name": "event_code:MSC-002",
+      "pass": true,
+      "detail": "MSC-002: violation"
+    },
+    {
+      "name": "event_code:MSC-003",
+      "pass": true,
+      "detail": "MSC-003: citation found"
+    },
+    {
+      "name": "event_code:MSC-004",
+      "pass": true,
+      "detail": "MSC-004: missing required artifact"
+    },
+    {
+      "name": "invariant:INV-MSC-CITED",
+      "pass": true,
+      "detail": "INV-MSC-CITED"
+    },
+    {
+      "name": "invariant:INV-MSC-ARTIFACT",
+      "pass": true,
+      "detail": "INV-MSC-ARTIFACT"
+    },
+    {
+      "name": "invariant:INV-MSC-FORMAL",
+      "pass": true,
+      "detail": "INV-MSC-FORMAL"
+    },
+    {
+      "name": "invariant:INV-MSC-SPEC-FIRST",
+      "pass": true,
+      "detail": "INV-MSC-SPEC-FIRST"
+    },
+    {
+      "name": "matrix:valid_json",
+      "pass": true,
+      "detail": "JSON parses"
+    },
+    {
+      "name": "matrix:schema_version",
+      "pass": true,
+      "detail": "got 1.0"
+    },
+    {
+      "name": "matrix:bead_id",
+      "pass": true,
+      "detail": "got bd-22e7"
+    },
+    {
+      "name": "matrix:four_stacks",
+      "pass": true,
+      "detail": "got 4"
+    },
+    {
+      "name": "matrix:stack_fields:MS-01",
+      "pass": true,
+      "detail": "MS-01"
+    },
+    {
+      "name": "matrix:stack_fields:MS-02",
+      "pass": true,
+      "detail": "MS-02"
+    },
+    {
+      "name": "matrix:stack_fields:MS-03",
+      "pass": true,
+      "detail": "MS-03"
+    },
+    {
+      "name": "matrix:stack_fields:MS-04",
+      "pass": true,
+      "detail": "MS-04"
+    },
+    {
+      "name": "matrix:has_sections",
+      "pass": true,
+      "detail": "got 14 sections"
+    },
+    {
+      "name": "matrix:valid_stack_refs",
+      "pass": true,
+      "detail": "all section refs use valid stack IDs"
+    },
+    {
+      "name": "matrix:four_events",
+      "pass": true,
+      "detail": "got 4"
+    },
+    {
+      "name": "matrix:section_map:10.2",
+      "pass": true,
+      "detail": "expected ['MS-04'], got ['MS-04']"
+    },
+    {
+      "name": "matrix:section_map:10.3",
+      "pass": true,
+      "detail": "expected ['MS-04'], got ['MS-04']"
+    },
+    {
+      "name": "matrix:section_map:10.5",
+      "pass": true,
+      "detail": "expected ['MS-02'], got ['MS-02']"
+    },
+    {
+      "name": "matrix:section_map:10.6",
+      "pass": true,
+      "detail": "expected ['MS-01'], got ['MS-01']"
+    },
+    {
+      "name": "matrix:section_map:10.7",
+      "pass": true,
+      "detail": "expected ['MS-04'], got ['MS-04']"
+    },
+    {
+      "name": "table:header",
+      "pass": true,
+      "detail": "compliance matrix table header"
+    },
+    {
+      "name": "table:section_row:10.2",
+      "pass": true,
+      "detail": "section 10.2 in table"
+    },
+    {
+      "name": "table:section_row:10.3",
+      "pass": true,
+      "detail": "section 10.3 in table"
+    },
+    {
+      "name": "table:section_row:10.5",
+      "pass": true,
+      "detail": "section 10.5 in table"
+    },
+    {
+      "name": "table:section_row:10.6",
+      "pass": true,
+      "detail": "section 10.6 in table"
+    },
+    {
+      "name": "table:section_row:10.7",
+      "pass": true,
+      "detail": "section 10.7 in table"
+    },
+    {
+      "name": "table:section_row:10.14",
+      "pass": true,
+      "detail": "section 10.14 in table"
+    },
+    {
+      "name": "table:section_row:10.15",
+      "pass": true,
+      "detail": "section 10.15 in table"
+    },
+    {
+      "name": "table:section_row:10.17",
+      "pass": true,
+      "detail": "section 10.17 in table"
+    },
+    {
+      "name": "table:required_keyword",
+      "pass": true,
+      "detail": "REQUIRED appears in table"
+    },
+    {
+      "name": "pr_checklist:PR Compliance",
+      "pass": true,
+      "detail": "PR checklist: PR Compliance"
+    },
+    {
+      "name": "pr_checklist:Stack(s)",
+      "pass": true,
+      "detail": "PR checklist: Stack(s)"
+    },
+    {
+      "name": "pr_checklist:Artifacts",
+      "pass": true,
+      "detail": "PR checklist: Artifacts"
+    },
+    {
+      "name": "pr_checklist:Verification",
+      "pass": true,
+      "detail": "PR checklist: Verification"
+    },
+    {
+      "name": "spec:bd-22e7",
+      "pass": true,
+      "detail": "spec contract: bd-22e7"
+    },
+    {
+      "name": "spec:Method Stack",
+      "pass": true,
+      "detail": "spec contract: Method Stack"
+    },
+    {
+      "name": "spec:MS-01",
+      "pass": true,
+      "detail": "spec contract: MS-01"
+    },
+    {
+      "name": "spec:MS-02",
+      "pass": true,
+      "detail": "spec contract: MS-02"
+    },
+    {
+      "name": "spec:MS-03",
+      "pass": true,
+      "detail": "spec contract: MS-03"
+    },
+    {
+      "name": "spec:MS-04",
+      "pass": true,
+      "detail": "spec contract: MS-04"
+    },
+    {
+      "name": "spec:MSC-001",
+      "pass": true,
+      "detail": "spec contract: MSC-001"
+    },
+    {
+      "name": "spec:INV-MSC",
+      "pass": true,
+      "detail": "spec contract: INV-MSC"
+    }
+  ]
+}

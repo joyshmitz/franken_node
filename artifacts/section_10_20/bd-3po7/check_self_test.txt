@@ -1,0 +1,51 @@
+{
+  "bead_id": "bd-3po7",
+  "mode": "self-test",
+  "verdict": "PASS",
+  "total": 8,
+  "passed": 8,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "section_bead_count",
+      "pass": true,
+      "detail": "15"
+    },
+    {
+      "check": "domain_group_count",
+      "pass": true,
+      "detail": "15"
+    },
+    {
+      "check": "gate_bead_set",
+      "pass": true,
+      "detail": "bd-3po7"
+    },
+    {
+      "check": "section_set",
+      "pass": true,
+      "detail": "10.20"
+    },
+    {
+      "check": "run_all_is_dict",
+      "pass": true,
+      "detail": "dict"
+    },
+    {
+      "check": "run_all_has_checks",
+      "pass": true,
+      "detail": "checks list"
+    },
+    {
+      "check": "run_all_total_matches",
+      "pass": true,
+      "detail": "total vs checks"
+    },
+    {
+      "check": "run_all_has_section_beads",
+      "pass": true,
+      "detail": "15 beads"
+    }
+  ],
+  "timestamp": "2026-02-22T08:03:42.680405+00:00"
+}

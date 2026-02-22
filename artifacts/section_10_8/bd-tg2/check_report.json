@@ -1,0 +1,551 @@
+{
+  "bead_id": "bd-tg2",
+  "title": "Fleet control API for quarantine/revocation operations",
+  "section": "10.8",
+  "verdict": "PASS",
+  "total": 108,
+  "passed": 108,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "fleet_quarantine implementation exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/api/fleet_quarantine.rs"
+    },
+    {
+      "check": "contract spec exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_8/bd-tg2_contract.md"
+    },
+    {
+      "check": "evidence artifact exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_8/bd-tg2/verification_evidence.json"
+    },
+    {
+      "check": "summary artifact exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_8/bd-tg2/verification_summary.md"
+    },
+    {
+      "check": "struct/enum QuarantineScope",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum RevocationScope",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum FleetAction",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum FleetActionResult",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum FleetStatus",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum FleetControlError",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum FleetControlEvent",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum ConvergenceState",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum IncidentHandle",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum DecisionReceipt",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum FleetControlManager",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum RevocationSeverity",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum ConvergencePhase",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum IncidentStatus",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code FLEET-001",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code FLEET-002",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code FLEET-003",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code FLEET-004",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code FLEET-005",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event name FLEET_QUARANTINE_INITIATED",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event name FLEET_REVOCATION_ISSUED",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event name FLEET_CONVERGENCE_PROGRESS",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event name FLEET_RELEASED",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event name FLEET_RECONCILE_COMPLETED",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code FLEET_SCOPE_INVALID",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code FLEET_ZONE_UNREACHABLE",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code FLEET_CONVERGENCE_TIMEOUT",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code FLEET_ROLLBACK_FAILED",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code FLEET_NOT_ACTIVATED",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-FLEET-ZONE-SCOPE",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-FLEET-RECEIPT",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-FLEET-CONVERGENCE",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-FLEET-SAFE-START",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-FLEET-ROLLBACK",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn quarantine",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn revoke",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn release",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn status",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn reconcile",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn activate",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn is_activated",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn events",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn active_incidents",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn zones",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn incident_count",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn quarantine_route_metadata",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn handle_quarantine",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn handle_revoke",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn handle_release",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn handle_status",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn handle_reconcile",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function fn build_receipt",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Overview",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Data Model",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: QuarantineScope",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: FleetControlManager",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Invariants",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Event Codes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Error Codes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Acceptance Criteria",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on QuarantineScope",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on FleetActionResult",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on FleetControlEvent",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on FleetStatus",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on DecisionReceipt",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Rust unit tests present (58)",
+      "pass": true,
+      "detail": "58 tests"
+    },
+    {
+      "check": "test: safe-start quarantine rejected",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: safe-start revoke rejected",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: zone scope validation",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: quarantine creates incident",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: quarantine produces receipt",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: quarantine convergence",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: revoke succeeds",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: emergency revocation incident",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: release rolls back",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: release nonexistent fails",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: reconcile cleans released",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: multi-zone scenario",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: serde round-trip",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: send+sync",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: route metadata count",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "zone_id field in QuarantineScope",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "zone_id field in RevocationScope",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "zone/tenant scoping",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "blast_radius metadata",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "converged_nodes field",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "total_nodes field",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "progress_pct field",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "eta_seconds field",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "ConvergencePhase enum",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC1: API endpoints implemented",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC2: scope control with zone/tenant",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC3: convergence tracking",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC4: rollback via release",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC5: signed decision receipts",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC6: structured observability + error taxonomy",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC7: safe-mode startup",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC8: incident bundle integration",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: incidents created",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: active after release",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: convergence progress",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: cleaned on reconcile",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: receipt hash deterministic",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: multi-zone",
+      "pass": true,
+      "detail": "ok"
+    }
+  ]
+}

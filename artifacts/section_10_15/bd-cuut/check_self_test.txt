@@ -1,0 +1,320 @@
+{
+  "bead_id": "bd-cuut",
+  "section": "10.15",
+  "gate": "control_lane_policy",
+  "passed": 62,
+  "total": 62,
+  "ok": true,
+  "checks": [
+    {
+      "name": "source_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/control_plane/control_lane_policy.rs"
+    },
+    {
+      "name": "mod_wired",
+      "passed": true,
+      "detail": "control_plane/mod.rs must contain pub mod control_lane_policy"
+    },
+    {
+      "name": "lane_cancel",
+      "passed": true,
+      "detail": "ControlLane::Cancel"
+    },
+    {
+      "name": "lane_timed",
+      "passed": true,
+      "detail": "ControlLane::Timed"
+    },
+    {
+      "name": "lane_ready",
+      "passed": true,
+      "detail": "ControlLane::Ready"
+    },
+    {
+      "name": "three_lanes",
+      "passed": true,
+      "detail": "ControlLane enum has Cancel, Timed, Ready"
+    },
+    {
+      "name": "type_ControlLane",
+      "passed": true,
+      "detail": "type ControlLane"
+    },
+    {
+      "name": "type_ControlTaskClass",
+      "passed": true,
+      "detail": "type ControlTaskClass"
+    },
+    {
+      "name": "type_LaneAssignment",
+      "passed": true,
+      "detail": "type LaneAssignment"
+    },
+    {
+      "name": "type_LaneBudget",
+      "passed": true,
+      "detail": "type LaneBudget"
+    },
+    {
+      "name": "type_LaneTickMetrics",
+      "passed": true,
+      "detail": "type LaneTickMetrics"
+    },
+    {
+      "name": "type_StarvationEvent",
+      "passed": true,
+      "detail": "type StarvationEvent"
+    },
+    {
+      "name": "type_PreemptionEvent",
+      "passed": true,
+      "detail": "type PreemptionEvent"
+    },
+    {
+      "name": "type_ControlLanePolicy",
+      "passed": true,
+      "detail": "type ControlLanePolicy"
+    },
+    {
+      "name": "type_LanePolicyAuditRecord",
+      "passed": true,
+      "detail": "type LanePolicyAuditRecord"
+    },
+    {
+      "name": "type_ControlLanePolicySnapshot",
+      "passed": true,
+      "detail": "type ControlLanePolicySnapshot"
+    },
+    {
+      "name": "task_classes_19",
+      "passed": true,
+      "detail": "19/19 task classes"
+    },
+    {
+      "name": "cancel_cancellationhandler",
+      "passed": true,
+      "detail": "CancellationHandler -> Cancel"
+    },
+    {
+      "name": "cancel_drainoperation",
+      "passed": true,
+      "detail": "DrainOperation -> Cancel"
+    },
+    {
+      "name": "cancel_regionclose",
+      "passed": true,
+      "detail": "RegionClose -> Cancel"
+    },
+    {
+      "name": "cancel_gracefulshutdown",
+      "passed": true,
+      "detail": "GracefulShutdown -> Cancel"
+    },
+    {
+      "name": "cancel_abortcompensation",
+      "passed": true,
+      "detail": "AbortCompensation -> Cancel"
+    },
+    {
+      "name": "timed_healthcheck",
+      "passed": true,
+      "detail": "HealthCheck -> Timed"
+    },
+    {
+      "name": "timed_leaserenewal",
+      "passed": true,
+      "detail": "LeaseRenewal -> Timed"
+    },
+    {
+      "name": "timed_epochtransition",
+      "passed": true,
+      "detail": "EpochTransition -> Timed"
+    },
+    {
+      "name": "timed_epochseal",
+      "passed": true,
+      "detail": "EpochSeal -> Timed"
+    },
+    {
+      "name": "timed_transitionbarrier",
+      "passed": true,
+      "detail": "TransitionBarrier -> Timed"
+    },
+    {
+      "name": "timed_deadlineenforcement",
+      "passed": true,
+      "detail": "DeadlineEnforcement -> Timed"
+    },
+    {
+      "name": "timed_forkdetection",
+      "passed": true,
+      "detail": "ForkDetection -> Timed"
+    },
+    {
+      "name": "ready_backgroundmaintenance",
+      "passed": true,
+      "detail": "BackgroundMaintenance -> Ready"
+    },
+    {
+      "name": "ready_telemetryflush",
+      "passed": true,
+      "detail": "TelemetryFlush -> Ready"
+    },
+    {
+      "name": "ready_evidencearchival",
+      "passed": true,
+      "detail": "EvidenceArchival -> Ready"
+    },
+    {
+      "name": "ready_markercompaction",
+      "passed": true,
+      "detail": "MarkerCompaction -> Ready"
+    },
+    {
+      "name": "ready_auditlogrotation",
+      "passed": true,
+      "detail": "AuditLogRotation -> Ready"
+    },
+    {
+      "name": "ready_metricsexport",
+      "passed": true,
+      "detail": "MetricsExport -> Ready"
+    },
+    {
+      "name": "ready_staleentrycleanup",
+      "passed": true,
+      "detail": "StaleEntryCleanup -> Ready"
+    },
+    {
+      "name": "cancel_budget_20",
+      "passed": true,
+      "detail": "Cancel budget >= 20%"
+    },
+    {
+      "name": "timed_budget_30",
+      "passed": true,
+      "detail": "Timed budget >= 30%"
+    },
+    {
+      "name": "ready_budget_50",
+      "passed": true,
+      "detail": "Ready budget = remainder 50%"
+    },
+    {
+      "name": "op_canonical_lane",
+      "passed": true,
+      "detail": "operation canonical_lane"
+    },
+    {
+      "name": "op_canonical_timeout",
+      "passed": true,
+      "detail": "operation canonical_timeout"
+    },
+    {
+      "name": "op_lookup",
+      "passed": true,
+      "detail": "operation lookup"
+    },
+    {
+      "name": "op_verify_all_assigned",
+      "passed": true,
+      "detail": "operation verify_all_assigned"
+    },
+    {
+      "name": "op_verify_budget_sum",
+      "passed": true,
+      "detail": "operation verify_budget_sum"
+    },
+    {
+      "name": "op_assign_task",
+      "passed": true,
+      "detail": "operation assign_task"
+    },
+    {
+      "name": "op_tick",
+      "passed": true,
+      "detail": "operation tick"
+    },
+    {
+      "name": "op_preempt_task",
+      "passed": true,
+      "detail": "operation preempt_task"
+    },
+    {
+      "name": "op_verify_cancel_no_starve",
+      "passed": true,
+      "detail": "operation verify_cancel_no_starve"
+    },
+    {
+      "name": "op_export_csv",
+      "passed": true,
+      "detail": "operation export_csv"
+    },
+    {
+      "name": "op_export_audit_log_jsonl",
+      "passed": true,
+      "detail": "operation export_audit_log_jsonl"
+    },
+    {
+      "name": "op_class_counts_per_lane",
+      "passed": true,
+      "detail": "operation class_counts_per_lane"
+    },
+    {
+      "name": "op_has_priority",
+      "passed": true,
+      "detail": "operation has_priority"
+    },
+    {
+      "name": "event_codes_5",
+      "passed": true,
+      "detail": "5/5 event codes"
+    },
+    {
+      "name": "error_codes_8",
+      "passed": true,
+      "detail": "8/8 error codes"
+    },
+    {
+      "name": "invariants_6",
+      "passed": true,
+      "detail": "6/6 invariant markers"
+    },
+    {
+      "name": "schema_version",
+      "passed": true,
+      "detail": "SCHEMA_VERSION = clp-v1.0"
+    },
+    {
+      "name": "csv_header",
+      "passed": true,
+      "detail": "CSV header present"
+    },
+    {
+      "name": "cancel_max_starve_1",
+      "passed": true,
+      "detail": "Cancel max starvation = 1 tick"
+    },
+    {
+      "name": "default_starve_threshold",
+      "passed": true,
+      "detail": "Default starvation threshold defined"
+    },
+    {
+      "name": "test_coverage",
+      "passed": true,
+      "detail": "31 inline tests (need >= 25)"
+    },
+    {
+      "name": "spec_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_15/bd-cuut_contract.md"
+    },
+    {
+      "name": "serde_derives",
+      "passed": true,
+      "detail": "Serde derives for serialization"
+    }
+  ]
+}

@@ -1,0 +1,491 @@
+{
+  "bead_id": "bd-1l5",
+  "title": "Canonical product trust object IDs with domain separation",
+  "section": "10.10",
+  "verdict": "PASS",
+  "total": 96,
+  "passed": 96,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "trust_object_id implementation exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/connector/trust_object_id.rs"
+    },
+    {
+      "check": "contract spec exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_10/bd-1l5_contract.md"
+    },
+    {
+      "check": "evidence artifact exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_10/bd-1l5/verification_evidence.json"
+    },
+    {
+      "check": "summary artifact exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_10/bd-1l5/verification_summary.md"
+    },
+    {
+      "check": "struct/enum DomainPrefix",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum DerivationMode",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum TrustObjectId",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum IdRegistry",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum DomainRegistryEntry",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum IdError",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum IdEvent",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code TOI-001",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code TOI-002",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code ERR_TOI_INVALID_PREFIX",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code ERR_TOI_MALFORMED_DIGEST",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code ERR_TOI_INVALID_FORMAT",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code ERR_TOI_UNKNOWN_DOMAIN",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-TOI-PREFIX",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-TOI-DETERMINISTIC",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-TOI-COLLISION",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-TOI-DIGEST",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function derive_content_addressed",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function derive_context_addressed",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function parse",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function validate",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function full_form",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function short_form",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function sha256_digest",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function canonical_bytes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function demo_trust_object_ids",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function is_valid_prefix",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function domain_count",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function from_prefix",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Overview",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Data Model",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: DomainPrefix",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: TrustObjectId",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: IdRegistry",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Invariants",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Event Codes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Error Codes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Acceptance Criteria",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "domain Extension variant",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "domain prefix ext:",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "domain TrustCard variant",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "domain prefix tcard:",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "domain Receipt variant",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "domain prefix rcpt:",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "domain PolicyCheckpoint variant",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "domain prefix pchk:",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "domain MigrationArtifact variant",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "domain prefix migr:",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "domain VerifierClaim variant",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "domain prefix vclaim:",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "6 domain prefixes defined",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "derivation mode ContentAddressed",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "derivation mode ContextAddressed",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "imports sha2::Sha256",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "uses hex::encode",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "SHA-256 digest length check",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on DomainPrefix",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on DerivationMode",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on TrustObjectId",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on IdRegistry",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on DomainRegistryEntry",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on IdEvent",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Rust unit tests present (52)",
+      "pass": true,
+      "detail": "52 tests found"
+    },
+    {
+      "check": "test: domain prefix tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: round-trip parse tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: collision resistance tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: content-addressed tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: context-addressed tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: short form tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: error code tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: serde roundtrip tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: send+sync tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: demo function test",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: registry tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: determinism tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Send + Sync assertions",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC1: 6 domain prefixes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC2: both derivation modes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC3: parse/validate utilities",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC4: cross-domain collision prevention",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC5: short-form and full-form",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC6: deterministic derivation documented",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC7: SHA-256 collision resistance",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: deterministic derivation",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: different inputs differ",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: cross-domain unique",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: short form 8 chars",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: context-addressed works",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: 256-bit digest",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: hex digest",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: 6 domain prefixes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: 2 derivation modes",
+      "pass": true,
+      "detail": "ok"
+    }
+  ]
+}

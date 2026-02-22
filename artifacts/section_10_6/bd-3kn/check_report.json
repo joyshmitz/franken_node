@@ -1,0 +1,101 @@
+{
+  "bead_id": "bd-3kn",
+  "title": "Packaging profiles for local/dev/enterprise deployments",
+  "section": "10.6",
+  "verdict": "PASS",
+  "total": 18,
+  "passed": 18,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "file_exists: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_6/bd-3kn_contract.md"
+    },
+    {
+      "check": "file_exists: policy document",
+      "pass": true,
+      "detail": "exists: docs/policy/packaging_profiles.md"
+    },
+    {
+      "check": "file_exists: profiles.toml",
+      "pass": true,
+      "detail": "exists: packaging/profiles.toml"
+    },
+    {
+      "check": "profiles_toml_three_profiles",
+      "pass": true,
+      "detail": "all 3 profiles defined"
+    },
+    {
+      "check": "profiles_toml_components",
+      "pass": true,
+      "detail": "all component sections present"
+    },
+    {
+      "check": "profiles_toml_defaults",
+      "pass": true,
+      "detail": "all default sections present"
+    },
+    {
+      "check": "profiles_toml_startup",
+      "pass": true,
+      "detail": "all startup sections present"
+    },
+    {
+      "check": "profiles_toml_size_budget",
+      "pass": true,
+      "detail": "all size_budget sections present"
+    },
+    {
+      "check": "spec_event_codes",
+      "pass": true,
+      "detail": "all 4 event codes present"
+    },
+    {
+      "check": "spec_invariants",
+      "pass": true,
+      "detail": "all 8 invariants present"
+    },
+    {
+      "check": "policy_event_codes",
+      "pass": true,
+      "detail": "all 4 event codes in policy"
+    },
+    {
+      "check": "policy_invariants",
+      "pass": true,
+      "detail": "all 8 invariants in policy"
+    },
+    {
+      "check": "local_telemetry_off",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "enterprise_audit_mandatory",
+      "pass": true,
+      "detail": "audit_logging = true in enterprise defaults"
+    },
+    {
+      "check": "enterprise_integrity_check",
+      "pass": true,
+      "detail": "integrity_self_check = true in enterprise startup"
+    },
+    {
+      "check": "spec_size_constraint: '30%'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_cli_flag: '--profile'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_env_var: 'FRANKEN_NODE_PROFILE'",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

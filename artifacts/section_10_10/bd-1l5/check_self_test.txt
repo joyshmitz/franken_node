@@ -1,0 +1,18 @@
+  [PASS] REQUIRED_STRUCTS non-empty
+  [PASS] REQUIRED_EVENT_CODES count
+  [PASS] REQUIRED_ERROR_CODES count
+  [PASS] REQUIRED_INVARIANTS count
+  [PASS] REQUIRED_FUNCTIONS count
+  [PASS] DOMAIN_PREFIXES count
+  [PASS] DERIVATION_MODES count
+  [PASS] REQUIRED_SPEC_SECTIONS count
+  [PASS] simulation returns dict
+  [PASS] simulation has deterministic key
+  [PASS] run_checks has bead_id
+  [PASS] run_checks has section
+  [PASS] run_checks has verdict
+  [PASS] run_checks has checks list
+  [PASS] sha256 deterministic
+  [PASS] sha256 distinct
+
+self-test: 16/16 PASS

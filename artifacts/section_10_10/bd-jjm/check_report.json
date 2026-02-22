@@ -1,0 +1,471 @@
+{
+  "bead_id": "bd-jjm",
+  "title": "Canonical deterministic serialization and signature preimage rules",
+  "section": "10.10",
+  "verdict": "PASS",
+  "total": 92,
+  "passed": 92,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "canonical_serializer implementation exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/connector/canonical_serializer.rs"
+    },
+    {
+      "check": "contract spec exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_10/bd-jjm_contract.md"
+    },
+    {
+      "check": "evidence artifact exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_10/bd-jjm/verification_evidence.json"
+    },
+    {
+      "check": "summary artifact exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_10/bd-jjm/verification_summary.md"
+    },
+    {
+      "check": "struct/enum TrustObjectType",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum CanonicalSerializer",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum SignaturePreimage",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum CanonicalSchema",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum SerializerEvent",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "struct/enum SerializerError",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code CAN_SERIALIZE",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code CAN_PREIMAGE_CONSTRUCT",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code CAN_REJECT",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code ERR_CAN_NON_CANONICAL",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code ERR_CAN_SCHEMA_NOT_FOUND",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code ERR_CAN_FLOAT_REJECTED",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code ERR_CAN_PREIMAGE_FAILED",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code ERR_CAN_ROUND_TRIP_DIVERGENCE",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-CAN-DETERMINISTIC",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-CAN-NO-FLOAT",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-CAN-DOMAIN-TAG",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-CAN-NO-BYPASS",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function serialize",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function deserialize",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function round_trip_canonical",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function build_preimage",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function register_schema",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function with_all_schemas",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function schema_count",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function get_schema",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function to_bytes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function byte_len",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function content_hash_prefix",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function demo_canonical_serialization",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function canonical_encode",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function canonical_decode",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function contains_float_marker",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Overview",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Data Model",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: TrustObjectType",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: CanonicalSerializer",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: SignaturePreimage",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Invariants",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Event Codes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Error Codes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Acceptance Criteria",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "trust object type PolicyCheckpoint",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "trust object type DelegationToken",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "trust object type RevocationAssertion",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "trust object type SessionTicket",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "trust object type ZoneBoundaryClaim",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "trust object type OperatorReceipt",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "6 trust object types",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "domain tags defined",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "domain tag 0x10 prefix",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "unique domain tags test",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on TrustObjectType",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on CanonicalSchema",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on SignaturePreimage",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on SerializerEvent",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Rust unit tests present (52)",
+      "pass": true,
+      "detail": "52 tests"
+    },
+    {
+      "check": "test: object types",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: domain tags unique",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: round-trip all types",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: float detection",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: preimage build",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: preimage deterministic",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: serialize deterministic",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: error codes test",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: serde roundtrip",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: send+sync",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: demo function",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: encode/decode round-trip",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "imports DomainPrefix from trust_object_id",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "uses sha2::Sha256",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "uses hex::encode",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC1: 6 trust object types registered",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC2: round_trip_canonical for all types",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC3: golden vector integration",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC4: no bypass invariant",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC5: preimage byte-identical",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC6: structured logging with trace IDs",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC7: no floating-point enforcement",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC8: serde for evidence schema",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: deterministic encoding",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: round-trip stable",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: preimage has domain tag",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: different domains differ",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: float detection",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: 6 object types",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: 3 event codes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: 5 error codes",
+      "pass": true,
+      "detail": "ok"
+    }
+  ]
+}

@@ -1,0 +1,407 @@
+{
+  "bead_id": "bd-3j4",
+  "title": "End-to-End Migration Singularity Pipeline for Pilot Cohorts",
+  "section": "10.12",
+  "verdict": "PASS",
+  "total": 68,
+  "passed": 68,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "Rust module exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/connector/migration_pipeline.rs"
+    },
+    {
+      "check": "Wired into connector/mod.rs",
+      "passed": true,
+      "detail": "migration_pipeline in mod.rs"
+    },
+    {
+      "check": "Spec contract exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_12/bd-3j4_contract.md"
+    },
+    {
+      "check": "Test file exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/tests/test_check_migration_pipeline.py"
+    },
+    {
+      "check": "Evidence exists with PASS verdict",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_12/bd-3j4/verification_evidence.json"
+    },
+    {
+      "check": "Stage type Intake defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Stage type Analysis defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Stage type PlanGeneration defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Stage type PlanReview defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Stage type Execution defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Stage type Verification defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Stage type ReceiptIssuance defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Stage type Complete defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Stage type Rollback defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Pipeline operation 'fn new(' defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Pipeline operation 'fn advance(' defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Pipeline operation 'fn rollback(' defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Pipeline operation 'fn is_idempotent(' defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code PIPE-001 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code PIPE-002 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code PIPE-003 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code PIPE-004 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code PIPE-005 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code PIPE-006 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code PIPE-007 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code PIPE-008 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code PIPE-009 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code PIPE-010 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code PIPE-011 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code PIPE-012 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Event code PIPE-013 defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_PIPE_INVALID_TRANSITION defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_PIPE_VERIFICATION_FAILED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_PIPE_IDEMPOTENCY_VIOLATED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_PIPE_ROLLBACK_FAILED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_PIPE_THRESHOLD_NOT_MET defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Error code ERR_PIPE_DUPLICATE_EXTENSION defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-PIPE-DETERMINISTIC defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-PIPE-IDEMPOTENT defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-PIPE-THRESHOLD-ENFORCED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-PIPE-ROLLBACK-ANY-STAGE defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-PIPE-RECEIPT-SIGNED defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Invariant INV-PIPE-STAGE-MONOTONIC defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum PipelineState defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum CohortDefinition defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum ExtensionSpec defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum CompatibilityReport defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum MigrationPlan defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum TransformationStep defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum ExecutionTrace defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum VerificationReport defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum MigrationReceipt defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum CohortSummary defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum PipelineError defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum PipelineEvent defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Struct/enum StageTransition defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "PipelineStage enum defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "TransformAction enum defined",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Schema version pipe-v1.0",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "BTreeMap usage for determinism",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Rust unit tests (58)",
+      "passed": true,
+      "detail": "58 tests found"
+    },
+    {
+      "check": "Deterministic pipeline test",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Idempotency test",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Rollback test",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "95% threshold test",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Receipt signing test",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Verification summary exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_12/bd-3j4/verification_summary.md"
+    }
+  ],
+  "events": [
+    {
+      "code": "PIPE-001",
+      "status": "defined"
+    },
+    {
+      "code": "PIPE-002",
+      "status": "defined"
+    },
+    {
+      "code": "PIPE-003",
+      "status": "defined"
+    },
+    {
+      "code": "PIPE-004",
+      "status": "defined"
+    },
+    {
+      "code": "PIPE-005",
+      "status": "defined"
+    },
+    {
+      "code": "PIPE-006",
+      "status": "defined"
+    },
+    {
+      "code": "PIPE-007",
+      "status": "defined"
+    },
+    {
+      "code": "PIPE-008",
+      "status": "defined"
+    },
+    {
+      "code": "PIPE-009",
+      "status": "defined"
+    },
+    {
+      "code": "PIPE-010",
+      "status": "defined"
+    },
+    {
+      "code": "PIPE-011",
+      "status": "defined"
+    },
+    {
+      "code": "PIPE-012",
+      "status": "defined"
+    },
+    {
+      "code": "PIPE-013",
+      "status": "defined"
+    }
+  ],
+  "summary": "bd-3j4: End-to-End Migration Singularity Pipeline\nChecks: 68/68 passing\nVerdict: PASS",
+  "timestamp": "2026-02-22T08:17:54.360843+00:00"
+}

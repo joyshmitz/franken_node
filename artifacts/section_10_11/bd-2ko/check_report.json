@@ -1,0 +1,67 @@
+{
+  "bead_id": "bd-2ko",
+  "title": "Deterministic lab runtime verification gate",
+  "section": "10.11",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "total": 11,
+  "passed": 11,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "lab_runtime.rs exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/testing/lab_runtime.rs"
+    },
+    {
+      "check": "lab_runtime.rs event codes FN-LB-001..010",
+      "pass": true,
+      "detail": "all 10 event codes present"
+    },
+    {
+      "check": "virtual_transport.rs exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/testing/virtual_transport.rs"
+    },
+    {
+      "check": "virtual_transport.rs VT event codes",
+      "pass": true,
+      "detail": "all 8 VT event codes present"
+    },
+    {
+      "check": "scenario_builder.rs exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/testing/scenario_builder.rs"
+    },
+    {
+      "check": "scenario_builder.rs SB event codes",
+      "pass": true,
+      "detail": "all 4 SB event codes present"
+    },
+    {
+      "check": "spec contract exists",
+      "pass": true,
+      "detail": "docs/specs/section_10_11/bd-2ko_contract.md"
+    },
+    {
+      "check": "evidence JSON exists",
+      "pass": true,
+      "detail": "artifacts/section_10_11/bd-2ko/verification_evidence.json"
+    },
+    {
+      "check": "evidence JSON is valid",
+      "pass": true,
+      "detail": "valid JSON object"
+    },
+    {
+      "check": "evidence required fields",
+      "pass": true,
+      "detail": "all required fields present"
+    },
+    {
+      "check": "determinism_verified is true",
+      "pass": true,
+      "detail": "determinism_verified=True"
+    }
+  ]
+}

@@ -1,0 +1,157 @@
+{
+  "bead_id": "bd-2q5",
+  "title": "Optimize migration scanner throughput for large monorepos",
+  "section": "10.6",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 29,
+  "passed": 29,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "spec_exists",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_6/bd-2q5_contract.md"
+    },
+    {
+      "check": "policy_exists",
+      "pass": true,
+      "detail": "exists: docs/policy/scanner_throughput_optimization.md"
+    },
+    {
+      "check": "spec_keyword: incremental",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword: parallel",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword: deterministic",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword: cache",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword: TTL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword: hash",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: OMS-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: OMS-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: OMS-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: OMS-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-OMS-HASH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-OMS-BATCH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-OMS-TTL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-OMS-SCALE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_strategy: Incremental scanning",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_strategy: Parallel file processing",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_strategy: Cache reuse",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "benchmark_target: wall-clock",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "benchmark_target: files/second",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "benchmark_target: cache hit ratio",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "benchmark_target: peak memory",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "quantitative_targets",
+      "pass": true,
+      "detail": "10% threshold, 3.0x speedup, 7-day TTL"
+    },
+    {
+      "check": "cache_path",
+      "pass": true,
+      "detail": "scan_cache.json referenced"
+    },
+    {
+      "check": "clear_cache_flag",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cache_versioning",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "workers_flag",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "synthetic_fixture",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

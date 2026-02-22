@@ -1,0 +1,253 @@
+{
+  "bead_id": "bd-23ys",
+  "title": "Section 10.2 verification gate: Compatibility Architecture",
+  "section": "10.2",
+  "gate": true,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 45,
+  "passed": 45,
+  "failed": 0,
+  "section_beads": [
+    "bd-2wz",
+    "bd-2qf",
+    "bd-38l",
+    "bd-2kf",
+    "bd-1z3",
+    "bd-2vi",
+    "bd-32v",
+    "bd-1ck",
+    "bd-240",
+    "bd-2hs",
+    "bd-80g",
+    "bd-7mt"
+  ],
+  "checks": [
+    {
+      "check": "evidence_bd-2wz",
+      "pass": true,
+      "detail": "PASS: Compatibility bands"
+    },
+    {
+      "check": "evidence_bd-2qf",
+      "pass": true,
+      "detail": "PASS: Compatibility registry"
+    },
+    {
+      "check": "evidence_bd-38l",
+      "pass": true,
+      "detail": "PASS: Divergence ledger"
+    },
+    {
+      "check": "evidence_bd-2kf",
+      "pass": true,
+      "detail": "PASS: Compatibility mode policy"
+    },
+    {
+      "check": "evidence_bd-1z3",
+      "pass": true,
+      "detail": "PASS: Compatibility fixture runner"
+    },
+    {
+      "check": "evidence_bd-2vi",
+      "pass": true,
+      "detail": "PASS: L1 lockstep runner"
+    },
+    {
+      "check": "evidence_bd-32v",
+      "pass": true,
+      "detail": "PASS: Minimized fixture spec"
+    },
+    {
+      "check": "evidence_bd-1ck",
+      "pass": true,
+      "detail": "PASS: L2 engine-boundary oracle"
+    },
+    {
+      "check": "evidence_bd-240",
+      "pass": true,
+      "detail": "PASS: Compatibility dashboard"
+    },
+    {
+      "check": "evidence_bd-2hs",
+      "pass": true,
+      "detail": "PASS: Four-doc spec pack verification"
+    },
+    {
+      "check": "evidence_bd-80g",
+      "pass": true,
+      "detail": "PASS: Fixture corpus verification"
+    },
+    {
+      "check": "evidence_bd-7mt",
+      "pass": true,
+      "detail": "PASS: Compat CI gate verification"
+    },
+    {
+      "check": "summary_bd-2wz",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_2/bd-2wz/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2qf",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_2/bd-2qf/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-38l",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_2/bd-38l/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2kf",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_2/bd-2kf/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1z3",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_2/bd-1z3/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2vi",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_2/bd-2vi/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-32v",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_2/bd-32v/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1ck",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_2/bd-1ck/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-240",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_2/bd-240/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2hs",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_2/bd-2hs/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-80g",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_2/bd-80g/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-7mt",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_2/bd-7mt/verification_summary.md"
+    },
+    {
+      "check": "all_evidence_present",
+      "pass": true,
+      "detail": "12/12 beads have evidence"
+    },
+    {
+      "check": "all_verdicts_pass",
+      "pass": true,
+      "detail": "12/12 PASS"
+    },
+    {
+      "check": "gate_tests",
+      "pass": true,
+      "detail": "exists: tests/test_check_section_10_2_gate.py"
+    },
+    {
+      "check": "domain_compat_bands_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_compat_registry_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_divergence_ledger_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_mode_policy_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_fixture_runner_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_lockstep_runner_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_fixture_spec_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_engine_oracle_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_dashboard_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_spec_pack_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_fixture_corpus_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_ci_gate_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "pipeline_bands_to_registry",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_registry_to_ledger",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_policy_to_runner",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_spec_to_corpus",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_runner_to_lockstep",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_oracle_to_dashboard",
+      "pass": true,
+      "detail": "both have evidence"
+    }
+  ],
+  "timestamp": "2026-02-22T08:10:52.364089+00:00"
+}

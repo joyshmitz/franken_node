@@ -1,55 +1,53 @@
 {
-  "schema_version": "1.0",
   "bead_id": "bd-16sk",
-  "artifact_type": "gate_verdict",
-  "timestamp": "2026-02-20T09:27:43.252675+00:00",
-  "git_commit": "32b56e4c639fd2a39f3f0b77ee55a656ae65109e",
-  "verdict": "PASS",
-  "gate_type": "section_comprehensive",
   "section": "10.1",
-  "section_name": "Charter + Split Governance",
+  "title": "Section 10.1 verification gate",
+  "generated_at": "2026-02-22T08:11:14Z",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "status": "all_bead_evidence_present",
+  "summary": {
+    "passed": 31,
+    "failed": 0,
+    "total": 31,
+    "missing_evidence_beads": []
+  },
   "checks": [
     {
-      "id": "GATE-SCRIPTS",
+      "name": "gate_self_test",
+      "command": "python3 scripts/check_section_10_1_gate.py --self-test --json",
+      "exit_code": 0,
       "status": "PASS",
-      "detail": "7/7 verification scripts pass"
+      "output_path": "artifacts/section_10_1/bd-16sk/check_self_test.txt"
     },
     {
-      "id": "GATE-TESTS",
+      "name": "gate_unit_tests",
+      "command": "python3 -m unittest tests/test_check_section_10_1_gate.py",
+      "exit_code": 0,
       "status": "PASS",
-      "detail": "57 unit tests passed, 0 failed"
+      "output_path": "artifacts/section_10_1/bd-16sk/unit_tests.txt",
+      "summary": "Ran 20 tests: OK"
     },
     {
-      "id": "GATE-ARTIFACTS",
+      "name": "gate_report",
+      "command": "python3 scripts/check_section_10_1_gate.py --json",
+      "exit_code": 0,
       "status": "PASS",
-      "detail": "8/8 evidence artifacts verified with PASS verdicts"
-    },
-    {
-      "id": "GATE-GOVERNANCE",
-      "status": "PASS",
-      "detail": "5/5 governance documents present"
+      "output_path": "artifacts/section_10_1/bd-16sk/check_report.json",
+      "summary": {
+        "verdict": "PASS",
+        "passed": 31,
+        "failed": 0,
+        "missing_evidence_beads": []
+      }
     }
   ],
-  "beads_verified": [
-    "bd-2nd",
-    "bd-vjq",
-    "bd-1j2",
-    "bd-2zz",
-    "bd-4yv",
-    "bd-1mj",
-    "bd-20l",
-    "bd-1pc"
-  ],
-  "unit_test_summary": {
-    "total": 57,
-    "passed": 57,
-    "failed": 0
-  },
-  "outputs": [
-    {
-      "path": "scripts/gate_section_10_1.py",
-      "sha256": "fe48ab197f39dbf2027408282b554b9ecfedd53a6551e4fd6b5c189023cc357c",
-      "size_bytes": 10680
-    }
-  ]
+  "artifacts": {
+    "gate_script": "scripts/check_section_10_1_gate.py",
+    "gate_tests": "tests/test_check_section_10_1_gate.py",
+    "check_self_test": "artifacts/section_10_1/bd-16sk/check_self_test.txt",
+    "check_report": "artifacts/section_10_1/bd-16sk/check_report.json",
+    "verification_summary": "artifacts/section_10_1/bd-16sk/verification_summary.md",
+    "verification_evidence": "artifacts/section_10_1/bd-16sk/verification_evidence.json"
+  }
 }

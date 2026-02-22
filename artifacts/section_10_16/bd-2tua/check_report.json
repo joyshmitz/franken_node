@@ -1,0 +1,650 @@
+{
+  "bead_id": "bd-2tua",
+  "title": "Frankensqlite adapter layer",
+  "section": "10.16",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "test_count": "48",
+  "summary": {
+    "passing": 127,
+    "failing": 0,
+    "total": 127
+  },
+  "checks": [
+    {
+      "check": "file: conformance test",
+      "pass": true,
+      "detail": "exists: tests/integration/frankensqlite_adapter_conformance.rs"
+    },
+    {
+      "check": "file: adapter report",
+      "pass": true,
+      "detail": "exists: artifacts/10.16/frankensqlite_adapter_report.json"
+    },
+    {
+      "check": "file: persistence matrix",
+      "pass": true,
+      "detail": "exists: artifacts/10.16/frankensqlite_persistence_matrix.json"
+    },
+    {
+      "check": "file: spec doc",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_16/bd-2tua_contract.md"
+    },
+    {
+      "check": "conformance test count",
+      "pass": true,
+      "detail": "48 tests (minimum 40)"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum SafetyTier",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum DurabilityMode",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum AdapterError",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct PersistenceClass",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct AdapterConfig",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct ConformanceResult",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct AdapterEvent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct FrankensqliteAdapter",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct AdapterSummary",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn register_class(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn tier1_write(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn tier1_read(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn tier1_audit_append(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn tier1_audit_read(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn tier2_flush(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn tier2_latest(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn tier3_put(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn tier3_get(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn tier3_evict(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn gate_pass(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn summary(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn to_report(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn all(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn label(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn requires_replay(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn for_tier(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn journal_mode(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn synchronous(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: FRANKENSQLITE_ADAPTER_INIT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: FRANKENSQLITE_WRITE_SUCCESS",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: FRANKENSQLITE_WRITE_FAIL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: FRANKENSQLITE_CRASH_RECOVERY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: FRANKENSQLITE_REPLAY_START",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: FRANKENSQLITE_REPLAY_MISMATCH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-FSA-MAPPED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-FSA-TIER",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-FSA-REPLAY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-FSA-SCHEMA",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_safety_tier_all_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_safety_tier_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_safety_tier_requires_replay",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_safety_tier_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_safety_tier_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_durability_mode_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_durability_mode_journal",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_durability_mode_synchronous",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_durability_mode_for_tier",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_durability_mode_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_durability_mode_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_class_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_tier1_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_tier2_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_tier3_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_tier1_tier2_replay",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_durability_mode_matches_tier",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_unique_domains",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_unique_table_names",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_adapter_new_emits_init_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_adapter_config_defaults",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_adapter_empty_gate_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_adapter_all_classes_gate_pass",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_adapter_summary",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_adapter_total_tables",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_tier1_write_read_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_tier1_read_missing_key",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_tier1_write_emits_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_tier1_write_unknown_domain_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_tier1_audit_append_read",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_tier2_flush_latest",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_tier2_latest_empty",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_tier3_put_get_evict",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_tier3_get_missing",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_take_events_drains",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_event_has_transaction_id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_structure",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_pass_verdict",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_fail_verdict_empty",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_conformance_results_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_invariant_constants_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_event_code_constants_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_adapter_error_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_adapter_error_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_determinism_same_input_same_report",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_persistence_class_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_adapter_event_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_conformance_result_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: fencing_token_state",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: lease_service_state",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: lease_quorum_coordination",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: rollout_state",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: health_gate_policy_state",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: control_channel_sequence_window",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: artifact_journal",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: tiered_trust_storage",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: canonical_state_roots",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: durability_mode_controls",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: durable_claim_gate_audit",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: snapshot_policy_state",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: crdt_merge_state",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: schema_migration_registry",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: quarantine_store_state",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: quarantine_promotion_receipts",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: retention_policy_state",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: offline_coverage_metrics",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: repair_cycle_audit",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: lease_conflict_audit",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: lifecycle_transition_cache",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report: valid JSON",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "report: gate verdict PASS",
+      "pass": true,
+      "detail": "PASS"
+    },
+    {
+      "check": "report: all conformance pass",
+      "pass": true,
+      "detail": "21 results, all pass"
+    },
+    {
+      "check": "report: 21 conformance results",
+      "pass": true,
+      "detail": "21 results"
+    },
+    {
+      "check": "report: tier1 count = 11",
+      "pass": true,
+      "detail": "tier1_count: 11"
+    },
+    {
+      "check": "report: tier2 count = 9",
+      "pass": true,
+      "detail": "tier2_count: 9"
+    },
+    {
+      "check": "report: tier3 count = 1",
+      "pass": true,
+      "detail": "tier3_count: 1"
+    },
+    {
+      "check": "spec doc: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: section 'Types'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: section 'Methods'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: section 'Event Codes'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: section 'Invariants'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec doc: section 'Acceptance Criteria'",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

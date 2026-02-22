@@ -1,0 +1,331 @@
+{
+  "bead_id": "bd-3hig",
+  "section": "9",
+  "title": "Multi-Track Build Program",
+  "total": 64,
+  "passed": 64,
+  "failed": 0,
+  "ok": true,
+  "checks": [
+    {
+      "check": "file_exists:docs/specs/section_9/bd-3hig_contract.md",
+      "passed": true,
+      "detail": "found: docs/specs/section_9/bd-3hig_contract.md"
+    },
+    {
+      "check": "file_exists:docs/governance/build_program.md",
+      "passed": true,
+      "detail": "found: docs/governance/build_program.md"
+    },
+    {
+      "check": "track_documented:Track-A",
+      "passed": true,
+      "detail": "found in docs"
+    },
+    {
+      "check": "track_documented:Track-B",
+      "passed": true,
+      "detail": "found in docs"
+    },
+    {
+      "check": "track_documented:Track-C",
+      "passed": true,
+      "detail": "found in docs"
+    },
+    {
+      "check": "track_documented:Track-D",
+      "passed": true,
+      "detail": "found in docs"
+    },
+    {
+      "check": "track_documented:Track-E",
+      "passed": true,
+      "detail": "found in docs"
+    },
+    {
+      "check": "exit_gate:Track-A",
+      "passed": true,
+      "detail": "found exit gate for Track-A"
+    },
+    {
+      "check": "exit_gate:Track-B",
+      "passed": true,
+      "detail": "found exit gate for Track-B"
+    },
+    {
+      "check": "exit_gate:Track-C",
+      "passed": true,
+      "detail": "found exit gate for Track-C"
+    },
+    {
+      "check": "exit_gate:Track-D",
+      "passed": true,
+      "detail": "found exit gate for Track-D"
+    },
+    {
+      "check": "exit_gate:Track-E",
+      "passed": true,
+      "detail": "found exit gate for Track-E"
+    },
+    {
+      "check": "enhancement_map:9A",
+      "passed": true,
+      "detail": "found: 9A"
+    },
+    {
+      "check": "enhancement_map:9B",
+      "passed": true,
+      "detail": "found: 9B"
+    },
+    {
+      "check": "enhancement_map:9C",
+      "passed": true,
+      "detail": "found: 9C"
+    },
+    {
+      "check": "enhancement_map:9D",
+      "passed": true,
+      "detail": "found: 9D"
+    },
+    {
+      "check": "enhancement_map:9E",
+      "passed": true,
+      "detail": "found: 9E"
+    },
+    {
+      "check": "enhancement_map:9F",
+      "passed": true,
+      "detail": "found: 9F"
+    },
+    {
+      "check": "enhancement_map:9G",
+      "passed": true,
+      "detail": "found: 9G"
+    },
+    {
+      "check": "enhancement_map:9H",
+      "passed": true,
+      "detail": "found: 9H"
+    },
+    {
+      "check": "enhancement_map:9I",
+      "passed": true,
+      "detail": "found: 9I"
+    },
+    {
+      "check": "enhancement_map:9J",
+      "passed": true,
+      "detail": "found: 9J"
+    },
+    {
+      "check": "enhancement_map:9K",
+      "passed": true,
+      "detail": "found: 9K"
+    },
+    {
+      "check": "enhancement_map:9L",
+      "passed": true,
+      "detail": "found: 9L"
+    },
+    {
+      "check": "enhancement_map:9M",
+      "passed": true,
+      "detail": "found: 9M"
+    },
+    {
+      "check": "enhancement_map:9N",
+      "passed": true,
+      "detail": "found: 9N"
+    },
+    {
+      "check": "enhancement_map:9O",
+      "passed": true,
+      "detail": "found: 9O"
+    },
+    {
+      "check": "section_mapping:10.1",
+      "passed": true,
+      "detail": "found: 10.1"
+    },
+    {
+      "check": "section_mapping:10.2",
+      "passed": true,
+      "detail": "found: 10.2"
+    },
+    {
+      "check": "section_mapping:10.3",
+      "passed": true,
+      "detail": "found: 10.3"
+    },
+    {
+      "check": "section_mapping:10.4",
+      "passed": true,
+      "detail": "found: 10.4"
+    },
+    {
+      "check": "section_mapping:10.5",
+      "passed": true,
+      "detail": "found: 10.5"
+    },
+    {
+      "check": "section_mapping:10.7",
+      "passed": true,
+      "detail": "found: 10.7"
+    },
+    {
+      "check": "section_mapping:10.8",
+      "passed": true,
+      "detail": "found: 10.8"
+    },
+    {
+      "check": "section_mapping:10.9",
+      "passed": true,
+      "detail": "found: 10.9"
+    },
+    {
+      "check": "section_mapping:10.12",
+      "passed": true,
+      "detail": "found: 10.12"
+    },
+    {
+      "check": "section_mapping:10.13",
+      "passed": true,
+      "detail": "found: 10.13"
+    },
+    {
+      "check": "section_mapping:10.14",
+      "passed": true,
+      "detail": "found: 10.14"
+    },
+    {
+      "check": "section_mapping:10.17",
+      "passed": true,
+      "detail": "found: 10.17"
+    },
+    {
+      "check": "section_mapping:10.18",
+      "passed": true,
+      "detail": "found: 10.18"
+    },
+    {
+      "check": "section_mapping:10.19",
+      "passed": true,
+      "detail": "found: 10.19"
+    },
+    {
+      "check": "section_mapping:10.20",
+      "passed": true,
+      "detail": "found: 10.20"
+    },
+    {
+      "check": "section_mapping:10.21",
+      "passed": true,
+      "detail": "found: 10.21"
+    },
+    {
+      "check": "event_code:BLD-001",
+      "passed": true,
+      "detail": "found: BLD-001"
+    },
+    {
+      "check": "event_code:BLD-002",
+      "passed": true,
+      "detail": "found: BLD-002"
+    },
+    {
+      "check": "event_code:BLD-003",
+      "passed": true,
+      "detail": "found: BLD-003"
+    },
+    {
+      "check": "event_code:BLD-004",
+      "passed": true,
+      "detail": "found: BLD-004"
+    },
+    {
+      "check": "invariant:INV-BLD-TRACKS",
+      "passed": true,
+      "detail": "found: INV-BLD-TRACKS"
+    },
+    {
+      "check": "invariant:INV-BLD-MAPS",
+      "passed": true,
+      "detail": "found: INV-BLD-MAPS"
+    },
+    {
+      "check": "invariant:INV-BLD-EXIT",
+      "passed": true,
+      "detail": "found: INV-BLD-EXIT"
+    },
+    {
+      "check": "invariant:INV-BLD-TRACE",
+      "passed": true,
+      "detail": "found: INV-BLD-TRACE"
+    },
+    {
+      "check": "required_section:Track-A",
+      "passed": true,
+      "detail": "found section: Track-A"
+    },
+    {
+      "check": "required_section:Track-B",
+      "passed": true,
+      "detail": "found section: Track-B"
+    },
+    {
+      "check": "required_section:Track-C",
+      "passed": true,
+      "detail": "found section: Track-C"
+    },
+    {
+      "check": "required_section:Track-D",
+      "passed": true,
+      "detail": "found section: Track-D"
+    },
+    {
+      "check": "required_section:Track-E",
+      "passed": true,
+      "detail": "found section: Track-E"
+    },
+    {
+      "check": "required_section:Enhancement Map",
+      "passed": true,
+      "detail": "found section: Enhancement Map"
+    },
+    {
+      "check": "required_section:Event Code",
+      "passed": true,
+      "detail": "found section: Event Code"
+    },
+    {
+      "check": "required_section:Invariant",
+      "passed": true,
+      "detail": "found section: Invariant"
+    },
+    {
+      "check": "spec_keyword:Exit Gate",
+      "passed": true,
+      "detail": "found keyword: Exit Gate"
+    },
+    {
+      "check": "spec_keyword:Enhancement Map",
+      "passed": true,
+      "detail": "found keyword: Enhancement Map"
+    },
+    {
+      "check": "spec_keyword:Event Code",
+      "passed": true,
+      "detail": "found keyword: Event Code"
+    },
+    {
+      "check": "spec_keyword:Invariant",
+      "passed": true,
+      "detail": "found keyword: Invariant"
+    },
+    {
+      "check": "spec_keyword:Acceptance Criteria",
+      "passed": true,
+      "detail": "found keyword: Acceptance Criteria"
+    }
+  ]
+}

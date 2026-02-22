@@ -1,0 +1,357 @@
+{
+  "bead_id": "bd-zm5b",
+  "title": "Section 10.21 verification gate: Behavioral Package Evolution Tracker (BPET)",
+  "section": "10.21",
+  "gate": true,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 65,
+  "passed": 65,
+  "failed": 0,
+  "section_beads": [
+    "bd-39ga",
+    "bd-2xgs",
+    "bd-3rai",
+    "bd-1ga5",
+    "bd-2ao3",
+    "bd-2lll",
+    "bd-1b9x",
+    "bd-1jpc",
+    "bd-232t",
+    "bd-kwwg",
+    "bd-2zo1",
+    "bd-ye4m",
+    "bd-1naf",
+    "bd-3cbi",
+    "bd-aoq6",
+    "bd-3v9l"
+  ],
+  "checks": [
+    {
+      "check": "evidence_bd-39ga",
+      "pass": true,
+      "detail": "PASS: BehavioralGenome schema and version-lineage contract"
+    },
+    {
+      "check": "evidence_bd-2xgs",
+      "pass": true,
+      "detail": "PASS: Deterministic phenotype feature extraction"
+    },
+    {
+      "check": "evidence_bd-3rai",
+      "pass": true,
+      "detail": "PASS: Signed lineage graph builder"
+    },
+    {
+      "check": "evidence_bd-1ga5",
+      "pass": true,
+      "detail": "PASS: Cohort-aware baseline modeling"
+    },
+    {
+      "check": "evidence_bd-2ao3",
+      "pass": true,
+      "detail": "PASS: Temporal drift feature engine"
+    },
+    {
+      "check": "evidence_bd-2lll",
+      "pass": true,
+      "detail": "PASS: Changepoint and regime-shift detection"
+    },
+    {
+      "check": "evidence_bd-1b9x",
+      "pass": true,
+      "detail": "PASS: Survival/hazard model"
+    },
+    {
+      "check": "evidence_bd-1jpc",
+      "pass": true,
+      "detail": "PASS: Unified evolution-risk scorer"
+    },
+    {
+      "check": "evidence_bd-232t",
+      "pass": true,
+      "detail": "PASS: BPET trajectory signals integration"
+    },
+    {
+      "check": "evidence_bd-kwwg",
+      "pass": true,
+      "detail": "PASS: BPET with DGIS integration"
+    },
+    {
+      "check": "evidence_bd-2zo1",
+      "pass": true,
+      "detail": "PASS: BPET with ATC integration"
+    },
+    {
+      "check": "evidence_bd-ye4m",
+      "pass": true,
+      "detail": "PASS: Adversarial evaluation suite"
+    },
+    {
+      "check": "evidence_bd-1naf",
+      "pass": true,
+      "detail": "PASS: BPET governance policy for thresholding/appeals/override wor"
+    },
+    {
+      "check": "evidence_bd-3cbi",
+      "pass": true,
+      "detail": "PASS: Integrate BPET risk into economic trust layer and operator c"
+    },
+    {
+      "check": "evidence_bd-aoq6",
+      "pass": true,
+      "detail": "PASS: BPET migration stability gate verification"
+    },
+    {
+      "check": "evidence_bd-3v9l",
+      "pass": true,
+      "detail": "PASS: BPET performance budgets and predictive claim release gate"
+    },
+    {
+      "check": "summary_bd-39ga",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-39ga/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2xgs",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-2xgs/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3rai",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-3rai/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1ga5",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-1ga5/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2ao3",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-2ao3/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2lll",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-2lll/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1b9x",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-1b9x/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1jpc",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-1jpc/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-232t",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-232t/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-kwwg",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-kwwg/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2zo1",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-2zo1/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-ye4m",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-ye4m/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1naf",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-1naf/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3cbi",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-3cbi/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-aoq6",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-aoq6/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3v9l",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_21/bd-3v9l/verification_summary.md"
+    },
+    {
+      "check": "all_evidence_present",
+      "pass": true,
+      "detail": "16/16 beads have evidence"
+    },
+    {
+      "check": "all_verdicts_pass",
+      "pass": true,
+      "detail": "16/16 PASS"
+    },
+    {
+      "check": "artifact_bpet_governance_audit_log",
+      "pass": true,
+      "detail": "exists: artifacts/10.21/bpet_governance_audit_log.jsonl"
+    },
+    {
+      "check": "artifact_bpet_release_gate_report",
+      "pass": true,
+      "detail": "exists: artifacts/10.21/bpet_release_gate_report.json"
+    },
+    {
+      "check": "artifact_bpet_migration_gate_results",
+      "pass": true,
+      "detail": "exists: artifacts/10.21/bpet_migration_gate_results.json"
+    },
+    {
+      "check": "artifact_bpet_economic_guidance_report",
+      "pass": true,
+      "detail": "exists: artifacts/10.21/bpet_economic_guidance_report.csv"
+    },
+    {
+      "check": "gate_tests",
+      "pass": true,
+      "detail": "exists: tests/test_check_section_10_21_gate.py"
+    },
+    {
+      "check": "domain_genome_schema_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_phenotype_extraction_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_lineage_graph_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_baseline_modeling_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_drift_detection_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_changepoint_detection_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_survival_model_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_risk_scoring_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_trajectory_signals_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_dgis_integration_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_atc_integration_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_adversarial_testing_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_governance_policy_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_economic_integration_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_migration_gate_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_release_gate_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "pipeline_schema_to_extraction",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_extraction_to_lineage",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_lineage_to_baseline",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_baseline_to_drift",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_drift_to_changepoint",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_changepoint_to_survival",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_survival_to_risk",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_risk_to_trajectory",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_trajectory_to_dgis",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_trajectory_to_atc",
+      "pass": true,
+      "detail": "both have evidence"
+    }
+  ],
+  "timestamp": "2026-02-22T08:06:10.888201+00:00"
+}

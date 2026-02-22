@@ -1,0 +1,296 @@
+{
+  "bead_id": "bd-ud5h",
+  "title": "Security and Trust Product Doctrine",
+  "section": "6",
+  "verdict": "PASS",
+  "total": 57,
+  "passed": 57,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "file_exists:doctrine_doc",
+      "pass": true,
+      "detail": "docs/doctrine/security_and_trust.md"
+    },
+    {
+      "name": "file_exists:spec_contract",
+      "pass": true,
+      "detail": "docs/specs/section_6/bd-ud5h_contract.md"
+    },
+    {
+      "name": "adversary:ADV-01",
+      "pass": true,
+      "detail": "ADV-01: Supply-Chain Compromise"
+    },
+    {
+      "name": "adversary:ADV-02",
+      "pass": true,
+      "detail": "ADV-02: Credential Exfiltration"
+    },
+    {
+      "name": "adversary:ADV-03",
+      "pass": true,
+      "detail": "ADV-03: Policy Evasion"
+    },
+    {
+      "name": "adversary:ADV-04",
+      "pass": true,
+      "detail": "ADV-04: Delayed Payload"
+    },
+    {
+      "name": "adversary:ADV-05",
+      "pass": true,
+      "detail": "ADV-05: Operational Confusion"
+    },
+    {
+      "name": "mitigation:provenance",
+      "pass": true,
+      "detail": "mitigation keyword: provenance"
+    },
+    {
+      "name": "mitigation:revocation",
+      "pass": true,
+      "detail": "mitigation keyword: revocation"
+    },
+    {
+      "name": "mitigation:sandbox",
+      "pass": true,
+      "detail": "mitigation keyword: sandbox"
+    },
+    {
+      "name": "mitigation:capability",
+      "pass": true,
+      "detail": "mitigation keyword: capability"
+    },
+    {
+      "name": "mitigation:containment",
+      "pass": true,
+      "detail": "mitigation keyword: containment"
+    },
+    {
+      "name": "mitigation:deterministic replay",
+      "pass": true,
+      "detail": "mitigation keyword: deterministic replay"
+    },
+    {
+      "name": "mitigation:audit",
+      "pass": true,
+      "detail": "mitigation keyword: audit"
+    },
+    {
+      "name": "mitigation:anomaly detection",
+      "pass": true,
+      "detail": "mitigation keyword: anomaly detection"
+    },
+    {
+      "name": "mitigation:signed",
+      "pass": true,
+      "detail": "mitigation keyword: signed"
+    },
+    {
+      "name": "surface:TNS-01",
+      "pass": true,
+      "detail": "TNS-01: Extension Trust Cards"
+    },
+    {
+      "name": "surface:TNS-02",
+      "pass": true,
+      "detail": "TNS-02: Policy-Visible Compatibility"
+    },
+    {
+      "name": "surface:TNS-03",
+      "pass": true,
+      "detail": "TNS-03: Revocation-First"
+    },
+    {
+      "name": "surface:TNS-04",
+      "pass": true,
+      "detail": "TNS-04: Signed Incident Receipts"
+    },
+    {
+      "name": "surface:TNS-05",
+      "pass": true,
+      "detail": "TNS-05: Autonomous Containment"
+    },
+    {
+      "name": "safety_target:SGT-01",
+      "pass": true,
+      "detail": "SGT-01: false-negative"
+    },
+    {
+      "name": "safety_target:SGT-02",
+      "pass": true,
+      "detail": "SGT-02: false-positive"
+    },
+    {
+      "name": "safety_target:SGT-03",
+      "pass": true,
+      "detail": "SGT-03: deterministic replay"
+    },
+    {
+      "name": "safety_target:SGT-04",
+      "pass": true,
+      "detail": "SGT-04: degraded-mode"
+    },
+    {
+      "name": "threshold:false_neg_bound",
+      "pass": true,
+      "detail": "threshold: 0.1%"
+    },
+    {
+      "name": "threshold:false_pos_bound",
+      "pass": true,
+      "detail": "threshold: 1.0%"
+    },
+    {
+      "name": "threshold:replay_target",
+      "pass": true,
+      "detail": "threshold: 100%"
+    },
+    {
+      "name": "event_code:SEC-001",
+      "pass": true,
+      "detail": "SEC-001"
+    },
+    {
+      "name": "event_code:SEC-002",
+      "pass": true,
+      "detail": "SEC-002"
+    },
+    {
+      "name": "event_code:SEC-003",
+      "pass": true,
+      "detail": "SEC-003"
+    },
+    {
+      "name": "event_code:SEC-004",
+      "pass": true,
+      "detail": "SEC-004"
+    },
+    {
+      "name": "event_code:SEC-005",
+      "pass": true,
+      "detail": "SEC-005"
+    },
+    {
+      "name": "invariant:INV-SEC-THREAT",
+      "pass": true,
+      "detail": "INV-SEC-THREAT"
+    },
+    {
+      "name": "invariant:INV-SEC-SURFACE",
+      "pass": true,
+      "detail": "INV-SEC-SURFACE"
+    },
+    {
+      "name": "invariant:INV-SEC-SAFETY",
+      "pass": true,
+      "detail": "INV-SEC-SAFETY"
+    },
+    {
+      "name": "invariant:INV-SEC-REVIEW",
+      "pass": true,
+      "detail": "INV-SEC-REVIEW"
+    },
+    {
+      "name": "cross_section:10.2",
+      "pass": true,
+      "detail": "cross-section: 10.2"
+    },
+    {
+      "name": "cross_section:10.3",
+      "pass": true,
+      "detail": "cross-section: 10.3"
+    },
+    {
+      "name": "cross_section:10.4",
+      "pass": true,
+      "detail": "cross-section: 10.4"
+    },
+    {
+      "name": "cross_section:10.5",
+      "pass": true,
+      "detail": "cross-section: 10.5"
+    },
+    {
+      "name": "cross_section:10.8",
+      "pass": true,
+      "detail": "cross-section: 10.8"
+    },
+    {
+      "name": "cross_section:10.13",
+      "pass": true,
+      "detail": "cross-section: 10.13"
+    },
+    {
+      "name": "cross_section:10.14",
+      "pass": true,
+      "detail": "cross-section: 10.14"
+    },
+    {
+      "name": "cross_section:10.17",
+      "pass": true,
+      "detail": "cross-section: 10.17"
+    },
+    {
+      "name": "section:Problem Statement",
+      "pass": true,
+      "detail": "section: Problem Statement"
+    },
+    {
+      "name": "section:Product Goal",
+      "pass": true,
+      "detail": "section: Product Goal"
+    },
+    {
+      "name": "section:Threat Model",
+      "pass": true,
+      "detail": "section: Threat Model"
+    },
+    {
+      "name": "section:Trust-Native Product Surfaces",
+      "pass": true,
+      "detail": "section: Trust-Native Product Surfaces"
+    },
+    {
+      "name": "section:Safety Guarantee Targets",
+      "pass": true,
+      "detail": "section: Safety Guarantee Targets"
+    },
+    {
+      "name": "section:Cross-Section",
+      "pass": true,
+      "detail": "section: Cross-Section"
+    },
+    {
+      "name": "spec:bd-ud5h",
+      "pass": true,
+      "detail": "spec: bd-ud5h"
+    },
+    {
+      "name": "spec:ADV-01",
+      "pass": true,
+      "detail": "spec: ADV-01"
+    },
+    {
+      "name": "spec:TNS-01",
+      "pass": true,
+      "detail": "spec: TNS-01"
+    },
+    {
+      "name": "spec:SGT-01",
+      "pass": true,
+      "detail": "spec: SGT-01"
+    },
+    {
+      "name": "spec:SEC-001",
+      "pass": true,
+      "detail": "spec: SEC-001"
+    },
+    {
+      "name": "spec:INV-SEC",
+      "pass": true,
+      "detail": "spec: INV-SEC"
+    }
+  ]
+}

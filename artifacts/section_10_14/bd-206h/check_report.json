@@ -1,0 +1,311 @@
+{
+  "bead_id": "bd-206h",
+  "title": "Idempotency dedupe store with at-most-once execution guarantee",
+  "section": "10.14",
+  "verdict": "PASS",
+  "total": 60,
+  "passed": 60,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "SOURCE_EXISTS",
+      "pass": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/remote/idempotency_store.rs"
+    },
+    {
+      "check": "mod.rs wires idempotency_store",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "contract spec exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_14/bd-206h_contract.md"
+    },
+    {
+      "check": "evidence artifact exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_14/bd-206h/verification_evidence.json"
+    },
+    {
+      "check": "summary artifact exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_14/bd-206h/verification_summary.md"
+    },
+    {
+      "check": "event code ID_ENTRY_NEW",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code ID_ENTRY_DUPLICATE",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code ID_ENTRY_CONFLICT",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code ID_ENTRY_EXPIRED",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code ID_STORE_RECOVERY",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code ID_INFLIGHT_RESOLVED",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code ID_SWEEP_COMPLETE",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "EVENT_CODES all 7 present",
+      "pass": true,
+      "detail": "7/7"
+    },
+    {
+      "check": "invariant INV-IDS-AT-MOST-ONCE",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-IDS-CONFLICT-DETECT",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-IDS-TTL-BOUND",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-IDS-CRASH-SAFE",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-IDS-AUDITABLE",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "INVARIANTS all 5 present",
+      "pass": true,
+      "detail": "5/5"
+    },
+    {
+      "check": "core type DedupeResult",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "core type DedupeEntry",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "core type IdempotencyDedupeStore",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "core type CachedOutcome",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "core type EntryStatus",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "CONFLICT_ERROR code",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "TTL_EXPIRATION: DEFAULT_TTL_SECS defined",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "TTL_EXPIRATION: is_expired method",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "TTL_EXPIRATION: 604_800 seconds (7 days)",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "CRASH_RECOVERY: recover_inflight",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "CRASH_RECOVERY: Abandoned variant",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "CRASH_RECOVERY: init constructor",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AUDIT_TRAIL: export_audit_log_jsonl",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AUDIT_TRAIL: IdsAuditRecord type",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AUDIT_TRAIL: trace_id field",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "operation check_or_insert",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "operation complete",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "operation sweep_expired",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "operation recover_inflight",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "operation export_audit_log_jsonl",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "operation content_hash",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "operation stats",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "operation entry_count",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "TEST_COVERAGE: 20 tests (>= 12)",
+      "pass": true,
+      "detail": "20 tests"
+    },
+    {
+      "check": "Serde Serialize derive",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Serde Deserialize derive",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "imports IdempotencyKey",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "uses sha2::Sha256",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "hash_payload helper",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "SCHEMA_VERSION ids-v1.0",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "DedupeResult::New variant",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "DedupeResult::Duplicate variant",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "DedupeResult::Conflict variant with fields",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "DedupeResult::InFlight variant",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: hash deterministic",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: hash differs for different payloads",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: TTL expired correctly",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: TTL not expired within window",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: 7 event codes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: 5 invariants",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: 5 core types",
+      "pass": true,
+      "detail": "ok"
+    }
+  ]
+}

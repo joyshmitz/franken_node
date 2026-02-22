@@ -1,0 +1,210 @@
+{
+  "bead_id": "bd-2pw",
+  "section": "10.6",
+  "title": "Artifact Signing and Checksum Verification for Releases",
+  "timestamp": "2026-02-22T08:17:51.659506+00:00",
+  "overall_pass": true,
+  "checks": {
+    "files": {
+      "spec": {
+        "path": "docs/specs/section_10_6/bd-2pw_contract.md",
+        "exists": true,
+        "size_bytes": 5766
+      },
+      "policy": {
+        "path": "docs/policy/artifact_signing_verification.md",
+        "exists": true,
+        "size_bytes": 5211
+      },
+      "rust_impl": {
+        "path": "crates/franken-node/src/supply_chain/artifact_signing.rs",
+        "exists": true,
+        "size_bytes": 32150
+      },
+      "mod_rs": {
+        "path": "crates/franken-node/src/supply_chain/mod.rs",
+        "exists": true,
+        "size_bytes": 368
+      },
+      "cli": {
+        "path": "crates/franken-node/src/cli.rs",
+        "exists": true,
+        "size_bytes": 15908
+      },
+      "main": {
+        "path": "crates/franken-node/src/main.rs",
+        "exists": true,
+        "size_bytes": 56903
+      }
+    },
+    "spec_invariants": {
+      "pass": true,
+      "found": [
+        "INV-ASV-SIG",
+        "INV-ASV-MANIFEST",
+        "INV-ASV-MSIG",
+        "INV-ASV-KEYID",
+        "INV-ASV-ROTATE",
+        "INV-ASV-THRESH",
+        "INV-ASV-TAMPER",
+        "INV-ASV-AUDIT"
+      ],
+      "missing": []
+    },
+    "spec_event_codes": {
+      "pass": true,
+      "found": [
+        "ASV-001",
+        "ASV-002",
+        "ASV-003",
+        "ASV-004"
+      ],
+      "missing": []
+    },
+    "rust_symbols": {
+      "pass": true,
+      "found": [
+        "pub struct ManifestEntry",
+        "pub struct ChecksumManifest",
+        "pub struct ArtifactVerificationResult",
+        "pub struct VerificationReport",
+        "pub struct KeyTransitionRecord",
+        "pub struct PartialSignature",
+        "pub struct KeyRing",
+        "pub struct KeyId",
+        "pub struct AuditLogEntry",
+        "pub enum ArtifactSigningError",
+        "pub fn sha256_hex(",
+        "pub fn sign_bytes(",
+        "pub fn verify_signature(",
+        "pub fn build_and_sign_manifest(",
+        "pub fn sign_artifact(",
+        "pub fn verify_release(",
+        "pub fn create_key_transition(",
+        "pub fn verify_key_transition(",
+        "pub fn collect_threshold_signatures(",
+        "pub fn verify_threshold(",
+        "pub fn demo_signing_key(",
+        "pub fn demo_signing_key_2(",
+        "pub fn demo_signing_key_3("
+      ],
+      "missing": []
+    },
+    "error_variants": {
+      "pass": true,
+      "found": [
+        "ManifestSignatureInvalid",
+        "ChecksumMismatch",
+        "SignatureInvalid",
+        "ArtifactMissing",
+        "UnlistedArtifact",
+        "KeyNotFound",
+        "ThresholdNotMet",
+        "TransitionRecordInvalid",
+        "IoError"
+      ],
+      "missing": []
+    },
+    "rust_event_codes": {
+      "pass": true,
+      "found": [
+        "ASV-001",
+        "ASV-002",
+        "ASV-003",
+        "ASV-004"
+      ],
+      "missing": []
+    },
+    "rust_tests": {
+      "pass": true,
+      "found": [
+        "test_sha256_hex_deterministic",
+        "test_sha256_hex_changes_on_different_input",
+        "test_sign_and_verify_roundtrip",
+        "test_verify_fails_on_tampered_data",
+        "test_build_and_sign_manifest",
+        "test_manifest_canonical_bytes_deterministic",
+        "test_manifest_parse_canonical",
+        "test_verify_release_success",
+        "test_verify_release_tampered_content",
+        "test_verify_release_missing_artifact",
+        "test_verify_release_manifest_not_updated",
+        "test_key_rotation_roundtrip",
+        "test_key_rotation_invalid_transition",
+        "test_old_key_verifies_old_artifact_after_rotation",
+        "test_new_key_signs_new_artifact_after_rotation",
+        "test_threshold_signing_2_of_3",
+        "test_threshold_signing_insufficient",
+        "test_threshold_rejects_duplicate_signer",
+        "test_key_id_derivation_deterministic",
+        "test_key_id_different_for_different_keys",
+        "test_audit_log_entry",
+        "test_error_display",
+        "test_verify_release_invalid_detached_sig",
+        "test_key_ring_empty",
+        "test_sign_artifact_produces_64_bytes"
+      ],
+      "missing": []
+    },
+    "cli_patterns": {
+      "pass": true,
+      "found": [
+        "VerifyReleaseArgs",
+        "Release(VerifyReleaseArgs)",
+        "release_path",
+        "key_dir"
+      ],
+      "missing": []
+    },
+    "main_patterns": {
+      "pass": true,
+      "found": [
+        "VerifyCommand::Release(args)",
+        "handle_verify_release",
+        "ASV_002_VERIFICATION_OK",
+        "ASV_003_VERIFICATION_FAILED"
+      ],
+      "missing": []
+    },
+    "mod_registration": {
+      "pass": true,
+      "registered": true
+    },
+    "test_count": {
+      "pass": true,
+      "count": 25
+    },
+    "signing_scheme": {
+      "pass": true,
+      "ed25519": true,
+      "sha256": true,
+      "signer_trait": true,
+      "verifier_trait": true
+    },
+    "threshold_logic": {
+      "pass": true,
+      "partial_signatures": true,
+      "collect_function": true,
+      "deduplication": true,
+      "threshold_error": true
+    },
+    "key_rotation_logic": {
+      "pass": true,
+      "transition_record": true,
+      "create_fn": true,
+      "verify_fn": true,
+      "endorsement_flow": true
+    },
+    "manifest_format": {
+      "pass": true,
+      "canonical_serialization": true,
+      "ordered_entries": true,
+      "format_fields": true
+    }
+  },
+  "summary": {
+    "total_checks": 15,
+    "passed": 15,
+    "failed": 0
+  }
+}

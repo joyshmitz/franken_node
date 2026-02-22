@@ -1,34 +1,23 @@
-# bd-23ys: Section 10.2 Verification Gate — Summary
+# bd-23ys Verification Summary
 
-## Gate Results
-- **Verdict**: PASS
-- **Section**: 10.2 — Compatibility Core
+## Result
+PASS (45/45 gate checks pass)
 
-## Components
+## Delivered
+- `scripts/check_section_10_2_gate.py`
+- `tests/test_check_section_10_2_gate.py`
+- `artifacts/section_10_2/bd-23ys/check_self_test.txt`
+- `artifacts/section_10_2/bd-23ys/check_report.json`
+- `artifacts/section_10_2/bd-23ys/unit_tests.txt`
+- `artifacts/section_10_2/bd-23ys/verification_evidence.json`
+- `artifacts/section_10_2/bd-23ys/verification_summary.md`
 
-### Verification Scripts (12/12 pass)
-| Bead | Name | Status |
-|------|------|--------|
-| bd-2wz | Compatibility Bands | PASS |
-| bd-2qf | Compatibility Registry | PASS |
-| bd-38l | Divergence Ledger | PASS |
-| bd-2kf | Compatibility Mode Policy | PASS |
-| bd-1z3 | Fixture Runner | PASS |
-| bd-2vi | L1 Lockstep Runner | PASS |
-| bd-32v | Minimized Fixture Generation | PASS |
-| bd-1ck | L2 Engine-Boundary Oracle | PASS |
-| bd-240 | Compatibility Dashboard | PASS |
-| bd-2hs | Four-Doc Spec Pack | PASS |
-| bd-80g | Fixture Corpus | PASS |
-| bd-7mt | Compat CI Gate | PASS |
+## Commands
+- `python3 scripts/check_section_10_2_gate.py --self-test --json`
+- `python3 -m unittest tests/test_check_section_10_2_gate.py`
+- `python3 scripts/check_section_10_2_gate.py --json`
 
-### Unit Tests
-- **121 tests**: all passed
-
-### Evidence Artifacts
-- 12/12 beads have verification_evidence.json
-
-### Governance Documents
-- 8/8 governance docs present
-
-## Verdict: PASS
+## Key Outcomes
+- Gate checker self-test passes (8/8).
+- Gate checker unit tests pass (20/20).
+- Gate verdict is PASS: all 12 Section 10.2 beads have verification evidence with PASS verdicts.

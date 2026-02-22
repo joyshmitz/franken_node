@@ -1,0 +1,561 @@
+{
+  "bead_id": "bd-oty",
+  "title": "Session-authenticated control channel integration",
+  "section": "10.10",
+  "verdict": "PASS",
+  "total": 110,
+  "passed": 110,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "session_auth implementation exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/api/session_auth.rs"
+    },
+    {
+      "check": "contract spec exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_10/bd-oty_contract.md"
+    },
+    {
+      "check": "evidence artifact exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_10/bd-oty/verification_evidence.json"
+    },
+    {
+      "check": "summary artifact exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_10/bd-oty/verification_summary.md"
+    },
+    {
+      "check": "policy document exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/docs/policy/session_authenticated_control.md"
+    },
+    {
+      "check": "struct/enum SessionState",
+      "pass": true,
+      "detail": "defined in session_auth.rs"
+    },
+    {
+      "check": "struct/enum SessionConfig",
+      "pass": true,
+      "detail": "defined in session_auth.rs"
+    },
+    {
+      "check": "struct/enum AuthenticatedSession",
+      "pass": true,
+      "detail": "defined in session_auth.rs"
+    },
+    {
+      "check": "struct/enum SessionManager",
+      "pass": true,
+      "detail": "defined in session_auth.rs"
+    },
+    {
+      "check": "struct/enum AuthenticatedMessage",
+      "pass": true,
+      "detail": "defined in session_auth.rs"
+    },
+    {
+      "check": "struct/enum MessageDirection",
+      "pass": true,
+      "detail": "defined in session_auth.rs"
+    },
+    {
+      "check": "struct/enum SessionEvent",
+      "pass": true,
+      "detail": "defined in session_auth.rs"
+    },
+    {
+      "check": "struct/enum SessionError",
+      "pass": true,
+      "detail": "defined in session_auth.rs"
+    },
+    {
+      "check": "event code SCC-001",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code SCC-002",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code SCC-003",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event code SCC-004",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code ERR_SCC_NO_SESSION",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code ERR_SCC_SEQUENCE_VIOLATION",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code ERR_SCC_SESSION_TERMINATED",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code ERR_SCC_ROLE_MISMATCH",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code ERR_SCC_AUTH_FAILED",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "error code ERR_SCC_MAX_SESSIONS",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-SCC-SESSION-AUTH",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-SCC-MONOTONIC",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-SCC-ROLE-KEYS",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "invariant INV-SCC-TERMINATED",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function establish_session",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function process_message",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function terminate_session",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function validate_key_roles",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function demo_session_lifecycle",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function demo_windowed_replay",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function activate",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function begin_termination",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function terminate",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function next_send_seq",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function next_recv_seq",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function active_session_count",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function get_session",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "function session_ids",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Overview",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Data Model",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: SessionState",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: AuthenticatedSession",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: SessionManager",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: SessionConfig",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: AuthenticatedMessage",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Invariants",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Event Codes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Error Codes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec section: Acceptance Criteria",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "session state Establishing",
+      "pass": true,
+      "detail": "variant in SessionState"
+    },
+    {
+      "check": "session state Active",
+      "pass": true,
+      "detail": "variant in SessionState"
+    },
+    {
+      "check": "session state Terminating",
+      "pass": true,
+      "detail": "variant in SessionState"
+    },
+    {
+      "check": "session state Terminated",
+      "pass": true,
+      "detail": "variant in SessionState"
+    },
+    {
+      "check": "imports KeyRole from key_role_separation",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "uses KeyRole::Encryption",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "uses KeyRole::Signing",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "imports Direction from control_channel",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "uses Direction::Send",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "uses Direction::Receive",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on SessionState",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on SessionConfig",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on AuthenticatedSession",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on AuthenticatedMessage",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on MessageDirection",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "serde derives on SessionEvent",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Rust unit tests present (44)",
+      "pass": true,
+      "detail": "44 tests found"
+    },
+    {
+      "check": "test: lifecycle tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: sequence enforcement tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: replay window tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: terminated session tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: max sessions test",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: key role validation tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: serde roundtrip tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: send+sync tests",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: demo lifecycle test",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "test: demo windowed test",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "Send + Sync assertions",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: Session-Authenticated Control Channel Policy",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: INV-SCC-SESSION-AUTH",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: INV-SCC-MONOTONIC",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: INV-SCC-ROLE-KEYS",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: INV-SCC-TERMINATED",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: SCC-001",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: SCC-004",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: ERR_SCC_NO_SESSION",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: Encryption",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: Signing",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: replay_window",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: establish_session",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "policy: validate_key_roles",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC1: session requirement enforced",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC2: per-direction sequence monotonicity",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC3: configurable replay window",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC4: role key separation",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC5: terminated sessions reject",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC6: concurrent session limit",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC7: traced session events",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "AC8: comprehensive unit test coverage",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: strict monotonicity",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: windowed out-of-order",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: replay detection",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: terminated rejection",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: independent counters",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: max sessions",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: role key validation",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: 4 event codes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sim: 6 error codes",
+      "pass": true,
+      "detail": "ok"
+    }
+  ]
+}

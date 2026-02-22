@@ -1,0 +1,312 @@
+{
+  "bead_id": "bd-8qlj",
+  "title": "VEF verification state in high-risk control transitions",
+  "section": "10.18",
+  "verdict": "PASS",
+  "total": 60,
+  "passed": 60,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "impl_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/vef/verification_state.rs"
+    },
+    {
+      "check": "mod_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/vef/mod.rs"
+    },
+    {
+      "check": "mod_wires_verification_state",
+      "pass": true,
+      "detail": "pub mod verification_state;"
+    },
+    {
+      "check": "impl_symbol_RiskLevel",
+      "pass": true,
+      "detail": "pub enum RiskLevel"
+    },
+    {
+      "check": "impl_symbol_TransitionResult",
+      "pass": true,
+      "detail": "pub enum TransitionResult"
+    },
+    {
+      "check": "impl_symbol_ActionResult",
+      "pass": true,
+      "detail": "pub enum ActionResult"
+    },
+    {
+      "check": "impl_symbol_VefStateError",
+      "pass": true,
+      "detail": "pub enum VefStateError"
+    },
+    {
+      "check": "impl_symbol_ProofStatus",
+      "pass": true,
+      "detail": "pub struct ProofStatus"
+    },
+    {
+      "check": "impl_symbol_ControlState",
+      "pass": true,
+      "detail": "pub struct ControlState"
+    },
+    {
+      "check": "impl_symbol_TransitionRequest",
+      "pass": true,
+      "detail": "pub struct TransitionRequest"
+    },
+    {
+      "check": "impl_symbol_ActionRequest",
+      "pass": true,
+      "detail": "pub struct ActionRequest"
+    },
+    {
+      "check": "impl_symbol_StateAuditEntry",
+      "pass": true,
+      "detail": "pub struct StateAuditEntry"
+    },
+    {
+      "check": "impl_symbol_VerificationStateManager",
+      "pass": true,
+      "detail": "pub struct VerificationStateManager"
+    },
+    {
+      "check": "impl_symbol_new",
+      "pass": true,
+      "detail": "pub fn new"
+    },
+    {
+      "check": "impl_symbol_register_entity",
+      "pass": true,
+      "detail": "pub fn register_entity"
+    },
+    {
+      "check": "impl_symbol_attach_proof",
+      "pass": true,
+      "detail": "pub fn attach_proof"
+    },
+    {
+      "check": "impl_symbol_request_transition",
+      "pass": true,
+      "detail": "pub fn request_transition"
+    },
+    {
+      "check": "impl_symbol_authorize_action",
+      "pass": true,
+      "detail": "pub fn authorize_action"
+    },
+    {
+      "check": "impl_symbol_state",
+      "pass": true,
+      "detail": "pub fn state"
+    },
+    {
+      "check": "impl_symbol_audit_log",
+      "pass": true,
+      "detail": "pub fn audit_log"
+    },
+    {
+      "check": "impl_symbol_is_fresh",
+      "pass": true,
+      "detail": "pub fn is_fresh"
+    },
+    {
+      "check": "risk_level_Low",
+      "pass": true,
+      "detail": "Low"
+    },
+    {
+      "check": "risk_level_Medium",
+      "pass": true,
+      "detail": "Medium"
+    },
+    {
+      "check": "risk_level_High",
+      "pass": true,
+      "detail": "High"
+    },
+    {
+      "check": "risk_level_Critical",
+      "pass": true,
+      "detail": "Critical"
+    },
+    {
+      "check": "event_VEF_STATE_TRANSITION_REQUESTED",
+      "pass": true,
+      "detail": "VEF_STATE_TRANSITION_REQUESTED"
+    },
+    {
+      "check": "event_VEF_STATE_TRANSITION_APPROVED",
+      "pass": true,
+      "detail": "VEF_STATE_TRANSITION_APPROVED"
+    },
+    {
+      "check": "event_VEF_STATE_TRANSITION_BLOCKED",
+      "pass": true,
+      "detail": "VEF_STATE_TRANSITION_BLOCKED"
+    },
+    {
+      "check": "event_VEF_STATE_ACTION_AUTHORIZED",
+      "pass": true,
+      "detail": "VEF_STATE_ACTION_AUTHORIZED"
+    },
+    {
+      "check": "event_VEF_STATE_ACTION_DENIED",
+      "pass": true,
+      "detail": "VEF_STATE_ACTION_DENIED"
+    },
+    {
+      "check": "error_code_ERR_VEF_STATE_NO_PROOF",
+      "pass": true,
+      "detail": "ERR_VEF_STATE_NO_PROOF"
+    },
+    {
+      "check": "error_code_ERR_VEF_STATE_STALE_PROOF",
+      "pass": true,
+      "detail": "ERR_VEF_STATE_STALE_PROOF"
+    },
+    {
+      "check": "error_code_ERR_VEF_STATE_INVALID_TRANSITION",
+      "pass": true,
+      "detail": "ERR_VEF_STATE_INVALID_TRANSITION"
+    },
+    {
+      "check": "error_code_ERR_VEF_STATE_RISK_EXCEEDED",
+      "pass": true,
+      "detail": "ERR_VEF_STATE_RISK_EXCEEDED"
+    },
+    {
+      "check": "error_code_ERR_VEF_STATE_POLICY_MISSING",
+      "pass": true,
+      "detail": "ERR_VEF_STATE_POLICY_MISSING"
+    },
+    {
+      "check": "error_variant_NoProof",
+      "pass": true,
+      "detail": "NoProof"
+    },
+    {
+      "check": "error_variant_StaleProof",
+      "pass": true,
+      "detail": "StaleProof"
+    },
+    {
+      "check": "error_variant_InvalidTransition",
+      "pass": true,
+      "detail": "InvalidTransition"
+    },
+    {
+      "check": "error_variant_RiskExceeded",
+      "pass": true,
+      "detail": "RiskExceeded"
+    },
+    {
+      "check": "error_variant_PolicyMissing",
+      "pass": true,
+      "detail": "PolicyMissing"
+    },
+    {
+      "check": "contract_fail_closed",
+      "pass": true,
+      "detail": "fail-closed on missing/stale proof"
+    },
+    {
+      "check": "contract_risk_bound",
+      "pass": true,
+      "detail": "risk-level-bound actions"
+    },
+    {
+      "check": "contract_audit_trail",
+      "pass": true,
+      "detail": "complete audit trail"
+    },
+    {
+      "check": "contract_no_escalation",
+      "pass": true,
+      "detail": "no-escalation-without-proof"
+    },
+    {
+      "check": "contract_schema_version",
+      "pass": true,
+      "detail": "schema version present"
+    },
+    {
+      "check": "contract_deterministic_storage",
+      "pass": true,
+      "detail": "BTreeMap for deterministic ordering"
+    },
+    {
+      "check": "contract_proof_freshness",
+      "pass": true,
+      "detail": "proof freshness check with max_age"
+    },
+    {
+      "check": "contract_downgrade_no_proof",
+      "pass": true,
+      "detail": "downgrade does not require proof"
+    },
+    {
+      "check": "contract_transition_count",
+      "pass": true,
+      "detail": "transition counter tracked"
+    },
+    {
+      "check": "contract_saturating_sub",
+      "pass": true,
+      "detail": "saturating arithmetic for safety"
+    },
+    {
+      "check": "contract_display_impl",
+      "pass": true,
+      "detail": "Display impl for error type"
+    },
+    {
+      "check": "contract_default_impl",
+      "pass": true,
+      "detail": "Default impl for manager"
+    },
+    {
+      "check": "impl_minimum_unit_tests",
+      "pass": true,
+      "detail": "19 tests"
+    },
+    {
+      "check": "evidence_exists",
+      "pass": true,
+      "detail": "artifacts/section_10_18/bd-8qlj/verification_evidence.json"
+    },
+    {
+      "check": "evidence_parseable",
+      "pass": true,
+      "detail": "valid JSON"
+    },
+    {
+      "check": "evidence_bead_id",
+      "pass": true,
+      "detail": "bd-8qlj"
+    },
+    {
+      "check": "evidence_verdict",
+      "pass": true,
+      "detail": "PASS"
+    },
+    {
+      "check": "summary_exists",
+      "pass": true,
+      "detail": "artifacts/section_10_18/bd-8qlj/verification_summary.md"
+    },
+    {
+      "check": "summary_mentions_bead",
+      "pass": true,
+      "detail": "bd-8qlj"
+    },
+    {
+      "check": "summary_mentions_pass",
+      "pass": true,
+      "detail": "PASS"
+    }
+  ],
+  "timestamp": "2026-02-22T07:13:34.996052+00:00"
+}

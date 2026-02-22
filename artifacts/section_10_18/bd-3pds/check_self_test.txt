@@ -1,0 +1,51 @@
+{
+  "bead_id": "bd-3pds",
+  "mode": "self-test",
+  "verdict": "PASS",
+  "total": 8,
+  "passed": 8,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "symbol_count",
+      "pass": true,
+      "detail": "18"
+    },
+    {
+      "check": "event_code_count",
+      "pass": true,
+      "detail": "5"
+    },
+    {
+      "check": "error_code_count",
+      "pass": true,
+      "detail": "6"
+    },
+    {
+      "check": "error_variant_count",
+      "pass": true,
+      "detail": "6"
+    },
+    {
+      "check": "invariant_count",
+      "pass": true,
+      "detail": "4"
+    },
+    {
+      "check": "run_all_is_dict",
+      "pass": true,
+      "detail": "dict"
+    },
+    {
+      "check": "run_all_has_checks",
+      "pass": true,
+      "detail": "checks list"
+    },
+    {
+      "check": "run_all_total_matches",
+      "pass": true,
+      "detail": "total vs checks"
+    }
+  ],
+  "timestamp": "2026-02-22T07:16:13.408040+00:00"
+}

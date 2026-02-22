@@ -1,0 +1,654 @@
+{
+  "bead_id": "bd-2ms",
+  "title": "Rollback/fork detection in control-plane state propagation",
+  "section": "10.10",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 128,
+    "failing": 0,
+    "total": 128
+  },
+  "checks": [
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "docs/specs/section_10_10/bd-2ms_contract.md"
+    },
+    {
+      "check": "file: implementation",
+      "pass": true,
+      "detail": "crates/franken-node/src/control_plane/divergence_gate.rs"
+    },
+    {
+      "check": "file: control_plane mod.rs",
+      "pass": true,
+      "detail": "crates/franken-node/src/control_plane/mod.rs"
+    },
+    {
+      "check": "file: upstream fork_detection.rs",
+      "pass": true,
+      "detail": "crates/franken-node/src/control_plane/fork_detection.rs"
+    },
+    {
+      "check": "file: upstream marker_stream.rs",
+      "pass": true,
+      "detail": "crates/franken-node/src/control_plane/marker_stream.rs"
+    },
+    {
+      "check": "file: upstream mmr_proofs.rs",
+      "pass": true,
+      "detail": "crates/franken-node/src/control_plane/mmr_proofs.rs"
+    },
+    {
+      "check": "module registered in mod.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum ResponseMode",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum GateState",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum MutationKind",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum DivergenceGateError",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct ControlPlaneDivergenceGate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct ActiveDivergence",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct OperatorAuthorization",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct QuarantinePartition",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct OperatorAlert",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct GateAuditEntry",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct MutationCheckResult",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct RecoveryResult",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn new(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn state(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn allows_mutation(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn check_propagation(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn check_mutation(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn respond_halt(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn respond_quarantine(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn respond_alert(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn respond_recover(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn verify_marker(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn take_events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn audit_log(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn quarantined_partitions(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn alerts(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn blocked_mutations(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn active_divergence(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn verify(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn label(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn all(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: DG-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: DG-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: DG-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: DG-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: DG-005",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: DG-006",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: DG-007",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: DG-008",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-DG-NO-MUTATION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-DG-OPERATOR-RECOVERY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-DG-ONE-CYCLE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-DG-VALID-TRANSITIONS",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "response_mode: Halt",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "response_mode: Quarantine",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "response_mode: Alert",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "response_mode: Recover",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "gate_state: Normal",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "gate_state: Diverged",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "gate_state: Quarantined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "gate_state: Alerted",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "gate_state: Recovering",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "mutation_kind: PolicyUpdate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "mutation_kind: TokenIssuance",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "mutation_kind: ZoneBoundaryChange",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "mutation_kind: RevocationPublish",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "mutation_kind: EpochTransition",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "mutation_kind: QuarantinePromotion",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_new_gate_normal",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_converged_stays_normal",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_converged_allows_mutation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_fork_transitions_to_diverged",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_fork_blocks_mutation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_fork_emits_divergence_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_fork_active_divergence",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gap_transitions_to_diverged",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_rollback_transitions_to_diverged",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_halt_from_diverged",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_halt_from_normal_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_quarantine_from_diverged",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_quarantine_from_normal_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_quarantine_blocks_mutation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_alert_from_diverged",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_alert_from_quarantined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_alert_from_normal_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_recover_from_diverged",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_recover_from_alerted",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_recover_from_normal_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_recover_unauthorized_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_recover_empty_operator_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_operator_authorization_verify",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_operator_authorization_tampered",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_operator_authorization_serde",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_all_mutation_kinds_blocked",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_response_mode_all",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_response_mode_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_response_mode_serde",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_state_allows_mutation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_state_serde",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_event_codes_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_invariant_constants",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_error_display_divergence_block",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_error_display_invalid_transition",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_error_display_unauthorized",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_error_display_freshness",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_error_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_audit_log_on_fork",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_audit_log_on_recovery",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_full_lifecycle_fork_quarantine_alert_recover",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_convergence_emits_freshness_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_quarantine_partition_serde",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_mutation_check_result_serde",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_default_gate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test count >= 40",
+      "pass": true,
+      "detail": "45 tests found"
+    },
+    {
+      "check": "upstream: DivergenceDetector",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "upstream: MarkerProofVerifier",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "upstream: StateVector",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "upstream: DetectionResult",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "upstream: RollbackProof",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "upstream: DivergenceLogEvent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "upstream: MarkerStream",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "SHA-256 usage",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: StateVector",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: DivergenceDetector",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: RollbackProof",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Invariants",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Event Codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Error Codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Acceptance Criteria",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

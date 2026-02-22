@@ -1,0 +1,466 @@
+{
+  "bead_id": "bd-2pu",
+  "title": "External-Reproduction Playbook and Automation Scripts",
+  "section": "10.7",
+  "verdict": "PASS",
+  "total": 91,
+  "passed": 91,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "file_exists:spec",
+      "pass": true,
+      "detail": "spec at docs/specs/section_10_7/bd-2pu_contract.md"
+    },
+    {
+      "name": "file_exists:policy",
+      "pass": true,
+      "detail": "policy at docs/policy/external_reproduction.md"
+    },
+    {
+      "name": "file_exists:playbook",
+      "pass": true,
+      "detail": "playbook at docs/reproduction_playbook.md"
+    },
+    {
+      "name": "file_exists:claims_registry",
+      "pass": true,
+      "detail": "claims_registry at docs/headline_claims.toml"
+    },
+    {
+      "name": "file_exists:automation_script",
+      "pass": true,
+      "detail": "automation_script at scripts/reproduce.py"
+    },
+    {
+      "name": "spec_event_code:ERP-001",
+      "pass": true,
+      "detail": "ERP-001"
+    },
+    {
+      "name": "spec_event_code:ERP-002",
+      "pass": true,
+      "detail": "ERP-002"
+    },
+    {
+      "name": "spec_event_code:ERP-003",
+      "pass": true,
+      "detail": "ERP-003"
+    },
+    {
+      "name": "spec_event_code:ERP-004",
+      "pass": true,
+      "detail": "ERP-004"
+    },
+    {
+      "name": "spec_invariant:INV-ERP-COMPLETE",
+      "pass": true,
+      "detail": "INV-ERP-COMPLETE"
+    },
+    {
+      "name": "spec_invariant:INV-ERP-REPLAY",
+      "pass": true,
+      "detail": "INV-ERP-REPLAY"
+    },
+    {
+      "name": "spec_invariant:INV-ERP-ENVIRONMENT",
+      "pass": true,
+      "detail": "INV-ERP-ENVIRONMENT"
+    },
+    {
+      "name": "spec_invariant:INV-ERP-DETERMINISM",
+      "pass": true,
+      "detail": "INV-ERP-DETERMINISM"
+    },
+    {
+      "name": "spec_section:reproduction playbook",
+      "pass": true,
+      "detail": "spec section: reproduction playbook"
+    },
+    {
+      "name": "spec_section:automation scripts",
+      "pass": true,
+      "detail": "spec section: automation scripts"
+    },
+    {
+      "name": "spec_section:headline claims registry",
+      "pass": true,
+      "detail": "spec section: headline claims registry"
+    },
+    {
+      "name": "spec_section:reproduction report",
+      "pass": true,
+      "detail": "spec section: reproduction report"
+    },
+    {
+      "name": "spec_section:acceptance criteria",
+      "pass": true,
+      "detail": "spec section: acceptance criteria"
+    },
+    {
+      "name": "spec_error_code:ERR_ERP_PLAYBOOK_MISSING",
+      "pass": true,
+      "detail": "ERR_ERP_PLAYBOOK_MISSING"
+    },
+    {
+      "name": "spec_error_code:ERR_ERP_CLAIMS_MISSING",
+      "pass": true,
+      "detail": "ERR_ERP_CLAIMS_MISSING"
+    },
+    {
+      "name": "spec_error_code:ERR_ERP_SCRIPT_MISSING",
+      "pass": true,
+      "detail": "ERR_ERP_SCRIPT_MISSING"
+    },
+    {
+      "name": "spec_error_code:ERR_ERP_FIXTURE_CHECKSUM",
+      "pass": true,
+      "detail": "ERR_ERP_FIXTURE_CHECKSUM"
+    },
+    {
+      "name": "policy_section:playbook format",
+      "pass": true,
+      "detail": "policy section: playbook format"
+    },
+    {
+      "name": "policy_section:automation requirements",
+      "pass": true,
+      "detail": "policy section: automation requirements"
+    },
+    {
+      "name": "policy_section:environment specification",
+      "pass": true,
+      "detail": "policy section: environment specification"
+    },
+    {
+      "name": "policy_section:seed data management",
+      "pass": true,
+      "detail": "policy section: seed data management"
+    },
+    {
+      "name": "policy_section:headline claims registry",
+      "pass": true,
+      "detail": "policy section: headline claims registry"
+    },
+    {
+      "name": "policy_section:ci integration",
+      "pass": true,
+      "detail": "policy section: ci integration"
+    },
+    {
+      "name": "policy_section:determinism",
+      "pass": true,
+      "detail": "policy section: determinism"
+    },
+    {
+      "name": "policy_section:event codes",
+      "pass": true,
+      "detail": "policy section: event codes"
+    },
+    {
+      "name": "policy_event_code:ERP-001",
+      "pass": true,
+      "detail": "ERP-001"
+    },
+    {
+      "name": "policy_event_code:ERP-002",
+      "pass": true,
+      "detail": "ERP-002"
+    },
+    {
+      "name": "policy_event_code:ERP-003",
+      "pass": true,
+      "detail": "ERP-003"
+    },
+    {
+      "name": "policy_event_code:ERP-004",
+      "pass": true,
+      "detail": "ERP-004"
+    },
+    {
+      "name": "policy_governance:sha-256",
+      "pass": true,
+      "detail": "policy governance: sha-256"
+    },
+    {
+      "name": "policy_governance:idempotent",
+      "pass": true,
+      "detail": "policy governance: idempotent"
+    },
+    {
+      "name": "policy_governance:skip-install",
+      "pass": true,
+      "detail": "policy governance: skip-install"
+    },
+    {
+      "name": "policy_governance:dry-run",
+      "pass": true,
+      "detail": "policy governance: dry-run"
+    },
+    {
+      "name": "policy_governance:nightly",
+      "pass": true,
+      "detail": "policy governance: nightly"
+    },
+    {
+      "name": "policy_governance:release gate",
+      "pass": true,
+      "detail": "policy governance: release gate"
+    },
+    {
+      "name": "playbook_section:environment setup",
+      "pass": true,
+      "detail": "playbook section: environment setup"
+    },
+    {
+      "name": "playbook_section:fixture download",
+      "pass": true,
+      "detail": "playbook section: fixture download"
+    },
+    {
+      "name": "playbook_section:benchmark execution",
+      "pass": true,
+      "detail": "playbook section: benchmark execution"
+    },
+    {
+      "name": "playbook_section:result comparison",
+      "pass": true,
+      "detail": "playbook section: result comparison"
+    },
+    {
+      "name": "playbook_section:troubleshooting",
+      "pass": true,
+      "detail": "playbook section: troubleshooting"
+    },
+    {
+      "name": "playbook_env:rust",
+      "pass": true,
+      "detail": "playbook env: rust"
+    },
+    {
+      "name": "playbook_env:node",
+      "pass": true,
+      "detail": "playbook env: node"
+    },
+    {
+      "name": "playbook_env:python",
+      "pass": true,
+      "detail": "playbook env: python"
+    },
+    {
+      "name": "playbook_env:cpu",
+      "pass": true,
+      "detail": "playbook env: cpu"
+    },
+    {
+      "name": "playbook_env:ram",
+      "pass": true,
+      "detail": "playbook env: ram"
+    },
+    {
+      "name": "playbook_env:disk",
+      "pass": true,
+      "detail": "playbook env: disk"
+    },
+    {
+      "name": "playbook_command:scripts/reproduce.py",
+      "pass": true,
+      "detail": "playbook command: scripts/reproduce.py"
+    },
+    {
+      "name": "playbook_command:git clone",
+      "pass": true,
+      "detail": "playbook command: git clone"
+    },
+    {
+      "name": "playbook_command:rustup",
+      "pass": true,
+      "detail": "playbook command: rustup"
+    },
+    {
+      "name": "playbook_variance:variance",
+      "pass": true,
+      "detail": "playbook variance: variance"
+    },
+    {
+      "name": "playbook_variance:pass/fail",
+      "pass": true,
+      "detail": "playbook variance: pass/fail"
+    },
+    {
+      "name": "playbook_variance:threshold",
+      "pass": true,
+      "detail": "playbook variance: threshold"
+    },
+    {
+      "name": "claims_field:claim_id",
+      "pass": true,
+      "detail": "claims field: claim_id"
+    },
+    {
+      "name": "claims_field:claim_text",
+      "pass": true,
+      "detail": "claims field: claim_text"
+    },
+    {
+      "name": "claims_field:verification_method",
+      "pass": true,
+      "detail": "claims field: verification_method"
+    },
+    {
+      "name": "claims_field:acceptance_threshold",
+      "pass": true,
+      "detail": "claims field: acceptance_threshold"
+    },
+    {
+      "name": "claims_field:test_reference",
+      "pass": true,
+      "detail": "claims field: test_reference"
+    },
+    {
+      "name": "claims_entries:count",
+      "pass": true,
+      "detail": "8 claims (minimum 5)"
+    },
+    {
+      "name": "claims_category:compatibility",
+      "pass": true,
+      "detail": "claims category: compatibility"
+    },
+    {
+      "name": "claims_category:security",
+      "pass": true,
+      "detail": "claims category: security"
+    },
+    {
+      "name": "claims_category:performance",
+      "pass": true,
+      "detail": "claims category: performance"
+    },
+    {
+      "name": "claims_category:migration",
+      "pass": true,
+      "detail": "claims category: migration"
+    },
+    {
+      "name": "claims_category:trust",
+      "pass": true,
+      "detail": "claims category: trust"
+    },
+    {
+      "name": "claims_id:HC-001",
+      "pass": true,
+      "detail": "HC-001"
+    },
+    {
+      "name": "claims_id:HC-002",
+      "pass": true,
+      "detail": "HC-002"
+    },
+    {
+      "name": "claims_id:HC-003",
+      "pass": true,
+      "detail": "HC-003"
+    },
+    {
+      "name": "claims_id:HC-004",
+      "pass": true,
+      "detail": "HC-004"
+    },
+    {
+      "name": "claims_id:HC-005",
+      "pass": true,
+      "detail": "HC-005"
+    },
+    {
+      "name": "script_feature:skip-install",
+      "pass": true,
+      "detail": "script feature: skip-install"
+    },
+    {
+      "name": "script_feature:dry-run",
+      "pass": true,
+      "detail": "script feature: dry-run"
+    },
+    {
+      "name": "script_feature:--json",
+      "pass": true,
+      "detail": "script feature: --json"
+    },
+    {
+      "name": "script_feature:--yes",
+      "pass": true,
+      "detail": "script feature: --yes"
+    },
+    {
+      "name": "script_feature:--claim",
+      "pass": true,
+      "detail": "script feature: --claim"
+    },
+    {
+      "name": "script_feature:environment_fingerprint",
+      "pass": true,
+      "detail": "script feature: environment_fingerprint"
+    },
+    {
+      "name": "script_feature:reproduction_report",
+      "pass": true,
+      "detail": "script feature: reproduction_report"
+    },
+    {
+      "name": "script_feature:idempotent",
+      "pass": true,
+      "detail": "script feature: idempotent"
+    },
+    {
+      "name": "script_report_field:environment",
+      "pass": true,
+      "detail": "report field: environment"
+    },
+    {
+      "name": "script_report_field:claims",
+      "pass": true,
+      "detail": "report field: claims"
+    },
+    {
+      "name": "script_report_field:verdict",
+      "pass": true,
+      "detail": "report field: verdict"
+    },
+    {
+      "name": "script_report_field:timestamp",
+      "pass": true,
+      "detail": "report field: timestamp"
+    },
+    {
+      "name": "script_report_field:duration_seconds",
+      "pass": true,
+      "detail": "report field: duration_seconds"
+    },
+    {
+      "name": "script_fingerprint:os",
+      "pass": true,
+      "detail": "fingerprint: os"
+    },
+    {
+      "name": "script_fingerprint:cpu",
+      "pass": true,
+      "detail": "fingerprint: cpu"
+    },
+    {
+      "name": "script_fingerprint:python_version",
+      "pass": true,
+      "detail": "fingerprint: python_version"
+    },
+    {
+      "name": "script_fingerprint:rust_version",
+      "pass": true,
+      "detail": "fingerprint: rust_version"
+    },
+    {
+      "name": "script_fingerprint:node_version",
+      "pass": true,
+      "detail": "fingerprint: node_version"
+    }
+  ]
+}

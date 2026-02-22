@@ -1,0 +1,919 @@
+{
+  "bead_id": "bd-25oa",
+  "title": "Enforce canonical DPOR-style schedule exploration for control-plane interactions",
+  "section": "10.15",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 106,
+    "failing": 0,
+    "total": 106
+  },
+  "checks": [
+    {
+      "id": "CDP-001",
+      "status": "PASS",
+      "details": {
+        "file": "docs/testing/control_dpor_scope.md",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-002",
+      "status": "PASS",
+      "details": {
+        "file": "artifacts/10.15/control_dpor_exploration_summary.json",
+        "keys_present": 7
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "epoch_transition_lease_renewal",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "remote_computation_evidence_emission",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "cancellation_saga_compensation",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "epoch_barrier_fencing_token",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "epoch_transition_lease_renewal",
+        "location": "report",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "remote_computation_evidence_emission",
+        "location": "report",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "cancellation_saga_compensation",
+        "location": "report",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "epoch_barrier_fencing_token",
+        "location": "report",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "epoch_transition_lease_renewal",
+        "location": "report_entry",
+        "missing_keys": []
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "epoch_transition_lease_renewal",
+        "violations_found": 0,
+        "expected": 0
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "remote_computation_evidence_emission",
+        "location": "report_entry",
+        "missing_keys": []
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "remote_computation_evidence_emission",
+        "violations_found": 0,
+        "expected": 0
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "cancellation_saga_compensation",
+        "location": "report_entry",
+        "missing_keys": []
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "cancellation_saga_compensation",
+        "violations_found": 0,
+        "expected": 0
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "epoch_barrier_fencing_token",
+        "location": "report_entry",
+        "missing_keys": []
+      }
+    },
+    {
+      "id": "CDP-003",
+      "status": "PASS",
+      "details": {
+        "class": "epoch_barrier_fencing_token",
+        "violations_found": 0,
+        "expected": 0
+      }
+    },
+    {
+      "id": "CDP-004",
+      "status": "PASS",
+      "details": {
+        "file": "crates/franken-node/src/control_plane/dpor_exploration.rs",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-004",
+      "status": "PASS",
+      "details": {
+        "upstream_type": "DporExplorer",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-004",
+      "status": "PASS",
+      "details": {
+        "upstream_type": "ProtocolModel",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-004",
+      "status": "PASS",
+      "details": {
+        "upstream_type": "Operation",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-004",
+      "status": "PASS",
+      "details": {
+        "upstream_type": "SafetyProperty",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-004",
+      "status": "PASS",
+      "details": {
+        "upstream_type": "Counterexample",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-004",
+      "status": "PASS",
+      "details": {
+        "upstream_type": "CounterexampleStep",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-004",
+      "status": "PASS",
+      "details": {
+        "upstream_type": "ExplorationBudget",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-004",
+      "status": "PASS",
+      "details": {
+        "upstream_type": "ExplorationResult",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-005",
+      "status": "PASS",
+      "details": {
+        "keyword": "max_interleavings_per_class",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-005",
+      "status": "PASS",
+      "details": {
+        "keyword": "10000",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-005",
+      "status": "PASS",
+      "details": {
+        "keyword": "40000",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-005",
+      "status": "PASS",
+      "details": {
+        "keyword": "time_budget",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-005",
+      "status": "PASS",
+      "details": {
+        "keyword": "memory_budget",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-005",
+      "status": "PASS",
+      "details": {
+        "report_budget_respected": true
+      }
+    },
+    {
+      "id": "CDP-006",
+      "status": "PASS",
+      "details": {
+        "invariant": "INV-DPOR-BOUNDED",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-006",
+      "status": "PASS",
+      "details": {
+        "invariant": "INV-DPOR-BOUNDED",
+        "location": "spec_contract",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-006",
+      "status": "PASS",
+      "details": {
+        "invariant": "INV-DPOR-INVARIANT-CHECK",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-006",
+      "status": "PASS",
+      "details": {
+        "invariant": "INV-DPOR-INVARIANT-CHECK",
+        "location": "spec_contract",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-006",
+      "status": "PASS",
+      "details": {
+        "invariant": "INV-DPOR-COUNTEREXAMPLE",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-006",
+      "status": "PASS",
+      "details": {
+        "invariant": "INV-DPOR-COUNTEREXAMPLE",
+        "location": "spec_contract",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-006",
+      "status": "PASS",
+      "details": {
+        "invariant": "INV-DPOR-CANONICAL",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-006",
+      "status": "PASS",
+      "details": {
+        "invariant": "INV-DPOR-CANONICAL",
+        "location": "spec_contract",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-006",
+      "status": "PASS",
+      "details": {
+        "invariant": "INV-DPOR-BOUNDED",
+        "location": "report",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-006",
+      "status": "PASS",
+      "details": {
+        "invariant": "INV-DPOR-INVARIANT-CHECK",
+        "location": "report",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-006",
+      "status": "PASS",
+      "details": {
+        "invariant": "INV-DPOR-COUNTEREXAMPLE",
+        "location": "report",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-006",
+      "status": "PASS",
+      "details": {
+        "invariant": "INV-DPOR-CANONICAL",
+        "location": "report",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-007",
+      "status": "PASS",
+      "details": {
+        "keyword": "model_name",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-007",
+      "status": "PASS",
+      "details": {
+        "keyword": "violated_property",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-007",
+      "status": "PASS",
+      "details": {
+        "keyword": "step_index",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-007",
+      "status": "PASS",
+      "details": {
+        "keyword": "operation_id",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-007",
+      "status": "PASS",
+      "details": {
+        "keyword": "state_summary",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-007",
+      "status": "PASS",
+      "details": {
+        "keyword": "Minimal",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-007",
+      "status": "PASS",
+      "details": {
+        "report_counterexample_format": true
+      }
+    },
+    {
+      "id": "CDP-008",
+      "status": "PASS",
+      "details": {
+        "section": "Protocol Interaction Classes",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-008",
+      "status": "PASS",
+      "details": {
+        "section": "DPOR Exploration Budget",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-008",
+      "status": "PASS",
+      "details": {
+        "section": "Invariant Assertions",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-008",
+      "status": "PASS",
+      "details": {
+        "section": "Counterexample Format",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-008",
+      "status": "PASS",
+      "details": {
+        "section": "Upstream Dependency",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-008",
+      "status": "PASS",
+      "details": {
+        "file": "docs/specs/section_10_15/bd-25oa_contract.md",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-008",
+      "status": "PASS",
+      "details": {
+        "file": "tests/test_check_control_dpor_scope.py",
+        "found": true
+      }
+    },
+    {
+      "id": "CDP-008",
+      "status": "PASS",
+      "details": {
+        "check": "classes_covered",
+        "expected": 4,
+        "actual": 4
+      }
+    },
+    {
+      "id": "CDP-008",
+      "status": "PASS",
+      "details": {
+        "check": "total_interleavings",
+        "claimed": 40000,
+        "computed": 40000
+      }
+    },
+    {
+      "id": "CDP-008",
+      "status": "PASS",
+      "details": {
+        "check": "violations",
+        "expected": 0,
+        "actual": 0
+      }
+    },
+    {
+      "id": "CDP-008",
+      "status": "PASS",
+      "details": {
+        "check": "adoption_status",
+        "expected": "documented",
+        "actual": "documented"
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "file": "tests/lab/control_dpor_exploration.rs",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_marker": "InteractionClass",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_marker": "ExplorationResult",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_marker": "DporExplorer",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_marker": "ExplorationBudget",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_marker": "CounterexampleStep",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_marker": "Counterexample",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_marker": "epoch_transition_lease_renewal",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_marker": "remote_computation_evidence_emission",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_marker": "cancellation_saga_compensation",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_marker": "epoch_barrier_fencing_token",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_marker": "#[test]",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_marker": "fn explore",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_test_count": 19,
+        "required": 12
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_class": "epoch_transition_lease_renewal",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_class": "remote_computation_evidence_emission",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_class": "cancellation_saga_compensation",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-001",
+      "status": "PASS",
+      "details": {
+        "rust_class": "epoch_barrier_fencing_token",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-002",
+      "status": "PASS",
+      "details": {
+        "event_code": "DPR-001",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-002",
+      "status": "PASS",
+      "details": {
+        "event_code": "DPR-001",
+        "location": "spec_contract",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-002",
+      "status": "PASS",
+      "details": {
+        "event_code": "DPR-002",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-002",
+      "status": "PASS",
+      "details": {
+        "event_code": "DPR-002",
+        "location": "spec_contract",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-002",
+      "status": "PASS",
+      "details": {
+        "event_code": "DPR-003",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-002",
+      "status": "PASS",
+      "details": {
+        "event_code": "DPR-003",
+        "location": "spec_contract",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-002",
+      "status": "PASS",
+      "details": {
+        "event_code": "DPR-004",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-002",
+      "status": "PASS",
+      "details": {
+        "event_code": "DPR-004",
+        "location": "spec_contract",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-002",
+      "status": "PASS",
+      "details": {
+        "event_code": "DPR-005",
+        "location": "scope_doc",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-002",
+      "status": "PASS",
+      "details": {
+        "event_code": "DPR-005",
+        "location": "spec_contract",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-003",
+      "status": "PASS",
+      "details": {
+        "file": "artifacts/10.15/control_dpor_results.json",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-003",
+      "status": "PASS",
+      "details": {
+        "check": "bead_id",
+        "expected": "bd-25oa",
+        "actual": "bd-25oa"
+      }
+    },
+    {
+      "id": "DPR-003",
+      "status": "PASS",
+      "details": {
+        "check": "verdict",
+        "expected": "PASS",
+        "actual": "PASS"
+      }
+    },
+    {
+      "id": "DPR-003",
+      "status": "PASS",
+      "details": {
+        "check": "interaction_classes_count",
+        "expected": 4,
+        "actual": 4
+      }
+    },
+    {
+      "id": "DPR-003",
+      "status": "PASS",
+      "details": {
+        "check": "class_passed",
+        "class": "epoch_transition_lease_renewal",
+        "passed": true
+      }
+    },
+    {
+      "id": "DPR-003",
+      "status": "PASS",
+      "details": {
+        "check": "class_passed",
+        "class": "remote_computation_evidence_emission",
+        "passed": true
+      }
+    },
+    {
+      "id": "DPR-003",
+      "status": "PASS",
+      "details": {
+        "check": "class_passed",
+        "class": "cancellation_saga_compensation",
+        "passed": true
+      }
+    },
+    {
+      "id": "DPR-003",
+      "status": "PASS",
+      "details": {
+        "check": "class_passed",
+        "class": "epoch_barrier_fencing_token",
+        "passed": true
+      }
+    },
+    {
+      "id": "DPR-003",
+      "status": "PASS",
+      "details": {
+        "check": "event_code_in_results",
+        "code": "DPR-001",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-003",
+      "status": "PASS",
+      "details": {
+        "check": "event_code_in_results",
+        "code": "DPR-002",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-003",
+      "status": "PASS",
+      "details": {
+        "check": "event_code_in_results",
+        "code": "DPR-003",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-003",
+      "status": "PASS",
+      "details": {
+        "check": "event_code_in_results",
+        "code": "DPR-004",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-003",
+      "status": "PASS",
+      "details": {
+        "check": "event_code_in_results",
+        "code": "DPR-005",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-004",
+      "status": "PASS",
+      "details": {
+        "file": "artifacts/section_10_15/bd-25oa/verification_evidence.json",
+        "found": true
+      }
+    },
+    {
+      "id": "DPR-004",
+      "status": "PASS",
+      "details": {
+        "file": "artifacts/section_10_15/bd-25oa/verification_summary.md",
+        "found": true
+      }
+    }
+  ]
+}

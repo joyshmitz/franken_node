@@ -1,0 +1,446 @@
+{
+  "bead_id": "bd-1e0",
+  "title": "Migration Singularity Demo Pipeline",
+  "section": "10.9",
+  "verdict": "PASS",
+  "total": 87,
+  "passed": 87,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "file_exists:spec",
+      "pass": true,
+      "detail": "spec at docs/specs/section_10_9/bd-1e0_contract.md"
+    },
+    {
+      "name": "file_exists:policy",
+      "pass": true,
+      "detail": "policy at docs/policy/migration_singularity_demo.md"
+    },
+    {
+      "name": "file_exists:fixtures_dir",
+      "pass": true,
+      "detail": "fixtures at fixtures/migration-demos"
+    },
+    {
+      "name": "flagship:min_three_configs",
+      "pass": true,
+      "detail": "3 config(s) found"
+    },
+    {
+      "name": "flagship:date-fns:required_keys",
+      "pass": true,
+      "detail": "keys present in fixtures/migration-demos/date-fns.json"
+    },
+    {
+      "name": "flagship:express:required_keys",
+      "pass": true,
+      "detail": "keys present in fixtures/migration-demos/express.json"
+    },
+    {
+      "name": "flagship:nextjs-starter:required_keys",
+      "pass": true,
+      "detail": "keys present in fixtures/migration-demos/nextjs-starter.json"
+    },
+    {
+      "name": "flagship:distinct_categories",
+      "pass": true,
+      "detail": "3 categories: ['fullstack_framework', 'utility_library', 'web_framework']"
+    },
+    {
+      "name": "stage:Discovery",
+      "pass": true,
+      "detail": "stage 'Discovery' in spec"
+    },
+    {
+      "name": "stage:Analysis",
+      "pass": true,
+      "detail": "stage 'Analysis' in spec"
+    },
+    {
+      "name": "stage:Migration Plan Generation",
+      "pass": true,
+      "detail": "stage 'Migration Plan Generation' in spec"
+    },
+    {
+      "name": "stage:Execution",
+      "pass": true,
+      "detail": "stage 'Execution' in spec"
+    },
+    {
+      "name": "stage:Validation",
+      "pass": true,
+      "detail": "stage 'Validation' in spec"
+    },
+    {
+      "name": "stage:Rollback",
+      "pass": true,
+      "detail": "stage 'Rollback' in spec"
+    },
+    {
+      "name": "output:discovery_manifest.json",
+      "pass": true,
+      "detail": "output 'discovery_manifest.json' in spec"
+    },
+    {
+      "name": "output:analysis_report.json",
+      "pass": true,
+      "detail": "output 'analysis_report.json' in spec"
+    },
+    {
+      "name": "output:migration_plan.json",
+      "pass": true,
+      "detail": "output 'migration_plan.json' in spec"
+    },
+    {
+      "name": "output:execution_log.json",
+      "pass": true,
+      "detail": "output 'execution_log.json' in spec"
+    },
+    {
+      "name": "output:validation_report.json",
+      "pass": true,
+      "detail": "output 'validation_report.json' in spec"
+    },
+    {
+      "name": "output:rollback_report.json",
+      "pass": true,
+      "detail": "output 'rollback_report.json' in spec"
+    },
+    {
+      "name": "event_code:MSD-001",
+      "pass": true,
+      "detail": "MSD-001"
+    },
+    {
+      "name": "event_code:MSD-002",
+      "pass": true,
+      "detail": "MSD-002"
+    },
+    {
+      "name": "event_code:MSD-003",
+      "pass": true,
+      "detail": "MSD-003"
+    },
+    {
+      "name": "event_code:MSD-004",
+      "pass": true,
+      "detail": "MSD-004"
+    },
+    {
+      "name": "invariant:INV-MSD-PIPELINE",
+      "pass": true,
+      "detail": "INV-MSD-PIPELINE"
+    },
+    {
+      "name": "invariant:INV-MSD-VALIDATION",
+      "pass": true,
+      "detail": "INV-MSD-VALIDATION"
+    },
+    {
+      "name": "invariant:INV-MSD-ROLLBACK",
+      "pass": true,
+      "detail": "INV-MSD-ROLLBACK"
+    },
+    {
+      "name": "invariant:INV-MSD-ARTIFACTS",
+      "pass": true,
+      "detail": "INV-MSD-ARTIFACTS"
+    },
+    {
+      "name": "error_code:ERR-MSD-CLONE-FAIL",
+      "pass": true,
+      "detail": "ERR-MSD-CLONE-FAIL"
+    },
+    {
+      "name": "error_code:ERR-MSD-ANALYSIS-TIMEOUT",
+      "pass": true,
+      "detail": "ERR-MSD-ANALYSIS-TIMEOUT"
+    },
+    {
+      "name": "error_code:ERR-MSD-TRANSFORM-CONFLICT",
+      "pass": true,
+      "detail": "ERR-MSD-TRANSFORM-CONFLICT"
+    },
+    {
+      "name": "error_code:ERR-MSD-VALIDATION-TIMEOUT",
+      "pass": true,
+      "detail": "ERR-MSD-VALIDATION-TIMEOUT"
+    },
+    {
+      "name": "error_code:ERR-MSD-ROLLBACK-INCOMPLETE",
+      "pass": true,
+      "detail": "ERR-MSD-ROLLBACK-INCOMPLETE"
+    },
+    {
+      "name": "confidence:spec:high",
+      "pass": true,
+      "detail": "grade 'high' in spec"
+    },
+    {
+      "name": "confidence:spec:medium",
+      "pass": true,
+      "detail": "grade 'medium' in spec"
+    },
+    {
+      "name": "confidence:spec:low",
+      "pass": true,
+      "detail": "grade 'low' in spec"
+    },
+    {
+      "name": "confidence:policy:high",
+      "pass": true,
+      "detail": "grade 'high' in policy"
+    },
+    {
+      "name": "confidence:policy:medium",
+      "pass": true,
+      "detail": "grade 'medium' in policy"
+    },
+    {
+      "name": "confidence:policy:low",
+      "pass": true,
+      "detail": "grade 'low' in policy"
+    },
+    {
+      "name": "rollback:automatic rollback",
+      "pass": true,
+      "detail": "rollback: automatic rollback"
+    },
+    {
+      "name": "rollback:test pass rate",
+      "pass": true,
+      "detail": "rollback: test pass rate"
+    },
+    {
+      "name": "rollback:rollback completeness",
+      "pass": true,
+      "detail": "rollback: rollback completeness"
+    },
+    {
+      "name": "rollback:partial rollback",
+      "pass": true,
+      "detail": "rollback: partial rollback"
+    },
+    {
+      "name": "reproducibility:spec:hermetic",
+      "pass": true,
+      "detail": "'hermetic' in spec"
+    },
+    {
+      "name": "reproducibility:spec:pinned",
+      "pass": true,
+      "detail": "'pinned' in spec"
+    },
+    {
+      "name": "reproducibility:spec:reproducib",
+      "pass": true,
+      "detail": "'reproducib' in spec"
+    },
+    {
+      "name": "reproducibility:policy:hermetic",
+      "pass": true,
+      "detail": "'hermetic' in policy"
+    },
+    {
+      "name": "reproducibility:policy:pinned",
+      "pass": true,
+      "detail": "'pinned' in policy"
+    },
+    {
+      "name": "reproducibility:policy:reproducib",
+      "pass": true,
+      "detail": "'reproducib' in policy"
+    },
+    {
+      "name": "integrity:spec:sha-256",
+      "pass": true,
+      "detail": "'sha-256' in spec"
+    },
+    {
+      "name": "integrity:spec:integrity",
+      "pass": true,
+      "detail": "'integrity' in spec"
+    },
+    {
+      "name": "integrity:spec:manifest",
+      "pass": true,
+      "detail": "'manifest' in spec"
+    },
+    {
+      "name": "integrity:policy:sha-256",
+      "pass": true,
+      "detail": "'sha-256' in policy"
+    },
+    {
+      "name": "integrity:policy:integrity",
+      "pass": true,
+      "detail": "'integrity' in policy"
+    },
+    {
+      "name": "integrity:policy:manifest",
+      "pass": true,
+      "detail": "'manifest' in policy"
+    },
+    {
+      "name": "before_after:test pass rate",
+      "pass": true,
+      "detail": "dimension 'test pass rate' in spec"
+    },
+    {
+      "name": "before_after:startup time",
+      "pass": true,
+      "detail": "dimension 'startup time' in spec"
+    },
+    {
+      "name": "before_after:request throughput",
+      "pass": true,
+      "detail": "dimension 'request throughput' in spec"
+    },
+    {
+      "name": "before_after:memory usage",
+      "pass": true,
+      "detail": "dimension 'memory usage' in spec"
+    },
+    {
+      "name": "before_after:security posture",
+      "pass": true,
+      "detail": "dimension 'security posture' in spec"
+    },
+    {
+      "name": "timeline:< 10 min",
+      "pass": true,
+      "detail": "timeline target '< 10 min'"
+    },
+    {
+      "name": "timeline:< 30s",
+      "pass": true,
+      "detail": "timeline target '< 30s'"
+    },
+    {
+      "name": "timeline:< 120s",
+      "pass": true,
+      "detail": "timeline target '< 120s'"
+    },
+    {
+      "name": "timeline:< 300s",
+      "pass": true,
+      "detail": "timeline target '< 300s'"
+    },
+    {
+      "name": "acceptance:single command",
+      "pass": true,
+      "detail": "acceptance: 'single command'"
+    },
+    {
+      "name": "acceptance:structured output",
+      "pass": true,
+      "detail": "acceptance: 'structured output'"
+    },
+    {
+      "name": "acceptance:confidence grades",
+      "pass": true,
+      "detail": "acceptance: 'confidence grades'"
+    },
+    {
+      "name": "acceptance:reproducible",
+      "pass": true,
+      "detail": "acceptance: 'reproducible'"
+    },
+    {
+      "name": "acceptance:publication",
+      "pass": true,
+      "detail": "acceptance: 'publication'"
+    },
+    {
+      "name": "acceptance:gracefully",
+      "pass": true,
+      "detail": "acceptance: 'gracefully'"
+    },
+    {
+      "name": "acceptance:under 10 minutes",
+      "pass": true,
+      "detail": "acceptance: 'under 10 minutes'"
+    },
+    {
+      "name": "logging:MSD-001",
+      "pass": true,
+      "detail": "event code MSD-001 in policy"
+    },
+    {
+      "name": "logging:MSD-002",
+      "pass": true,
+      "detail": "event code MSD-002 in policy"
+    },
+    {
+      "name": "logging:MSD-003",
+      "pass": true,
+      "detail": "event code MSD-003 in policy"
+    },
+    {
+      "name": "logging:MSD-004",
+      "pass": true,
+      "detail": "event code MSD-004 in policy"
+    },
+    {
+      "name": "policy_inv:INV-MSD-PIPELINE",
+      "pass": true,
+      "detail": "invariant INV-MSD-PIPELINE in policy"
+    },
+    {
+      "name": "policy_inv:INV-MSD-VALIDATION",
+      "pass": true,
+      "detail": "invariant INV-MSD-VALIDATION in policy"
+    },
+    {
+      "name": "policy_inv:INV-MSD-ROLLBACK",
+      "pass": true,
+      "detail": "invariant INV-MSD-ROLLBACK in policy"
+    },
+    {
+      "name": "policy_inv:INV-MSD-ARTIFACTS",
+      "pass": true,
+      "detail": "invariant INV-MSD-ARTIFACTS in policy"
+    },
+    {
+      "name": "criteria:10,000",
+      "pass": true,
+      "detail": "criterion '10,000' in spec"
+    },
+    {
+      "name": "criteria:500,000",
+      "pass": true,
+      "detail": "criterion '500,000' in spec"
+    },
+    {
+      "name": "criteria:test coverage",
+      "pass": true,
+      "detail": "criterion 'test coverage' in spec"
+    },
+    {
+      "name": "criteria:active maintenance",
+      "pass": true,
+      "detail": "criterion 'active maintenance' in spec"
+    },
+    {
+      "name": "report:executive summary",
+      "pass": true,
+      "detail": "report: 'executive summary'"
+    },
+    {
+      "name": "report:detailed findings",
+      "pass": true,
+      "detail": "report: 'detailed findings'"
+    },
+    {
+      "name": "report:before/after",
+      "pass": true,
+      "detail": "report: 'before/after'"
+    },
+    {
+      "name": "report:confidence assessment",
+      "pass": true,
+      "detail": "report: 'confidence assessment'"
+    }
+  ]
+}

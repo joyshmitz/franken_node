@@ -1,0 +1,359 @@
+{
+  "bead_id": "bd-1f8m",
+  "title": "Invariant-breach runbooks for asupersync incidents",
+  "section": "10.15",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 69,
+    "failing": 0,
+    "total": 69
+  },
+  "checks": [
+    {
+      "check": "file: region_quiescence_breach",
+      "pass": true,
+      "detail": "exists: docs/runbooks/region_quiescence_breach.md"
+    },
+    {
+      "check": "file: obligation_leak_incident",
+      "pass": true,
+      "detail": "exists: docs/runbooks/obligation_leak_incident.md"
+    },
+    {
+      "check": "file: cancel_timeout_incident",
+      "pass": true,
+      "detail": "exists: docs/runbooks/cancel_timeout_incident.md"
+    },
+    {
+      "check": "file: dashboard doc (bd-3gnh)",
+      "pass": true,
+      "detail": "exists: docs/observability/asupersync_control_dashboards.md"
+    },
+    {
+      "check": "file: alert policy map (bd-3gnh)",
+      "pass": true,
+      "detail": "exists: artifacts/10.15/alert_policy_map.json"
+    },
+    {
+      "check": "region_quiescence_breach: section 'Detection Signature'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "region_quiescence_breach: section 'Immediate Containment'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "region_quiescence_breach: section 'Replay Procedure'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "region_quiescence_breach: section 'Rollback Procedure'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "obligation_leak_incident: section 'Detection Signature'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "obligation_leak_incident: section 'Immediate Containment'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "obligation_leak_incident: section 'Replay Procedure'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "obligation_leak_incident: section 'Rollback Procedure'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cancel_timeout_incident: section 'Detection Signature'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cancel_timeout_incident: section 'Immediate Containment'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cancel_timeout_incident: section 'Replay Procedure'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cancel_timeout_incident: section 'Rollback Procedure'",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "region: metric fn_region_quiescence_failures",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "region: metric fn_region_close_total",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "region: metric fn_region_active_gauge",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "obligation: metric fn_obligation_leaked_total",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "obligation: metric fn_obligation_active_gauge",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "obligation: metric fn_obligation_reserved_total",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "obligation: metric fn_obligation_committed_total",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cancel: metric fn_cancel_total_duration_ms",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cancel: metric fn_cancel_drain_duration_ms",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cancel: metric fn_cancel_finalize_duration_ms",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cancel: metric fn_cancel_request_duration_ms",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "region: event code RGN-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "region: event code RGN-005",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "obligation: event code OBL-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cancel: event code CAN-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "region_quiescence_breach: cross-ref bd-3gnh",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "region_quiescence_breach: cross-ref bd-145n",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "region_quiescence_breach: cross-ref bd-1f8m",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "obligation_leak_incident: cross-ref bd-3gnh",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "obligation_leak_incident: cross-ref bd-145n",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "obligation_leak_incident: cross-ref bd-1f8m",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "obligation_leak_incident: cross-ref bd-1n5p",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cancel_timeout_incident: cross-ref bd-3gnh",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cancel_timeout_incident: cross-ref bd-145n",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cancel_timeout_incident: cross-ref bd-1f8m",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cancel_timeout_incident: cross-ref bd-1cs7",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "region_quiescence_breach: alert RegionQuiescenceFailure",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "obligation_leak_incident: alert ObligationLeak",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cancel_timeout_incident: alert CancelLatencyBudgetExceeded",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "region_quiescence_breach: severity CRITICAL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "obligation_leak_incident: severity CRITICAL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cancel_timeout_incident: severity WARNING",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "region_quiescence_breach: lab replay with seed",
+      "pass": true,
+      "detail": "lab replay + seed found"
+    },
+    {
+      "check": "obligation_leak_incident: lab replay with seed",
+      "pass": true,
+      "detail": "lab replay + seed found"
+    },
+    {
+      "check": "cancel_timeout_incident: lab replay with seed",
+      "pass": true,
+      "detail": "lab replay + seed found"
+    },
+    {
+      "check": "dashboard: fn_region_quiescence_failures exists for region",
+      "pass": true,
+      "detail": "found in dashboard"
+    },
+    {
+      "check": "dashboard: fn_region_close_total exists for region",
+      "pass": true,
+      "detail": "found in dashboard"
+    },
+    {
+      "check": "dashboard: fn_region_active_gauge exists for region",
+      "pass": true,
+      "detail": "found in dashboard"
+    },
+    {
+      "check": "dashboard: fn_obligation_leaked_total exists for obligation",
+      "pass": true,
+      "detail": "found in dashboard"
+    },
+    {
+      "check": "dashboard: fn_obligation_active_gauge exists for obligation",
+      "pass": true,
+      "detail": "found in dashboard"
+    },
+    {
+      "check": "dashboard: fn_obligation_reserved_total exists for obligation",
+      "pass": true,
+      "detail": "found in dashboard"
+    },
+    {
+      "check": "dashboard: fn_obligation_committed_total exists for obligation",
+      "pass": true,
+      "detail": "found in dashboard"
+    },
+    {
+      "check": "dashboard: fn_cancel_total_duration_ms exists for cancel",
+      "pass": true,
+      "detail": "found in dashboard"
+    },
+    {
+      "check": "dashboard: fn_cancel_drain_duration_ms exists for cancel",
+      "pass": true,
+      "detail": "found in dashboard"
+    },
+    {
+      "check": "dashboard: fn_cancel_finalize_duration_ms exists for cancel",
+      "pass": true,
+      "detail": "found in dashboard"
+    },
+    {
+      "check": "dashboard: fn_cancel_request_duration_ms exists for cancel",
+      "pass": true,
+      "detail": "found in dashboard"
+    },
+    {
+      "check": "alert map: RegionQuiescenceFailure references bd-1f8m",
+      "pass": true,
+      "detail": "bd-1f8m: region-quiescence-failure"
+    },
+    {
+      "check": "alert map: ObligationLeak references bd-1f8m",
+      "pass": true,
+      "detail": "bd-1f8m: obligation-leak"
+    },
+    {
+      "check": "alert map: LaneStarvation references bd-1f8m",
+      "pass": true,
+      "detail": "bd-1f8m: lane-starvation"
+    },
+    {
+      "check": "alert map: CancelLatencyBudgetExceeded references bd-1f8m",
+      "pass": true,
+      "detail": "bd-1f8m: cancel-timeout"
+    },
+    {
+      "check": "alert map: HighObligationCount references bd-1f8m",
+      "pass": true,
+      "detail": "bd-1f8m: obligation-accumulation"
+    },
+    {
+      "check": "alert map: RegionCloseFailureRate references bd-1f8m",
+      "pass": true,
+      "detail": "bd-1f8m: region-close-failure"
+    }
+  ]
+}

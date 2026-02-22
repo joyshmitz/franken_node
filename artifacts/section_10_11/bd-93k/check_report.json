@@ -1,0 +1,75 @@
+{
+  "bead_id": "bd-93k",
+  "ok": true,
+  "results": [
+    {
+      "detail": "/data/projects/franken_node/crates/franken-node/src/runtime/checkpoint.rs",
+      "name": "checkpoint_rs_exists",
+      "passed": true
+    },
+    {
+      "detail": "/data/projects/franken_node/crates/franken-node/src/runtime/checkpoint_guard.rs",
+      "name": "checkpoint_guard_rs_exists",
+      "passed": true
+    },
+    {
+      "detail": "/data/projects/franken_node/crates/franken-node/src/runtime/mod.rs",
+      "name": "runtime_mod_exists",
+      "passed": true
+    },
+    {
+      "detail": "/data/projects/franken_node/docs/specs/section_10_11/bd-93k_contract.md",
+      "name": "spec_exists",
+      "passed": true
+    },
+    {
+      "detail": "/data/projects/franken_node/artifacts/section_10_11/bd-93k/verification_evidence.json",
+      "name": "evidence_exists",
+      "passed": true
+    },
+    {
+      "detail": "/data/projects/franken_node/artifacts/section_10_11/bd-93k/verification_summary.md",
+      "name": "summary_exists",
+      "passed": true
+    },
+    {
+      "detail": "ok",
+      "name": "checkpoint_tokens",
+      "passed": true
+    },
+    {
+      "detail": "ok",
+      "name": "guard_tokens",
+      "passed": true
+    },
+    {
+      "detail": "ok",
+      "name": "unit_test_presence",
+      "passed": true
+    },
+    {
+      "detail": "runtime/mod.rs must export checkpoint and checkpoint_guard",
+      "name": "runtime_mod_exports",
+      "passed": true
+    },
+    {
+      "detail": "spec must define invariants and structured events",
+      "name": "spec_mentions_invariants",
+      "passed": true
+    },
+    {
+      "detail": "summary must mention full FN-CK-001..FN-CK-008 span",
+      "name": "summary_mentions_event_span",
+      "passed": true
+    },
+    {
+      "detail": "ok",
+      "name": "evidence_metrics_fields",
+      "passed": true
+    }
+  ],
+  "summary": {
+    "passed": 13,
+    "total": 13
+  }
+}

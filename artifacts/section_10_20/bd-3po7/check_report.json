@@ -1,0 +1,331 @@
+{
+  "bead_id": "bd-3po7",
+  "title": "Section 10.20 verification gate: Dependency Graph Intelligence Service (DGIS)",
+  "section": "10.20",
+  "gate": true,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 60,
+  "passed": 60,
+  "failed": 0,
+  "section_beads": [
+    "bd-b541",
+    "bd-2bj4",
+    "bd-t89w",
+    "bd-2jns",
+    "bd-1q38",
+    "bd-2fid",
+    "bd-c97l",
+    "bd-2wod",
+    "bd-351r",
+    "bd-19k2",
+    "bd-cclm",
+    "bd-1tnu",
+    "bd-2d17",
+    "bd-1f8v",
+    "bd-38yt"
+  ],
+  "checks": [
+    {
+      "check": "evidence_bd-b541",
+      "pass": true,
+      "detail": "PASS: Canonical dependency/topology graph schema"
+    },
+    {
+      "check": "evidence_bd-2bj4",
+      "pass": true,
+      "detail": "PASS: Deterministic graph ingestion pipeline"
+    },
+    {
+      "check": "evidence_bd-t89w",
+      "pass": true,
+      "detail": "PASS: Topological risk metric engine"
+    },
+    {
+      "check": "evidence_bd-2jns",
+      "pass": true,
+      "detail": "PASS: Maintainer/publisher fragility model"
+    },
+    {
+      "check": "evidence_bd-1q38",
+      "pass": true,
+      "detail": "PASS: Adversarial contagion simulator"
+    },
+    {
+      "check": "evidence_bd-2fid",
+      "pass": true,
+      "detail": "PASS: Critical-node immunization planner"
+    },
+    {
+      "check": "evidence_bd-c97l",
+      "pass": true,
+      "detail": "PASS: DGIS topological context integration"
+    },
+    {
+      "check": "evidence_bd-2wod",
+      "pass": true,
+      "detail": "PASS: Graph-aware quarantine orchestration"
+    },
+    {
+      "check": "evidence_bd-351r",
+      "pass": true,
+      "detail": "PASS: ATC interoperability for topology indicators"
+    },
+    {
+      "check": "evidence_bd-19k2",
+      "pass": true,
+      "detail": "PASS: Expected-loss cascade economics"
+    },
+    {
+      "check": "evidence_bd-cclm",
+      "pass": true,
+      "detail": "PASS: Adversarial validation suite"
+    },
+    {
+      "check": "evidence_bd-1tnu",
+      "pass": true,
+      "detail": "PASS: Trust barrier primitives and policy wiring"
+    },
+    {
+      "check": "evidence_bd-2d17",
+      "pass": true,
+      "detail": "PASS: DGIS migration gate verification"
+    },
+    {
+      "check": "evidence_bd-1f8v",
+      "pass": true,
+      "detail": "PASS: Operator copilot guidance for dependency updates"
+    },
+    {
+      "check": "evidence_bd-38yt",
+      "pass": true,
+      "detail": "PASS: DGIS performance/scale budgets and release claim gate"
+    },
+    {
+      "check": "summary_bd-b541",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_20/bd-b541/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2bj4",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_20/bd-2bj4/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-t89w",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_20/bd-t89w/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2jns",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_20/bd-2jns/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1q38",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_20/bd-1q38/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2fid",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_20/bd-2fid/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-c97l",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_20/bd-c97l/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2wod",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_20/bd-2wod/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-351r",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_20/bd-351r/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-19k2",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_20/bd-19k2/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-cclm",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_20/bd-cclm/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1tnu",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_20/bd-1tnu/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2d17",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_20/bd-2d17/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1f8v",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_20/bd-1f8v/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-38yt",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_20/bd-38yt/verification_summary.md"
+    },
+    {
+      "check": "all_evidence_present",
+      "pass": true,
+      "detail": "15/15 beads have evidence"
+    },
+    {
+      "check": "all_verdicts_pass",
+      "pass": true,
+      "detail": "15/15 PASS"
+    },
+    {
+      "check": "artifact_dgis_barrier_enforcement_trace",
+      "pass": true,
+      "detail": "exists: artifacts/10.20/dgis_barrier_enforcement_trace.jsonl"
+    },
+    {
+      "check": "artifact_dgis_migration_health_report",
+      "pass": true,
+      "detail": "exists: artifacts/10.20/dgis_migration_health_report.json"
+    },
+    {
+      "check": "artifact_dgis_operator_recommendation_log",
+      "pass": true,
+      "detail": "exists: artifacts/10.20/dgis_operator_recommendation_log.jsonl"
+    },
+    {
+      "check": "artifact_dgis_release_gate_report",
+      "pass": true,
+      "detail": "exists: artifacts/10.20/dgis_release_gate_report.json"
+    },
+    {
+      "check": "gate_tests",
+      "pass": true,
+      "detail": "exists: tests/test_check_section_10_20_gate.py"
+    },
+    {
+      "check": "domain_graph_schema_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_graph_ingestion_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_risk_metrics_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_fragility_model_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_contagion_sim_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_immunization_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_topological_context_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_quarantine_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_atc_interop_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_cascade_economics_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_adversarial_testing_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_barrier_primitives_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_migration_gate_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_operator_copilot_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_release_gate_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "pipeline_schema_to_ingestion",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_ingestion_to_risk",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_risk_to_fragility",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_fragility_to_contagion",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_contagion_to_immunization",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_immunization_to_quarantine",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_context_to_atc",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_economics_to_release",
+      "pass": true,
+      "detail": "both have evidence"
+    }
+  ],
+  "timestamp": "2026-02-22T08:03:42.635851+00:00"
+}

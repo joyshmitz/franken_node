@@ -1,0 +1,559 @@
+{
+  "bead_id": "bd-2f5l",
+  "title": "fastapi_rust service skeleton",
+  "section": "10.16",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 109,
+    "failing": 0,
+    "total": 109
+  },
+  "checks": [
+    {
+      "check": "File exists: integration tests",
+      "pass": true,
+      "detail": "tests/integration/fastapi_control_plane_endpoints.rs"
+    },
+    {
+      "check": "File exists: endpoint report",
+      "pass": true,
+      "detail": "artifacts/10.16/fastapi_endpoint_report.json"
+    },
+    {
+      "check": "File exists: spec doc",
+      "pass": true,
+      "detail": "docs/specs/section_10_16/bd-2f5l_contract.md"
+    },
+    {
+      "check": "Rust test count >= 35",
+      "pass": true,
+      "detail": "38 tests found"
+    },
+    {
+      "check": "serde: Serialize",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "serde: Deserialize",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: EndpointLifecycle",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: EndpointGroup",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: HttpMethod",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: AuthMethod",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: MiddlewareLayer",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: EndpointDef",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: ServiceEvent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: FastapiSkeletonGate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: SkeletonSummary",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn all()",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn label(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn is_active(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn new()",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn register_endpoint(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn wire_middleware(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn gate_pass(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn summary(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn endpoints(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn take_events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: fn to_report(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: FASTAPI_SKELETON_INIT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: FASTAPI_ENDPOINT_REGISTERED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: FASTAPI_MIDDLEWARE_WIRED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: FASTAPI_AUTH_REJECT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: FASTAPI_RATE_LIMIT_HIT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: FASTAPI_ERROR_RESPONSE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-FAS-ENDPOINTS",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-FAS-MIDDLEWARE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-FAS-AUTH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-FAS-ERRORS",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "middleware: TraceContext",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "middleware: Authentication",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "middleware: Authorization",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "middleware: RateLimit",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "middleware: ErrorFormatting",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "middleware: Telemetry",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_lifecycle_all_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_lifecycle_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_lifecycle_is_active",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_lifecycle_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_endpoint_group_all_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_endpoint_group_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_endpoint_group_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_middleware_all_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_middleware_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_endpoint_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_operator_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_verifier_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_fleet_control_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_all_stable",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_all_traced",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_canonical_unique_paths",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_empty_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_all_wired_passes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_missing_middleware_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_gate_missing_group_fails",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_register_endpoint_emits_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_wire_middleware_emits_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_init_emits_event",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_take_events_drains",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_summary_counts",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_structure",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_pass_verdict",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_fail_verdict_empty",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_report_endpoints_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_invariant_constants_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_event_code_constants_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_determinism_same_input_same_report",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_endpoint_def_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_service_event_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_auth_methods_by_group",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_fleet_control_uses_fleet_mutate_hook",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_all_endpoints_have_status_codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_all_versioned_paths",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Report: gate verdict PASS",
+      "pass": true,
+      "detail": "PASS"
+    },
+    {
+      "check": "Report: 10 endpoints",
+      "pass": true,
+      "detail": "10 endpoints"
+    },
+    {
+      "check": "Report: all conformance pass",
+      "pass": true,
+      "detail": "all pass"
+    },
+    {
+      "check": "Report: 4 operator endpoints",
+      "pass": true,
+      "detail": "4 operator"
+    },
+    {
+      "check": "Report: 3 verifier endpoints",
+      "pass": true,
+      "detail": "3 verifier"
+    },
+    {
+      "check": "Report: 3 fleet_control endpoints",
+      "pass": true,
+      "detail": "3 fleet_control"
+    },
+    {
+      "check": "Report: all endpoints traced",
+      "pass": true,
+      "detail": "all traced"
+    },
+    {
+      "check": "Report: all middleware covered",
+      "pass": true,
+      "detail": "all covered"
+    },
+    {
+      "check": "Report: endpoint /v1/operator/status",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Report: endpoint /v1/operator/health",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Report: endpoint /v1/operator/config",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Report: endpoint /v1/operator/rollout",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Report: endpoint /v1/verifier/conformance",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Report: endpoint /v1/verifier/evidence",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Report: endpoint /v1/verifier/audit-log",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Report: endpoint /v1/fleet/lease",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Report: endpoint /v1/fleet/fence",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Report: endpoint /v1/fleet/coordinate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Report: operator auth = api_key",
+      "pass": true,
+      "detail": "correct"
+    },
+    {
+      "check": "Report: verifier auth = bearer_token",
+      "pass": true,
+      "detail": "correct"
+    },
+    {
+      "check": "Report: fleet_control auth = mtls_cert",
+      "pass": true,
+      "detail": "correct"
+    },
+    {
+      "check": "Report: all paths versioned /v1/",
+      "pass": true,
+      "detail": "all versioned"
+    },
+    {
+      "check": "Report: all endpoints have status codes",
+      "pass": true,
+      "detail": "all have codes"
+    },
+    {
+      "check": "Spec: has Types",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Spec: has Methods",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Spec: has Event Codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Spec: has Invariants",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Spec: has Acceptance Criteria",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

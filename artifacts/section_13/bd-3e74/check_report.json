@@ -1,0 +1,426 @@
+{
+  "bead_id": "bd-3e74",
+  "title": "benchmark/verifier external usage",
+  "section": "13",
+  "verdict": "PASS",
+  "total": 83,
+  "passed": 83,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "spec_exists",
+      "pass": true,
+      "detail": "spec at docs/specs/section_13/bd-3e74_contract.md"
+    },
+    {
+      "check": "policy_exists",
+      "pass": true,
+      "detail": "policy at docs/policy/benchmark_verifier_external_usage.md"
+    },
+    {
+      "check": "spec_event_code:BVE-001",
+      "pass": true,
+      "detail": "BVE-001"
+    },
+    {
+      "check": "spec_event_code:BVE-002",
+      "pass": true,
+      "detail": "BVE-002"
+    },
+    {
+      "check": "spec_event_code:BVE-003",
+      "pass": true,
+      "detail": "BVE-003"
+    },
+    {
+      "check": "spec_event_code:BVE-004",
+      "pass": true,
+      "detail": "BVE-004"
+    },
+    {
+      "check": "spec_invariant:INV-BVE-PACKAGE",
+      "pass": true,
+      "detail": "INV-BVE-PACKAGE"
+    },
+    {
+      "check": "spec_invariant:INV-BVE-GUIDE",
+      "pass": true,
+      "detail": "INV-BVE-GUIDE"
+    },
+    {
+      "check": "spec_invariant:INV-BVE-TRACK",
+      "pass": true,
+      "detail": "INV-BVE-TRACK"
+    },
+    {
+      "check": "spec_invariant:INV-BVE-REPORT",
+      "pass": true,
+      "detail": "INV-BVE-REPORT"
+    },
+    {
+      "check": "spec_tier:U0",
+      "pass": true,
+      "detail": "U0"
+    },
+    {
+      "check": "spec_tier:U1",
+      "pass": true,
+      "detail": "U1"
+    },
+    {
+      "check": "spec_tier:U2",
+      "pass": true,
+      "detail": "U2"
+    },
+    {
+      "check": "spec_tier:U3",
+      "pass": true,
+      "detail": "U3"
+    },
+    {
+      "check": "spec_tier:U4",
+      "pass": true,
+      "detail": "U4"
+    },
+    {
+      "check": "spec_target:adoption_ge_3",
+      "pass": true,
+      "detail": "adoption_ge_3"
+    },
+    {
+      "check": "spec_target:validation_ge_2",
+      "pass": true,
+      "detail": "validation_ge_2"
+    },
+    {
+      "check": "spec_target:citations_ge_1",
+      "pass": true,
+      "detail": "citations_ge_1"
+    },
+    {
+      "check": "spec_target:time_le_15",
+      "pass": true,
+      "detail": "time_le_15"
+    },
+    {
+      "check": "spec_dimension:external project adoption",
+      "pass": true,
+      "detail": "external project adoption"
+    },
+    {
+      "check": "spec_dimension:external validation parties",
+      "pass": true,
+      "detail": "external validation parties"
+    },
+    {
+      "check": "spec_dimension:external citations",
+      "pass": true,
+      "detail": "external citations"
+    },
+    {
+      "check": "spec_dimension:packaging formats",
+      "pass": true,
+      "detail": "packaging formats"
+    },
+    {
+      "check": "spec_dimension:getting started guide",
+      "pass": true,
+      "detail": "getting started guide"
+    },
+    {
+      "check": "spec_dimension:usage tracking channels",
+      "pass": true,
+      "detail": "usage tracking channels"
+    },
+    {
+      "check": "spec_gate:alpha",
+      "pass": true,
+      "detail": "alpha gate at U2"
+    },
+    {
+      "check": "spec_gate:beta",
+      "pass": true,
+      "detail": "beta gate at U3"
+    },
+    {
+      "check": "spec_provenance:sha-256",
+      "pass": true,
+      "detail": "provenance: sha-256"
+    },
+    {
+      "check": "spec_provenance:correlation id",
+      "pass": true,
+      "detail": "provenance: correlation id"
+    },
+    {
+      "check": "spec_provenance:environment",
+      "pass": true,
+      "detail": "provenance: environment"
+    },
+    {
+      "check": "spec_provenance:timestamp",
+      "pass": true,
+      "detail": "provenance: timestamp"
+    },
+    {
+      "check": "spec_format:npm",
+      "pass": true,
+      "detail": "format: npm"
+    },
+    {
+      "check": "spec_format:docker",
+      "pass": true,
+      "detail": "format: docker"
+    },
+    {
+      "check": "spec_format:binary",
+      "pass": true,
+      "detail": "format: binary"
+    },
+    {
+      "check": "spec_channel:npm downloads",
+      "pass": true,
+      "detail": "channel: npm downloads"
+    },
+    {
+      "check": "spec_channel:docker pulls",
+      "pass": true,
+      "detail": "channel: docker pulls"
+    },
+    {
+      "check": "spec_channel:github stars",
+      "pass": true,
+      "detail": "channel: github stars"
+    },
+    {
+      "check": "spec_channel:github forks",
+      "pass": true,
+      "detail": "channel: github forks"
+    },
+    {
+      "check": "spec_channel:citations",
+      "pass": true,
+      "detail": "channel: citations"
+    },
+    {
+      "check": "spec_channel:usage reports",
+      "pass": true,
+      "detail": "channel: usage reports"
+    },
+    {
+      "check": "spec_report_field:download_counts",
+      "pass": true,
+      "detail": "report field: download_counts"
+    },
+    {
+      "check": "spec_report_field:known_external_users",
+      "pass": true,
+      "detail": "report field: known_external_users"
+    },
+    {
+      "check": "spec_report_field:citations",
+      "pass": true,
+      "detail": "report field: citations"
+    },
+    {
+      "check": "spec_report_field:usage_tier",
+      "pass": true,
+      "detail": "report field: usage_tier"
+    },
+    {
+      "check": "spec_report_field:tracking_channels_active",
+      "pass": true,
+      "detail": "report field: tracking_channels_active"
+    },
+    {
+      "check": "policy_event_code:BVE-001",
+      "pass": true,
+      "detail": "BVE-001"
+    },
+    {
+      "check": "policy_event_code:BVE-002",
+      "pass": true,
+      "detail": "BVE-002"
+    },
+    {
+      "check": "policy_event_code:BVE-003",
+      "pass": true,
+      "detail": "BVE-003"
+    },
+    {
+      "check": "policy_event_code:BVE-004",
+      "pass": true,
+      "detail": "BVE-004"
+    },
+    {
+      "check": "policy_invariant:INV-BVE-PACKAGE",
+      "pass": true,
+      "detail": "INV-BVE-PACKAGE"
+    },
+    {
+      "check": "policy_invariant:INV-BVE-GUIDE",
+      "pass": true,
+      "detail": "INV-BVE-GUIDE"
+    },
+    {
+      "check": "policy_invariant:INV-BVE-TRACK",
+      "pass": true,
+      "detail": "INV-BVE-TRACK"
+    },
+    {
+      "check": "policy_invariant:INV-BVE-REPORT",
+      "pass": true,
+      "detail": "INV-BVE-REPORT"
+    },
+    {
+      "check": "policy_tier:U0",
+      "pass": true,
+      "detail": "U0"
+    },
+    {
+      "check": "policy_tier:U1",
+      "pass": true,
+      "detail": "U1"
+    },
+    {
+      "check": "policy_tier:U2",
+      "pass": true,
+      "detail": "U2"
+    },
+    {
+      "check": "policy_tier:U3",
+      "pass": true,
+      "detail": "U3"
+    },
+    {
+      "check": "policy_tier:U4",
+      "pass": true,
+      "detail": "U4"
+    },
+    {
+      "check": "policy_dimension:external project adoption",
+      "pass": true,
+      "detail": "external project adoption"
+    },
+    {
+      "check": "policy_dimension:external validation parties",
+      "pass": true,
+      "detail": "external validation parties"
+    },
+    {
+      "check": "policy_dimension:external citations",
+      "pass": true,
+      "detail": "external citations"
+    },
+    {
+      "check": "policy_dimension:packaging formats",
+      "pass": true,
+      "detail": "packaging formats"
+    },
+    {
+      "check": "policy_dimension:getting started time",
+      "pass": true,
+      "detail": "getting started time"
+    },
+    {
+      "check": "policy_dimension:tracking channels",
+      "pass": true,
+      "detail": "tracking channels"
+    },
+    {
+      "check": "policy_sybil:sybil",
+      "pass": true,
+      "detail": "sybil defense: sybil"
+    },
+    {
+      "check": "policy_sybil:verifiable identit",
+      "pass": true,
+      "detail": "sybil defense: verifiable identit"
+    },
+    {
+      "check": "policy_sybil:manual review",
+      "pass": true,
+      "detail": "sybil defense: manual review"
+    },
+    {
+      "check": "policy_ci:json_flag",
+      "pass": true,
+      "detail": "CI --json flag"
+    },
+    {
+      "check": "policy_ci:exit_code",
+      "pass": true,
+      "detail": "CI exit code"
+    },
+    {
+      "check": "policy_escalation:escalation",
+      "pass": true,
+      "detail": "escalation: escalation"
+    },
+    {
+      "check": "policy_escalation:block release",
+      "pass": true,
+      "detail": "escalation: block release"
+    },
+    {
+      "check": "policy_escalation:investigate",
+      "pass": true,
+      "detail": "escalation: investigate"
+    },
+    {
+      "check": "policy_provenance:sha-256",
+      "pass": true,
+      "detail": "provenance: sha-256"
+    },
+    {
+      "check": "policy_provenance:correlation id",
+      "pass": true,
+      "detail": "provenance: correlation id"
+    },
+    {
+      "check": "policy_provenance:environment fingerprint",
+      "pass": true,
+      "detail": "provenance: environment fingerprint"
+    },
+    {
+      "check": "policy_provenance:timestamp",
+      "pass": true,
+      "detail": "provenance: timestamp"
+    },
+    {
+      "check": "policy_section:risk",
+      "pass": true,
+      "detail": "risk section"
+    },
+    {
+      "check": "policy_section:impact",
+      "pass": true,
+      "detail": "impact section"
+    },
+    {
+      "check": "policy_monitoring:dashboard",
+      "pass": true,
+      "detail": "monitoring: dashboard"
+    },
+    {
+      "check": "policy_monitoring:alert",
+      "pass": true,
+      "detail": "monitoring: alert"
+    },
+    {
+      "check": "policy_monitoring:weekly",
+      "pass": true,
+      "detail": "monitoring: weekly"
+    },
+    {
+      "check": "evidence:json",
+      "pass": true,
+      "detail": "evidence.json at artifacts/section_13/bd-3e74/verification_evidence.json"
+    },
+    {
+      "check": "evidence:summary",
+      "pass": true,
+      "detail": "summary.md at artifacts/section_13/bd-3e74/verification_summary.md"
+    }
+  ]
+}

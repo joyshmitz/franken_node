@@ -1,0 +1,109 @@
+{
+  "bead_id": "bd-vll",
+  "title": "Deterministic incident replay bundle generation",
+  "section": "10.5",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "summary": {
+    "passing": 19,
+    "failing": 0,
+    "total": 19
+  },
+  "checks": [
+    {
+      "check": "file: replay bundle implementation",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/tools/replay_bundle.rs"
+    },
+    {
+      "check": "file: contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_5/bd-vll_contract.md"
+    },
+    {
+      "check": "file: interop fixture",
+      "pass": true,
+      "detail": "exists: fixtures/interop/interop_test_vectors.json"
+    },
+    {
+      "check": "impl: pub struct ReplayBundle",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct TimelineEvent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct BundleManifest",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub struct BundleChunk",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub fn generate_replay_bundle(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub fn validate_bundle_integrity(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: pub fn replay_bundle(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl: INV-RB-DETERMINISTIC",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "module wiring: pub mod replay_bundle;",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cli wiring: generate_replay_bundle",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cli wiring: read_bundle_from_path",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cli wiring: incident bundle written",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cli wiring: incident replay result",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "fixture vectors",
+      "pass": true,
+      "detail": "vectors=5"
+    },
+    {
+      "check": "sample determinism",
+      "pass": true,
+      "detail": "bundle A == bundle B"
+    },
+    {
+      "check": "sample integrity",
+      "pass": true,
+      "detail": "integrity hash recomputes"
+    }
+  ]
+}

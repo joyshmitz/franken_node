@@ -1,0 +1,176 @@
+{
+  "bead_id": "bd-3go4",
+  "title": "VEF coverage and proof-validity metrics integration",
+  "section": "10.18",
+  "verdict": "PASS",
+  "total": 33,
+  "passed": 33,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "spec_exists",
+      "pass": true,
+      "detail": "found: docs/specs/vef_claim_integration.md"
+    },
+    {
+      "check": "spec_bead_id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_section_10_18",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_VEF-CLAIM-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_VEF-CLAIM-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_VEF-CLAIM-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code_VEF-SCORE-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-VEF-CLAIM-GATE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-VEF-CLAIM-DETERMINISTIC",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-VEF-SCORE-TRACEABLE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant_INV-VEF-SCORE-REPRODUCIBLE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_acceptance_criteria",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_test_scenarios",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "conformance_exists",
+      "pass": true,
+      "detail": "found: tests/conformance/vef_claim_gate.rs"
+    },
+    {
+      "check": "conformance_tests",
+      "pass": true,
+      "detail": "all 5 tests present"
+    },
+    {
+      "check": "snapshot_exists",
+      "pass": true,
+      "detail": "found: artifacts/10.18/vef_claim_coverage_snapshot.json"
+    },
+    {
+      "check": "snapshot_valid_json",
+      "pass": true,
+      "detail": "valid JSON"
+    },
+    {
+      "check": "snapshot_bead_id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "snapshot_coverage",
+      "pass": true,
+      "detail": "coverage 100.0% >= 80.0%"
+    },
+    {
+      "check": "snapshot_claim_gates",
+      "pass": true,
+      "detail": "all 3 claims pass"
+    },
+    {
+      "check": "snapshot_verdict",
+      "pass": true,
+      "detail": "PASS"
+    },
+    {
+      "check": "evidence_exists",
+      "pass": true,
+      "detail": "found: artifacts/section_10_18/bd-3go4/verification_evidence.json"
+    },
+    {
+      "check": "evidence_valid",
+      "pass": true,
+      "detail": "valid: bead_id and verdict correct"
+    },
+    {
+      "check": "summary_exists",
+      "pass": true,
+      "detail": "found: artifacts/section_10_18/bd-3go4/verification_summary.md"
+    },
+    {
+      "check": "impl_exists",
+      "pass": true,
+      "detail": "found: crates/franken-node/src/connector/vef_claim_integration.rs"
+    },
+    {
+      "check": "impl_event_code_VEF-CLAIM-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_event_code_VEF-CLAIM-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_event_code_VEF-CLAIM-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_event_code_VEF-SCORE-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_invariant_INV-VEF-CLAIM-GATE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_invariant_INV-VEF-CLAIM-DETERMINISTIC",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_invariant_INV-VEF-SCORE-TRACEABLE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_invariant_INV-VEF-SCORE-REPRODUCIBLE",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

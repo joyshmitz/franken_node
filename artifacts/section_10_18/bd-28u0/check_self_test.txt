@@ -1,0 +1,10 @@
+[bd-28u0] PASS (9/9)
+- PASS workload_tier_count: 4
+- PASS event_code_count: 4
+- PASS error_event_code_count: 4
+- PASS error_code_count: 4
+- PASS impl_symbol_count: 15
+- PASS job_status_count: 4
+- PASS run_all_is_dict: dict
+- PASS run_all_has_checks: checks list
+- PASS run_all_total_matches: total vs checks

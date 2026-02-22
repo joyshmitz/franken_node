@@ -1,0 +1,216 @@
+{
+  "bead_id": "bd-3qsp",
+  "title": "Section 10.0 verification gate: Compatibility Envelope & Divergence Ledger",
+  "section": "10.0",
+  "gate": true,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 38,
+  "passed": 38,
+  "failed": 0,
+  "section_beads": [
+    "bd-1qp",
+    "bd-2de",
+    "bd-y4g",
+    "bd-uo4",
+    "bd-mwf",
+    "bd-yqz",
+    "bd-2ac",
+    "bd-1nf",
+    "bd-2g0",
+    "bd-khy"
+  ],
+  "checks": [
+    {
+      "check": "evidence_bd-1qp",
+      "pass": true,
+      "detail": "PASS: Compatibility envelope and divergence ledger"
+    },
+    {
+      "check": "evidence_bd-2de",
+      "pass": true,
+      "detail": "PASS: Migration autopilot pipeline"
+    },
+    {
+      "check": "evidence_bd-y4g",
+      "pass": true,
+      "detail": "PASS: Trust cards for extensions and publishers"
+    },
+    {
+      "check": "evidence_bd-uo4",
+      "pass": true,
+      "detail": "PASS: Dual-layer lockstep oracle program"
+    },
+    {
+      "check": "evidence_bd-mwf",
+      "pass": true,
+      "detail": "PASS: Policy-visible compatibility shim system"
+    },
+    {
+      "check": "evidence_bd-yqz",
+      "pass": true,
+      "detail": "PASS: Fleet quarantine UX and control plane"
+    },
+    {
+      "check": "evidence_bd-2ac",
+      "pass": true,
+      "detail": "PASS: Secure extension distribution network"
+    },
+    {
+      "check": "evidence_bd-1nf",
+      "pass": true,
+      "detail": "PASS: Operator safety copilot"
+    },
+    {
+      "check": "evidence_bd-2g0",
+      "pass": true,
+      "detail": "PASS: Economic trust layer"
+    },
+    {
+      "check": "evidence_bd-khy",
+      "pass": true,
+      "detail": "PASS: Benchmark and standard ownership stack"
+    },
+    {
+      "check": "summary_bd-1qp",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_0/bd-1qp/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2de",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_0/bd-2de/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-y4g",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_0/bd-y4g/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-uo4",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_0/bd-uo4/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-mwf",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_0/bd-mwf/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-yqz",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_0/bd-yqz/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2ac",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_0/bd-2ac/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1nf",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_0/bd-1nf/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2g0",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_0/bd-2g0/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-khy",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_0/bd-khy/verification_summary.md"
+    },
+    {
+      "check": "all_evidence_present",
+      "pass": true,
+      "detail": "10/10 beads have evidence"
+    },
+    {
+      "check": "all_verdicts_pass",
+      "pass": true,
+      "detail": "10/10 PASS"
+    },
+    {
+      "check": "gate_tests",
+      "pass": true,
+      "detail": "exists: tests/test_check_section_10_0_gate.py"
+    },
+    {
+      "check": "domain_compat_envelope_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_migration_autopilot_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_trust_cards_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_lockstep_oracle_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_compat_shim_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_quarantine_ux_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_extension_distribution_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_operator_copilot_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_economic_trust_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_benchmark_ownership_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "pipeline_envelope_to_shim",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_shim_to_oracle",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_oracle_to_migration",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_trust_to_distribution",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_quarantine_to_copilot",
+      "pass": true,
+      "detail": "both have evidence"
+    }
+  ],
+  "timestamp": "2026-02-22T08:10:51.710100+00:00"
+}

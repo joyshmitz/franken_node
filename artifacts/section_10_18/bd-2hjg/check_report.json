@@ -1,0 +1,284 @@
+{
+  "bead_id": "bd-2hjg",
+  "title": "Section 10.18 verification gate: Verifiable Execution Fabric (VEF)",
+  "section": "10.18",
+  "gate": true,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 51,
+  "passed": 51,
+  "failed": 0,
+  "section_beads": [
+    "bd-16fq",
+    "bd-p73r",
+    "bd-3g4k",
+    "bd-28u0",
+    "bd-1u8m",
+    "bd-1o4v",
+    "bd-8qlj",
+    "bd-4jh9",
+    "bd-3pds",
+    "bd-3go4",
+    "bd-3ptu",
+    "bd-ufk5",
+    "bd-3lzk"
+  ],
+  "checks": [
+    {
+      "check": "evidence_bd-16fq",
+      "pass": true,
+      "detail": "PASS: Define VEF policy-constraint language and compiler contract "
+    },
+    {
+      "check": "evidence_bd-p73r",
+      "pass": true,
+      "detail": "PASS: Define canonical ExecutionReceipt schema and deterministic s"
+    },
+    {
+      "check": "evidence_bd-3g4k",
+      "pass": true,
+      "detail": "PASS: Implement hash-chained receipt stream with periodic commitme"
+    },
+    {
+      "check": "evidence_bd-28u0",
+      "pass": true,
+      "detail": "PASS: Implement receipt-window selection and proof-job scheduler w"
+    },
+    {
+      "check": "evidence_bd-1u8m",
+      "pass": true,
+      "detail": "PASS: Implement proof-generation service interface (backend-agnost"
+    },
+    {
+      "check": "evidence_bd-1o4v",
+      "pass": true,
+      "detail": "PASS: Implement proof-verification gate API for control-plane trus"
+    },
+    {
+      "check": "evidence_bd-8qlj",
+      "pass": true,
+      "detail": "PASS: Integrate VEF verification state into high-risk control tran"
+    },
+    {
+      "check": "evidence_bd-4jh9",
+      "pass": true,
+      "detail": "PASS: Implement degraded-mode policy for proof lag/outage with exp"
+    },
+    {
+      "check": "evidence_bd-3pds",
+      "pass": true,
+      "detail": "PASS: Integrate VEF evidence into verifier SDK replay capsules and"
+    },
+    {
+      "check": "evidence_bd-3go4",
+      "pass": true,
+      "detail": "PASS: Integrate VEF coverage and proof-validity metrics into claim"
+    },
+    {
+      "check": "evidence_bd-3ptu",
+      "pass": true,
+      "detail": "PASS: Add adversarial test suite for receipt tampering, proof repl"
+    },
+    {
+      "check": "evidence_bd-ufk5",
+      "pass": true,
+      "detail": "PASS: Add performance budget gates for VEF overhead in p95/p99 con"
+    },
+    {
+      "check": "evidence_bd-3lzk",
+      "pass": true,
+      "detail": "PASS: Add release gate requiring VEF-backed evidence for designate"
+    },
+    {
+      "check": "summary_bd-16fq",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_18/bd-16fq/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-p73r",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_18/bd-p73r/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3g4k",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_18/bd-3g4k/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-28u0",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_18/bd-28u0/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1u8m",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_18/bd-1u8m/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1o4v",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_18/bd-1o4v/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-8qlj",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_18/bd-8qlj/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-4jh9",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_18/bd-4jh9/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3pds",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_18/bd-3pds/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3go4",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_18/bd-3go4/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3ptu",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_18/bd-3ptu/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-ufk5",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_18/bd-ufk5/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3lzk",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_18/bd-3lzk/verification_summary.md"
+    },
+    {
+      "check": "all_evidence_present",
+      "pass": true,
+      "detail": "13/13 beads have evidence"
+    },
+    {
+      "check": "all_verdicts_pass",
+      "pass": true,
+      "detail": "13/13 PASS"
+    },
+    {
+      "check": "artifact_vef_constraint_compiler_report",
+      "pass": true,
+      "detail": "exists: artifacts/10.18/vef_constraint_compiler_report.json"
+    },
+    {
+      "check": "artifact_vef_receipt_schema_vectors",
+      "pass": true,
+      "detail": "exists: artifacts/10.18/vef_receipt_schema_vectors.json"
+    },
+    {
+      "check": "artifact_vef_receipt_commitment_log",
+      "pass": true,
+      "detail": "exists: artifacts/10.18/vef_receipt_commitment_log.jsonl"
+    },
+    {
+      "check": "gate_tests",
+      "pass": true,
+      "detail": "exists: tests/test_check_section_10_18_gate.py"
+    },
+    {
+      "check": "domain_constraint_language_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_receipt_schema_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_receipt_chain_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_proof_scheduling_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_proof_generation_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_proof_verification_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_control_integration_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_degraded_mode_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_sdk_integration_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_claim_integration_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_adversarial_testing_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_performance_budget_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_release_gate_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "pipeline_constraint_to_receipt",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_receipt_to_chain",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_chain_to_schedule",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_schedule_to_prove",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_prove_to_verify",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_verify_to_control",
+      "pass": true,
+      "detail": "both have evidence"
+    }
+  ],
+  "timestamp": "2026-02-22T07:18:49.594880+00:00"
+}

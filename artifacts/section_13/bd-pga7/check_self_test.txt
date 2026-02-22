@@ -1,0 +1,4 @@
+{
+  "ok": true,
+  "message": "all self-test assertions pass"
+}

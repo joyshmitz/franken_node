@@ -1,0 +1,496 @@
+{
+  "bead_id": "bd-174",
+  "title": "policy checkpoint chain for release channels",
+  "section": "10.10",
+  "verdict": "PASS",
+  "total": 97,
+  "passed": 97,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "spec_exists",
+      "pass": true,
+      "detail": "found: docs/specs/section_10_10/bd-174_contract.md"
+    },
+    {
+      "check": "policy_exists",
+      "pass": true,
+      "detail": "found: docs/policy/policy_checkpoint_chain.md"
+    },
+    {
+      "check": "impl_exists",
+      "pass": true,
+      "detail": "found: crates/franken-node/src/connector/policy_checkpoint.rs"
+    },
+    {
+      "check": "mod_exports",
+      "pass": true,
+      "detail": "policy_checkpoint module exported"
+    },
+    {
+      "check": "spec_bead_id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_section_10_10",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_PCK-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_PCK-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_PCK-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_PCK-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_inv_INV-PCK-MONOTONIC",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_inv_INV-PCK-PARENT-CHAIN",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_inv_INV-PCK-HASH-INTEGRITY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_inv_INV-PCK-APPEND-ONLY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_inv_INV-PCK-CANONICAL-SER",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_inv_INV-PCK-MULTI-CHANNEL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_err_CHECKPOINT_SEQ_VIOLATION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_err_CHECKPOINT_PARENT_MISMATCH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_err_CHECKPOINT_HASH_CHAIN_BREAK",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_err_CHECKPOINT_EMPTY_CHAIN",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_err_CHECKPOINT_SERIALIZATION_ERROR",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_acceptance_criteria",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_test_scenarios",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_dependencies",
+      "pass": true,
+      "detail": "upstream (bd-jjm, bd-1l5) and downstream (bd-2ms) referenced"
+    },
+    {
+      "check": "impl_token_pub_enum_ReleaseChannel",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_struct_PolicyCheckpoint",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_struct_PolicyCheckpointChain",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_struct_CheckpointChainEvent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_enum_CheckpointChainError",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_fn_create_checkpoint(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_fn_verify_chain(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_fn_latest_for_channel(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_fn_policy_frontier(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_fn_append_checkpoint(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_fn_compute_hash(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_fn_verify_hash(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_sequence:_u64",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_epoch_id:_u64",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_channel:_ReleaseChannel",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_policy_hash:_String",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_parent_hash:_Option<String>",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_timestamp:_u64",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_signer:_String",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_pub_checkpoint_hash:_String",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_CHECKPOINT_CREATED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_CHECKPOINT_VERIFIED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_CHECKPOINT_REJECTED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_token_CHECKPOINT_FRONTIER",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_event_PCK-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_event_PCK-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_event_PCK-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_event_PCK-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_err_CHECKPOINT_SEQ_VIOLATION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_err_CHECKPOINT_PARENT_MISMATCH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_err_CHECKPOINT_HASH_CHAIN_BREAK",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_err_CHECKPOINT_EMPTY_CHAIN",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_err_CHECKPOINT_SERIALIZATION_ERROR",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_inv_INV-PCK-MONOTONIC",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_inv_INV-PCK-PARENT-CHAIN",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_inv_INV-PCK-HASH-INTEGRITY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_inv_INV-PCK-APPEND-ONLY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_inv_INV-PCK-CANONICAL-SER",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_inv_INV-PCK-MULTI-CHANNEL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_new_chain_is_empty",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_create_genesis_checkpoint",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_create_sequential_checkpoints",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_append_rejects_wrong_sequence",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_append_rejects_wrong_parent_hash",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_verify_empty_chain",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_verify_valid_chain",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_verify_detects_tampered_policy_hash",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_verify_detects_tampered_checkpoint_hash",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_verify_detects_tampered_parent_hash",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_verify_single_bit_flip_detection",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_latest_for_channel_empty",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_latest_for_channel_multi",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_policy_frontier_multi_channel",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_chain_100_plus_checkpoints",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_epoch_boundary_continuity",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_test_test_checkpoint_serde",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_release_channels",
+      "pass": true,
+      "detail": "stable, beta, canary, custom all present"
+    },
+    {
+      "check": "impl_canonical_serialization",
+      "pass": true,
+      "detail": "canonical domain tag pchk:canonical:v1 present"
+    },
+    {
+      "check": "impl_100_checkpoint_test",
+      "pass": true,
+      "detail": "100+ checkpoint test found (150 checkpoints)"
+    },
+    {
+      "check": "policy_content",
+      "pass": true,
+      "detail": "append-only, monotonic, multi-channel, rollback resistance documented"
+    },
+    {
+      "check": "policy_event_PCK-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_event_PCK-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_event_PCK-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_event_PCK-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_inv_INV-PCK-MONOTONIC",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_inv_INV-PCK-PARENT-CHAIN",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_inv_INV-PCK-HASH-INTEGRITY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_inv_INV-PCK-APPEND-ONLY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_inv_INV-PCK-CANONICAL-SER",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy_inv_INV-PCK-MULTI-CHANNEL",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "verification_evidence",
+      "pass": true,
+      "detail": "valid: artifacts/section_10_10/bd-174/verification_evidence.json"
+    },
+    {
+      "check": "evidence_chain_metrics",
+      "pass": true,
+      "detail": "chain_length, channels_covered, sample_checkpoint_hashes present"
+    },
+    {
+      "check": "verification_summary",
+      "pass": true,
+      "detail": "found: artifacts/section_10_10/bd-174/verification_summary.md"
+    }
+  ]
+}

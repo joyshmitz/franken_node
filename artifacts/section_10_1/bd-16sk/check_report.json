@@ -1,0 +1,179 @@
+{
+  "bead_id": "bd-16sk",
+  "title": "Section 10.1 verification gate: Charter & Split Governance",
+  "section": "10.1",
+  "gate": true,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 31,
+  "passed": 31,
+  "failed": 0,
+  "section_beads": [
+    "bd-1j2",
+    "bd-2zz",
+    "bd-4yv",
+    "bd-1mj",
+    "bd-20l",
+    "bd-1pc",
+    "bd-2nd",
+    "bd-vjq"
+  ],
+  "checks": [
+    {
+      "check": "evidence_bd-1j2",
+      "pass": true,
+      "detail": "PASS: Split contract enforcement"
+    },
+    {
+      "check": "evidence_bd-2zz",
+      "pass": true,
+      "detail": "PASS: Dependency direction guard"
+    },
+    {
+      "check": "evidence_bd-4yv",
+      "pass": true,
+      "detail": "PASS: Reproducibility environment schemas"
+    },
+    {
+      "check": "evidence_bd-1mj",
+      "pass": true,
+      "detail": "PASS: Claim language registry"
+    },
+    {
+      "check": "evidence_bd-20l",
+      "pass": true,
+      "detail": "PASS: Hybrid baseline ADR"
+    },
+    {
+      "check": "evidence_bd-1pc",
+      "pass": true,
+      "detail": "PASS: Implementation governance"
+    },
+    {
+      "check": "evidence_bd-2nd",
+      "pass": true,
+      "detail": "PASS: Product charter verification"
+    },
+    {
+      "check": "evidence_bd-vjq",
+      "pass": true,
+      "detail": "PASS: Product charter verification gate"
+    },
+    {
+      "check": "summary_bd-1j2",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_1/bd-1j2/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2zz",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_1/bd-2zz/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-4yv",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_1/bd-4yv/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1mj",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_1/bd-1mj/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-20l",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_1/bd-20l/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1pc",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_1/bd-1pc/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2nd",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_1/bd-2nd/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-vjq",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_1/bd-vjq/verification_summary.md"
+    },
+    {
+      "check": "all_evidence_present",
+      "pass": true,
+      "detail": "8/8 beads have evidence"
+    },
+    {
+      "check": "all_verdicts_pass",
+      "pass": true,
+      "detail": "8/8 PASS"
+    },
+    {
+      "check": "gate_tests",
+      "pass": true,
+      "detail": "exists: tests/test_check_section_10_1_gate.py"
+    },
+    {
+      "check": "domain_split_contract_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_dependency_guard_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_reproducibility_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_claim_language_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_baseline_adr_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_governance_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_charter_verification_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "domain_charter_gate_coverage",
+      "pass": true,
+      "detail": "1/1 beads PASS"
+    },
+    {
+      "check": "pipeline_charter_to_governance",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_governance_to_split",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_split_to_dependency",
+      "pass": true,
+      "detail": "both have evidence"
+    },
+    {
+      "check": "pipeline_claim_to_baseline",
+      "pass": true,
+      "detail": "both have evidence"
+    }
+  ],
+  "timestamp": "2026-02-22T08:10:52.038812+00:00"
+}

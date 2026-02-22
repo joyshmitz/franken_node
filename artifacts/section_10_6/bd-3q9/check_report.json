@@ -1,0 +1,763 @@
+{
+  "bead_id": "bd-3q9",
+  "section": "10.6",
+  "title": "Release rollback bundles with deterministic restoration",
+  "timestamp": "2026-02-22T08:17:55.098797+00:00",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 149,
+  "passed": 149,
+  "failed": 0,
+  "summary": {
+    "passing": 149,
+    "failing": 0,
+    "total": 149
+  },
+  "checks": [
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_6/bd-3q9_contract.md"
+    },
+    {
+      "check": "file: policy document",
+      "pass": true,
+      "detail": "exists: docs/policy/release_rollback_bundles.md"
+    },
+    {
+      "check": "file: Rust implementation",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/connector/rollback_bundle.rs"
+    },
+    {
+      "check": "file: connector mod.rs",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/connector/mod.rs"
+    },
+    {
+      "check": "module registered in mod.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct RollbackBundle",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct BundleStore",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct BundleComponent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct RestoreManifest",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct ManifestComponent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct CompatibilityProof",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct StateSnapshot",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct HealthCheckResult",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct RollbackResult",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct RollbackAction",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct RollbackAuditEntry",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum RollbackBundleError",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum HealthCheckKind",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum RollbackMode",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn sha256_hex(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn new(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn verify_checksum(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn verify_integrity(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn check_compatibility(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn ordered_components(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn create_bundle(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn apply_rollback(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn get_bundle(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn list_bundles(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn prune(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn set_state(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn current_state(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn take_events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn audit_log(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn integrity_hash(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn canonical_bytes(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn snapshot_hash(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn diff(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn to_json(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn label(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn all(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_event_code: RRB-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_event_code: RRB-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_event_code: RRB-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_event_code: RRB-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_invariant: INV-RRB-DETERM",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_invariant: INV-RRB-IDEMPOT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_invariant: INV-RRB-HEALTH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_invariant: INV-RRB-MANIFEST",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_error_code: ERR-RRB-MANIFEST-INVALID",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_error_code: ERR-RRB-CHECKSUM-MISMATCH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_error_code: ERR-RRB-HEALTH-FAILED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl_error_code: ERR-RRB-VERSION-MISMATCH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_sha256_hex_deterministic",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_sha256_hex_different_input",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_bundle_component_new",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_bundle_component_checksum_verification",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_bundle_component_tampered_data",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_compatibility_proof_serde",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_health_check_kind_all",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_health_check_kind_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_health_check_kind_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_health_check_kind_serde",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_restore_manifest_integrity_hash_deterministic",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_state_snapshot_hash_deterministic",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_state_snapshot_hash_changes_on_version",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_state_snapshot_diff_identical",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_state_snapshot_diff_version",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_create_bundle",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_bundle_integrity_valid",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_bundle_integrity_tampered",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_bundle_component_tampered_in_bundle",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_bundle_compatibility_pass",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_bundle_compatibility_fail",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_ordered_components",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_apply_rollback_success",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_apply_rollback_idempotent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_dry_run_no_state_change",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_rollback_version_mismatch",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_rollback_emits_events",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_rollback_failure_emits_rrb004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_health_check_binary_version",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_health_check_config_schema",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_health_check_state_integrity",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_health_check_smoke_test",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_bundle_store_list_bundles",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_bundle_store_get_bundle",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_bundle_store_prune",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_audit_log_on_creation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_audit_log_on_rollback",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_rollback_result_to_json",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_rollback_mode_serde",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_error_display_manifest_invalid",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_error_display_checksum_mismatch",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_error_display_health_failed",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_error_display_version_mismatch",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_error_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_manifest_canonical_bytes_deterministic",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_bundle_store_default",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_event_codes_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_invariant_constants_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_health_check_result_serde",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_rollback_action_serde",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_rollback_audit_entry_serde",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_apply_rollback_actions_count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_dry_run_actions_not_applied",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_manifest_health_checks_populated",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_bundle_timestamp",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_state_snapshot_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_restore_manifest_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_bundle_component_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_rollback_bundle_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test: test_set_and_get_state",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "impl unit test count",
+      "pass": true,
+      "detail": "60 tests (minimum 40)"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "SHA-256 usage",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "idempotency test",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "dry-run test",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "deterministic restore logic",
+      "pass": true,
+      "detail": "StateSnapshot+diff+hash present"
+    },
+    {
+      "check": "health_check: BinaryVersion",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "health_check: ConfigSchema",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "health_check: StateIntegrity",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "health_check: SmokeTest",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code: RRB-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code: RRB-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code: RRB-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_code: RRB-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant: INV-RRB-DETERM",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant: INV-RRB-IDEMPOT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant: INV-RRB-HEALTH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_invariant: INV-RRB-MANIFEST",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_error_code: ERR-RRB-MANIFEST-INVALID",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_error_code: ERR-RRB-CHECKSUM-MISMATCH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_error_code: ERR-RRB-HEALTH-FAILED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_error_code: ERR-RRB-VERSION-MISMATCH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Rollback Bundle Structure",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Event Codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Invariants",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Error Codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Health Check Sequence",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Restore Manifest Format",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Quantitative Targets",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: Bundle Generation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: Rollback Procedure",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: Dry-Run Mode",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: Error Handling",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: Audit Trail",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: Time Ceiling",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}
