@@ -1,0 +1,37 @@
+{
+  "bead_id": "bd-17z7.3",
+  "status": "completed",
+  "timestamp_utc": "2026-02-22T22:59:45Z",
+  "changed_files": [
+    "crates/franken-node/src/runtime/lane_router.rs"
+  ],
+  "validation": [
+    {
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/rch_bd17z7_3_fix_check cargo check -p frankenengine-node --all-targets",
+      "result": "pass"
+    },
+    {
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/rch_bd17z7_3_fix_clippy cargo clippy -p frankenengine-node --all-targets -- -D warnings",
+      "result": "pass"
+    },
+    {
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/rch_bd17z7_3_fix_tests cargo test -p frankenengine-node --bin frankenengine-node runtime::lane_router::tests -- --nocapture",
+      "result": "pass",
+      "matched_tests": [
+        "runtime::lane_router::tests::lane_hint_scope_mismatch_defaults_to_background",
+        "runtime::lane_router::tests::duplicate_operation_id_rejected_while_queued",
+        "runtime::lane_router::tests::expired_queued_operation_can_be_reused_after_eviction",
+        "runtime::lane_router::tests::non_background_shed_oldest_emits_lane_saturated_event"
+      ]
+    },
+    {
+      "command": "rustfmt +nightly --edition 2024 --check crates/franken-node/src/runtime/lane_router.rs",
+      "result": "pass"
+    }
+  ],
+  "notes": [
+    "Lane-router now rejects duplicate operation IDs even when the first instance is still queued.",
+    "Explicit lane hints now require matching capability scope to prevent priority-lane escalation by hint spoofing.",
+    "Saturation telemetry is now emitted consistently for non-background ShedOldest rejection paths."
+  ]
+}

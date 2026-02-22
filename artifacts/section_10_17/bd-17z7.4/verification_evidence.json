@@ -1,0 +1,38 @@
+{
+  "bead_id": "bd-17z7.4",
+  "status": "completed",
+  "timestamp_utc": "2026-02-22T23:05:20Z",
+  "changed_files": [
+    "crates/franken-node/src/runtime/bulkhead.rs",
+    "crates/franken-node/src/runtime/lane_router.rs"
+  ],
+  "validation": [
+    {
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/rch_bd17z7_4_check cargo check -p frankenengine-node --all-targets",
+      "result": "pass"
+    },
+    {
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/rch_bd17z7_4_clippy cargo clippy -p frankenengine-node --all-targets -- -D warnings",
+      "result": "pass"
+    },
+    {
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/rch_bd17z7_4_bulkhead_tests cargo test -p frankenengine-node --bin frankenengine-node runtime::bulkhead::tests -- --nocapture",
+      "result": "pass",
+      "matched_tests": [
+        "runtime::bulkhead::tests::release_with_mismatched_operation_is_rejected_without_releasing_permit"
+      ]
+    },
+    {
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/rch_bd17z7_4_lane_router_tests cargo test -p frankenengine-node --bin frankenengine-node runtime::lane_router::tests -- --nocapture",
+      "result": "pass"
+    },
+    {
+      "command": "rustfmt +nightly --edition 2024 --check crates/franken-node/src/runtime/bulkhead.rs crates/franken-node/src/runtime/lane_router.rs",
+      "result": "pass"
+    }
+  ],
+  "notes": [
+    "Release now verifies permit-to-operation ownership before mutating in-flight counters.",
+    "Permit-operation mismatches fail closed and preserve permit state until correct release arrives."
+  ]
+}

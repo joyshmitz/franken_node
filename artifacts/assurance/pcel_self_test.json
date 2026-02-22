@@ -1,0 +1,33 @@
+{
+  "name": "check_proof_carrying_execution_ledger",
+  "bead_id": "bd-2hqd.4",
+  "verdict": "PASS",
+  "passed": 6,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "canonical_json_deterministic",
+      "passed": true
+    },
+    {
+      "check": "sha256_deterministic",
+      "passed": true
+    },
+    {
+      "check": "sha256_length_64",
+      "passed": true
+    },
+    {
+      "check": "merkle_root_deterministic",
+      "passed": true
+    },
+    {
+      "check": "merkle_root_non_empty",
+      "passed": true
+    },
+    {
+      "check": "dependency_parser_deduplicates_and_sorts",
+      "passed": true
+    }
+  ]
+}

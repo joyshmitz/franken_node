@@ -1,0 +1,277 @@
+{
+  "schema_version": "pcel-v1.0",
+  "bead_id": "bd-2hqd.4",
+  "section": "10.17",
+  "title": "Proof-Carrying Execution Ledger (PCEL) v1",
+  "generated_at": "2026-02-22T22:32:01Z",
+  "verdict": "PASS",
+  "scope": {
+    "label": "prefix:bd-2hqd",
+    "bead_prefix": "bd-2hqd",
+    "include_all_closed": false,
+    "selected_closed_bead_count": 4,
+    "total_closed_beads_in_issue_index": 564
+  },
+  "sources": {
+    "issues_jsonl": ".beads/issues.jsonl",
+    "issues_jsonl_sha256": "eaf83488ea7d7b3ea844fb9ec3764f39a1f74fdbcffa1ab9776c46160a4973f1",
+    "artifacts_root": "artifacts"
+  },
+  "summary": {
+    "selected_closed_beads": 4,
+    "full_proof_beads": 4,
+    "missing_evidence": 0,
+    "missing_summary": 0,
+    "invalid_evidence_json": 0
+  },
+  "checks": [
+    {
+      "id": "PCEL-SCOPE-NONEMPTY",
+      "check": "selected closed-bead scope is non-empty",
+      "passed": true,
+      "detail": "selected_closed_beads=4 scope=prefix:bd-2hqd"
+    },
+    {
+      "id": "PCEL-PROOF-COMPLETE",
+      "check": "all selected closed beads have evidence + summary proof artifacts",
+      "passed": true,
+      "detail": "full_proof=4 total=4 missing_evidence=0 missing_summary=0 invalid_evidence_json=0"
+    },
+    {
+      "id": "PCEL-DEP-CLOSURE",
+      "check": "closed dependency proof-chain closure holds within selected scope",
+      "passed": true,
+      "detail": "missing_dependency_proofs=0"
+    },
+    {
+      "id": "PCEL-DEP-SCOPE-COMPLETE",
+      "check": "closed dependencies are fully represented inside selected ledger scope",
+      "passed": true,
+      "detail": "out_of_scope_closed_dependencies=0"
+    },
+    {
+      "id": "PCEL-DEP-RESOLVED",
+      "check": "all dependency ids resolve in .beads/issues.jsonl",
+      "passed": true,
+      "detail": "unresolved_dependency_references=0"
+    },
+    {
+      "id": "PCEL-MERKLE-ROOT",
+      "check": "deterministic Merkle root computed for selected scope",
+      "passed": true,
+      "detail": "leaf_count=4 depth=3 root=d599b4e0e610c81bcf9cc4987f0a3cf0fc33cf197616483c70170f64e27086fc"
+    },
+    {
+      "id": "PCEL-CANONICAL-DETERMINISM",
+      "check": "canonical JSON serialization is deterministic",
+      "passed": true,
+      "detail": "json.dumps(sort_keys=True,separators=(',',':'),ensure_ascii=True)"
+    }
+  ],
+  "dependency_map": {
+    "bd-2hqd": [],
+    "bd-2hqd.1": [
+      "bd-2hqd"
+    ],
+    "bd-2hqd.2": [
+      "bd-2hqd"
+    ],
+    "bd-2hqd.3": [
+      "bd-2hqd"
+    ]
+  },
+  "dependency_closure": {
+    "missing_dependency_proofs": [],
+    "out_of_scope_closed_dependencies": [],
+    "unresolved_dependency_references": []
+  },
+  "merkle": {
+    "algorithm": "sha256",
+    "domain_leaf": "pcel:v1:leaf:",
+    "domain_node": "pcel:v1:node:",
+    "leaf_count": 4,
+    "tree_depth": 3,
+    "root_sha256": "d599b4e0e610c81bcf9cc4987f0a3cf0fc33cf197616483c70170f64e27086fc"
+  },
+  "beads": [
+    {
+      "bead_id": "bd-2hqd",
+      "status": "closed",
+      "closed_at": "2026-02-22T19:08:12.800175702Z",
+      "dependencies": [],
+      "artifact_dir": "artifacts/section_10_17/bd-2hqd",
+      "evidence_path": "artifacts/section_10_17/bd-2hqd/verification_evidence.json",
+      "summary_path": "artifacts/section_10_17/bd-2hqd/verification_summary.md",
+      "evidence_exists": true,
+      "summary_exists": true,
+      "evidence_valid_json": true,
+      "evidence_sha256": "cad4e43ff8a76fdc7a566b11c97ae4b8ee8fecea01bc196e4d9421008426476a",
+      "summary_sha256": "819f7feedadc92092a784c76fec076c868be95bf7ede079ff83943eeab32b96b",
+      "dependency_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "leaf_sha256": "36e974392052098ec5fdef8cf0c7c6e4afc3c8ca7380e95ba746e6982f0dce02",
+      "checks": [
+        {
+          "check": "verification_evidence_present",
+          "passed": true,
+          "detail": "artifacts/section_10_17/bd-2hqd/verification_evidence.json"
+        },
+        {
+          "check": "verification_summary_present",
+          "passed": true,
+          "detail": "artifacts/section_10_17/bd-2hqd/verification_summary.md"
+        },
+        {
+          "check": "verification_evidence_utf8",
+          "passed": true,
+          "detail": "readable UTF-8"
+        },
+        {
+          "check": "verification_evidence_json_parse",
+          "passed": true,
+          "detail": "parsed canonical JSON"
+        },
+        {
+          "check": "verification_summary_utf8",
+          "passed": true,
+          "detail": "readable UTF-8"
+        }
+      ]
+    },
+    {
+      "bead_id": "bd-2hqd.1",
+      "status": "closed",
+      "closed_at": "2026-02-22T19:13:26.114205482Z",
+      "dependencies": [
+        "bd-2hqd"
+      ],
+      "artifact_dir": "artifacts/section_10_17/bd-2hqd.1",
+      "evidence_path": "artifacts/section_10_17/bd-2hqd.1/verification_evidence.json",
+      "summary_path": "artifacts/section_10_17/bd-2hqd.1/verification_summary.md",
+      "evidence_exists": true,
+      "summary_exists": true,
+      "evidence_valid_json": true,
+      "evidence_sha256": "f11e4dbf27717f1968f540f54825ce1bd3964c8624395980e4cbff6419f479b8",
+      "summary_sha256": "82dda7e6fbf6d783df4834a73fdffce83ea1cc5c9b9df204cbf7e13bcc5121cf",
+      "dependency_sha256": "37635ad2221f26e44b5b32b2de4a8dc423c7720132a9542aebc80152c2159cc5",
+      "leaf_sha256": "b3ae092abd4e927c46a2e1557e89078be781a6ccf27bcfa7da2644c9435189df",
+      "checks": [
+        {
+          "check": "verification_evidence_present",
+          "passed": true,
+          "detail": "artifacts/section_10_17/bd-2hqd.1/verification_evidence.json"
+        },
+        {
+          "check": "verification_summary_present",
+          "passed": true,
+          "detail": "artifacts/section_10_17/bd-2hqd.1/verification_summary.md"
+        },
+        {
+          "check": "verification_evidence_utf8",
+          "passed": true,
+          "detail": "readable UTF-8"
+        },
+        {
+          "check": "verification_evidence_json_parse",
+          "passed": true,
+          "detail": "parsed canonical JSON"
+        },
+        {
+          "check": "verification_summary_utf8",
+          "passed": true,
+          "detail": "readable UTF-8"
+        }
+      ]
+    },
+    {
+      "bead_id": "bd-2hqd.2",
+      "status": "closed",
+      "closed_at": "2026-02-22T18:59:51.531463191Z",
+      "dependencies": [
+        "bd-2hqd"
+      ],
+      "artifact_dir": "artifacts/section_10_17/bd-2hqd.2",
+      "evidence_path": "artifacts/section_10_17/bd-2hqd.2/verification_evidence.json",
+      "summary_path": "artifacts/section_10_17/bd-2hqd.2/verification_summary.md",
+      "evidence_exists": true,
+      "summary_exists": true,
+      "evidence_valid_json": true,
+      "evidence_sha256": "fb7c0417148aad70dd2f944fd0261787f58cf8591d2f1ffe238f53ca2641afd2",
+      "summary_sha256": "5aa40661da9835de6dc56898670865b2a331b1f5074069eeb193a7484e93439c",
+      "dependency_sha256": "37635ad2221f26e44b5b32b2de4a8dc423c7720132a9542aebc80152c2159cc5",
+      "leaf_sha256": "2ea4b3f85f003a9403aeee80997711beb9da19423d8062b4a1b801e388da85db",
+      "checks": [
+        {
+          "check": "verification_evidence_present",
+          "passed": true,
+          "detail": "artifacts/section_10_17/bd-2hqd.2/verification_evidence.json"
+        },
+        {
+          "check": "verification_summary_present",
+          "passed": true,
+          "detail": "artifacts/section_10_17/bd-2hqd.2/verification_summary.md"
+        },
+        {
+          "check": "verification_evidence_utf8",
+          "passed": true,
+          "detail": "readable UTF-8"
+        },
+        {
+          "check": "verification_evidence_json_parse",
+          "passed": true,
+          "detail": "parsed canonical JSON"
+        },
+        {
+          "check": "verification_summary_utf8",
+          "passed": true,
+          "detail": "readable UTF-8"
+        }
+      ]
+    },
+    {
+      "bead_id": "bd-2hqd.3",
+      "status": "closed",
+      "closed_at": "2026-02-22T18:50:12.066076648Z",
+      "dependencies": [
+        "bd-2hqd"
+      ],
+      "artifact_dir": "artifacts/section_bootstrap/bd-2hqd.3",
+      "evidence_path": "artifacts/section_bootstrap/bd-2hqd.3/verification_evidence.json",
+      "summary_path": "artifacts/section_bootstrap/bd-2hqd.3/verification_summary.md",
+      "evidence_exists": true,
+      "summary_exists": true,
+      "evidence_valid_json": true,
+      "evidence_sha256": "062d6637044afd460d1f3b41ca63b26bbee727ac74be70230f8f0c0bffa92f3a",
+      "summary_sha256": "ecd38f968fe59cf4006ba5a00d820b505e2350d06e36c5717973f0ba4352724b",
+      "dependency_sha256": "37635ad2221f26e44b5b32b2de4a8dc423c7720132a9542aebc80152c2159cc5",
+      "leaf_sha256": "37739a23ac1364163435cf0b573027e273c9f472efdadd7b8b0c5997675fdcb9",
+      "checks": [
+        {
+          "check": "verification_evidence_present",
+          "passed": true,
+          "detail": "artifacts/section_bootstrap/bd-2hqd.3/verification_evidence.json"
+        },
+        {
+          "check": "verification_summary_present",
+          "passed": true,
+          "detail": "artifacts/section_bootstrap/bd-2hqd.3/verification_summary.md"
+        },
+        {
+          "check": "verification_evidence_utf8",
+          "passed": true,
+          "detail": "readable UTF-8"
+        },
+        {
+          "check": "verification_evidence_json_parse",
+          "passed": true,
+          "detail": "parsed canonical JSON"
+        },
+        {
+          "check": "verification_summary_utf8",
+          "passed": true,
+          "detail": "readable UTF-8"
+        }
+      ]
+    }
+  ],
+  "content_hash": "34763fd62ae453b9a94011835a4c822b5ab38a5c19f4d42f2c1d11328b8a7941"
+}

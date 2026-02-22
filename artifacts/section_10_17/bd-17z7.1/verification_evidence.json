@@ -1,0 +1,42 @@
+{
+  "bead_id": "bd-17z7.1",
+  "status": "in_progress",
+  "timestamp_utc": "2026-02-22T22:42:01Z",
+  "changed_files": [
+    "crates/franken-node/src/runtime/mod.rs",
+    "crates/franken-node/src/runtime/cancellable_task.rs",
+    "crates/franken-node/src/runtime/lane_router.rs"
+  ],
+  "validation": [
+    {
+      "command": "rch exec -- env RUSTUP_TOOLCHAIN=nightly CARGO_TARGET_DIR=target/rch_bd17z7_1 cargo check -p frankenengine-node --all-targets",
+      "result": "pass"
+    },
+    {
+      "command": "rch exec -- env RUSTUP_TOOLCHAIN=nightly CARGO_TARGET_DIR=target/rch_bd17z7_1_bin cargo test -p frankenengine-node --bin frankenengine-node register_child_rejects_unknown_child -- --nocapture",
+      "result": "pass",
+      "matched_tests": [
+        "runtime::cancellable_task::tests::register_child_rejects_unknown_child"
+      ]
+    },
+    {
+      "command": "rch exec -- env RUSTUP_TOOLCHAIN=nightly CARGO_TARGET_DIR=target/rch_bd17z7_1_bin cargo test -p frankenengine-node --bin frankenengine-node register_child_duplicate_link_is_idempotent -- --nocapture",
+      "result": "pass",
+      "matched_tests": [
+        "runtime::cancellable_task::tests::register_child_duplicate_link_is_idempotent"
+      ]
+    },
+    {
+      "command": "rch exec -- env RUSTUP_TOOLCHAIN=nightly CARGO_TARGET_DIR=target/rch_bd17z7_1_clippy cargo clippy -p frankenengine-node --all-targets -- -D warnings",
+      "result": "pass"
+    },
+    {
+      "command": "rustfmt +nightly --edition 2024 --check crates/franken-node/src/runtime/mod.rs crates/franken-node/src/runtime/cancellable_task.rs crates/franken-node/src/runtime/lane_router.rs",
+      "result": "pass"
+    }
+  ],
+  "notes": [
+    "Enabling runtime module exports surfaced previously hidden borrow-check issues in lane_router and cancellable_task; these were fixed in this lane.",
+    "cargo fmt --all --check reports unrelated pre-existing formatting diffs outside this bead scope."
+  ]
+}
