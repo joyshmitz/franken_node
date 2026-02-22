@@ -1,0 +1,8 @@
+{
+  "chart_set": "public_campaign_v1",
+  "charts": [
+    {"id": "latency_p95", "type": "bar", "x": "workload", "y": "p95_latency_ms", "group": "runtime"},
+    {"id": "throughput", "type": "bar", "x": "workload", "y": "throughput_rps", "group": "runtime"},
+    {"id": "targets", "type": "table", "columns": ["compatibility_pct", "migration_velocity_x", "compromise_reduction_x"]}
+  ]
+}

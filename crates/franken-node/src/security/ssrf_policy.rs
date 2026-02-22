@@ -150,7 +150,13 @@ impl SsrfPolicyTemplate {
         }
         let octets = match parse_ipv4(ip) {
             Some(o) => o,
-            None => return false,
+            None => {
+                let clean_ip = ip.trim_start_matches('[').trim_end_matches(']');
+                if clean_ip.parse::<std::net::IpAddr>().is_ok() {
+                    return true; // Deny unsupported IP literals (like IPv6) by treating them as private
+                }
+                return false;
+            }
         };
         let cidrs = standard_blocked_cidrs();
         cidrs.iter().any(|cidr| cidr.contains(octets))
@@ -197,6 +203,22 @@ impl SsrfPolicyTemplate {
         let octets = match parse_ipv4(host) {
             Some(o) => o,
             None => {
+                let clean_host = host.trim_start_matches('[').trim_end_matches(']');
+                if clean_host.parse::<std::net::IpAddr>().is_ok() {
+                    self.emit_audit(
+                        host,
+                        port,
+                        Action::Deny,
+                        Some("ipv6_unsupported"),
+                        false,
+                        trace_id,
+                        timestamp,
+                    );
+                    return Err(SsrfError::SsrfDenied {
+                        host: host.to_string(),
+                        cidr: "ipv6_unsupported".to_string(),
+                    });
+                }
                 // Not an IP literal — allow through (DNS names handled by network guard)
                 self.emit_audit(host, port, Action::Allow, None, false, trace_id, timestamp);
                 return Ok(Action::Allow);

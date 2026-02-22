@@ -1,0 +1,27 @@
+{
+  "bead_id": "bd-3014",
+  "section": "10.15",
+  "title": "Remote named-computation registry integration for control-plane",
+  "gate_script": "scripts/check_remote_registry_adoption.py",
+  "test_suite": "tests/test_check_remote_registry_adoption.py",
+  "timestamp": "2026-02-22T02:01:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "adoption_document": "docs/integration/control_remote_registry_adoption.md",
+    "adoption_report": "artifacts/10.15/remote_registry_adoption_report.json",
+    "canonical_registry": "crates/franken-node/src/remote/computation_registry.rs",
+    "spec_contract": "docs/specs/section_10_15/bd-3014_contract.md",
+    "verification_script": "scripts/check_remote_registry_adoption.py",
+    "unit_tests": "tests/test_check_remote_registry_adoption.py"
+  },
+  "gate_checks_passed": 12,
+  "gate_checks_total": 12,
+  "python_test_count": 30,
+  "capabilities_verified": {
+    "registered_computations": 5,
+    "fail_closed_error": "ERR_UNKNOWN_COMPUTATION",
+    "divergent_registry_violations": 0,
+    "canonical_name_validation": true,
+    "adoption_doc_sections": ["Fail-Closed Contract", "Prohibition on Divergent Registries", "Error Handling", "Registered Computations", "Invariants"]
+  }
+}

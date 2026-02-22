@@ -1,0 +1,60 @@
+{
+  "bead_id": "bd-1cs7",
+  "section": "10.15",
+  "title": "Implement REQUEST -> DRAIN -> FINALIZE cancellation protocol across high-impact workflows",
+  "verification_timestamp": "2026-02-22T02:50:00Z",
+  "verdict": "PASS",
+  "artifacts": {
+    "implementation": "crates/franken-node/src/control_plane/cancellation_protocol.rs",
+    "spec_contract": "docs/specs/section_10_15/bd-1cs7_contract.md",
+    "conformance_tests": "tests/conformance/cancel_drain_finalize.rs",
+    "timing_csv": "artifacts/10.15/cancel_protocol_timing.csv",
+    "gate_script": "scripts/check_cancellation_protocol.py",
+    "test_file": "tests/test_check_cancellation_protocol.py"
+  },
+  "modified_files": [
+    "crates/franken-node/src/connector/lifecycle.rs",
+    "crates/franken-node/src/connector/rollout_state.rs",
+    "crates/franken-node/src/control_plane/mod.rs"
+  ],
+  "invariants_verified": [
+    "INV-CANP-THREE-PHASE",
+    "INV-CANP-NO-NEW-WORK",
+    "INV-CANP-DRAIN-BOUNDED",
+    "INV-CANP-FINALIZE-CLEAN",
+    "INV-CANP-IDEMPOTENT",
+    "INV-CANP-AUDIT-COMPLETE"
+  ],
+  "event_codes_verified": [
+    "CAN-001",
+    "CAN-002",
+    "CAN-003",
+    "CAN-004",
+    "CAN-005",
+    "CAN-006"
+  ],
+  "error_codes_verified": [
+    "ERR_CANCEL_INVALID_PHASE",
+    "ERR_CANCEL_ALREADY_FINAL",
+    "ERR_CANCEL_DRAIN_TIMEOUT",
+    "ERR_CANCEL_LEAK"
+  ],
+  "workflows_covered": [
+    "lifecycle_shutdown",
+    "rollout_cancel",
+    "publish_abort",
+    "health_check_cancel",
+    "epoch_transition_cancel"
+  ],
+  "integration_points": {
+    "lifecycle_rs": "Added Cancelling state with transitions from Active/Paused to Cancelling to Stopped/Failed",
+    "rollout_state_rs": "Added cancel_phase field, set_cancel_phase(), clear_cancel_phase(), is_cancelling()",
+    "control_plane_mod_rs": "Wired pub mod cancellation_protocol"
+  },
+  "test_summary": {
+    "rust_unit_tests": 30,
+    "conformance_tests": 18,
+    "gate_script_checks": 48,
+    "python_tests": 55
+  }
+}

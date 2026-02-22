@@ -1,0 +1,28 @@
+{
+  "bead_id": "bd-1hd",
+  "section": "10.10",
+  "title": "Release Gate Vector Suites",
+  "status": "pass",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "manifest_path": "vectors/release_gate_manifest.json",
+  "vector_suites": [
+    {
+      "suite_name": "Trust Protocol Vectors v1",
+      "source_section": "10.13",
+      "vector_file": "vectors/fnode_trust_vectors_v1.json",
+      "version": "1.0.0"
+    },
+    {
+      "suite_name": "BOCPD Regime Shift Vectors",
+      "source_section": "10.11",
+      "vector_file": "vectors/bocpd_regime_shifts.json",
+      "version": "1.0.0"
+    }
+  ],
+  "event_codes": ["RGV-001", "RGV-002", "RGV-003", "RGV-004", "RGV-005", "RGV-006", "RGV-007"],
+  "invariants": ["INV-RGV-BLOCK", "INV-RGV-REGRESSION", "INV-RGV-VERSIONED", "INV-RGV-COVERAGE"],
+  "error_codes": ["ERR_RGV_MANIFEST_MISSING", "ERR_RGV_MANIFEST_INVALID", "ERR_RGV_VECTOR_FILE_MISSING", "ERR_RGV_SUITE_FAILED", "ERR_RGV_REGRESSION"],
+  "coverage_report": "artifacts/section_10_10/bd-1hd/vector_coverage.json",
+  "compilation": "n/a"
+}

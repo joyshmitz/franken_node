@@ -1,0 +1,214 @@
+{
+  "bead_id": "bd-1rff",
+  "title": "Risk control: longitudinal privacy/re-identification",
+  "section": "12",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 40,
+    "failing": 0,
+    "total": 40
+  },
+  "checks": [
+    {
+      "check": "file: contract doc",
+      "pass": true,
+      "detail": "exists: docs/specs/section_12/bd-1rff_contract.md"
+    },
+    {
+      "check": "file: longitudinal privacy report",
+      "pass": true,
+      "detail": "exists: artifacts/12/longitudinal_privacy_report.json"
+    },
+    {
+      "check": "contract: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "contract: term INV-LPR-SKETCH-ONLY",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-LPR-K-ANON",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-LPR-EPOCH",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-LPR-LINKAGE",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-LPR-BLOCKING",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario A",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario B",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario C",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario D",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "report: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report: valid json",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "storage: sketch-only persistence",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "storage: at least 1000 sketch records persisted",
+      "pass": true,
+      "detail": "count=1000"
+    },
+    {
+      "check": "reconstruction: exact trajectory reconstruction fails",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "k-anonymity: minimum cohort threshold k>=50",
+      "pass": true,
+      "detail": "k=50"
+    },
+    {
+      "check": "k-anonymity: below-threshold queries are blocked",
+      "pass": true,
+      "detail": "all small cohorts blocked"
+    },
+    {
+      "check": "k-anonymity: blocked queries emit stable error code",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "temporal: sub-hour data bucketed to >=1h epochs",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "linkage: success rate below 1%",
+      "pass": true,
+      "detail": "rate=0.7% threshold=1.0%"
+    },
+    {
+      "check": "linkage: attack sample size >=1000 sketches",
+      "pass": true,
+      "detail": "sketches=1000"
+    },
+    {
+      "check": "scenario A: reconstruction from sketches fails",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario B: cohort-30 query blocked",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario C: sub-hour input bucketed to hour",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario D: linkage success remains below 1%",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "events: LPR-001",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: LPR-002",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: LPR-003",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: LPR-004",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: LPR-005",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "logs: trace id present",
+      "pass": true,
+      "detail": "trace-bd-1rff-longitudinal-privacy"
+    },
+    {
+      "check": "aggregate: sketch_records_persisted matches storage",
+      "pass": true,
+      "detail": "reported=1000 storage=1000"
+    },
+    {
+      "check": "aggregate: raw_records_persisted is zero",
+      "pass": true,
+      "detail": "reported=0"
+    },
+    {
+      "check": "aggregate: minimum_cohort_size_k matches query policy",
+      "pass": true,
+      "detail": "reported=50 policy=50"
+    },
+    {
+      "check": "aggregate: minimum_epoch_minutes matches temporal policy",
+      "pass": true,
+      "detail": "reported=60 policy=60"
+    },
+    {
+      "check": "aggregate: linkage success rate matches report",
+      "pass": true,
+      "detail": "reported=0.7 measured=0.7"
+    },
+    {
+      "check": "determinism: query-order-insensitive policy evaluation",
+      "pass": true,
+      "detail": "stable"
+    },
+    {
+      "check": "adversarial: reduced cohort threshold is detected",
+      "pass": true,
+      "detail": "adversarial_k=20"
+    }
+  ]
+}

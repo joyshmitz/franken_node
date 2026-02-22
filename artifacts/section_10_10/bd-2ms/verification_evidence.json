@@ -1,0 +1,39 @@
+{
+  "bead_id": "bd-2ms",
+  "section": "10.10",
+  "title": "Rollback/fork detection in control-plane state propagation",
+  "timestamp": "2026-02-21T00:50:00Z",
+  "verdict": "PASS",
+  "files": {
+    "spec": "docs/specs/section_10_10/bd-2ms_contract.md",
+    "implementation": "crates/franken-node/src/control_plane/divergence_gate.rs",
+    "verification_script": "scripts/check_fork_detection.py",
+    "python_tests": "tests/test_check_fork_detection.py"
+  },
+  "metrics": {
+    "python_checks_total": 128,
+    "python_checks_passing": 128,
+    "python_checks_failing": 0,
+    "rust_tests_divergence_gate": 45,
+    "rust_tests_fork_detection": 47,
+    "rust_tests_total": 92,
+    "python_unit_tests": 33,
+    "types_verified": 12,
+    "methods_verified": 20,
+    "event_codes_verified": 8,
+    "invariants_verified": 4,
+    "response_modes": 4,
+    "gate_states": 5,
+    "mutation_kinds": 6,
+    "upstream_integrations": 7
+  },
+  "upstream_dependencies": {
+    "fork_detection.rs": "DivergenceDetector, MarkerProofVerifier, StateVector, DetectionResult, RollbackProof",
+    "marker_stream.rs": "MarkerStream",
+    "mmr_proofs.rs": "MmrCheckpoint (proof APIs)"
+  },
+  "compilation": {
+    "cargo_check": "PASS (exit=0)",
+    "cargo_test": "blocked by pre-existing errors in supply_chain/manifest.rs (unrelated)"
+  }
+}

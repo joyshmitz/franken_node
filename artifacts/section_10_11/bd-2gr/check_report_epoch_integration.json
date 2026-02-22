@@ -1,0 +1,463 @@
+{
+  "bead_id": "bd-2gr",
+  "section": "10.11",
+  "title": "Epoch Guard + Transition Barrier Integration",
+  "checks": [
+    {
+      "name": "spec_exists",
+      "passed": true,
+      "detail": "docs/specs/section_10_11/bd-2gr_contract.md"
+    },
+    {
+      "name": "guard_module_exists",
+      "passed": true,
+      "detail": "crates/franken-node/src/runtime/epoch_guard.rs"
+    },
+    {
+      "name": "transition_module_exists",
+      "passed": true,
+      "detail": "crates/franken-node/src/runtime/epoch_transition.rs"
+    },
+    {
+      "name": "runtime_mod_wiring_guard",
+      "passed": true,
+      "detail": "runtime/mod.rs exports epoch_guard"
+    },
+    {
+      "name": "runtime_mod_wiring_transition",
+      "passed": true,
+      "detail": "runtime/mod.rs exports epoch_transition"
+    },
+    {
+      "name": "spec_invariant:INV-EP-MONOTONIC",
+      "passed": true,
+      "detail": "INV-EP-MONOTONIC present in contract"
+    },
+    {
+      "name": "spec_invariant:INV-EP-DRAIN-BARRIER",
+      "passed": true,
+      "detail": "INV-EP-DRAIN-BARRIER present in contract"
+    },
+    {
+      "name": "spec_invariant:INV-EP-FAIL-CLOSED",
+      "passed": true,
+      "detail": "INV-EP-FAIL-CLOSED present in contract"
+    },
+    {
+      "name": "spec_invariant:INV-EP-SPLIT-BRAIN-GUARD",
+      "passed": true,
+      "detail": "INV-EP-SPLIT-BRAIN-GUARD present in contract"
+    },
+    {
+      "name": "spec_invariant:INV-EP-IMMUTABLE-CREATION-EPOCH",
+      "passed": true,
+      "detail": "INV-EP-IMMUTABLE-CREATION-EPOCH present in contract"
+    },
+    {
+      "name": "spec_invariant:INV-EP-AUDIT-HISTORY",
+      "passed": true,
+      "detail": "INV-EP-AUDIT-HISTORY present in contract"
+    },
+    {
+      "name": "spec_event:EPOCH_OPERATION_ACCEPTED",
+      "passed": true,
+      "detail": "EPOCH_OPERATION_ACCEPTED present in contract"
+    },
+    {
+      "name": "spec_event:STALE_EPOCH_REJECTED",
+      "passed": true,
+      "detail": "STALE_EPOCH_REJECTED present in contract"
+    },
+    {
+      "name": "spec_event:FUTURE_EPOCH_REJECTED",
+      "passed": true,
+      "detail": "FUTURE_EPOCH_REJECTED present in contract"
+    },
+    {
+      "name": "spec_event:EPOCH_UNAVAILABLE",
+      "passed": true,
+      "detail": "EPOCH_UNAVAILABLE present in contract"
+    },
+    {
+      "name": "spec_event:EPOCH_SIGNATURE_VERIFIED",
+      "passed": true,
+      "detail": "EPOCH_SIGNATURE_VERIFIED present in contract"
+    },
+    {
+      "name": "spec_event:EPOCH_SIGNATURE_REJECTED",
+      "passed": true,
+      "detail": "EPOCH_SIGNATURE_REJECTED present in contract"
+    },
+    {
+      "name": "spec_event:EPOCH_PROPOSED",
+      "passed": true,
+      "detail": "EPOCH_PROPOSED present in contract"
+    },
+    {
+      "name": "spec_event:EPOCH_DRAIN_REQUESTED",
+      "passed": true,
+      "detail": "EPOCH_DRAIN_REQUESTED present in contract"
+    },
+    {
+      "name": "spec_event:EPOCH_DRAIN_CONFIRMED",
+      "passed": true,
+      "detail": "EPOCH_DRAIN_CONFIRMED present in contract"
+    },
+    {
+      "name": "spec_event:EPOCH_ADVANCED",
+      "passed": true,
+      "detail": "EPOCH_ADVANCED present in contract"
+    },
+    {
+      "name": "spec_event:EPOCH_TRANSITION_ABORTED",
+      "passed": true,
+      "detail": "EPOCH_TRANSITION_ABORTED present in contract"
+    },
+    {
+      "name": "spec_error:STALE_EPOCH_REJECTED",
+      "passed": true,
+      "detail": "STALE_EPOCH_REJECTED present in contract"
+    },
+    {
+      "name": "spec_error:FUTURE_EPOCH_REJECTED",
+      "passed": true,
+      "detail": "FUTURE_EPOCH_REJECTED present in contract"
+    },
+    {
+      "name": "spec_error:EPOCH_UNAVAILABLE",
+      "passed": true,
+      "detail": "EPOCH_UNAVAILABLE present in contract"
+    },
+    {
+      "name": "spec_error:EPOCH_TRANSITION_NO_ACTIVE",
+      "passed": true,
+      "detail": "EPOCH_TRANSITION_NO_ACTIVE present in contract"
+    },
+    {
+      "name": "spec_error:ERR_BARRIER_CONCURRENT",
+      "passed": true,
+      "detail": "ERR_BARRIER_CONCURRENT present in contract"
+    },
+    {
+      "name": "spec_error:EPOCH_TRANSITION_ADVANCE_MISMATCH",
+      "passed": true,
+      "detail": "EPOCH_TRANSITION_ADVANCE_MISMATCH present in contract"
+    },
+    {
+      "name": "guard_type:EpochGuardEvent",
+      "passed": true,
+      "detail": "EpochGuardEvent present in epoch_guard.rs"
+    },
+    {
+      "name": "guard_type:EpochGuardError",
+      "passed": true,
+      "detail": "EpochGuardError present in epoch_guard.rs"
+    },
+    {
+      "name": "guard_type:EpochSource",
+      "passed": true,
+      "detail": "EpochSource present in epoch_guard.rs"
+    },
+    {
+      "name": "guard_type:StaticEpochSource",
+      "passed": true,
+      "detail": "StaticEpochSource present in epoch_guard.rs"
+    },
+    {
+      "name": "guard_type:EpochTaggedArtifact",
+      "passed": true,
+      "detail": "EpochTaggedArtifact present in epoch_guard.rs"
+    },
+    {
+      "name": "guard_type:EpochGuard",
+      "passed": true,
+      "detail": "EpochGuard present in epoch_guard.rs"
+    },
+    {
+      "name": "transition_type:EpochTransitionLogEvent",
+      "passed": true,
+      "detail": "EpochTransitionLogEvent present in epoch_transition.rs"
+    },
+    {
+      "name": "transition_type:EpochTransitionRecord",
+      "passed": true,
+      "detail": "EpochTransitionRecord present in epoch_transition.rs"
+    },
+    {
+      "name": "transition_type:EpochTransitionProposal",
+      "passed": true,
+      "detail": "EpochTransitionProposal present in epoch_transition.rs"
+    },
+    {
+      "name": "transition_type:EpochTransitionError",
+      "passed": true,
+      "detail": "EpochTransitionError present in epoch_transition.rs"
+    },
+    {
+      "name": "transition_type:ProductEpochCoordinator",
+      "passed": true,
+      "detail": "ProductEpochCoordinator present in epoch_transition.rs"
+    },
+    {
+      "name": "guard_method:new_signed",
+      "passed": true,
+      "detail": "fn new_signed exists in epoch_guard.rs"
+    },
+    {
+      "name": "guard_method:artifact_id",
+      "passed": true,
+      "detail": "fn artifact_id exists in epoch_guard.rs"
+    },
+    {
+      "name": "guard_method:creation_epoch",
+      "passed": true,
+      "detail": "fn creation_epoch exists in epoch_guard.rs"
+    },
+    {
+      "name": "guard_method:validate_operation_epoch",
+      "passed": true,
+      "detail": "fn validate_operation_epoch exists in epoch_guard.rs"
+    },
+    {
+      "name": "guard_method:validate_artifact_epoch",
+      "passed": true,
+      "detail": "fn validate_artifact_epoch exists in epoch_guard.rs"
+    },
+    {
+      "name": "guard_method:verify_tagged_artifact",
+      "passed": true,
+      "detail": "fn verify_tagged_artifact exists in epoch_guard.rs"
+    },
+    {
+      "name": "transition_method:new",
+      "passed": true,
+      "detail": "fn new exists in epoch_transition.rs"
+    },
+    {
+      "name": "transition_method:current_epoch",
+      "passed": true,
+      "detail": "fn current_epoch exists in epoch_transition.rs"
+    },
+    {
+      "name": "transition_method:register_service",
+      "passed": true,
+      "detail": "fn register_service exists in epoch_transition.rs"
+    },
+    {
+      "name": "transition_method:validate_operation_epoch",
+      "passed": true,
+      "detail": "fn validate_operation_epoch exists in epoch_transition.rs"
+    },
+    {
+      "name": "transition_method:validate_replica_lag",
+      "passed": true,
+      "detail": "fn validate_replica_lag exists in epoch_transition.rs"
+    },
+    {
+      "name": "transition_method:propose_transition",
+      "passed": true,
+      "detail": "fn propose_transition exists in epoch_transition.rs"
+    },
+    {
+      "name": "transition_method:ack_drain",
+      "passed": true,
+      "detail": "fn ack_drain exists in epoch_transition.rs"
+    },
+    {
+      "name": "transition_method:commit_transition",
+      "passed": true,
+      "detail": "fn commit_transition exists in epoch_transition.rs"
+    },
+    {
+      "name": "transition_method:abort_transition_timeout",
+      "passed": true,
+      "detail": "fn abort_transition_timeout exists in epoch_transition.rs"
+    },
+    {
+      "name": "transition_method:abort_transition_cancellation",
+      "passed": true,
+      "detail": "fn abort_transition_cancellation exists in epoch_transition.rs"
+    },
+    {
+      "name": "transition_method:events",
+      "passed": true,
+      "detail": "fn events exists in epoch_transition.rs"
+    },
+    {
+      "name": "transition_method:history",
+      "passed": true,
+      "detail": "fn history exists in epoch_transition.rs"
+    },
+    {
+      "name": "guard_event:EPOCH_OPERATION_ACCEPTED",
+      "passed": true,
+      "detail": "EPOCH_OPERATION_ACCEPTED declared/used in epoch_guard.rs"
+    },
+    {
+      "name": "guard_event:STALE_EPOCH_REJECTED",
+      "passed": true,
+      "detail": "STALE_EPOCH_REJECTED declared/used in epoch_guard.rs"
+    },
+    {
+      "name": "guard_event:FUTURE_EPOCH_REJECTED",
+      "passed": true,
+      "detail": "FUTURE_EPOCH_REJECTED declared/used in epoch_guard.rs"
+    },
+    {
+      "name": "guard_event:EPOCH_UNAVAILABLE",
+      "passed": true,
+      "detail": "EPOCH_UNAVAILABLE declared/used in epoch_guard.rs"
+    },
+    {
+      "name": "guard_event:EPOCH_SIGNATURE_VERIFIED",
+      "passed": true,
+      "detail": "EPOCH_SIGNATURE_VERIFIED declared/used in epoch_guard.rs"
+    },
+    {
+      "name": "guard_event:EPOCH_SIGNATURE_REJECTED",
+      "passed": true,
+      "detail": "EPOCH_SIGNATURE_REJECTED declared/used in epoch_guard.rs"
+    },
+    {
+      "name": "transition_event:EPOCH_PROPOSED",
+      "passed": true,
+      "detail": "EPOCH_PROPOSED declared/used in epoch_transition.rs"
+    },
+    {
+      "name": "transition_event:EPOCH_DRAIN_REQUESTED",
+      "passed": true,
+      "detail": "EPOCH_DRAIN_REQUESTED declared/used in epoch_transition.rs"
+    },
+    {
+      "name": "transition_event:EPOCH_DRAIN_CONFIRMED",
+      "passed": true,
+      "detail": "EPOCH_DRAIN_CONFIRMED declared/used in epoch_transition.rs"
+    },
+    {
+      "name": "transition_event:EPOCH_ADVANCED",
+      "passed": true,
+      "detail": "EPOCH_ADVANCED declared/used in epoch_transition.rs"
+    },
+    {
+      "name": "transition_event:EPOCH_TRANSITION_ABORTED",
+      "passed": true,
+      "detail": "EPOCH_TRANSITION_ABORTED declared/used in epoch_transition.rs"
+    },
+    {
+      "name": "error_code:STALE_EPOCH_REJECTED",
+      "passed": true,
+      "detail": "STALE_EPOCH_REJECTED appears in runtime modules"
+    },
+    {
+      "name": "error_code:FUTURE_EPOCH_REJECTED",
+      "passed": true,
+      "detail": "FUTURE_EPOCH_REJECTED appears in runtime modules"
+    },
+    {
+      "name": "error_code:EPOCH_UNAVAILABLE",
+      "passed": true,
+      "detail": "EPOCH_UNAVAILABLE appears in runtime modules"
+    },
+    {
+      "name": "error_code:EPOCH_TRANSITION_NO_ACTIVE",
+      "passed": true,
+      "detail": "EPOCH_TRANSITION_NO_ACTIVE appears in runtime modules"
+    },
+    {
+      "name": "error_code:ERR_BARRIER_CONCURRENT",
+      "passed": true,
+      "detail": "ERR_BARRIER_CONCURRENT appears in runtime modules"
+    },
+    {
+      "name": "error_code:EPOCH_TRANSITION_ADVANCE_MISMATCH",
+      "passed": true,
+      "detail": "EPOCH_TRANSITION_ADVANCE_MISMATCH appears in runtime modules"
+    },
+    {
+      "name": "fail_closed_unavailable_path",
+      "passed": true,
+      "detail": "unavailable epoch path returns error"
+    },
+    {
+      "name": "fail_closed_latency_test",
+      "passed": true,
+      "detail": "explicit bounded-latency fail-closed test exists"
+    },
+    {
+      "name": "artifact_creation_epoch_private",
+      "passed": true,
+      "detail": "creation_epoch field is private"
+    },
+    {
+      "name": "artifact_creation_epoch_getter",
+      "passed": true,
+      "detail": "creation_epoch getter exists"
+    },
+    {
+      "name": "artifact_creation_epoch_no_setter",
+      "passed": true,
+      "detail": "no creation_epoch mutation API"
+    },
+    {
+      "name": "epoch_key_signing_integration",
+      "passed": true,
+      "detail": "epoch-scoped signature integration present"
+    },
+    {
+      "name": "transition_barrier_integration",
+      "passed": true,
+      "detail": "coordinator integrates barrier + abort + epoch store"
+    },
+    {
+      "name": "split_brain_guard",
+      "passed": true,
+      "detail": "bounded lag guard implemented"
+    },
+    {
+      "name": "transition_sequence_apis",
+      "passed": true,
+      "detail": "propose/drain/commit APIs present"
+    },
+    {
+      "name": "abort_timeout_api",
+      "passed": true,
+      "detail": "timeout abort API present"
+    },
+    {
+      "name": "transition_history_metadata",
+      "passed": true,
+      "detail": "history metadata fields encoded"
+    },
+    {
+      "name": "integration_test_five_services",
+      "passed": true,
+      "detail": "5-service quiescence test present"
+    },
+    {
+      "name": "integration_test_timeout_abort",
+      "passed": true,
+      "detail": "timeout abort integration test present"
+    },
+    {
+      "name": "unit_test_monotonicity",
+      "passed": true,
+      "detail": "monotonic transition test present"
+    },
+    {
+      "name": "guard_test_count",
+      "passed": true,
+      "detail": "9 tests in epoch_guard.rs (>= 9)"
+    },
+    {
+      "name": "transition_test_count",
+      "passed": true,
+      "detail": "8 tests in epoch_transition.rs (>= 8)"
+    }
+  ],
+  "passed": 90,
+  "failed": 0,
+  "total": 90,
+  "status": "pass",
+  "verdict": "PASS",
+  "all_passed": true
+}

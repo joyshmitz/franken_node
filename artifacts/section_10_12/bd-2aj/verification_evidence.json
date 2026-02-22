@@ -1,0 +1,204 @@
+{
+  "bead_id": "bd-2aj",
+  "section": "10.12",
+  "title": "Ecosystem Network-Effect APIs (Registry/Reputation/Compliance)",
+  "timestamp": "2026-02-21T04:55:42.829311+00:00",
+  "overall_pass": true,
+  "checks": {
+    "files": {
+      "contract": {
+        "path": "docs/specs/section_10_12/bd-2aj_contract.md",
+        "exists": true,
+        "size_bytes": 7890
+      },
+      "api_schema": {
+        "path": "docs/specs/section_10_12/bd-2aj_api_schema.md",
+        "exists": true,
+        "size_bytes": 4732
+      },
+      "registry_module": {
+        "path": "crates/franken-node/src/connector/ecosystem_registry.rs",
+        "exists": true,
+        "size_bytes": 26734
+      },
+      "reputation_module": {
+        "path": "crates/franken-node/src/connector/ecosystem_reputation.rs",
+        "exists": true,
+        "size_bytes": 24751
+      },
+      "compliance_module": {
+        "path": "crates/franken-node/src/connector/ecosystem_compliance.rs",
+        "exists": true,
+        "size_bytes": 21971
+      },
+      "connector_mod": {
+        "path": "crates/franken-node/src/connector/mod.rs",
+        "exists": true,
+        "size_bytes": 1389
+      }
+    },
+    "contract_invariants": {
+      "pass": true,
+      "found": [
+        "INV-ENE-REGISTRY",
+        "INV-ENE-DETERM",
+        "INV-ENE-TAMPER",
+        "INV-ENE-SYBIL",
+        "INV-ENE-ANOMALY"
+      ],
+      "missing": []
+    },
+    "api_schema_contract": {
+      "pass": true,
+      "found": [
+        "POST `/api/v1/registry/extensions`",
+        "GET `/api/v1/registry/extensions/{extension_id}`",
+        "GET `/api/v1/registry/extensions/{extension_id}/lineage`",
+        "GET `/api/v1/registry/extensions/{extension_id}/compat`",
+        "POST `/api/v1/registry/extensions/{extension_id}/deprecate`",
+        "POST `/api/v1/registry/extensions/{extension_id}/revoke`",
+        "GET `/api/v1/registry/audit`",
+        "GET `/api/v1/reputation/{publisher_id}`",
+        "POST `/api/v1/reputation/{publisher_id}/compute`",
+        "GET `/api/v1/reputation/{publisher_id}/history`",
+        "POST `/api/v1/reputation/dispute`",
+        "POST `/api/v1/compliance/evidence`",
+        "GET `/api/v1/compliance/evidence/{content_hash}`",
+        "GET `/api/v1/compliance/evidence/{content_hash}/verify`",
+        "GET `/api/v1/compliance/index`"
+      ],
+      "missing": []
+    },
+    "registry_symbols": {
+      "pass": true,
+      "found": [
+        "pub struct EcosystemRegistry",
+        "pub fn register_extension",
+        "pub fn get_extension",
+        "pub fn get_lineage",
+        "pub fn get_compatibility",
+        "pub fn deprecate_extension",
+        "pub fn revoke_extension",
+        "pub fn verify_audit_integrity",
+        "pub const ENE_001_REGISTRY_MUTATION",
+        "pub const ENE_011_SYBIL_REJECT"
+      ],
+      "missing": []
+    },
+    "reputation_symbols": {
+      "pass": true,
+      "found": [
+        "pub struct EcosystemReputationApi",
+        "pub fn deterministic_reputation_score",
+        "pub fn is_anomalous_delta",
+        "pub fn register_publisher",
+        "pub fn compute_reputation",
+        "pub fn file_dispute",
+        "pub fn resolve_dispute",
+        "pub const ENE_003_REPUTATION_COMPUTED",
+        "pub const ENE_004_REPUTATION_ANOMALY"
+      ],
+      "missing": []
+    },
+    "compliance_symbols": {
+      "pass": true,
+      "found": [
+        "pub struct ComplianceEvidenceStore",
+        "pub fn compute_content_hash",
+        "pub fn store_evidence",
+        "pub fn retrieve_evidence",
+        "pub fn verify_tamper_evidence",
+        "EvidenceSource::MigrationSingularity",
+        "EvidenceSource::TrustFabric",
+        "pub const ENE_005_COMPLIANCE_EVIDENCE_STORED",
+        "pub const ENE_007_COMPLIANCE_TAMPER_CHECK_PASS"
+      ],
+      "missing": []
+    },
+    "event_codes": {
+      "pass": true,
+      "found": [
+        "ENE-001",
+        "ENE-002",
+        "ENE-003",
+        "ENE-004",
+        "ENE-005",
+        "ENE-006",
+        "ENE-007",
+        "ENE-008",
+        "ENE-009",
+        "ENE-010",
+        "ENE-011"
+      ],
+      "missing": []
+    },
+    "anti_gaming": {
+      "pass": true,
+      "found": [
+        "SybilDuplicate",
+        "RateLimitExceeded",
+        "is_anomalous_delta",
+        "file_dispute",
+        "resolve_dispute",
+        "ENE_004_REPUTATION_ANOMALY",
+        "ENE_011_SYBIL_REJECT"
+      ],
+      "missing": []
+    },
+    "cross_program_evidence": {
+      "pass": true,
+      "found": [
+        "test_cross_program_migration_singularity_evidence",
+        "test_cross_program_trust_fabric_evidence"
+      ],
+      "missing": []
+    },
+    "mod_registration": {
+      "pass": true,
+      "found": [
+        "pub mod ecosystem_registry;",
+        "pub mod ecosystem_reputation;",
+        "pub mod ecosystem_compliance;"
+      ],
+      "missing": []
+    },
+    "endpoint_coverage": {
+      "pass": true,
+      "found": [
+        "POST `/api/v1/registry/extensions`",
+        "GET `/api/v1/registry/extensions/{extension_id}`",
+        "GET `/api/v1/registry/extensions/{extension_id}/lineage`",
+        "GET `/api/v1/registry/extensions/{extension_id}/compat`",
+        "POST `/api/v1/registry/extensions/{extension_id}/deprecate`",
+        "POST `/api/v1/registry/extensions/{extension_id}/revoke`",
+        "GET `/api/v1/registry/audit`",
+        "GET `/api/v1/reputation/{publisher_id}`",
+        "POST `/api/v1/reputation/{publisher_id}/compute`",
+        "GET `/api/v1/reputation/{publisher_id}/history`",
+        "POST `/api/v1/reputation/dispute`",
+        "POST `/api/v1/compliance/evidence`",
+        "GET `/api/v1/compliance/evidence/{content_hash}`",
+        "GET `/api/v1/compliance/evidence/{content_hash}/verify`",
+        "GET `/api/v1/compliance/index`"
+      ],
+      "missing": [],
+      "coverage_pct": 100.0,
+      "required_coverage_pct": 95.0
+    },
+    "auth_and_pagination": {
+      "pass": true,
+      "found": [
+        "mTLS",
+        "X-API-Key",
+        "Rate Limiting",
+        "Pagination"
+      ],
+      "missing": []
+    }
+  },
+  "summary": {
+    "total_checks": 12,
+    "passed": 12,
+    "failed": 0
+  }
+}

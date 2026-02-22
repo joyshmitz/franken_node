@@ -1,0 +1,219 @@
+{
+  "bead_id": "bd-v4ps",
+  "title": "Risk control: temporal concept drift",
+  "section": "12",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 41,
+    "failing": 0,
+    "total": 41
+  },
+  "checks": [
+    {
+      "check": "file: contract doc",
+      "pass": true,
+      "detail": "exists: docs/specs/section_12/bd-v4ps_contract.md"
+    },
+    {
+      "check": "file: temporal drift report",
+      "pass": true,
+      "detail": "exists: artifacts/12/temporal_concept_drift_report.json"
+    },
+    {
+      "check": "contract: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "contract: term INV-TCD-TTL",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-TCD-STALE-BLOCK",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-TCD-DRIFT-GATE",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-TCD-RECAL-PIPELINE",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-TCD-COHORT-REPORT",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario A",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario B",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario C",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario D",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "report: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report: valid json",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "models: at least one model exists",
+      "pass": true,
+      "detail": "models=3"
+    },
+    {
+      "check": "models: ttl and calibration timestamp metadata present",
+      "pass": true,
+      "detail": "all models have TTL + timestamp"
+    },
+    {
+      "check": "staleness: stale flag matches age > ttl",
+      "pass": true,
+      "detail": "consistent"
+    },
+    {
+      "check": "staleness: stale models are deployment-blocked",
+      "pass": true,
+      "detail": "all stale models blocked"
+    },
+    {
+      "check": "drift: reported delta matches accuracy difference",
+      "pass": true,
+      "detail": "consistent"
+    },
+    {
+      "check": "drift: >5% delta triggers recalibration",
+      "pass": true,
+      "detail": "trigger policy satisfied"
+    },
+    {
+      "check": "recalibration: triggered models include run id",
+      "pass": true,
+      "detail": "all triggered models have run ids"
+    },
+    {
+      "check": "recalibration: post-recalibration recent accuracy does not regress",
+      "pass": true,
+      "detail": "improvement/non-regression satisfied"
+    },
+    {
+      "check": "pipeline: synthetic recalibration run completes without errors",
+      "pass": true,
+      "detail": "pipeline validated"
+    },
+    {
+      "check": "cohort: monthly cohort accuracy breakdown present",
+      "pass": true,
+      "detail": "cohorts=4"
+    },
+    {
+      "check": "scenario A: stale model triggers alert and deployment block",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario B: >5% drift triggers recalibration",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario C: recalibration improves recent cohort accuracy",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario D: cohort breakdown reported",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "events: TCD-001",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: TCD-002",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: TCD-003",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: TCD-004",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: TCD-005",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "logs: trace id present",
+      "pass": true,
+      "detail": "trace-bd-v4ps-drift"
+    },
+    {
+      "check": "aggregate: models_total matches recomputation",
+      "pass": true,
+      "detail": "reported=3 computed=3"
+    },
+    {
+      "check": "aggregate: models_stale matches recomputation",
+      "pass": true,
+      "detail": "reported=1 computed=1"
+    },
+    {
+      "check": "aggregate: stale_models_blocked matches recomputation",
+      "pass": true,
+      "detail": "reported=True computed=True"
+    },
+    {
+      "check": "aggregate: models_exceeding_drift_threshold matches recomputation",
+      "pass": true,
+      "detail": "reported=2 computed=2"
+    },
+    {
+      "check": "aggregate: recalibration pipeline pass flag true",
+      "pass": true,
+      "detail": "reported=True"
+    },
+    {
+      "check": "determinism: order-insensitive model aggregation",
+      "pass": true,
+      "detail": "stable"
+    },
+    {
+      "check": "adversarial: stale-model unblock attempt is detected",
+      "pass": true,
+      "detail": "detected"
+    }
+  ]
+}

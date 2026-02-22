@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Compatibility Fixture Metadata",
+  "type": "object",
+  "required": ["fixture_id", "api_surface", "band", "expected_behavior", "node_version", "inputs", "expected_outputs"],
+  "properties": {
+    "fixture_id": {"type": "string", "pattern": "^FIX-[A-Z0-9]+-[0-9]+$"},
+    "api_surface": {"type": "string"},
+    "band": {"type": "string", "enum": ["core", "high_value", "edge", "unsafe"]},
+    "expected_behavior": {"type": "string"},
+    "node_version": {"type": "string"},
+    "bun_version": {"type": "string"},
+    "inputs": {"type": "object"},
+    "expected_outputs": {"type": "object"},
+    "edge_cases": {"type": "array", "items": {"type": "string"}},
+    "known_divergences": {"type": "array", "items": {"type": "object", "properties": {"runtime": {"type": "string"}, "description": {"type": "string"}}}},
+    "spec_section": {"type": "string"},
+    "deterministic": {"type": "boolean", "default": true}
+  }
+}

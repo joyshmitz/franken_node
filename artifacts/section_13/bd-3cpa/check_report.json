@@ -1,0 +1,158 @@
+{
+  "bead_id": "bd-3cpa",
+  "title": "Compromise reduction gate (>= 10x)",
+  "section": "13",
+  "trace_id": "trace-bd-3cpa-compromise-reduction",
+  "verdict": "PASS",
+  "total": 23,
+  "passed": 23,
+  "failed": 0,
+  "computed": {
+    "minimum_required_ratio": 10.0,
+    "compromise_reduction_ratio": 10.0,
+    "baseline_compromised": 20,
+    "hardened_compromised": 2,
+    "total_attack_vectors": 20,
+    "containment_vectors": 4,
+    "missing_attack_classes": []
+  },
+  "checks": [
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "docs/specs/section_13/bd-3cpa_contract.md"
+    },
+    {
+      "check": "file: compromise reduction report",
+      "pass": true,
+      "detail": "artifacts/13/compromise_reduction_report.json"
+    },
+    {
+      "check": "spec threshold >= 10x",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec attack class coverage",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report parse",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report required top-level fields",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report bead id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report timestamp valid RFC3339 UTC",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "reproducible campaign command present",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "attack_vectors is list",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "attack vector count >= 20",
+      "pass": true,
+      "detail": "count=20"
+    },
+    {
+      "check": "total_attack_vectors matches list length",
+      "pass": true,
+      "detail": "declared=20, actual=20"
+    },
+    {
+      "check": "attack entry schema",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "required attack classes covered",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "baseline compromised count matches declared",
+      "pass": true,
+      "detail": "declared=20, computed=20"
+    },
+    {
+      "check": "hardened compromised count matches declared",
+      "pass": true,
+      "detail": "declared=2, computed=2"
+    },
+    {
+      "check": "containment count matches declared",
+      "pass": true,
+      "detail": "declared=4, computed=4"
+    },
+    {
+      "check": "containment vectors >= 3",
+      "pass": true,
+      "detail": "containment=4"
+    },
+    {
+      "check": "reduction ratio matches computed",
+      "pass": true,
+      "detail": "declared=10.0, computed=10.0"
+    },
+    {
+      "check": "compromise reduction threshold >= 10x",
+      "pass": true,
+      "detail": "ratio=10.0, threshold=10.0"
+    },
+    {
+      "check": "determinism under reordering",
+      "pass": true,
+      "detail": "ratio=10.0, reversed_ratio=10.0"
+    },
+    {
+      "check": "adversarial perturbation flips threshold",
+      "pass": true,
+      "detail": "perturbed_ratio=6.6667, threshold=10.0"
+    }
+  ],
+  "events": [
+    {
+      "event_code": "CRG-001",
+      "trace_id": "trace-bd-3cpa-compromise-reduction",
+      "message": "Compromise metrics computed (baseline=20, hardened=2, ratio=10.0000)."
+    },
+    {
+      "event_code": "CRG-002",
+      "trace_id": "trace-bd-3cpa-compromise-reduction",
+      "message": "Compromise reduction gate passed."
+    },
+    {
+      "event_code": "CRG-006",
+      "trace_id": "trace-bd-3cpa-compromise-reduction",
+      "message": "Determinism validation executed."
+    },
+    {
+      "event_code": "CRG-007",
+      "trace_id": "trace-bd-3cpa-compromise-reduction",
+      "message": "Adversarial perturbation validation executed."
+    }
+  ]
+}

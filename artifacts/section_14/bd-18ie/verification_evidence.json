@@ -1,0 +1,39 @@
+{
+  "bead_id": "bd-18ie",
+  "section": "14",
+  "title": "Compatibility correctness metric family by API/risk band",
+  "gate_script": "scripts/check_compatibility_correctness_metrics.py",
+  "test_suite": "tests/test_check_compatibility_correctness_metrics.py",
+  "timestamp": "2026-02-21T06:30:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "compatibility_correctness_metrics": "crates/franken-node/src/tools/compatibility_correctness_metrics.rs",
+    "tools_mod": "crates/franken-node/src/tools/mod.rs",
+    "spec_contract": "docs/specs/section_14/bd-18ie_contract.md",
+    "verification_script": "scripts/check_compatibility_correctness_metrics.py",
+    "unit_tests": "tests/test_check_compatibility_correctness_metrics.py"
+  },
+  "rust_test_count": 24,
+  "python_test_count": 25,
+  "event_codes_defined": 12,
+  "gate_checks_passed": 20,
+  "gate_checks_total": 20,
+  "invariants_verified": [
+    "INV-CCM-SEGMENTED",
+    "INV-CCM-DETERMINISTIC",
+    "INV-CCM-GATED",
+    "INV-CCM-REGRESSION",
+    "INV-CCM-VERSIONED",
+    "INV-CCM-AUDITABLE"
+  ],
+  "capabilities_verified": {
+    "api_families": ["Core", "Extension", "Management", "Telemetry", "Migration"],
+    "risk_bands": ["Critical", "High", "Medium", "Low"],
+    "thresholds": {"critical": 0.999, "high": 0.995, "medium": 0.99, "low": 0.95},
+    "operations": ["submit_metric", "generate_report", "export_audit_log_jsonl"],
+    "correctness_computation": true,
+    "regression_detection": true,
+    "threshold_enforcement": true,
+    "segment_aggregation": true
+  }
+}

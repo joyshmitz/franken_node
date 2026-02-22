@@ -1,0 +1,48 @@
+{
+  "bead_id": "bd-aoq6",
+  "generated_at": "2026-02-21T05:15:20Z",
+  "commands": [
+    {
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "status": "baseline_fail",
+      "notes": [
+        "Pre-existing workspace compile failures (executed earlier in this same session)",
+        "Representative errors: E0599 missing sha2::Digest imports, E0502 borrow conflicts"
+      ]
+    },
+    {
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "status": "baseline_fail",
+      "notes": [
+        "Pre-existing workspace lint/compile debt (executed earlier in this same session)",
+        "Representative errors: E0423, E0599, widespread -D warnings violations"
+      ]
+    },
+    {
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "status": "baseline_fail",
+      "notes": [
+        "Formatting diffs across many pre-existing files"
+      ]
+    },
+    {
+      "command": "rch exec -- cargo clippy -p frankenengine-node --test bpet_migration_stability_gate -- -D warnings",
+      "exit_code": 0,
+      "status": "pass",
+      "notes": [
+        "Targeted clippy for the new bd-aoq6 integration test wrapper passed"
+      ]
+    },
+    {
+      "command": "rch exec -- cargo test -p frankenengine-node --test bpet_migration_stability_gate",
+      "exit_code": 101,
+      "status": "baseline_fail",
+      "notes": [
+        "Targeted test invocation blocked by pre-existing bin compile failures outside bd-aoq6 scope"
+      ]
+    }
+  ]
+}

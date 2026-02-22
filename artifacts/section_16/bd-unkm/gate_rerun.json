@@ -1,0 +1,1877 @@
+{
+  "bead_id": "bd-unkm",
+  "section": "16",
+  "title": "Section-wide verification gate: comprehensive unit+e2e+logging",
+  "generated_at": "2026-02-22T01:03:55.848975+00:00",
+  "verdict": "PASS",
+  "gate_pass": true,
+  "beads_expected": 8,
+  "beads_verified": 8,
+  "beads_passing": 8,
+  "publication_checks_passing": 4,
+  "publication_checks_total": 4,
+  "publication_checklist": [
+    {
+      "id": "PUB-16-REPORTS",
+      "target": ">= 3 reproducible reports",
+      "measured": 5,
+      "required": 3,
+      "pass": true,
+      "source": "bd-1sgr report_types"
+    },
+    {
+      "id": "PUB-16-REPLICATIONS",
+      "target": ">= 2 external replications",
+      "measured": 2,
+      "required": 2,
+      "pass": true,
+      "source": "external_replication_claims::MIN_REPLICATIONS"
+    },
+    {
+      "id": "PUB-16-REDTEAM",
+      "target": ">= 2 red-team engagements",
+      "measured": 5,
+      "required": 2,
+      "pass": true,
+      "source": "bd-3id1 evaluation_types capacity"
+    },
+    {
+      "id": "PUB-16-DATASET-DOI",
+      "target": ">= 1 dataset publication with DOI-style identifier",
+      "measured": 1,
+      "required": 1,
+      "pass": true,
+      "source": "bd-2ad0 + INV-BMP-CITABLE"
+    }
+  ],
+  "per_bead_results": [
+    {
+      "bead_id": "bd-f955",
+      "criterion": "Open specs are published and versioned",
+      "script": "scripts/check_open_trust_compat_specs.py",
+      "test": "tests/test_check_open_trust_compat_specs.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-f955",
+        "script": "scripts/check_open_trust_compat_specs.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-f955",
+          "title": "open trust and compatibility specs",
+          "section": "16",
+          "verdict": "PASS",
+          "total": 16,
+          "passed": 16,
+          "failed": 0,
+          "checks": [
+            {
+              "check": "spec_exists",
+              "pass": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_16/bd-f955_open_trust_compatibility_specs.md"
+            },
+            {
+              "check": "artifact_exists",
+              "pass": true,
+              "detail": "/data/projects/franken_node/artifacts/16/open_trust_compatibility_specs.json"
+            },
+            {
+              "check": "spec_required_headings",
+              "pass": true,
+              "detail": "all present"
+            },
+            {
+              "check": "spec_event_codes",
+              "pass": true,
+              "detail": "all present"
+            },
+            {
+              "check": "spec_invariants",
+              "pass": true,
+              "detail": "all present"
+            },
+            {
+              "check": "artifact_parse",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "artifact_required_top_fields",
+              "pass": true,
+              "detail": "all present"
+            },
+            {
+              "check": "artifact_bead_id",
+              "pass": true,
+              "detail": "bd-f955"
+            },
+            {
+              "check": "artifact_section",
+              "pass": true,
+              "detail": "16"
+            },
+            {
+              "check": "artifact_spec_version",
+              "pass": true,
+              "detail": "1.0.0"
+            },
+            {
+              "check": "artifact_published_documents",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "artifact_event_codes",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "artifact_compatibility_matrix",
+              "pass": true,
+              "detail": "count=6"
+            },
+            {
+              "check": "artifact_trust_requirements",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "artifact_invariants",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "artifact_release_gate",
+              "pass": true,
+              "detail": "found"
+            }
+          ],
+          "artifacts": {
+            "spec": "docs/specs/section_16/bd-f955_open_trust_compatibility_specs.md",
+            "machine_artifact": "artifacts/16/open_trust_compatibility_specs.json"
+          }
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-f955",
+        "test": "tests/test_check_open_trust_compat_specs.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 4,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-f955",
+        "path": "artifacts/section_16/bd-f955/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-f955",
+          "section": "16",
+          "title": "open trust and compatibility specifications",
+          "generated_at": "2026-02-21T05:12:46Z",
+          "status": "completed_with_baseline_workspace_failures",
+          "checks": [
+            {
+              "name": "py_compile",
+              "command": "python3 -m py_compile scripts/check_open_trust_compat_specs.py tests/test_check_open_trust_compat_specs.py",
+              "exit_code": 0,
+              "status": "PASS"
+            },
+            {
+              "name": "checker_self_test",
+              "command": "python3 scripts/check_open_trust_compat_specs.py --self-test --json",
+              "exit_code": 0,
+              "status": "PASS",
+              "output_path": "artifacts/section_16/bd-f955/check_self_test.json"
+            },
+            {
+              "name": "checker_report",
+              "command": "python3 scripts/check_open_trust_compat_specs.py --json",
+              "exit_code": 0,
+              "status": "PASS",
+              "output_path": "artifacts/section_16/bd-f955/check_report.json",
+              "summary": {
+                "verdict": "PASS",
+                "passed": 16,
+                "total": 16
+              }
+            },
+            {
+              "name": "unit_tests",
+              "command": "python3 -m unittest tests/test_check_open_trust_compat_specs.py",
+              "exit_code": 0,
+              "status": "PASS",
+              "output_path": "artifacts/section_16/bd-f955/unit_tests.txt",
+              "summary": "Ran 4 tests: OK"
+            },
+            {
+              "name": "cargo_check_all_targets_via_rch",
+              "command": "rch exec -- cargo check --all-targets",
+              "exit_code": 101,
+              "status": "FAIL_BASELINE",
+              "output_path": "artifacts/section_16/bd-f955/rch_cargo_check_all_targets.log",
+              "note": "Pre-existing workspace compile debt outside bd-f955 scope."
+            },
+            {
+              "name": "cargo_clippy_all_targets_via_rch",
+              "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+              "exit_code": 101,
+              "status": "FAIL_BASELINE",
+              "output_path": "artifacts/section_16/bd-f955/rch_cargo_clippy_all_targets.log",
+              "note": "Pre-existing workspace lint/compile debt outside bd-f955 scope."
+            },
+            {
+              "name": "cargo_fmt_check_via_rch",
+              "command": "rch exec -- cargo fmt --check",
+              "exit_code": 1,
+              "status": "FAIL_BASELINE",
+              "output_path": "artifacts/section_16/bd-f955/rch_cargo_fmt_check.log",
+              "note": "Pre-existing workspace formatting drift/missing module outside bd-f955 scope."
+            }
+          ],
+          "contract_surface": {
+            "spec": "docs/specs/section_16/bd-f955_open_trust_compatibility_specs.md",
+            "machine_artifact": "artifacts/16/open_trust_compatibility_specs.json",
+            "checker": "scripts/check_open_trust_compat_specs.py",
+            "tests": "tests/test_check_open_trust_compat_specs.py",
+            "checker_report": "artifacts/section_16/bd-f955/check_report.json"
+          }
+        },
+        "verdict": "COMPLETED_WITH_BASELINE_WORKSPACE_FAILURES"
+      }
+    },
+    {
+      "bead_id": "bd-2ad0",
+      "criterion": "Reproducible datasets are published",
+      "script": "scripts/check_reproducible_datasets.py",
+      "test": "tests/test_check_reproducible_datasets.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-2ad0",
+        "script": "scripts/check_reproducible_datasets.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-2ad0",
+          "section": "16",
+          "gate_script": "check_reproducible_datasets.py",
+          "checks_passed": 20,
+          "checks_total": 20,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/migration_incident_datasets.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": "tools/mod.rs"
+            },
+            {
+              "check": "dataset_types",
+              "passed": true,
+              "detail": "5/5 types"
+            },
+            {
+              "check": "struct_DatasetEntry",
+              "passed": true,
+              "detail": "DatasetEntry"
+            },
+            {
+              "check": "struct_DatasetProvenance",
+              "passed": true,
+              "detail": "DatasetProvenance"
+            },
+            {
+              "check": "struct_ReplayInstructions",
+              "passed": true,
+              "detail": "ReplayInstructions"
+            },
+            {
+              "check": "struct_DatasetBundle",
+              "passed": true,
+              "detail": "DatasetBundle"
+            },
+            {
+              "check": "struct_DatasetCatalog",
+              "passed": true,
+              "detail": "DatasetCatalog"
+            },
+            {
+              "check": "struct_ReproducibleDatasets",
+              "passed": true,
+              "detail": "ReproducibleDatasets"
+            },
+            {
+              "check": "content_hash_integrity",
+              "passed": true,
+              "detail": "SHA-256 content hashing"
+            },
+            {
+              "check": "provenance_metadata",
+              "passed": true,
+              "detail": "Provenance linked to source bead"
+            },
+            {
+              "check": "replay_instructions",
+              "passed": true,
+              "detail": "Replay with commands and deterministic flag"
+            },
+            {
+              "check": "schema_versioning",
+              "passed": true,
+              "detail": "rds-v1.0"
+            },
+            {
+              "check": "bundle_publication",
+              "passed": true,
+              "detail": "Bundle aggregation with hash"
+            },
+            {
+              "check": "catalog_generation",
+              "passed": true,
+              "detail": "Catalog with by_type counts"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12 codes"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6 invariants"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL audit export"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_16/bd-2ad0_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "22 tests (>=22)"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-2ad0",
+        "test": "tests/test_check_reproducible_datasets.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 25,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-2ad0",
+        "path": "artifacts/section_16/bd-2ad0/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-2ad0",
+          "section": "16",
+          "title": "Reproducible migration and incident datasets",
+          "gate_script": "scripts/check_reproducible_datasets.py",
+          "test_suite": "tests/test_check_reproducible_datasets.py",
+          "timestamp": "2026-02-21T00:30:00+00:00",
+          "verdict": "PASS",
+          "implementation_artifacts": {
+            "migration_incident_datasets": "crates/franken-node/src/tools/migration_incident_datasets.rs",
+            "tools_mod": "crates/franken-node/src/tools/mod.rs",
+            "spec_contract": "docs/specs/section_16/bd-2ad0_contract.md",
+            "verification_script": "scripts/check_reproducible_datasets.py",
+            "unit_tests": "tests/test_check_reproducible_datasets.py"
+          },
+          "rust_test_count": 22,
+          "python_test_count": 25,
+          "event_codes_defined": 12,
+          "gate_checks_passed": 20,
+          "gate_checks_total": 20,
+          "invariants_verified": [
+            "INV-RDS-INTEGRITY",
+            "INV-RDS-DETERMINISTIC",
+            "INV-RDS-PROVENANCE",
+            "INV-RDS-REPRODUCIBLE",
+            "INV-RDS-VERSIONED",
+            "INV-RDS-GATED"
+          ],
+          "capabilities_verified": {
+            "dataset_types": [
+              "MigrationScenario",
+              "SecurityIncident",
+              "BenchmarkBaseline",
+              "CompatibilityMatrix",
+              "TrustEvidence"
+            ],
+            "operations": [
+              "register_dataset",
+              "publish_bundle",
+              "generate_catalog",
+              "export_audit_log_jsonl"
+            ],
+            "content_hashing": true,
+            "provenance_tracking": true,
+            "replay_instructions": true,
+            "schema_versioning": true,
+            "completeness_gating": true,
+            "audit_logging": true
+          }
+        },
+        "verdict": "PASS"
+      }
+    },
+    {
+      "bead_id": "bd-nbh7",
+      "criterion": "Methodology publications are structured and citable",
+      "script": "scripts/check_benchmark_methodology.py",
+      "test": "tests/test_check_benchmark_methodology.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-nbh7",
+        "script": "scripts/check_benchmark_methodology.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-nbh7",
+          "section": "16",
+          "gate_script": "check_benchmark_methodology.py",
+          "checks_passed": 21,
+          "checks_total": 21,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/benchmark_methodology.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": "tools/mod.rs"
+            },
+            {
+              "check": "methodology_topics",
+              "passed": true,
+              "detail": "5/5"
+            },
+            {
+              "check": "pub_statuses",
+              "passed": true,
+              "detail": "4/4"
+            },
+            {
+              "check": "status_transitions",
+              "passed": true,
+              "detail": "State machine enforcement"
+            },
+            {
+              "check": "required_sections",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "struct_Publication",
+              "passed": true,
+              "detail": "Publication"
+            },
+            {
+              "check": "struct_Citation",
+              "passed": true,
+              "detail": "Citation"
+            },
+            {
+              "check": "struct_ChecklistItem",
+              "passed": true,
+              "detail": "ChecklistItem"
+            },
+            {
+              "check": "struct_PublicationCatalog",
+              "passed": true,
+              "detail": "PublicationCatalog"
+            },
+            {
+              "check": "struct_BenchmarkMethodology",
+              "passed": true,
+              "detail": "BenchmarkMethodology"
+            },
+            {
+              "check": "content_hashing",
+              "passed": true,
+              "detail": "SHA-256 integrity"
+            },
+            {
+              "check": "reproducibility_checklist",
+              "passed": true,
+              "detail": "Checklist with verified flag"
+            },
+            {
+              "check": "catalog_generation",
+              "passed": true,
+              "detail": "Catalog with by_topic/by_status"
+            },
+            {
+              "check": "search_by_topic",
+              "passed": true,
+              "detail": "Topic-based search"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "pub_version",
+              "passed": true,
+              "detail": "bmp-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_16/bd-nbh7_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "22 tests (>=22)"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-nbh7",
+        "test": "tests/test_check_benchmark_methodology.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 26,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-nbh7",
+        "path": "artifacts/section_16/bd-nbh7/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-nbh7",
+          "section": "16",
+          "title": "Benchmark/verifier methodology publications",
+          "gate_script": "scripts/check_benchmark_methodology.py",
+          "test_suite": "tests/test_check_benchmark_methodology.py",
+          "timestamp": "2026-02-21T06:30:00+00:00",
+          "verdict": "PASS",
+          "implementation_artifacts": {
+            "benchmark_methodology": "crates/franken-node/src/tools/benchmark_methodology.rs",
+            "tools_mod": "crates/franken-node/src/tools/mod.rs",
+            "spec_contract": "docs/specs/section_16/bd-nbh7_contract.md",
+            "verification_script": "scripts/check_benchmark_methodology.py",
+            "unit_tests": "tests/test_check_benchmark_methodology.py"
+          },
+          "rust_test_count": 22,
+          "python_test_count": 26,
+          "event_codes_defined": 12,
+          "gate_checks_passed": 21,
+          "gate_checks_total": 21,
+          "invariants_verified": [
+            "INV-BMP-STRUCTURED",
+            "INV-BMP-DETERMINISTIC",
+            "INV-BMP-CITABLE",
+            "INV-BMP-REPRODUCIBLE",
+            "INV-BMP-VERSIONED",
+            "INV-BMP-AUDITABLE"
+          ],
+          "capabilities_verified": {
+            "methodology_topics": [
+              "BenchmarkDesign",
+              "VerifierArchitecture",
+              "MetricDefinition",
+              "ReproducibilityProtocol",
+              "ThreatModeling"
+            ],
+            "pub_statuses": [
+              "Draft",
+              "Review",
+              "Published",
+              "Archived"
+            ],
+            "required_sections": [
+              "abstract",
+              "introduction",
+              "methodology",
+              "results",
+              "reproducibility",
+              "limitations"
+            ],
+            "operations": [
+              "create_publication",
+              "transition_status",
+              "add_citation",
+              "generate_catalog",
+              "search_by_topic",
+              "export_audit_log_jsonl"
+            ],
+            "content_hashing": true,
+            "status_machine": true,
+            "reproducibility_checklist": true,
+            "citation_management": true
+          }
+        },
+        "verdict": "PASS"
+      }
+    },
+    {
+      "bead_id": "bd-3id1",
+      "criterion": "External red-team and independent evaluations are completed",
+      "script": "scripts/check_redteam_evaluations.py",
+      "test": "tests/test_check_redteam_evaluations.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-3id1",
+        "script": "scripts/check_redteam_evaluations.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-3id1",
+          "section": "16",
+          "gate_script": "check_redteam_evaluations.py",
+          "checks_passed": 20,
+          "checks_total": 20,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/redteam_evaluations.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": "tools/mod.rs"
+            },
+            {
+              "check": "severity_levels",
+              "passed": true,
+              "detail": "5/5"
+            },
+            {
+              "check": "evaluation_types",
+              "passed": true,
+              "detail": "5/5"
+            },
+            {
+              "check": "remediation_statuses",
+              "passed": true,
+              "detail": "4/4"
+            },
+            {
+              "check": "status_transitions",
+              "passed": true,
+              "detail": "State machine enforcement"
+            },
+            {
+              "check": "struct_Engagement",
+              "passed": true,
+              "detail": "Engagement"
+            },
+            {
+              "check": "struct_Finding",
+              "passed": true,
+              "detail": "Finding"
+            },
+            {
+              "check": "struct_EvaluationCatalog",
+              "passed": true,
+              "detail": "EvaluationCatalog"
+            },
+            {
+              "check": "struct_RedTeamEvaluations",
+              "passed": true,
+              "detail": "RedTeamEvaluations"
+            },
+            {
+              "check": "scope_validation",
+              "passed": true,
+              "detail": "Scope and rules"
+            },
+            {
+              "check": "confidence_scoring",
+              "passed": true,
+              "detail": "Confidence score 0.0-1.0"
+            },
+            {
+              "check": "remediation_tracking",
+              "passed": true,
+              "detail": "Status transitions for findings"
+            },
+            {
+              "check": "catalog_generation",
+              "passed": true,
+              "detail": "Catalog with by_type/by_severity"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "schema_version",
+              "passed": true,
+              "detail": "rte-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_16/bd-3id1_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "22 tests (>=22)"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-3id1",
+        "test": "tests/test_check_redteam_evaluations.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 25,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-3id1",
+        "path": "artifacts/section_16/bd-3id1/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-3id1",
+          "section": "16",
+          "title": "External red-team and independent evaluations",
+          "gate_script": "scripts/check_redteam_evaluations.py",
+          "test_suite": "tests/test_check_redteam_evaluations.py",
+          "timestamp": "2026-02-21T07:00:00+00:00",
+          "verdict": "PASS",
+          "implementation_artifacts": {
+            "redteam_evaluations": "crates/franken-node/src/tools/redteam_evaluations.rs",
+            "tools_mod": "crates/franken-node/src/tools/mod.rs",
+            "spec_contract": "docs/specs/section_16/bd-3id1_contract.md",
+            "verification_script": "scripts/check_redteam_evaluations.py",
+            "unit_tests": "tests/test_check_redteam_evaluations.py"
+          },
+          "rust_test_count": 22,
+          "python_test_count": 25,
+          "event_codes_defined": 12,
+          "gate_checks_passed": 20,
+          "gate_checks_total": 20,
+          "invariants_verified": [
+            "INV-RTE-SCOPED",
+            "INV-RTE-DETERMINISTIC",
+            "INV-RTE-CLASSIFIED",
+            "INV-RTE-TRACKED",
+            "INV-RTE-VERSIONED",
+            "INV-RTE-AUDITABLE"
+          ],
+          "capabilities_verified": {
+            "severity_levels": [
+              "Critical",
+              "High",
+              "Medium",
+              "Low",
+              "Informational"
+            ],
+            "evaluation_types": [
+              "RedTeam",
+              "PenetrationTest",
+              "SecurityAudit",
+              "IndependentReview",
+              "FormalVerification"
+            ],
+            "remediation_statuses": [
+              "Open",
+              "InProgress",
+              "Resolved",
+              "Verified"
+            ],
+            "operations": [
+              "create_engagement",
+              "add_finding",
+              "update_remediation",
+              "generate_catalog",
+              "export_audit_log_jsonl"
+            ],
+            "scope_validation": true,
+            "confidence_scoring": true,
+            "status_machine": true,
+            "content_hashing": true
+          }
+        },
+        "verdict": "PASS"
+      }
+    },
+    {
+      "bead_id": "bd-10ee",
+      "criterion": "Transparent technical reports are published",
+      "script": "scripts/check_transparent_reports.py",
+      "test": "tests/test_check_transparent_reports.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-10ee",
+        "script": "scripts/check_transparent_reports.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-10ee",
+          "section": "16",
+          "gate_script": "check_transparent_reports.py",
+          "checks_passed": 22,
+          "checks_total": 22,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/transparent_reports.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": "tools/mod.rs"
+            },
+            {
+              "check": "report_categories",
+              "passed": true,
+              "detail": "5/5"
+            },
+            {
+              "check": "required_sections",
+              "passed": true,
+              "detail": "7/7"
+            },
+            {
+              "check": "action_statuses",
+              "passed": true,
+              "detail": "4/4"
+            },
+            {
+              "check": "status_transitions",
+              "passed": true,
+              "detail": "State machine enforcement"
+            },
+            {
+              "check": "struct_TransparentReport",
+              "passed": true,
+              "detail": "TransparentReport"
+            },
+            {
+              "check": "struct_TimelineEntry",
+              "passed": true,
+              "detail": "TimelineEntry"
+            },
+            {
+              "check": "struct_CorrectiveAction",
+              "passed": true,
+              "detail": "CorrectiveAction"
+            },
+            {
+              "check": "struct_ReportCatalog",
+              "passed": true,
+              "detail": "ReportCatalog"
+            },
+            {
+              "check": "struct_TransparentReports",
+              "passed": true,
+              "detail": "TransparentReports"
+            },
+            {
+              "check": "timeline_validation",
+              "passed": true,
+              "detail": "Timeline structure"
+            },
+            {
+              "check": "root_cause_analysis",
+              "passed": true,
+              "detail": "Root cause tracking"
+            },
+            {
+              "check": "lessons_learned",
+              "passed": true,
+              "detail": "Lessons learned section"
+            },
+            {
+              "check": "content_hashing",
+              "passed": true,
+              "detail": "SHA-256 integrity"
+            },
+            {
+              "check": "catalog_generation",
+              "passed": true,
+              "detail": "Catalog with open_actions"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "report_version",
+              "passed": true,
+              "detail": "tr-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_16/bd-10ee_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "22 tests (>=22)"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-10ee",
+        "test": "tests/test_check_transparent_reports.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 27,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-10ee",
+        "path": "artifacts/section_16/bd-10ee/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-10ee",
+          "section": "16",
+          "title": "Transparent technical reports",
+          "gate_script": "scripts/check_transparent_reports.py",
+          "test_suite": "tests/test_check_transparent_reports.py",
+          "timestamp": "2026-02-21T07:30:00+00:00",
+          "verdict": "PASS",
+          "implementation_artifacts": {
+            "transparent_reports": "crates/franken-node/src/tools/transparent_reports.rs",
+            "tools_mod": "crates/franken-node/src/tools/mod.rs",
+            "spec_contract": "docs/specs/section_16/bd-10ee_contract.md",
+            "verification_script": "scripts/check_transparent_reports.py",
+            "unit_tests": "tests/test_check_transparent_reports.py"
+          },
+          "rust_test_count": 22,
+          "python_test_count": 27,
+          "event_codes_defined": 12,
+          "gate_checks_passed": 22,
+          "gate_checks_total": 22,
+          "invariants_verified": [
+            "INV-TR-TRANSPARENT",
+            "INV-TR-DETERMINISTIC",
+            "INV-TR-TIMELINE",
+            "INV-TR-CORRECTIVE",
+            "INV-TR-VERSIONED",
+            "INV-TR-AUDITABLE"
+          ],
+          "capabilities_verified": {
+            "report_categories": [
+              "SecurityIncident",
+              "PerformanceRegression",
+              "DataIntegrity",
+              "ServiceOutage",
+              "ComplianceGap"
+            ],
+            "required_sections": 7,
+            "action_statuses": [
+              "Identified",
+              "Planned",
+              "Implemented",
+              "Verified"
+            ],
+            "operations": [
+              "create_report",
+              "add_corrective_action",
+              "update_action_status",
+              "generate_catalog",
+              "export_audit_log_jsonl"
+            ],
+            "timeline_tracking": true,
+            "root_cause_analysis": true,
+            "lessons_learned": true,
+            "content_hashing": true,
+            "status_machine": true
+          }
+        },
+        "verdict": "PASS"
+      }
+    },
+    {
+      "bead_id": "bd-1sgr",
+      "criterion": "Report output contract is enforced",
+      "script": "scripts/check_report_output_contract.py",
+      "test": "tests/test_check_report_output_contract.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-1sgr",
+        "script": "scripts/check_report_output_contract.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-1sgr",
+          "section": "16",
+          "gate_script": "check_report_output_contract.py",
+          "checks_passed": 18,
+          "checks_total": 18,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/report_output_contract.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": ""
+            },
+            {
+              "check": "report_types",
+              "passed": true,
+              "detail": "5 types"
+            },
+            {
+              "check": "required_artifacts",
+              "passed": true,
+              "detail": "5 required artifact types"
+            },
+            {
+              "check": "struct_ReportBundle",
+              "passed": true,
+              "detail": "ReportBundle"
+            },
+            {
+              "check": "struct_ArtifactEntry",
+              "passed": true,
+              "detail": "ArtifactEntry"
+            },
+            {
+              "check": "struct_OutputCatalog",
+              "passed": true,
+              "detail": "OutputCatalog"
+            },
+            {
+              "check": "struct_ReportOutputContract",
+              "passed": true,
+              "detail": "ReportOutputContract"
+            },
+            {
+              "check": "integrity_verification",
+              "passed": true,
+              "detail": "SHA-256 hashing"
+            },
+            {
+              "check": "completeness_checking",
+              "passed": true,
+              "detail": "Completeness validation"
+            },
+            {
+              "check": "reproducibility",
+              "passed": true,
+              "detail": "Reproduction instructions"
+            },
+            {
+              "check": "catalog_generation",
+              "passed": true,
+              "detail": "Catalog with completeness"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "contract_version",
+              "passed": true,
+              "detail": "roc-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_16/bd-1sgr_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "0 tests"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-1sgr",
+        "test": "tests/test_check_report_output_contract.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 26,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-1sgr",
+        "path": "artifacts/section_16/bd-1sgr/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-1sgr",
+          "section": "16",
+          "gate_script": "check_report_output_contract.py",
+          "checks_passed": 18,
+          "checks_total": 18,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/report_output_contract.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": ""
+            },
+            {
+              "check": "report_types",
+              "passed": true,
+              "detail": "5 types"
+            },
+            {
+              "check": "required_artifacts",
+              "passed": true,
+              "detail": "5 required artifact types"
+            },
+            {
+              "check": "struct_ReportBundle",
+              "passed": true,
+              "detail": "ReportBundle"
+            },
+            {
+              "check": "struct_ArtifactEntry",
+              "passed": true,
+              "detail": "ArtifactEntry"
+            },
+            {
+              "check": "struct_OutputCatalog",
+              "passed": true,
+              "detail": "OutputCatalog"
+            },
+            {
+              "check": "struct_ReportOutputContract",
+              "passed": true,
+              "detail": "ReportOutputContract"
+            },
+            {
+              "check": "integrity_verification",
+              "passed": true,
+              "detail": "SHA-256 hashing"
+            },
+            {
+              "check": "completeness_checking",
+              "passed": true,
+              "detail": "Completeness validation"
+            },
+            {
+              "check": "reproducibility",
+              "passed": true,
+              "detail": "Reproduction instructions"
+            },
+            {
+              "check": "catalog_generation",
+              "passed": true,
+              "detail": "Catalog with completeness"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "contract_version",
+              "passed": true,
+              "detail": "roc-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_16/bd-1sgr_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "0 tests"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      }
+    },
+    {
+      "bead_id": "bd-e5cz",
+      "criterion": "External replication claim contract is enforced",
+      "script": "scripts/check_external_replication_claims.py",
+      "test": "tests/test_check_external_replication_claims.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-e5cz",
+        "script": "scripts/check_external_replication_claims.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-e5cz",
+          "section": "16",
+          "gate_script": "check_external_replication_claims.py",
+          "checks_passed": 18,
+          "checks_total": 18,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/external_replication_claims.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": ""
+            },
+            {
+              "check": "claim_categories",
+              "passed": true,
+              "detail": "5 categories"
+            },
+            {
+              "check": "replication_lifecycle",
+              "passed": true,
+              "detail": "4 statuses"
+            },
+            {
+              "check": "struct_HighImpactClaim",
+              "passed": true,
+              "detail": "HighImpactClaim"
+            },
+            {
+              "check": "struct_ReplicationRecord",
+              "passed": true,
+              "detail": "ReplicationRecord"
+            },
+            {
+              "check": "struct_ClaimCatalog",
+              "passed": true,
+              "detail": "ClaimCatalog"
+            },
+            {
+              "check": "struct_ExternalReplicationClaims",
+              "passed": true,
+              "detail": "ExternalReplicationClaims"
+            },
+            {
+              "check": "replication_tracking",
+              "passed": true,
+              "detail": "Replication counting"
+            },
+            {
+              "check": "publication_gating",
+              "passed": true,
+              "detail": "Threshold-gated publication"
+            },
+            {
+              "check": "evidence_linking",
+              "passed": true,
+              "detail": "Evidence chain"
+            },
+            {
+              "check": "content_hash",
+              "passed": true,
+              "detail": "SHA-256 hashing"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "schema_version",
+              "passed": true,
+              "detail": "erc-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_16/bd-e5cz_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "0 tests"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-e5cz",
+        "test": "tests/test_check_external_replication_claims.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 26,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-e5cz",
+        "path": "artifacts/section_16/bd-e5cz/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-e5cz",
+          "section": "16",
+          "gate_script": "check_external_replication_claims.py",
+          "checks_passed": 18,
+          "checks_total": 18,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/external_replication_claims.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": ""
+            },
+            {
+              "check": "claim_categories",
+              "passed": true,
+              "detail": "5 categories"
+            },
+            {
+              "check": "replication_lifecycle",
+              "passed": true,
+              "detail": "4 statuses"
+            },
+            {
+              "check": "struct_HighImpactClaim",
+              "passed": true,
+              "detail": "HighImpactClaim"
+            },
+            {
+              "check": "struct_ReplicationRecord",
+              "passed": true,
+              "detail": "ReplicationRecord"
+            },
+            {
+              "check": "struct_ClaimCatalog",
+              "passed": true,
+              "detail": "ClaimCatalog"
+            },
+            {
+              "check": "struct_ExternalReplicationClaims",
+              "passed": true,
+              "detail": "ExternalReplicationClaims"
+            },
+            {
+              "check": "replication_tracking",
+              "passed": true,
+              "detail": "Replication counting"
+            },
+            {
+              "check": "publication_gating",
+              "passed": true,
+              "detail": "Threshold-gated publication"
+            },
+            {
+              "check": "evidence_linking",
+              "passed": true,
+              "detail": "Evidence chain"
+            },
+            {
+              "check": "content_hash",
+              "passed": true,
+              "detail": "SHA-256 hashing"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "schema_version",
+              "passed": true,
+              "detail": "erc-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_16/bd-e5cz_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "0 tests"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      }
+    },
+    {
+      "bead_id": "bd-33u2",
+      "criterion": "Verifier/benchmark release contract is enforced",
+      "script": "scripts/check_verifier_benchmark_releases.py",
+      "test": "tests/test_check_verifier_benchmark_releases.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-33u2",
+        "script": "scripts/check_verifier_benchmark_releases.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-33u2",
+          "section": "16",
+          "gate_script": "check_verifier_benchmark_releases.py",
+          "checks_passed": 19,
+          "checks_total": 19,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/verifier_benchmark_releases.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": ""
+            },
+            {
+              "check": "release_types",
+              "passed": true,
+              "detail": "5 types"
+            },
+            {
+              "check": "release_lifecycle",
+              "passed": true,
+              "detail": "4 statuses"
+            },
+            {
+              "check": "struct_ToolRelease",
+              "passed": true,
+              "detail": "ToolRelease"
+            },
+            {
+              "check": "struct_ReleaseArtifact",
+              "passed": true,
+              "detail": "ReleaseArtifact"
+            },
+            {
+              "check": "struct_DownloadRecord",
+              "passed": true,
+              "detail": "DownloadRecord"
+            },
+            {
+              "check": "struct_AdoptionMetrics",
+              "passed": true,
+              "detail": "AdoptionMetrics"
+            },
+            {
+              "check": "struct_VerifierBenchmarkReleases",
+              "passed": true,
+              "detail": "VerifierBenchmarkReleases"
+            },
+            {
+              "check": "download_tracking",
+              "passed": true,
+              "detail": "Download tracking"
+            },
+            {
+              "check": "quality_gating",
+              "passed": true,
+              "detail": "Quality threshold"
+            },
+            {
+              "check": "changelog_support",
+              "passed": true,
+              "detail": "Changelog management"
+            },
+            {
+              "check": "content_hash",
+              "passed": true,
+              "detail": "SHA-256 hashing"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "schema_version",
+              "passed": true,
+              "detail": "vbr-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_16/bd-33u2_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "0 tests"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-33u2",
+        "test": "tests/test_check_verifier_benchmark_releases.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 27,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-33u2",
+        "path": "artifacts/section_16/bd-33u2/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-33u2",
+          "section": "16",
+          "gate_script": "check_verifier_benchmark_releases.py",
+          "checks_passed": 19,
+          "checks_total": 19,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/verifier_benchmark_releases.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": ""
+            },
+            {
+              "check": "release_types",
+              "passed": true,
+              "detail": "5 types"
+            },
+            {
+              "check": "release_lifecycle",
+              "passed": true,
+              "detail": "4 statuses"
+            },
+            {
+              "check": "struct_ToolRelease",
+              "passed": true,
+              "detail": "ToolRelease"
+            },
+            {
+              "check": "struct_ReleaseArtifact",
+              "passed": true,
+              "detail": "ReleaseArtifact"
+            },
+            {
+              "check": "struct_DownloadRecord",
+              "passed": true,
+              "detail": "DownloadRecord"
+            },
+            {
+              "check": "struct_AdoptionMetrics",
+              "passed": true,
+              "detail": "AdoptionMetrics"
+            },
+            {
+              "check": "struct_VerifierBenchmarkReleases",
+              "passed": true,
+              "detail": "VerifierBenchmarkReleases"
+            },
+            {
+              "check": "download_tracking",
+              "passed": true,
+              "detail": "Download tracking"
+            },
+            {
+              "check": "quality_gating",
+              "passed": true,
+              "detail": "Quality threshold"
+            },
+            {
+              "check": "changelog_support",
+              "passed": true,
+              "detail": "Changelog management"
+            },
+            {
+              "check": "content_hash",
+              "passed": true,
+              "detail": "SHA-256 hashing"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "schema_version",
+              "passed": true,
+              "detail": "vbr-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_16/bd-33u2_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "0 tests"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      }
+    }
+  ],
+  "gate_checks": [
+    {
+      "id": "GATE-16-SCRIPTS",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-16-TESTS",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-16-EVIDENCE",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-16-PER-CONTRIBUTION",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-16-PUBLICATION-CHECKLIST",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-16-ALL-BEADS",
+      "status": "PASS"
+    }
+  ],
+  "gaps": [],
+  "events": [
+    {
+      "event_code": "GATE_16_EVALUATION_STARTED",
+      "message": "Section 16 gate evaluation started"
+    },
+    {
+      "event_code": "GATE_16_BEAD_CHECKED",
+      "bead": "bd-f955",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_16_BEAD_CHECKED",
+      "bead": "bd-2ad0",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_16_BEAD_CHECKED",
+      "bead": "bd-nbh7",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_16_BEAD_CHECKED",
+      "bead": "bd-3id1",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_16_BEAD_CHECKED",
+      "bead": "bd-10ee",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_16_BEAD_CHECKED",
+      "bead": "bd-1sgr",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_16_BEAD_CHECKED",
+      "bead": "bd-e5cz",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_16_BEAD_CHECKED",
+      "bead": "bd-33u2",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_16_VERDICT_EMITTED",
+      "verdict": "PASS",
+      "beads_passing": 8,
+      "beads_total": 8,
+      "publication_checks_passing": 4,
+      "publication_checks_total": 4
+    }
+  ],
+  "content_hash": "5ebbe29b6a3c8d704aef32f3cc87e91da2ac2688ecd22b8ba4e572622bf2cab2"
+}

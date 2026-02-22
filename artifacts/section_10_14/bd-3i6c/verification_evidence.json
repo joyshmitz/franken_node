@@ -1,0 +1,319 @@
+{
+  "bead_id": "bd-3i6c",
+  "title": "FrankenSQLite-inspired conformance suite",
+  "section": "10.14",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 61,
+    "failing": 0,
+    "total": 61
+  },
+  "checks": [
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "docs/specs/section_10_14/bd-3i6c_contract.md"
+    },
+    {
+      "check": "file: library module",
+      "pass": true,
+      "detail": "crates/franken-node/src/conformance/fsqlite_inspired_suite.rs"
+    },
+    {
+      "check": "module wired in conformance/mod.rs",
+      "pass": true,
+      "detail": "conformance/mod.rs contains pub mod fsqlite_inspired_suite"
+    },
+    {
+      "check": "type: ConformanceDomain",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: ConformanceId",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: ConformanceTestResult",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: ConformanceTestRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: ConformanceReport",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: ConformanceFixture",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: ConformanceAuditRecord",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: ConformanceError",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: ConformanceSuiteRunner",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: Determinism",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: Idempotency",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: EpochValidity",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "domain: ProofCorrectness",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "prefix: FSQL-DET",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "prefix: FSQL-IDP",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "prefix: FSQL-EPO",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "prefix: FSQL-PRF",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "op: register_fixture",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "op: register_builtin_fixtures",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "op: run_all",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "op: check_release_gate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "op: domain_coverage",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "op: verify_domain_coverage",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "op: export_report_json",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "op: export_audit_log_jsonl",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event codes (6/6)",
+      "pass": true,
+      "detail": "6/6"
+    },
+    {
+      "check": "error codes (8/8)",
+      "pass": true,
+      "detail": "8/8"
+    },
+    {
+      "check": "invariants (6/6)",
+      "pass": true,
+      "detail": "6/6"
+    },
+    {
+      "check": "schema version cs-v1.0",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "suite version 1.0.0",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "library inline tests >= 25",
+      "pass": true,
+      "detail": "28 tests"
+    },
+    {
+      "check": "file: determinism fixtures",
+      "pass": true,
+      "detail": "fixtures/conformance/fsqlite_inspired/determinism_fixtures.json"
+    },
+    {
+      "check": "file: idempotency fixtures",
+      "pass": true,
+      "detail": "fixtures/conformance/fsqlite_inspired/idempotency_fixtures.json"
+    },
+    {
+      "check": "file: epoch_validity fixtures",
+      "pass": true,
+      "detail": "fixtures/conformance/fsqlite_inspired/epoch_validity_fixtures.json"
+    },
+    {
+      "check": "file: proof_correctness fixtures",
+      "pass": true,
+      "detail": "fixtures/conformance/fsqlite_inspired/proof_correctness_fixtures.json"
+    },
+    {
+      "check": "total fixture count >= 40",
+      "pass": true,
+      "detail": "44 fixtures"
+    },
+    {
+      "check": "domain determinism >= 10 fixtures",
+      "pass": true,
+      "detail": "11 fixtures"
+    },
+    {
+      "check": "domain idempotency >= 8 fixtures",
+      "pass": true,
+      "detail": "9 fixtures"
+    },
+    {
+      "check": "domain epoch_validity >= 12 fixtures",
+      "pass": true,
+      "detail": "13 fixtures"
+    },
+    {
+      "check": "domain proof_correctness >= 10 fixtures",
+      "pass": true,
+      "detail": "11 fixtures"
+    },
+    {
+      "check": "all conformance IDs match FSQL-(DET|IDP|EPO|PRF)-NNN",
+      "pass": true,
+      "detail": "all valid"
+    },
+    {
+      "check": "no duplicate conformance IDs",
+      "pass": true,
+      "detail": "all unique"
+    },
+    {
+      "check": "conformance ID prefix matches domain",
+      "pass": true,
+      "detail": "all aligned"
+    },
+    {
+      "check": "all fixtures have required schema fields",
+      "pass": true,
+      "detail": "all valid"
+    },
+    {
+      "check": "file: Rust test suite",
+      "pass": true,
+      "detail": "tests/conformance/fsqlite_inspired_suite.rs"
+    },
+    {
+      "check": "Rust test suite test count >= 40",
+      "pass": true,
+      "detail": "44 #[test] annotations"
+    },
+    {
+      "check": "Rust suite determinism tests",
+      "pass": true,
+      "detail": "11 tests"
+    },
+    {
+      "check": "Rust suite idempotency tests",
+      "pass": true,
+      "detail": "9 tests"
+    },
+    {
+      "check": "Rust suite epoch_validity tests",
+      "pass": true,
+      "detail": "13 tests"
+    },
+    {
+      "check": "Rust suite proof_correctness tests",
+      "pass": true,
+      "detail": "11 tests"
+    },
+    {
+      "check": "Rust suite references conformance IDs",
+      "pass": true,
+      "detail": "44 unique IDs"
+    },
+    {
+      "check": "spec: Determinism",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Idempotency",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Epoch",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Proof",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Acceptance Criteria",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Invariants",
+      "pass": true,
+      "detail": "found"
+    }
+  ]
+}

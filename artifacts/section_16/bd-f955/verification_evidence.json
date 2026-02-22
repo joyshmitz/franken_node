@@ -1,0 +1,73 @@
+{
+  "bead_id": "bd-f955",
+  "section": "16",
+  "title": "open trust and compatibility specifications",
+  "generated_at": "2026-02-21T05:12:46Z",
+  "status": "completed_with_baseline_workspace_failures",
+  "checks": [
+    {
+      "name": "py_compile",
+      "command": "python3 -m py_compile scripts/check_open_trust_compat_specs.py tests/test_check_open_trust_compat_specs.py",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "checker_self_test",
+      "command": "python3 scripts/check_open_trust_compat_specs.py --self-test --json",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_16/bd-f955/check_self_test.json"
+    },
+    {
+      "name": "checker_report",
+      "command": "python3 scripts/check_open_trust_compat_specs.py --json",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_16/bd-f955/check_report.json",
+      "summary": {
+        "verdict": "PASS",
+        "passed": 16,
+        "total": 16
+      }
+    },
+    {
+      "name": "unit_tests",
+      "command": "python3 -m unittest tests/test_check_open_trust_compat_specs.py",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_16/bd-f955/unit_tests.txt",
+      "summary": "Ran 4 tests: OK"
+    },
+    {
+      "name": "cargo_check_all_targets_via_rch",
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_16/bd-f955/rch_cargo_check_all_targets.log",
+      "note": "Pre-existing workspace compile debt outside bd-f955 scope."
+    },
+    {
+      "name": "cargo_clippy_all_targets_via_rch",
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_16/bd-f955/rch_cargo_clippy_all_targets.log",
+      "note": "Pre-existing workspace lint/compile debt outside bd-f955 scope."
+    },
+    {
+      "name": "cargo_fmt_check_via_rch",
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_16/bd-f955/rch_cargo_fmt_check.log",
+      "note": "Pre-existing workspace formatting drift/missing module outside bd-f955 scope."
+    }
+  ],
+  "contract_surface": {
+    "spec": "docs/specs/section_16/bd-f955_open_trust_compatibility_specs.md",
+    "machine_artifact": "artifacts/16/open_trust_compatibility_specs.json",
+    "checker": "scripts/check_open_trust_compat_specs.py",
+    "tests": "tests/test_check_open_trust_compat_specs.py",
+    "checker_report": "artifacts/section_16/bd-f955/check_report.json"
+  }
+}

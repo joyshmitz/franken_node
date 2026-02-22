@@ -1,0 +1,12 @@
+{
+  "bead_id": "bd-2ja",
+  "section": "10.7",
+  "title": "Compatibility Golden Corpus and Fixture Metadata Schema",
+  "timestamp": "2026-02-22T00:00:00Z",
+  "total_fixtures": 8,
+  "bands_covered": ["core", "high_value", "edge", "unsafe"],
+  "schema_validated": true,
+  "deterministic_fixtures": 8,
+  "gate_script": "scripts/check_compatibility_corpus.py",
+  "verdict": "PASS"
+}

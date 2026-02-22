@@ -1,0 +1,133 @@
+{
+  "schema_version": "verifier-cli-contract-v1",
+  "bead_id": "bd-3ex",
+  "section": "10.7",
+  "contract_version": "2.0.0",
+  "contract_major": 2,
+  "previous_major": 1,
+  "description": "Verifier CLI conformance contract for franken-node verify subcommands",
+  "subcommands": [
+    {
+      "name": "verify module",
+      "cli_form": "franken-node verify module <MODULE_ID>",
+      "flags": [
+        {"flag": "--json", "type": "bool", "default": false, "description": "Emit structured JSON output"},
+        {"flag": "--compat-version", "type": "u16", "default": null, "description": "Request output in a previous major version format"}
+      ],
+      "input_formats": ["positional_module_id"],
+      "exit_codes": {
+        "0": "all checks pass",
+        "1": "some checks fail",
+        "2": "invalid input or unsupported compat-version",
+        "3": "internal error or not-yet-implemented"
+      }
+    },
+    {
+      "name": "verify migration",
+      "cli_form": "franken-node verify migration <MIGRATION_ID>",
+      "flags": [
+        {"flag": "--json", "type": "bool", "default": false, "description": "Emit structured JSON output"},
+        {"flag": "--compat-version", "type": "u16", "default": null, "description": "Request output in a previous major version format"}
+      ],
+      "input_formats": ["positional_migration_id"],
+      "exit_codes": {
+        "0": "all checks pass",
+        "1": "some checks fail",
+        "2": "invalid input or unsupported compat-version",
+        "3": "internal error or not-yet-implemented"
+      }
+    },
+    {
+      "name": "verify compatibility",
+      "cli_form": "franken-node verify compatibility <TARGET>",
+      "flags": [
+        {"flag": "--json", "type": "bool", "default": false, "description": "Emit structured JSON output"},
+        {"flag": "--compat-version", "type": "u16", "default": null, "description": "Request output in a previous major version format"}
+      ],
+      "input_formats": ["positional_target"],
+      "exit_codes": {
+        "0": "all checks pass",
+        "1": "some checks fail",
+        "2": "invalid input or unsupported compat-version",
+        "3": "internal error or not-yet-implemented"
+      }
+    },
+    {
+      "name": "verify corpus",
+      "cli_form": "franken-node verify corpus <CORPUS_PATH>",
+      "flags": [
+        {"flag": "--json", "type": "bool", "default": false, "description": "Emit structured JSON output"},
+        {"flag": "--compat-version", "type": "u16", "default": null, "description": "Request output in a previous major version format"}
+      ],
+      "input_formats": ["positional_corpus_path"],
+      "exit_codes": {
+        "0": "all checks pass",
+        "1": "some checks fail",
+        "2": "invalid input or unsupported compat-version",
+        "3": "internal error or not-yet-implemented"
+      }
+    },
+    {
+      "name": "verify lockstep",
+      "cli_form": "franken-node verify lockstep <PROJECT_PATH>",
+      "flags": [
+        {"flag": "--runtimes", "type": "string", "default": "node,bun,franken-node", "description": "Comma-separated list of runtimes to compare"},
+        {"flag": "--emit-fixtures", "type": "bool", "default": false, "description": "Emit divergence fixtures for failing comparisons"}
+      ],
+      "input_formats": ["positional_project_path"],
+      "exit_codes": {
+        "0": "all checks pass",
+        "1": "some checks fail",
+        "2": "invalid input",
+        "3": "internal error or not-yet-implemented"
+      }
+    },
+    {
+      "name": "verify release",
+      "cli_form": "franken-node verify release <RELEASE_PATH>",
+      "flags": [
+        {"flag": "--key-dir", "type": "path", "default": null, "description": "Directory containing trusted public keys"},
+        {"flag": "--json", "type": "bool", "default": false, "description": "Emit structured JSON output"}
+      ],
+      "input_formats": ["positional_release_path"],
+      "exit_codes": {
+        "0": "all checks pass",
+        "1": "some checks fail",
+        "2": "invalid input",
+        "3": "internal error or not-yet-implemented"
+      }
+    }
+  ],
+  "output_schema": {
+    "json_fields": [
+      {"field": "command", "type": "string", "required": true, "description": "The subcommand invoked"},
+      {"field": "contract_version", "type": "string", "required": true, "description": "Semver contract version embedded in CLI"},
+      {"field": "schema_version", "type": "string", "required": true, "description": "Schema version tag"},
+      {"field": "compat_version", "type": "u16|null", "required": true, "description": "Requested compat version or null"},
+      {"field": "verdict", "type": "string", "required": true, "description": "PASS, FAIL, SKIPPED, or ERROR"},
+      {"field": "status", "type": "string", "required": true, "description": "Machine-readable status"},
+      {"field": "exit_code", "type": "integer", "required": true, "description": "Exit code the process will use"},
+      {"field": "reason", "type": "string", "required": true, "description": "Human-readable explanation"}
+    ],
+    "error_format": {
+      "fields": ["command", "status", "exit_code", "reason"],
+      "description": "Error responses always include at least these four fields"
+    }
+  },
+  "compat_policy": {
+    "supported_versions": [1, 2],
+    "current_major": 2,
+    "compat_window": 1,
+    "description": "CLI supports --compat-version for current and one previous major version"
+  },
+  "invariants": [
+    "INV-CLI-VERSION: contract_version field in JSON output matches this contract's contract_version",
+    "INV-CLI-SCHEMA: schema_version field in JSON output equals this contract's schema_version",
+    "INV-CLI-EXIT: exit_code field in JSON output matches the actual process exit code",
+    "INV-CLI-COMPAT: --compat-version accepts current and previous major; rejects others with exit 2",
+    "INV-CLI-SUBCOMMANDS: all six verify subcommands are wired and produce structured output",
+    "INV-CLI-FLAGS: every subcommand accepts its documented flags",
+    "INV-CLI-JSON-REQUIRED: all required JSON fields are present in --json output",
+    "INV-CLI-BREAKING: removing or renaming a required field is a breaking change requiring major version bump"
+  ]
+}

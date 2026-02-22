@@ -426,13 +426,27 @@ impl IntegritySweepScheduler {
             "timestamp,band,interval_ms,depth,rejection_count,escalation_count,repairability_avg,hysteresis_count\n"
         );
         for d in &self.decisions {
-            // Parse trajectory summary to extract values
+            let mut rej = "0";
+            let mut esc = "0";
+            let mut rep = "0.0";
+            for part in d.trajectory_summary.split(", ") {
+                if let Some(v) = part.strip_prefix("rejections=") {
+                    rej = v;
+                } else if let Some(v) = part.strip_prefix("escalations=") {
+                    esc = v;
+                } else if let Some(v) = part.strip_prefix("repairability=") {
+                    rep = v;
+                }
+            }
             out.push_str(&format!(
-                "{},{},{},{},{}\n",
+                "{},{},{},{},{},{},{},{}\n",
                 d.timestamp,
                 d.band.label(),
                 d.interval_ms,
                 d.depth.label(),
+                rej,
+                esc,
+                rep,
                 d.hysteresis_count,
             ));
         }

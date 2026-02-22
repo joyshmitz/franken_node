@@ -1,0 +1,179 @@
+{
+  "domain": "epoch_validity",
+  "description": "Fixtures verifying epoch lifecycle invariants: monotonic progression, boundary enforcement, key derivation, and transition legality.",
+  "fixtures": [
+    {
+      "conformance_id": "FSQL-EPO-001",
+      "domain": "epoch_validity",
+      "description": "Epoch IDs are monotonically increasing: epoch N+1 > epoch N",
+      "input": {
+        "epoch_sequence": [0, 1, 2, 3, 4]
+      },
+      "expected": {
+        "monotonic": true,
+        "all_increasing": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-EPO-002",
+      "domain": "epoch_validity",
+      "description": "Epoch boundaries are non-overlapping: end(N) <= start(N+1)",
+      "input": {
+        "epochs": [
+          {"id": 0, "start": 0, "end": 100},
+          {"id": 1, "start": 100, "end": 200},
+          {"id": 2, "start": 200, "end": 300}
+        ]
+      },
+      "expected": {
+        "non_overlapping": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-EPO-003",
+      "domain": "epoch_validity",
+      "description": "Key derivation is epoch-scoped: keys derived for epoch N differ from epoch M (N != M)",
+      "input": {
+        "master_secret": "test-master-secret",
+        "epoch_a": 5,
+        "epoch_b": 6
+      },
+      "expected": {
+        "keys_differ": true,
+        "both_deterministic": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-EPO-004",
+      "domain": "epoch_validity",
+      "description": "Cross-epoch references are rejected: a marker in epoch N cannot reference epoch M data (M != N)",
+      "input": {
+        "marker_epoch": 5,
+        "reference_epoch": 3
+      },
+      "expected": {
+        "cross_epoch_rejected": true,
+        "error_code": "EPOCH_CROSS_REF"
+      }
+    },
+    {
+      "conformance_id": "FSQL-EPO-005",
+      "domain": "epoch_validity",
+      "description": "Epoch zero is the genesis sentinel with special properties",
+      "input": {
+        "epoch": 0
+      },
+      "expected": {
+        "is_genesis": true,
+        "predecessor": null,
+        "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "conformance_id": "FSQL-EPO-006",
+      "domain": "epoch_validity",
+      "description": "Transition to epoch N+1 requires that epoch N is finalized (sealed)",
+      "input": {
+        "current_epoch": 10,
+        "current_sealed": false,
+        "requested_next": 11
+      },
+      "expected": {
+        "transition_allowed": false,
+        "error_code": "EPOCH_NOT_SEALED"
+      }
+    },
+    {
+      "conformance_id": "FSQL-EPO-007",
+      "domain": "epoch_validity",
+      "description": "Epoch metadata is immutable after seal: attempted mutation is rejected",
+      "input": {
+        "epoch": 7,
+        "sealed": true,
+        "mutation": {"quorum_size": 5}
+      },
+      "expected": {
+        "mutation_rejected": true,
+        "error_code": "EPOCH_SEALED_IMMUTABLE"
+      }
+    },
+    {
+      "conformance_id": "FSQL-EPO-008",
+      "domain": "epoch_validity",
+      "description": "Gap detection in epoch sequences: jumping from epoch 5 to epoch 8 is detected",
+      "input": {
+        "epoch_sequence": [0, 1, 2, 3, 5, 8]
+      },
+      "expected": {
+        "gaps_detected": [4, 6, 7],
+        "has_gaps": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-EPO-009",
+      "domain": "epoch_validity",
+      "description": "Epoch expiry enforcement: operations on an expired epoch are rejected",
+      "input": {
+        "epoch": 3,
+        "epoch_ttl_seconds": 3600,
+        "current_time_offset_seconds": 7200
+      },
+      "expected": {
+        "expired": true,
+        "operation_rejected": true,
+        "error_code": "EPOCH_EXPIRED"
+      }
+    },
+    {
+      "conformance_id": "FSQL-EPO-010",
+      "domain": "epoch_validity",
+      "description": "Concurrent epoch rejection: only one epoch can be active at a time",
+      "input": {
+        "active_epochs": [10, 11]
+      },
+      "expected": {
+        "concurrent_rejected": true,
+        "error_code": "EPOCH_CONCURRENT"
+      }
+    },
+    {
+      "conformance_id": "FSQL-EPO-011",
+      "domain": "epoch_validity",
+      "description": "Epoch rollback detection: transitioning from epoch 10 to epoch 8 is rejected",
+      "input": {
+        "current_epoch": 10,
+        "requested_epoch": 8
+      },
+      "expected": {
+        "rollback_detected": true,
+        "error_code": "EPOCH_ROLLBACK"
+      }
+    },
+    {
+      "conformance_id": "FSQL-EPO-012",
+      "domain": "epoch_validity",
+      "description": "Epoch seal integrity: the seal hash covers all epoch metadata fields",
+      "input": {
+        "epoch": 15,
+        "metadata": {"quorum_size": 3, "max_markers": 1000},
+        "tampered_metadata": {"quorum_size": 5, "max_markers": 1000}
+      },
+      "expected": {
+        "original_seal_valid": true,
+        "tampered_seal_invalid": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-EPO-013",
+      "domain": "epoch_validity",
+      "description": "Epoch ID must be a non-negative integer; negative values are rejected",
+      "input": {
+        "epoch": -1
+      },
+      "expected": {
+        "rejected": true,
+        "error_code": "EPOCH_INVALID_ID"
+      }
+    }
+  ]
+}

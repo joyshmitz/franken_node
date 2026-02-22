@@ -1,0 +1,40 @@
+{
+  "bead_id": "bd-jbp1",
+  "section": "14",
+  "title": "Replay determinism and artifact completeness metrics",
+  "gate_script": "scripts/check_replay_determinism_metrics.py",
+  "test_suite": "tests/test_check_replay_determinism_metrics.py",
+  "timestamp": "2026-02-21T02:00:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "replay_determinism_metrics": "crates/franken-node/src/tools/replay_determinism_metrics.rs",
+    "tools_mod": "crates/franken-node/src/tools/mod.rs",
+    "spec_contract": "docs/specs/section_14/bd-jbp1_contract.md",
+    "verification_script": "scripts/check_replay_determinism_metrics.py",
+    "unit_tests": "tests/test_check_replay_determinism_metrics.py"
+  },
+  "rust_test_count": 23,
+  "python_test_count": 24,
+  "event_codes_defined": 12,
+  "gate_checks_passed": 19,
+  "gate_checks_total": 19,
+  "invariants_verified": [
+    "INV-RDM-HASH",
+    "INV-RDM-COMPLETE",
+    "INV-RDM-DETERMINISTIC",
+    "INV-RDM-GATED",
+    "INV-RDM-VERSIONED",
+    "INV-RDM-AUDITABLE"
+  ],
+  "capabilities_verified": {
+    "artifact_categories": ["VerificationEvidence", "SpecContract", "GateScript", "UnitTests", "CheckReport"],
+    "operations": ["record_run", "compare_runs", "track_artifact", "generate_report", "export_audit_log_jsonl"],
+    "hash_comparison": true,
+    "divergence_detection": true,
+    "artifact_completeness": true,
+    "determinism_rate": true,
+    "gate_verdicts": true,
+    "audit_logging": true
+  },
+  "compile_note": "FAIL_BASELINE — pre-existing compile debt in unrelated modules"
+}

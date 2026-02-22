@@ -1,0 +1,31 @@
+{
+  "bead_id": "bd-3k9t",
+  "coverage": {
+    "clean": 4,
+    "degraded": 1,
+    "drifted": 1
+  },
+  "fail_count": 0,
+  "missing_stage_ids": [],
+  "pass_count": 6,
+  "required_journeys": {
+    "config": true,
+    "doctor": true,
+    "init": true,
+    "run": true,
+    "transplant_integrity": true
+  },
+  "schema_version": "bootstrap-foundation-e2e-v1",
+  "stage_count": 6,
+  "stage_order": [
+    "run_surface_contract",
+    "config_profile_resolution",
+    "init_profile_bootstrap",
+    "doctor_command_diagnostics",
+    "transplant_verify_missing_snapshot",
+    "transplant_drift_probe_missing_snapshot"
+  ],
+  "suite": "foundation_bootstrap_suite",
+  "trace_id": "trace-bd-3k9t-foundation-e2e",
+  "verdict": "PASS"
+}

@@ -1,0 +1,172 @@
+{
+  "bead_id": "bd-2l1k",
+  "title": "Replay coverage gate (100%)",
+  "section": "13",
+  "trace_id": "trace-bd-2l1k-replay-coverage",
+  "verdict": "PASS",
+  "total": 26,
+  "passed": 26,
+  "failed": 0,
+  "computed": {
+    "required_count": 8,
+    "covered_count": 8,
+    "coverage_ratio": 1.0,
+    "minimum_required_coverage_ratio": 1.0,
+    "missing_incident_types": [],
+    "sla_days": 14
+  },
+  "checks": [
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "docs/specs/section_13/bd-2l1k_contract.md"
+    },
+    {
+      "check": "file: replay coverage matrix",
+      "pass": true,
+      "detail": "artifacts/13/replay_coverage_matrix.json"
+    },
+    {
+      "check": "spec threshold 100% coverage",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec incident enumeration",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "matrix parse",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "matrix required top-level fields",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "matrix bead id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "matrix timestamp valid RFC3339 UTC",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "required_incident_types is list",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "required incident types covered",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "replay_artifacts is list",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "new incident SLA days valid",
+      "pass": true,
+      "detail": "value=14"
+    },
+    {
+      "check": "replay artifact record schema",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "artifact files exist",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "100% required incident coverage",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "replay artifact content completeness",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "deterministic replay requirements",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "new incident SLA met",
+      "pass": true,
+      "detail": "required <= 14 days"
+    },
+    {
+      "check": "coverage_summary is object",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "summary required_count matches",
+      "pass": true,
+      "detail": "declared=8, computed=8"
+    },
+    {
+      "check": "summary covered_count matches",
+      "pass": true,
+      "detail": "declared=8, computed=8"
+    },
+    {
+      "check": "summary coverage_ratio matches",
+      "pass": true,
+      "detail": "declared=1.0, computed=1.0000"
+    },
+    {
+      "check": "coverage ratio threshold met",
+      "pass": true,
+      "detail": "ratio=1.0000, threshold=1.0"
+    },
+    {
+      "check": "determinism under reordering",
+      "pass": true,
+      "detail": "ratio=1.0000, reordered_ratio=1.0000"
+    },
+    {
+      "check": "adversarial perturbation flips threshold",
+      "pass": true,
+      "detail": "perturbed_ratio=0.8750, threshold=1.0"
+    }
+  ],
+  "events": [
+    {
+      "event_code": "RCG-001",
+      "trace_id": "trace-bd-2l1k-replay-coverage",
+      "message": "Replay coverage metrics computed (required=8, covered=8, ratio=1.0000)."
+    },
+    {
+      "event_code": "RCG-002",
+      "trace_id": "trace-bd-2l1k-replay-coverage",
+      "message": "Replay coverage gate passed."
+    },
+    {
+      "event_code": "RCG-006",
+      "trace_id": "trace-bd-2l1k-replay-coverage",
+      "message": "Determinism validation executed."
+    },
+    {
+      "event_code": "RCG-007",
+      "trace_id": "trace-bd-2l1k-replay-coverage",
+      "message": "New-incident SLA validation executed."
+    }
+  ]
+}

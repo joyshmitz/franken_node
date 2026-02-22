@@ -1,0 +1,85 @@
+{
+  "bead_id": "bd-3k9t",
+  "section": "bootstrap",
+  "title": "Foundation e2e scripts with structured log bundles",
+  "generated_at_utc": "2026-02-22T02:28:00Z",
+  "status": "implemented_with_baseline_quality_debt",
+  "implementation": {
+    "harness_script": "tests/e2e/foundation_bootstrap_suite.sh",
+    "bundle_verifier": "scripts/check_foundation_e2e_bundle.py",
+    "verifier_tests": "tests/test_check_foundation_e2e_bundle.py",
+    "harness_contract": "docs/specs/bootstrap_e2e_harness.md"
+  },
+  "foundation_suite": {
+    "summary_path": "artifacts/section_bootstrap/bd-3k9t/foundation_e2e_summary.json",
+    "bundle_path": "artifacts/section_bootstrap/bd-3k9t/foundation_e2e_bundle.json",
+    "log_path": "artifacts/section_bootstrap/bd-3k9t/foundation_e2e_log.jsonl",
+    "verdict": "PASS",
+    "stage_count": 6,
+    "pass_count": 6,
+    "fail_count": 0,
+    "coverage": {
+      "clean": 4,
+      "degraded": 1,
+      "drifted": 1
+    },
+    "required_journeys": {
+      "run": true,
+      "config": true,
+      "init": true,
+      "doctor": true,
+      "transplant_integrity": true
+    }
+  },
+  "verifier_results": {
+    "check_report": {
+      "path": "artifacts/section_bootstrap/bd-3k9t/check_report.json",
+      "verdict": "PASS",
+      "checks_passed": 16,
+      "checks_total": 16
+    },
+    "self_test": {
+      "command": "python3 scripts/check_foundation_e2e_bundle.py --self-test",
+      "status": "pass",
+      "exit_code": 0,
+      "artifact": "artifacts/section_bootstrap/bd-3k9t/check_self_test.txt"
+    },
+    "unit_tests": {
+      "command": "python3 -m unittest tests/test_check_foundation_e2e_bundle.py",
+      "status": "pass",
+      "exit_code": 0,
+      "artifact": "artifacts/section_bootstrap/bd-3k9t/unit_tests.txt"
+    }
+  },
+  "rch_quality": {
+    "commands": [
+      {
+        "name": "cargo fmt --check",
+        "runner": "rch exec --",
+        "exit_code": 1,
+        "status": "fail",
+        "log": "artifacts/section_bootstrap/bd-3k9t/rch_cargo_fmt_check.log"
+      },
+      {
+        "name": "cargo check --all-targets",
+        "runner": "rch exec -- env CARGO_TARGET_DIR=/tmp/rch_target_franken_node_bd3k9t_check_<ts>",
+        "exit_code": 101,
+        "status": "fail",
+        "log": "artifacts/section_bootstrap/bd-3k9t/rch_cargo_check.log",
+        "notable_error": "E0583: file not found for module epoch_transition"
+      },
+      {
+        "name": "cargo clippy --all-targets -- -D warnings",
+        "runner": "rch exec -- env CARGO_TARGET_DIR=/tmp/rch_target_franken_node_bd3k9t_clippy_<ts>",
+        "exit_code": 101,
+        "status": "fail",
+        "log": "artifacts/section_bootstrap/bd-3k9t/rch_cargo_clippy.log",
+        "notable_error": "E0382: borrow of moved value stage"
+      }
+    ]
+  },
+  "notes": [
+    "Foundation harness + verifier stack is green for bd-3k9t scope.",
+    "Workspace-wide cargo fmt/check/clippy failures are baseline debt outside bd-3k9t scope."
+  ]
+}

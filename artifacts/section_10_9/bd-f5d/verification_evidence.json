@@ -1,0 +1,53 @@
+{
+  "bead_id": "bd-f5d",
+  "section": "10.9",
+  "title": "Build public Node/Bun/franken_node benchmark campaign infrastructure",
+  "timestamp": "2026-02-21T00:00:00Z",
+  "verdict": "PASS",
+  "files": {
+    "contract": "docs/specs/section_10_9/bd-f5d_contract.md",
+    "methodology": "docs/policy/benchmark_campaign_methodology.md",
+    "manifest": "fixtures/benchmarks/campaign_manifest.json",
+    "dataset_catalog": "fixtures/benchmarks/dataset_catalog.json",
+    "baseline_results": "fixtures/benchmarks/campaign_results_baseline.json",
+    "candidate_results": "fixtures/benchmarks/campaign_results_candidate.json",
+    "chart_spec": "fixtures/benchmarks/chart_spec.json",
+    "campaign_runner": "scripts/run_benchmark_campaign.sh",
+    "verification_script": "scripts/check_benchmark_infra.py",
+    "python_tests": "tests/test_check_benchmark_infra.py",
+    "campaign_output": "artifacts/section_10_9/bd-f5d/campaign_run.json",
+    "diff_output": "artifacts/section_10_9/bd-f5d/diff_report.json",
+    "public_report": "artifacts/section_10_9/bd-f5d/public_report.md"
+  },
+  "metrics": {
+    "workloads_total": 10,
+    "dimensions_total": 6,
+    "runtimes_total": 3,
+    "dataset_entries": 3,
+    "verification_checks": 44,
+    "verification_failures": 0,
+    "python_unit_tests": 10,
+    "compatibility_pct": 96.3,
+    "migration_velocity_x": 3.4,
+    "compromise_reduction_x": 11.2,
+    "deterministic_runner_output": true
+  },
+  "commands": [
+    {
+      "command": "python3 scripts/check_benchmark_infra.py --self-test --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 scripts/check_benchmark_infra.py --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 -m unittest tests/test_check_benchmark_infra.py",
+      "status": "pass"
+    },
+    {
+      "command": "scripts/run_benchmark_campaign.sh --baseline fixtures/benchmarks/campaign_results_baseline.json --candidate fixtures/benchmarks/campaign_results_candidate.json --output artifacts/section_10_9/bd-f5d/campaign_run.json",
+      "status": "pass"
+    }
+  ]
+}

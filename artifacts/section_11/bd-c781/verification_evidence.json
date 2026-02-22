@@ -1,0 +1,68 @@
+{
+  "bead_id": "bd-c781",
+  "title": "[11] Section-wide verification gate: comprehensive unit+e2e+logging",
+  "timestamp_utc": "2026-02-21T01:13:15Z",
+  "deliverables": [
+    "scripts/check_section_11_gate.py",
+    "tests/test_check_section_11_gate.py",
+    "artifacts/section_11/bd-c781/check_self_test.json",
+    "artifacts/section_11/bd-c781/check_report.json",
+    "artifacts/section_11/bd-c781/unit_tests.txt",
+    "artifacts/section_11/bd-c781/verification_summary.md"
+  ],
+  "gate_validation": {
+    "self_test": {
+      "command": "python3 scripts/check_section_11_gate.py --self-test --json",
+      "result_path": "artifacts/section_11/bd-c781/check_self_test.json",
+      "ok": true
+    },
+    "section_gate_report": {
+      "command": "python3 scripts/check_section_11_gate.py --json",
+      "result_path": "artifacts/section_11/bd-c781/check_report.json",
+      "gate_pass": true,
+      "scripts_passing": 9,
+      "scripts_total": 9,
+      "test_coverage_pct": 100.0,
+      "required_event_codes": [
+        "GATE_11_BEAD_CHECKED",
+        "GATE_11_CONTRACT_COVERAGE",
+        "GATE_11_EVALUATION_STARTED",
+        "GATE_11_VERDICT_EMITTED"
+      ]
+    },
+    "unit_tests": {
+      "command": "python3 -m unittest tests/test_check_section_11_gate.py",
+      "result_path": "artifacts/section_11/bd-c781/unit_tests.txt",
+      "ok": true,
+      "tests_run": 10
+    }
+  },
+  "cargo_quality_gates_rch": [
+    {
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "log_path": "artifacts/section_11/bd-c781/rch_cargo_check.log",
+      "status": "failed",
+      "note": "Pre-existing workspace compile errors (E0423 and related) outside bd-c781 gate-script scope."
+    },
+    {
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "log_path": "artifacts/section_11/bd-c781/rch_cargo_clippy.log",
+      "status": "failed",
+      "note": "Pre-existing repository lint debt and compile blockers outside bd-c781 scope."
+    },
+    {
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "log_path": "artifacts/section_11/bd-c781/rch_cargo_fmt_check.log",
+      "status": "failed",
+      "note": "Pre-existing formatting drift in unrelated files."
+    }
+  ],
+  "overall_assessment": {
+    "section_11_gate": "pass",
+    "workspace_global_cargo_state": "failing_preexisting",
+    "ready_to_close_bead": true
+  }
+}

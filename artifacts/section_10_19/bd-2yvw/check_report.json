@@ -1,0 +1,351 @@
+{
+  "bead_id": "bd-2yvw",
+  "title": "Sybil-resistant participation controls for ATC federation",
+  "section": "10.19",
+  "gate": false,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 61,
+  "passed": 61,
+  "failed": 0,
+  "required_types": [
+    "AttestationEvidence",
+    "AttestationLevel",
+    "StakeEvidence",
+    "ReputationEvidence",
+    "ParticipantIdentity",
+    "ParticipationWeight",
+    "WeightAuditRecord",
+    "SybilCluster",
+    "WeightingConfig",
+    "ParticipationWeightEngine"
+  ],
+  "event_codes": [
+    "ATC-PART-001",
+    "ATC-PART-002",
+    "ATC-PART-003",
+    "ATC-PART-004",
+    "ATC-PART-005",
+    "ATC-PART-006",
+    "ATC-PART-007",
+    "ATC-PART-008",
+    "ATC-PART-ERR-001",
+    "ATC-PART-ERR-002"
+  ],
+  "invariants": [
+    "INV-ATC-SYBIL-BOUND",
+    "INV-ATC-WEIGHT-DETERMINISM",
+    "INV-ATC-NEW-NODE-CAP",
+    "INV-ATC-STAKE-MONOTONE",
+    "INV-ATC-ATTESTATION-REQUIRED",
+    "INV-ATC-AUDIT-COMPLETE",
+    "INV-ATC-CLUSTER-ATTENUATION"
+  ],
+  "checks": [
+    {
+      "check": "rust_module_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/federation/atc_participation_weighting.rs"
+    },
+    {
+      "check": "federation_mod_registration",
+      "pass": true,
+      "detail": "atc_participation_weighting in federation/mod.rs"
+    },
+    {
+      "check": "main_federation_registration",
+      "pass": true,
+      "detail": "federation module registered in main.rs"
+    },
+    {
+      "check": "type_AttestationEvidence",
+      "pass": true,
+      "detail": "AttestationEvidence defined"
+    },
+    {
+      "check": "type_AttestationLevel",
+      "pass": true,
+      "detail": "AttestationLevel defined"
+    },
+    {
+      "check": "type_StakeEvidence",
+      "pass": true,
+      "detail": "StakeEvidence defined"
+    },
+    {
+      "check": "type_ReputationEvidence",
+      "pass": true,
+      "detail": "ReputationEvidence defined"
+    },
+    {
+      "check": "type_ParticipantIdentity",
+      "pass": true,
+      "detail": "ParticipantIdentity defined"
+    },
+    {
+      "check": "type_ParticipationWeight",
+      "pass": true,
+      "detail": "ParticipationWeight defined"
+    },
+    {
+      "check": "type_WeightAuditRecord",
+      "pass": true,
+      "detail": "WeightAuditRecord defined"
+    },
+    {
+      "check": "type_SybilCluster",
+      "pass": true,
+      "detail": "SybilCluster defined"
+    },
+    {
+      "check": "type_WeightingConfig",
+      "pass": true,
+      "detail": "WeightingConfig defined"
+    },
+    {
+      "check": "type_ParticipationWeightEngine",
+      "pass": true,
+      "detail": "ParticipationWeightEngine defined"
+    },
+    {
+      "check": "event_code_ATC-PART-001",
+      "pass": true,
+      "detail": "ATC-PART-001 defined"
+    },
+    {
+      "check": "event_code_ATC-PART-002",
+      "pass": true,
+      "detail": "ATC-PART-002 defined"
+    },
+    {
+      "check": "event_code_ATC-PART-003",
+      "pass": true,
+      "detail": "ATC-PART-003 defined"
+    },
+    {
+      "check": "event_code_ATC-PART-004",
+      "pass": true,
+      "detail": "ATC-PART-004 defined"
+    },
+    {
+      "check": "event_code_ATC-PART-005",
+      "pass": true,
+      "detail": "ATC-PART-005 defined"
+    },
+    {
+      "check": "event_code_ATC-PART-006",
+      "pass": true,
+      "detail": "ATC-PART-006 defined"
+    },
+    {
+      "check": "event_code_ATC-PART-007",
+      "pass": true,
+      "detail": "ATC-PART-007 defined"
+    },
+    {
+      "check": "event_code_ATC-PART-008",
+      "pass": true,
+      "detail": "ATC-PART-008 defined"
+    },
+    {
+      "check": "event_code_ATC-PART-ERR-001",
+      "pass": true,
+      "detail": "ATC-PART-ERR-001 defined"
+    },
+    {
+      "check": "event_code_ATC-PART-ERR-002",
+      "pass": true,
+      "detail": "ATC-PART-ERR-002 defined"
+    },
+    {
+      "check": "invariant_INV-ATC-SYBIL-BOUND",
+      "pass": true,
+      "detail": "INV-ATC-SYBIL-BOUND defined"
+    },
+    {
+      "check": "invariant_INV-ATC-WEIGHT-DETERMINISM",
+      "pass": true,
+      "detail": "INV-ATC-WEIGHT-DETERMINISM defined"
+    },
+    {
+      "check": "invariant_INV-ATC-NEW-NODE-CAP",
+      "pass": true,
+      "detail": "INV-ATC-NEW-NODE-CAP defined"
+    },
+    {
+      "check": "invariant_INV-ATC-STAKE-MONOTONE",
+      "pass": true,
+      "detail": "INV-ATC-STAKE-MONOTONE defined"
+    },
+    {
+      "check": "invariant_INV-ATC-ATTESTATION-REQUIRED",
+      "pass": true,
+      "detail": "INV-ATC-ATTESTATION-REQUIRED defined"
+    },
+    {
+      "check": "invariant_INV-ATC-AUDIT-COMPLETE",
+      "pass": true,
+      "detail": "INV-ATC-AUDIT-COMPLETE defined"
+    },
+    {
+      "check": "invariant_INV-ATC-CLUSTER-ATTENUATION",
+      "pass": true,
+      "detail": "INV-ATC-CLUSTER-ATTENUATION defined"
+    },
+    {
+      "check": "attestation_level_SelfSigned",
+      "pass": true,
+      "detail": "SelfSigned (0.1)"
+    },
+    {
+      "check": "attestation_level_PeerVerified",
+      "pass": true,
+      "detail": "PeerVerified (0.4)"
+    },
+    {
+      "check": "attestation_level_VerifierBacked",
+      "pass": true,
+      "detail": "VerifierBacked (0.8)"
+    },
+    {
+      "check": "attestation_level_AuthorityCertified",
+      "pass": true,
+      "detail": "AuthorityCertified (1.0)"
+    },
+    {
+      "check": "weight_component_attestation_component",
+      "pass": true,
+      "detail": "attestation_component present"
+    },
+    {
+      "check": "weight_component_stake_component",
+      "pass": true,
+      "detail": "stake_component present"
+    },
+    {
+      "check": "weight_component_reputation_component",
+      "pass": true,
+      "detail": "reputation_component present"
+    },
+    {
+      "check": "weight_component_sybil_penalty",
+      "pass": true,
+      "detail": "sybil_penalty present"
+    },
+    {
+      "check": "weight_component_final_weight",
+      "pass": true,
+      "detail": "final_weight present"
+    },
+    {
+      "check": "sybil_detection",
+      "pass": true,
+      "detail": "Sybil detection with cluster attenuation"
+    },
+    {
+      "check": "audit_logging",
+      "pass": true,
+      "detail": "audit log with JSON export and content hash"
+    },
+    {
+      "check": "inline_tests",
+      "pass": true,
+      "detail": "19 inline tests (need >= 15)"
+    },
+    {
+      "check": "weight_computation",
+      "pass": true,
+      "detail": "batch and single weight computation present"
+    },
+    {
+      "check": "spec_contract",
+      "pass": true,
+      "detail": "docs/specs/section_10_19/bd-2yvw_contract.md"
+    },
+    {
+      "check": "spec_INV-ATC-SYBIL-BOUND",
+      "pass": true,
+      "detail": "INV-ATC-SYBIL-BOUND in spec"
+    },
+    {
+      "check": "spec_INV-ATC-WEIGHT-DETERMINISM",
+      "pass": true,
+      "detail": "INV-ATC-WEIGHT-DETERMINISM in spec"
+    },
+    {
+      "check": "spec_INV-ATC-NEW-NODE-CAP",
+      "pass": true,
+      "detail": "INV-ATC-NEW-NODE-CAP in spec"
+    },
+    {
+      "check": "spec_INV-ATC-STAKE-MONOTONE",
+      "pass": true,
+      "detail": "INV-ATC-STAKE-MONOTONE in spec"
+    },
+    {
+      "check": "spec_INV-ATC-ATTESTATION-REQUIRED",
+      "pass": true,
+      "detail": "INV-ATC-ATTESTATION-REQUIRED in spec"
+    },
+    {
+      "check": "spec_INV-ATC-AUDIT-COMPLETE",
+      "pass": true,
+      "detail": "INV-ATC-AUDIT-COMPLETE in spec"
+    },
+    {
+      "check": "spec_INV-ATC-CLUSTER-ATTENUATION",
+      "pass": true,
+      "detail": "INV-ATC-CLUSTER-ATTENUATION in spec"
+    },
+    {
+      "check": "spec_event_ATC-PART-001",
+      "pass": true,
+      "detail": "ATC-PART-001 in spec"
+    },
+    {
+      "check": "spec_event_ATC-PART-002",
+      "pass": true,
+      "detail": "ATC-PART-002 in spec"
+    },
+    {
+      "check": "spec_event_ATC-PART-003",
+      "pass": true,
+      "detail": "ATC-PART-003 in spec"
+    },
+    {
+      "check": "spec_event_ATC-PART-004",
+      "pass": true,
+      "detail": "ATC-PART-004 in spec"
+    },
+    {
+      "check": "spec_event_ATC-PART-005",
+      "pass": true,
+      "detail": "ATC-PART-005 in spec"
+    },
+    {
+      "check": "spec_event_ATC-PART-006",
+      "pass": true,
+      "detail": "ATC-PART-006 in spec"
+    },
+    {
+      "check": "spec_event_ATC-PART-007",
+      "pass": true,
+      "detail": "ATC-PART-007 in spec"
+    },
+    {
+      "check": "spec_event_ATC-PART-008",
+      "pass": true,
+      "detail": "ATC-PART-008 in spec"
+    },
+    {
+      "check": "spec_event_ATC-PART-ERR-001",
+      "pass": true,
+      "detail": "ATC-PART-ERR-001 in spec"
+    },
+    {
+      "check": "spec_event_ATC-PART-ERR-002",
+      "pass": true,
+      "detail": "ATC-PART-ERR-002 in spec"
+    }
+  ]
+}

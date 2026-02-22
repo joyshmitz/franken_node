@@ -1,0 +1,88 @@
+{
+  "migration_id": "bpet-migration-2026-02-21-a",
+  "admission": {
+    "verdict": "staged_rollout_required",
+    "baseline": {
+      "instability_score": 0.22,
+      "drift_score": 0.14,
+      "regime_shift_probability": 0.12
+    },
+    "projected": {
+      "instability_score": 0.74,
+      "drift_score": 0.41,
+      "regime_shift_probability": 0.57
+    },
+    "delta": {
+      "instability_delta": 0.52,
+      "drift_delta": 0.27,
+      "regime_shift_delta": 0.45
+    },
+    "thresholds": {
+      "max_instability_delta_for_direct_admit": 0.08,
+      "max_drift_score_for_direct_admit": 0.3,
+      "max_regime_shift_probability_for_direct_admit": 0.22,
+      "max_instability_score_for_staged_rollout": 0.62,
+      "max_regime_shift_probability_for_staged_rollout": 0.45
+    },
+    "additional_evidence_required": [
+      "bpet.calibration_report",
+      "bpet.drift_explainer",
+      "bpet.longitudinal_drift_trace",
+      "bpet.regime_shift_counterfactuals",
+      "ops.signoff.two_person_rule"
+    ],
+    "staged_rollout": {
+      "steps": [
+        {
+          "phase": "canary",
+          "max_instability_score": 0.6512,
+          "max_regime_shift_probability": 0.5016
+        },
+        {
+          "phase": "limited",
+          "max_instability_score": 0.6808,
+          "max_regime_shift_probability": 0.5244
+        },
+        {
+          "phase": "progressive",
+          "max_instability_score": 0.7104,
+          "max_regime_shift_probability": 0.5472
+        },
+        {
+          "phase": "general",
+          "max_instability_score": 0.74,
+          "max_regime_shift_probability": 0.57
+        }
+      ],
+      "fallback": {
+        "rollback_to_version": "v3.2.1-previous",
+        "quarantine_window_minutes": 90,
+        "required_artifacts": [
+          "artifacts/10.21/bpet_migration_gate_results.json",
+          "artifacts/10.21/bpet_trajectory_replay.json",
+          "artifacts/10.21/bpet_fallback_receipt.json"
+        ]
+      }
+    },
+    "events": [
+      {
+        "code": "BPET-MIGRATE-001",
+        "level": "info",
+        "trace_id": "trace-bd-aoq6-01",
+        "message": "captured baseline instability=0.2200, drift=0.1400, regime_prob=0.1200"
+      },
+      {
+        "code": "BPET-MIGRATE-004",
+        "level": "warn",
+        "trace_id": "trace-bd-aoq6-01",
+        "message": "trajectory risk exceeds direct-admit limits; staged rollout required"
+      },
+      {
+        "code": "BPET-MIGRATE-007",
+        "level": "info",
+        "trace_id": "trace-bd-aoq6-01",
+        "message": "generated fallback rollback target=v3.2.1-previous"
+      }
+    ]
+  }
+}

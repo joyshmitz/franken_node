@@ -1,0 +1,96 @@
+{
+  "bead_id": "bd-9is",
+  "title": "Autonomous adversarial campaign runner with continuous updates",
+  "section": "10.9",
+  "timestamp": "2026-02-20T00:00:00Z",
+  "agent": "CrimsonCrane",
+  "verdict": "PASS",
+  "deliverables": {
+    "spec_contract": {
+      "path": "docs/specs/section_10_9/bd-9is_contract.md",
+      "status": "CREATED"
+    },
+    "rust_module": {
+      "path": "crates/franken-node/src/security/adversarial_runner.rs",
+      "status": "CREATED",
+      "registered_in": "crates/franken-node/src/security/mod.rs"
+    },
+    "corpus_fixture": {
+      "path": "fixtures/campaigns/initial_corpus.json",
+      "status": "CREATED",
+      "campaigns": 5,
+      "categories": 5
+    },
+    "check_script": {
+      "path": "scripts/check_adversarial_runner.py",
+      "status": "CREATED",
+      "total_checks": 54,
+      "passed": 54,
+      "failed": 0
+    },
+    "unit_tests": {
+      "path": "tests/test_check_adversarial_runner.py",
+      "status": "CREATED",
+      "total_tests": 19,
+      "passed": 19,
+      "failed": 0
+    },
+    "check_report": {
+      "path": "artifacts/section_10_9/bd-9is/check_report.json",
+      "status": "CREATED"
+    }
+  },
+  "verification_results": {
+    "check_script": {
+      "verdict": "PASS",
+      "total": 54,
+      "passed": 54,
+      "failed": 0
+    },
+    "unit_tests": {
+      "verdict": "PASS",
+      "total": 19,
+      "passed": 19,
+      "failed": 0
+    },
+    "self_test": {
+      "verdict": "PASS"
+    },
+    "cargo_check": {
+      "verdict": "FAIL_BASELINE",
+      "detail": "Pre-existing workspace compile errors in unrelated modules (E0502 in tools/vef_perf_budget_gate.rs). Not introduced by this bead."
+    }
+  },
+  "implementation_summary": {
+    "campaign_categories": [
+      "CAMP-MEI (MaliciousExtensionInjection)",
+      "CAMP-CEX (CredentialExfiltration)",
+      "CAMP-PEV (PolicyEvasion)",
+      "CAMP-DPA (DelayedPayloadActivation)",
+      "CAMP-SCC (SupplyChainCompromise)"
+    ],
+    "mutation_strategies": [
+      "MUT-PARAM (ParameterVariation)",
+      "MUT-COMBO (TechniqueCombination)",
+      "MUT-TIMING (TimingVariation)",
+      "MUT-EVASION (EvasionRefinement)"
+    ],
+    "event_codes": [
+      "ADV-RUN-001", "ADV-RUN-002", "ADV-RUN-003",
+      "ADV-RUN-004", "ADV-RUN-005", "ADV-RUN-006",
+      "ADV-RUN-ERR-001", "ADV-RUN-ERR-002"
+    ],
+    "invariants": [
+      "INV-ACR-CORPUS", "INV-ACR-SANDBOX", "INV-ACR-MUTATION",
+      "INV-ACR-RESULTS", "INV-ACR-INTEGRATION", "INV-ACR-CONTINUOUS",
+      "INV-ACR-PROVENANCE"
+    ],
+    "key_types": [
+      "AdversarialRunner", "CampaignCategory", "MutationStrategy",
+      "CampaignDefinition", "CampaignCorpus", "RunnerMode",
+      "RunnerConfig", "RunnerGateResult"
+    ],
+    "inline_tests": 19,
+    "runner_modes": ["continuous", "on_demand"]
+  }
+}

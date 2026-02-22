@@ -1,0 +1,1 @@
+self_test: 7 checks validated

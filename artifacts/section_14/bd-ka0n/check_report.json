@@ -1,0 +1,110 @@
+{
+  "bead_id": "bd-ka0n",
+  "section": "14",
+  "gate_script": "check_performance_hardening_metrics.py",
+  "checks_passed": 20,
+  "checks_total": 20,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "source_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/tools/performance_hardening_metrics.rs"
+    },
+    {
+      "check": "module_wiring",
+      "passed": true,
+      "detail": "tools/mod.rs"
+    },
+    {
+      "check": "operation_categories",
+      "passed": true,
+      "detail": "5/5 categories"
+    },
+    {
+      "check": "struct_Percentiles",
+      "passed": true,
+      "detail": "Percentiles"
+    },
+    {
+      "check": "struct_PerformanceMetric",
+      "passed": true,
+      "detail": "PerformanceMetric"
+    },
+    {
+      "check": "struct_CategoryStats",
+      "passed": true,
+      "detail": "CategoryStats"
+    },
+    {
+      "check": "struct_PerformanceReport",
+      "passed": true,
+      "detail": "PerformanceReport"
+    },
+    {
+      "check": "struct_PhmAuditRecord",
+      "passed": true,
+      "detail": "PhmAuditRecord"
+    },
+    {
+      "check": "struct_PerformanceHardeningMetrics",
+      "passed": true,
+      "detail": "PerformanceHardeningMetrics"
+    },
+    {
+      "check": "percentile_ordering",
+      "passed": true,
+      "detail": "p50 <= p95 <= p99 validation"
+    },
+    {
+      "check": "overhead_computation",
+      "passed": true,
+      "detail": "Hardened/baseline ratio"
+    },
+    {
+      "check": "cold_start_measurement",
+      "passed": true,
+      "detail": "Cold vs warm start comparison"
+    },
+    {
+      "check": "budget_gating",
+      "passed": true,
+      "detail": "Category-specific latency budgets"
+    },
+    {
+      "check": "report_generation",
+      "passed": true,
+      "detail": "Aggregated report with flagged categories"
+    },
+    {
+      "check": "metric_versioning",
+      "passed": true,
+      "detail": "phm-v1.0"
+    },
+    {
+      "check": "event_codes",
+      "passed": true,
+      "detail": "12/12 codes"
+    },
+    {
+      "check": "invariants",
+      "passed": true,
+      "detail": "6/6 invariants"
+    },
+    {
+      "check": "audit_log",
+      "passed": true,
+      "detail": "JSONL audit export"
+    },
+    {
+      "check": "spec_alignment",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_14/bd-ka0n_contract.md"
+    },
+    {
+      "check": "test_coverage",
+      "passed": true,
+      "detail": "22 tests (>=22)"
+    }
+  ]
+}

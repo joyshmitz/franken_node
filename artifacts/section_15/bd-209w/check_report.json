@@ -1,0 +1,87 @@
+{
+  "bead_id": "bd-209w",
+  "title": "Signed extension registry with provenance and revocation",
+  "section": "15",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 15,
+  "passed": 15,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "source_exists",
+      "passed": true,
+      "detail": "Source file exists: extension_registry.rs"
+    },
+    {
+      "check": "module_wiring",
+      "passed": true,
+      "detail": "Module wired in supply_chain/mod.rs"
+    },
+    {
+      "check": "structs",
+      "passed": true,
+      "detail": "All 10 structs present"
+    },
+    {
+      "check": "extension_statuses",
+      "passed": true,
+      "detail": "4 statuses: 4/4"
+    },
+    {
+      "check": "revocation_reasons",
+      "passed": true,
+      "detail": "5 reasons: 5/5"
+    },
+    {
+      "check": "registry_operations",
+      "passed": true,
+      "detail": "Registry operations: 7/7 functions"
+    },
+    {
+      "check": "signature_verification",
+      "passed": true,
+      "detail": "Signature verification: 4/4 checks"
+    },
+    {
+      "check": "provenance_validation",
+      "passed": true,
+      "detail": "Provenance validation: 6/6 checks"
+    },
+    {
+      "check": "monotonic_revocation",
+      "passed": true,
+      "detail": "Monotonic revocation: 4/4 checks"
+    },
+    {
+      "check": "event_codes",
+      "passed": true,
+      "detail": "Event codes: 13/13"
+    },
+    {
+      "check": "invariants",
+      "passed": true,
+      "detail": "Invariants: 6/6"
+    },
+    {
+      "check": "content_hash",
+      "passed": true,
+      "detail": "Content hash: 3/3 checks"
+    },
+    {
+      "check": "audit_logging",
+      "passed": true,
+      "detail": "Audit logging: 3/3 checks"
+    },
+    {
+      "check": "spec_alignment",
+      "passed": true,
+      "detail": "Spec contract aligns with implementation"
+    },
+    {
+      "check": "test_coverage",
+      "passed": true,
+      "detail": "Rust unit tests: 29 (target >= 25)"
+    }
+  ]
+}

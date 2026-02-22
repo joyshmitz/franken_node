@@ -1,0 +1,63 @@
+{
+  "bead_id": "bd-3u6o",
+  "section": "10.15",
+  "title": "Enforce canonical virtual transport fault harness for distributed control protocols",
+  "schema_version": "tfg-v1.0",
+  "timestamp": "2026-02-21T20:30:00+00:00",
+  "verdict": "PASS",
+  "upstream_dependency": {
+    "bead_id": "bd-2qqu",
+    "section": "10.14",
+    "module": "crates/franken-node/src/remote/virtual_transport_faults.rs",
+    "upstream_schema": "vtf-v1.0"
+  },
+  "implementation": {
+    "module": "crates/franken-node/src/connector/transport_fault_gate.rs",
+    "wired_in": "crates/franken-node/src/connector/mod.rs",
+    "imports_upstream": true,
+    "no_custom_fault_injection": true,
+    "uses_crate_import": "use crate::remote::virtual_transport_faults"
+  },
+  "protocols_registered": [
+    "epoch_transition",
+    "lease_renewal",
+    "evidence_commit",
+    "marker_append",
+    "fencing_acquire",
+    "health_check"
+  ],
+  "fault_modes": ["NONE", "DROP", "REORDER", "CORRUPT", "PARTITION"],
+  "event_codes": ["TFG-001", "TFG-002", "TFG-003", "TFG-004", "TFG-005", "TFG-006", "TFG-007", "TFG-008"],
+  "error_codes": [
+    "ERR_TFG_INVALID_CONFIG",
+    "ERR_TFG_UNKNOWN_PROTOCOL",
+    "ERR_TFG_SEED_UNSTABLE",
+    "ERR_TFG_GATE_FAILED",
+    "ERR_TFG_PARTITION_ERROR",
+    "ERR_TFG_INIT_FAILED"
+  ],
+  "invariants": [
+    "INV-TFG-DETERMINISTIC",
+    "INV-TFG-CORRECT-OR-FAIL",
+    "INV-TFG-NO-CUSTOM",
+    "INV-TFG-SEED-STABLE",
+    "INV-TFG-FULL-COVERAGE",
+    "INV-TFG-PARTITION-CLOSED"
+  ],
+  "verification_checks": {
+    "check_script": "scripts/check_transport_fault_gate.py",
+    "check_result": "66/66 PASS",
+    "self_test_result": "15/15 PASS",
+    "test_suite": "tests/test_check_transport_fault_gate.py",
+    "test_suite_result": "19/19 PASS",
+    "rust_inline_tests": 28
+  },
+  "artifacts": {
+    "spec_contract": "docs/specs/section_10_15/bd-3u6o_contract.md",
+    "implementation": "crates/franken-node/src/connector/transport_fault_gate.rs",
+    "check_script": "scripts/check_transport_fault_gate.py",
+    "test_suite": "tests/test_check_transport_fault_gate.py",
+    "evidence": "artifacts/section_10_15/bd-3u6o/verification_evidence.json",
+    "summary": "artifacts/section_10_15/bd-3u6o/verification_summary.md"
+  }
+}

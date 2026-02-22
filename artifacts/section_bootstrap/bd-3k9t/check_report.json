@@ -1,0 +1,109 @@
+{
+  "bead": "bd-3k9t",
+  "title": "Foundation e2e scripts with structured log bundles",
+  "section": "bootstrap",
+  "verdict": "PASS",
+  "summary": {
+    "passing_checks": 16,
+    "failing_checks": 0,
+    "total_checks": 16
+  },
+  "checks": [
+    {
+      "id": "FBE2E-FILE-HARNESS",
+      "check": "foundation harness script exists",
+      "pass": true,
+      "detail": "exists: tests/e2e/foundation_bootstrap_suite.sh"
+    },
+    {
+      "id": "FBE2E-FILE-SUMMARY",
+      "check": "summary json exists",
+      "pass": true,
+      "detail": "exists: artifacts/section_bootstrap/bd-3k9t/foundation_e2e_summary.json"
+    },
+    {
+      "id": "FBE2E-FILE-BUNDLE",
+      "check": "bundle json exists",
+      "pass": true,
+      "detail": "exists: artifacts/section_bootstrap/bd-3k9t/foundation_e2e_bundle.json"
+    },
+    {
+      "id": "FBE2E-FILE-LOG",
+      "check": "jsonl log exists",
+      "pass": true,
+      "detail": "exists: artifacts/section_bootstrap/bd-3k9t/foundation_e2e_log.jsonl"
+    },
+    {
+      "id": "FBE2E-SUMMARY-JSON",
+      "check": "summary json parses",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "id": "FBE2E-BUNDLE-JSON",
+      "check": "bundle json parses",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "id": "FBE2E-LOG-JSONL",
+      "check": "jsonl log parses",
+      "pass": true,
+      "detail": "rows=14"
+    },
+    {
+      "id": "FBE2E-BEAD-ID",
+      "check": "summary bead_id is bd-3k9t",
+      "pass": true,
+      "detail": "bd-3k9t"
+    },
+    {
+      "id": "FBE2E-VERDICT",
+      "check": "summary verdict is PASS",
+      "pass": true,
+      "detail": "PASS"
+    },
+    {
+      "id": "FBE2E-STAGE-COUNT",
+      "check": "bundle has >= 6 stage results",
+      "pass": true,
+      "detail": "count=6"
+    },
+    {
+      "id": "FBE2E-REQUIRED-STAGES",
+      "check": "required stage ids present",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "id": "FBE2E-COVERAGE",
+      "check": "clean/degraded/drifted coverage each >= 1",
+      "pass": true,
+      "detail": "clean=4,degraded=1,drifted=1"
+    },
+    {
+      "id": "FBE2E-EVENT-CODES",
+      "check": "required stable event codes present",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "id": "FBE2E-TRACE-ID",
+      "check": "structured logs use a single trace correlation id",
+      "pass": true,
+      "detail": "trace_ids=['trace-bd-3k9t-foundation-e2e']"
+    },
+    {
+      "id": "FBE2E-STAGE-ARTIFACTS",
+      "check": "all stage stdout/stderr artifacts exist",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "id": "FBE2E-REPLAY-INPUTS",
+      "check": "bundle replay inputs exist",
+      "pass": true,
+      "detail": "ok"
+    }
+  ]
+}

@@ -1,0 +1,281 @@
+{
+  "bead_id": "bd-1jjq",
+  "title": "Section 10.10 verification gate: comprehensive unit+e2e+logging",
+  "section": "10.10",
+  "gate": true,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 51,
+  "passed": 51,
+  "failed": 0,
+  "section_beads": [
+    "bd-1l5",
+    "bd-jjm",
+    "bd-174",
+    "bd-2ms",
+    "bd-1r2",
+    "bd-364",
+    "bd-oty",
+    "bd-2sx",
+    "bd-1vp",
+    "bd-13q",
+    "bd-1hd"
+  ],
+  "checks": [
+    {
+      "check": "evidence_bd-1l5",
+      "pass": true,
+      "detail": "PASS: Canonical product trust object IDs with domain separation"
+    },
+    {
+      "check": "evidence_bd-jjm",
+      "pass": true,
+      "detail": "PASS: Canonical deterministic serialization and signature preimage rul"
+    },
+    {
+      "check": "evidence_bd-174",
+      "pass": true,
+      "detail": "PASS: Policy checkpoint chain for product release channels"
+    },
+    {
+      "check": "evidence_bd-2ms",
+      "pass": true,
+      "detail": "PASS: Rollback/fork detection in control-plane state propagation"
+    },
+    {
+      "check": "evidence_bd-1r2",
+      "pass": true,
+      "detail": "PASS: Audience-bound token chains for control actions"
+    },
+    {
+      "check": "evidence_bd-364",
+      "pass": true,
+      "detail": "PASS: Key-role separation for control-plane signing/encryption/issuanc"
+    },
+    {
+      "check": "evidence_bd-oty",
+      "pass": true,
+      "detail": "PASS: Session-authenticated control channel + anti-replay framing"
+    },
+    {
+      "check": "evidence_bd-2sx",
+      "pass": true,
+      "detail": "PASS: Revocation freshness semantics before risky/dangerous actions"
+    },
+    {
+      "check": "evidence_bd-1vp",
+      "pass": true,
+      "detail": "PASS: Zone/tenant trust segmentation policies"
+    },
+    {
+      "check": "evidence_bd-13q",
+      "pass": true,
+      "detail": "PASS: Stable error namespace and compatibility policy"
+    },
+    {
+      "check": "evidence_bd-1hd",
+      "pass": true,
+      "detail": "PASS: Canonical trust protocol vectors/golden fixtures as release gate"
+    },
+    {
+      "check": "summary_bd-1l5",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_10/bd-1l5/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-jjm",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_10/bd-jjm/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-174",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_10/bd-174/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2ms",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_10/bd-2ms/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1r2",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_10/bd-1r2/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-364",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_10/bd-364/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-oty",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_10/bd-oty/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2sx",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_10/bd-2sx/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1vp",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_10/bd-1vp/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-13q",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_10/bd-13q/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-1hd",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_10/bd-1hd/verification_summary.md"
+    },
+    {
+      "check": "spec_bd-1l5",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_10/bd-1l5_contract.md"
+    },
+    {
+      "check": "spec_bd-jjm",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_10/bd-jjm_contract.md"
+    },
+    {
+      "check": "spec_bd-174",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_10/bd-174_contract.md"
+    },
+    {
+      "check": "spec_bd-2ms",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_10/bd-2ms_contract.md"
+    },
+    {
+      "check": "spec_bd-1r2",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_10/bd-1r2_contract.md"
+    },
+    {
+      "check": "spec_bd-364",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_10/bd-364_contract.md"
+    },
+    {
+      "check": "spec_bd-oty",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_10/bd-oty_contract.md"
+    },
+    {
+      "check": "spec_bd-2sx",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_10/bd-2sx_contract.md"
+    },
+    {
+      "check": "spec_bd-1vp",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_10/bd-1vp_contract.md"
+    },
+    {
+      "check": "spec_bd-13q",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_10/bd-13q_contract.md"
+    },
+    {
+      "check": "spec_bd-1hd",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_10/bd-1hd_contract.md"
+    },
+    {
+      "check": "section_bead_cardinality",
+      "pass": true,
+      "detail": "11 beads configured"
+    },
+    {
+      "check": "all_evidence_present",
+      "pass": true,
+      "detail": "11/11 beads have evidence"
+    },
+    {
+      "check": "all_summaries_present",
+      "pass": true,
+      "detail": "11/11 beads have summaries"
+    },
+    {
+      "check": "all_specs_present",
+      "pass": true,
+      "detail": "11/11 specs present"
+    },
+    {
+      "check": "all_verdicts_pass",
+      "pass": true,
+      "detail": "all PASS"
+    },
+    {
+      "check": "vector_coverage_artifact",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_10/bd-1hd/vector_coverage.json"
+    },
+    {
+      "check": "error_namespace_audit_artifact",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_10/bd-13q/error_audit.json"
+    },
+    {
+      "check": "cross_trust_object_prefix_coverage",
+      "pass": true,
+      "detail": "6/6 canonical prefixes present"
+    },
+    {
+      "check": "cross_checkpoint_prefix_alignment",
+      "pass": true,
+      "detail": "3/3 hashes use pchk: prefix"
+    },
+    {
+      "check": "cross_token_chain_invariants",
+      "pass": true,
+      "detail": "3/3 token-chain invariants present"
+    },
+    {
+      "check": "cross_zone_segmentation_invariants",
+      "pass": true,
+      "detail": "4/4 invariants present"
+    },
+    {
+      "check": "cross_trust_chain_coherence",
+      "pass": true,
+      "detail": "4/4 cross-bead trust-chain components PASS"
+    },
+    {
+      "check": "hardening_session_auth",
+      "pass": true,
+      "detail": "direction_integration_checks=3"
+    },
+    {
+      "check": "hardening_revocation_freshness",
+      "pass": true,
+      "detail": "replay/signature/tier checks present"
+    },
+    {
+      "check": "hardening_release_vectors",
+      "pass": true,
+      "detail": "release vector evidence PASS"
+    },
+    {
+      "check": "hardening_error_namespace",
+      "pass": true,
+      "detail": "namespace compatibility report PASS"
+    },
+    {
+      "check": "hardening_control_plane_surfaces_present",
+      "pass": true,
+      "detail": "3/3 hardening surfaces present"
+    },
+    {
+      "check": "hardening_mod_registration",
+      "pass": true,
+      "detail": "session_auth + revocation_freshness_gate registered"
+    }
+  ]
+}

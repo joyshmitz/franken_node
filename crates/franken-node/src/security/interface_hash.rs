@@ -5,9 +5,9 @@
 //! Telemetry tracks rejection code distribution.
 
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use std::collections::HashMap;
 use std::fmt;
-use std::hash::{DefaultHasher, Hash, Hasher};
 
 // ── Domain-separated hash ───────────────────────────────────────────
 
@@ -16,16 +16,19 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 /// Uses SipHash (DefaultHasher) for deterministic, non-cryptographic
 /// hashing. In production this would use SHA-256 or BLAKE3.
 pub fn compute_hash(domain: &str, data: &[u8]) -> InterfaceHash {
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = sha2::Sha256::new();
     // Domain separation: hash domain tag first, then separator, then data
-    domain.hash(&mut hasher);
-    ":".hash(&mut hasher);
-    data.hash(&mut hasher);
-    let hash_val = hasher.finish();
+    sha2::Digest::update(&mut hasher, domain.as_bytes());
+    sha2::Digest::update(&mut hasher, b":");
+    sha2::Digest::update(&mut hasher, data);
+    let hash_hex = format!("{:x}", sha2::Digest::finalize(hasher));
+
+    // For backwards compatibility with tests expecting a 16-char hex string, we take the first 16 chars.
+    let hash_hex_16 = hash_hex.chars().take(16).collect::<String>();
 
     InterfaceHash {
         domain: domain.to_string(),
-        hash_hex: format!("{:016x}", hash_val),
+        hash_hex: hash_hex_16,
         data_len: data.len(),
     }
 }

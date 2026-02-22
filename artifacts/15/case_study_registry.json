@@ -1,0 +1,98 @@
+{
+  "schema_version": "csc-v1.0",
+  "generated_at": "2026-02-22T00:00:00Z",
+  "summary": {
+    "total_case_studies": 3,
+    "security_improvement_case_studies": 2,
+    "reviewed_case_studies": 3,
+    "website_published_case_studies": 3,
+    "industry_submissions": 1,
+    "overall_verdict": true
+  },
+  "case_studies": [
+    {
+      "case_study_id": "cs-001",
+      "title": "FinTech SaaS Control Plane Hardening",
+      "organization_type": "SaaS",
+      "industry": "FinTech",
+      "anonymized": true,
+      "migration_effort_days": 24,
+      "migration_timeline_days": 42,
+      "key_metrics": {
+        "pre_vulnerability_count": 18,
+        "post_vulnerability_count": 7,
+        "pre_incident_containment_minutes": 140,
+        "post_incident_containment_minutes": 55,
+        "pre_deployments_per_week": 3,
+        "post_deployments_per_week": 8
+      },
+      "security_improvement_bps": 6111,
+      "incident_response_improvement_bps": 6071,
+      "deployment_frequency_improvement_bps": 16666,
+      "publication_status": {
+        "reviewed_by_featured_org": true,
+        "reviewed_at": "2026-02-01T15:00:00Z",
+        "published_on_project_website": true,
+        "submitted_to_industry_publication": true,
+        "industry_publication_name": "SRE Journal"
+      },
+      "url": "https://franken-node.dev/case-studies/fintech-control-plane"
+    },
+    {
+      "case_study_id": "cs-002",
+      "title": "Marketplace Runtime Migration Under Active Threat Model",
+      "organization_type": "Platform Team",
+      "industry": "E-commerce",
+      "anonymized": true,
+      "migration_effort_days": 19,
+      "migration_timeline_days": 35,
+      "key_metrics": {
+        "pre_vulnerability_count": 23,
+        "post_vulnerability_count": 11,
+        "pre_incident_containment_minutes": 120,
+        "post_incident_containment_minutes": 50,
+        "pre_deployments_per_week": 4,
+        "post_deployments_per_week": 9
+      },
+      "security_improvement_bps": 5217,
+      "incident_response_improvement_bps": 5833,
+      "deployment_frequency_improvement_bps": 12500,
+      "publication_status": {
+        "reviewed_by_featured_org": true,
+        "reviewed_at": "2026-02-04T11:30:00Z",
+        "published_on_project_website": true,
+        "submitted_to_industry_publication": false,
+        "industry_publication_name": null
+      },
+      "url": "https://franken-node.dev/case-studies/marketplace-threat-model"
+    },
+    {
+      "case_study_id": "cs-003",
+      "title": "Healthcare Integrations: Deterministic Incident Replay Adoption",
+      "organization_type": "Enterprise Integration",
+      "industry": "Healthcare",
+      "anonymized": true,
+      "migration_effort_days": 16,
+      "migration_timeline_days": 28,
+      "key_metrics": {
+        "pre_vulnerability_count": 9,
+        "post_vulnerability_count": 9,
+        "pre_incident_containment_minutes": 90,
+        "post_incident_containment_minutes": 48,
+        "pre_deployments_per_week": 2,
+        "post_deployments_per_week": 5
+      },
+      "security_improvement_bps": 0,
+      "incident_response_improvement_bps": 4666,
+      "deployment_frequency_improvement_bps": 15000,
+      "publication_status": {
+        "reviewed_by_featured_org": true,
+        "reviewed_at": "2026-02-07T09:10:00Z",
+        "published_on_project_website": true,
+        "submitted_to_industry_publication": false,
+        "industry_publication_name": null
+      },
+      "url": "https://franken-node.dev/case-studies/healthcare-replay-adoption"
+    }
+  ]
+}

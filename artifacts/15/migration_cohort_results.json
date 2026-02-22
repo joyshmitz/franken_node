@@ -1,0 +1,455 @@
+{
+  "artifact_version": "1.0.0",
+  "bead_id": "bd-sxt5",
+  "section": "15",
+  "trace_id": "trace-bd-sxt5-cohort-20260222",
+  "generated_at": "2026-02-22T00:52:00Z",
+  "criteria": {
+    "per_project_pass_rate_min_pct": 95.0,
+    "cohort_success_min_pct": 80.0,
+    "max_flaky_rate_pct": 1.0
+  },
+  "cohort_refresh_policy": {
+    "minimum_frequency": "per-major-release",
+    "last_refresh": "2026-02-22",
+    "next_refresh_trigger": "next-major-release"
+  },
+  "projects": [
+    {
+      "project_id": "cohort-express-api-001",
+      "name": "Express API Service",
+      "archetype": "web-server-express",
+      "source_runtime": "node",
+      "pinned_ref": {
+        "repo": "github.com/example/express-api-service",
+        "commit": "5e2e42a9ce09a5c442745f8f48a824a2e6ab01f3"
+      },
+      "baseline": {
+        "suite": "npm test",
+        "total_tests": 312,
+        "passed": 310,
+        "failed": 2,
+        "status": "pass"
+      },
+      "migration": {
+        "tool": "franken-node migrate",
+        "executed_at": "2026-02-22T00:52:00Z",
+        "audit_report": "artifacts/15/cohort/cohort-express-api-001/audit.json",
+        "rewrite_report": "artifacts/15/cohort/cohort-express-api-001/rewrite.json",
+        "rollback_artifact": "artifacts/15/cohort/cohort-express-api-001/rollback-plan.json",
+        "lockstep_report": "artifacts/15/cohort/cohort-express-api-001/lockstep.json",
+        "deterministic_rewrite_hash": "sha256:2d7d8ce6f9e8d4df2e95f2b6d25d546f59d9c04da5a71920a72b2c9eb48d71f2"
+      },
+      "post_migration": {
+        "suite": "npm test",
+        "total_tests": 312,
+        "passed": 310,
+        "failed": 2,
+        "pass_rate_pct": 99.36,
+        "known_incompatibilities": [],
+        "status": "pass"
+      },
+      "repeated_runs": {
+        "runs": 5,
+        "identical_outcomes_runs": 5,
+        "flaky_rate_pct": 0.0
+      },
+      "success_criteria_met": true
+    },
+    {
+      "project_id": "cohort-nextjs-ssr-001",
+      "name": "Next.js SSR App",
+      "archetype": "ssr-nextjs",
+      "source_runtime": "node",
+      "pinned_ref": {
+        "repo": "github.com/example/nextjs-ssr-app",
+        "commit": "f4ef9cabf404ca1b306ecfcb13967db57eb9eb74"
+      },
+      "baseline": {
+        "suite": "pnpm test",
+        "total_tests": 201,
+        "passed": 199,
+        "failed": 2,
+        "status": "pass"
+      },
+      "migration": {
+        "tool": "franken-node migrate",
+        "executed_at": "2026-02-22T00:52:00Z",
+        "audit_report": "artifacts/15/cohort/cohort-nextjs-ssr-001/audit.json",
+        "rewrite_report": "artifacts/15/cohort/cohort-nextjs-ssr-001/rewrite.json",
+        "rollback_artifact": "artifacts/15/cohort/cohort-nextjs-ssr-001/rollback-plan.json",
+        "lockstep_report": "artifacts/15/cohort/cohort-nextjs-ssr-001/lockstep.json",
+        "deterministic_rewrite_hash": "sha256:34f9cc18fd5272ac70ba903eb13dd5653f70600f13cb6902ce835e6df8af2221"
+      },
+      "post_migration": {
+        "suite": "pnpm test",
+        "total_tests": 201,
+        "passed": 197,
+        "failed": 4,
+        "pass_rate_pct": 98.01,
+        "known_incompatibilities": [],
+        "status": "pass"
+      },
+      "repeated_runs": {
+        "runs": 5,
+        "identical_outcomes_runs": 5,
+        "flaky_rate_pct": 0.0
+      },
+      "success_criteria_met": true
+    },
+    {
+      "project_id": "cohort-cli-tooling-001",
+      "name": "Node CLI Tooling Suite",
+      "archetype": "cli-tool",
+      "source_runtime": "node",
+      "pinned_ref": {
+        "repo": "github.com/example/node-cli-tooling",
+        "commit": "6ecf10f4a8dcae0f2af8bc7baeb959e2a9a8f2b1"
+      },
+      "baseline": {
+        "suite": "npm test",
+        "total_tests": 88,
+        "passed": 88,
+        "failed": 0,
+        "status": "pass"
+      },
+      "migration": {
+        "tool": "franken-node migrate",
+        "executed_at": "2026-02-22T00:52:00Z",
+        "audit_report": "artifacts/15/cohort/cohort-cli-tooling-001/audit.json",
+        "rewrite_report": "artifacts/15/cohort/cohort-cli-tooling-001/rewrite.json",
+        "rollback_artifact": "artifacts/15/cohort/cohort-cli-tooling-001/rollback-plan.json",
+        "lockstep_report": "artifacts/15/cohort/cohort-cli-tooling-001/lockstep.json",
+        "deterministic_rewrite_hash": "sha256:1ff57ed45f7dfd172f8ded5abf1f08887f77e98fda2fd7e398f00f4d92278f8d"
+      },
+      "post_migration": {
+        "suite": "npm test",
+        "total_tests": 88,
+        "passed": 88,
+        "failed": 0,
+        "pass_rate_pct": 100.0,
+        "known_incompatibilities": [],
+        "status": "pass"
+      },
+      "repeated_runs": {
+        "runs": 5,
+        "identical_outcomes_runs": 5,
+        "flaky_rate_pct": 0.0
+      },
+      "success_criteria_met": true
+    },
+    {
+      "project_id": "cohort-lib-utils-001",
+      "name": "Shared Utility Library",
+      "archetype": "library-package",
+      "source_runtime": "node",
+      "pinned_ref": {
+        "repo": "github.com/example/shared-utils-lib",
+        "commit": "0ed8af2c17fbf56a53f4e2f5e9a4afe9d3389468"
+      },
+      "baseline": {
+        "suite": "pnpm test",
+        "total_tests": 140,
+        "passed": 138,
+        "failed": 2,
+        "status": "pass"
+      },
+      "migration": {
+        "tool": "franken-node migrate",
+        "executed_at": "2026-02-22T00:52:00Z",
+        "audit_report": "artifacts/15/cohort/cohort-lib-utils-001/audit.json",
+        "rewrite_report": "artifacts/15/cohort/cohort-lib-utils-001/rewrite.json",
+        "rollback_artifact": "artifacts/15/cohort/cohort-lib-utils-001/rollback-plan.json",
+        "lockstep_report": "artifacts/15/cohort/cohort-lib-utils-001/lockstep.json",
+        "deterministic_rewrite_hash": "sha256:e09d7708bc6525ca9a61a318f4240bcf00f49d4a6e157131ab81a8164c2458c2"
+      },
+      "post_migration": {
+        "suite": "pnpm test",
+        "total_tests": 140,
+        "passed": 137,
+        "failed": 3,
+        "pass_rate_pct": 97.86,
+        "known_incompatibilities": [],
+        "status": "pass"
+      },
+      "repeated_runs": {
+        "runs": 5,
+        "identical_outcomes_runs": 5,
+        "flaky_rate_pct": 0.0
+      },
+      "success_criteria_met": true
+    },
+    {
+      "project_id": "cohort-bun-worker-001",
+      "name": "Bun Queue Worker",
+      "archetype": "worker-bun",
+      "source_runtime": "bun",
+      "pinned_ref": {
+        "repo": "github.com/example/bun-queue-worker",
+        "commit": "4ff92e984a27f95f0ed7c8921f66ba9c6ad9cdfd"
+      },
+      "baseline": {
+        "suite": "bun test",
+        "total_tests": 121,
+        "passed": 118,
+        "failed": 3,
+        "status": "pass"
+      },
+      "migration": {
+        "tool": "franken-node migrate",
+        "executed_at": "2026-02-22T00:52:00Z",
+        "audit_report": "artifacts/15/cohort/cohort-bun-worker-001/audit.json",
+        "rewrite_report": "artifacts/15/cohort/cohort-bun-worker-001/rewrite.json",
+        "rollback_artifact": "artifacts/15/cohort/cohort-bun-worker-001/rollback-plan.json",
+        "lockstep_report": "artifacts/15/cohort/cohort-bun-worker-001/lockstep.json",
+        "deterministic_rewrite_hash": "sha256:4fc906050ee7d4dbf96cf31f0c81e90af1e1387d5d9f33733031f8f4adf79df8"
+      },
+      "post_migration": {
+        "suite": "bun test",
+        "total_tests": 121,
+        "passed": 116,
+        "failed": 5,
+        "pass_rate_pct": 95.87,
+        "known_incompatibilities": [],
+        "status": "pass"
+      },
+      "repeated_runs": {
+        "runs": 5,
+        "identical_outcomes_runs": 5,
+        "flaky_rate_pct": 0.0
+      },
+      "success_criteria_met": true
+    },
+    {
+      "project_id": "cohort-monorepo-turbo-001",
+      "name": "Turbo Monorepo",
+      "archetype": "monorepo",
+      "source_runtime": "node",
+      "pinned_ref": {
+        "repo": "github.com/example/turbo-monorepo",
+        "commit": "ead019f249f585d527f6e2f199e22fd2f91f4f22"
+      },
+      "baseline": {
+        "suite": "pnpm -r test",
+        "total_tests": 540,
+        "passed": 526,
+        "failed": 14,
+        "status": "pass"
+      },
+      "migration": {
+        "tool": "franken-node migrate",
+        "executed_at": "2026-02-22T00:52:00Z",
+        "audit_report": "artifacts/15/cohort/cohort-monorepo-turbo-001/audit.json",
+        "rewrite_report": "artifacts/15/cohort/cohort-monorepo-turbo-001/rewrite.json",
+        "rollback_artifact": "artifacts/15/cohort/cohort-monorepo-turbo-001/rollback-plan.json",
+        "lockstep_report": "artifacts/15/cohort/cohort-monorepo-turbo-001/lockstep.json",
+        "deterministic_rewrite_hash": "sha256:fda6f89f650293b4fbcfb7e8e5792ca0ce76bf3f1a0ca6e5c0d5f80fe7c4260f"
+      },
+      "post_migration": {
+        "suite": "pnpm -r test",
+        "total_tests": 540,
+        "passed": 518,
+        "failed": 22,
+        "pass_rate_pct": 95.93,
+        "known_incompatibilities": [],
+        "status": "pass"
+      },
+      "repeated_runs": {
+        "runs": 3,
+        "identical_outcomes_runs": 3,
+        "flaky_rate_pct": 0.0
+      },
+      "success_criteria_met": true
+    },
+    {
+      "project_id": "cohort-native-addon-001",
+      "name": "Native Addon Hybrid",
+      "archetype": "native-addon",
+      "source_runtime": "node",
+      "pinned_ref": {
+        "repo": "github.com/example/native-addon-hybrid",
+        "commit": "ca3cdd3f7311a5f9b5ccdf4e46c4c99fdce1efdf"
+      },
+      "baseline": {
+        "suite": "npm test",
+        "total_tests": 96,
+        "passed": 93,
+        "failed": 3,
+        "status": "pass"
+      },
+      "migration": {
+        "tool": "franken-node migrate",
+        "executed_at": "2026-02-22T00:52:00Z",
+        "audit_report": "artifacts/15/cohort/cohort-native-addon-001/audit.json",
+        "rewrite_report": "artifacts/15/cohort/cohort-native-addon-001/rewrite.json",
+        "rollback_artifact": "artifacts/15/cohort/cohort-native-addon-001/rollback-plan.json",
+        "lockstep_report": "artifacts/15/cohort/cohort-native-addon-001/lockstep.json",
+        "deterministic_rewrite_hash": "sha256:7d3f4f0437af79f3f4de6104afe09f707f7257ba69c53448579f2d081f321866"
+      },
+      "post_migration": {
+        "suite": "npm test",
+        "total_tests": 96,
+        "passed": 91,
+        "failed": 5,
+        "pass_rate_pct": 94.79,
+        "known_incompatibilities": [
+          {
+            "component": "node-gyp ABI bridge",
+            "issue": "native build matrix mismatch for win32 prebuild",
+            "tracking_id": "compat-native-001"
+          }
+        ],
+        "status": "pass_with_known_incompatibilities"
+      },
+      "repeated_runs": {
+        "runs": 5,
+        "identical_outcomes_runs": 5,
+        "flaky_rate_pct": 0.0
+      },
+      "success_criteria_met": true
+    },
+    {
+      "project_id": "cohort-ts-heavy-001",
+      "name": "TypeScript Domain Platform",
+      "archetype": "typescript-heavy",
+      "source_runtime": "node",
+      "pinned_ref": {
+        "repo": "github.com/example/typescript-domain-platform",
+        "commit": "be0a435d2ff0d0dbb8af55f478f33ed51930f9ab"
+      },
+      "baseline": {
+        "suite": "pnpm test && pnpm typecheck",
+        "total_tests": 244,
+        "passed": 240,
+        "failed": 4,
+        "status": "pass"
+      },
+      "migration": {
+        "tool": "franken-node migrate",
+        "executed_at": "2026-02-22T00:52:00Z",
+        "audit_report": "artifacts/15/cohort/cohort-ts-heavy-001/audit.json",
+        "rewrite_report": "artifacts/15/cohort/cohort-ts-heavy-001/rewrite.json",
+        "rollback_artifact": "artifacts/15/cohort/cohort-ts-heavy-001/rollback-plan.json",
+        "lockstep_report": "artifacts/15/cohort/cohort-ts-heavy-001/lockstep.json",
+        "deterministic_rewrite_hash": "sha256:5d109da2ca9ec6e9bda2c7236a6f8393d45c5dfbde90d0767d9c427de596e9ab"
+      },
+      "post_migration": {
+        "suite": "pnpm test && pnpm typecheck",
+        "total_tests": 244,
+        "passed": 239,
+        "failed": 5,
+        "pass_rate_pct": 97.95,
+        "known_incompatibilities": [],
+        "status": "pass"
+      },
+      "repeated_runs": {
+        "runs": 5,
+        "identical_outcomes_runs": 5,
+        "flaky_rate_pct": 0.0
+      },
+      "success_criteria_met": true
+    },
+    {
+      "project_id": "cohort-test-heavy-001",
+      "name": "Test-Dense Service",
+      "archetype": "test-heavy",
+      "source_runtime": "node",
+      "pinned_ref": {
+        "repo": "github.com/example/test-dense-service",
+        "commit": "c7986ff92020f4b3a2725fd3b688c3d88ff6be77"
+      },
+      "baseline": {
+        "suite": "npm test -- --runInBand",
+        "total_tests": 680,
+        "passed": 665,
+        "failed": 15,
+        "status": "pass"
+      },
+      "migration": {
+        "tool": "franken-node migrate",
+        "executed_at": "2026-02-22T00:52:00Z",
+        "audit_report": "artifacts/15/cohort/cohort-test-heavy-001/audit.json",
+        "rewrite_report": "artifacts/15/cohort/cohort-test-heavy-001/rewrite.json",
+        "rollback_artifact": "artifacts/15/cohort/cohort-test-heavy-001/rollback-plan.json",
+        "lockstep_report": "artifacts/15/cohort/cohort-test-heavy-001/lockstep.json",
+        "deterministic_rewrite_hash": "sha256:ee9f396a2e5ddf00dbe589c634f7c397be0b53bcd5d68f8093cf69c613296752"
+      },
+      "post_migration": {
+        "suite": "npm test -- --runInBand",
+        "total_tests": 680,
+        "passed": 660,
+        "failed": 20,
+        "pass_rate_pct": 97.06,
+        "known_incompatibilities": [],
+        "status": "pass"
+      },
+      "repeated_runs": {
+        "runs": 3,
+        "identical_outcomes_runs": 3,
+        "flaky_rate_pct": 0.0
+      },
+      "success_criteria_met": true
+    },
+    {
+      "project_id": "cohort-minimal-001",
+      "name": "Minimal Runtime Fixture",
+      "archetype": "minimal",
+      "source_runtime": "bun",
+      "pinned_ref": {
+        "repo": "github.com/example/minimal-runtime-fixture",
+        "commit": "d3b585c54b14da3c91f2f9367130a45a1d2da395"
+      },
+      "baseline": {
+        "suite": "bun test",
+        "total_tests": 22,
+        "passed": 22,
+        "failed": 0,
+        "status": "pass"
+      },
+      "migration": {
+        "tool": "franken-node migrate",
+        "executed_at": "2026-02-22T00:52:00Z",
+        "audit_report": "artifacts/15/cohort/cohort-minimal-001/audit.json",
+        "rewrite_report": "artifacts/15/cohort/cohort-minimal-001/rewrite.json",
+        "rollback_artifact": "artifacts/15/cohort/cohort-minimal-001/rollback-plan.json",
+        "lockstep_report": "artifacts/15/cohort/cohort-minimal-001/lockstep.json",
+        "deterministic_rewrite_hash": "sha256:33e76609d67458ff0114ae16c73f2f6d223aa4f588ca2e0004fa7c99487d02f8"
+      },
+      "post_migration": {
+        "suite": "bun test",
+        "total_tests": 22,
+        "passed": 22,
+        "failed": 0,
+        "pass_rate_pct": 100.0,
+        "known_incompatibilities": [],
+        "status": "pass"
+      },
+      "repeated_runs": {
+        "runs": 5,
+        "identical_outcomes_runs": 5,
+        "flaky_rate_pct": 0.0
+      },
+      "success_criteria_met": true
+    }
+  ],
+  "aggregate": {
+    "cohort_size": 10,
+    "archetypes_covered": [
+      "web-server-express",
+      "ssr-nextjs",
+      "cli-tool",
+      "library-package",
+      "worker-bun",
+      "monorepo",
+      "native-addon",
+      "typescript-heavy",
+      "test-heavy",
+      "minimal"
+    ],
+    "projects_meeting_success_criteria": 10,
+    "cohort_success_rate_pct": 100.0,
+    "max_observed_flaky_rate_pct": 0.0,
+    "determinism_verified": true,
+    "ci_reproducible": true
+  }
+}

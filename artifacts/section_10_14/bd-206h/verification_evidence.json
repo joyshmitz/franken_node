@@ -1,0 +1,48 @@
+{
+  "bead_id": "bd-206h",
+  "section": "10.14",
+  "title": "Idempotency dedupe store with at-most-once execution guarantee",
+  "gate_script": "scripts/check_idempotency_store.py",
+  "test_suite": "tests/test_check_idempotency_store.py",
+  "timestamp": "2026-02-21T20:00:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "idempotency_store": "crates/franken-node/src/remote/idempotency_store.rs",
+    "remote_mod": "crates/franken-node/src/remote/mod.rs",
+    "spec_contract": "docs/specs/section_10_14/bd-206h_contract.md",
+    "verification_script": "scripts/check_idempotency_store.py",
+    "unit_tests": "tests/test_check_idempotency_store.py"
+  },
+  "rust_test_count": 20,
+  "python_test_count": 28,
+  "event_codes_defined": 7,
+  "invariants_verified": [
+    "INV-IDS-AT-MOST-ONCE",
+    "INV-IDS-CONFLICT-DETECT",
+    "INV-IDS-TTL-BOUND",
+    "INV-IDS-CRASH-SAFE",
+    "INV-IDS-AUDITABLE"
+  ],
+  "capabilities_verified": {
+    "dedupe_results": ["New", "Duplicate", "Conflict", "InFlight"],
+    "entry_statuses": ["Processing", "Complete", "Abandoned"],
+    "operations": [
+      "check_or_insert",
+      "complete",
+      "sweep_expired",
+      "recover_inflight",
+      "export_audit_log_jsonl",
+      "content_hash",
+      "stats",
+      "entry_count"
+    ],
+    "ttl_expiration": true,
+    "crash_recovery": true,
+    "conflict_detection": true,
+    "jsonl_audit_export": true,
+    "content_hash_determinism": true
+  },
+  "schema_version": "ids-v1.0",
+  "default_ttl_secs": 604800,
+  "error_code": "ERR_IDEMPOTENCY_CONFLICT"
+}

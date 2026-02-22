@@ -1,0 +1,77 @@
+{
+  "bead_id": "bd-32e",
+  "scenarios": [
+    {
+      "expected": {
+        "file_actions": [
+          {
+            "action": "created",
+            "backup_path": null,
+            "path_suffix": "franken_node.toml"
+          },
+          {
+            "action": "created",
+            "backup_path": null,
+            "path_suffix": "franken_node.profile_examples.toml"
+          }
+        ],
+        "wrote_to_stdout": false
+      },
+      "inputs": {
+        "backup_existing": false,
+        "json": true,
+        "out_dir": "/workspace/new-project",
+        "overwrite": false
+      },
+      "scenario": "clean_out_dir"
+    },
+    {
+      "expected_error": {
+        "code": "INIT-EXISTS-001",
+        "message_contains": "use --overwrite or --backup-existing"
+      },
+      "inputs": {
+        "backup_existing": false,
+        "out_dir": "/workspace/existing-project",
+        "overwrite": false
+      },
+      "scenario": "existing_files_abort_default"
+    },
+    {
+      "expected": {
+        "file_actions": [
+          {
+            "action": "backed_up_and_overwritten",
+            "backup_path_suffix": ".bak.<timestamp>",
+            "path_suffix": "franken_node.toml"
+          },
+          {
+            "action": "backed_up_and_overwritten",
+            "backup_path_suffix": ".bak.<timestamp>",
+            "path_suffix": "franken_node.profile_examples.toml"
+          }
+        ],
+        "wrote_to_stdout": false
+      },
+      "inputs": {
+        "backup_existing": true,
+        "out_dir": "/workspace/existing-project",
+        "overwrite": false
+      },
+      "scenario": "backup_existing_rewrite"
+    },
+    {
+      "expected": {
+        "file_actions": [],
+        "stdout_config_toml_non_empty": true,
+        "wrote_to_stdout": true
+      },
+      "inputs": {
+        "json": true,
+        "out_dir": null
+      },
+      "scenario": "stdout_only"
+    }
+  ],
+  "schema_version": "init-bootstrap-snapshots-v1"
+}

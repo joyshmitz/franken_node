@@ -1,0 +1,198 @@
+{
+  "bead_id": "bd-aoq6",
+  "gate": "bpet_migration_stability_gate_verification",
+  "generated_at": "2026-02-21T05:15:42.906383+00:00",
+  "verdict": "PASS",
+  "summary": {
+    "total_checks": 37,
+    "passing_checks": 37,
+    "failing_checks": 0
+  },
+  "checks": [
+    {
+      "id": "BDAOQ6-FILE-crates/franken-node/src/migration/mod.rs",
+      "status": "PASS",
+      "detail": "/data/projects/franken_node/crates/franken-node/src/migration/mod.rs"
+    },
+    {
+      "id": "BDAOQ6-FILE-crates/franken-node/src/migration/bpet_migration_gate.rs",
+      "status": "PASS",
+      "detail": "/data/projects/franken_node/crates/franken-node/src/migration/bpet_migration_gate.rs"
+    },
+    {
+      "id": "BDAOQ6-FILE-tests/integration/bpet_migration_stability_gate.rs",
+      "status": "PASS",
+      "detail": "/data/projects/franken_node/tests/integration/bpet_migration_stability_gate.rs"
+    },
+    {
+      "id": "BDAOQ6-FILE-crates/franken-node/tests/bpet_migration_stability_gate.rs",
+      "status": "PASS",
+      "detail": "/data/projects/franken_node/crates/franken-node/tests/bpet_migration_stability_gate.rs"
+    },
+    {
+      "id": "BDAOQ6-FILE-artifacts/10.21/bpet_migration_gate_results.json",
+      "status": "PASS",
+      "detail": "/data/projects/franken_node/artifacts/10.21/bpet_migration_gate_results.json"
+    },
+    {
+      "id": "BDAOQ6-RUST-SYMBOL-pub fn evaluate_admission",
+      "status": "PASS",
+      "detail": "required API symbol present"
+    },
+    {
+      "id": "BDAOQ6-RUST-SYMBOL-pub fn evaluate_rollout_health",
+      "status": "PASS",
+      "detail": "required API symbol present"
+    },
+    {
+      "id": "BDAOQ6-RUST-SYMBOL-pub fn build_migration_report",
+      "status": "PASS",
+      "detail": "required API symbol present"
+    },
+    {
+      "id": "BDAOQ6-RUST-EVENT-BPET-MIGRATE-001",
+      "status": "PASS",
+      "detail": "required event code present"
+    },
+    {
+      "id": "BDAOQ6-RUST-EVENT-BPET-MIGRATE-002",
+      "status": "PASS",
+      "detail": "required event code present"
+    },
+    {
+      "id": "BDAOQ6-RUST-EVENT-BPET-MIGRATE-003",
+      "status": "PASS",
+      "detail": "required event code present"
+    },
+    {
+      "id": "BDAOQ6-RUST-EVENT-BPET-MIGRATE-004",
+      "status": "PASS",
+      "detail": "required event code present"
+    },
+    {
+      "id": "BDAOQ6-RUST-EVENT-BPET-MIGRATE-005",
+      "status": "PASS",
+      "detail": "required event code present"
+    },
+    {
+      "id": "BDAOQ6-RUST-EVENT-BPET-MIGRATE-006",
+      "status": "PASS",
+      "detail": "required event code present"
+    },
+    {
+      "id": "BDAOQ6-RUST-EVENT-BPET-MIGRATE-007",
+      "status": "PASS",
+      "detail": "required event code present"
+    },
+    {
+      "id": "BDAOQ6-REPORT-OBJECT",
+      "status": "PASS",
+      "detail": "root object"
+    },
+    {
+      "id": "BDAOQ6-REPORT-MIGRATION-ID",
+      "status": "PASS",
+      "detail": "migration id set"
+    },
+    {
+      "id": "BDAOQ6-ADMISSION-OBJECT",
+      "status": "PASS",
+      "detail": "admission object"
+    },
+    {
+      "id": "BDAOQ6-ADMISSION-VERDICT",
+      "status": "PASS",
+      "detail": "valid verdict"
+    },
+    {
+      "id": "BDAOQ6-BASELINE-instability_score",
+      "status": "PASS",
+      "detail": "baseline.instability_score numeric"
+    },
+    {
+      "id": "BDAOQ6-BASELINE-drift_score",
+      "status": "PASS",
+      "detail": "baseline.drift_score numeric"
+    },
+    {
+      "id": "BDAOQ6-BASELINE-regime_shift_probability",
+      "status": "PASS",
+      "detail": "baseline.regime_shift_probability numeric"
+    },
+    {
+      "id": "BDAOQ6-PROJECTED-instability_score",
+      "status": "PASS",
+      "detail": "projected.instability_score numeric"
+    },
+    {
+      "id": "BDAOQ6-PROJECTED-drift_score",
+      "status": "PASS",
+      "detail": "projected.drift_score numeric"
+    },
+    {
+      "id": "BDAOQ6-PROJECTED-regime_shift_probability",
+      "status": "PASS",
+      "detail": "projected.regime_shift_probability numeric"
+    },
+    {
+      "id": "BDAOQ6-DELTA-instability_delta",
+      "status": "PASS",
+      "detail": "delta.instability_delta numeric"
+    },
+    {
+      "id": "BDAOQ6-DELTA-drift_delta",
+      "status": "PASS",
+      "detail": "delta.drift_delta numeric"
+    },
+    {
+      "id": "BDAOQ6-DELTA-regime_shift_delta",
+      "status": "PASS",
+      "detail": "delta.regime_shift_delta numeric"
+    },
+    {
+      "id": "BDAOQ6-THRESHOLD-max_instability_delta_for_direct_admit",
+      "status": "PASS",
+      "detail": "threshold value present"
+    },
+    {
+      "id": "BDAOQ6-THRESHOLD-max_drift_score_for_direct_admit",
+      "status": "PASS",
+      "detail": "threshold value present"
+    },
+    {
+      "id": "BDAOQ6-THRESHOLD-max_regime_shift_probability_for_direct_admit",
+      "status": "PASS",
+      "detail": "threshold value present"
+    },
+    {
+      "id": "BDAOQ6-THRESHOLD-max_instability_score_for_staged_rollout",
+      "status": "PASS",
+      "detail": "threshold value present"
+    },
+    {
+      "id": "BDAOQ6-THRESHOLD-max_regime_shift_probability_for_staged_rollout",
+      "status": "PASS",
+      "detail": "threshold value present"
+    },
+    {
+      "id": "BDAOQ6-EVENTS",
+      "status": "PASS",
+      "detail": "events present"
+    },
+    {
+      "id": "BDAOQ6-EVENT-BASELINE",
+      "status": "PASS",
+      "detail": "baseline event present"
+    },
+    {
+      "id": "BDAOQ6-STAGED-ROLLOUT",
+      "status": "PASS",
+      "detail": "staged rollout included"
+    },
+    {
+      "id": "BDAOQ6-FALLBACK-TARGET",
+      "status": "PASS",
+      "detail": "rollback target present"
+    }
+  ]
+}

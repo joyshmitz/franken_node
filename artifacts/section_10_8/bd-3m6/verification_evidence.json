@@ -1,0 +1,60 @@
+{
+  "bead_id": "bd-3m6",
+  "section": "10.8",
+  "title": "Disaster-recovery drills for control-plane failures",
+  "status": "pass",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "scenarios_covered": 5,
+  "schema_valid": true,
+  "event_codes_documented": ["DRD-001", "DRD-002", "DRD-003", "DRD-004", "DRD-005", "DRD-006"],
+  "invariants_documented": [
+    "INV-DRD-DETERMINISTIC",
+    "INV-DRD-ISOLATED",
+    "INV-DRD-MEASURED",
+    "INV-DRD-EVIDENCE",
+    "INV-DRD-ABORT-SAFE"
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "DR-001",
+      "category": "evidence_ledger_loss",
+      "severity": "high",
+      "slo_seconds": 300,
+      "drill_interval": "monthly",
+      "related_runbook": "RB-005"
+    },
+    {
+      "scenario_id": "DR-002",
+      "category": "trust_artifact_corruption",
+      "severity": "critical",
+      "slo_seconds": 120,
+      "drill_interval": "weekly",
+      "related_runbook": "RB-001"
+    },
+    {
+      "scenario_id": "DR-003",
+      "category": "epoch_barrier_failure",
+      "severity": "critical",
+      "slo_seconds": 180,
+      "drill_interval": "weekly",
+      "related_runbook": "RB-004"
+    },
+    {
+      "scenario_id": "DR-004",
+      "category": "federation_partition",
+      "severity": "high",
+      "slo_seconds": 600,
+      "drill_interval": "monthly",
+      "related_runbook": "RB-005"
+    },
+    {
+      "scenario_id": "DR-005",
+      "category": "proof_pipeline_outage",
+      "severity": "high",
+      "slo_seconds": 300,
+      "drill_interval": "monthly",
+      "related_runbook": "RB-006"
+    }
+  ]
+}

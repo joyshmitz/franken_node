@@ -1,0 +1,215 @@
+{
+  "bead_id": "bd-2l4i",
+  "section": "14",
+  "title": "Section-wide verification gate: comprehensive unit+e2e+logging",
+  "verdict": "PASS",
+  "gate_pass": true,
+  "beads_expected": 10,
+  "beads_verified": 10,
+  "beads_passing": 10,
+  "metric_families_passing": 6,
+  "metric_families_total": 6,
+  "publication_beads_passing": 4,
+  "publication_beads_total": 4,
+  "per_bead_results": [
+    {
+      "bead_id": "bd-3h1g",
+      "title": "Publish benchmark specs/harness/datasets/scoring formulas",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-wzjl",
+      "title": "Include security and trust co-metrics",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-yz3t",
+      "title": "Publish verifier toolkit for independent validation",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-3v8g",
+      "title": "Version benchmark standards with migration guidance",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-18ie",
+      "title": "Metric family: compatibility correctness",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-ka0n",
+      "title": "Metric family: performance under hardening",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-2a6g",
+      "title": "Metric family: containment/revocation latency",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-jbp1",
+      "title": "Metric family: replay determinism",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-2ps7",
+      "title": "Metric family: adversarial resilience",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-2fkq",
+      "title": "Metric family: migration speed and failure-rate",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    }
+  ],
+  "gate_checks": [
+    {
+      "id": "GATE-14-SCRIPTS",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-14-TESTS",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-14-EVIDENCE",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-14-PUBLICATION",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-14-METRIC-FAMILIES",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-14-ALL-BEADS",
+      "status": "PASS"
+    }
+  ],
+  "events": [
+    {
+      "event_code": "GATE_14_EVALUATION_STARTED",
+      "section": "14"
+    },
+    {
+      "event_code": "GATE_14_BEAD_CHECKED",
+      "bead": "bd-3h1g",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_14_BEAD_CHECKED",
+      "bead": "bd-wzjl",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_14_BEAD_CHECKED",
+      "bead": "bd-yz3t",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_14_BEAD_CHECKED",
+      "bead": "bd-3v8g",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_14_BEAD_CHECKED",
+      "bead": "bd-18ie",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_14_BEAD_CHECKED",
+      "bead": "bd-ka0n",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_14_BEAD_CHECKED",
+      "bead": "bd-2a6g",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_14_BEAD_CHECKED",
+      "bead": "bd-jbp1",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_14_BEAD_CHECKED",
+      "bead": "bd-2ps7",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_14_BEAD_CHECKED",
+      "bead": "bd-2fkq",
+      "script_pass": true,
+      "test_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_14_VERDICT_EMITTED",
+      "verdict": "PASS",
+      "beads_passing": 10,
+      "beads_total": 10
+    }
+  ],
+  "content_hash": "b8fd574c78c3a6c0b26aa1122dd5ad17191fad9ee7f1cb6a075962e732346e49"
+}

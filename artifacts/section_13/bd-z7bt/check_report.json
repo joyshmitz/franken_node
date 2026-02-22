@@ -1,0 +1,4214 @@
+{
+  "bead_id": "bd-z7bt",
+  "section": "13",
+  "title": "Section-wide verification gate: comprehensive unit+e2e+logging",
+  "generated_at": "2026-02-21T01:38:30.094763+00:00",
+  "gate_pass": true,
+  "verdict": "PASS",
+  "section_beads_expected": 12,
+  "section_beads_verified": 12,
+  "overall_coverage_pct": 100.0,
+  "quantitative_targets_passing": 6,
+  "quantitative_targets_total": 6,
+  "quantitative_targets": [
+    {
+      "bead": "bd-28sz",
+      "criterion": "Concrete target: >=95% compatibility corpus pass",
+      "target": "overall_pass_rate >= 95%",
+      "measured": 98.7,
+      "required": 95.0,
+      "pass": true,
+      "detail": "overall_pass_rate_pct=98.7 required=95.0"
+    },
+    {
+      "bead": "bd-3agp",
+      "criterion": "Concrete target: >=3x migration velocity",
+      "target": "overall_velocity_ratio >= 3.0",
+      "measured": 3.1507,
+      "required": 3.0,
+      "pass": true,
+      "detail": "ratio=3.1507 required=3.0"
+    },
+    {
+      "bead": "bd-3cpa",
+      "criterion": "Concrete target: >=10x compromise reduction",
+      "target": "compromise_reduction_ratio >= 10.0",
+      "measured": 10.0,
+      "required": 10.0,
+      "pass": true,
+      "detail": "ratio=10.0 required=10.0"
+    },
+    {
+      "bead": "bd-34d5",
+      "criterion": "Concrete target: friction-minimized install-to-first-safe-production",
+      "target": "all friction pathway checks pass",
+      "measured": "13/13 checks",
+      "required": "13/13 checks",
+      "pass": true,
+      "detail": "all friction pathway checks must pass"
+    },
+    {
+      "bead": "bd-2l1k",
+      "criterion": "Concrete target: 100% replay artifact coverage",
+      "target": "coverage_ratio >= 1.0",
+      "measured": 1.0,
+      "required": 1.0,
+      "pass": true,
+      "detail": "coverage_ratio=1.0 required=1.0"
+    },
+    {
+      "bead": "bd-whxp",
+      "criterion": "Concrete target: >=2 independent replications",
+      "target": "independent_replications_passing >= 2",
+      "measured": 2,
+      "required": 2,
+      "pass": true,
+      "detail": "independent_passing=2 required=2"
+    }
+  ],
+  "per_bead_results": [
+    {
+      "bead_id": "bd-2f43",
+      "criterion": "Success criterion: low-risk migration pathways",
+      "quantitative": false,
+      "target": "Measurement mechanism + evidence present",
+      "script": "scripts/check_migration_pathways.py",
+      "test": "tests/test_check_migration_pathways.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "measurement_methodology_defined": true,
+      "quantitative_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-2f43",
+        "script": "scripts/check_migration_pathways.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "verdict": "UNKNOWN",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-2f43",
+          "section": "13",
+          "title": "Low-Risk Migration Pathways",
+          "total_checks": 12,
+          "passed": 12,
+          "failed": 0,
+          "overall_passed": true,
+          "checks": [
+            {
+              "name": "spec_exists",
+              "passed": true,
+              "detail": "Spec file found: docs/specs/section_13/bd-2f43_contract.md"
+            },
+            {
+              "name": "policy_exists",
+              "passed": true,
+              "detail": "Policy file found: docs/policy/migration_pathways.md"
+            },
+            {
+              "name": "quantitative_targets",
+              "passed": true,
+              "detail": "All targets present"
+            },
+            {
+              "name": "pathway_requirements",
+              "passed": true,
+              "detail": "All requirements present"
+            },
+            {
+              "name": "risk_scoring",
+              "passed": true,
+              "detail": "Dimensions: 3/3, weights present: True"
+            },
+            {
+              "name": "rollout_stages",
+              "passed": true,
+              "detail": "Stages found: canary, progressive, full"
+            },
+            {
+              "name": "rollback_requirements",
+              "passed": true,
+              "detail": "Time constraint: True, zero-loss: True"
+            },
+            {
+              "name": "event_codes",
+              "passed": true,
+              "detail": "All event codes present"
+            },
+            {
+              "name": "invariants",
+              "passed": true,
+              "detail": "All invariants present"
+            },
+            {
+              "name": "evidence_artifacts",
+              "passed": true,
+              "detail": "evidence.json: True, summary.md: True"
+            },
+            {
+              "name": "cohort_strategy",
+              "passed": true,
+              "detail": "Node referenced: True, Bun referenced: True"
+            },
+            {
+              "name": "ci_gate",
+              "passed": true,
+              "detail": "CI gate section: True, --json flag: True"
+            }
+          ]
+        }
+      },
+      "unit_result": {
+        "bead": "bd-2f43",
+        "test": "tests/test_check_migration_pathways.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 20,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-2f43",
+        "path": "artifacts/section_13/bd-2f43/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "verdict": "UNKNOWN",
+        "has_checks": true,
+        "payload": {
+          "bead_id": "bd-2f43",
+          "section": "13",
+          "title": "Low-Risk Migration Pathways",
+          "generated_at": "2026-02-20T00:00:00Z",
+          "total_checks": 12,
+          "passed": 12,
+          "failed": 0,
+          "overall_passed": true,
+          "checks": [
+            {
+              "name": "spec_exists",
+              "passed": true,
+              "detail": "Spec file found: docs/specs/section_13/bd-2f43_contract.md"
+            },
+            {
+              "name": "policy_exists",
+              "passed": true,
+              "detail": "Policy file found: docs/policy/migration_pathways.md"
+            },
+            {
+              "name": "quantitative_targets",
+              "passed": true,
+              "detail": "All targets present"
+            },
+            {
+              "name": "pathway_requirements",
+              "passed": true,
+              "detail": "All requirements present"
+            },
+            {
+              "name": "risk_scoring",
+              "passed": true,
+              "detail": "Dimensions: 3/3, weights present: True"
+            },
+            {
+              "name": "rollout_stages",
+              "passed": true,
+              "detail": "Stages found: canary, progressive, full"
+            },
+            {
+              "name": "rollback_requirements",
+              "passed": true,
+              "detail": "Time constraint: True, zero-loss: True"
+            },
+            {
+              "name": "event_codes",
+              "passed": true,
+              "detail": "All event codes present"
+            },
+            {
+              "name": "invariants",
+              "passed": true,
+              "detail": "All invariants present"
+            },
+            {
+              "name": "evidence_artifacts",
+              "passed": true,
+              "detail": "evidence.json: True, summary.md: True"
+            },
+            {
+              "name": "cohort_strategy",
+              "passed": true,
+              "detail": "Node referenced: True, Bun referenced: True"
+            },
+            {
+              "name": "ci_gate",
+              "passed": true,
+              "detail": "CI gate section: True, --json flag: True"
+            }
+          ],
+          "invariants_verified": [
+            "INV-MIG-PATHWAY",
+            "INV-MIG-RISK",
+            "INV-MIG-ROLLBACK",
+            "INV-MIG-EVIDENCE"
+          ],
+          "event_codes_verified": [
+            "MIG-001",
+            "MIG-002",
+            "MIG-003",
+            "MIG-004"
+          ],
+          "quantitative_targets": {
+            "migration_success_rate": ">= 90%",
+            "rollback_time": "< 5 min",
+            "data_loss_guarantee": "zero",
+            "risk_score_threshold": "<= 0.30"
+          }
+        }
+      }
+    },
+    {
+      "bead_id": "bd-1w78",
+      "criterion": "Success criterion: continuous lockstep validation",
+      "quantitative": false,
+      "target": "Measurement mechanism + evidence present",
+      "script": "scripts/check_lockstep_validation.py",
+      "test": "tests/test_check_lockstep_validation.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "measurement_methodology_defined": true,
+      "quantitative_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-1w78",
+        "script": "scripts/check_lockstep_validation.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "verdict": "UNKNOWN",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-1w78",
+          "passed": 10,
+          "total": 10,
+          "all_passed": true,
+          "checks": [
+            {
+              "name": "files_exist",
+              "passed": true,
+              "detail": "all files present"
+            },
+            {
+              "name": "spec_completeness",
+              "passed": true,
+              "detail": "all sections present"
+            },
+            {
+              "name": "lockstep_architecture",
+              "passed": true,
+              "detail": "L1 + L2 architecture documented"
+            },
+            {
+              "name": "ci_integration",
+              "passed": true,
+              "detail": "CI integration documented"
+            },
+            {
+              "name": "corpus_requirements",
+              "passed": true,
+              "detail": "corpus requirements met"
+            },
+            {
+              "name": "divergence_classification",
+              "passed": true,
+              "detail": "all divergence classes documented"
+            },
+            {
+              "name": "event_codes",
+              "passed": true,
+              "detail": "all event codes defined"
+            },
+            {
+              "name": "invariants",
+              "passed": true,
+              "detail": "all invariants defined"
+            },
+            {
+              "name": "targets",
+              "passed": true,
+              "detail": "all quantitative targets present"
+            },
+            {
+              "name": "alerting_policy",
+              "passed": true,
+              "detail": "alerting policy documented"
+            }
+          ]
+        }
+      },
+      "unit_result": {
+        "bead": "bd-1w78",
+        "test": "tests/test_check_lockstep_validation.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 21,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-1w78",
+        "path": "artifacts/section_13/bd-1w78/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "verdict": "UNKNOWN",
+        "has_checks": true,
+        "payload": {
+          "bead_id": "bd-1w78",
+          "section": "13",
+          "title": "Continuous Lockstep Validation",
+          "verified_at": "2026-02-20T00:00:00Z",
+          "verification_script": "scripts/check_lockstep_validation.py",
+          "checks": [
+            {
+              "name": "files_exist",
+              "passed": true,
+              "detail": "all files present"
+            },
+            {
+              "name": "spec_completeness",
+              "passed": true,
+              "detail": "all sections present"
+            },
+            {
+              "name": "lockstep_architecture",
+              "passed": true,
+              "detail": "L1 + L2 architecture documented"
+            },
+            {
+              "name": "ci_integration",
+              "passed": true,
+              "detail": "CI integration documented"
+            },
+            {
+              "name": "corpus_requirements",
+              "passed": true,
+              "detail": "corpus requirements met"
+            },
+            {
+              "name": "divergence_classification",
+              "passed": true,
+              "detail": "all divergence classes documented"
+            },
+            {
+              "name": "event_codes",
+              "passed": true,
+              "detail": "all event codes defined"
+            },
+            {
+              "name": "invariants",
+              "passed": true,
+              "detail": "all invariants defined"
+            },
+            {
+              "name": "targets",
+              "passed": true,
+              "detail": "all quantitative targets present"
+            },
+            {
+              "name": "alerting_policy",
+              "passed": true,
+              "detail": "alerting policy documented"
+            }
+          ],
+          "event_codes": [
+            {
+              "code": "CLV-001",
+              "name": "lockstep_run_completed",
+              "verified": true
+            },
+            {
+              "code": "CLV-002",
+              "name": "divergence_detected",
+              "verified": true
+            },
+            {
+              "code": "CLV-003",
+              "name": "regression_blocked",
+              "verified": true
+            },
+            {
+              "code": "CLV-004",
+              "name": "corpus_updated",
+              "verified": true
+            }
+          ],
+          "invariants": [
+            {
+              "id": "INV-CLV-CONTINUOUS",
+              "description": "Lockstep runs on every CI push",
+              "verified": true
+            },
+            {
+              "id": "INV-CLV-COVERAGE",
+              "description": "Corpus covers >= 95% API surface, pass rate >= 95%",
+              "verified": true
+            },
+            {
+              "id": "INV-CLV-REGRESSION",
+              "description": "Zero undetected regressions merged",
+              "verified": true
+            },
+            {
+              "id": "INV-CLV-CORPUS",
+              "description": "Version-controlled corpus with >= 1000 test cases",
+              "verified": true
+            }
+          ],
+          "targets": {
+            "compatibility_pass_rate": ">= 95%",
+            "divergence_detection_latency": "< 100 ms per test",
+            "undetected_regressions": "0",
+            "minimum_corpus_size": ">= 1000 test cases"
+          },
+          "summary": "All 10 checks passed. Continuous lockstep validation contract fully verified."
+        }
+      }
+    },
+    {
+      "bead_id": "bd-2a4l",
+      "criterion": "Success criterion: externally verifiable trust/security claims",
+      "quantitative": false,
+      "target": "Measurement mechanism + evidence present",
+      "script": "scripts/check_verifiable_claims.py",
+      "test": "tests/test_check_verifiable_claims.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "measurement_methodology_defined": true,
+      "quantitative_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-2a4l",
+        "script": "scripts/check_verifiable_claims.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-2a4l",
+          "title": "Externally Verifiable Trust/Security Claims",
+          "section": "13",
+          "verdict": "PASS",
+          "total": 44,
+          "passed": 44,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "file_exists:spec",
+              "pass": true,
+              "detail": "spec at docs/specs/section_13/bd-2a4l_contract.md"
+            },
+            {
+              "name": "file_exists:policy",
+              "pass": true,
+              "detail": "policy at docs/policy/externally_verifiable_claims.md"
+            },
+            {
+              "name": "dimension:VD-01",
+              "pass": true,
+              "detail": "VD-01 in spec"
+            },
+            {
+              "name": "dimension:VD-02",
+              "pass": true,
+              "detail": "VD-02 in spec"
+            },
+            {
+              "name": "dimension:VD-03",
+              "pass": true,
+              "detail": "VD-03 in spec"
+            },
+            {
+              "name": "dimension:VD-04",
+              "pass": true,
+              "detail": "VD-04 in spec"
+            },
+            {
+              "name": "dimension:VD-05",
+              "pass": true,
+              "detail": "VD-05 in spec"
+            },
+            {
+              "name": "target:100%",
+              "pass": true,
+              "detail": "target 100% in spec"
+            },
+            {
+              "name": "target:95%",
+              "pass": true,
+              "detail": "target 95% in spec"
+            },
+            {
+              "name": "target:30 days",
+              "pass": true,
+              "detail": "target 30 days in spec"
+            },
+            {
+              "name": "target:sha-256",
+              "pass": true,
+              "detail": "target sha-256 in spec"
+            },
+            {
+              "name": "event_code:EVC-001",
+              "pass": true,
+              "detail": "EVC-001"
+            },
+            {
+              "name": "event_code:EVC-002",
+              "pass": true,
+              "detail": "EVC-002"
+            },
+            {
+              "name": "event_code:EVC-003",
+              "pass": true,
+              "detail": "EVC-003"
+            },
+            {
+              "name": "event_code:EVC-004",
+              "pass": true,
+              "detail": "EVC-004"
+            },
+            {
+              "name": "invariant:INV-EVC-COVERAGE",
+              "pass": true,
+              "detail": "INV-EVC-COVERAGE"
+            },
+            {
+              "name": "invariant:INV-EVC-REPRODUCE",
+              "pass": true,
+              "detail": "INV-EVC-REPRODUCE"
+            },
+            {
+              "name": "invariant:INV-EVC-DETERMINISM",
+              "pass": true,
+              "detail": "INV-EVC-DETERMINISM"
+            },
+            {
+              "name": "invariant:INV-EVC-INTEGRITY",
+              "pass": true,
+              "detail": "INV-EVC-INTEGRITY"
+            },
+            {
+              "name": "bundle:claim.json",
+              "pass": true,
+              "detail": "bundle format: claim.json"
+            },
+            {
+              "name": "bundle:procedure.md",
+              "pass": true,
+              "detail": "bundle format: procedure.md"
+            },
+            {
+              "name": "bundle:manifest.json",
+              "pass": true,
+              "detail": "bundle format: manifest.json"
+            },
+            {
+              "name": "bundle:sha-256",
+              "pass": true,
+              "detail": "bundle format: sha-256"
+            },
+            {
+              "name": "reproduction:reproduction",
+              "pass": true,
+              "detail": "reproduction: reproduction"
+            },
+            {
+              "name": "reproduction:external",
+              "pass": true,
+              "detail": "reproduction: external"
+            },
+            {
+              "name": "reproduction:determinism",
+              "pass": true,
+              "detail": "reproduction: determinism"
+            },
+            {
+              "name": "reproduction:timestamp",
+              "pass": true,
+              "detail": "reproduction: timestamp"
+            },
+            {
+              "name": "reproduction:non-determinism",
+              "pass": true,
+              "detail": "reproduction: non-determinism"
+            },
+            {
+              "name": "adversarial:corrupted",
+              "pass": true,
+              "detail": "adversarial: corrupted"
+            },
+            {
+              "name": "adversarial:truncated",
+              "pass": true,
+              "detail": "adversarial: truncated"
+            },
+            {
+              "name": "adversarial:tampered",
+              "pass": true,
+              "detail": "adversarial: tampered"
+            },
+            {
+              "name": "adversarial:replayed",
+              "pass": true,
+              "detail": "adversarial: replayed"
+            },
+            {
+              "name": "ci:release gate",
+              "pass": true,
+              "detail": "CI: release gate"
+            },
+            {
+              "name": "ci:freshness",
+              "pass": true,
+              "detail": "CI: freshness"
+            },
+            {
+              "name": "ci:nightly",
+              "pass": true,
+              "detail": "CI: nightly"
+            },
+            {
+              "name": "category:compatibility",
+              "pass": true,
+              "detail": "category: compatibility"
+            },
+            {
+              "name": "category:security",
+              "pass": true,
+              "detail": "category: security"
+            },
+            {
+              "name": "category:trust",
+              "pass": true,
+              "detail": "category: trust"
+            },
+            {
+              "name": "category:performance",
+              "pass": true,
+              "detail": "category: performance"
+            },
+            {
+              "name": "category:migration",
+              "pass": true,
+              "detail": "category: migration"
+            },
+            {
+              "name": "acceptance:claim registry",
+              "pass": true,
+              "detail": "acceptance: claim registry"
+            },
+            {
+              "name": "acceptance:content-addressed",
+              "pass": true,
+              "detail": "acceptance: content-addressed"
+            },
+            {
+              "name": "acceptance:external-reproduction",
+              "pass": true,
+              "detail": "acceptance: external-reproduction"
+            },
+            {
+              "name": "acceptance:adversarial",
+              "pass": true,
+              "detail": "acceptance: adversarial"
+            }
+          ]
+        }
+      },
+      "unit_result": {
+        "bead": "bd-2a4l",
+        "test": "tests/test_check_verifiable_claims.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 26,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-2a4l",
+        "path": "artifacts/section_13/bd-2a4l/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "has_checks": true,
+        "payload": {
+          "bead_id": "bd-2a4l",
+          "title": "Externally Verifiable Trust/Security Claims",
+          "section": "13",
+          "verdict": "PASS",
+          "total": 44,
+          "passed": 44,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "file_exists:spec",
+              "pass": true,
+              "detail": "spec at docs/specs/section_13/bd-2a4l_contract.md"
+            },
+            {
+              "name": "file_exists:policy",
+              "pass": true,
+              "detail": "policy at docs/policy/externally_verifiable_claims.md"
+            },
+            {
+              "name": "dimension:VD-01",
+              "pass": true,
+              "detail": "VD-01 in spec"
+            },
+            {
+              "name": "dimension:VD-02",
+              "pass": true,
+              "detail": "VD-02 in spec"
+            },
+            {
+              "name": "dimension:VD-03",
+              "pass": true,
+              "detail": "VD-03 in spec"
+            },
+            {
+              "name": "dimension:VD-04",
+              "pass": true,
+              "detail": "VD-04 in spec"
+            },
+            {
+              "name": "dimension:VD-05",
+              "pass": true,
+              "detail": "VD-05 in spec"
+            },
+            {
+              "name": "target:100%",
+              "pass": true,
+              "detail": "target 100% in spec"
+            },
+            {
+              "name": "target:95%",
+              "pass": true,
+              "detail": "target 95% in spec"
+            },
+            {
+              "name": "target:30 days",
+              "pass": true,
+              "detail": "target 30 days in spec"
+            },
+            {
+              "name": "target:sha-256",
+              "pass": true,
+              "detail": "target sha-256 in spec"
+            },
+            {
+              "name": "event_code:EVC-001",
+              "pass": true,
+              "detail": "EVC-001"
+            },
+            {
+              "name": "event_code:EVC-002",
+              "pass": true,
+              "detail": "EVC-002"
+            },
+            {
+              "name": "event_code:EVC-003",
+              "pass": true,
+              "detail": "EVC-003"
+            },
+            {
+              "name": "event_code:EVC-004",
+              "pass": true,
+              "detail": "EVC-004"
+            },
+            {
+              "name": "invariant:INV-EVC-COVERAGE",
+              "pass": true,
+              "detail": "INV-EVC-COVERAGE"
+            },
+            {
+              "name": "invariant:INV-EVC-REPRODUCE",
+              "pass": true,
+              "detail": "INV-EVC-REPRODUCE"
+            },
+            {
+              "name": "invariant:INV-EVC-DETERMINISM",
+              "pass": true,
+              "detail": "INV-EVC-DETERMINISM"
+            },
+            {
+              "name": "invariant:INV-EVC-INTEGRITY",
+              "pass": true,
+              "detail": "INV-EVC-INTEGRITY"
+            },
+            {
+              "name": "bundle:claim.json",
+              "pass": true,
+              "detail": "bundle format: claim.json"
+            },
+            {
+              "name": "bundle:procedure.md",
+              "pass": true,
+              "detail": "bundle format: procedure.md"
+            },
+            {
+              "name": "bundle:manifest.json",
+              "pass": true,
+              "detail": "bundle format: manifest.json"
+            },
+            {
+              "name": "bundle:sha-256",
+              "pass": true,
+              "detail": "bundle format: sha-256"
+            },
+            {
+              "name": "reproduction:reproduction",
+              "pass": true,
+              "detail": "reproduction: reproduction"
+            },
+            {
+              "name": "reproduction:external",
+              "pass": true,
+              "detail": "reproduction: external"
+            },
+            {
+              "name": "reproduction:determinism",
+              "pass": true,
+              "detail": "reproduction: determinism"
+            },
+            {
+              "name": "reproduction:timestamp",
+              "pass": true,
+              "detail": "reproduction: timestamp"
+            },
+            {
+              "name": "reproduction:non-determinism",
+              "pass": true,
+              "detail": "reproduction: non-determinism"
+            },
+            {
+              "name": "adversarial:corrupted",
+              "pass": true,
+              "detail": "adversarial: corrupted"
+            },
+            {
+              "name": "adversarial:truncated",
+              "pass": true,
+              "detail": "adversarial: truncated"
+            },
+            {
+              "name": "adversarial:tampered",
+              "pass": true,
+              "detail": "adversarial: tampered"
+            },
+            {
+              "name": "adversarial:replayed",
+              "pass": true,
+              "detail": "adversarial: replayed"
+            },
+            {
+              "name": "ci:release gate",
+              "pass": true,
+              "detail": "CI: release gate"
+            },
+            {
+              "name": "ci:freshness",
+              "pass": true,
+              "detail": "CI: freshness"
+            },
+            {
+              "name": "ci:nightly",
+              "pass": true,
+              "detail": "CI: nightly"
+            },
+            {
+              "name": "category:compatibility",
+              "pass": true,
+              "detail": "category: compatibility"
+            },
+            {
+              "name": "category:security",
+              "pass": true,
+              "detail": "category: security"
+            },
+            {
+              "name": "category:trust",
+              "pass": true,
+              "detail": "category: trust"
+            },
+            {
+              "name": "category:performance",
+              "pass": true,
+              "detail": "category: performance"
+            },
+            {
+              "name": "category:migration",
+              "pass": true,
+              "detail": "category: migration"
+            },
+            {
+              "name": "acceptance:claim registry",
+              "pass": true,
+              "detail": "acceptance: claim registry"
+            },
+            {
+              "name": "acceptance:content-addressed",
+              "pass": true,
+              "detail": "acceptance: content-addressed"
+            },
+            {
+              "name": "acceptance:external-reproduction",
+              "pass": true,
+              "detail": "acceptance: external-reproduction"
+            },
+            {
+              "name": "acceptance:adversarial",
+              "pass": true,
+              "detail": "acceptance: adversarial"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "bead_id": "bd-pga7",
+      "criterion": "Success criterion: deterministic incident containment/explanation",
+      "quantitative": false,
+      "target": "Measurement mechanism + evidence present",
+      "script": "scripts/check_incident_containment.py",
+      "test": "tests/test_check_incident_containment.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "measurement_methodology_defined": true,
+      "quantitative_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-pga7",
+        "script": "scripts/check_incident_containment.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-pga7",
+          "title": "Deterministic incident containment and explanation",
+          "section": "13",
+          "verdict": "PASS",
+          "overall_pass": true,
+          "summary": {
+            "passing": 70,
+            "failing": 0,
+            "total": 70
+          },
+          "checks": [
+            {
+              "check": "file: spec contract",
+              "pass": true,
+              "detail": "exists: docs/specs/section_13/bd-pga7_contract.md"
+            },
+            {
+              "check": "file: policy document",
+              "pass": true,
+              "detail": "exists: docs/policy/deterministic_incident_containment.md"
+            },
+            {
+              "check": "spec containment: blast_radius_bound",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec containment: time_to_contain",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec containment: automated_actions",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec action: isolate_component",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec action: shed_load",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec action: revoke_credentials",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec action: disable_extension",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec action: snapshot_state",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec action: emit_alert",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec explanation: evidence_completeness",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec explanation: root_cause_reproducibility",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec explanation: explanation_latency",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "blast_radius target <= 3 components",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "time_to_contain target <= 60s",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "evidence_completeness target >= 95%",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec event_code: DIC-001",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy event_code: DIC-001",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec event_code: DIC-002",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy event_code: DIC-002",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec event_code: DIC-003",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy event_code: DIC-003",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec event_code: DIC-004",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy event_code: DIC-004",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec invariant: INV-DIC-CONTAIN",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec invariant: INV-DIC-EXPLAIN",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec invariant: INV-DIC-BOUND",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec invariant: INV-DIC-COMPLETE",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "quantitative targets: blast_radius",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "quantitative targets: time_to_contain",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "quantitative targets: evidence_completeness",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "quantitative targets: explanation_reproducibility",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "acceptance criteria section",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "acceptance: Spec contract exists",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "acceptance: Policy document exists",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "acceptance: event codes",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "acceptance: invariants",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "acceptance: blast_radius",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "acceptance: time_to_contain",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "acceptance: evidence_completeness",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "acceptance: explanation_reproducibility",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "acceptance: Containment determinism",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "acceptance: Explanation determinism",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "acceptance: Verification script passes",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "acceptance: Evidence artifact",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy containment: Blast Radius",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy containment: Time Bounds",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy containment: Automated Actions",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy explanation: Evidence Capture",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy explanation: Reproducibility",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy explanation: Latency",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy: Escalation Procedures",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy escalation: Containment Divergence",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy escalation: Explanation Divergence",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy escalation: Blast Radius Exceeded",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy escalation: Evidence Completeness Below",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy: Monitoring",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy metric: dic_containment_time_p99",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy metric: dic_blast_radius_max",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy metric: dic_explanation_time_p99",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy metric: dic_evidence_completeness_min",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy metric: dic_containment_divergence_count",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy metric: dic_explanation_divergence_count",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy: Evidence Requirements",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec: Containment Determinism",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec: Explanation Determinism",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec determinism: pure function",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "verification evidence",
+              "pass": true,
+              "detail": "valid"
+            },
+            {
+              "check": "verification summary",
+              "pass": true,
+              "detail": "valid"
+            }
+          ]
+        }
+      },
+      "unit_result": {
+        "bead": "bd-pga7",
+        "test": "tests/test_check_incident_containment.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 50,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-pga7",
+        "path": "artifacts/section_13/bd-pga7/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "has_checks": true,
+        "payload": {
+          "bead_id": "bd-pga7",
+          "title": "Deterministic incident containment and explanation",
+          "section": "13",
+          "status": "pass",
+          "overall_pass": true,
+          "verdict": "PASS",
+          "timestamp": "2026-02-20T00:00:00Z",
+          "agent": "CrimsonCrane",
+          "event_codes": [
+            "DIC-001",
+            "DIC-002",
+            "DIC-003",
+            "DIC-004"
+          ],
+          "invariants": [
+            "INV-DIC-CONTAIN",
+            "INV-DIC-EXPLAIN",
+            "INV-DIC-BOUND",
+            "INV-DIC-COMPLETE"
+          ],
+          "quantitative_targets": {
+            "blast_radius": {
+              "operator": "<=",
+              "value": 3,
+              "unit": "components"
+            },
+            "time_to_contain": {
+              "operator": "<=",
+              "value": 60,
+              "unit": "seconds"
+            },
+            "evidence_completeness": {
+              "operator": ">=",
+              "value": 95,
+              "unit": "percent"
+            },
+            "explanation_reproducibility": {
+              "operator": "==",
+              "value": 100,
+              "unit": "percent"
+            }
+          },
+          "containment_actions": [
+            "isolate_component",
+            "shed_load",
+            "revoke_credentials",
+            "disable_extension",
+            "snapshot_state",
+            "emit_alert"
+          ],
+          "artifacts": {
+            "spec_contract": "docs/specs/section_13/bd-pga7_contract.md",
+            "policy_document": "docs/policy/deterministic_incident_containment.md",
+            "verification_script": "scripts/check_incident_containment.py",
+            "unit_tests": "tests/test_check_incident_containment.py",
+            "verification_evidence": "artifacts/section_13/bd-pga7/verification_evidence.json",
+            "verification_summary": "artifacts/section_13/bd-pga7/verification_summary.md"
+          }
+        }
+      }
+    },
+    {
+      "bead_id": "bd-1xao",
+      "criterion": "Success criterion: impossible-by-default adoption",
+      "quantitative": false,
+      "target": "Measurement mechanism + evidence present",
+      "script": "scripts/check_impossible_adoption.py",
+      "test": "tests/test_check_impossible_adoption.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "measurement_methodology_defined": true,
+      "quantitative_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-1xao",
+        "script": "scripts/check_impossible_adoption.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-1xao",
+          "title": "Impossible-by-default adoption success criterion",
+          "section": "13",
+          "verdict": "PASS",
+          "total": 72,
+          "passed": 72,
+          "failed": 0,
+          "checks": [
+            {
+              "check": "file: spec contract",
+              "pass": true,
+              "detail": "exists: docs/specs/section_13/bd-1xao_contract.md"
+            },
+            {
+              "check": "file: policy document",
+              "pass": true,
+              "detail": "exists: docs/policy/impossible_by_default_adoption.md"
+            },
+            {
+              "check": "spec event_code: IBD-001",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec event_code: IBD-002",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec event_code: IBD-003",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec event_code: IBD-004",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy event_code: IBD-001",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy event_code: IBD-002",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy event_code: IBD-003",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy event_code: IBD-004",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec invariant: INV-IBD-DEFAULT",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec invariant: INV-IBD-AUTH",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec invariant: INV-IBD-AUDIT",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec invariant: INV-IBD-COVERAGE",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy invariant: INV-IBD-DEFAULT",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy invariant: INV-IBD-AUTH",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy invariant: INV-IBD-AUDIT",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy invariant: INV-IBD-COVERAGE",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec capability_state: BLOCKED",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec capability_state: AUTHORIZED",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec capability_state: ACTIVE",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec capability_state: REVOKED",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy capability_state: BLOCKED",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy capability_state: AUTHORIZED",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy capability_state: ACTIVE",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy capability_state: REVOKED",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec adoption_tier: A0",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec adoption_tier: A1",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec adoption_tier: A2",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec adoption_tier: A3",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec adoption_tier: A4",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy adoption_tier: A0",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy adoption_tier: A1",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy adoption_tier: A2",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy adoption_tier: A3",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy adoption_tier: A4",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec dangerous_op: Credential management",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec dangerous_op: Network exposure",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec dangerous_op: Data exfiltration paths",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec dangerous_op: Privilege escalation",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec dangerous_op: Configuration override",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec quant_target: capability_coverage",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec quant_target: bypass_detection_rate",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec quant_target: authorization_audit_completeness",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec quant_target: operator_adoption_rate",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec quant_target: mean_time_to_authorize",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec quant_target: revocation_latency",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "coverage threshold >= 95%",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "bypass detection rate 100%",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "audit completeness 100%",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "release gate A3 threshold",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "state machine documented",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec: Authorization Workflow",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec: ## Acceptance Criteria",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec: ## Artifacts",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy: ## Risk Description",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy: ### Impact",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy: Monitoring",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy metric: ibd_capability_coverage_pct",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy metric: ibd_bypass_attempts_count",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy metric: ibd_authorization_audit_completeness",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy metric: ibd_active_authorizations_count",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy metric: ibd_mean_time_to_authorize_hours",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy metric: ibd_revocation_latency_minutes",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy: Escalation Procedures",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy escalation: Bypass Attempt Detected",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy escalation: Coverage Below Release Gate",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy escalation: Authorization Audit Incomplete",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy escalation: Revocation Latency Exceeded",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy: Evidence Requirements",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "verification evidence",
+              "pass": true,
+              "detail": "valid"
+            },
+            {
+              "check": "verification summary",
+              "pass": true,
+              "detail": "valid"
+            }
+          ]
+        }
+      },
+      "unit_result": {
+        "bead": "bd-1xao",
+        "test": "tests/test_check_impossible_adoption.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 118,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-1xao",
+        "path": "artifacts/section_13/bd-1xao/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "has_checks": true,
+        "payload": {
+          "bead_id": "bd-1xao",
+          "title": "Impossible-by-default adoption enforcement",
+          "section": "13",
+          "status": "pass",
+          "timestamp": "2026-02-20T00:00:00Z",
+          "checks": {
+            "total": 120,
+            "passed": 120,
+            "failed": 0
+          },
+          "artifacts": {
+            "spec_contract": "docs/specs/section_13/bd-1xao_contract.md",
+            "policy_document": "docs/policy/impossible_by_default_adoption.md",
+            "rust_implementation": "crates/franken-node/src/security/impossible_default.rs",
+            "verification_script": "scripts/check_impossible_default.py",
+            "unit_tests": "tests/test_check_impossible_default.py"
+          },
+          "event_codes": [
+            "IBD-001",
+            "IBD-002",
+            "IBD-003",
+            "IBD-004"
+          ],
+          "invariants": {
+            "implementation": [
+              "INV-IBD-ENFORCE",
+              "INV-IBD-TOKEN",
+              "INV-IBD-AUDIT",
+              "INV-IBD-ADOPTION"
+            ],
+            "spec": [
+              "INV-IBD-DEFAULT",
+              "INV-IBD-AUTH",
+              "INV-IBD-AUDIT",
+              "INV-IBD-COVERAGE"
+            ]
+          },
+          "error_codes": [
+            "ERR_IBD_BLOCKED",
+            "ERR_IBD_TOKEN_EXPIRED",
+            "ERR_IBD_INVALID_SIGNATURE",
+            "ERR_IBD_SILENT_DISABLE"
+          ],
+          "impossible_capabilities": [
+            "FsAccess",
+            "OutboundNetwork",
+            "ChildProcessSpawn",
+            "UnsignedExtension",
+            "DisableHardening"
+          ],
+          "capability_states": [
+            "BLOCKED",
+            "AUTHORIZED",
+            "ACTIVE",
+            "REVOKED"
+          ],
+          "adoption_tiers": {
+            "A0": "< 50%",
+            "A1": "50% - 74%",
+            "A2": "75% - 89%",
+            "A3": "90% - 94%",
+            "A4": ">= 95%"
+          },
+          "release_gate_threshold": "A3",
+          "quantitative_targets": {
+            "capability_coverage": ">= 95%",
+            "bypass_detection_rate": "100%",
+            "authorization_audit_completeness": "100%",
+            "operator_adoption_rate": ">= 90%",
+            "mean_time_to_authorize": "<= 24 hours",
+            "revocation_latency": "<= 1 hour"
+          },
+          "dangerous_operation_categories": [
+            "Credential management",
+            "Network exposure",
+            "Data exfiltration paths",
+            "Privilege escalation",
+            "Configuration override"
+          ],
+          "rust_test_count": 50,
+          "rust_module": "crates/franken-node/src/security/impossible_default.rs",
+          "types": [
+            "ImpossibleCapability",
+            "CapabilityToken",
+            "CapabilityEnforcer",
+            "EnforcementReport",
+            "EnforcementError",
+            "EnforcementAuditEntry",
+            "EnforcementMetrics",
+            "EnforcementStatus",
+            "CapabilityReportEntry",
+            "SignatureVerifier",
+            "HashSignatureVerifier"
+          ]
+        }
+      }
+    },
+    {
+      "bead_id": "bd-3e74",
+      "criterion": "Success criterion: benchmark/verifier external usage",
+      "quantitative": false,
+      "target": "Measurement mechanism + evidence present",
+      "script": "scripts/check_benchmark_external.py",
+      "test": "tests/test_check_benchmark_external.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "measurement_methodology_defined": true,
+      "quantitative_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-3e74",
+        "script": "scripts/check_benchmark_external.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-3e74",
+          "title": "benchmark/verifier external usage",
+          "section": "13",
+          "verdict": "PASS",
+          "total": 83,
+          "passed": 83,
+          "failed": 0,
+          "checks": [
+            {
+              "check": "spec_exists",
+              "pass": true,
+              "detail": "spec at docs/specs/section_13/bd-3e74_contract.md"
+            },
+            {
+              "check": "policy_exists",
+              "pass": true,
+              "detail": "policy at docs/policy/benchmark_verifier_external_usage.md"
+            },
+            {
+              "check": "spec_event_code:BVE-001",
+              "pass": true,
+              "detail": "BVE-001"
+            },
+            {
+              "check": "spec_event_code:BVE-002",
+              "pass": true,
+              "detail": "BVE-002"
+            },
+            {
+              "check": "spec_event_code:BVE-003",
+              "pass": true,
+              "detail": "BVE-003"
+            },
+            {
+              "check": "spec_event_code:BVE-004",
+              "pass": true,
+              "detail": "BVE-004"
+            },
+            {
+              "check": "spec_invariant:INV-BVE-PACKAGE",
+              "pass": true,
+              "detail": "INV-BVE-PACKAGE"
+            },
+            {
+              "check": "spec_invariant:INV-BVE-GUIDE",
+              "pass": true,
+              "detail": "INV-BVE-GUIDE"
+            },
+            {
+              "check": "spec_invariant:INV-BVE-TRACK",
+              "pass": true,
+              "detail": "INV-BVE-TRACK"
+            },
+            {
+              "check": "spec_invariant:INV-BVE-REPORT",
+              "pass": true,
+              "detail": "INV-BVE-REPORT"
+            },
+            {
+              "check": "spec_tier:U0",
+              "pass": true,
+              "detail": "U0"
+            },
+            {
+              "check": "spec_tier:U1",
+              "pass": true,
+              "detail": "U1"
+            },
+            {
+              "check": "spec_tier:U2",
+              "pass": true,
+              "detail": "U2"
+            },
+            {
+              "check": "spec_tier:U3",
+              "pass": true,
+              "detail": "U3"
+            },
+            {
+              "check": "spec_tier:U4",
+              "pass": true,
+              "detail": "U4"
+            },
+            {
+              "check": "spec_target:adoption_ge_3",
+              "pass": true,
+              "detail": "adoption_ge_3"
+            },
+            {
+              "check": "spec_target:validation_ge_2",
+              "pass": true,
+              "detail": "validation_ge_2"
+            },
+            {
+              "check": "spec_target:citations_ge_1",
+              "pass": true,
+              "detail": "citations_ge_1"
+            },
+            {
+              "check": "spec_target:time_le_15",
+              "pass": true,
+              "detail": "time_le_15"
+            },
+            {
+              "check": "spec_dimension:external project adoption",
+              "pass": true,
+              "detail": "external project adoption"
+            },
+            {
+              "check": "spec_dimension:external validation parties",
+              "pass": true,
+              "detail": "external validation parties"
+            },
+            {
+              "check": "spec_dimension:external citations",
+              "pass": true,
+              "detail": "external citations"
+            },
+            {
+              "check": "spec_dimension:packaging formats",
+              "pass": true,
+              "detail": "packaging formats"
+            },
+            {
+              "check": "spec_dimension:getting started guide",
+              "pass": true,
+              "detail": "getting started guide"
+            },
+            {
+              "check": "spec_dimension:usage tracking channels",
+              "pass": true,
+              "detail": "usage tracking channels"
+            },
+            {
+              "check": "spec_gate:alpha",
+              "pass": true,
+              "detail": "alpha gate at U2"
+            },
+            {
+              "check": "spec_gate:beta",
+              "pass": true,
+              "detail": "beta gate at U3"
+            },
+            {
+              "check": "spec_provenance:sha-256",
+              "pass": true,
+              "detail": "provenance: sha-256"
+            },
+            {
+              "check": "spec_provenance:correlation id",
+              "pass": true,
+              "detail": "provenance: correlation id"
+            },
+            {
+              "check": "spec_provenance:environment",
+              "pass": true,
+              "detail": "provenance: environment"
+            },
+            {
+              "check": "spec_provenance:timestamp",
+              "pass": true,
+              "detail": "provenance: timestamp"
+            },
+            {
+              "check": "spec_format:npm",
+              "pass": true,
+              "detail": "format: npm"
+            },
+            {
+              "check": "spec_format:docker",
+              "pass": true,
+              "detail": "format: docker"
+            },
+            {
+              "check": "spec_format:binary",
+              "pass": true,
+              "detail": "format: binary"
+            },
+            {
+              "check": "spec_channel:npm downloads",
+              "pass": true,
+              "detail": "channel: npm downloads"
+            },
+            {
+              "check": "spec_channel:docker pulls",
+              "pass": true,
+              "detail": "channel: docker pulls"
+            },
+            {
+              "check": "spec_channel:github stars",
+              "pass": true,
+              "detail": "channel: github stars"
+            },
+            {
+              "check": "spec_channel:github forks",
+              "pass": true,
+              "detail": "channel: github forks"
+            },
+            {
+              "check": "spec_channel:citations",
+              "pass": true,
+              "detail": "channel: citations"
+            },
+            {
+              "check": "spec_channel:usage reports",
+              "pass": true,
+              "detail": "channel: usage reports"
+            },
+            {
+              "check": "spec_report_field:download_counts",
+              "pass": true,
+              "detail": "report field: download_counts"
+            },
+            {
+              "check": "spec_report_field:known_external_users",
+              "pass": true,
+              "detail": "report field: known_external_users"
+            },
+            {
+              "check": "spec_report_field:citations",
+              "pass": true,
+              "detail": "report field: citations"
+            },
+            {
+              "check": "spec_report_field:usage_tier",
+              "pass": true,
+              "detail": "report field: usage_tier"
+            },
+            {
+              "check": "spec_report_field:tracking_channels_active",
+              "pass": true,
+              "detail": "report field: tracking_channels_active"
+            },
+            {
+              "check": "policy_event_code:BVE-001",
+              "pass": true,
+              "detail": "BVE-001"
+            },
+            {
+              "check": "policy_event_code:BVE-002",
+              "pass": true,
+              "detail": "BVE-002"
+            },
+            {
+              "check": "policy_event_code:BVE-003",
+              "pass": true,
+              "detail": "BVE-003"
+            },
+            {
+              "check": "policy_event_code:BVE-004",
+              "pass": true,
+              "detail": "BVE-004"
+            },
+            {
+              "check": "policy_invariant:INV-BVE-PACKAGE",
+              "pass": true,
+              "detail": "INV-BVE-PACKAGE"
+            },
+            {
+              "check": "policy_invariant:INV-BVE-GUIDE",
+              "pass": true,
+              "detail": "INV-BVE-GUIDE"
+            },
+            {
+              "check": "policy_invariant:INV-BVE-TRACK",
+              "pass": true,
+              "detail": "INV-BVE-TRACK"
+            },
+            {
+              "check": "policy_invariant:INV-BVE-REPORT",
+              "pass": true,
+              "detail": "INV-BVE-REPORT"
+            },
+            {
+              "check": "policy_tier:U0",
+              "pass": true,
+              "detail": "U0"
+            },
+            {
+              "check": "policy_tier:U1",
+              "pass": true,
+              "detail": "U1"
+            },
+            {
+              "check": "policy_tier:U2",
+              "pass": true,
+              "detail": "U2"
+            },
+            {
+              "check": "policy_tier:U3",
+              "pass": true,
+              "detail": "U3"
+            },
+            {
+              "check": "policy_tier:U4",
+              "pass": true,
+              "detail": "U4"
+            },
+            {
+              "check": "policy_dimension:external project adoption",
+              "pass": true,
+              "detail": "external project adoption"
+            },
+            {
+              "check": "policy_dimension:external validation parties",
+              "pass": true,
+              "detail": "external validation parties"
+            },
+            {
+              "check": "policy_dimension:external citations",
+              "pass": true,
+              "detail": "external citations"
+            },
+            {
+              "check": "policy_dimension:packaging formats",
+              "pass": true,
+              "detail": "packaging formats"
+            },
+            {
+              "check": "policy_dimension:getting started time",
+              "pass": true,
+              "detail": "getting started time"
+            },
+            {
+              "check": "policy_dimension:tracking channels",
+              "pass": true,
+              "detail": "tracking channels"
+            },
+            {
+              "check": "policy_sybil:sybil",
+              "pass": true,
+              "detail": "sybil defense: sybil"
+            },
+            {
+              "check": "policy_sybil:verifiable identit",
+              "pass": true,
+              "detail": "sybil defense: verifiable identit"
+            },
+            {
+              "check": "policy_sybil:manual review",
+              "pass": true,
+              "detail": "sybil defense: manual review"
+            },
+            {
+              "check": "policy_ci:json_flag",
+              "pass": true,
+              "detail": "CI --json flag"
+            },
+            {
+              "check": "policy_ci:exit_code",
+              "pass": true,
+              "detail": "CI exit code"
+            },
+            {
+              "check": "policy_escalation:escalation",
+              "pass": true,
+              "detail": "escalation: escalation"
+            },
+            {
+              "check": "policy_escalation:block release",
+              "pass": true,
+              "detail": "escalation: block release"
+            },
+            {
+              "check": "policy_escalation:investigate",
+              "pass": true,
+              "detail": "escalation: investigate"
+            },
+            {
+              "check": "policy_provenance:sha-256",
+              "pass": true,
+              "detail": "provenance: sha-256"
+            },
+            {
+              "check": "policy_provenance:correlation id",
+              "pass": true,
+              "detail": "provenance: correlation id"
+            },
+            {
+              "check": "policy_provenance:environment fingerprint",
+              "pass": true,
+              "detail": "provenance: environment fingerprint"
+            },
+            {
+              "check": "policy_provenance:timestamp",
+              "pass": true,
+              "detail": "provenance: timestamp"
+            },
+            {
+              "check": "policy_section:risk",
+              "pass": true,
+              "detail": "risk section"
+            },
+            {
+              "check": "policy_section:impact",
+              "pass": true,
+              "detail": "impact section"
+            },
+            {
+              "check": "policy_monitoring:dashboard",
+              "pass": true,
+              "detail": "monitoring: dashboard"
+            },
+            {
+              "check": "policy_monitoring:alert",
+              "pass": true,
+              "detail": "monitoring: alert"
+            },
+            {
+              "check": "policy_monitoring:weekly",
+              "pass": true,
+              "detail": "monitoring: weekly"
+            },
+            {
+              "check": "evidence:json",
+              "pass": true,
+              "detail": "evidence.json at artifacts/section_13/bd-3e74/verification_evidence.json"
+            },
+            {
+              "check": "evidence:summary",
+              "pass": true,
+              "detail": "summary.md at artifacts/section_13/bd-3e74/verification_summary.md"
+            }
+          ]
+        }
+      },
+      "unit_result": {
+        "bead": "bd-3e74",
+        "test": "tests/test_check_benchmark_external.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 86,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-3e74",
+        "path": "artifacts/section_13/bd-3e74/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "has_checks": true,
+        "payload": {
+          "bead_id": "bd-3e74",
+          "title": "benchmark/verifier external usage",
+          "section": "13",
+          "status": "pass",
+          "timestamp": "2026-02-20T00:00:00Z",
+          "checks": {
+            "total": 83,
+            "passed": 83,
+            "failed": 0
+          },
+          "artifacts": {
+            "spec_contract": "docs/specs/section_13/bd-3e74_contract.md",
+            "policy_document": "docs/policy/benchmark_verifier_external_usage.md",
+            "verification_script": "scripts/check_benchmark_external.py",
+            "unit_tests": "tests/test_check_benchmark_external.py"
+          },
+          "event_codes": [
+            "BVE-001",
+            "BVE-002",
+            "BVE-003",
+            "BVE-004"
+          ],
+          "invariants": [
+            "INV-BVE-PACKAGE",
+            "INV-BVE-GUIDE",
+            "INV-BVE-TRACK",
+            "INV-BVE-REPORT"
+          ],
+          "adoption_tiers": {
+            "U0": "No external usage detected",
+            "U1": ">= 1 external user, < 3 project adoptions",
+            "U2": ">= 2 external validation parties",
+            "U3": ">= 3 external projects adopt benchmark",
+            "U4": ">= 1 external citation"
+          },
+          "release_gate_thresholds": {
+            "alpha": "U2",
+            "beta": "U3",
+            "ga": "U3 + U4"
+          },
+          "quantitative_targets": {
+            "external_project_adoption": ">= 3",
+            "external_validation_parties": ">= 2",
+            "external_citations": ">= 1",
+            "packaging_formats": ">= 1",
+            "getting_started_time": "<= 15 min",
+            "tracking_channels": ">= 2"
+          },
+          "metric_dimensions": [
+            "External Project Adoption",
+            "External Validation Parties",
+            "External Citations",
+            "Packaging Formats",
+            "Getting Started Guide",
+            "Usage Tracking Channels"
+          ],
+          "tracking_channels": [
+            "npm downloads",
+            "Docker pulls",
+            "GitHub stars",
+            "GitHub forks",
+            "Citations",
+            "Usage reports"
+          ]
+        }
+      }
+    },
+    {
+      "bead_id": "bd-28sz",
+      "criterion": "Concrete target: >=95% compatibility corpus pass",
+      "quantitative": true,
+      "target": "overall_pass_rate >= 95%",
+      "script": "scripts/check_compat_corpus_gate.py",
+      "test": "tests/test_check_compat_corpus_gate.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "measurement_methodology_defined": true,
+      "quantitative_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-28sz",
+        "script": "scripts/check_compat_corpus_gate.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-28sz",
+          "title": "Compatibility corpus gate (>= 95%)",
+          "section": "13",
+          "verdict": "PASS",
+          "total": 20,
+          "passed": 20,
+          "failed": 0,
+          "checks": [
+            {
+              "check": "file_exists: spec contract",
+              "pass": true,
+              "detail": "exists: docs/specs/section_13/bd-28sz_contract.md"
+            },
+            {
+              "check": "file_exists: policy document",
+              "pass": true,
+              "detail": "exists: docs/policy/compat_corpus_gate.md"
+            },
+            {
+              "check": "spec_threshold: '>= 95%'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec_floor: '>= 80%'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec_gate_tiers",
+              "pass": true,
+              "detail": "all 5 gate tiers present"
+            },
+            {
+              "check": "spec_event_codes",
+              "pass": true,
+              "detail": "all 4 event codes present"
+            },
+            {
+              "check": "spec_invariants",
+              "pass": true,
+              "detail": "all 4 invariants present"
+            },
+            {
+              "check": "spec_ratchet: '0%'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec_run_time: '30 min'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec_corpus_schema",
+              "pass": true,
+              "detail": "all schema fields documented"
+            },
+            {
+              "check": "spec_module_schema",
+              "pass": true,
+              "detail": "module sub-schema fields documented"
+            },
+            {
+              "check": "spec_section: 'Gate Decision Flow'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec_formula: 'pass_rate'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy_gate_tiers",
+              "pass": true,
+              "detail": "all 5 gate tiers in policy"
+            },
+            {
+              "check": "policy_event_codes",
+              "pass": true,
+              "detail": "all 4 event codes in policy"
+            },
+            {
+              "check": "policy_invariants",
+              "pass": true,
+              "detail": "all 4 invariants in policy"
+            },
+            {
+              "check": "policy_section: 'Governance'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy_section: 'Appeal Process'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy_thresholds",
+              "pass": true,
+              "detail": "both thresholds present"
+            },
+            {
+              "check": "policy_section: 'Gate Decision Flow'",
+              "pass": true,
+              "detail": "found"
+            }
+          ]
+        }
+      },
+      "unit_result": {
+        "bead": "bd-28sz",
+        "test": "tests/test_check_compat_corpus_gate.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 71,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-28sz",
+        "path": "artifacts/section_13/bd-28sz/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "has_checks": true,
+        "payload": {
+          "bead_id": "bd-28sz",
+          "title": "Compatibility corpus gate (>= 95%)",
+          "section": "13",
+          "verdict": "PASS",
+          "total": 20,
+          "passed": 20,
+          "failed": 0,
+          "checks": [
+            {
+              "check": "file_exists: spec contract",
+              "pass": true,
+              "detail": "exists: docs/specs/section_13/bd-28sz_contract.md"
+            },
+            {
+              "check": "file_exists: policy document",
+              "pass": true,
+              "detail": "exists: docs/policy/compat_corpus_gate.md"
+            },
+            {
+              "check": "spec_threshold: '>= 95%'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec_floor: '>= 80%'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec_gate_tiers",
+              "pass": true,
+              "detail": "all 5 gate tiers present"
+            },
+            {
+              "check": "spec_event_codes",
+              "pass": true,
+              "detail": "all 4 event codes present"
+            },
+            {
+              "check": "spec_invariants",
+              "pass": true,
+              "detail": "all 4 invariants present"
+            },
+            {
+              "check": "spec_ratchet: '0%'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec_run_time: '30 min'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec_corpus_schema",
+              "pass": true,
+              "detail": "all schema fields documented"
+            },
+            {
+              "check": "spec_module_schema",
+              "pass": true,
+              "detail": "module sub-schema fields documented"
+            },
+            {
+              "check": "spec_section: 'Gate Decision Flow'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec_formula: 'pass_rate'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy_gate_tiers",
+              "pass": true,
+              "detail": "all 5 gate tiers in policy"
+            },
+            {
+              "check": "policy_event_codes",
+              "pass": true,
+              "detail": "all 4 event codes in policy"
+            },
+            {
+              "check": "policy_invariants",
+              "pass": true,
+              "detail": "all 4 invariants in policy"
+            },
+            {
+              "check": "policy_section: 'Governance'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy_section: 'Appeal Process'",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "policy_thresholds",
+              "pass": true,
+              "detail": "both thresholds present"
+            },
+            {
+              "check": "policy_section: 'Gate Decision Flow'",
+              "pass": true,
+              "detail": "found"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "bead_id": "bd-3agp",
+      "criterion": "Concrete target: >=3x migration velocity",
+      "quantitative": true,
+      "target": "overall_velocity_ratio >= 3.0",
+      "script": "scripts/check_migration_velocity_gate.py",
+      "test": "tests/test_check_migration_velocity_gate.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "measurement_methodology_defined": true,
+      "quantitative_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-3agp",
+        "script": "scripts/check_migration_velocity_gate.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-3agp",
+          "title": "Migration velocity gate (>= 3x)",
+          "section": "13",
+          "trace_id": "trace-bd-3agp-migration-velocity",
+          "verdict": "PASS",
+          "total": 18,
+          "passed": 18,
+          "failed": 0,
+          "computed": {
+            "overall_velocity_ratio": 3.1507,
+            "required_velocity_ratio": 3.0,
+            "cohort_size": 10,
+            "ci_release_sample_count": 5,
+            "missing_archetypes": []
+          },
+          "checks": [
+            {
+              "check": "file: spec contract",
+              "pass": true,
+              "detail": "docs/specs/section_13/bd-3agp_contract.md"
+            },
+            {
+              "check": "file: migration velocity report",
+              "pass": true,
+              "detail": "artifacts/13/migration_velocity_report.json"
+            },
+            {
+              "check": "spec threshold >= 3x",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec archetype coverage",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec event codes",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "report parse",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "report required top-level fields",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "report bead id",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "report unit minutes",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "cohort size >= 10",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "cohort_size matches project count",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "project entry schema",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "required archetypes covered",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "overall velocity ratio matches computed",
+              "pass": true,
+              "detail": "declared=3.15, computed=3.15"
+            },
+            {
+              "check": "velocity threshold >= 3x",
+              "pass": true,
+              "detail": "ratio=3.15, threshold=3.0"
+            },
+            {
+              "check": "ci sample coverage >= 3",
+              "pass": true,
+              "detail": "ci_release_sample projects=5"
+            },
+            {
+              "check": "determinism under reordering",
+              "pass": true,
+              "detail": "ratio=3.15068, reversed_ratio=3.15068"
+            },
+            {
+              "check": "adversarial perturbation flips threshold",
+              "pass": true,
+              "detail": "perturbed_ratio=2.10"
+            }
+          ],
+          "events": [
+            {
+              "event_code": "MVG-001",
+              "trace_id": "trace-bd-3agp-migration-velocity",
+              "message": "Velocity metrics computed (ratio=3.15)."
+            },
+            {
+              "event_code": "MVG-002",
+              "trace_id": "trace-bd-3agp-migration-velocity",
+              "message": "Velocity threshold met (>= 3x)."
+            },
+            {
+              "event_code": "MVG-006",
+              "trace_id": "trace-bd-3agp-migration-velocity",
+              "message": "Determinism validation executed."
+            }
+          ]
+        }
+      },
+      "unit_result": {
+        "bead": "bd-3agp",
+        "test": "tests/test_check_migration_velocity_gate.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 5,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-3agp",
+        "path": "artifacts/section_13/bd-3agp/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "has_checks": true,
+        "payload": {
+          "bead_id": "bd-3agp",
+          "section": "13",
+          "title": "Concrete target gate: >=3x migration velocity",
+          "generated_at": "2026-02-21T00:54:26Z",
+          "status": "pass",
+          "checks": [
+            {
+              "name": "velocity_self_test",
+              "command": "python3 scripts/check_migration_velocity_gate.py --self-test --json",
+              "exit_code": 0,
+              "output_path": "artifacts/section_13/bd-3agp/check_self_test.json"
+            },
+            {
+              "name": "velocity_gate_validation",
+              "command": "python3 scripts/check_migration_velocity_gate.py --json",
+              "exit_code": 0,
+              "output_path": "artifacts/section_13/bd-3agp/check_report.json",
+              "summary": {
+                "verdict": "PASS",
+                "overall_velocity_ratio": 3.1507,
+                "required_velocity_ratio": 3.0,
+                "cohort_size": 10,
+                "ci_release_sample_count": 5,
+                "missing_archetypes": [],
+                "trace_id": "trace-bd-3agp-migration-velocity"
+              }
+            },
+            {
+              "name": "unit_tests",
+              "command": "python3 -m unittest tests/test_check_migration_velocity_gate.py",
+              "exit_code": 0,
+              "output_path": "artifacts/section_13/bd-3agp/unit_tests.txt",
+              "summary": " OK"
+            },
+            {
+              "name": "cargo_check_all_targets_via_rch",
+              "command": "rch exec -- cargo check --all-targets",
+              "exit_code": 101,
+              "output_path": "artifacts/section_13/bd-3agp/rch_cargo_check.log",
+              "note": "Pre-existing repository compile debt outside bd-3agp scope."
+            },
+            {
+              "name": "cargo_clippy_all_targets_via_rch",
+              "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+              "exit_code": 101,
+              "output_path": "artifacts/section_13/bd-3agp/rch_cargo_clippy.log",
+              "note": "Pre-existing repository-wide clippy debt outside bd-3agp scope."
+            },
+            {
+              "name": "cargo_fmt_check_via_rch",
+              "command": "rch exec -- cargo fmt --check",
+              "exit_code": 1,
+              "output_path": "artifacts/section_13/bd-3agp/rch_cargo_fmt_check.log",
+              "note": "Pre-existing repository formatting drift outside bd-3agp scope."
+            }
+          ],
+          "acceptance_mapping": {
+            "velocity_ratio_definition_manual_over_tooled": true,
+            "cohort_size_gte_10": true,
+            "required_archetypes_covered": true,
+            "velocity_ratio_gte_3x": true,
+            "e2e_timing_fields_required": true,
+            "manual_intervention_and_blockers_documented": true,
+            "ci_sample_projects_gte_3": true,
+            "determinism_and_adversarial_checks_enforced": true
+          },
+          "contract_surface": {
+            "spec": "docs/specs/section_13/bd-3agp_contract.md",
+            "canonical_report": "artifacts/13/migration_velocity_report.json",
+            "validator": "scripts/check_migration_velocity_gate.py",
+            "unit_tests": "tests/test_check_migration_velocity_gate.py",
+            "ci_gate": ".github/workflows/migration-velocity-gate.yml"
+          },
+          "required_event_codes": [
+            "MVG-001",
+            "MVG-002",
+            "MVG-003",
+            "MVG-004",
+            "MVG-005",
+            "MVG-006"
+          ]
+        }
+      }
+    },
+    {
+      "bead_id": "bd-3cpa",
+      "criterion": "Concrete target: >=10x compromise reduction",
+      "quantitative": true,
+      "target": "compromise_reduction_ratio >= 10.0",
+      "script": "scripts/check_compromise_reduction_gate.py",
+      "test": "tests/test_check_compromise_reduction_gate.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "measurement_methodology_defined": true,
+      "quantitative_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-3cpa",
+        "script": "scripts/check_compromise_reduction_gate.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-3cpa",
+          "title": "Compromise reduction gate (>= 10x)",
+          "section": "13",
+          "trace_id": "trace-bd-3cpa-compromise-reduction",
+          "verdict": "PASS",
+          "total": 23,
+          "passed": 23,
+          "failed": 0,
+          "computed": {
+            "minimum_required_ratio": 10.0,
+            "compromise_reduction_ratio": 10.0,
+            "baseline_compromised": 20,
+            "hardened_compromised": 2,
+            "total_attack_vectors": 20,
+            "containment_vectors": 4,
+            "missing_attack_classes": []
+          },
+          "checks": [
+            {
+              "check": "file: spec contract",
+              "pass": true,
+              "detail": "docs/specs/section_13/bd-3cpa_contract.md"
+            },
+            {
+              "check": "file: compromise reduction report",
+              "pass": true,
+              "detail": "artifacts/13/compromise_reduction_report.json"
+            },
+            {
+              "check": "spec threshold >= 10x",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec attack class coverage",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec event codes",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "report parse",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "report required top-level fields",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "report bead id",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "report timestamp valid RFC3339 UTC",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "reproducible campaign command present",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "attack_vectors is list",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "attack vector count >= 20",
+              "pass": true,
+              "detail": "count=20"
+            },
+            {
+              "check": "total_attack_vectors matches list length",
+              "pass": true,
+              "detail": "declared=20, actual=20"
+            },
+            {
+              "check": "attack entry schema",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "required attack classes covered",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "baseline compromised count matches declared",
+              "pass": true,
+              "detail": "declared=20, computed=20"
+            },
+            {
+              "check": "hardened compromised count matches declared",
+              "pass": true,
+              "detail": "declared=2, computed=2"
+            },
+            {
+              "check": "containment count matches declared",
+              "pass": true,
+              "detail": "declared=4, computed=4"
+            },
+            {
+              "check": "containment vectors >= 3",
+              "pass": true,
+              "detail": "containment=4"
+            },
+            {
+              "check": "reduction ratio matches computed",
+              "pass": true,
+              "detail": "declared=10.0, computed=10.0"
+            },
+            {
+              "check": "compromise reduction threshold >= 10x",
+              "pass": true,
+              "detail": "ratio=10.0, threshold=10.0"
+            },
+            {
+              "check": "determinism under reordering",
+              "pass": true,
+              "detail": "ratio=10.0, reversed_ratio=10.0"
+            },
+            {
+              "check": "adversarial perturbation flips threshold",
+              "pass": true,
+              "detail": "perturbed_ratio=6.6667, threshold=10.0"
+            }
+          ],
+          "events": [
+            {
+              "event_code": "CRG-001",
+              "trace_id": "trace-bd-3cpa-compromise-reduction",
+              "message": "Compromise metrics computed (baseline=20, hardened=2, ratio=10.0000)."
+            },
+            {
+              "event_code": "CRG-002",
+              "trace_id": "trace-bd-3cpa-compromise-reduction",
+              "message": "Compromise reduction gate passed."
+            },
+            {
+              "event_code": "CRG-006",
+              "trace_id": "trace-bd-3cpa-compromise-reduction",
+              "message": "Determinism validation executed."
+            },
+            {
+              "event_code": "CRG-007",
+              "trace_id": "trace-bd-3cpa-compromise-reduction",
+              "message": "Adversarial perturbation validation executed."
+            }
+          ]
+        }
+      },
+      "unit_result": {
+        "bead": "bd-3cpa",
+        "test": "tests/test_check_compromise_reduction_gate.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 7,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-3cpa",
+        "path": "artifacts/section_13/bd-3cpa/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "has_checks": true,
+        "payload": {
+          "bead_id": "bd-3cpa",
+          "section": "13",
+          "title": "Concrete target gate: >=10x compromise reduction",
+          "generated_at": "2026-02-21T01:05:25Z",
+          "status": "pass",
+          "checks": [
+            {
+              "name": "compromise_reduction_self_test",
+              "command": "python3 scripts/check_compromise_reduction_gate.py --self-test --json",
+              "exit_code": 0,
+              "output_path": "artifacts/section_13/bd-3cpa/check_self_test.json"
+            },
+            {
+              "name": "compromise_reduction_gate_validation",
+              "command": "python3 scripts/check_compromise_reduction_gate.py --json",
+              "exit_code": 0,
+              "output_path": "artifacts/section_13/bd-3cpa/check_report.json",
+              "summary": {
+                "verdict": "PASS",
+                "compromise_reduction_ratio": 10.0,
+                "minimum_required_ratio": 10.0,
+                "baseline_compromised": 20,
+                "hardened_compromised": 2,
+                "total_attack_vectors": 20,
+                "containment_vectors": 4,
+                "missing_attack_classes": [],
+                "trace_id": "trace-bd-3cpa-compromise-reduction"
+              }
+            },
+            {
+              "name": "compromise_campaign_replay",
+              "command": "python3 scripts/check_compromise_reduction_gate.py --replay-campaign --json",
+              "exit_code": 0,
+              "output_path": "artifacts/section_13/bd-3cpa/campaign_replay.json",
+              "summary": {
+                "campaign_name": "host_compromise_adversarial_campaign_v1",
+                "total_attack_vectors": 20,
+                "ratio": 10.0
+              }
+            },
+            {
+              "name": "unit_tests",
+              "command": "python3 -m unittest tests/test_check_compromise_reduction_gate.py",
+              "exit_code": 0,
+              "output_path": "artifacts/section_13/bd-3cpa/unit_tests.txt",
+              "summary": "Ran 7 tests: OK"
+            },
+            {
+              "name": "cargo_check_all_targets_via_rch",
+              "command": "rch exec -- cargo check --all-targets",
+              "exit_code": 101,
+              "output_path": "artifacts/section_13/bd-3cpa/rch_cargo_check.log",
+              "note": "Pre-existing repository compile debt outside bd-3cpa scope."
+            },
+            {
+              "name": "cargo_clippy_all_targets_via_rch",
+              "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+              "exit_code": 101,
+              "output_path": "artifacts/section_13/bd-3cpa/rch_cargo_clippy.log",
+              "note": "Pre-existing repository-wide clippy debt outside bd-3cpa scope."
+            },
+            {
+              "name": "cargo_fmt_check_via_rch",
+              "command": "rch exec -- cargo fmt --check",
+              "exit_code": 1,
+              "output_path": "artifacts/section_13/bd-3cpa/rch_cargo_fmt_check.log",
+              "note": "Pre-existing repository formatting drift outside bd-3cpa scope."
+            }
+          ],
+          "acceptance_mapping": {
+            "identical_baseline_vs_hardened_campaign": true,
+            "attack_vectors_gte_20": true,
+            "required_attack_classes_covered": true,
+            "compromise_ratio_gte_10x": true,
+            "per_vector_description_outcomes_mitigation_documented": true,
+            "reproducible_scripted_campaign_command_present": true,
+            "containment_vectors_gte_3": true,
+            "overall_report_artifact_present": true,
+            "determinism_and_adversarial_checks_enforced": true
+          },
+          "contract_surface": {
+            "spec": "docs/specs/section_13/bd-3cpa_contract.md",
+            "canonical_report": "artifacts/13/compromise_reduction_report.json",
+            "validator": "scripts/check_compromise_reduction_gate.py",
+            "unit_tests": "tests/test_check_compromise_reduction_gate.py",
+            "ci_gate": ".github/workflows/compromise-reduction-gate.yml"
+          },
+          "required_event_codes": [
+            "CRG-001",
+            "CRG-002",
+            "CRG-003",
+            "CRG-004",
+            "CRG-005",
+            "CRG-006",
+            "CRG-007"
+          ]
+        }
+      }
+    },
+    {
+      "bead_id": "bd-34d5",
+      "criterion": "Concrete target: friction-minimized install-to-first-safe-production",
+      "quantitative": true,
+      "target": "all friction pathway checks pass",
+      "script": "scripts/check_friction_pathway.py",
+      "test": "tests/test_check_friction_pathway.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "measurement_methodology_defined": true,
+      "quantitative_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-34d5",
+        "script": "scripts/check_friction_pathway.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "verdict": "UNKNOWN",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-34d5",
+          "total": 13,
+          "passed": 13,
+          "failed": 0,
+          "all_passed": true,
+          "checks": [
+            {
+              "check": "spec_exists",
+              "passed": true,
+              "detail": "Spec file found at docs/specs/section_13/bd-34d5_contract.md"
+            },
+            {
+              "check": "policy_exists",
+              "passed": true,
+              "detail": "Policy file found at docs/policy/friction_minimized_pathway.md"
+            },
+            {
+              "check": "archetypes_defined",
+              "passed": true,
+              "detail": "All 5 archetypes present"
+            },
+            {
+              "check": "time_budget",
+              "passed": true,
+              "detail": "Time budget of 300s / 5 min found"
+            },
+            {
+              "check": "zero_edit_requirement",
+              "passed": true,
+              "detail": "Zero-edit requirement documented"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "All 4 event codes defined"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "All 4 invariants defined"
+            },
+            {
+              "check": "telemetry_policy",
+              "passed": true,
+              "detail": "Telemetry schema and event codes in policy"
+            },
+            {
+              "check": "error_handling_policy",
+              "passed": true,
+              "detail": "Error handling policy complete"
+            },
+            {
+              "check": "ci_gate_policy",
+              "passed": true,
+              "detail": "CI gate policy defined for all archetypes"
+            },
+            {
+              "check": "spec_sections",
+              "passed": true,
+              "detail": "All required spec sections present"
+            },
+            {
+              "check": "policy_pathway_steps",
+              "passed": true,
+              "detail": "All 4 pathway steps defined in policy"
+            },
+            {
+              "check": "archetype_scores",
+              "passed": true,
+              "detail": "Found 5/5 archetype compatibility scores"
+            }
+          ]
+        }
+      },
+      "unit_result": {
+        "bead": "bd-34d5",
+        "test": "tests/test_check_friction_pathway.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 27,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-34d5",
+        "path": "artifacts/section_13/bd-34d5/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "verdict": "UNKNOWN",
+        "has_checks": true,
+        "payload": {
+          "bead_id": "bd-34d5",
+          "section": "section_13",
+          "timestamp_utc": "2026-02-21T01:38:29.255605+00:00",
+          "total_checks": 13,
+          "passed": 13,
+          "failed": 0,
+          "all_passed": true,
+          "checks": [
+            {
+              "check": "spec_exists",
+              "passed": true,
+              "detail": "Spec file found at docs/specs/section_13/bd-34d5_contract.md"
+            },
+            {
+              "check": "policy_exists",
+              "passed": true,
+              "detail": "Policy file found at docs/policy/friction_minimized_pathway.md"
+            },
+            {
+              "check": "archetypes_defined",
+              "passed": true,
+              "detail": "All 5 archetypes present"
+            },
+            {
+              "check": "time_budget",
+              "passed": true,
+              "detail": "Time budget of 300s / 5 min found"
+            },
+            {
+              "check": "zero_edit_requirement",
+              "passed": true,
+              "detail": "Zero-edit requirement documented"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "All 4 event codes defined"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "All 4 invariants defined"
+            },
+            {
+              "check": "telemetry_policy",
+              "passed": true,
+              "detail": "Telemetry schema and event codes in policy"
+            },
+            {
+              "check": "error_handling_policy",
+              "passed": true,
+              "detail": "Error handling policy complete"
+            },
+            {
+              "check": "ci_gate_policy",
+              "passed": true,
+              "detail": "CI gate policy defined for all archetypes"
+            },
+            {
+              "check": "spec_sections",
+              "passed": true,
+              "detail": "All required spec sections present"
+            },
+            {
+              "check": "policy_pathway_steps",
+              "passed": true,
+              "detail": "All 4 pathway steps defined in policy"
+            },
+            {
+              "check": "archetype_scores",
+              "passed": true,
+              "detail": "Found 5/5 archetype compatibility scores"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "bead_id": "bd-2l1k",
+      "criterion": "Concrete target: 100% replay artifact coverage",
+      "quantitative": true,
+      "target": "coverage_ratio >= 1.0",
+      "script": "scripts/check_replay_coverage_gate.py",
+      "test": "tests/test_check_replay_coverage_gate.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "measurement_methodology_defined": true,
+      "quantitative_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-2l1k",
+        "script": "scripts/check_replay_coverage_gate.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-2l1k",
+          "title": "Replay coverage gate (100%)",
+          "section": "13",
+          "trace_id": "trace-bd-2l1k-replay-coverage",
+          "verdict": "PASS",
+          "total": 26,
+          "passed": 26,
+          "failed": 0,
+          "computed": {
+            "required_count": 8,
+            "covered_count": 8,
+            "coverage_ratio": 1.0,
+            "minimum_required_coverage_ratio": 1.0,
+            "missing_incident_types": [],
+            "sla_days": 14
+          },
+          "checks": [
+            {
+              "check": "file: spec contract",
+              "pass": true,
+              "detail": "docs/specs/section_13/bd-2l1k_contract.md"
+            },
+            {
+              "check": "file: replay coverage matrix",
+              "pass": true,
+              "detail": "artifacts/13/replay_coverage_matrix.json"
+            },
+            {
+              "check": "spec threshold 100% coverage",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec incident enumeration",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "spec event codes",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "matrix parse",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "matrix required top-level fields",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "matrix bead id",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "matrix timestamp valid RFC3339 UTC",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "required_incident_types is list",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "required incident types covered",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "replay_artifacts is list",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "new incident SLA days valid",
+              "pass": true,
+              "detail": "value=14"
+            },
+            {
+              "check": "replay artifact record schema",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "artifact files exist",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "100% required incident coverage",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "replay artifact content completeness",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "deterministic replay requirements",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "new incident SLA met",
+              "pass": true,
+              "detail": "required <= 14 days"
+            },
+            {
+              "check": "coverage_summary is object",
+              "pass": true,
+              "detail": "found"
+            },
+            {
+              "check": "summary required_count matches",
+              "pass": true,
+              "detail": "declared=8, computed=8"
+            },
+            {
+              "check": "summary covered_count matches",
+              "pass": true,
+              "detail": "declared=8, computed=8"
+            },
+            {
+              "check": "summary coverage_ratio matches",
+              "pass": true,
+              "detail": "declared=1.0, computed=1.0000"
+            },
+            {
+              "check": "coverage ratio threshold met",
+              "pass": true,
+              "detail": "ratio=1.0000, threshold=1.0"
+            },
+            {
+              "check": "determinism under reordering",
+              "pass": true,
+              "detail": "ratio=1.0000, reordered_ratio=1.0000"
+            },
+            {
+              "check": "adversarial perturbation flips threshold",
+              "pass": true,
+              "detail": "perturbed_ratio=0.8750, threshold=1.0"
+            }
+          ],
+          "events": [
+            {
+              "event_code": "RCG-001",
+              "trace_id": "trace-bd-2l1k-replay-coverage",
+              "message": "Replay coverage metrics computed (required=8, covered=8, ratio=1.0000)."
+            },
+            {
+              "event_code": "RCG-002",
+              "trace_id": "trace-bd-2l1k-replay-coverage",
+              "message": "Replay coverage gate passed."
+            },
+            {
+              "event_code": "RCG-006",
+              "trace_id": "trace-bd-2l1k-replay-coverage",
+              "message": "Determinism validation executed."
+            },
+            {
+              "event_code": "RCG-007",
+              "trace_id": "trace-bd-2l1k-replay-coverage",
+              "message": "New-incident SLA validation executed."
+            }
+          ]
+        }
+      },
+      "unit_result": {
+        "bead": "bd-2l1k",
+        "test": "tests/test_check_replay_coverage_gate.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 7,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-2l1k",
+        "path": "artifacts/section_13/bd-2l1k/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "has_checks": true,
+        "payload": {
+          "bead_id": "bd-2l1k",
+          "section": "13",
+          "title": "Concrete target gate: 100% replay artifact coverage",
+          "generated_at": "2026-02-21T01:14:45Z",
+          "status": "pass",
+          "checks": [
+            {
+              "name": "replay_coverage_self_test",
+              "command": "python3 scripts/check_replay_coverage_gate.py --self-test --json",
+              "exit_code": 0,
+              "output_path": "artifacts/section_13/bd-2l1k/check_self_test.json"
+            },
+            {
+              "name": "replay_coverage_gate_validation",
+              "command": "python3 scripts/check_replay_coverage_gate.py --json",
+              "exit_code": 0,
+              "output_path": "artifacts/section_13/bd-2l1k/check_report.json",
+              "summary": {
+                "verdict": "PASS",
+                "required_count": 8,
+                "covered_count": 8,
+                "coverage_ratio": 1.0,
+                "minimum_required_coverage_ratio": 1.0,
+                "missing_incident_types": [],
+                "sla_days": 14,
+                "trace_id": "trace-bd-2l1k-replay-coverage"
+              }
+            },
+            {
+              "name": "replay_incident_rce",
+              "command": "python3 scripts/check_replay_coverage_gate.py --replay-incident rce --json",
+              "exit_code": 0,
+              "output_path": "artifacts/section_13/bd-2l1k/replay_rce.json",
+              "summary": {
+                "incident_type": "rce",
+                "deterministic": true,
+                "trace_match": true
+              }
+            },
+            {
+              "name": "unit_tests",
+              "command": "python3 -m unittest tests/test_check_replay_coverage_gate.py",
+              "exit_code": 0,
+              "output_path": "artifacts/section_13/bd-2l1k/unit_tests.txt",
+              "summary": "Ran 7 tests: OK"
+            },
+            {
+              "name": "cargo_check_all_targets_via_rch",
+              "command": "rch exec -- cargo check --all-targets",
+              "exit_code": 101,
+              "output_path": "artifacts/section_13/bd-2l1k/rch_cargo_check.log",
+              "note": "Pre-existing repository compile debt outside bd-2l1k scope."
+            },
+            {
+              "name": "cargo_clippy_all_targets_via_rch",
+              "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+              "exit_code": 101,
+              "output_path": "artifacts/section_13/bd-2l1k/rch_cargo_clippy.log",
+              "note": "Pre-existing repository-wide clippy debt outside bd-2l1k scope."
+            },
+            {
+              "name": "cargo_fmt_check_via_rch",
+              "command": "rch exec -- cargo fmt --check",
+              "exit_code": 1,
+              "output_path": "artifacts/section_13/bd-2l1k/rch_cargo_fmt_check.log",
+              "note": "Pre-existing repository formatting drift outside bd-2l1k scope."
+            }
+          ],
+          "acceptance_mapping": {
+            "all_required_high_severity_incident_types_enumerated": true,
+            "every_required_incident_has_replay_artifact": true,
+            "coverage_ratio_exactly_100_percent": true,
+            "replay_artifacts_include_required_state_and_trace_fields": true,
+            "deterministic_replay_runs_gte_10_for_each_incident": true,
+            "new_incident_sla_days_lte_14": true,
+            "replay_coverage_matrix_artifact_present": true,
+            "determinism_and_adversarial_checks_enforced": true
+          },
+          "contract_surface": {
+            "spec": "docs/specs/section_13/bd-2l1k_contract.md",
+            "canonical_matrix": "artifacts/13/replay_coverage_matrix.json",
+            "replay_artifacts_dir": "artifacts/13/replay_artifacts/",
+            "validator": "scripts/check_replay_coverage_gate.py",
+            "unit_tests": "tests/test_check_replay_coverage_gate.py",
+            "ci_gate": ".github/workflows/replay-coverage-gate.yml"
+          },
+          "required_event_codes": [
+            "RCG-001",
+            "RCG-002",
+            "RCG-003",
+            "RCG-004",
+            "RCG-005",
+            "RCG-006",
+            "RCG-007"
+          ]
+        }
+      }
+    },
+    {
+      "bead_id": "bd-whxp",
+      "criterion": "Concrete target: >=2 independent replications",
+      "quantitative": true,
+      "target": "independent_replications_passing >= 2",
+      "script": "scripts/check_independent_replications_gate.py",
+      "test": "tests/test_check_independent_replications_gate.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "measurement_methodology_defined": true,
+      "quantitative_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-whxp",
+        "script": "scripts/check_independent_replications_gate.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "verdict": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-whxp",
+          "title": "Concrete target gate: >=2 independent replications",
+          "section": "13",
+          "trace_id": "3f61deaf8a6a5ccf4d29a0bb2fdb68a7c09d98f554e6ff2d95cb3e8d968a31b2",
+          "verdict": "PASS",
+          "total": 24,
+          "passed": 24,
+          "failed": 0,
+          "computed": {
+            "required_minimum_replications": 2,
+            "replication_count": 3,
+            "independent_replication_count": 2,
+            "independent_replications_passing": 2,
+            "required_claims": [
+              "compromise_reduction_10x",
+              "migration_velocity_3x",
+              "replay_coverage_100pct"
+            ]
+          },
+          "checks": [
+            {
+              "check": "file: spec contract",
+              "pass": true,
+              "detail": "docs/specs/section_13/bd-whxp_contract.md"
+            },
+            {
+              "check": "file: independent replication report",
+              "pass": true,
+              "detail": "artifacts/13/independent_replication_report.json"
+            },
+            {
+              "check": "spec invariants present",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "spec event codes",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "report parse",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "report required top-level fields",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "report bead id",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "trace_id format",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "generated_at_utc RFC-3339",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "required_claims list",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "required claims exact",
+              "pass": true,
+              "detail": "seen=['compromise_reduction_10x', 'migration_velocity_3x', 'replay_coverage_100pct']"
+            },
+            {
+              "check": "minimum required replications >=2",
+              "pass": true,
+              "detail": "value=2"
+            },
+            {
+              "check": "replications list",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "replication schema and claim result completeness",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "independent organizations unique",
+              "pass": true,
+              "detail": "duplicates=[]"
+            },
+            {
+              "check": "independent evaluator hashes unique",
+              "pass": true,
+              "detail": "duplicates=[]"
+            },
+            {
+              "check": "independent conflict disclosures clean",
+              "pass": true,
+              "detail": "count=0"
+            },
+            {
+              "check": ">=2 independent passing replications",
+              "pass": true,
+              "detail": "independent_passing=2 required=2"
+            },
+            {
+              "check": "summary fields present",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "summary counts match computed values",
+              "pass": true,
+              "detail": "summary=3/2/2 computed=3/2/2"
+            },
+            {
+              "check": "summary verdict matches computed verdict",
+              "pass": true,
+              "detail": "summary=PASS computed=PASS"
+            },
+            {
+              "check": "determinism under replication reorder",
+              "pass": true,
+              "detail": "forward=True reversed=True"
+            },
+            {
+              "check": "adversarial perturbation flips verdict",
+              "pass": true,
+              "detail": "ok"
+            },
+            {
+              "check": "report event code coverage",
+              "pass": true,
+              "detail": "seen=['IRG-001', 'IRG-002', 'IRG-003', 'IRG-004', 'IRG-005', 'IRG-006']"
+            }
+          ],
+          "events": [
+            {
+              "event_code": "IRG-001",
+              "trace_id": "3f61deaf8a6a5ccf4d29a0bb2fdb68a7c09d98f554e6ff2d95cb3e8d968a31b2",
+              "message": "Replication report loaded."
+            },
+            {
+              "event_code": "IRG-002",
+              "trace_id": "3f61deaf8a6a5ccf4d29a0bb2fdb68a7c09d98f554e6ff2d95cb3e8d968a31b2",
+              "message": "Required claims/schema validated."
+            },
+            {
+              "event_code": "IRG-003",
+              "trace_id": "3f61deaf8a6a5ccf4d29a0bb2fdb68a7c09d98f554e6ff2d95cb3e8d968a31b2",
+              "message": "Independence checks validated."
+            },
+            {
+              "event_code": "IRG-004",
+              "trace_id": "3f61deaf8a6a5ccf4d29a0bb2fdb68a7c09d98f554e6ff2d95cb3e8d968a31b2",
+              "message": "Threshold gate passed."
+            },
+            {
+              "event_code": "IRG-006",
+              "trace_id": "3f61deaf8a6a5ccf4d29a0bb2fdb68a7c09d98f554e6ff2d95cb3e8d968a31b2",
+              "message": "Determinism/adversarial checks executed."
+            }
+          ]
+        }
+      },
+      "unit_result": {
+        "bead": "bd-whxp",
+        "test": "tests/test_check_independent_replications_gate.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 5,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-whxp",
+        "path": "artifacts/section_13/bd-whxp/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "verdict": "UNKNOWN",
+        "has_checks": true,
+        "payload": {
+          "bead_id": "bd-whxp",
+          "title": "[13] Concrete target gate: >=2 independent replications",
+          "timestamp_utc": "2026-02-21T01:27:33Z",
+          "deliverables": [
+            "docs/specs/section_13/bd-whxp_contract.md",
+            "artifacts/13/independent_replication_report.json",
+            "scripts/check_independent_replications_gate.py",
+            "tests/test_check_independent_replications_gate.py",
+            ".github/workflows/independent-replication-gate.yml",
+            "artifacts/section_13/bd-whxp/check_self_test.json",
+            "artifacts/section_13/bd-whxp/check_report.json",
+            "artifacts/section_13/bd-whxp/unit_tests.txt",
+            "artifacts/section_13/bd-whxp/verification_summary.md"
+          ],
+          "gate_validation": {
+            "self_test": {
+              "command": "python3 scripts/check_independent_replications_gate.py --self-test --json",
+              "result_path": "artifacts/section_13/bd-whxp/check_self_test.json",
+              "ok": true
+            },
+            "independent_replication_gate": {
+              "command": "python3 scripts/check_independent_replications_gate.py --json",
+              "result_path": "artifacts/section_13/bd-whxp/check_report.json",
+              "verdict": "PASS",
+              "passed": 24,
+              "total": 24,
+              "required_event_codes": [
+                "IRG-001",
+                "IRG-002",
+                "IRG-003",
+                "IRG-004",
+                "IRG-005",
+                "IRG-006"
+              ]
+            },
+            "unit_tests": {
+              "command": "python3 -m unittest tests/test_check_independent_replications_gate.py",
+              "result_path": "artifacts/section_13/bd-whxp/unit_tests.txt",
+              "ok": true,
+              "tests_run": 5
+            }
+          },
+          "cargo_quality_gates_rch": [
+            {
+              "command": "rch exec -- cargo check --all-targets",
+              "exit_code": 101,
+              "log_path": "artifacts/section_13/bd-whxp/rch_cargo_check.log",
+              "status": "failed",
+              "note": "Pre-existing workspace compile errors (E0423 and related) outside bd-whxp scope."
+            },
+            {
+              "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+              "exit_code": 101,
+              "log_path": "artifacts/section_13/bd-whxp/rch_cargo_clippy.log",
+              "status": "failed",
+              "note": "Pre-existing repository lint debt and compile blockers outside bd-whxp scope."
+            },
+            {
+              "command": "rch exec -- cargo fmt --check",
+              "exit_code": 1,
+              "log_path": "artifacts/section_13/bd-whxp/rch_cargo_fmt_check.log",
+              "status": "failed",
+              "note": "Pre-existing formatting drift in unrelated files."
+            }
+          ],
+          "overall_assessment": {
+            "independent_replication_gate": "pass",
+            "workspace_global_cargo_state": "failing_preexisting",
+            "ready_to_close_bead": true
+          }
+        }
+      }
+    }
+  ],
+  "gate_checks": [
+    {
+      "id": "GATE-13-SCRIPTS",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-13-TESTS",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-13-EVIDENCE",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-13-MEASUREMENT-METHODOLOGY",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-13-QUANTITATIVE-MEASUREMENTS",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-13-QUANTITATIVE-THRESHOLD",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-13-ALL-BEADS",
+      "status": "PASS"
+    }
+  ],
+  "gaps": [],
+  "events": [
+    {
+      "event_code": "GATE_13_EVALUATION_STARTED",
+      "message": "Section 13 gate evaluation started."
+    },
+    {
+      "event_code": "GATE_13_BEAD_CHECKED",
+      "bead": "bd-2f43",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_13_BEAD_CHECKED",
+      "bead": "bd-1w78",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_13_BEAD_CHECKED",
+      "bead": "bd-2a4l",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_13_BEAD_CHECKED",
+      "bead": "bd-pga7",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_13_BEAD_CHECKED",
+      "bead": "bd-1xao",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_13_BEAD_CHECKED",
+      "bead": "bd-3e74",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_13_TARGET_MEASURED",
+      "bead": "bd-28sz",
+      "target": "overall_pass_rate >= 95%",
+      "pass": true
+    },
+    {
+      "event_code": "GATE_13_BEAD_CHECKED",
+      "bead": "bd-28sz",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_13_TARGET_MEASURED",
+      "bead": "bd-3agp",
+      "target": "overall_velocity_ratio >= 3.0",
+      "pass": true
+    },
+    {
+      "event_code": "GATE_13_BEAD_CHECKED",
+      "bead": "bd-3agp",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_13_TARGET_MEASURED",
+      "bead": "bd-3cpa",
+      "target": "compromise_reduction_ratio >= 10.0",
+      "pass": true
+    },
+    {
+      "event_code": "GATE_13_BEAD_CHECKED",
+      "bead": "bd-3cpa",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_13_TARGET_MEASURED",
+      "bead": "bd-34d5",
+      "target": "all friction pathway checks pass",
+      "pass": true
+    },
+    {
+      "event_code": "GATE_13_BEAD_CHECKED",
+      "bead": "bd-34d5",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_13_TARGET_MEASURED",
+      "bead": "bd-2l1k",
+      "target": "coverage_ratio >= 1.0",
+      "pass": true
+    },
+    {
+      "event_code": "GATE_13_BEAD_CHECKED",
+      "bead": "bd-2l1k",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_13_TARGET_MEASURED",
+      "bead": "bd-whxp",
+      "target": "independent_replications_passing >= 2",
+      "pass": true
+    },
+    {
+      "event_code": "GATE_13_BEAD_CHECKED",
+      "bead": "bd-whxp",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_13_VERDICT_EMITTED",
+      "verdict": "PASS",
+      "gate_pass": true,
+      "quantitative_targets_passing": 6,
+      "quantitative_targets_total": 6
+    }
+  ],
+  "content_hash": "1ab2704aa7d6f109c078711db9a644113081fb1210d541bbd93ce416b6188439"
+}

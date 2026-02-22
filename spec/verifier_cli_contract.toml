@@ -1,0 +1,118 @@
+schema_version = "1.0"
+contract_name = "verifier-cli"
+contract_version = "2.0.0"
+previous_contract_major = 1
+snapshot_dir = "tests/contract/snapshots"
+
+[exit_codes]
+pass = 0
+fail = 1
+error = 2
+skipped = 3
+
+[error_format]
+schema = "verifier-error-v1"
+required_fields = ["error_code", "message", "remediation"]
+
+[snapshot_policy]
+update_flag = "--update-snapshots"
+breaking_requires_major_bump = true
+additive_fields_non_breaking = true
+
+[[commands]]
+id = "verify-module"
+subcommand = "module"
+output_schema = "verifier-cli-output-v1"
+supports_json = true
+supports_compat_version = true
+required_output_fields = [
+  "command",
+  "contract_version",
+  "schema_version",
+  "compat_version",
+  "verdict",
+  "status",
+  "exit_code",
+  "reason",
+]
+
+[[commands]]
+id = "verify-migration"
+subcommand = "migration"
+output_schema = "verifier-cli-output-v1"
+supports_json = true
+supports_compat_version = true
+required_output_fields = [
+  "command",
+  "contract_version",
+  "schema_version",
+  "compat_version",
+  "verdict",
+  "status",
+  "exit_code",
+  "reason",
+]
+
+[[commands]]
+id = "verify-compatibility"
+subcommand = "compatibility"
+output_schema = "verifier-cli-output-v1"
+supports_json = true
+supports_compat_version = true
+required_output_fields = [
+  "command",
+  "contract_version",
+  "schema_version",
+  "compat_version",
+  "verdict",
+  "status",
+  "exit_code",
+  "reason",
+]
+
+[[commands]]
+id = "verify-corpus"
+subcommand = "corpus"
+output_schema = "verifier-cli-output-v1"
+supports_json = true
+supports_compat_version = true
+required_output_fields = [
+  "command",
+  "contract_version",
+  "schema_version",
+  "compat_version",
+  "verdict",
+  "status",
+  "exit_code",
+  "reason",
+]
+
+[[scenarios]]
+scenario_id = "verify_module_default"
+command_id = "verify-module"
+compat_version = 0
+snapshot = "tests/contract/snapshots/verify_module_default.json"
+
+[[scenarios]]
+scenario_id = "verify_migration_default"
+command_id = "verify-migration"
+compat_version = 0
+snapshot = "tests/contract/snapshots/verify_migration_default.json"
+
+[[scenarios]]
+scenario_id = "verify_compatibility_default"
+command_id = "verify-compatibility"
+compat_version = 0
+snapshot = "tests/contract/snapshots/verify_compatibility_default.json"
+
+[[scenarios]]
+scenario_id = "verify_corpus_default"
+command_id = "verify-corpus"
+compat_version = 0
+snapshot = "tests/contract/snapshots/verify_corpus_default.json"
+
+[[scenarios]]
+scenario_id = "verify_module_invalid_compat"
+command_id = "verify-module"
+compat_version = 9
+snapshot = "tests/contract/snapshots/verify_module_invalid_compat.json"

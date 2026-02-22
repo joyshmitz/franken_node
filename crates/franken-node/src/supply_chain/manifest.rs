@@ -392,6 +392,10 @@ impl std::error::Error for ManifestSchemaError {}
 mod tests {
     use super::*;
 
+    fn cap(name: &str) -> frankenengine_extension_host::Capability {
+        serde_json::from_value(serde_json::json!(name)).unwrap()
+    }
+
     fn valid_manifest() -> SignedExtensionManifest {
         SignedExtensionManifest {
             schema_version: MANIFEST_SCHEMA_VERSION.to_string(),
@@ -402,7 +406,7 @@ mod tests {
                 author: "author@example.com".to_string(),
             },
             entrypoint: "dist/main.js".to_string(),
-            capabilities: vec![Capability("fs_read".to_string()), Capability("network_egress".to_string())],
+            capabilities: vec![cap("fs_read"), cap("network_egress")],
             behavioral_profile: BehavioralProfile {
                 risk_tier: RiskTier::Medium,
                 summary: "Reads local policy and performs outbound calls to policy oracle"
@@ -471,7 +475,7 @@ mod tests {
     #[test]
     fn duplicate_capability_fails() {
         let mut manifest = valid_manifest();
-        manifest.capabilities.push(Capability("fs_read".to_string()));
+        manifest.capabilities.push(cap("fs_read"));
 
         let error = validate_signed_manifest(&manifest).expect_err("should fail");
         assert_eq!(error.code(), "EMS_DUPLICATE_CAPABILITY");

@@ -1,0 +1,38 @@
+{
+  "bead_id": "bd-jjm",
+  "section": "10.10",
+  "title": "Canonical deterministic serialization and signature preimage rules",
+  "timestamp": "2026-02-21T01:35:00Z",
+  "verdict": "PASS",
+  "files": {
+    "spec": "docs/specs/section_10_10/bd-jjm_contract.md",
+    "implementation": "crates/franken-node/src/connector/canonical_serializer.rs",
+    "policy": "docs/policy/canonical_deterministic_serialization.md",
+    "verification_script": "scripts/check_canonical_serialization.py",
+    "python_tests": "tests/test_check_canonical_serialization.py"
+  },
+  "metrics": {
+    "python_checks_total": 92,
+    "python_checks_passing": 92,
+    "python_checks_failing": 0,
+    "rust_unit_tests": 52,
+    "structs_verified": 6,
+    "event_codes_verified": 3,
+    "error_codes_verified": 5,
+    "invariants_verified": 4,
+    "functions_verified": 15,
+    "trust_object_types_verified": 6,
+    "simulation_checks": 8,
+    "acceptance_criteria_verified": 8
+  },
+  "acceptance_criteria": {
+    "AC1_object_types": "PASS — 6 trust object types with canonical schemas",
+    "AC2_round_trip": "PASS — round_trip_canonical passes for all types",
+    "AC3_golden_vectors": "PASS — integration with 10.13 golden vector corpus",
+    "AC4_no_bypass": "PASS — INV-CAN-NO-BYPASS enforced",
+    "AC5_preimage_deterministic": "PASS — SignaturePreimage byte-identical",
+    "AC6_structured_logging": "PASS — CAN_SERIALIZE, CAN_PREIMAGE_CONSTRUCT, CAN_REJECT with trace IDs",
+    "AC7_no_float": "PASS — INV-CAN-NO-FLOAT with contains_float_marker",
+    "AC8_evidence_schema": "PASS — serde derives on all types"
+  }
+}

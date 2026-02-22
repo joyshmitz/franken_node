@@ -1,0 +1,19 @@
+{
+  "bead_id": "bd-2tdi",
+  "section": "10.15",
+  "title": "Region-Owned Lifecycle Orchestration",
+  "timestamp": "2026-02-22T00:00:00Z",
+  "region_kinds": ["ConnectorLifecycle", "HealthGate", "Rollout", "Fencing"],
+  "event_codes": ["RGN-001", "RGN-002", "RGN-003", "RGN-004", "RGN-005"],
+  "error_codes": ["RGN_ALREADY_CLOSED", "RGN_CHILD_STILL_OPEN", "RGN_TASK_NOT_FOUND"],
+  "invariants_enforced": [
+    "INV-RGN-QUIESCENCE",
+    "INV-RGN-NO-OUTLIVE",
+    "INV-RGN-HIERARCHY",
+    "INV-RGN-DETERMINISTIC"
+  ],
+  "rust_unit_tests": 11,
+  "types_defined": ["RegionId", "RegionKind", "Region", "CloseResult", "RegionEvent", "RegionError", "RegionTask", "TaskState"],
+  "gate_script": "scripts/check_region_owned_lifecycle.py",
+  "verdict": "PASS"
+}

@@ -1,0 +1,114 @@
+{
+  "bead_id": "bd-2zip",
+  "generated_at_utc": "2026-02-21T05:01:00Z",
+  "verifier_version": "1.0.0",
+  "public_key_id": "atc-verifier-v1",
+  "signature_algorithm": "sha256-canonical-v1",
+  "computation_id": "atc-comp-2026-02-21-001",
+  "dataset_commitment": {
+    "root_hash": "sha256:44b1b94a9b8c0e6591f1d7b6d47aaaf3be334d5516a9af2db2f26d8af8f5b373",
+    "participant_count": 42,
+    "raw_data_included": false
+  },
+  "metric_snapshots": [
+    {
+      "metric_id": "ecosystem_risk_index",
+      "value": 0.217,
+      "unit": "score",
+      "confidence": 0.93,
+      "data_visibility": "aggregate_only",
+      "source_commitment": "sha256:8ff82bd8ecaf5276be55f75a9ec323767f6f855ec6e610e603f8f57f5f9f4b11",
+      "raw_participant_data_included": false
+    },
+    {
+      "metric_id": "proof_validity_rate",
+      "value": 0.991,
+      "unit": "ratio",
+      "confidence": 0.96,
+      "data_visibility": "aggregate_only",
+      "source_commitment": "sha256:42ca5182f39b8ed34bc960154ecf2ecbd0d00658ce5f49825f2fd6ce98f58f63",
+      "raw_participant_data_included": false
+    }
+  ],
+  "determinism_checks": {
+    "runs": [
+      {
+        "run_id": "run-1",
+        "result_digest": "sha256:3df0e871af7ce490325ba8df42f8df4db9d5bb447ee81873f5f8430f562f26fd",
+        "duration_ms": 14
+      },
+      {
+        "run_id": "run-2",
+        "result_digest": "sha256:3df0e871af7ce490325ba8df42f8df4db9d5bb447ee81873f5f8430f562f26fd",
+        "duration_ms": 15
+      },
+      {
+        "run_id": "run-3",
+        "result_digest": "sha256:3df0e871af7ce490325ba8df42f8df4db9d5bb447ee81873f5f8430f562f26fd",
+        "duration_ms": 14
+      }
+    ],
+    "all_equal": true,
+    "max_digest_distance": 0
+  },
+  "proof_chain": [
+    {
+      "step": 0,
+      "artifact_hash": "sha256:7c66b485f8e9fd7784ca45221249191ad0fcb7131f4f1dc793f8cd53d4f2b6e6",
+      "parent_hash": null,
+      "signature": "sig-root"
+    },
+    {
+      "step": 1,
+      "artifact_hash": "sha256:9985ff45d7e4db32b5f6dd833d29e0de5d673ca7bcf92390f7b06c5681965932",
+      "parent_hash": "sha256:7c66b485f8e9fd7784ca45221249191ad0fcb7131f4f1dc793f8cd53d4f2b6e6",
+      "signature": "sig-mid"
+    },
+    {
+      "step": 2,
+      "artifact_hash": "sha256:ac5e9c8ea126aefbf7cf3de20b99af4da5bb9208485ac177deecf78f7094cb8e",
+      "parent_hash": "sha256:9985ff45d7e4db32b5f6dd833d29e0de5d673ca7bcf92390f7b06c5681965932",
+      "signature": "sig-leaf"
+    }
+  ],
+  "verifier_outputs": {
+    "integrity_valid": true,
+    "metric_provenance_valid": true,
+    "deterministic": true,
+    "private_raw_data_required": false
+  },
+  "evidence_refs": [
+    "docs/specs/atc_verifier_contract.md",
+    "tests/conformance/atc_verifier_apis.rs"
+  ],
+  "events": [
+    {
+      "code": "ATC-VERIFIER-001",
+      "detail": "verifier evaluation started"
+    },
+    {
+      "code": "ATC-VERIFIER-002",
+      "detail": "metric provenance validated"
+    },
+    {
+      "code": "ATC-VERIFIER-003",
+      "detail": "proof-chain continuity validated"
+    },
+    {
+      "code": "ATC-VERIFIER-004",
+      "detail": "determinism check passed"
+    },
+    {
+      "code": "ATC-VERIFIER-005",
+      "detail": "privacy envelope validated"
+    },
+    {
+      "code": "ATC-VERIFIER-006",
+      "detail": "external verifier report emitted"
+    }
+  ],
+  "signing": {
+    "canonical_payload_sha256": "3bd700cdb9dec1df374b778be6cf33691ce4b76f1987d444f3aa2cb7709bf12b",
+    "signature": "d2524e6733d116585d293bbf45da07b413654be74410d37bdd4a3ee5b420a4c5"
+  }
+}

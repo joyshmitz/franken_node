@@ -91,8 +91,16 @@ Capability validation runs **before** policy allow/deny evaluation.
 Required operator flow:
 
 ```bash
-franken-node remotecap issue --scope <scope> --ttl <duration> --operator-approved
+franken-node remotecap issue \
+  --scope network_egress,federation_sync,telemetry_export \
+  --endpoint https:// \
+  --endpoint federation:// \
+  --ttl 15m \
+  --issuer ops-control-plane \
+  --operator-approved \
+  --json
 ```
 
-Current implementation exposes issuance primitives in Rust (`CapabilityProvider::issue`) and keeps this CLI contract as the normative command surface.
-
+The CLI uses `CapabilityProvider::issue` and enforces explicit operator authorization.
+Token signing secret is read from `FRANKEN_NODE_REMOTECAP_SECRET` (falls back to
+a development default if unset).

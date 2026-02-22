@@ -1,0 +1,110 @@
+{
+  "bead": "bd-2qqu",
+  "title": "Virtual Transport Fault Harness",
+  "section": "10.14",
+  "verdict": "PASS",
+  "passed": 10,
+  "total": 10,
+  "timestamp": "2026-02-21T00:00:00Z",
+  "gate_script": "scripts/check_virtual_transport_faults.py",
+  "test_suite": "tests/test_check_virtual_transport_faults.py",
+  "rust_test_count": 19,
+  "python_test_count": 36,
+  "checks": [
+    {
+      "check": "SOURCE_EXISTS",
+      "passed": true,
+      "detail": "crates/franken-node/src/remote/virtual_transport_faults.rs"
+    },
+    {
+      "check": "EVENT_CODES",
+      "passed": true,
+      "detail": "12/12 event codes"
+    },
+    {
+      "check": "INVARIANTS",
+      "passed": true,
+      "detail": "6/6 invariants"
+    },
+    {
+      "check": "CORE_TYPES",
+      "passed": true,
+      "detail": "5/5 types"
+    },
+    {
+      "check": "PREBUILT_SCENARIOS",
+      "passed": true,
+      "detail": "5/5 scenarios"
+    },
+    {
+      "check": "DETERMINISTIC_SCHEDULE",
+      "passed": true,
+      "detail": "seed-based deterministic schedule"
+    },
+    {
+      "check": "FAULT_INJECTION",
+      "passed": true,
+      "detail": "3 fault injection methods"
+    },
+    {
+      "check": "CAMPAIGN_RUNNER",
+      "passed": true,
+      "detail": "campaign execution"
+    },
+    {
+      "check": "AUDIT_TRAIL",
+      "passed": true,
+      "detail": "log export"
+    },
+    {
+      "check": "TEST_COVERAGE",
+      "passed": true,
+      "detail": "19 tests found"
+    }
+  ],
+  "implementation_artifacts": {
+    "source": "crates/franken-node/src/remote/virtual_transport_faults.rs",
+    "spec_contract": "docs/specs/section_10_14/bd-2qqu_contract.md",
+    "verification_script": "scripts/check_virtual_transport_faults.py",
+    "unit_tests": "tests/test_check_virtual_transport_faults.py"
+  },
+  "invariants_verified": [
+    "INV-VTF-DETERMINISTIC",
+    "INV-VTF-DROP",
+    "INV-VTF-REORDER",
+    "INV-VTF-CORRUPT",
+    "INV-VTF-LOGGED",
+    "INV-VTF-REPRODUCIBLE"
+  ],
+  "event_codes_verified": [
+    "FAULT_INJECTED",
+    "FAULT_SCHEDULE_CREATED",
+    "FAULT_CAMPAIGN_COMPLETE",
+    "FAULT_LOG_EXPORTED",
+    "FAULT_DROP_APPLIED",
+    "FAULT_REORDER_APPLIED",
+    "FAULT_CORRUPT_APPLIED",
+    "FAULT_NONE",
+    "FAULT_HARNESS_INIT",
+    "FAULT_SCENARIO_START",
+    "FAULT_SCENARIO_END",
+    "FAULT_AUDIT_EMITTED"
+  ],
+  "prebuilt_scenarios": [
+    "no_faults",
+    "moderate_drops",
+    "heavy_reorder",
+    "light_corruption",
+    "chaos"
+  ],
+  "core_types": [
+    "VirtualTransportFaultHarness",
+    "FaultClass",
+    "FaultConfig",
+    "FaultSchedule",
+    "CampaignResult",
+    "FaultEvent",
+    "ScheduledFault",
+    "VtfAuditRecord"
+  ]
+}

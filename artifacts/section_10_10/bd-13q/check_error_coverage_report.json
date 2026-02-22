@@ -1,0 +1,39 @@
+{
+  "bead_id": "bd-13q",
+  "check": "error_coverage_audit",
+  "verdict": "PASS",
+  "summary": {
+    "total_checks": 5,
+    "passed": 5,
+    "failed": 0,
+    "mapped_error_count": 6,
+    "unmapped_error_count": 0
+  },
+  "checks": [
+    {
+      "check": "required_surfaces_present",
+      "pass": true,
+      "detail": "all required surfaces present"
+    },
+    {
+      "check": "zero_unmapped_errors",
+      "pass": true,
+      "detail": "no unmapped surfaced errors"
+    },
+    {
+      "check": "canonical_code_registry_coverage",
+      "pass": true,
+      "detail": "all canonical codes are registry-backed"
+    },
+    {
+      "check": "surface_code_prefix_coverage",
+      "pass": true,
+      "detail": "all surface codes use FN-* prefixes"
+    },
+    {
+      "check": "implementation_prefix_registry",
+      "pass": true,
+      "detail": "all prefixes and telemetry dimension found in implementation"
+    }
+  ]
+}

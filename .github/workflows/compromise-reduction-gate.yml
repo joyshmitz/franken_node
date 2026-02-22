@@ -1,0 +1,33 @@
+name: Compromise Reduction Gate
+
+on:
+  pull_request:
+    paths:
+      - "docs/specs/section_13/bd-3cpa_contract.md"
+      - "artifacts/13/compromise_reduction_report.json"
+      - "scripts/check_compromise_reduction_gate.py"
+      - "tests/test_check_compromise_reduction_gate.py"
+  push:
+    branches: [main]
+    paths:
+      - "docs/specs/section_13/bd-3cpa_contract.md"
+      - "artifacts/13/compromise_reduction_report.json"
+      - "scripts/check_compromise_reduction_gate.py"
+      - "tests/test_check_compromise_reduction_gate.py"
+
+jobs:
+  compromise-reduction:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run compromise reduction gate
+        run: |
+          python3 scripts/check_compromise_reduction_gate.py --json > /tmp/compromise_reduction_gate.json
+
+      - name: Upload gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compromise-reduction-gate
+          path: /tmp/compromise_reduction_gate.json

@@ -1,0 +1,41 @@
+{
+  "registry_version": 1,
+  "entries": [
+    {
+      "name": "federation.sync_delta.v1",
+      "description": "Synchronize signed trust deltas from a remote federation peer.",
+      "required_capabilities": [
+        "remote_computation"
+      ],
+      "input_schema": "schemas/remote/federation_sync_delta_input.json",
+      "output_schema": "schemas/remote/federation_sync_delta_output.json"
+    },
+    {
+      "name": "storage.upload_receipt.v1",
+      "description": "Upload receipt-window proof bundles to remote durable storage.",
+      "required_capabilities": [
+        "remote_computation"
+      ],
+      "input_schema": "schemas/remote/storage_upload_receipt_input.json",
+      "output_schema": "schemas/remote/storage_upload_receipt_output.json"
+    },
+    {
+      "name": "telemetry.export_metrics.v1",
+      "description": "Export policy-governed aggregate telemetry snapshots.",
+      "required_capabilities": [
+        "remote_computation"
+      ],
+      "input_schema": "schemas/remote/telemetry_export_metrics_input.json",
+      "output_schema": "schemas/remote/telemetry_export_metrics_output.json"
+    },
+    {
+      "name": "trust.verify_manifest.v1",
+      "description": "Verify remote trust-manifest integrity and signer lineage.",
+      "required_capabilities": [
+        "remote_computation"
+      ],
+      "input_schema": "schemas/remote/trust_verify_manifest_input.json",
+      "output_schema": "schemas/remote/trust_verify_manifest_output.json"
+    }
+  ]
+}

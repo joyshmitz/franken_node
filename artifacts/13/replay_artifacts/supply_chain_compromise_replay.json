@@ -1,0 +1,24 @@
+{
+  "incident_type": "supply_chain_compromise",
+  "initial_state_snapshot": "snap-supply_chain_compromise-v1",
+  "input_sequence": [
+    "seed-fixture-supply_chain_compromise",
+    "execute-attack-supply_chain_compromise",
+    "capture-runtime-trace"
+  ],
+  "expected_behavior_trace": [
+    "attack-attempt-detected",
+    "policy-gate-evaluated",
+    "mitigation-applied"
+  ],
+  "actual_behavior_trace": [
+    "attack-attempt-detected",
+    "policy-gate-evaluated",
+    "mitigation-applied"
+  ],
+  "divergence_point": "none",
+  "last_verified_utc": "2026-02-21T01:00:00Z",
+  "deterministic_runs": 10,
+  "deterministic_match": true,
+  "reproduction_command": "python3 scripts/check_replay_coverage_gate.py --replay-incident supply_chain_compromise --json"
+}

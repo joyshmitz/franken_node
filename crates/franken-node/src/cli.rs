@@ -41,6 +41,10 @@ pub enum Command {
     #[command(subcommand)]
     Trust(TrustCommand),
 
+    /// Remote capability token issuance and inspection.
+    #[command(subcommand, name = "remotecap")]
+    Remotecap(RemoteCapCommand),
+
     /// Trust-card API/CLI parity surfaces.
     #[command(subcommand, name = "trust-card")]
     TrustCard(TrustCardCommand),
@@ -69,13 +73,33 @@ pub enum Command {
 
 #[derive(Debug, Parser)]
 pub struct InitArgs {
-    /// Runtime profile: strict, balanced, or legacy-risky.
-    #[arg(long, default_value = "balanced")]
-    pub profile: String,
+    /// Runtime profile override: strict, balanced, or legacy-risky.
+    #[arg(long)]
+    pub profile: Option<String>,
+
+    /// Config file override (default discovery is used when omitted).
+    #[arg(long)]
+    pub config: Option<PathBuf>,
 
     /// Output directory for generated config files.
     #[arg(long)]
     pub out_dir: Option<PathBuf>,
+
+    /// Overwrite existing generated files in target directory.
+    #[arg(long)]
+    pub overwrite: bool,
+
+    /// Backup existing generated files before writing replacements.
+    #[arg(long)]
+    pub backup_existing: bool,
+
+    /// Emit machine-readable init report.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Stable trace ID for correlating init events.
+    #[arg(long, default_value = "init-bootstrap")]
+    pub trace_id: String,
 }
 
 // -- run --
@@ -146,6 +170,22 @@ pub struct MigrateValidateArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum VerifyCommand {
+    /// Verify module conformance against the public verifier contract.
+    #[command(name = "module")]
+    Module(VerifyModuleArgs),
+
+    /// Verify migration compatibility contract output.
+    #[command(name = "migration")]
+    Migration(VerifyMigrationArgs),
+
+    /// Verify compatibility claims for a target profile/runtime.
+    #[command(name = "compatibility")]
+    Compatibility(VerifyCompatibilityArgs),
+
+    /// Verify corpus schema and coverage contract output.
+    #[command(name = "corpus")]
+    Corpus(VerifyCorpusArgs),
+
     /// Compare behavior across runtimes in lockstep.
     Lockstep(VerifyLockstepArgs),
 
@@ -180,6 +220,62 @@ pub struct VerifyReleaseArgs {
     /// Emit structured JSON output instead of human-readable text.
     #[arg(long)]
     pub json: bool,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyModuleArgs {
+    /// Module identifier to verify.
+    pub module_id: String,
+
+    /// Emit structured JSON output.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Request compatibility output for one previous major contract version.
+    #[arg(long)]
+    pub compat_version: Option<u16>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyMigrationArgs {
+    /// Migration identifier to verify.
+    pub migration_id: String,
+
+    /// Emit structured JSON output.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Request compatibility output for one previous major contract version.
+    #[arg(long)]
+    pub compat_version: Option<u16>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyCompatibilityArgs {
+    /// Compatibility target (for example: runtime name or profile).
+    pub target: String,
+
+    /// Emit structured JSON output.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Request compatibility output for one previous major contract version.
+    #[arg(long)]
+    pub compat_version: Option<u16>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyCorpusArgs {
+    /// Path to the corpus manifest to verify.
+    pub corpus_path: PathBuf,
+
+    /// Emit structured JSON output.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Request compatibility output for one previous major contract version.
+    #[arg(long)]
+    pub compat_version: Option<u16>,
 }
 
 // -- trust --
@@ -253,6 +349,52 @@ pub struct TrustSyncArgs {
     /// Force sync even if cache is fresh.
     #[arg(long)]
     pub force: bool,
+}
+
+// -- remotecap --
+
+#[derive(Debug, Subcommand)]
+pub enum RemoteCapCommand {
+    /// Issue a signed capability token for network-bound operations.
+    Issue(RemoteCapIssueArgs),
+}
+
+#[derive(Debug, Parser)]
+pub struct RemoteCapIssueArgs {
+    /// Comma-separated operation scope.
+    /// Example: `network_egress,federation_sync,telemetry_export`
+    #[arg(long)]
+    pub scope: String,
+
+    /// Allowed endpoint prefix (repeatable).
+    /// Example: `--endpoint https:// --endpoint federation://`
+    #[arg(long = "endpoint", required = true)]
+    pub endpoint_prefixes: Vec<String>,
+
+    /// Capability token TTL (`s`, `m`, `h`, `d` suffix supported).
+    /// Example: `15m`, `1h`, `86400`
+    #[arg(long, default_value = "1h")]
+    pub ttl: String,
+
+    /// Issuer identity written into the token.
+    #[arg(long, default_value = "operator-cli")]
+    pub issuer: String,
+
+    /// Explicit operator authorization for issuance.
+    #[arg(long)]
+    pub operator_approved: bool,
+
+    /// Issue single-use token that is replay-protected by the gate.
+    #[arg(long, default_value_t = false)]
+    pub single_use: bool,
+
+    /// Trace correlation ID for audit logs.
+    #[arg(long, default_value = "trace-cli-remotecap")]
+    pub trace_id: String,
+
+    /// Emit machine-readable JSON output.
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
 }
 
 // -- trust-card --
@@ -489,6 +631,22 @@ pub struct BenchRunArgs {
 
 #[derive(Debug, Parser)]
 pub struct DoctorArgs {
+    /// Config file override (default discovery is used when omitted).
+    #[arg(long)]
+    pub config: Option<PathBuf>,
+
+    /// Runtime profile override: strict, balanced, or legacy-risky.
+    #[arg(long)]
+    pub profile: Option<String>,
+
+    /// Emit machine-readable JSON report.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Stable trace ID for correlating diagnostics.
+    #[arg(long, default_value = "doctor-bootstrap")]
+    pub trace_id: String,
+
     /// Show verbose diagnostic output.
     #[arg(long)]
     pub verbose: bool,

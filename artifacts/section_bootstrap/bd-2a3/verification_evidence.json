@@ -1,0 +1,113 @@
+{
+  "bead_id": "bd-2a3",
+  "section": "bootstrap",
+  "timestamp_utc": "2026-02-22T01:11:19Z",
+  "git_head": "f1d41ad9b488c06ff83cc4b4c259a9bbb48335e9",
+  "schema_version": "rch-baseline-v1.1",
+  "trace_id": "trace-bd-2a3-rch",
+  "implementation_paths": [
+    "tests/e2e/baseline_rch_sequence.sh",
+    "artifacts/section_bootstrap/bd-2a3/baseline_checks.json",
+    "artifacts/section_bootstrap/bd-2a3/baseline_checks.md",
+    "artifacts/section_bootstrap/bd-2a3/rch_command_log.jsonl"
+  ],
+  "acceptance_criteria": [
+    {
+      "id": 1,
+      "status": "pass",
+      "detail": "All required baseline checks were executed through rch offload.",
+      "evidence": [
+        "RCH-BASELINE-010 events show each required command starting via rch",
+        "checks[].command values: cargo fmt --check, cargo check --all-targets, cargo clippy --all-targets -- -D warnings",
+        "tests/e2e/baseline_rch_sequence.sh run_rch() executes `rch exec -- <command>`"
+      ]
+    },
+    {
+      "id": 2,
+      "status": "pass",
+      "detail": "Results include deterministic provenance (timestamp, trace_id, command, exit codes, durations, logs).",
+      "evidence": [
+        "artifacts/section_bootstrap/bd-2a3/baseline_checks.json",
+        "artifacts/section_bootstrap/bd-2a3/rch_command_log.jsonl",
+        "artifacts/section_bootstrap/bd-2a3/rch_doctor.log"
+      ]
+    },
+    {
+      "id": 3,
+      "status": "pass",
+      "detail": "Failure reports include actionable failing target/lint signals and reproduction commands.",
+      "evidence": [
+        "cargo_check_all_targets.log includes E0599/E0423/E0499/E0502 and compile-target failures",
+        "cargo_clippy_all_targets.log includes hard failures under -D warnings and compile-target failures",
+        "cargo_fmt_check.log includes concrete file-level formatting diffs"
+      ]
+    }
+  ],
+  "status_code_registry": [
+    {
+      "check_id": "cargo_fmt_check",
+      "class_code": "BD2A3-FMT",
+      "pass_code": "BD2A3-FMT-PASS",
+      "fail_code": "BD2A3-FMT-FAIL"
+    },
+    {
+      "check_id": "cargo_check_all_targets",
+      "class_code": "BD2A3-CHECK",
+      "pass_code": "BD2A3-CHECK-PASS",
+      "fail_code": "BD2A3-CHECK-FAIL"
+    },
+    {
+      "check_id": "cargo_clippy_all_targets",
+      "class_code": "BD2A3-CLIPPY",
+      "pass_code": "BD2A3-CLIPPY-PASS",
+      "fail_code": "BD2A3-CLIPPY-FAIL"
+    }
+  ],
+  "verification_runs": [
+    {
+      "name": "baseline_rch_sequence",
+      "command": "timeout 900 tests/e2e/baseline_rch_sequence.sh",
+      "runner": "local_orchestrator_with_rch_offload",
+      "exit_code": 1,
+      "result": "fail_workspace_debt_captured",
+      "summary": "bd-2a3 baseline sequence: FAIL (0/3 checks passed)"
+    }
+  ],
+  "check_results": [
+    {
+      "check_id": "cargo_fmt_check",
+      "status_code": "BD2A3-FMT-FAIL",
+      "exit_code": 1,
+      "elapsed_ms": 1864,
+      "output_log": "artifacts/section_bootstrap/bd-2a3/cargo_fmt_check.log"
+    },
+    {
+      "check_id": "cargo_check_all_targets",
+      "status_code": "BD2A3-CHECK-FAIL",
+      "exit_code": 101,
+      "elapsed_ms": 141720,
+      "output_log": "artifacts/section_bootstrap/bd-2a3/cargo_check_all_targets.log"
+    },
+    {
+      "check_id": "cargo_clippy_all_targets",
+      "status_code": "BD2A3-CLIPPY-FAIL",
+      "exit_code": 101,
+      "elapsed_ms": 91709,
+      "output_log": "artifacts/section_bootstrap/bd-2a3/cargo_clippy_all_targets.log"
+    }
+  ],
+  "remediation_hints": [
+    "Formatting drift: run `rch exec -- cargo fmt` and re-check with `rch exec -- cargo fmt --check`.",
+    "Digest trait import failures (E0599): import `sha2::Digest`/`hmac::Mac` where constructors like `Sha256::new()` are used.",
+    "Capability construction failures (E0423): update enum construction sites to current API shape.",
+    "Borrow checker failures (E0499/E0502): avoid mutable logging while immutable borrows are alive (collect data first, log after iteration)."
+  ],
+  "determinism": {
+    "baseline_json_sha256_runs": [
+      "e60cc16617a74fb05df450481db76bebfbbc8dea8319be1ddd7fee81245b9363",
+      "e60cc16617a74fb05df450481db76bebfbbc8dea8319be1ddd7fee81245b9363"
+    ],
+    "consistent_across_runs": true
+  },
+  "overall_status": "pass_for_bd_2a3_scope_with_workspace_quality_failures_documented"
+}

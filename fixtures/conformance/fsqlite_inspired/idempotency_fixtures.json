@@ -1,0 +1,125 @@
+{
+  "domain": "idempotency",
+  "description": "Fixtures verifying that repeated application of the same operation yields the same result as a single application.",
+  "fixtures": [
+    {
+      "conformance_id": "FSQL-IDP-001",
+      "domain": "idempotency",
+      "description": "Inserting the same idempotency key twice returns the original result, not a duplicate",
+      "input": {
+        "operation": "insert_with_key",
+        "idempotency_key": "idem-key-001",
+        "payload": {"action": "create_token", "subject": "node-A"}
+      },
+      "expected": {
+        "first_insert": "accepted",
+        "second_insert": "deduplicated",
+        "result_identical": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-IDP-002",
+      "domain": "idempotency",
+      "description": "Set-union merge of two identical sets is idempotent",
+      "input": {
+        "set_a": ["x", "y", "z"],
+        "set_b": ["x", "y", "z"]
+      },
+      "expected": {
+        "merged": ["x", "y", "z"],
+        "merge_idempotent": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-IDP-003",
+      "domain": "idempotency",
+      "description": "Set-union merge with overlapping elements is idempotent on re-merge",
+      "input": {
+        "set_a": ["a", "b", "c"],
+        "set_b": ["b", "c", "d"]
+      },
+      "expected": {
+        "merged": ["a", "b", "c", "d"],
+        "re_merge_same": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-IDP-004",
+      "domain": "idempotency",
+      "description": "Configuration apply with identical config is idempotent (no state change)",
+      "input": {
+        "config": {"max_epoch": 100, "quorum_size": 3},
+        "apply_count": 3
+      },
+      "expected": {
+        "final_config": {"max_epoch": 100, "quorum_size": 3},
+        "state_changes": 1
+      }
+    },
+    {
+      "conformance_id": "FSQL-IDP-005",
+      "domain": "idempotency",
+      "description": "Marker append with duplicate sequence number is rejected, stream unchanged",
+      "input": {
+        "sequence": 5,
+        "first_append": "accepted",
+        "second_append_same_seq": true
+      },
+      "expected": {
+        "second_result": "rejected",
+        "stream_length_unchanged": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-IDP-006",
+      "domain": "idempotency",
+      "description": "Proof verification returns same verdict on repeated checks",
+      "input": {
+        "proof_type": "merkle_inclusion",
+        "verify_count": 5
+      },
+      "expected": {
+        "all_verdicts_identical": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-IDP-007",
+      "domain": "idempotency",
+      "description": "Hash computation of the same data is idempotent across invocations",
+      "input": {
+        "data": "idempotency-hash-test",
+        "compute_count": 10
+      },
+      "expected": {
+        "all_hashes_identical": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-IDP-008",
+      "domain": "idempotency",
+      "description": "Epoch seal operation on an already-sealed epoch is a no-op",
+      "input": {
+        "epoch": 42,
+        "seal_count": 3
+      },
+      "expected": {
+        "first_seal": "sealed",
+        "subsequent_seals": "already_sealed",
+        "epoch_state_unchanged": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-IDP-009",
+      "domain": "idempotency",
+      "description": "Revocation publish with duplicate cert ID is idempotent",
+      "input": {
+        "cert_id": "cert-revoke-001",
+        "publish_count": 2
+      },
+      "expected": {
+        "revocation_count": 1,
+        "second_publish": "deduplicated"
+      }
+    }
+  ]
+}

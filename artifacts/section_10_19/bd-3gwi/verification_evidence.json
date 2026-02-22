@@ -1,0 +1,71 @@
+{
+  "bead_id": "bd-3gwi",
+  "title": "Contribution-weighted intelligence access policy and reciprocity controls",
+  "section": "10.19",
+  "timestamp": "2026-02-20T00:00:00Z",
+  "agent": "CrimsonCrane",
+  "deliverables": {
+    "spec_contract": {
+      "path": "docs/specs/section_10_19/bd-3gwi_contract.md",
+      "status": "CREATED"
+    },
+    "rust_module": {
+      "path": "crates/franken-node/src/federation/atc_reciprocity.rs",
+      "status": "CREATED",
+      "registered_in": "crates/franken-node/src/federation/mod.rs"
+    },
+    "check_script": {
+      "path": "scripts/check_atc_reciprocity.py",
+      "status": "CREATED",
+      "total_checks": 57,
+      "passed": 57,
+      "failed": 0
+    },
+    "unit_tests": {
+      "path": "tests/test_check_atc_reciprocity.py",
+      "status": "CREATED",
+      "total_tests": 25,
+      "passed": 25,
+      "failed": 0
+    },
+    "reciprocity_matrix": {
+      "path": "artifacts/10.19/atc_reciprocity_matrix.json",
+      "status": "CREATED"
+    }
+  },
+  "verification_results": {
+    "check_script": {
+      "verdict": "PASS",
+      "total": 57,
+      "passed": 57,
+      "failed": 0
+    },
+    "unit_tests": {
+      "verdict": "PASS",
+      "total": 25,
+      "passed": 25,
+      "failed": 0
+    },
+    "self_test": {
+      "verdict": "PASS"
+    },
+    "cargo_check": {
+      "verdict": "FAIL_BASELINE",
+      "detail": "Pre-existing workspace compile errors in unrelated modules. Not introduced by this bead."
+    }
+  },
+  "implementation_summary": {
+    "types_implemented": 8,
+    "event_codes": 12,
+    "invariants": 6,
+    "inline_tests": 21,
+    "access_tiers": 4,
+    "controls": [
+      "freerider_blocking",
+      "grace_period_7d",
+      "exception_paths_audited",
+      "contribution_ratio_quality_adjusted",
+      "batch_reciprocity_matrix"
+    ]
+  }
+}

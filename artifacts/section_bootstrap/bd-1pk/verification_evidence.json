@@ -1,0 +1,71 @@
+{
+  "bead_id": "bd-1pk",
+  "generated_at_utc": "2026-02-22T01:38:40.919749+00:00",
+  "status": "implemented_with_baseline_quality_debt",
+  "implementation": {
+    "code_paths": [
+      "crates/franken-node/src/main.rs",
+      "crates/franken-node/src/cli.rs"
+    ],
+    "contract_path": "docs/specs/bootstrap_doctor_contract.md",
+    "test_paths": [
+      "tests/e2e/doctor_command_diagnostics.sh",
+      "tests/test_doctor_command_diagnostics_gate.py"
+    ]
+  },
+  "diagnostic_contract_gate": {
+    "path": "artifacts/section_bootstrap/bd-1pk/doctor_contract_checks.json",
+    "verdict": "PASS",
+    "checks_passed": 34,
+    "checks_total": 34,
+    "sample_reports": {
+      "healthy": "artifacts/section_bootstrap/bd-1pk/doctor_report_healthy.json",
+      "degraded": "artifacts/section_bootstrap/bd-1pk/doctor_report_degraded.json",
+      "failure": "artifacts/section_bootstrap/bd-1pk/doctor_report_failure.json"
+    }
+  },
+  "python_validation": {
+    "py_compile": {
+      "command": "python3 -m py_compile tests/test_doctor_command_diagnostics_gate.py",
+      "status": "pass",
+      "exit_code": 0
+    },
+    "pytest": {
+      "command": "pytest -q tests/test_doctor_command_diagnostics_gate.py",
+      "status": "pass",
+      "exit_code": 0,
+      "summary": "4 passed"
+    }
+  },
+  "rch_quality": {
+    "bead_id": "bd-1pk",
+    "schema_version": "rch-quality-summary-v1",
+    "commands": [
+      {
+        "name": "cargo fmt --check",
+        "runner": "rch exec --",
+        "exit_code": 1,
+        "status": "fail",
+        "log": "artifacts/section_bootstrap/bd-1pk/rch_cargo_fmt_check.log"
+      },
+      {
+        "name": "cargo check --all-targets",
+        "runner": "rch exec --",
+        "exit_code": 101,
+        "status": "fail",
+        "log": "artifacts/section_bootstrap/bd-1pk/rch_cargo_check.log"
+      },
+      {
+        "name": "cargo clippy --all-targets -- -D warnings",
+        "runner": "rch exec --",
+        "exit_code": 101,
+        "status": "fail",
+        "log": "artifacts/section_bootstrap/bd-1pk/rch_cargo_clippy.log"
+      }
+    ]
+  },
+  "notes": [
+    "Doctor diagnostics contract gate and dedicated tests are green.",
+    "Global cargo fmt/check/clippy failures are pre-existing workspace baseline debt outside bd-1pk scope."
+  ]
+}

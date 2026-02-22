@@ -1,0 +1,22 @@
+{
+  "bead_id": "bd-24du",
+  "artifact": "artifacts/10.19/atc_degraded_mode_events.jsonl",
+  "total_events": 11,
+  "trace_count": 2,
+  "trace_ids": [
+    "atc-partition-0001",
+    "atc-partition-0002"
+  ],
+  "required_event_codes_present": [
+    "DEGRADED_ACTION_ANNOTATED",
+    "DEGRADED_ACTION_BLOCKED",
+    "DEGRADED_MODE_ENTERED",
+    "DEGRADED_MODE_EXITED",
+    "DEGRADED_MODE_SUSPENDED",
+    "TRUST_INPUT_REFRESHED",
+    "TRUST_INPUT_STALE"
+  ],
+  "missing_required_codes": [],
+  "sequence_monotonic_per_trace": true,
+  "verdict": "PASS"
+}

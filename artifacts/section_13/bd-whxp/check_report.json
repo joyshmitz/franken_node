@@ -1,0 +1,170 @@
+{
+  "bead_id": "bd-whxp",
+  "title": "Concrete target gate: >=2 independent replications",
+  "section": "13",
+  "trace_id": "3f61deaf8a6a5ccf4d29a0bb2fdb68a7c09d98f554e6ff2d95cb3e8d968a31b2",
+  "verdict": "PASS",
+  "total": 24,
+  "passed": 24,
+  "failed": 0,
+  "computed": {
+    "required_minimum_replications": 2,
+    "replication_count": 3,
+    "independent_replication_count": 2,
+    "independent_replications_passing": 2,
+    "required_claims": [
+      "compromise_reduction_10x",
+      "migration_velocity_3x",
+      "replay_coverage_100pct"
+    ]
+  },
+  "checks": [
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "docs/specs/section_13/bd-whxp_contract.md"
+    },
+    {
+      "check": "file: independent replication report",
+      "pass": true,
+      "detail": "artifacts/13/independent_replication_report.json"
+    },
+    {
+      "check": "spec invariants present",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec event codes",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report parse",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report required top-level fields",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report bead id",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "trace_id format",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "generated_at_utc RFC-3339",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "required_claims list",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "required claims exact",
+      "pass": true,
+      "detail": "seen=['compromise_reduction_10x', 'migration_velocity_3x', 'replay_coverage_100pct']"
+    },
+    {
+      "check": "minimum required replications >=2",
+      "pass": true,
+      "detail": "value=2"
+    },
+    {
+      "check": "replications list",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "replication schema and claim result completeness",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "independent organizations unique",
+      "pass": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "check": "independent evaluator hashes unique",
+      "pass": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "check": "independent conflict disclosures clean",
+      "pass": true,
+      "detail": "count=0"
+    },
+    {
+      "check": ">=2 independent passing replications",
+      "pass": true,
+      "detail": "independent_passing=2 required=2"
+    },
+    {
+      "check": "summary fields present",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "summary counts match computed values",
+      "pass": true,
+      "detail": "summary=3/2/2 computed=3/2/2"
+    },
+    {
+      "check": "summary verdict matches computed verdict",
+      "pass": true,
+      "detail": "summary=PASS computed=PASS"
+    },
+    {
+      "check": "determinism under replication reorder",
+      "pass": true,
+      "detail": "forward=True reversed=True"
+    },
+    {
+      "check": "adversarial perturbation flips verdict",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report event code coverage",
+      "pass": true,
+      "detail": "seen=['IRG-001', 'IRG-002', 'IRG-003', 'IRG-004', 'IRG-005', 'IRG-006']"
+    }
+  ],
+  "events": [
+    {
+      "event_code": "IRG-001",
+      "trace_id": "3f61deaf8a6a5ccf4d29a0bb2fdb68a7c09d98f554e6ff2d95cb3e8d968a31b2",
+      "message": "Replication report loaded."
+    },
+    {
+      "event_code": "IRG-002",
+      "trace_id": "3f61deaf8a6a5ccf4d29a0bb2fdb68a7c09d98f554e6ff2d95cb3e8d968a31b2",
+      "message": "Required claims/schema validated."
+    },
+    {
+      "event_code": "IRG-003",
+      "trace_id": "3f61deaf8a6a5ccf4d29a0bb2fdb68a7c09d98f554e6ff2d95cb3e8d968a31b2",
+      "message": "Independence checks validated."
+    },
+    {
+      "event_code": "IRG-004",
+      "trace_id": "3f61deaf8a6a5ccf4d29a0bb2fdb68a7c09d98f554e6ff2d95cb3e8d968a31b2",
+      "message": "Threshold gate passed."
+    },
+    {
+      "event_code": "IRG-006",
+      "trace_id": "3f61deaf8a6a5ccf4d29a0bb2fdb68a7c09d98f554e6ff2d95cb3e8d968a31b2",
+      "message": "Determinism/adversarial checks executed."
+    }
+  ]
+}

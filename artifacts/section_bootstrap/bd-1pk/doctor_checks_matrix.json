@@ -1,0 +1,54 @@
+{
+  "bead_id": "bd-1pk",
+  "schema_version": "doctor-check-matrix-v1",
+  "checks": [
+    {
+      "code": "DR-CONFIG-001",
+      "event_code": "DOC-001",
+      "scope": "config.resolve",
+      "remediation": "No action required."
+    },
+    {
+      "code": "DR-CONFIG-002",
+      "event_code": "DOC-002",
+      "scope": "config.source",
+      "remediation": "Create franken_node.toml or pass --config to lock deterministic project settings."
+    },
+    {
+      "code": "DR-PROFILE-003",
+      "event_code": "DOC-003",
+      "scope": "profile.safety",
+      "remediation": "Prefer --profile balanced or --profile strict for stronger controls."
+    },
+    {
+      "code": "DR-TRUST-004",
+      "event_code": "DOC-004",
+      "scope": "registry.assurance",
+      "remediation": "Raise registry.minimum_assurance_level to 3+."
+    },
+    {
+      "code": "DR-MIGRATE-005",
+      "event_code": "DOC-005",
+      "scope": "migration.lockstep",
+      "remediation": "Set migration.require_lockstep_validation=true for safer rollout validation."
+    },
+    {
+      "code": "DR-OBS-006",
+      "event_code": "DOC-006",
+      "scope": "observability.audit_events",
+      "remediation": "Set observability.emit_structured_audit_events=true for stronger traceability."
+    },
+    {
+      "code": "DR-ENV-007",
+      "event_code": "DOC-007",
+      "scope": "environment.cwd",
+      "remediation": "Fix working directory access before running operations."
+    },
+    {
+      "code": "DR-CONFIG-008",
+      "event_code": "DOC-008",
+      "scope": "config.provenance",
+      "remediation": "Investigate resolver instrumentation before relying on doctor provenance."
+    }
+  ]
+}

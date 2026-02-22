@@ -1,0 +1,39 @@
+{
+  "bead_id": "bd-nbh7",
+  "section": "16",
+  "title": "Benchmark/verifier methodology publications",
+  "gate_script": "scripts/check_benchmark_methodology.py",
+  "test_suite": "tests/test_check_benchmark_methodology.py",
+  "timestamp": "2026-02-21T06:30:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "benchmark_methodology": "crates/franken-node/src/tools/benchmark_methodology.rs",
+    "tools_mod": "crates/franken-node/src/tools/mod.rs",
+    "spec_contract": "docs/specs/section_16/bd-nbh7_contract.md",
+    "verification_script": "scripts/check_benchmark_methodology.py",
+    "unit_tests": "tests/test_check_benchmark_methodology.py"
+  },
+  "rust_test_count": 22,
+  "python_test_count": 26,
+  "event_codes_defined": 12,
+  "gate_checks_passed": 21,
+  "gate_checks_total": 21,
+  "invariants_verified": [
+    "INV-BMP-STRUCTURED",
+    "INV-BMP-DETERMINISTIC",
+    "INV-BMP-CITABLE",
+    "INV-BMP-REPRODUCIBLE",
+    "INV-BMP-VERSIONED",
+    "INV-BMP-AUDITABLE"
+  ],
+  "capabilities_verified": {
+    "methodology_topics": ["BenchmarkDesign", "VerifierArchitecture", "MetricDefinition", "ReproducibilityProtocol", "ThreatModeling"],
+    "pub_statuses": ["Draft", "Review", "Published", "Archived"],
+    "required_sections": ["abstract", "introduction", "methodology", "results", "reproducibility", "limitations"],
+    "operations": ["create_publication", "transition_status", "add_citation", "generate_catalog", "search_by_topic", "export_audit_log_jsonl"],
+    "content_hashing": true,
+    "status_machine": true,
+    "reproducibility_checklist": true,
+    "citation_management": true
+  }
+}

@@ -1,0 +1,234 @@
+{
+  "bead_id": "bd-f5d",
+  "title": "Build public Node/Bun/franken_node benchmark campaign infrastructure",
+  "section": "10.9",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 44,
+    "failing": 0,
+    "total": 44
+  },
+  "checks": [
+    {
+      "check": "file: contract",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_9/bd-f5d_contract.md"
+    },
+    {
+      "check": "contract: INV-BCI-WORKLOADS",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: INV-BCI-RUNTIMES",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: INV-BCI-REPRODUCIBLE",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: INV-BCI-METRICS",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: INV-BCI-TARGETS",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: INV-BCI-RERUN",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: event code BCI-001",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: event code BCI-002",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: event code BCI-003",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: event code BCI-004",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: event code BCI-005",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "file: methodology policy",
+      "pass": true,
+      "detail": "exists: docs/policy/benchmark_campaign_methodology.md"
+    },
+    {
+      "check": "json: fixtures/benchmarks/campaign_manifest.json",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "manifest: >=10 workloads",
+      "pass": true,
+      "detail": "count=10"
+    },
+    {
+      "check": "manifest: required workloads present",
+      "pass": true,
+      "detail": "all present"
+    },
+    {
+      "check": "manifest: runtimes include node/bun/franken_node",
+      "pass": true,
+      "detail": "runtimes=['bun', 'franken_node', 'node']"
+    },
+    {
+      "check": "manifest: required dimensions present",
+      "pass": true,
+      "detail": "all present"
+    },
+    {
+      "check": "manifest: methodology populated",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "manifest: hermetic container provenance",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "json: fixtures/benchmarks/dataset_catalog.json",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "dataset catalog: datasets >=3",
+      "pass": true,
+      "detail": "count=3"
+    },
+    {
+      "check": "dataset catalog: integrity hashes present",
+      "pass": true,
+      "detail": "all present"
+    },
+    {
+      "check": "json: fixtures/benchmarks/campaign_results_baseline.json",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "baseline: workload rows >=10",
+      "pass": true,
+      "detail": "count=10"
+    },
+    {
+      "check": "baseline: per-runtime metric shape (mean/median/p95/p99/throughput)",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "baseline: category target fields present",
+      "pass": true,
+      "detail": "targets=['compatibility_pct', 'compromise_reduction_x', 'migration_velocity_x']"
+    },
+    {
+      "check": "json: fixtures/benchmarks/campaign_results_candidate.json",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "candidate: workload rows >=10",
+      "pass": true,
+      "detail": "count=10"
+    },
+    {
+      "check": "candidate: per-runtime metric shape (mean/median/p95/p99/throughput)",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "candidate: category target fields present",
+      "pass": true,
+      "detail": "targets=['compatibility_pct', 'compromise_reduction_x', 'migration_velocity_x']"
+    },
+    {
+      "check": "candidate: compatibility >=95%",
+      "pass": true,
+      "detail": "value=96.3"
+    },
+    {
+      "check": "candidate: migration velocity >=3x",
+      "pass": true,
+      "detail": "value=3.4"
+    },
+    {
+      "check": "candidate: compromise reduction >=10x",
+      "pass": true,
+      "detail": "value=11.2"
+    },
+    {
+      "check": "json: fixtures/benchmarks/chart_spec.json",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "chart spec: comparative visualization definitions",
+      "pass": true,
+      "detail": "count=3"
+    },
+    {
+      "check": "file: campaign runner",
+      "pass": true,
+      "detail": "exists: scripts/run_benchmark_campaign.sh"
+    },
+    {
+      "check": "runner: execution exit code",
+      "pass": true,
+      "detail": "code=0"
+    },
+    {
+      "check": "file: runner output",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_9/bd-f5d/campaign_run.json"
+    },
+    {
+      "check": "file: runner diff",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_9/bd-f5d/diff_report.json"
+    },
+    {
+      "check": "file: runner report",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_9/bd-f5d/public_report.md"
+    },
+    {
+      "check": "runner report: contains table",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "runner report: highlights category targets",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "runner: deterministic campaign output",
+      "pass": true,
+      "detail": "stable"
+    }
+  ]
+}

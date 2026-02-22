@@ -1,0 +1,52 @@
+{
+  "bead_id": "bd-yz3t",
+  "section": "14",
+  "title": "Verifier toolkit for independent validation",
+  "gate_script": "scripts/check_verifier_toolkit.py",
+  "test_suite": "tests/test_check_verifier_toolkit.py",
+  "timestamp": "2026-02-21T05:50:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "verifier_toolkit": "crates/franken-node/src/tools/verifier_toolkit.rs",
+    "tools_mod": "crates/franken-node/src/tools/mod.rs",
+    "spec_contract": "docs/specs/section_14/bd-yz3t_contract.md",
+    "verification_script": "scripts/check_verifier_toolkit.py",
+    "unit_tests": "tests/test_check_verifier_toolkit.py"
+  },
+  "rust_test_count": 30,
+  "python_test_count": 18,
+  "event_codes_defined": 12,
+  "gate_checks_passed": 13,
+  "gate_checks_total": 13,
+  "invariants_verified": [
+    "INV-VTK-SCHEMA",
+    "INV-VTK-DETERMINISTIC",
+    "INV-VTK-EVIDENCE-CHAIN",
+    "INV-VTK-INDEPENDENT",
+    "INV-VTK-VERSIONED",
+    "INV-VTK-GATED"
+  ],
+  "capabilities_verified": {
+    "claim_types": {
+      "count": 5,
+      "ids": ["benchmark_performance", "security_posture", "trust_property", "compatibility_guarantee", "migration_readiness"]
+    },
+    "validation_steps": {
+      "count": 4,
+      "steps": ["schema_validation", "evidence_hash_verification", "metrics_threshold_check", "cross_validation"]
+    },
+    "verdicts": {
+      "types": ["Pass", "Fail", "Partial"]
+    },
+    "evidence_chain": {
+      "linked_hashes": true,
+      "genesis_parent": true
+    },
+    "report": {
+      "content_hashing": true,
+      "toolkit_versioning": true,
+      "confidence_intervals": true,
+      "audit_logging": true
+    }
+  }
+}

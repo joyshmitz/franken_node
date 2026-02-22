@@ -1,0 +1,72 @@
+{
+  "plan_id": "migration-plan-2026-02-21-a",
+  "evaluation": {
+    "phase": "admission",
+    "verdict": "replan_required",
+    "baseline": {
+      "cascade_risk": 0.21,
+      "fragility_findings": 4,
+      "articulation_points": 2
+    },
+    "projected": {
+      "cascade_risk": 0.43,
+      "fragility_findings": 8,
+      "articulation_points": 5
+    },
+    "delta": {
+      "cascade_risk_delta": 0.22,
+      "new_fragility_findings": 4,
+      "new_articulation_points": 3
+    },
+    "thresholds": {
+      "max_cascade_risk_delta": 0.12,
+      "max_new_fragility_findings": 2,
+      "max_new_articulation_points": 1
+    },
+    "rejection_reasons": [
+      {
+        "code": "DGIS-MIGRATE-RISK-DELTA",
+        "detail": "cascade risk delta 0.2200 exceeds max 0.1200"
+      },
+      {
+        "code": "DGIS-MIGRATE-FRAGILITY-DELTA",
+        "detail": "new fragility findings 4 exceed max 2"
+      },
+      {
+        "code": "DGIS-MIGRATE-ARTICULATION-DELTA",
+        "detail": "new articulation points 3 exceed max 1"
+      }
+    ],
+    "replan_suggestions": [
+      {
+        "path_id": "path-staged-quarantine",
+        "projected_delta": {
+          "cascade_risk_delta": 0.06,
+          "new_fragility_findings": 1,
+          "new_articulation_points": 0
+        },
+        "rationale": "candidate reduces topology risk while staying within policy budget (staged rollout + quarantine gate)"
+      }
+    ],
+    "events": [
+      {
+        "code": "DGIS-MIGRATE-001",
+        "level": "info",
+        "trace_id": "trace-bd-2d17-01",
+        "message": "phase=admission: captured baseline risk=0.2100, fragility=4, articulation=2"
+      },
+      {
+        "code": "DGIS-MIGRATE-003",
+        "level": "warn",
+        "trace_id": "trace-bd-2d17-01",
+        "message": "phase=admission: migration gate rejected with 3 violation(s)"
+      },
+      {
+        "code": "DGIS-MIGRATE-006",
+        "level": "info",
+        "trace_id": "trace-bd-2d17-01",
+        "message": "phase=admission: suggested path=path-staged-quarantine"
+      }
+    ]
+  }
+}

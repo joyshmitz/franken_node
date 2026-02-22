@@ -1,0 +1,140 @@
+{
+  "bead_id": "bd-v4l0",
+  "section": "10.14",
+  "gate_script": "check_remote_bulkhead.py",
+  "checks_passed": 26,
+  "checks_total": 26,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "impl_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/remote/remote_bulkhead.rs"
+    },
+    {
+      "check": "remote_mod_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/remote/mod.rs"
+    },
+    {
+      "check": "perf_test_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/tests/perf/remote_bulkhead_under_load.rs"
+    },
+    {
+      "check": "spec_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/remote_bulkhead.md"
+    },
+    {
+      "check": "latency_csv_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/10.14/remote_bulkhead_latency_report.csv"
+    },
+    {
+      "check": "module_wiring",
+      "passed": true,
+      "detail": "remote/mod.rs exports remote_bulkhead"
+    },
+    {
+      "check": "marker_pub enum BackpressurePolicy",
+      "passed": true,
+      "detail": "pub enum BackpressurePolicy"
+    },
+    {
+      "check": "marker_pub struct BulkheadPermit",
+      "passed": true,
+      "detail": "pub struct BulkheadPermit"
+    },
+    {
+      "check": "marker_pub struct RemoteBulkhead",
+      "passed": true,
+      "detail": "pub struct RemoteBulkhead"
+    },
+    {
+      "check": "marker_pub fn new(",
+      "passed": true,
+      "detail": "pub fn new("
+    },
+    {
+      "check": "marker_pub fn acquire(",
+      "passed": true,
+      "detail": "pub fn acquire("
+    },
+    {
+      "check": "marker_pub fn poll_queued(",
+      "passed": true,
+      "detail": "pub fn poll_queued("
+    },
+    {
+      "check": "marker_pub fn release(",
+      "passed": true,
+      "detail": "pub fn release("
+    },
+    {
+      "check": "marker_pub fn set_max_in_flight(",
+      "passed": true,
+      "detail": "pub fn set_max_in_flight("
+    },
+    {
+      "check": "marker_pub fn current_in_flight(",
+      "passed": true,
+      "detail": "pub fn current_in_flight("
+    },
+    {
+      "check": "marker_pub fn p99_foreground_latency_ms(",
+      "passed": true,
+      "detail": "pub fn p99_foreground_latency_ms("
+    },
+    {
+      "check": "event_codes_present",
+      "passed": true,
+      "detail": "8/8 found"
+    },
+    {
+      "check": "impl_test_count",
+      "passed": true,
+      "detail": "12 tests (>=12)"
+    },
+    {
+      "check": "perf_test_imports_impl",
+      "passed": true,
+      "detail": "path import + simulation harness"
+    },
+    {
+      "check": "csv_columns",
+      "passed": true,
+      "detail": "columns=['test_scenario', 'in_flight_count', 'p50_latency_ms', 'p99_latency_ms', 'rejected_count', 'queue_depth']"
+    },
+    {
+      "check": "csv_row_count",
+      "passed": true,
+      "detail": "rows=4"
+    },
+    {
+      "check": "csv_required_scenarios",
+      "passed": true,
+      "detail": "all present"
+    },
+    {
+      "check": "csv_numeric_parse",
+      "passed": true,
+      "detail": "parse_failures=0"
+    },
+    {
+      "check": "csv_p99_budget",
+      "passed": true,
+      "detail": "rows_over_budget=0"
+    },
+    {
+      "check": "csv_overload_rejections",
+      "passed": true,
+      "detail": "at least one row rejected overload"
+    },
+    {
+      "check": "csv_queue_depth_observed",
+      "passed": true,
+      "detail": "at least one row observed queue depth"
+    }
+  ]
+}

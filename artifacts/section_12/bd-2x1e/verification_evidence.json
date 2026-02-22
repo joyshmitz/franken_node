@@ -1,0 +1,61 @@
+{
+  "bead_id": "bd-2x1e",
+  "section": "12",
+  "title": "Section-wide verification gate: comprehensive unit+e2e+logging",
+  "timestamp": "2026-02-21T00:00:00Z",
+  "verdict": "PASS",
+  "files": {
+    "gate_script": "scripts/check_section_12_gate.py",
+    "gate_tests": "tests/test_check_section_12_gate.py",
+    "gate_report": "artifacts/section_12/bd-2x1e/check_report.json",
+    "gate_self_test": "artifacts/section_12/bd-2x1e/check_self_test.json",
+    "gate_unit_tests_output": "artifacts/section_12/bd-2x1e/unit_tests.txt",
+    "risk_register_summary": "docs/specs/section_12/risk_register_summary.md",
+    "section_matrix_summary": "artifacts/section_12/section_12_verification_summary.md"
+  },
+  "metrics": {
+    "section_beads_expected": 12,
+    "section_beads_verified": 12,
+    "overall_coverage_pct": 100.0,
+    "gate_checks_total": 4,
+    "gate_checks_passing": 4,
+    "gate_checks_failing": 0,
+    "self_test_checks": 3,
+    "python_unit_tests": 9,
+    "risk_status_mitigated": 12,
+    "risk_status_monitoring": 0,
+    "risk_status_open": 0
+  },
+  "gate_checks": [
+    {
+      "id": "GATE-SCRIPTS",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-TESTS",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-EVIDENCE",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-RISK-COVERAGE",
+      "status": "PASS"
+    }
+  ],
+  "commands": [
+    {
+      "command": "python3 scripts/check_section_12_gate.py --self-test --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 scripts/check_section_12_gate.py --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 -m unittest tests/test_check_section_12_gate.py",
+      "status": "pass"
+    }
+  ]
+}

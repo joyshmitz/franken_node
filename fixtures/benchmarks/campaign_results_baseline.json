@@ -1,0 +1,21 @@
+{
+  "campaign_id": "bd-f5d-public-benchmark-campaign",
+  "run_label": "baseline",
+  "workloads": [
+    {"name": "http_server_throughput", "metrics": {"node": {"latency_ms": {"mean": 10.2, "median": 9.9, "p95": 14.6, "p99": 19.8}, "throughput_rps": 32000}, "bun": {"latency_ms": {"mean": 9.6, "median": 9.3, "p95": 13.9, "p99": 18.2}, "throughput_rps": 34500}, "franken_node": {"latency_ms": {"mean": 9.1, "median": 8.9, "p95": 13.1, "p99": 17.4}, "throughput_rps": 37200}}},
+    {"name": "module_loading", "metrics": {"node": {"latency_ms": {"mean": 42.0, "median": 41.1, "p95": 49.4, "p99": 54.0}, "throughput_rps": 1100}, "bun": {"latency_ms": {"mean": 35.2, "median": 34.7, "p95": 41.5, "p99": 47.1}, "throughput_rps": 1360}, "franken_node": {"latency_ms": {"mean": 33.8, "median": 33.1, "p95": 40.2, "p99": 45.9}, "throughput_rps": 1420}}},
+    {"name": "cold_start", "metrics": {"node": {"latency_ms": {"mean": 188.0, "median": 185.4, "p95": 223.0, "p99": 241.5}, "throughput_rps": 250}, "bun": {"latency_ms": {"mean": 128.4, "median": 125.0, "p95": 151.8, "p99": 169.3}, "throughput_rps": 375}, "franken_node": {"latency_ms": {"mean": 121.0, "median": 118.2, "p95": 144.2, "p99": 162.8}, "throughput_rps": 398}}},
+    {"name": "json_processing", "metrics": {"node": {"latency_ms": {"mean": 6.2, "median": 6.0, "p95": 8.5, "p99": 10.2}, "throughput_rps": 52500}, "bun": {"latency_ms": {"mean": 5.4, "median": 5.2, "p95": 7.6, "p99": 9.3}, "throughput_rps": 60300}, "franken_node": {"latency_ms": {"mean": 5.1, "median": 4.9, "p95": 7.1, "p99": 8.8}, "throughput_rps": 64100}}},
+    {"name": "file_io", "metrics": {"node": {"latency_ms": {"mean": 14.5, "median": 14.2, "p95": 18.9, "p99": 22.1}, "throughput_rps": 24000}, "bun": {"latency_ms": {"mean": 12.8, "median": 12.4, "p95": 16.7, "p99": 20.4}, "throughput_rps": 26800}, "franken_node": {"latency_ms": {"mean": 12.1, "median": 11.8, "p95": 15.9, "p99": 19.2}, "throughput_rps": 28100}}},
+    {"name": "child_process_spawning", "metrics": {"node": {"latency_ms": {"mean": 22.3, "median": 21.8, "p95": 28.7, "p99": 34.2}, "throughput_rps": 8100}, "bun": {"latency_ms": {"mean": 20.5, "median": 20.0, "p95": 26.1, "p99": 31.5}, "throughput_rps": 8500}, "franken_node": {"latency_ms": {"mean": 19.7, "median": 19.2, "p95": 25.0, "p99": 30.3}, "throughput_rps": 8840}}},
+    {"name": "stream_throughput", "metrics": {"node": {"latency_ms": {"mean": 8.4, "median": 8.1, "p95": 11.6, "p99": 13.9}, "throughput_rps": 47000}, "bun": {"latency_ms": {"mean": 7.8, "median": 7.5, "p95": 10.8, "p99": 12.7}, "throughput_rps": 50200}, "franken_node": {"latency_ms": {"mean": 7.3, "median": 7.1, "p95": 10.1, "p99": 11.9}, "throughput_rps": 53400}}},
+    {"name": "crypto_operations", "metrics": {"node": {"latency_ms": {"mean": 4.6, "median": 4.4, "p95": 6.3, "p99": 7.8}, "throughput_rps": 64000}, "bun": {"latency_ms": {"mean": 4.4, "median": 4.2, "p95": 6.0, "p99": 7.5}, "throughput_rps": 66100}, "franken_node": {"latency_ms": {"mean": 4.0, "median": 3.9, "p95": 5.7, "p99": 7.0}, "throughput_rps": 68900}}},
+    {"name": "url_parsing", "metrics": {"node": {"latency_ms": {"mean": 2.7, "median": 2.6, "p95": 3.8, "p99": 4.5}, "throughput_rps": 88000}, "bun": {"latency_ms": {"mean": 2.6, "median": 2.5, "p95": 3.6, "p99": 4.3}, "throughput_rps": 90200}, "franken_node": {"latency_ms": {"mean": 2.4, "median": 2.3, "p95": 3.4, "p99": 4.0}, "throughput_rps": 93400}}},
+    {"name": "compatibility_shim_overhead", "metrics": {"node": {"latency_ms": {"mean": 11.1, "median": 10.9, "p95": 15.3, "p99": 18.1}, "throughput_rps": 30000}, "bun": {"latency_ms": {"mean": 10.4, "median": 10.1, "p95": 14.5, "p99": 17.2}, "throughput_rps": 31800}, "franken_node": {"latency_ms": {"mean": 9.7, "median": 9.5, "p95": 13.8, "p99": 16.4}, "throughput_rps": 33900}}}
+  ],
+  "targets": {
+    "compatibility_pct": 95.6,
+    "migration_velocity_x": 3.1,
+    "compromise_reduction_x": 10.4
+  }
+}

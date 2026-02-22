@@ -1,0 +1,176 @@
+{
+  "bead_id": "bd-11rz",
+  "title": "ATC release claim gate",
+  "section": "10.19",
+  "verdict": "PASS",
+  "total": 31,
+  "passed": 31,
+  "failed": 0,
+  "summary": {
+    "derived_total_claims": 3,
+    "derived_passed_claims": 3,
+    "derived_failed_claims": 0,
+    "derived_release_decision": "allow"
+  },
+  "checks": [
+    {
+      "check": "spec file exists",
+      "pass": true,
+      "detail": "docs/conformance/atc_release_claim_gate.md"
+    },
+    {
+      "check": "report file exists",
+      "pass": true,
+      "detail": "artifacts/10.19/atc_release_gate_report.json"
+    },
+    {
+      "check": "spec claim id ATC-CLAIM-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec claim id ATC-CLAIM-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec claim id ATC-CLAIM-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code ATC-RELEASE-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code ATC-RELEASE-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code ATC-RELEASE-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code ATC-RELEASE-ERR-INPUT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code ATC-RELEASE-ERR-SIGNATURE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report parse",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report required top-level fields",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report bead id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report generated_at_utc RFC3339",
+      "pass": true,
+      "detail": "2026-02-21T04:53:00Z"
+    },
+    {
+      "check": "designated_claims list",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "no duplicate claim IDs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "required claim IDs present",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "claim ATC-CLAIM-001",
+      "pass": true,
+      "detail": "coverage/provenance/evidence satisfied"
+    },
+    {
+      "check": "claim ATC-CLAIM-002",
+      "pass": true,
+      "detail": "coverage/provenance/evidence satisfied"
+    },
+    {
+      "check": "claim ATC-CLAIM-003",
+      "pass": true,
+      "detail": "coverage/provenance/evidence satisfied"
+    },
+    {
+      "check": "summary object",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "summary total_claims",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "summary passed_claims",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "summary failed_claims",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "summary release_decision",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "signature verification",
+      "pass": true,
+      "detail": "signature valid"
+    },
+    {
+      "check": "signature idempotency",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "external verification",
+      "pass": true,
+      "detail": "signature valid"
+    },
+    {
+      "check": "events list",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event includes ATC-RELEASE-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event includes allow code",
+      "pass": true,
+      "detail": "found"
+    }
+  ],
+  "events": [
+    "ATC-RELEASE-001",
+    "ATC-RELEASE-002"
+  ]
+}

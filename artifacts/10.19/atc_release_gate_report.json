@@ -1,0 +1,67 @@
+{
+  "bead_id": "bd-11rz",
+  "generated_at_utc": "2026-02-21T04:53:00Z",
+  "gate_version": "1.0.0",
+  "public_key_id": "atc-release-gate-v1",
+  "signature_algorithm": "sha256-canonical-v1",
+  "designated_claims": [
+    {
+      "claim_id": "ATC-CLAIM-001",
+      "claim": "Federated threat-intelligence claim includes required ATC coverage.",
+      "required_coverage_ratio": 1.0,
+      "coverage_ratio": 1.0,
+      "required_provenance_artifacts": 1,
+      "provenance_artifacts_present": 1,
+      "evidence_refs": [
+        "docs/conformance/atc_release_claim_gate.md",
+        "scripts/check_atc_claim_gate.py"
+      ]
+    },
+    {
+      "claim_id": "ATC-CLAIM-002",
+      "claim": "Published ecosystem metric includes verifier-backed coverage.",
+      "required_coverage_ratio": 0.95,
+      "coverage_ratio": 1.0,
+      "required_provenance_artifacts": 1,
+      "provenance_artifacts_present": 1,
+      "evidence_refs": [
+        "tests/test_check_atc_claim_gate.py",
+        ".github/workflows/atc-claim-gate.yml"
+      ]
+    },
+    {
+      "claim_id": "ATC-CLAIM-003",
+      "claim": "Public trust claim includes replayable signed provenance artifacts.",
+      "required_coverage_ratio": 1.0,
+      "coverage_ratio": 1.0,
+      "required_provenance_artifacts": 2,
+      "provenance_artifacts_present": 2,
+      "evidence_refs": [
+        "docs/conformance/atc_release_claim_gate.md",
+        "artifacts/10.19/atc_release_gate_report.json"
+      ]
+    }
+  ],
+  "summary": {
+    "total_claims": 3,
+    "passed_claims": 3,
+    "failed_claims": 0,
+    "release_decision": "allow"
+  },
+  "events": [
+    {
+      "code": "ATC-RELEASE-001",
+      "detail": "gate evaluation started",
+      "trace_id": "trace-bd-11rz-atc-gate"
+    },
+    {
+      "code": "ATC-RELEASE-002",
+      "detail": "all designated claims satisfied",
+      "trace_id": "trace-bd-11rz-atc-gate"
+    }
+  ],
+  "signing": {
+    "canonical_payload_sha256": "811f51a98346f53c224eee40787a948ba3a09e3960ac66e2c0238bbe54fb74ee",
+    "signature": "5f4bad17c5bc459251dabfddbe0cdf06fd3e5f6f041f0717eeb9f8d582e73e24"
+  }
+}

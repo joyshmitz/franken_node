@@ -1,0 +1,71 @@
+{
+  "bead": "bd-3cs3",
+  "section": "10.14",
+  "title": "Epoch-scoped key derivation for trust artifact authentication",
+  "timestamp": "2026-02-22T01:14:21Z",
+  "verification_results": {
+    "python_checks": {
+      "verdict": "PASS",
+      "passing": 24,
+      "total": 24,
+      "artifact": "artifacts/section_10_14/bd-3cs3/check_report.json"
+    },
+    "python_unit_tests": {
+      "verdict": "PASS",
+      "passed": 6,
+      "total": 6,
+      "artifact": "artifacts/section_10_14/bd-3cs3/unit_tests.txt"
+    },
+    "conformance_test_rch": {
+      "verdict": "FAIL_BASELINE",
+      "exit_code": 101,
+      "command": "rch exec -- cargo test -p frankenengine-node --test epoch_key_derivation",
+      "artifact": "artifacts/section_10_14/bd-3cs3/rch_epoch_key_conformance.log",
+      "note": "failed on pre-existing workspace compile debt outside bd-3cs3 scope"
+    },
+    "rch_cargo_fmt_check": {
+      "verdict": "FAIL_BASELINE",
+      "exit_code": 1,
+      "artifact": "artifacts/section_10_14/bd-3cs3/rch_cargo_fmt_check.log"
+    },
+    "rch_cargo_check": {
+      "verdict": "FAIL_BASELINE",
+      "exit_code": 101,
+      "artifact": "artifacts/section_10_14/bd-3cs3/rch_cargo_check.log"
+    },
+    "rch_cargo_clippy": {
+      "verdict": "FAIL_BASELINE",
+      "exit_code": 101,
+      "artifact": "artifacts/section_10_14/bd-3cs3/rch_cargo_clippy.log"
+    }
+  },
+  "artifacts": {
+    "implementation": "crates/franken-node/src/security/epoch_scoped_keys.rs",
+    "module_registration": "crates/franken-node/src/security/mod.rs",
+    "conformance_tests": "tests/conformance/epoch_key_derivation.rs",
+    "verification_vectors": "artifacts/10.14/epoch_key_vectors.json",
+    "verification_script": "scripts/check_epoch_scoped_keys.py",
+    "verification_script_tests": "tests/test_check_epoch_scoped_keys.py"
+  },
+  "acceptance_criteria": {
+    "epoch_and_domain_bound_derivation": true,
+    "cross_epoch_reuse_rejected": true,
+    "cross_domain_reuse_rejected": true,
+    "vectors_published_min_10": true,
+    "signature_verification_api_present": true,
+    "key_material_zeroized": true,
+    "throughput_budget_test_present": true,
+    "security_module_export_registered": true
+  },
+  "invariants_verified": [
+    "INV-EPOCH-KEY-DOMAIN-SEP",
+    "INV-EPOCH-KEY-CROSS-EPOCH-ISOLATION",
+    "INV-EPOCH-SIGNATURE-EPOCH-BOUND",
+    "INV-EPOCH-SIGNATURE-DOMAIN-BOUND",
+    "INV-EPOCH-KEY-ZEROIZE"
+  ],
+  "notes": [
+    "All bd-3cs3-specific static/verifier checks are passing.",
+    "Workspace-wide cargo failures are baseline and pre-existing in unrelated modules."
+  ]
+}

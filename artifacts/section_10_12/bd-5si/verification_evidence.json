@@ -1,0 +1,33 @@
+{
+  "bead_id": "bd-5si",
+  "section": "10.12",
+  "title": "Trust Fabric Convergence Protocol and Degraded-Mode Semantics",
+  "status": "pass",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "verification_checks": {
+    "total": 88,
+    "passed": 88,
+    "failed": 0
+  },
+  "pytest_results": {
+    "total": 43,
+    "passed": 43,
+    "failed": 0
+  },
+  "event_codes": ["TFC-001", "TFC-002", "TFC-003", "TFC-004", "TFC-005", "TFC-006", "TFC-007", "TFC-008"],
+  "invariants": ["INV-TFC-MONOTONIC", "INV-TFC-REVOKE-FIRST", "INV-TFC-DEGRADED-DENY", "INV-TFC-CONVERGENCE"],
+  "error_codes": ["ERR_TFC_INVALID_CONFIG", "ERR_TFC_STALE_STATE", "ERR_TFC_DIGEST_MISMATCH", "ERR_TFC_DEGRADED_REJECT", "ERR_TFC_ESCALATION_TIMEOUT", "ERR_TFC_PARTITION_DETECTED"],
+  "types": ["TrustFabricConfig", "TrustStateVector", "TrustStateDelta", "TrustFabricNode", "TrustFabricFleet", "TrustFabricEvent", "TrustFabricError"],
+  "rust_tests": 34,
+  "compilation": "exit 0",
+  "artifacts": {
+    "spec": "docs/specs/section_10_12/bd-5si_contract.md",
+    "policy": "docs/policy/trust_fabric_convergence.md",
+    "rust_src": "crates/franken-node/src/connector/trust_fabric.rs",
+    "check_script": "scripts/check_trust_fabric.py",
+    "unit_tests": "tests/test_check_trust_fabric.py",
+    "evidence": "artifacts/section_10_12/bd-5si/verification_evidence.json",
+    "summary": "artifacts/section_10_12/bd-5si/verification_summary.md"
+  }
+}

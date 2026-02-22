@@ -1,0 +1,45 @@
+{
+  "bead_id": "bd-2h2s",
+  "section": "10.15",
+  "title": "Migration plan for existing non-asupersync control surfaces with scope burn-down tracking",
+  "gate_script": "scripts/check_control_surface_burndown.py",
+  "test_suite": "tests/test_check_control_surface_burndown.py",
+  "timestamp": "2026-02-22T02:55:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "migration_plan": "docs/migration/asupersync_control_surface_migration.md",
+    "burndown_csv": "artifacts/10.15/control_surface_burndown.csv",
+    "spec_contract": "docs/specs/section_10_15/bd-2h2s_contract.md",
+    "verification_script": "scripts/check_control_surface_burndown.py",
+    "unit_tests": "tests/test_check_control_surface_burndown.py"
+  },
+  "gate_checks_passed": 13,
+  "gate_checks_total": 13,
+  "python_test_count": 43,
+  "capabilities_verified": {
+    "total_surfaces_inventoried": 16,
+    "completed_surfaces": 4,
+    "in_progress_surfaces": 5,
+    "not_started_surfaces": 5,
+    "excepted_surfaces": 2,
+    "expired_exceptions": 0,
+    "required_csv_columns": 8,
+    "invariants_verified": [
+      "INV-MIG-INVENTORIED",
+      "INV-MIG-STATUS-VERIFIED",
+      "INV-MIG-EXPIRY-ENFORCED"
+    ],
+    "event_codes": [
+      "MIG-001",
+      "MIG-002",
+      "MIG-003",
+      "MIG-004",
+      "MIG-005"
+    ],
+    "mutation_tests_passed": [
+      "expired_exception_detected",
+      "missing_column_detected",
+      "invalid_status_detected"
+    ]
+  }
+}

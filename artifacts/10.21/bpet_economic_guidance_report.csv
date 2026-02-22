@@ -1,0 +1,6 @@
+package_name,compromise_propensity,risk_adjusted_cost,insurance_premium,motif_matches,top_intervention,top_roi,urgency,timestamp
+lodash,0.72,72000.00,86400.00,2,sandbox_barriers,43.2,urgent,2026-02-21T00:10:00Z
+event-stream,0.91,455000.00,546000.00,3,replace_dependency,43.2,critical,2026-02-21T00:15:00Z
+left-pad,0.15,1500.00,1800.00,0,sandbox_barriers,9.0,routine,2026-02-21T00:20:00Z
+colors,0.58,29000.00,34800.00,1,sponsor_maintainer,14.5,elevated,2026-02-21T00:25:00Z
+ua-parser-js,0.83,415000.00,498000.00,2,fork_and_maintain,66.4,critical,2026-02-21T00:30:00Z

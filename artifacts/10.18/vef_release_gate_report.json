@@ -1,0 +1,61 @@
+{
+  "bead_id": "bd-3lzk",
+  "generated_at_utc": "2026-02-21T01:27:00Z",
+  "gate_version": "1.0.0",
+  "public_key_id": "vef-release-gate-v1",
+  "signature_algorithm": "sha256-canonical-v1",
+  "designated_claims": [
+    {
+      "claim_id": "VEF-CLAIM-001",
+      "claim": "Filesystem policy compliance is provably enforced.",
+      "required_coverage_ratio": 1.0,
+      "coverage_ratio": 1.0,
+      "evidence_refs": [
+        "docs/conformance/vef_release_claim_gate.md",
+        "scripts/check_vef_claim_gate.py"
+      ]
+    },
+    {
+      "claim_id": "VEF-CLAIM-002",
+      "claim": "Secret access is authorized and evidence-backed.",
+      "required_coverage_ratio": 1.0,
+      "coverage_ratio": 1.0,
+      "evidence_refs": [
+        "tests/test_check_vef_claim_gate.py",
+        ".github/workflows/vef-claim-gate.yml"
+      ]
+    },
+    {
+      "claim_id": "VEF-CLAIM-003",
+      "claim": "High-risk runtime actions produce verifiable receipts.",
+      "required_coverage_ratio": 1.0,
+      "coverage_ratio": 1.0,
+      "evidence_refs": [
+        "docs/conformance/vef_release_claim_gate.md",
+        "artifacts/10.18/vef_release_gate_report.json"
+      ]
+    }
+  ],
+  "summary": {
+    "total_claims": 3,
+    "passed_claims": 3,
+    "failed_claims": 0,
+    "release_decision": "allow"
+  },
+  "events": [
+    {
+      "code": "VEF-RELEASE-001",
+      "detail": "gate evaluation started",
+      "trace_id": "trace-bd-3lzk-vef-gate"
+    },
+    {
+      "code": "VEF-RELEASE-002",
+      "detail": "all designated claims satisfied",
+      "trace_id": "trace-bd-3lzk-vef-gate"
+    }
+  ],
+  "signing": {
+    "canonical_payload_sha256": "77770fde1fa2e652b1914abb089a8ad67296dbf473f5b39b6c4959b93616f22f",
+    "signature": "b60dbdc28b4379fe2cf5e19ecfdff498c138721beca43f5d6080c788d57673e1"
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "runbook_id": "RB-005",
+  "title": "Evidence Ledger Divergence",
+  "category": "evidence_ledger_divergence",
+  "severity": "high",
+  "operator_privilege_level": "p2",
+  "detection_signature": {
+    "metrics": [
+      "evidence_ledger_divergence_detected == 1",
+      "ledger_hash_mismatch_total > 0"
+    ],
+    "log_patterns": [
+      "EVIDENCE_LEDGER_DIVERGENCE_DETECTED",
+      "ledger_consistency_check_failed"
+    ]
+  },
+  "estimated_recovery_time": "45m",
+  "required_permissions": ["operator", "ledger_admin"],
+  "steps": {
+    "containment": [
+      "Mark divergent ledger replicas as untrusted",
+      "Suspend ledger writes to prevent further divergence",
+      "Snapshot all divergent ledger states for forensic comparison",
+      "Alert ledger operations team"
+    ],
+    "investigation": [
+      "Identify the divergence point by comparing ledger hashes at each entry",
+      "Determine which replica(s) diverged from the canonical chain",
+      "Check for concurrent write conflicts or replication lag",
+      "Audit recent ledger mutations for unauthorized entries",
+      "Determine whether divergence is due to software bug, network partition, or malicious action"
+    ],
+    "repair": [
+      "Identify canonical ledger chain (highest quorum agreement)",
+      "Re-sync divergent replicas from canonical chain",
+      "Replay any valid entries that exist only on divergent replicas",
+      "Compact ledger after re-sync to remove divergent entries"
+    ],
+    "verification": [
+      "Run full ledger consistency check across all replicas",
+      "Confirm all replicas have identical head hash",
+      "Validate evidence chain integrity end-to-end",
+      "Verify dependent trust decisions are consistent with repaired ledger"
+    ],
+    "rollback": [
+      "If re-sync fails, restore all replicas from last consistent backup",
+      "Replay ledger entries from backup point forward",
+      "Document gap if entries are irrecoverably lost and escalate",
+      "Consider epoch reset if divergence affects trust state integrity"
+    ]
+  },
+  "cross_references": ["evidence_ledger", "transparency_log", "ledger_consistency"],
+  "drill_scenario": "Introduce a simulated divergence by injecting a conflicting entry into one ledger replica in staging. Verify divergence detection fires, containment suspends writes, and the re-sync procedure restores consistency.",
+  "command_references": [
+    "franken-node ledger hash --all-peers",
+    "franken-node ledger reconcile --source authoritative",
+    "POST /api/v1/ledger/reconcile"
+  ],
+  "coverage_tags": [
+    "control-plane-split-brain"
+  ],
+  "last_reviewed": "2026-02-21",
+  "review_cadence": "per_release_cycle"
+}

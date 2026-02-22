@@ -1,0 +1,39 @@
+{
+  "scenario_id": "DR-002",
+  "title": "Trust Artifact Corruption",
+  "category": "trust_artifact_corruption",
+  "severity": "critical",
+  "slo_seconds": 120,
+  "drill_interval": "weekly",
+  "fault_description": "Inject a bitflip in a trust artifact checksum field to simulate corruption. Verifies that integrity checks detect the corruption and the repair procedure restores correct state.",
+  "fault_injection_steps": [
+    "Select a trust artifact in the isolated test environment",
+    "Record the original checksum value",
+    "Flip a single bit in the checksum field",
+    "Write the corrupted artifact back to storage",
+    "Record fault injection timestamp"
+  ],
+  "recovery_steps": [
+    "Detect trust artifact integrity failure via periodic check",
+    "Activate safe mode to freeze trust operations",
+    "Identify which artifacts are corrupted via full scan",
+    "Restore corrupted artifacts from last verified snapshot",
+    "Re-derive trust chain from verified root of trust",
+    "Re-validate all trust delegations against policy"
+  ],
+  "verification_steps": [
+    "Run full trust re-verification pass",
+    "Confirm all trust artifact checksums are valid",
+    "Validate trust chain integrity end-to-end",
+    "Verify safe mode has been exited",
+    "Confirm no unauthorized trust mutations occurred"
+  ],
+  "abort_conditions": [
+    "Corruption spreads to artifacts outside drill scope",
+    "Safe mode activation fails",
+    "Trust chain cannot be re-derived from root",
+    "Recovery time exceeds 3x SLO with no progress"
+  ],
+  "related_runbook": "RB-001",
+  "cross_references": ["bd-nr4", "bd-k6o", "safe_mode.rs", "state_model.rs"]
+}

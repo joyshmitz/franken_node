@@ -1,0 +1,156 @@
+{
+  "bead_id": "bd-h93z",
+  "title": "Asupersync integration release gate",
+  "section": "10.15",
+  "verdict": "PASS",
+  "total": 28,
+  "passed": 28,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "spec file exists",
+      "pass": true,
+      "detail": "docs/conformance/asupersync_release_gate.md"
+    },
+    {
+      "check": "report file exists",
+      "pass": true,
+      "detail": "artifacts/10.15/release_gate_report.json"
+    },
+    {
+      "check": "spec event code RLG-001",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec event code RLG-002",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec event code RLG-003",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec event code RLG-004",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec event code RLG-005",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec event code RLG-006",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec event code RLG-007",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report parse",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report required top-level fields",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report bead id",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report generated_at_utc RFC3339",
+      "pass": true,
+      "detail": "2026-02-22T02:55:27.232933Z"
+    },
+    {
+      "check": "artifact_statuses list",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "artifact evidence_entries",
+      "pass": true,
+      "detail": "artifact valid"
+    },
+    {
+      "check": "artifact replay_verification",
+      "pass": true,
+      "detail": "artifact valid"
+    },
+    {
+      "check": "artifact cancellation_injection_report",
+      "pass": true,
+      "detail": "artifact valid"
+    },
+    {
+      "check": "artifact dpor_results",
+      "pass": true,
+      "detail": "artifact valid"
+    },
+    {
+      "check": "artifact epoch_validity",
+      "pass": true,
+      "detail": "artifact valid"
+    },
+    {
+      "check": "artifact obligation_leak_oracle_report",
+      "pass": true,
+      "detail": "artifact valid"
+    },
+    {
+      "check": "all required artifact types present",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "summary counts valid",
+      "pass": true,
+      "detail": "{\"failing_count\": 0, \"passing_count\": 6, \"required_count\": 6}"
+    },
+    {
+      "check": "waiver validity",
+      "pass": true,
+      "detail": "no waiver"
+    },
+    {
+      "check": "signature verification",
+      "pass": true,
+      "detail": "signature valid"
+    },
+    {
+      "check": "events list",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event includes RLG-001",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "event includes RLG-007",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "verdict consistency",
+      "pass": true,
+      "detail": "expected=PASS, actual=PASS"
+    }
+  ],
+  "events": [
+    "RLG-001",
+    "RLG-002",
+    "RLG-007"
+  ]
+}

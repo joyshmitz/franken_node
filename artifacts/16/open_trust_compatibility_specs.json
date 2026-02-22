@@ -1,0 +1,75 @@
+{
+  "bead_id": "bd-f955",
+  "section": "16",
+  "spec_version": "1.0.0",
+  "spec_path": "docs/specs/section_16/bd-f955_open_trust_compatibility_specs.md",
+  "published_documents": [
+    "docs/specs/section_16/bd-f955_open_trust_compatibility_specs.md",
+    "artifacts/16/open_trust_compatibility_specs.json"
+  ],
+  "event_codes": [
+    "OTCS-001",
+    "OTCS-002",
+    "OTCS-003",
+    "OTCS-004"
+  ],
+  "compatibility_matrix": [
+    {
+      "domain": "control-plane-api",
+      "contract": "stable-request-response-schema",
+      "risk_band": "high"
+    },
+    {
+      "domain": "data-plane-api",
+      "contract": "deterministic-error-envelope",
+      "risk_band": "high"
+    },
+    {
+      "domain": "policy-plane",
+      "contract": "profile-locked-policy-semantics",
+      "risk_band": "critical"
+    },
+    {
+      "domain": "storage",
+      "contract": "migration-guarded-schema-evolution",
+      "risk_band": "high"
+    },
+    {
+      "domain": "security-profile",
+      "contract": "balanced-strict-behavior-contract",
+      "risk_band": "critical"
+    },
+    {
+      "domain": "evidence-artifacts",
+      "contract": "canonical-serialization-and-signature",
+      "risk_band": "critical"
+    }
+  ],
+  "trust_requirements": {
+    "signed_provenance": true,
+    "deterministic_replay": true,
+    "open_schema": true
+  },
+  "invariants": [
+    {
+      "id": "INV-OTCS-OPEN",
+      "pass_condition": "all required artifacts live in public canonical paths"
+    },
+    {
+      "id": "INV-OTCS-COMPAT",
+      "pass_condition": "compatibility matrix includes all required contract dimensions"
+    },
+    {
+      "id": "INV-OTCS-TRUST",
+      "pass_condition": "trust requirements include signed provenance + deterministic replay"
+    },
+    {
+      "id": "INV-OTCS-DETERMINISTIC",
+      "pass_condition": "checker output is byte-identical for identical inputs"
+    }
+  ],
+  "release_gate": {
+    "checker_command": "python3 scripts/check_open_trust_compat_specs.py --json",
+    "unit_test_command": "python3 -m unittest tests/test_check_open_trust_compat_specs.py"
+  }
+}

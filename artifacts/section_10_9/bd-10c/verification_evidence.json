@@ -1,0 +1,66 @@
+{
+  "bead_id": "bd-10c",
+  "section": "10.9",
+  "title": "Trust economics dashboard with attacker-ROI deltas",
+  "gate_script": "scripts/check_trust_economics.py",
+  "test_suite": "tests/test_check_trust_economics.py",
+  "timestamp": "2026-02-20T22:00:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "trust_economics_dashboard": "crates/franken-node/src/tools/trust_economics_dashboard.rs",
+    "tools_mod": "crates/franken-node/src/tools/mod.rs",
+    "spec_contract": "docs/specs/section_10_9/bd-10c_contract.md",
+    "verification_script": "scripts/check_trust_economics.py",
+    "unit_tests": "tests/test_check_trust_economics.py"
+  },
+  "rust_test_count": 26,
+  "python_test_count": 18,
+  "event_codes_defined": 12,
+  "gate_checks_passed": 13,
+  "gate_checks_total": 13,
+  "invariants_verified": [
+    "INV-TED-QUANTIFIED",
+    "INV-TED-DETERMINISTIC",
+    "INV-TED-VERSIONED",
+    "INV-TED-CONFIDENCE",
+    "INV-TED-GATED",
+    "INV-TED-COMPARATIVE"
+  ],
+  "capabilities_verified": {
+    "attack_categories": {
+      "count": 5,
+      "ids": [
+        "credential_exfiltration",
+        "privilege_escalation",
+        "supply_chain_compromise",
+        "policy_evasion",
+        "data_exfiltration"
+      ]
+    },
+    "platforms_compared": {
+      "count": 3,
+      "ids": ["node_js", "bun", "franken_node"]
+    },
+    "privilege_levels": {
+      "count": 4,
+      "ids": ["unrestricted", "standard", "restricted", "quarantined"]
+    },
+    "optimization_objectives": {
+      "count": 4,
+      "ids": [
+        "MinimizeExpectedLoss",
+        "MaximizeAttackerCost",
+        "MinimizeOperationalOverhead",
+        "BalancedOptimization"
+      ]
+    },
+    "economic_model": {
+      "model_version": "ted-v1.0",
+      "attack_cost_formula": "time*50 + compute*10 + tooling*200 + detection*500",
+      "expected_loss_formula": "freq * (1-eff) * cost * 365",
+      "bayesian_posterior_updates": true,
+      "confidence_intervals": true,
+      "content_hashing": true
+    }
+  }
+}

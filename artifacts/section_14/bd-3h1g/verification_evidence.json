@@ -1,0 +1,72 @@
+{
+  "bead_id": "bd-3h1g",
+  "title": "[14] Publish benchmark specs/harness/datasets/scoring formulas",
+  "timestamp_utc": "2026-02-21T01:21:08Z",
+  "deliverables": [
+    "docs/specs/section_14/bd-3h1g_contract.md",
+    "artifacts/14/benchmark_specs_package.json",
+    "scripts/check_benchmark_specs_package.py",
+    "tests/test_check_benchmark_specs_package.py",
+    ".github/workflows/benchmark-specs-package-gate.yml",
+    "artifacts/section_14/bd-3h1g/check_self_test.json",
+    "artifacts/section_14/bd-3h1g/check_report.json",
+    "artifacts/section_14/bd-3h1g/unit_tests.txt",
+    "artifacts/section_14/bd-3h1g/verification_summary.md"
+  ],
+  "gate_validation": {
+    "self_test": {
+      "command": "python3 scripts/check_benchmark_specs_package.py --self-test --json",
+      "result_path": "artifacts/section_14/bd-3h1g/check_self_test.json",
+      "ok": true
+    },
+    "package_gate": {
+      "command": "python3 scripts/check_benchmark_specs_package.py --json",
+      "result_path": "artifacts/section_14/bd-3h1g/check_report.json",
+      "verdict": "PASS",
+      "passed": 22,
+      "total": 22,
+      "required_event_codes": [
+        "BSP-001",
+        "BSP-002",
+        "BSP-003",
+        "BSP-004",
+        "BSP-005",
+        "BSP-006"
+      ]
+    },
+    "unit_tests": {
+      "command": "python3 -m unittest tests/test_check_benchmark_specs_package.py",
+      "result_path": "artifacts/section_14/bd-3h1g/unit_tests.txt",
+      "ok": true,
+      "tests_run": 5
+    }
+  },
+  "cargo_quality_gates_rch": [
+    {
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "log_path": "artifacts/section_14/bd-3h1g/rch_cargo_check.log",
+      "status": "failed",
+      "note": "Pre-existing workspace compile errors (E0423 and related) outside bd-3h1g scope."
+    },
+    {
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "log_path": "artifacts/section_14/bd-3h1g/rch_cargo_clippy.log",
+      "status": "failed",
+      "note": "Pre-existing repository lint debt and compile blockers outside bd-3h1g scope."
+    },
+    {
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "log_path": "artifacts/section_14/bd-3h1g/rch_cargo_fmt_check.log",
+      "status": "failed",
+      "note": "Pre-existing formatting drift in unrelated files."
+    }
+  ],
+  "overall_assessment": {
+    "benchmark_specs_package_contract": "pass",
+    "workspace_global_cargo_state": "failing_preexisting",
+    "ready_to_close_bead": true
+  }
+}

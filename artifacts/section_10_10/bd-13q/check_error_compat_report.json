@@ -1,0 +1,28 @@
+{
+  "bead_id": "bd-13q",
+  "check": "error_compatibility_policy",
+  "verdict": "PASS",
+  "added": [],
+  "unchanged": [
+    "FRANKEN_CAPABILITY_NOT_AVAILABLE",
+    "FRANKEN_CONNECTOR_LEASE_EXPIRED",
+    "FRANKEN_EGRESS_TIMEOUT",
+    "FRANKEN_PROTOCOL_AUTH_FAILED",
+    "FRANKEN_PROTOCOL_SEQUENCE_REGRESS",
+    "FRANKEN_SECURITY_KEY_COMPROMISED"
+  ],
+  "violations": {
+    "removed": [],
+    "category_changes": [],
+    "retryable_changes": [],
+    "metadata_violations": []
+  },
+  "summary": {
+    "added": 0,
+    "unchanged": 6,
+    "removed": 0,
+    "category_changes": 0,
+    "retryable_changes": 0,
+    "metadata_violations": 0
+  }
+}

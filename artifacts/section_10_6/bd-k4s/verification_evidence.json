@@ -1,0 +1,127 @@
+{
+  "bead_id": "bd-k4s",
+  "title": "Product-level benchmark suite with secure-extension scenarios",
+  "section": "10.6",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 23,
+  "passed": 23,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "spec_exists",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_6/bd-k4s_contract.md"
+    },
+    {
+      "check": "policy_exists",
+      "pass": true,
+      "detail": "exists: docs/policy/benchmark_suite.md"
+    },
+    {
+      "check": "spec_keyword_benchmark",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword_scoring",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword_confidence",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword_deterministic",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword_sandbox",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword_provenance",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword_variance_5pct",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_codes_in_spec",
+      "pass": true,
+      "detail": "all present"
+    },
+    {
+      "check": "dimensions_in_spec",
+      "pass": true,
+      "detail": "all 6 dimensions present"
+    },
+    {
+      "check": "rust_impl_exists",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/tools/benchmark_suite.rs"
+    },
+    {
+      "check": "rust_module_registered",
+      "pass": true,
+      "detail": "registered in tools/mod.rs"
+    },
+    {
+      "check": "rust_event_codes",
+      "pass": true,
+      "detail": "all present"
+    },
+    {
+      "check": "rust_invariant_constants",
+      "pass": true,
+      "detail": "all 6 invariants present"
+    },
+    {
+      "check": "rust_scoring_formula",
+      "pass": true,
+      "detail": "scoring formula with clamp found"
+    },
+    {
+      "check": "rust_confidence_interval",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_regression_detection",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_json_roundtrip_test",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_dimension_coverage_test",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "rust_test_count",
+      "pass": true,
+      "detail": "30 tests (>= 15 required)"
+    },
+    {
+      "check": "policy_scoring_formula",
+      "pass": true,
+      "detail": "sf-v1 and clamp found"
+    },
+    {
+      "check": "policy_dimensions",
+      "pass": true,
+      "detail": "key metrics present"
+    }
+  ]
+}

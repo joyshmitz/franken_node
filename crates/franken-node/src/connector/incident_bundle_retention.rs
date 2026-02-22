@@ -368,7 +368,7 @@ pub fn csv_header() -> &'static str {
 /// Export a bundle to minimal SARIF v2.1.0 representation.
 pub fn export_sarif(bundle: &IncidentBundle) -> BTreeMap<String, String> {
     let mut sarif = BTreeMap::new();
-    sarif.insert("$schema".into(), "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json".into());
+    sarif.insert("$schema".into(), "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/Schemata/sarif-schema-2.1.0.json".into());
     sarif.insert("version".into(), "2.1.0".into());
     sarif.insert("bundle_id".into(), bundle.bundle_id.clone());
     sarif.insert("incident_id".into(), bundle.incident_id.clone());

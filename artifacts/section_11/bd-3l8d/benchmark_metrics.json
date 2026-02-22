@@ -1,0 +1,21 @@
+{
+  "scenario": "lease-guard-validation",
+  "metrics": [
+    {
+      "metric_name": "p95_latency_ms",
+      "unit": "ms",
+      "measured_value": 31.4,
+      "baseline_value": 29.8,
+      "delta": 1.6,
+      "within_acceptable_bounds": true
+    },
+    {
+      "metric_name": "throughput_rps",
+      "unit": "req/s",
+      "measured_value": 4512,
+      "baseline_value": 4488,
+      "delta": 24,
+      "within_acceptable_bounds": true
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "bead_id": "bd-ufk5",
+  "title": "VEF performance budget gates for p95/p99 hot paths",
+  "section": "10.18",
+  "gate": "vef_perf_budget_gate_verification",
+  "verdict": "PASS",
+  "timestamp": "2026-02-21T05:10:00Z",
+  "artifacts": {
+    "spec": "docs/specs/section_10_18/bd-ufk5_contract.md",
+    "implementation": "crates/franken-node/src/tools/vef_perf_budget_gate.rs",
+    "module_wiring": "crates/franken-node/src/tools/mod.rs",
+    "verification_script": "scripts/check_vef_perf_budget_gate.py",
+    "unit_tests": "tests/test_check_vef_perf_budget_gate.py"
+  },
+  "checks": {
+    "python_verification_checks": 62,
+    "python_verification_all_passed": true,
+    "python_unit_tests": 16,
+    "python_unit_tests_all_passed": true,
+    "self_test_checks": 12,
+    "self_test_all_passed": true,
+    "rust_unit_tests": 30
+  },
+  "coverage": {
+    "vef_operations": [
+      "receipt_emission",
+      "chain_append",
+      "checkpoint_computation",
+      "verification_gate_check",
+      "mode_transition",
+      "control_plane_hot_path",
+      "extension_host_hot_path"
+    ],
+    "budget_modes": ["normal", "restricted", "quarantine"],
+    "budget_pairs_defined": 21,
+    "event_codes": [
+      "VEF-PERF-001",
+      "VEF-PERF-002",
+      "VEF-PERF-003",
+      "VEF-PERF-004",
+      "VEF-PERF-005",
+      "VEF-PERF-ERR-001"
+    ],
+    "verdict_statuses": ["Pass", "Fail", "Skipped", "Unstable"],
+    "invariants_verified": [
+      "INV-VEF-PBG-BUDGET",
+      "INV-VEF-PBG-GATE",
+      "INV-VEF-PBG-BASELINE",
+      "INV-VEF-PBG-NOISE",
+      "INV-VEF-PBG-EVIDENCE",
+      "INV-VEF-PBG-MODE"
+    ]
+  },
+  "acceptance_criteria": {
+    "21_budget_pairs_defined": "PASS",
+    "normal_tightest_quarantine_relaxed": "PASS",
+    "p99_gte_p95": "PASS",
+    "gate_passes_within_budget": "PASS",
+    "gate_fails_on_exceed": "PASS",
+    "unstable_skipped_not_failed": "PASS",
+    "insufficient_samples_skipped": "PASS",
+    "baseline_serializable": "PASS",
+    "regression_detection": "PASS",
+    "deterministic_evaluation": "PASS"
+  }
+}

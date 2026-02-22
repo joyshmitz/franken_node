@@ -1,0 +1,1373 @@
+{
+  "gate": "section_11_comprehensive_gate",
+  "bead_id": "bd-c781",
+  "section": "11",
+  "gate_pass": true,
+  "verdict": "PASS",
+  "timestamp": "2026-02-21T01:11:10.785971+00:00",
+  "beads_tested": [
+    "bd-3se1",
+    "bd-36wa",
+    "bd-1jmq",
+    "bd-2fpj",
+    "bd-3v8f",
+    "bd-2ymp",
+    "bd-nglx",
+    "bd-3l8d",
+    "bd-2ut3"
+  ],
+  "required_event_codes": [
+    "GATE_11_BEAD_CHECKED",
+    "GATE_11_CONTRACT_COVERAGE",
+    "GATE_11_EVALUATION_STARTED",
+    "GATE_11_VERDICT_EMITTED"
+  ],
+  "events": [
+    {
+      "event_code": "GATE_11_EVALUATION_STARTED",
+      "severity": "info",
+      "timestamp": "2026-02-21T01:11:10.785971+00:00"
+    },
+    {
+      "event_code": "GATE_11_BEAD_CHECKED",
+      "severity": "info",
+      "bead": "bd-3se1",
+      "script": "scripts/check_change_summary_contract.py",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_11_BEAD_CHECKED",
+      "severity": "info",
+      "bead": "bd-36wa",
+      "script": "scripts/check_compatibility_threat_evidence.py",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_11_BEAD_CHECKED",
+      "severity": "info",
+      "bead": "bd-1jmq",
+      "script": "scripts/check_ev_score.py",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_11_BEAD_CHECKED",
+      "severity": "info",
+      "bead": "bd-2fpj",
+      "script": "scripts/check_expected_loss.py",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_11_BEAD_CHECKED",
+      "severity": "info",
+      "bead": "bd-3v8f",
+      "script": "scripts/check_fallback_trigger.py",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_11_BEAD_CHECKED",
+      "severity": "info",
+      "bead": "bd-2ymp",
+      "script": "scripts/check_rollout_wedge.py",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_11_BEAD_CHECKED",
+      "severity": "info",
+      "bead": "bd-nglx",
+      "script": "scripts/check_rollback_command.py",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_11_BEAD_CHECKED",
+      "severity": "info",
+      "bead": "bd-3l8d",
+      "script": "scripts/check_benchmark_correctness_artifacts.py",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_11_BEAD_CHECKED",
+      "severity": "info",
+      "bead": "bd-2ut3",
+      "script": "scripts/check_no_contract_no_merge.py",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_11_CONTRACT_COVERAGE",
+      "severity": "info",
+      "status": "PASS",
+      "missing_or_invalid_count": 0
+    },
+    {
+      "event_code": "GATE_11_VERDICT_EMITTED",
+      "severity": "info",
+      "verdict": "PASS"
+    }
+  ],
+  "per_bead_results": [
+    {
+      "bead_id": "bd-3se1",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-36wa",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-1jmq",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-2fpj",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-3v8f",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-2ymp",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-nglx",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-3l8d",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-2ut3",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    }
+  ],
+  "checks": [
+    {
+      "id": "GATE11-SCRIPTS",
+      "status": "PASS",
+      "details": {
+        "total": 9,
+        "passing": 9,
+        "results": [
+          {
+            "bead": "bd-3se1",
+            "name": "Contract field: change summary",
+            "script": "scripts/check_change_summary_contract.py",
+            "status": "PASS",
+            "exit_code": 0,
+            "payload": {
+              "bead_id": "bd-3se1",
+              "changed_file_count": 2,
+              "changed_files_source": "artifacts/section_11/bd-c781/changed_files_for_validation.txt",
+              "errors": [],
+              "events": [
+                {
+                  "event_code": "CONTRACT_CHANGE_SUMMARY_VALIDATED",
+                  "message": "change summary validated: docs/change_summaries/example_change_summary.json",
+                  "severity": "info",
+                  "summary_file": "docs/change_summaries/example_change_summary.json",
+                  "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26"
+                }
+              ],
+              "example": "docs/change_summaries/example_change_summary.json",
+              "ok": true,
+              "required_event_codes": [
+                "CONTRACT_CHANGE_SUMMARY_VALIDATED",
+                "CONTRACT_INCOMPLETE",
+                "CONTRACT_MISSING"
+              ],
+              "requires_change_summary": true,
+              "subsystem_change_count": 1,
+              "summary_directory": "docs/change_summaries",
+              "summary_files_checked": [
+                "docs/change_summaries/example_change_summary.json"
+              ],
+              "template": "docs/templates/change_summary_template.md",
+              "validated_summaries": [
+                {
+                  "errors": [],
+                  "events": [
+                    {
+                      "event_code": "CONTRACT_CHANGE_SUMMARY_VALIDATED",
+                      "message": "change summary validated: docs/change_summaries/example_change_summary.json",
+                      "severity": "info",
+                      "summary_file": "docs/change_summaries/example_change_summary.json",
+                      "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26"
+                    }
+                  ],
+                  "modules": [
+                    "crates/franken-node/src/connector/lease_coordinator.rs",
+                    "crates/franken-node/src/connector/lease_service.rs"
+                  ],
+                  "ok": true,
+                  "subsystems": [
+                    "franken_node.connector",
+                    "franken_node.control_plane"
+                  ],
+                  "summary_file": "docs/change_summaries/example_change_summary.json",
+                  "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26",
+                  "warnings": []
+                }
+              ],
+              "warnings": []
+            },
+            "stderr": ""
+          },
+          {
+            "bead": "bd-36wa",
+            "name": "Contract field: compatibility and threat evidence",
+            "script": "scripts/check_compatibility_threat_evidence.py",
+            "status": "PASS",
+            "exit_code": 0,
+            "payload": {
+              "bead_id": "bd-36wa",
+              "changed_file_count": 2,
+              "changed_files_source": "artifacts/section_11/bd-c781/changed_files_for_validation.txt",
+              "errors": [],
+              "events": [
+                {
+                  "event_code": "CONTRACT_COMPAT_THREAT_VALIDATED",
+                  "message": "compatibility/threat evidence validated: docs/change_summaries/example_change_summary.json",
+                  "severity": "info",
+                  "summary_file": "docs/change_summaries/example_change_summary.json",
+                  "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26"
+                }
+              ],
+              "example": "docs/change_summaries/example_change_summary.json",
+              "ok": true,
+              "required_event_codes": [
+                "CONTRACT_COMPAT_THREAT_INCOMPLETE",
+                "CONTRACT_COMPAT_THREAT_MISSING",
+                "CONTRACT_COMPAT_THREAT_VALIDATED"
+              ],
+              "requires_contract": true,
+              "subsystem_change_count": 1,
+              "summary_directory": "docs/change_summaries",
+              "summary_files_checked": [
+                "docs/change_summaries/example_change_summary.json"
+              ],
+              "template": "docs/templates/change_summary_template.md",
+              "validated_summaries": [
+                {
+                  "api_families": [
+                    "POST /v1/fleet/lease/validate",
+                    "fn finalize_lease(...) -> Result<LeaseFinalizeReceipt, LeaseError>"
+                  ],
+                  "errors": [],
+                  "events": [
+                    {
+                      "event_code": "CONTRACT_COMPAT_THREAT_VALIDATED",
+                      "message": "compatibility/threat evidence validated: docs/change_summaries/example_change_summary.json",
+                      "severity": "info",
+                      "summary_file": "docs/change_summaries/example_change_summary.json",
+                      "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26"
+                    }
+                  ],
+                  "ok": true,
+                  "summary_file": "docs/change_summaries/example_change_summary.json",
+                  "threat_vectors": [
+                    "data_exfiltration",
+                    "denial_of_service",
+                    "privilege_escalation"
+                  ],
+                  "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26",
+                  "validated_suite_count": 2,
+                  "warnings": []
+                }
+              ],
+              "warnings": []
+            },
+            "stderr": ""
+          },
+          {
+            "bead": "bd-1jmq",
+            "name": "Contract field: EV score and tier",
+            "script": "scripts/check_ev_score.py",
+            "status": "PASS",
+            "exit_code": 0,
+            "payload": {
+              "bead_id": "bd-1jmq",
+              "title": "EV score and tier contract field",
+              "section": "11",
+              "verdict": "PASS",
+              "total": 20,
+              "passed": 20,
+              "failed": 0,
+              "checks": [
+                {
+                  "check": "file_exists: spec contract",
+                  "pass": true,
+                  "detail": "exists: docs/specs/section_11/bd-1jmq_contract.md"
+                },
+                {
+                  "check": "file_exists: policy document",
+                  "pass": true,
+                  "detail": "exists: docs/policy/ev_score_and_tier.md"
+                },
+                {
+                  "check": "spec_keyword: 'EV score'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_keyword: 'tier'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_tiers_defined",
+                  "pass": true,
+                  "detail": "all 5 tiers present"
+                },
+                {
+                  "check": "spec_keyword: 'verification'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_keyword: 'weighted'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_event_codes",
+                  "pass": true,
+                  "detail": "all 4 event codes present"
+                },
+                {
+                  "check": "spec_invariants",
+                  "pass": true,
+                  "detail": "all 4 invariants present"
+                },
+                {
+                  "check": "spec_tier_thresholds",
+                  "pass": true,
+                  "detail": "all 5 tier threshold ranges present"
+                },
+                {
+                  "check": "spec_section: 'Upgrade Path'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_section: 'Downgrade Triggers'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_dimensions",
+                  "pass": true,
+                  "detail": "all 5 dimensions present"
+                },
+                {
+                  "check": "policy_weights",
+                  "pass": true,
+                  "detail": "weight values found"
+                },
+                {
+                  "check": "policy_section: 'Governance'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_section: 'Appeal Process'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_tier_thresholds",
+                  "pass": true,
+                  "detail": "all 5 tier threshold ranges in policy"
+                },
+                {
+                  "check": "policy_event_codes",
+                  "pass": true,
+                  "detail": "all 4 event codes in policy"
+                },
+                {
+                  "check": "policy_invariants",
+                  "pass": true,
+                  "detail": "all 4 invariants in policy"
+                },
+                {
+                  "check": "policy_section: 'Downgrade Triggers'",
+                  "pass": true,
+                  "detail": "found"
+                }
+              ]
+            },
+            "stderr": ""
+          },
+          {
+            "bead": "bd-2fpj",
+            "name": "Contract field: expected-loss model",
+            "script": "scripts/check_expected_loss.py",
+            "status": "PASS",
+            "exit_code": 0,
+            "payload": {
+              "bead_id": "bd-2fpj",
+              "section": "11",
+              "title": "Contract field: expected-loss model",
+              "status": "pass",
+              "passed": 13,
+              "total": 13,
+              "all_passed": true,
+              "checks": [
+                {
+                  "name": "file_exists: spec contract",
+                  "passed": true,
+                  "detail": "exists: docs/specs/section_11/bd-2fpj_contract.md"
+                },
+                {
+                  "name": "contract_field: 'change_summary.expected_loss_model'",
+                  "passed": true,
+                  "detail": "found"
+                },
+                {
+                  "name": "scenarios_schema",
+                  "passed": true,
+                  "detail": "all scenario fields documented"
+                },
+                {
+                  "name": "loss_categories",
+                  "passed": true,
+                  "detail": "all 5 loss categories present"
+                },
+                {
+                  "name": "category_thresholds",
+                  "passed": true,
+                  "detail": "all threshold values present"
+                },
+                {
+                  "name": "aggregate_formula",
+                  "passed": true,
+                  "detail": "formula documented"
+                },
+                {
+                  "name": "confidence_interval",
+                  "passed": true,
+                  "detail": "confidence interval fully documented"
+                },
+                {
+                  "name": "event_codes",
+                  "passed": true,
+                  "detail": "all 4 event codes present"
+                },
+                {
+                  "name": "invariants",
+                  "passed": true,
+                  "detail": "all 4 invariants present"
+                },
+                {
+                  "name": "acceptance_criteria",
+                  "passed": true,
+                  "detail": "section present with 14 criteria"
+                },
+                {
+                  "name": "enforcement",
+                  "passed": true,
+                  "detail": "validator and tests referenced"
+                },
+                {
+                  "name": "verification_evidence",
+                  "passed": true,
+                  "detail": "valid evidence file"
+                },
+                {
+                  "name": "file_exists: verification summary",
+                  "passed": true,
+                  "detail": "exists: artifacts/section_11/bd-2fpj/verification_summary.md"
+                }
+              ]
+            },
+            "stderr": ""
+          },
+          {
+            "bead": "bd-3v8f",
+            "name": "Contract field: fallback trigger",
+            "script": "scripts/check_fallback_trigger.py",
+            "status": "PASS",
+            "exit_code": 0,
+            "payload": {
+              "bead_id": "bd-3v8f",
+              "title": "Fallback trigger contract field",
+              "section": "11",
+              "verdict": "PASS",
+              "total": 22,
+              "passed": 22,
+              "failed": 0,
+              "checks": [
+                {
+                  "check": "file_exists: spec contract",
+                  "pass": true,
+                  "detail": "exists: docs/specs/section_11/bd-3v8f_contract.md"
+                },
+                {
+                  "check": "file_exists: policy document",
+                  "pass": true,
+                  "detail": "exists: docs/policy/fallback_trigger.md"
+                },
+                {
+                  "check": "spec_keyword: 'fallback trigger'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_keyword: 'deterministic'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_rollback_mechanisms",
+                  "pass": true,
+                  "detail": "all 3 rollback mechanisms present"
+                },
+                {
+                  "check": "spec_required_fields",
+                  "pass": true,
+                  "detail": "all 7 required fields present"
+                },
+                {
+                  "check": "spec_event_codes",
+                  "pass": true,
+                  "detail": "all 4 event codes present"
+                },
+                {
+                  "check": "spec_invariants",
+                  "pass": true,
+                  "detail": "all 4 invariants present"
+                },
+                {
+                  "check": "spec_threshold: '<= 5'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_threshold: '<= 30'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_threshold: '100%'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_keyword: 'known-safe state'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_contract_fields",
+                  "pass": true,
+                  "detail": "all 7 required fields in policy"
+                },
+                {
+                  "check": "policy_rollback_mechanisms",
+                  "pass": true,
+                  "detail": "all 3 rollback mechanisms in policy"
+                },
+                {
+                  "check": "policy_section: 'Governance'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_section: 'Appeal Process'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_event_codes",
+                  "pass": true,
+                  "detail": "all 4 event codes in policy"
+                },
+                {
+                  "check": "policy_invariants",
+                  "pass": true,
+                  "detail": "all 4 invariants in policy"
+                },
+                {
+                  "check": "policy_section: 'Timing Guarantees'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_section: 'Downgrade Triggers'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_section: 'Validation'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_section: 'Audit Trail'",
+                  "pass": true,
+                  "detail": "found"
+                }
+              ]
+            },
+            "stderr": ""
+          },
+          {
+            "bead": "bd-2ymp",
+            "name": "Contract field: rollout wedge",
+            "script": "scripts/check_rollout_wedge.py",
+            "status": "PASS",
+            "exit_code": 0,
+            "payload": {
+              "bead_id": "bd-2ymp",
+              "title": "rollout wedge contract field",
+              "section": "11",
+              "verdict": "PASS",
+              "total": 57,
+              "passed": 57,
+              "failed": 0,
+              "checks": [
+                {
+                  "check": "file: spec contract",
+                  "pass": true,
+                  "detail": "exists: docs/specs/section_11/bd-2ymp_contract.md"
+                },
+                {
+                  "check": "file: policy document",
+                  "pass": true,
+                  "detail": "exists: docs/policy/rollout_wedge.md"
+                },
+                {
+                  "check": "spec field: wedge_stages",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec field: initial_percentage",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec field: increment_policy",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec field: max_blast_radius",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec field: observation_window_hours",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec field: wedge_state",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "stage field: stage_id",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "stage field: target_percentage",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "stage field: duration_hours",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "stage field: success_criteria",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "stage field: rollback_trigger",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec event code: RWG-001",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec event code: RWG-002",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec event code: RWG-003",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec event code: RWG-004",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec invariant: INV-RWG-STAGED",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec invariant: INV-RWG-OBSERVE",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec invariant: INV-RWG-BLAST",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec invariant: INV-RWG-ROLLBACK",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec wedge state: PENDING",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec wedge state: ACTIVE",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec wedge state: PAUSED",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec wedge state: ROLLED_BACK",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec wedge state: COMPLETE",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec increment policy: linear",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec increment policy: exponential",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec increment policy: manual",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec threshold: <= 10%",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec threshold: >= 2",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec threshold: >= 1 hour",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec threshold: <= 25%",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec threshold: <= 60 seconds",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec validation rules section",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec helper: validate_rollout_wedge",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec helper: compute_total_rollout_duration",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy event code: RWG-001",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy event code: RWG-002",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy event code: RWG-003",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy event code: RWG-004",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy invariant: INV-RWG-STAGED",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy invariant: INV-RWG-OBSERVE",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy invariant: INV-RWG-BLAST",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy invariant: INV-RWG-ROLLBACK",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy wedge state: PENDING",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy wedge state: ACTIVE",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy wedge state: PAUSED",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy wedge state: ROLLED_BACK",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy wedge state: COMPLETE",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy increment policy: linear",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy increment policy: exponential",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy increment policy: manual",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy blast radius controls",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy observation window",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy governance section",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy appeal process",
+                  "pass": true,
+                  "detail": "found"
+                }
+              ]
+            },
+            "stderr": ""
+          },
+          {
+            "bead": "bd-nglx",
+            "name": "Contract field: rollback command",
+            "script": "scripts/check_rollback_command.py",
+            "status": "PASS",
+            "exit_code": 0,
+            "payload": {
+              "bead_id": "bd-nglx",
+              "changed_file_count": 2,
+              "changed_files_source": "artifacts/section_11/bd-c781/changed_files_for_validation.txt",
+              "errors": [],
+              "events": [
+                {
+                  "event_code": "CONTRACT_ROLLBACK_COMMAND_VALIDATED",
+                  "message": "rollback command contract validated: docs/change_summaries/example_change_summary.json",
+                  "severity": "info",
+                  "summary_file": "docs/change_summaries/example_change_summary.json",
+                  "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26"
+                }
+              ],
+              "example": "docs/change_summaries/example_change_summary.json",
+              "ok": true,
+              "required_event_codes": [
+                "CONTRACT_ROLLBACK_COMMAND_INCOMPLETE",
+                "CONTRACT_ROLLBACK_COMMAND_MISSING",
+                "CONTRACT_ROLLBACK_COMMAND_VALIDATED"
+              ],
+              "requires_contract": true,
+              "subsystem_change_count": 1,
+              "summary_directory": "docs/change_summaries",
+              "summary_files_checked": [
+                "docs/change_summaries/example_change_summary.json"
+              ],
+              "template": "docs/templates/change_summary_template.md",
+              "validated_summaries": [
+                {
+                  "does_not_revert_count": 3,
+                  "errors": [],
+                  "estimated_duration": "2m30s",
+                  "events": [
+                    {
+                      "event_code": "CONTRACT_ROLLBACK_COMMAND_VALIDATED",
+                      "message": "rollback command contract validated: docs/change_summaries/example_change_summary.json",
+                      "severity": "info",
+                      "summary_file": "docs/change_summaries/example_change_summary.json",
+                      "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26"
+                    }
+                  ],
+                  "ok": true,
+                  "reverts_count": 3,
+                  "summary_file": "docs/change_summaries/example_change_summary.json",
+                  "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26",
+                  "warnings": []
+                }
+              ],
+              "warnings": []
+            },
+            "stderr": ""
+          },
+          {
+            "bead": "bd-3l8d",
+            "name": "Contract field: benchmark and correctness artifacts",
+            "script": "scripts/check_benchmark_correctness_artifacts.py",
+            "status": "PASS",
+            "exit_code": 0,
+            "payload": {
+              "bead_id": "bd-3l8d",
+              "changed_file_count": 2,
+              "changed_files_source": "artifacts/section_11/bd-c781/changed_files_for_validation.txt",
+              "errors": [],
+              "events": [
+                {
+                  "event_code": "CONTRACT_BENCH_CORRECT_VALIDATED",
+                  "message": "benchmark/correctness artifacts validated: docs/change_summaries/example_change_summary.json",
+                  "severity": "info",
+                  "summary_file": "docs/change_summaries/example_change_summary.json",
+                  "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26"
+                }
+              ],
+              "example": "docs/change_summaries/example_change_summary.json",
+              "ok": true,
+              "required_event_codes": [
+                "CONTRACT_BENCH_CORRECT_INCOMPLETE",
+                "CONTRACT_BENCH_CORRECT_MISSING",
+                "CONTRACT_BENCH_CORRECT_VALIDATED"
+              ],
+              "requires_contract": true,
+              "subsystem_change_count": 1,
+              "summary_directory": "docs/change_summaries",
+              "summary_files_checked": [
+                "docs/change_summaries/example_change_summary.json"
+              ],
+              "template": "docs/templates/change_summary_template.md",
+              "validated_summaries": [
+                {
+                  "errors": [],
+                  "events": [
+                    {
+                      "event_code": "CONTRACT_BENCH_CORRECT_VALIDATED",
+                      "message": "benchmark/correctness artifacts validated: docs/change_summaries/example_change_summary.json",
+                      "severity": "info",
+                      "summary_file": "docs/change_summaries/example_change_summary.json",
+                      "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26"
+                    }
+                  ],
+                  "ok": true,
+                  "summary_file": "docs/change_summaries/example_change_summary.json",
+                  "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26",
+                  "validated_metric_count": 2,
+                  "validated_suite_count": 2,
+                  "warnings": []
+                }
+              ],
+              "warnings": []
+            },
+            "stderr": ""
+          },
+          {
+            "bead": "bd-2ut3",
+            "name": "No-contract-no-merge gate",
+            "script": "scripts/check_no_contract_no_merge.py",
+            "status": "PASS",
+            "exit_code": 0,
+            "payload": {
+              "bead_id": "bd-2ut3",
+              "changed_file_count": 2,
+              "changed_files_source": "artifacts/section_11/bd-c781/changed_files_for_validation.txt",
+              "errors": [],
+              "events": [
+                {
+                  "event_code": "CONTRACT_NO_MERGE_VALIDATED",
+                  "message": "no-contract-no-merge contract validated: docs/change_summaries/example_change_summary.json",
+                  "severity": "info",
+                  "summary_file": "docs/change_summaries/example_change_summary.json",
+                  "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26"
+                }
+              ],
+              "example": "docs/change_summaries/example_change_summary.json",
+              "labels": [],
+              "ok": true,
+              "override_applied": false,
+              "override_label": "contract-override",
+              "override_label_present": false,
+              "required_event_codes": [
+                "CONTRACT_NO_MERGE_INCOMPLETE",
+                "CONTRACT_NO_MERGE_MISSING",
+                "CONTRACT_NO_MERGE_OVERRIDE",
+                "CONTRACT_NO_MERGE_VALIDATED"
+              ],
+              "requires_contract": true,
+              "subsystem_change_count": 1,
+              "summary_directory": "docs/change_summaries",
+              "summary_files_checked": [
+                "docs/change_summaries/example_change_summary.json"
+              ],
+              "template": "docs/templates/change_summary_template.md",
+              "validated_summaries": [
+                {
+                  "errors": [],
+                  "events": [
+                    {
+                      "event_code": "CONTRACT_NO_MERGE_VALIDATED",
+                      "message": "no-contract-no-merge contract validated: docs/change_summaries/example_change_summary.json",
+                      "severity": "info",
+                      "summary_file": "docs/change_summaries/example_change_summary.json",
+                      "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26"
+                    }
+                  ],
+                  "ok": true,
+                  "summary_file": "docs/change_summaries/example_change_summary.json",
+                  "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26",
+                  "warnings": []
+                }
+              ],
+              "warnings": []
+            },
+            "stderr": ""
+          }
+        ],
+        "events": [
+          {
+            "event_code": "GATE_11_BEAD_CHECKED",
+            "severity": "info",
+            "bead": "bd-3se1",
+            "script": "scripts/check_change_summary_contract.py",
+            "status": "PASS"
+          },
+          {
+            "event_code": "GATE_11_BEAD_CHECKED",
+            "severity": "info",
+            "bead": "bd-36wa",
+            "script": "scripts/check_compatibility_threat_evidence.py",
+            "status": "PASS"
+          },
+          {
+            "event_code": "GATE_11_BEAD_CHECKED",
+            "severity": "info",
+            "bead": "bd-1jmq",
+            "script": "scripts/check_ev_score.py",
+            "status": "PASS"
+          },
+          {
+            "event_code": "GATE_11_BEAD_CHECKED",
+            "severity": "info",
+            "bead": "bd-2fpj",
+            "script": "scripts/check_expected_loss.py",
+            "status": "PASS"
+          },
+          {
+            "event_code": "GATE_11_BEAD_CHECKED",
+            "severity": "info",
+            "bead": "bd-3v8f",
+            "script": "scripts/check_fallback_trigger.py",
+            "status": "PASS"
+          },
+          {
+            "event_code": "GATE_11_BEAD_CHECKED",
+            "severity": "info",
+            "bead": "bd-2ymp",
+            "script": "scripts/check_rollout_wedge.py",
+            "status": "PASS"
+          },
+          {
+            "event_code": "GATE_11_BEAD_CHECKED",
+            "severity": "info",
+            "bead": "bd-nglx",
+            "script": "scripts/check_rollback_command.py",
+            "status": "PASS"
+          },
+          {
+            "event_code": "GATE_11_BEAD_CHECKED",
+            "severity": "info",
+            "bead": "bd-3l8d",
+            "script": "scripts/check_benchmark_correctness_artifacts.py",
+            "status": "PASS"
+          },
+          {
+            "event_code": "GATE_11_BEAD_CHECKED",
+            "severity": "info",
+            "bead": "bd-2ut3",
+            "script": "scripts/check_no_contract_no_merge.py",
+            "status": "PASS"
+          }
+        ]
+      }
+    },
+    {
+      "id": "GATE11-TESTS",
+      "status": "PASS",
+      "details": {
+        "results": [
+          {
+            "bead": "bd-3se1",
+            "test": "tests/test_check_change_summary_contract.py",
+            "status": "PASS",
+            "passed": 0,
+            "failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-36wa",
+            "test": "tests/test_check_compatibility_threat_evidence.py",
+            "status": "PASS",
+            "passed": 0,
+            "failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-1jmq",
+            "test": "tests/test_check_ev_score.py",
+            "status": "PASS",
+            "passed": 0,
+            "failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-2fpj",
+            "test": "tests/test_check_expected_loss.py",
+            "status": "PASS",
+            "passed": 0,
+            "failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-3v8f",
+            "test": "tests/test_check_fallback_trigger.py",
+            "status": "PASS",
+            "passed": 0,
+            "failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-2ymp",
+            "test": "tests/test_check_rollout_wedge.py",
+            "status": "PASS",
+            "passed": 0,
+            "failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-nglx",
+            "test": "tests/test_check_rollback_command.py",
+            "status": "PASS",
+            "passed": 0,
+            "failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-3l8d",
+            "test": "tests/test_check_benchmark_correctness_artifacts.py",
+            "status": "PASS",
+            "passed": 0,
+            "failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-2ut3",
+            "test": "tests/test_check_no_contract_no_merge.py",
+            "status": "PASS",
+            "passed": 0,
+            "failed": 0,
+            "exit_code": 0
+          }
+        ],
+        "total_passed": 0,
+        "total_failed": 0,
+        "companion_test_coverage_pct": 100.0,
+        "threshold_pct": 100.0,
+        "meets_threshold": true
+      }
+    },
+    {
+      "id": "GATE11-EVIDENCE",
+      "status": "PASS",
+      "details": {
+        "results": [
+          {
+            "bead": "bd-3se1",
+            "path": "artifacts/section_11/bd-3se1/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-36wa",
+            "path": "artifacts/section_11/bd-36wa/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-1jmq",
+            "path": "artifacts/section_11/bd-1jmq/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-2fpj",
+            "path": "artifacts/section_11/bd-2fpj/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-3v8f",
+            "path": "artifacts/section_11/bd-3v8f/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-2ymp",
+            "path": "artifacts/section_11/bd-2ymp/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-nglx",
+            "path": "artifacts/section_11/bd-nglx/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-3l8d",
+            "path": "artifacts/section_11/bd-3l8d/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-2ut3",
+            "path": "artifacts/section_11/bd-2ut3/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          }
+        ],
+        "missing_or_invalid": []
+      }
+    },
+    {
+      "id": "GATE11-CONTRACT-COVERAGE",
+      "status": "PASS",
+      "details": {
+        "required_fields": [
+          "intent",
+          "scope",
+          "surface_area_delta",
+          "affected_contracts",
+          "operational_impact",
+          "risk_delta",
+          "compatibility",
+          "dependency_changes",
+          "compatibility_and_threat_evidence",
+          "ev_score_and_tier",
+          "expected_loss_model",
+          "fallback_trigger",
+          "rollout_wedge",
+          "rollback_command",
+          "benchmark_and_correctness_artifacts"
+        ],
+        "missing_or_invalid": []
+      }
+    }
+  ],
+  "summary": {
+    "total_checks": 4,
+    "passing_checks": 4,
+    "failing_checks": 0,
+    "scripts_passing": 9,
+    "scripts_total": 9,
+    "test_coverage_pct": 100.0
+  },
+  "content_hash": "64298ea92eb91af35e15f261711f0db6732170da37b63280e2e121a97e1155ca"
+}

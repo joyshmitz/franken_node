@@ -1,5 +1,6 @@
 pub mod artifact_signing;
 pub mod category_shift;
+pub mod extension_registry;
 pub mod certification;
 pub mod ecosystem_telemetry;
 pub mod manifest;
@@ -10,4 +11,5 @@ pub mod reputation;
 pub mod revocation_integration;
 pub mod revocation_registry;
 pub mod transparency_verifier;
+pub mod migration_kit;
 pub mod trust_card;

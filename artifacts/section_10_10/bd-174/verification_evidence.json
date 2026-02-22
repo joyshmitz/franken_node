@@ -1,0 +1,68 @@
+{
+  "bead_id": "bd-174",
+  "title": "Policy checkpoint chain for product release channels",
+  "section": "10.10",
+  "status": "pass",
+  "timestamp": "2026-02-21T01:40:00Z",
+  "verification_script": "scripts/check_policy_checkpoint.py",
+  "metrics": {
+    "chain_length": 150,
+    "channels_covered": ["stable", "beta", "canary"],
+    "sample_checkpoint_hashes": [
+      "pchk:canonical:v1:seq0:genesis",
+      "pchk:canonical:v1:seq1:beta",
+      "pchk:canonical:v1:seq2:canary"
+    ],
+    "rust_tests_count": 38,
+    "invariants_enforced": [
+      "INV-PCK-MONOTONIC",
+      "INV-PCK-PARENT-CHAIN",
+      "INV-PCK-HASH-INTEGRITY",
+      "INV-PCK-APPEND-ONLY",
+      "INV-PCK-CANONICAL-SER",
+      "INV-PCK-MULTI-CHANNEL"
+    ],
+    "error_codes_implemented": [
+      "CHECKPOINT_SEQ_VIOLATION",
+      "CHECKPOINT_PARENT_MISMATCH",
+      "CHECKPOINT_HASH_CHAIN_BREAK",
+      "CHECKPOINT_EMPTY_CHAIN",
+      "CHECKPOINT_SERIALIZATION_ERROR"
+    ],
+    "event_codes_implemented": [
+      "PCK-001",
+      "PCK-002",
+      "PCK-003",
+      "PCK-004"
+    ],
+    "adversarial_tests": [
+      "tampered_policy_hash_detected",
+      "tampered_checkpoint_hash_detected",
+      "tampered_parent_hash_detected",
+      "tampered_sequence_detected",
+      "single_bit_flip_detected",
+      "wrong_sequence_rejected",
+      "duplicate_sequence_rejected",
+      "wrong_parent_hash_rejected"
+    ],
+    "acceptance_criteria_met": [
+      "AC1: PolicyCheckpoint struct with all required fields",
+      "AC2: Non-monotonic sequence rejection (CHECKPOINT_SEQ_VIOLATION)",
+      "AC3: Parent hash mismatch rejection (CHECKPOINT_PARENT_MISMATCH)",
+      "AC4: verify_chain() detects violations in O(n)",
+      "AC5: latest_for_channel() correct for 3+ channels",
+      "AC6: Serde round-trip persistence",
+      "AC7: Canonical serialization via pchk:canonical:v1 domain tag",
+      "AC8: Verification evidence with chain metrics",
+      "AC9: 150-checkpoint chain test across 3 channels and 3 epochs",
+      "AC10: Adversarial tests covering all tampering scenarios"
+    ]
+  },
+  "artifacts": {
+    "spec": "docs/specs/section_10_10/bd-174_contract.md",
+    "policy": "docs/policy/policy_checkpoint_chain.md",
+    "implementation": "crates/franken-node/src/connector/policy_checkpoint.rs",
+    "verification_script": "scripts/check_policy_checkpoint.py",
+    "unit_tests": "tests/test_check_policy_checkpoint.py"
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "bead_id": "bd-12n3",
+  "section": "10.14",
+  "title": "Idempotency key derivation from request bytes with epoch binding",
+  "generated_at": "2026-02-22T01:32:36Z",
+  "status": "completed_with_baseline_workspace_failures",
+  "checks": [
+    {
+      "name": "implementation_surface_present",
+      "command": "test -f crates/franken-node/src/remote/idempotency.rs && test -f tests/conformance/idempotency_key_derivation.rs && test -f docs/specs/section_10_14/bd-12n3_contract.md",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "gate_script_json",
+      "command": "python3 scripts/check_idempotency_key_derivation.py --json",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_14/bd-12n3/check_report_idempotency_key_derivation.json",
+      "summary": {
+        "verdict": "PASS",
+        "checks_passed": 28,
+        "checks_total": 28
+      }
+    },
+    {
+      "name": "gate_script_self_test",
+      "command": "python3 scripts/check_idempotency_key_derivation.py --self-test",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_14/bd-12n3/check_idempotency_key_derivation_self_test.log"
+    },
+    {
+      "name": "pytest_gate_tests",
+      "command": "pytest -q tests/test_check_idempotency_key_derivation.py",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_14/bd-12n3/pytest_check_idempotency_key_derivation.log"
+    },
+    {
+      "name": "cargo_check_all_targets_via_rch",
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_14/bd-12n3/rch_cargo_check_all_targets.log",
+      "note": "Pre-existing workspace compile debt outside bd-12n3 scope."
+    },
+    {
+      "name": "cargo_clippy_all_targets_via_rch",
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_14/bd-12n3/rch_cargo_clippy_all_targets.log",
+      "note": "Pre-existing workspace lint/compile debt outside bd-12n3 scope."
+    },
+    {
+      "name": "cargo_fmt_check_via_rch",
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_14/bd-12n3/rch_cargo_fmt_check.log",
+      "note": "Pre-existing workspace formatting drift outside bd-12n3 scope."
+    }
+  ],
+  "contract_surface": {
+    "implementation": "crates/franken-node/src/remote/idempotency.rs",
+    "remote_mod": "crates/franken-node/src/remote/mod.rs",
+    "conformance_test": "tests/conformance/idempotency_key_derivation.rs",
+    "gate_script": "scripts/check_idempotency_key_derivation.py",
+    "gate_tests": "tests/test_check_idempotency_key_derivation.py",
+    "vectors": "artifacts/10.14/idempotency_vectors.json",
+    "spec": "docs/specs/section_10_14/bd-12n3_contract.md"
+  }
+}

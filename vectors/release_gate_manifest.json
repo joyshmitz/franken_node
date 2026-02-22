@@ -1,0 +1,49 @@
+{
+  "version": "1.0.0",
+  "description": "Release gate vector suite manifest (bd-1hd)",
+  "suites": [
+    {
+      "suite_name": "Trust Protocol Vectors v1",
+      "source_section": "10.13",
+      "vector_file": "vectors/fnode_trust_vectors_v1.json",
+      "min_pass_count": 1,
+      "version": "1.0.0",
+      "schema_ref": "docs/specs/section_10_13",
+      "features": [
+        "serialization_round_trip",
+        "signature_verification",
+        "schema_validation",
+        "control_channel_frames",
+        "trust_receipt_encoding"
+      ]
+    },
+    {
+      "suite_name": "BOCPD Regime Shift Vectors",
+      "source_section": "10.11",
+      "vector_file": "vectors/bocpd_regime_shifts.json",
+      "min_pass_count": 1,
+      "version": "1.0.0",
+      "schema_ref": "docs/specs/section_10_11/bd-3u4_contract.md",
+      "features": [
+        "changepoint_detection",
+        "hazard_functions",
+        "observation_models",
+        "multi_stream_correlation"
+      ]
+    }
+  ],
+  "coverage_features": [
+    "serialization_round_trip",
+    "signature_verification",
+    "schema_validation",
+    "control_channel_frames",
+    "trust_receipt_encoding",
+    "changepoint_detection",
+    "hazard_functions",
+    "observation_models",
+    "multi_stream_correlation",
+    "epoch_key_derivation",
+    "idempotency_keys",
+    "seed_derivation"
+  ]
+}

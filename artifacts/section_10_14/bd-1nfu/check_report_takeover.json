@@ -1,0 +1,45 @@
+{
+  "bead_id": "bd-1nfu",
+  "section": "10.14",
+  "title": "RemoteCap requirement for network-bound trust/control operations",
+  "verdict": "PASS",
+  "passed": 7,
+  "total": 7,
+  "checks": [
+    {
+      "check": "cli_has_remotecap_command",
+      "pass": true,
+      "detail": "Command enum includes Remotecap subcommand"
+    },
+    {
+      "check": "cli_has_issue_args",
+      "pass": true,
+      "detail": "issue args include scope/endpoint/ttl/operator-approved"
+    },
+    {
+      "check": "main_has_remotecap_handler",
+      "pass": true,
+      "detail": "main dispatch includes remotecap issue handler"
+    },
+    {
+      "check": "main_parses_ttl",
+      "pass": true,
+      "detail": "ttl parser supports s/m/h/d suffixes"
+    },
+    {
+      "check": "spec_has_cli_contract",
+      "pass": true,
+      "detail": "spec documents explicit cli contract"
+    },
+    {
+      "check": "denial_artifact_exists",
+      "pass": true,
+      "detail": "artifacts/10.14/remote_cap_denials.json"
+    },
+    {
+      "check": "security_test_exists",
+      "pass": true,
+      "detail": "tests/security/remote_cap_enforcement.rs"
+    }
+  ]
+}

@@ -1,0 +1,184 @@
+{
+  "bead_id": "bd-3ohj",
+  "title": "Foundation verification gate: comprehensive unit+e2e+logging",
+  "section": "bootstrap",
+  "schema_version": "bootstrap-foundation-gate-v1",
+  "trace_id": "trace-sample-fail",
+  "generated_at_utc": "2026-02-22T02:39:59Z",
+  "verdict": "FAIL",
+  "summary": {
+    "passing_checks": 6,
+    "failing_checks": 3,
+    "total_checks": 9,
+    "failing_dimensions": [
+      "baseline",
+      "determinism",
+      "logging"
+    ]
+  },
+  "checks": [
+    {
+      "id": "BGATE-PARSE-INTEGRITY",
+      "dimension": "evidence",
+      "pass": true,
+      "detail": "ok",
+      "remediation": "Re-generate missing/invalid JSON evidence artifacts before running the gate."
+    },
+    {
+      "id": "BGATE-TRACEABILITY-EVIDENCE",
+      "dimension": "traceability",
+      "pass": true,
+      "detail": "ok=bd-n9r,bd-1pk,bd-32e,bd-2a3,bd-3k9t bad=",
+      "remediation": "Every upstream bead must provide passing verification evidence with matching bead_id."
+    },
+    {
+      "id": "BGATE-UPSTREAM-CONTRACTS",
+      "dimension": "unit_evidence",
+      "pass": true,
+      "detail": "n9r/pk1/e32 contracts PASS + k9 report PASS",
+      "remediation": "Re-run upstream contract gates and publish passing check reports."
+    },
+    {
+      "id": "BGATE-E2E-OUTCOMES",
+      "dimension": "e2e",
+      "pass": true,
+      "detail": "summary_verdict=PASS",
+      "remediation": "Re-run foundation e2e suite until all required journeys and coverage classes are satisfied."
+    },
+    {
+      "id": "BGATE-MATRIX-COVERAGE-CONTRACT",
+      "dimension": "matrix",
+      "pass": true,
+      "detail": "matrix families + deterministic fixture contract + canonical gate path",
+      "remediation": "Fix docs/verification/bootstrap_test_matrix.json coverage metadata and gate consumption fields."
+    },
+    {
+      "id": "BGATE-DOCS-NAVIGATION",
+      "dimension": "docs",
+      "pass": true,
+      "detail": "matrix markdown + harness spec references resolved",
+      "remediation": "Update docs navigation references so operators can trace bootstrap evidence to the gate verdict."
+    },
+    {
+      "id": "BGATE-BASELINE-DOCUMENTED",
+      "dimension": "baseline",
+      "pass": false,
+      "detail": "bd-2a3 expected baseline FAIL captured with deterministic status codes and pass-for-scope evidence",
+      "remediation": "Regenerate baseline checks with deterministic status code registry and documented workspace debt."
+    },
+    {
+      "id": "BGATE-LOG-STABILITY",
+      "dimension": "logging",
+      "pass": false,
+      "detail": "single-trace structured logs + required event code coverage",
+      "remediation": "Ensure structured logs carry one trace_id per run and include all required stable event codes."
+    },
+    {
+      "id": "BGATE-DETERMINISM-GUARD",
+      "dimension": "determinism",
+      "pass": false,
+      "detail": "stable baseline hashes + canonical foundation stage order",
+      "remediation": "Fix nondeterministic evidence generation and enforce canonical stage ordering before gate closure."
+    }
+  ],
+  "events": [
+    {
+      "event_code": "BGATE-001",
+      "trace_id": "trace-sample-fail",
+      "dimension": "gate",
+      "status": "start",
+      "detail": "Bootstrap foundation verification gate started"
+    },
+    {
+      "event_code": "BGATE-020",
+      "trace_id": "trace-sample-fail",
+      "dimension": "evidence",
+      "status": "pass",
+      "check_id": "BGATE-PARSE-INTEGRITY",
+      "detail": "ok"
+    },
+    {
+      "event_code": "BGATE-020",
+      "trace_id": "trace-sample-fail",
+      "dimension": "traceability",
+      "status": "pass",
+      "check_id": "BGATE-TRACEABILITY-EVIDENCE",
+      "detail": "ok=bd-n9r,bd-1pk,bd-32e,bd-2a3,bd-3k9t bad="
+    },
+    {
+      "event_code": "BGATE-020",
+      "trace_id": "trace-sample-fail",
+      "dimension": "unit_evidence",
+      "status": "pass",
+      "check_id": "BGATE-UPSTREAM-CONTRACTS",
+      "detail": "n9r/pk1/e32 contracts PASS + k9 report PASS"
+    },
+    {
+      "event_code": "BGATE-020",
+      "trace_id": "trace-sample-fail",
+      "dimension": "e2e",
+      "status": "pass",
+      "check_id": "BGATE-E2E-OUTCOMES",
+      "detail": "summary_verdict=PASS"
+    },
+    {
+      "event_code": "BGATE-020",
+      "trace_id": "trace-sample-fail",
+      "dimension": "matrix",
+      "status": "pass",
+      "check_id": "BGATE-MATRIX-COVERAGE-CONTRACT",
+      "detail": "matrix families + deterministic fixture contract + canonical gate path"
+    },
+    {
+      "event_code": "BGATE-020",
+      "trace_id": "trace-sample-fail",
+      "dimension": "docs",
+      "status": "pass",
+      "check_id": "BGATE-DOCS-NAVIGATION",
+      "detail": "matrix markdown + harness spec references resolved"
+    },
+    {
+      "event_code": "BGATE-021",
+      "trace_id": "trace-sample-fail",
+      "dimension": "baseline",
+      "status": "fail",
+      "check_id": "BGATE-BASELINE-DOCUMENTED",
+      "detail": "bd-2a3 expected baseline FAIL captured with deterministic status codes and pass-for-scope evidence"
+    },
+    {
+      "event_code": "BGATE-021",
+      "trace_id": "trace-sample-fail",
+      "dimension": "logging",
+      "status": "fail",
+      "check_id": "BGATE-LOG-STABILITY",
+      "detail": "single-trace structured logs + required event code coverage"
+    },
+    {
+      "event_code": "BGATE-021",
+      "trace_id": "trace-sample-fail",
+      "dimension": "determinism",
+      "status": "fail",
+      "check_id": "BGATE-DETERMINISM-GUARD",
+      "detail": "stable baseline hashes + canonical foundation stage order"
+    },
+    {
+      "event_code": "BGATE-099",
+      "trace_id": "trace-sample-fail",
+      "dimension": "gate",
+      "status": "fail",
+      "detail": "verdict=FAIL; failing_dimensions=baseline,determinism,logging"
+    }
+  ],
+  "source_paths": {},
+  "artifact_meta": {
+    "schema_version": "1.0",
+    "bead_id": "bd-3ohj",
+    "section": "bootstrap",
+    "artifact_type": "gate_verdict",
+    "scenario_id": "bootstrap_foundation_gate",
+    "timestamp": "2026-02-22T02:39:59Z",
+    "commit": "f1d41ad9b488c06ff83cc4b4c259a9bbb48335e9",
+    "trace_id": "trace-sample-fail"
+  },
+  "content_hash": "0c317c02d88d12364bedc91b2ffbf43a776921cdd80bb9f5dcfd732b5e1521be"
+}

@@ -1,0 +1,54 @@
+{
+  "bead_id": "bd-2nt",
+  "section": "10.11",
+  "title": "VOI-Budgeted Monitor Scheduling",
+  "status": "pass",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "rust_module": "crates/franken-node/src/connector/diagnostic_registry.rs",
+  "structs_implemented": [
+    "VoiConfig",
+    "VoiScheduler",
+    "DiagnosticDef",
+    "DiagnosticState",
+    "ScheduleDecision",
+    "ScheduleCycleResult",
+    "VoiEvent",
+    "VoiError",
+    "PriorityClass"
+  ],
+  "methods_implemented": [
+    "new",
+    "register_diagnostic",
+    "diagnostic_count",
+    "compute_voi",
+    "schedule",
+    "signal_regime_shift",
+    "effective_budget",
+    "record_finding",
+    "is_conservative",
+    "events",
+    "diagnostic_names",
+    "get_diagnostic",
+    "validate"
+  ],
+  "event_codes": ["VOI-001", "VOI-002", "VOI-003", "VOI-004", "VOI-005", "VOI-006"],
+  "invariants": [
+    "INV-VOI-BUDGET",
+    "INV-VOI-ORDER",
+    "INV-VOI-PREEMPT",
+    "INV-VOI-STORM"
+  ],
+  "error_codes": [
+    "ERR_VOI_INVALID_CONFIG",
+    "ERR_VOI_DUPLICATE_DIAG",
+    "ERR_VOI_UNKNOWN_DIAG",
+    "ERR_VOI_BUDGET_EXCEEDED",
+    "ERR_VOI_EMPTY_REGISTRY"
+  ],
+  "priority_classes": ["Critical", "Standard", "Background"],
+  "voi_components": ["staleness", "uncertainty", "downstream", "historical"],
+  "default_diagnostics_count": 12,
+  "rust_test_count": 36,
+  "compilation": "pass"
+}

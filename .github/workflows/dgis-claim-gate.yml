@@ -1,0 +1,47 @@
+name: DGIS Release Claim Gate
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/dgis-claim-gate.yml"
+      - "docs/conformance/dgis_release_claim_gate.md"
+      - "tests/perf/dgis_budget_gate.rs"
+      - "artifacts/10.20/dgis_release_gate_report.json"
+      - "scripts/check_dgis_claim_gate.py"
+      - "tests/test_check_dgis_claim_gate.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/dgis-claim-gate.yml"
+      - "docs/conformance/dgis_release_claim_gate.md"
+      - "tests/perf/dgis_budget_gate.rs"
+      - "artifacts/10.20/dgis_release_gate_report.json"
+      - "scripts/check_dgis_claim_gate.py"
+      - "tests/test_check_dgis_claim_gate.py"
+
+jobs:
+  dgis-claim-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run DGIS claim gate self-test
+        run: |
+          python3 scripts/check_dgis_claim_gate.py --self-test --json > /tmp/dgis_claim_gate_self_test.json
+
+      - name: Run DGIS claim gate
+        run: |
+          python3 scripts/check_dgis_claim_gate.py --json > /tmp/dgis_claim_gate_report.json
+
+      - name: Run unit tests
+        run: |
+          python3 -m unittest tests/test_check_dgis_claim_gate.py
+
+      - name: Upload gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dgis-claim-gate
+          path: |
+            /tmp/dgis_claim_gate_self_test.json
+            /tmp/dgis_claim_gate_report.json

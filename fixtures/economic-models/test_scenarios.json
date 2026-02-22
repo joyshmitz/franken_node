@@ -1,0 +1,67 @@
+{
+  "description": "Test scenarios for trust economics model validation",
+  "scenarios": [
+    {
+      "name": "default_baseline",
+      "description": "Default model with no posterior updates",
+      "model_updates": [],
+      "expected": {
+        "all_amplification_above_one": true,
+        "total_categories": 5,
+        "overall_amplification_above_3x": true,
+        "expected_loss_positive": true
+      }
+    },
+    {
+      "name": "high_frequency_attack",
+      "description": "After observing high attack frequency",
+      "model_updates": [
+        {"category": "credential_exfiltration", "frequency": 0.5, "effectiveness": 0.3}
+      ],
+      "expected": {
+        "credential_loss_increases": true,
+        "model_updates_reflected": true
+      }
+    },
+    {
+      "name": "improved_defenses",
+      "description": "After defense effectiveness improvement",
+      "model_updates": [
+        {"category": "supply_chain_compromise", "frequency": 0.1, "effectiveness": 0.9}
+      ],
+      "expected": {
+        "supply_chain_loss_decreases": true,
+        "model_updates_reflected": true
+      }
+    },
+    {
+      "name": "multiple_updates",
+      "description": "Multiple posterior updates across categories",
+      "model_updates": [
+        {"category": "credential_exfiltration", "frequency": 0.3, "effectiveness": 0.7},
+        {"category": "privilege_escalation", "frequency": 0.2, "effectiveness": 0.8},
+        {"category": "data_exfiltration", "frequency": 0.15, "effectiveness": 0.75}
+      ],
+      "expected": {
+        "all_categories_computed": true,
+        "recommendations_generated": true,
+        "privilege_pricing_monotonic": true
+      }
+    },
+    {
+      "name": "worst_case",
+      "description": "High frequency, low effectiveness across all categories",
+      "model_updates": [
+        {"category": "credential_exfiltration", "frequency": 0.8, "effectiveness": 0.1},
+        {"category": "privilege_escalation", "frequency": 0.7, "effectiveness": 0.15},
+        {"category": "supply_chain_compromise", "frequency": 0.6, "effectiveness": 0.2},
+        {"category": "policy_evasion", "frequency": 0.75, "effectiveness": 0.1},
+        {"category": "data_exfiltration", "frequency": 0.65, "effectiveness": 0.15}
+      ],
+      "expected": {
+        "total_annual_loss_high": true,
+        "recommendations_favor_hardening": true
+      }
+    }
+  ]
+}

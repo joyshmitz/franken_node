@@ -1,0 +1,2585 @@
+{
+  "gate": "section_10_9_comprehensive_gate",
+  "bead_id": "bd-1kfq",
+  "section": "10.9",
+  "gate_pass": true,
+  "verdict": "PASS",
+  "timestamp": "2026-02-21T05:41:03.674316+00:00",
+  "beads_tested": [
+    "bd-f5d",
+    "bd-9is",
+    "bd-1e0",
+    "bd-m8p",
+    "bd-10c",
+    "bd-15t"
+  ],
+  "required_event_codes": [
+    "GATE_10_9_BEAD_CHECKED",
+    "GATE_10_9_EVALUATION_STARTED",
+    "GATE_10_9_MOONSHOT_COVERAGE",
+    "GATE_10_9_VERDICT_EMITTED"
+  ],
+  "events": [
+    {
+      "event_code": "GATE_10_9_EVALUATION_STARTED",
+      "severity": "info",
+      "timestamp": "2026-02-21T05:41:03.674316+00:00"
+    },
+    {
+      "event_code": "GATE_10_9_BEAD_CHECKED",
+      "severity": "info",
+      "bead": "bd-f5d",
+      "script": "scripts/check_benchmark_infra.py",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_10_9_BEAD_CHECKED",
+      "severity": "info",
+      "bead": "bd-9is",
+      "script": "scripts/check_adversarial_runner.py",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_10_9_BEAD_CHECKED",
+      "severity": "info",
+      "bead": "bd-1e0",
+      "script": "scripts/check_migration_demo.py",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_10_9_BEAD_CHECKED",
+      "severity": "info",
+      "bead": "bd-m8p",
+      "script": "scripts/check_verifier_economy.py",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_10_9_BEAD_CHECKED",
+      "severity": "info",
+      "bead": "bd-10c",
+      "script": "scripts/check_trust_economics.py",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_10_9_BEAD_CHECKED",
+      "severity": "info",
+      "bead": "bd-15t",
+      "script": "scripts/check_category_shift.py",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_10_9_MOONSHOT_COVERAGE",
+      "severity": "info",
+      "status": "PASS"
+    },
+    {
+      "event_code": "GATE_10_9_VERDICT_EMITTED",
+      "severity": "info",
+      "verdict": "PASS"
+    }
+  ],
+  "per_bead_results": [
+    {
+      "bead_id": "bd-f5d",
+      "name": "Public benchmark campaign infrastructure",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-9is",
+      "name": "Autonomous adversarial campaign runner",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-1e0",
+      "name": "Migration singularity demo pipeline",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-m8p",
+      "name": "Verifier economy portal",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-10c",
+      "name": "Trust economics dashboard",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    },
+    {
+      "bead_id": "bd-15t",
+      "name": "Category-shift reporting pipeline",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true
+    }
+  ],
+  "checks": [
+    {
+      "id": "GATE109-SCRIPTS",
+      "status": "PASS",
+      "details": {
+        "total": 6,
+        "passing": 6,
+        "results": [
+          {
+            "bead": "bd-f5d",
+            "name": "Public benchmark campaign infrastructure",
+            "script": "scripts/check_benchmark_infra.py",
+            "status": "PASS",
+            "exit_code": 0,
+            "payload": {
+              "bead_id": "bd-f5d",
+              "title": "Build public Node/Bun/franken_node benchmark campaign infrastructure",
+              "section": "10.9",
+              "overall_pass": true,
+              "verdict": "PASS",
+              "summary": {
+                "passing": 44,
+                "failing": 0,
+                "total": 44
+              },
+              "checks": [
+                {
+                  "check": "file: contract",
+                  "pass": true,
+                  "detail": "exists: docs/specs/section_10_9/bd-f5d_contract.md"
+                },
+                {
+                  "check": "contract: INV-BCI-WORKLOADS",
+                  "pass": true,
+                  "detail": "present"
+                },
+                {
+                  "check": "contract: INV-BCI-RUNTIMES",
+                  "pass": true,
+                  "detail": "present"
+                },
+                {
+                  "check": "contract: INV-BCI-REPRODUCIBLE",
+                  "pass": true,
+                  "detail": "present"
+                },
+                {
+                  "check": "contract: INV-BCI-METRICS",
+                  "pass": true,
+                  "detail": "present"
+                },
+                {
+                  "check": "contract: INV-BCI-TARGETS",
+                  "pass": true,
+                  "detail": "present"
+                },
+                {
+                  "check": "contract: INV-BCI-RERUN",
+                  "pass": true,
+                  "detail": "present"
+                },
+                {
+                  "check": "contract: event code BCI-001",
+                  "pass": true,
+                  "detail": "present"
+                },
+                {
+                  "check": "contract: event code BCI-002",
+                  "pass": true,
+                  "detail": "present"
+                },
+                {
+                  "check": "contract: event code BCI-003",
+                  "pass": true,
+                  "detail": "present"
+                },
+                {
+                  "check": "contract: event code BCI-004",
+                  "pass": true,
+                  "detail": "present"
+                },
+                {
+                  "check": "contract: event code BCI-005",
+                  "pass": true,
+                  "detail": "present"
+                },
+                {
+                  "check": "file: methodology policy",
+                  "pass": true,
+                  "detail": "exists: docs/policy/benchmark_campaign_methodology.md"
+                },
+                {
+                  "check": "json: fixtures/benchmarks/campaign_manifest.json",
+                  "pass": true,
+                  "detail": "valid"
+                },
+                {
+                  "check": "manifest: >=10 workloads",
+                  "pass": true,
+                  "detail": "count=10"
+                },
+                {
+                  "check": "manifest: required workloads present",
+                  "pass": true,
+                  "detail": "all present"
+                },
+                {
+                  "check": "manifest: runtimes include node/bun/franken_node",
+                  "pass": true,
+                  "detail": "runtimes=['bun', 'franken_node', 'node']"
+                },
+                {
+                  "check": "manifest: required dimensions present",
+                  "pass": true,
+                  "detail": "all present"
+                },
+                {
+                  "check": "manifest: methodology populated",
+                  "pass": true,
+                  "detail": "valid"
+                },
+                {
+                  "check": "manifest: hermetic container provenance",
+                  "pass": true,
+                  "detail": "valid"
+                },
+                {
+                  "check": "json: fixtures/benchmarks/dataset_catalog.json",
+                  "pass": true,
+                  "detail": "valid"
+                },
+                {
+                  "check": "dataset catalog: datasets >=3",
+                  "pass": true,
+                  "detail": "count=3"
+                },
+                {
+                  "check": "dataset catalog: integrity hashes present",
+                  "pass": true,
+                  "detail": "all present"
+                },
+                {
+                  "check": "json: fixtures/benchmarks/campaign_results_baseline.json",
+                  "pass": true,
+                  "detail": "valid"
+                },
+                {
+                  "check": "baseline: workload rows >=10",
+                  "pass": true,
+                  "detail": "count=10"
+                },
+                {
+                  "check": "baseline: per-runtime metric shape (mean/median/p95/p99/throughput)",
+                  "pass": true,
+                  "detail": "valid"
+                },
+                {
+                  "check": "baseline: category target fields present",
+                  "pass": true,
+                  "detail": "targets=['compatibility_pct', 'compromise_reduction_x', 'migration_velocity_x']"
+                },
+                {
+                  "check": "json: fixtures/benchmarks/campaign_results_candidate.json",
+                  "pass": true,
+                  "detail": "valid"
+                },
+                {
+                  "check": "candidate: workload rows >=10",
+                  "pass": true,
+                  "detail": "count=10"
+                },
+                {
+                  "check": "candidate: per-runtime metric shape (mean/median/p95/p99/throughput)",
+                  "pass": true,
+                  "detail": "valid"
+                },
+                {
+                  "check": "candidate: category target fields present",
+                  "pass": true,
+                  "detail": "targets=['compatibility_pct', 'compromise_reduction_x', 'migration_velocity_x']"
+                },
+                {
+                  "check": "candidate: compatibility >=95%",
+                  "pass": true,
+                  "detail": "value=96.3"
+                },
+                {
+                  "check": "candidate: migration velocity >=3x",
+                  "pass": true,
+                  "detail": "value=3.4"
+                },
+                {
+                  "check": "candidate: compromise reduction >=10x",
+                  "pass": true,
+                  "detail": "value=11.2"
+                },
+                {
+                  "check": "json: fixtures/benchmarks/chart_spec.json",
+                  "pass": true,
+                  "detail": "valid"
+                },
+                {
+                  "check": "chart spec: comparative visualization definitions",
+                  "pass": true,
+                  "detail": "count=3"
+                },
+                {
+                  "check": "file: campaign runner",
+                  "pass": true,
+                  "detail": "exists: scripts/run_benchmark_campaign.sh"
+                },
+                {
+                  "check": "runner: execution exit code",
+                  "pass": true,
+                  "detail": "code=0"
+                },
+                {
+                  "check": "file: runner output",
+                  "pass": true,
+                  "detail": "exists: artifacts/section_10_9/bd-f5d/campaign_run.json"
+                },
+                {
+                  "check": "file: runner diff",
+                  "pass": true,
+                  "detail": "exists: artifacts/section_10_9/bd-f5d/diff_report.json"
+                },
+                {
+                  "check": "file: runner report",
+                  "pass": true,
+                  "detail": "exists: artifacts/section_10_9/bd-f5d/public_report.md"
+                },
+                {
+                  "check": "runner report: contains table",
+                  "pass": true,
+                  "detail": "present"
+                },
+                {
+                  "check": "runner report: highlights category targets",
+                  "pass": true,
+                  "detail": "present"
+                },
+                {
+                  "check": "runner: deterministic campaign output",
+                  "pass": true,
+                  "detail": "stable"
+                }
+              ]
+            },
+            "stderr": ""
+          },
+          {
+            "bead": "bd-9is",
+            "name": "Autonomous adversarial campaign runner",
+            "script": "scripts/check_adversarial_runner.py",
+            "status": "PASS",
+            "exit_code": 0,
+            "payload": {
+              "bead_id": "bd-9is",
+              "title": "Autonomous adversarial campaign runner with continuous updates",
+              "section": "10.9",
+              "gate": false,
+              "verdict": "PASS",
+              "overall_pass": true,
+              "total": 54,
+              "passed": 54,
+              "failed": 0,
+              "campaign_categories": [
+                "CAMP-MEI",
+                "CAMP-CEX",
+                "CAMP-PEV",
+                "CAMP-DPA",
+                "CAMP-SCC"
+              ],
+              "mutation_strategies": [
+                "MUT-PARAM",
+                "MUT-COMBO",
+                "MUT-TIMING",
+                "MUT-EVASION"
+              ],
+              "checks": [
+                {
+                  "check": "rust_module_exists",
+                  "pass": true,
+                  "detail": "crates/franken-node/src/security/adversarial_runner.rs"
+                },
+                {
+                  "check": "mod_registration",
+                  "pass": true,
+                  "detail": "adversarial_runner registered in security/mod.rs"
+                },
+                {
+                  "check": "category_CAMP-MEI",
+                  "pass": true,
+                  "detail": "CAMP-MEI (MaliciousExtensionInjection)"
+                },
+                {
+                  "check": "category_CAMP-CEX",
+                  "pass": true,
+                  "detail": "CAMP-CEX (CredentialExfiltration)"
+                },
+                {
+                  "check": "category_CAMP-PEV",
+                  "pass": true,
+                  "detail": "CAMP-PEV (PolicyEvasion)"
+                },
+                {
+                  "check": "category_CAMP-DPA",
+                  "pass": true,
+                  "detail": "CAMP-DPA (DelayedPayloadActivation)"
+                },
+                {
+                  "check": "category_CAMP-SCC",
+                  "pass": true,
+                  "detail": "CAMP-SCC (SupplyChainCompromise)"
+                },
+                {
+                  "check": "mutation_MUT-PARAM",
+                  "pass": true,
+                  "detail": "MUT-PARAM (ParameterVariation)"
+                },
+                {
+                  "check": "mutation_MUT-COMBO",
+                  "pass": true,
+                  "detail": "MUT-COMBO (TechniqueCombination)"
+                },
+                {
+                  "check": "mutation_MUT-TIMING",
+                  "pass": true,
+                  "detail": "MUT-TIMING (TimingVariation)"
+                },
+                {
+                  "check": "mutation_MUT-EVASION",
+                  "pass": true,
+                  "detail": "MUT-EVASION (EvasionRefinement)"
+                },
+                {
+                  "check": "event_code_ADV-RUN-001",
+                  "pass": true,
+                  "detail": "ADV-RUN-001 defined"
+                },
+                {
+                  "check": "event_code_ADV-RUN-002",
+                  "pass": true,
+                  "detail": "ADV-RUN-002 defined"
+                },
+                {
+                  "check": "event_code_ADV-RUN-003",
+                  "pass": true,
+                  "detail": "ADV-RUN-003 defined"
+                },
+                {
+                  "check": "event_code_ADV-RUN-004",
+                  "pass": true,
+                  "detail": "ADV-RUN-004 defined"
+                },
+                {
+                  "check": "event_code_ADV-RUN-005",
+                  "pass": true,
+                  "detail": "ADV-RUN-005 defined"
+                },
+                {
+                  "check": "event_code_ADV-RUN-006",
+                  "pass": true,
+                  "detail": "ADV-RUN-006 defined"
+                },
+                {
+                  "check": "event_code_ADV-RUN-ERR-001",
+                  "pass": true,
+                  "detail": "ADV-RUN-ERR-001 defined"
+                },
+                {
+                  "check": "event_code_ADV-RUN-ERR-002",
+                  "pass": true,
+                  "detail": "ADV-RUN-ERR-002 defined"
+                },
+                {
+                  "check": "invariant_INV-ACR-CORPUS",
+                  "pass": true,
+                  "detail": "INV-ACR-CORPUS defined"
+                },
+                {
+                  "check": "invariant_INV-ACR-SANDBOX",
+                  "pass": true,
+                  "detail": "INV-ACR-SANDBOX defined"
+                },
+                {
+                  "check": "invariant_INV-ACR-MUTATION",
+                  "pass": true,
+                  "detail": "INV-ACR-MUTATION defined"
+                },
+                {
+                  "check": "invariant_INV-ACR-RESULTS",
+                  "pass": true,
+                  "detail": "INV-ACR-RESULTS defined"
+                },
+                {
+                  "check": "invariant_INV-ACR-INTEGRATION",
+                  "pass": true,
+                  "detail": "INV-ACR-INTEGRATION defined"
+                },
+                {
+                  "check": "invariant_INV-ACR-CONTINUOUS",
+                  "pass": true,
+                  "detail": "INV-ACR-CONTINUOUS defined"
+                },
+                {
+                  "check": "invariant_INV-ACR-PROVENANCE",
+                  "pass": true,
+                  "detail": "INV-ACR-PROVENANCE defined"
+                },
+                {
+                  "check": "runner_struct",
+                  "pass": true,
+                  "detail": "AdversarialRunner defined"
+                },
+                {
+                  "check": "evaluate_method",
+                  "pass": true,
+                  "detail": "evaluate_results present"
+                },
+                {
+                  "check": "corpus_builder",
+                  "pass": true,
+                  "detail": "build_default_corpus present"
+                },
+                {
+                  "check": "inline_tests",
+                  "pass": true,
+                  "detail": "19 inline tests (need >= 10)"
+                },
+                {
+                  "check": "runner_modes",
+                  "pass": true,
+                  "detail": "continuous + on_demand modes"
+                },
+                {
+                  "check": "sandbox_verification",
+                  "pass": true,
+                  "detail": "sandbox_verified field present"
+                },
+                {
+                  "check": "corpus_fixture_exists",
+                  "pass": true,
+                  "detail": "fixtures/campaigns/initial_corpus.json"
+                },
+                {
+                  "check": "corpus_fixture_valid_json",
+                  "pass": true,
+                  "detail": "valid JSON object"
+                },
+                {
+                  "check": "corpus_fixture_categories",
+                  "pass": true,
+                  "detail": "5 categories in fixture (need >= 5)"
+                },
+                {
+                  "check": "corpus_fixture_campaign_count",
+                  "pass": true,
+                  "detail": "5 campaigns (need >= 5)"
+                },
+                {
+                  "check": "spec_contract",
+                  "pass": true,
+                  "detail": "docs/specs/section_10_9/bd-9is_contract.md"
+                },
+                {
+                  "check": "spec_category_CAMP-MEI",
+                  "pass": true,
+                  "detail": "CAMP-MEI in spec"
+                },
+                {
+                  "check": "spec_category_CAMP-CEX",
+                  "pass": true,
+                  "detail": "CAMP-CEX in spec"
+                },
+                {
+                  "check": "spec_category_CAMP-PEV",
+                  "pass": true,
+                  "detail": "CAMP-PEV in spec"
+                },
+                {
+                  "check": "spec_category_CAMP-DPA",
+                  "pass": true,
+                  "detail": "CAMP-DPA in spec"
+                },
+                {
+                  "check": "spec_category_CAMP-SCC",
+                  "pass": true,
+                  "detail": "CAMP-SCC in spec"
+                },
+                {
+                  "check": "spec_mutation_MUT-PARAM",
+                  "pass": true,
+                  "detail": "MUT-PARAM in spec"
+                },
+                {
+                  "check": "spec_mutation_MUT-COMBO",
+                  "pass": true,
+                  "detail": "MUT-COMBO in spec"
+                },
+                {
+                  "check": "spec_mutation_MUT-TIMING",
+                  "pass": true,
+                  "detail": "MUT-TIMING in spec"
+                },
+                {
+                  "check": "spec_mutation_MUT-EVASION",
+                  "pass": true,
+                  "detail": "MUT-EVASION in spec"
+                },
+                {
+                  "check": "spec_event_ADV-RUN-001",
+                  "pass": true,
+                  "detail": "ADV-RUN-001 in spec"
+                },
+                {
+                  "check": "spec_event_ADV-RUN-002",
+                  "pass": true,
+                  "detail": "ADV-RUN-002 in spec"
+                },
+                {
+                  "check": "spec_event_ADV-RUN-003",
+                  "pass": true,
+                  "detail": "ADV-RUN-003 in spec"
+                },
+                {
+                  "check": "spec_event_ADV-RUN-004",
+                  "pass": true,
+                  "detail": "ADV-RUN-004 in spec"
+                },
+                {
+                  "check": "spec_event_ADV-RUN-005",
+                  "pass": true,
+                  "detail": "ADV-RUN-005 in spec"
+                },
+                {
+                  "check": "spec_event_ADV-RUN-006",
+                  "pass": true,
+                  "detail": "ADV-RUN-006 in spec"
+                },
+                {
+                  "check": "spec_event_ADV-RUN-ERR-001",
+                  "pass": true,
+                  "detail": "ADV-RUN-ERR-001 in spec"
+                },
+                {
+                  "check": "spec_event_ADV-RUN-ERR-002",
+                  "pass": true,
+                  "detail": "ADV-RUN-ERR-002 in spec"
+                }
+              ]
+            },
+            "stderr": ""
+          },
+          {
+            "bead": "bd-1e0",
+            "name": "Migration singularity demo pipeline",
+            "script": "scripts/check_migration_demo.py",
+            "status": "PASS",
+            "exit_code": 0,
+            "payload": {
+              "bead_id": "bd-1e0",
+              "title": "Migration Singularity Demo Pipeline",
+              "section": "10.9",
+              "verdict": "PASS",
+              "total": 87,
+              "passed": 87,
+              "failed": 0,
+              "checks": [
+                {
+                  "name": "file_exists:spec",
+                  "pass": true,
+                  "detail": "spec at docs/specs/section_10_9/bd-1e0_contract.md"
+                },
+                {
+                  "name": "file_exists:policy",
+                  "pass": true,
+                  "detail": "policy at docs/policy/migration_singularity_demo.md"
+                },
+                {
+                  "name": "file_exists:fixtures_dir",
+                  "pass": true,
+                  "detail": "fixtures at fixtures/migration-demos"
+                },
+                {
+                  "name": "flagship:min_three_configs",
+                  "pass": true,
+                  "detail": "3 config(s) found"
+                },
+                {
+                  "name": "flagship:date-fns:required_keys",
+                  "pass": true,
+                  "detail": "keys present in fixtures/migration-demos/date-fns.json"
+                },
+                {
+                  "name": "flagship:express:required_keys",
+                  "pass": true,
+                  "detail": "keys present in fixtures/migration-demos/express.json"
+                },
+                {
+                  "name": "flagship:nextjs-starter:required_keys",
+                  "pass": true,
+                  "detail": "keys present in fixtures/migration-demos/nextjs-starter.json"
+                },
+                {
+                  "name": "flagship:distinct_categories",
+                  "pass": true,
+                  "detail": "3 categories: ['fullstack_framework', 'utility_library', 'web_framework']"
+                },
+                {
+                  "name": "stage:Discovery",
+                  "pass": true,
+                  "detail": "stage 'Discovery' in spec"
+                },
+                {
+                  "name": "stage:Analysis",
+                  "pass": true,
+                  "detail": "stage 'Analysis' in spec"
+                },
+                {
+                  "name": "stage:Migration Plan Generation",
+                  "pass": true,
+                  "detail": "stage 'Migration Plan Generation' in spec"
+                },
+                {
+                  "name": "stage:Execution",
+                  "pass": true,
+                  "detail": "stage 'Execution' in spec"
+                },
+                {
+                  "name": "stage:Validation",
+                  "pass": true,
+                  "detail": "stage 'Validation' in spec"
+                },
+                {
+                  "name": "stage:Rollback",
+                  "pass": true,
+                  "detail": "stage 'Rollback' in spec"
+                },
+                {
+                  "name": "output:discovery_manifest.json",
+                  "pass": true,
+                  "detail": "output 'discovery_manifest.json' in spec"
+                },
+                {
+                  "name": "output:analysis_report.json",
+                  "pass": true,
+                  "detail": "output 'analysis_report.json' in spec"
+                },
+                {
+                  "name": "output:migration_plan.json",
+                  "pass": true,
+                  "detail": "output 'migration_plan.json' in spec"
+                },
+                {
+                  "name": "output:execution_log.json",
+                  "pass": true,
+                  "detail": "output 'execution_log.json' in spec"
+                },
+                {
+                  "name": "output:validation_report.json",
+                  "pass": true,
+                  "detail": "output 'validation_report.json' in spec"
+                },
+                {
+                  "name": "output:rollback_report.json",
+                  "pass": true,
+                  "detail": "output 'rollback_report.json' in spec"
+                },
+                {
+                  "name": "event_code:MSD-001",
+                  "pass": true,
+                  "detail": "MSD-001"
+                },
+                {
+                  "name": "event_code:MSD-002",
+                  "pass": true,
+                  "detail": "MSD-002"
+                },
+                {
+                  "name": "event_code:MSD-003",
+                  "pass": true,
+                  "detail": "MSD-003"
+                },
+                {
+                  "name": "event_code:MSD-004",
+                  "pass": true,
+                  "detail": "MSD-004"
+                },
+                {
+                  "name": "invariant:INV-MSD-PIPELINE",
+                  "pass": true,
+                  "detail": "INV-MSD-PIPELINE"
+                },
+                {
+                  "name": "invariant:INV-MSD-VALIDATION",
+                  "pass": true,
+                  "detail": "INV-MSD-VALIDATION"
+                },
+                {
+                  "name": "invariant:INV-MSD-ROLLBACK",
+                  "pass": true,
+                  "detail": "INV-MSD-ROLLBACK"
+                },
+                {
+                  "name": "invariant:INV-MSD-ARTIFACTS",
+                  "pass": true,
+                  "detail": "INV-MSD-ARTIFACTS"
+                },
+                {
+                  "name": "error_code:ERR-MSD-CLONE-FAIL",
+                  "pass": true,
+                  "detail": "ERR-MSD-CLONE-FAIL"
+                },
+                {
+                  "name": "error_code:ERR-MSD-ANALYSIS-TIMEOUT",
+                  "pass": true,
+                  "detail": "ERR-MSD-ANALYSIS-TIMEOUT"
+                },
+                {
+                  "name": "error_code:ERR-MSD-TRANSFORM-CONFLICT",
+                  "pass": true,
+                  "detail": "ERR-MSD-TRANSFORM-CONFLICT"
+                },
+                {
+                  "name": "error_code:ERR-MSD-VALIDATION-TIMEOUT",
+                  "pass": true,
+                  "detail": "ERR-MSD-VALIDATION-TIMEOUT"
+                },
+                {
+                  "name": "error_code:ERR-MSD-ROLLBACK-INCOMPLETE",
+                  "pass": true,
+                  "detail": "ERR-MSD-ROLLBACK-INCOMPLETE"
+                },
+                {
+                  "name": "confidence:spec:high",
+                  "pass": true,
+                  "detail": "grade 'high' in spec"
+                },
+                {
+                  "name": "confidence:spec:medium",
+                  "pass": true,
+                  "detail": "grade 'medium' in spec"
+                },
+                {
+                  "name": "confidence:spec:low",
+                  "pass": true,
+                  "detail": "grade 'low' in spec"
+                },
+                {
+                  "name": "confidence:policy:high",
+                  "pass": true,
+                  "detail": "grade 'high' in policy"
+                },
+                {
+                  "name": "confidence:policy:medium",
+                  "pass": true,
+                  "detail": "grade 'medium' in policy"
+                },
+                {
+                  "name": "confidence:policy:low",
+                  "pass": true,
+                  "detail": "grade 'low' in policy"
+                },
+                {
+                  "name": "rollback:automatic rollback",
+                  "pass": true,
+                  "detail": "rollback: automatic rollback"
+                },
+                {
+                  "name": "rollback:test pass rate",
+                  "pass": true,
+                  "detail": "rollback: test pass rate"
+                },
+                {
+                  "name": "rollback:rollback completeness",
+                  "pass": true,
+                  "detail": "rollback: rollback completeness"
+                },
+                {
+                  "name": "rollback:partial rollback",
+                  "pass": true,
+                  "detail": "rollback: partial rollback"
+                },
+                {
+                  "name": "reproducibility:spec:hermetic",
+                  "pass": true,
+                  "detail": "'hermetic' in spec"
+                },
+                {
+                  "name": "reproducibility:spec:pinned",
+                  "pass": true,
+                  "detail": "'pinned' in spec"
+                },
+                {
+                  "name": "reproducibility:spec:reproducib",
+                  "pass": true,
+                  "detail": "'reproducib' in spec"
+                },
+                {
+                  "name": "reproducibility:policy:hermetic",
+                  "pass": true,
+                  "detail": "'hermetic' in policy"
+                },
+                {
+                  "name": "reproducibility:policy:pinned",
+                  "pass": true,
+                  "detail": "'pinned' in policy"
+                },
+                {
+                  "name": "reproducibility:policy:reproducib",
+                  "pass": true,
+                  "detail": "'reproducib' in policy"
+                },
+                {
+                  "name": "integrity:spec:sha-256",
+                  "pass": true,
+                  "detail": "'sha-256' in spec"
+                },
+                {
+                  "name": "integrity:spec:integrity",
+                  "pass": true,
+                  "detail": "'integrity' in spec"
+                },
+                {
+                  "name": "integrity:spec:manifest",
+                  "pass": true,
+                  "detail": "'manifest' in spec"
+                },
+                {
+                  "name": "integrity:policy:sha-256",
+                  "pass": true,
+                  "detail": "'sha-256' in policy"
+                },
+                {
+                  "name": "integrity:policy:integrity",
+                  "pass": true,
+                  "detail": "'integrity' in policy"
+                },
+                {
+                  "name": "integrity:policy:manifest",
+                  "pass": true,
+                  "detail": "'manifest' in policy"
+                },
+                {
+                  "name": "before_after:test pass rate",
+                  "pass": true,
+                  "detail": "dimension 'test pass rate' in spec"
+                },
+                {
+                  "name": "before_after:startup time",
+                  "pass": true,
+                  "detail": "dimension 'startup time' in spec"
+                },
+                {
+                  "name": "before_after:request throughput",
+                  "pass": true,
+                  "detail": "dimension 'request throughput' in spec"
+                },
+                {
+                  "name": "before_after:memory usage",
+                  "pass": true,
+                  "detail": "dimension 'memory usage' in spec"
+                },
+                {
+                  "name": "before_after:security posture",
+                  "pass": true,
+                  "detail": "dimension 'security posture' in spec"
+                },
+                {
+                  "name": "timeline:< 10 min",
+                  "pass": true,
+                  "detail": "timeline target '< 10 min'"
+                },
+                {
+                  "name": "timeline:< 30s",
+                  "pass": true,
+                  "detail": "timeline target '< 30s'"
+                },
+                {
+                  "name": "timeline:< 120s",
+                  "pass": true,
+                  "detail": "timeline target '< 120s'"
+                },
+                {
+                  "name": "timeline:< 300s",
+                  "pass": true,
+                  "detail": "timeline target '< 300s'"
+                },
+                {
+                  "name": "acceptance:single command",
+                  "pass": true,
+                  "detail": "acceptance: 'single command'"
+                },
+                {
+                  "name": "acceptance:structured output",
+                  "pass": true,
+                  "detail": "acceptance: 'structured output'"
+                },
+                {
+                  "name": "acceptance:confidence grades",
+                  "pass": true,
+                  "detail": "acceptance: 'confidence grades'"
+                },
+                {
+                  "name": "acceptance:reproducible",
+                  "pass": true,
+                  "detail": "acceptance: 'reproducible'"
+                },
+                {
+                  "name": "acceptance:publication",
+                  "pass": true,
+                  "detail": "acceptance: 'publication'"
+                },
+                {
+                  "name": "acceptance:gracefully",
+                  "pass": true,
+                  "detail": "acceptance: 'gracefully'"
+                },
+                {
+                  "name": "acceptance:under 10 minutes",
+                  "pass": true,
+                  "detail": "acceptance: 'under 10 minutes'"
+                },
+                {
+                  "name": "logging:MSD-001",
+                  "pass": true,
+                  "detail": "event code MSD-001 in policy"
+                },
+                {
+                  "name": "logging:MSD-002",
+                  "pass": true,
+                  "detail": "event code MSD-002 in policy"
+                },
+                {
+                  "name": "logging:MSD-003",
+                  "pass": true,
+                  "detail": "event code MSD-003 in policy"
+                },
+                {
+                  "name": "logging:MSD-004",
+                  "pass": true,
+                  "detail": "event code MSD-004 in policy"
+                },
+                {
+                  "name": "policy_inv:INV-MSD-PIPELINE",
+                  "pass": true,
+                  "detail": "invariant INV-MSD-PIPELINE in policy"
+                },
+                {
+                  "name": "policy_inv:INV-MSD-VALIDATION",
+                  "pass": true,
+                  "detail": "invariant INV-MSD-VALIDATION in policy"
+                },
+                {
+                  "name": "policy_inv:INV-MSD-ROLLBACK",
+                  "pass": true,
+                  "detail": "invariant INV-MSD-ROLLBACK in policy"
+                },
+                {
+                  "name": "policy_inv:INV-MSD-ARTIFACTS",
+                  "pass": true,
+                  "detail": "invariant INV-MSD-ARTIFACTS in policy"
+                },
+                {
+                  "name": "criteria:10,000",
+                  "pass": true,
+                  "detail": "criterion '10,000' in spec"
+                },
+                {
+                  "name": "criteria:500,000",
+                  "pass": true,
+                  "detail": "criterion '500,000' in spec"
+                },
+                {
+                  "name": "criteria:test coverage",
+                  "pass": true,
+                  "detail": "criterion 'test coverage' in spec"
+                },
+                {
+                  "name": "criteria:active maintenance",
+                  "pass": true,
+                  "detail": "criterion 'active maintenance' in spec"
+                },
+                {
+                  "name": "report:executive summary",
+                  "pass": true,
+                  "detail": "report: 'executive summary'"
+                },
+                {
+                  "name": "report:detailed findings",
+                  "pass": true,
+                  "detail": "report: 'detailed findings'"
+                },
+                {
+                  "name": "report:before/after",
+                  "pass": true,
+                  "detail": "report: 'before/after'"
+                },
+                {
+                  "name": "report:confidence assessment",
+                  "pass": true,
+                  "detail": "report: 'confidence assessment'"
+                }
+              ]
+            },
+            "stderr": ""
+          },
+          {
+            "bead": "bd-m8p",
+            "name": "Verifier economy portal",
+            "script": "scripts/check_verifier_economy.py",
+            "status": "PASS",
+            "exit_code": 0,
+            "payload": {
+              "bead_id": "bd-m8p",
+              "title": "Verifier economy portal and external attestation publishing flow",
+              "section": "10.9",
+              "timestamp": "2026-02-21T05:41:03.956876+00:00",
+              "verdict": "PASS",
+              "overall_pass": true,
+              "total": 146,
+              "passed": 146,
+              "failed": 0,
+              "checks": [
+                {
+                  "check": "file_exists: spec contract",
+                  "pass": true,
+                  "detail": "exists: docs/specs/section_10_9/bd-m8p_contract.md"
+                },
+                {
+                  "check": "file_exists: policy document",
+                  "pass": true,
+                  "detail": "exists: docs/policy/verifier_economy.md"
+                },
+                {
+                  "check": "file_exists: rust implementation",
+                  "pass": true,
+                  "detail": "exists: crates/franken-node/src/verifier_economy/mod.rs"
+                },
+                {
+                  "check": "main_rs: 'pub mod verifier_economy;'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_event_codes",
+                  "pass": true,
+                  "detail": "all 8 event codes present"
+                },
+                {
+                  "check": "spec_invariants",
+                  "pass": true,
+                  "detail": "all 4 invariants present"
+                },
+                {
+                  "check": "spec_error_codes",
+                  "pass": true,
+                  "detail": "all 5 error codes present"
+                },
+                {
+                  "check": "spec_keyword: 'JSON-LD'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_section: 'Anti-Gaming'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_section: 'Replay Capsule'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_section: 'Reputation Scoring'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_keyword: 'Dispute'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_section: 'Publishing Flow'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_event_codes",
+                  "pass": true,
+                  "detail": "all 8 event codes in policy"
+                },
+                {
+                  "check": "policy_invariants",
+                  "pass": true,
+                  "detail": "all 4 invariants in policy"
+                },
+                {
+                  "check": "policy_reputation_tiers",
+                  "pass": true,
+                  "detail": "all 4 reputation tiers in policy"
+                },
+                {
+                  "check": "policy_section: 'Governance'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_section: 'Dispute Resolution'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_section: 'Anti-Gaming'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_section: 'Appeal Process'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_section: 'Upgrade Path'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy_section: 'Downgrade Triggers'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub enum VerificationDimension'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub enum VerifierTier'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub enum ReputationTier'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub enum AttestationState'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub enum DisputeOutcome'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub struct AttestationClaim'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub struct AttestationEvidence'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub struct AttestationSignature'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub struct Attestation'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub struct AttestationSubmission'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub struct Verifier'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub struct VerifierRegistration'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub struct ReputationDimensions'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub struct Dispute'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub struct ReplayCapsule'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub struct ScoreboardEntry'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub struct TrustScoreboard'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub struct VerifierEconomyEvent'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub struct VepError'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_type: 'pub struct VerifierEconomyRegistry'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn register_verifier('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn get_verifier('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn list_verifiers('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn verifier_count('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn submit_attestation('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn review_attestation('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn publish_attestation('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn reject_attestation('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn get_attestation('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn list_attestations('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn published_attestations('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn attestation_count('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn verify_signature('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn compute_reputation('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn update_reputation('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn file_dispute('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn resolve_dispute('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn get_dispute('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn list_disputes('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn register_replay_capsule('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn access_replay_capsule('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn verify_capsule_integrity('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn build_scoreboard('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn check_selective_reporting('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn reset_submission_counts('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_method: 'pub fn reputation_tier_from_score('",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_event_code: 'VEP-001'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_event_code: 'VEP-002'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_event_code: 'VEP-003'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_event_code: 'VEP-004'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_event_code: 'VEP-005'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_event_code: 'VEP-006'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_event_code: 'VEP-007'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_event_code: 'VEP-008'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_invariant: 'INV-VEP-ATTESTATION'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_invariant: 'INV-VEP-SIGNATURE'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_invariant: 'INV-VEP-REPUTATION'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_invariant: 'INV-VEP-PUBLISH'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_error_code: 'ERR-VEP-INVALID-SIGNATURE'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_error_code: 'ERR-VEP-DUPLICATE-SUBMISSION'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_error_code: 'ERR-VEP-UNREGISTERED-VERIFIER'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_error_code: 'ERR-VEP-INCOMPLETE-PAYLOAD'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_error_code: 'ERR-VEP-ANTI-GAMING'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_register_verifier'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_register_emits_vep005'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_duplicate_public_key_rejected'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_verifier_count'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_get_verifier'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_list_verifiers'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_submit_attestation'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_submit_emits_vep001'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_submit_unregistered_verifier_rejected'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_submit_invalid_signature_rejected'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_submit_empty_statement_rejected'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_submit_empty_suite_id_rejected'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_submit_duplicate_rejected'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_publish_flow_submit_review_publish'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_publish_emits_vep002'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_cannot_publish_without_review'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_cannot_review_already_published'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_reject_attestation'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_reject_emits_vep008'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_compute_reputation_deterministic'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_compute_reputation_all_ones'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_compute_reputation_all_zeros'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_compute_reputation_mixed'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_update_reputation'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_update_reputation_emits_vep004'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_reputation_tier_novice'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_reputation_tier_active'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_reputation_tier_established'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_reputation_tier_trusted'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_file_dispute'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_file_dispute_emits_vep003'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_cannot_dispute_unpublished'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_resolve_dispute_upheld'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_resolve_dispute_rejected'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_register_and_access_capsule'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_access_capsule_emits_vep007'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_capsule_integrity_valid'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_capsule_integrity_invalid_empty_hash'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_empty_scoreboard'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_scoreboard_with_published_attestation'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_sybil_rate_limiting'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_sybil_rate_limit_emits_vep006'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_selective_reporting_check_passes'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_reset_submission_counts'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_take_events_drains'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_dimension_display'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_verifier_tier_display'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_reputation_tier_display'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_attestation_state_display'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_dispute_outcome_display'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_vep_error_display'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_verify_signature_valid'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_verify_signature_wrong_key'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_verify_signature_wrong_algorithm'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_verify_signature_empty_value'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_default_registry'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_published_attestations_filter'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_event_code_constants'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_invariant_constants'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test: 'test_error_code_constants'",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust_test_count",
+                  "pass": true,
+                  "detail": "60 tests (minimum 50)"
+                }
+              ]
+            },
+            "stderr": ""
+          },
+          {
+            "bead": "bd-10c",
+            "name": "Trust economics dashboard",
+            "script": "scripts/check_trust_economics.py",
+            "status": "PASS",
+            "exit_code": 0,
+            "payload": {
+              "bead": "bd-10c",
+              "verdict": "PASS",
+              "checks": [
+                {
+                  "check": "source_exists",
+                  "passed": true,
+                  "detail": "Source file exists: trust_economics_dashboard.rs"
+                },
+                {
+                  "check": "module_wiring",
+                  "passed": true,
+                  "detail": "Module wired in tools/mod.rs"
+                },
+                {
+                  "check": "structs",
+                  "passed": true,
+                  "detail": "All 12 structs present"
+                },
+                {
+                  "check": "attack_categories",
+                  "passed": true,
+                  "detail": "5 attack categories: 5/5"
+                },
+                {
+                  "check": "three_way_comparison",
+                  "passed": true,
+                  "detail": "Three-way platform comparison (Node.js/Bun/franken_node)"
+                },
+                {
+                  "check": "privilege_pricing",
+                  "passed": true,
+                  "detail": "4 privilege levels with risk pricing: 5/5 checks"
+                },
+                {
+                  "check": "policy_recommendations",
+                  "passed": true,
+                  "detail": "4 optimization objectives: 5/5 checks"
+                },
+                {
+                  "check": "expected_loss_model",
+                  "passed": true,
+                  "detail": "Expected-loss model with Bayesian updates: 6/6 checks"
+                },
+                {
+                  "check": "event_codes",
+                  "passed": true,
+                  "detail": "Event codes: 12/12"
+                },
+                {
+                  "check": "invariants",
+                  "passed": true,
+                  "detail": "Invariants: 6/6"
+                },
+                {
+                  "check": "confidence_versioning",
+                  "passed": true,
+                  "detail": "Confidence intervals + model versioning: 5/5 checks"
+                },
+                {
+                  "check": "spec_alignment",
+                  "passed": true,
+                  "detail": "Spec contract aligns with implementation"
+                },
+                {
+                  "check": "test_coverage",
+                  "passed": true,
+                  "detail": "Rust unit tests: 26 (target >= 25)"
+                }
+              ]
+            },
+            "stderr": ""
+          },
+          {
+            "bead": "bd-15t",
+            "name": "Category-shift reporting pipeline",
+            "script": "scripts/check_category_shift.py",
+            "status": "PASS",
+            "exit_code": 0,
+            "payload": {
+              "bead_id": "bd-15t",
+              "title": "Category-shift reporting pipeline with reproducible evidence bundles",
+              "section": "10.9",
+              "verdict": "PASS",
+              "total": 85,
+              "passed": 85,
+              "failed": 0,
+              "checks": [
+                {
+                  "check": "file: category_shift implementation",
+                  "pass": true,
+                  "detail": "exists: crates/franken-node/src/supply_chain/category_shift.rs"
+                },
+                {
+                  "check": "file: supply_chain module",
+                  "pass": true,
+                  "detail": "exists: crates/franken-node/src/supply_chain/mod.rs"
+                },
+                {
+                  "check": "file: bd-15t contract spec",
+                  "pass": true,
+                  "detail": "exists: docs/specs/section_10_9/bd-15t_contract.md"
+                },
+                {
+                  "check": "file: category shift reporting policy",
+                  "pass": true,
+                  "detail": "exists: docs/policy/category_shift_reporting.md"
+                },
+                {
+                  "check": "file: verification evidence",
+                  "pass": true,
+                  "detail": "exists: artifacts/section_10_9/bd-15t/verification_evidence.json"
+                },
+                {
+                  "check": "file: verification summary",
+                  "pass": true,
+                  "detail": "exists: artifacts/section_10_9/bd-15t/verification_summary.md"
+                },
+                {
+                  "check": "mod export: category_shift",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub struct CategoryShiftReport",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub struct ShiftEvidence",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub struct ReportingPipeline",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub struct ReportClaim",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub struct ThresholdResult",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub struct MoonshotBetEntry",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub struct ManifestEntry",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub struct DimensionData",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub struct ReportDiffEntry",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub struct PipelineEvent",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub struct PipelineConfig",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub struct ClaimInput",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub struct EvidenceInput",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub enum ThresholdStatus",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub enum ReportDimension",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub enum BetStatus",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub enum FreshnessStatus",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub enum ClaimOutcome",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "impl: pub enum CategoryShiftError",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "event_code: CSR_PIPELINE_STARTED",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "event_code: CSR_DIMENSION_COLLECTED",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "event_code: CSR_CLAIM_VERIFIED",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "event_code: CSR_REPORT_GENERATED",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "error_code: ERR_CSR_SOURCE_UNAVAILABLE",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "error_code: ERR_CSR_CLAIM_STALE",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "error_code: ERR_CSR_CLAIM_INVALID",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "error_code: ERR_CSR_HASH_MISMATCH",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "invariant: INV_CSR_CLAIM_VALID",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "invariant: INV_CSR_MANIFEST",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "invariant: INV_CSR_REPRODUCE",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "invariant: INV_CSR_IDEMPOTENT",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "function: pub fn start(",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "function: pub fn ingest_dimension(",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "function: pub fn register_bet(",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "function: pub fn generate_report(",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "function: pub fn render_markdown(",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "function: pub fn render_json(",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "function: pub fn diff_reports(",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "function: pub fn sha256_hex(",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "function: pub fn demo_pipeline(",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "threshold: THRESHOLD_COMPAT_PERCENT",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "threshold: THRESHOLD_MIGRATION_VELOCITY",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "threshold: THRESHOLD_COMPROMISE_REDUCTION",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec: ## Scope",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec: ## Report Dimensions",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec: ## Category-Defining Thresholds",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec: ## Reproducibility Requirements",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec: ## Output Formats",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec: ## Event Codes",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec: ## Error Codes",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec: ## Invariants",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec: ## Acceptance Criteria",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy: ## 1. Overview",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy: ## 2. Report Generation",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy: ## 3. Claim Integrity",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy: ## 4. Category-Defining Thresholds",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy: ## 5. Moonshot Bet Status",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy: ## 6. Output Format Requirements",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy: ## 7. Versioning and Retention",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "policy: ## 8. Idempotency",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "rust unit test count",
+                  "pass": true,
+                  "detail": "34 tests found"
+                },
+                {
+                  "check": "impl: #[cfg(test)]",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "simulation: 5 dimensions collected",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "simulation: all claims verified",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "simulation: all claims have reproduce scripts",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "simulation: 3 thresholds evaluated",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "simulation: all thresholds met or exceeded",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "simulation: bet status entries present",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "simulation: manifest has entries",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "simulation: idempotent hash",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "simulation: JSON format supported",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "simulation: Markdown format supported",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_threshold: >= 95%",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_threshold: >= 3x",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "spec_threshold: >= 10x",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "evidence: has bead_id",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "evidence: has section",
+                  "pass": true,
+                  "detail": "found"
+                },
+                {
+                  "check": "evidence: has verdict",
+                  "pass": true,
+                  "detail": "found"
+                }
+              ]
+            },
+            "stderr": ""
+          }
+        ],
+        "events": [
+          {
+            "event_code": "GATE_10_9_BEAD_CHECKED",
+            "severity": "info",
+            "bead": "bd-f5d",
+            "script": "scripts/check_benchmark_infra.py",
+            "status": "PASS"
+          },
+          {
+            "event_code": "GATE_10_9_BEAD_CHECKED",
+            "severity": "info",
+            "bead": "bd-9is",
+            "script": "scripts/check_adversarial_runner.py",
+            "status": "PASS"
+          },
+          {
+            "event_code": "GATE_10_9_BEAD_CHECKED",
+            "severity": "info",
+            "bead": "bd-1e0",
+            "script": "scripts/check_migration_demo.py",
+            "status": "PASS"
+          },
+          {
+            "event_code": "GATE_10_9_BEAD_CHECKED",
+            "severity": "info",
+            "bead": "bd-m8p",
+            "script": "scripts/check_verifier_economy.py",
+            "status": "PASS"
+          },
+          {
+            "event_code": "GATE_10_9_BEAD_CHECKED",
+            "severity": "info",
+            "bead": "bd-10c",
+            "script": "scripts/check_trust_economics.py",
+            "status": "PASS"
+          },
+          {
+            "event_code": "GATE_10_9_BEAD_CHECKED",
+            "severity": "info",
+            "bead": "bd-15t",
+            "script": "scripts/check_category_shift.py",
+            "status": "PASS"
+          }
+        ]
+      }
+    },
+    {
+      "id": "GATE109-TESTS",
+      "status": "PASS",
+      "details": {
+        "results": [
+          {
+            "bead": "bd-f5d",
+            "test": "tests/test_check_benchmark_infra.py",
+            "status": "PASS",
+            "passed": 10,
+            "failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-9is",
+            "test": "tests/test_check_adversarial_runner.py",
+            "status": "PASS",
+            "passed": 19,
+            "failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-1e0",
+            "test": "tests/test_check_migration_demo.py",
+            "status": "PASS",
+            "passed": 43,
+            "failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-m8p",
+            "test": "tests/test_check_verifier_economy.py",
+            "status": "PASS",
+            "passed": 56,
+            "failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-10c",
+            "test": "tests/test_check_trust_economics.py",
+            "status": "PASS",
+            "passed": 18,
+            "failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-15t",
+            "test": "tests/test_check_category_shift.py",
+            "status": "PASS",
+            "passed": 36,
+            "failed": 0,
+            "exit_code": 0
+          }
+        ],
+        "total_passed": 182,
+        "total_failed": 0,
+        "companion_test_coverage_pct": 100.0,
+        "threshold_pct": 100.0,
+        "meets_threshold": true
+      }
+    },
+    {
+      "id": "GATE109-EVIDENCE",
+      "status": "PASS",
+      "details": {
+        "results": [
+          {
+            "bead": "bd-f5d",
+            "path": "artifacts/section_10_9/bd-f5d/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-9is",
+            "path": "artifacts/section_10_9/bd-9is/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-1e0",
+            "path": "artifacts/section_10_9/bd-1e0/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-m8p",
+            "path": "artifacts/section_10_9/bd-m8p/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-10c",
+            "path": "artifacts/section_10_9/bd-10c/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-15t",
+            "path": "artifacts/section_10_9/bd-15t/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          }
+        ],
+        "missing_or_invalid": []
+      }
+    },
+    {
+      "id": "GATE109-MOONSHOT-COVERAGE",
+      "status": "PASS",
+      "details": {
+        "errors": [],
+        "beads_with_pass_verdicts": 6
+      }
+    }
+  ],
+  "summary": {
+    "total_checks": 4,
+    "passing_checks": 4,
+    "failing_checks": 0,
+    "scripts_passing": 6,
+    "scripts_total": 6,
+    "test_coverage_pct": 100.0,
+    "total_unit_tests_passed": 182
+  },
+  "content_hash": "f8ebdf1c75efca2eb72c8c0435c745b9fea74d0a66edfece952c2b180fb4401f"
+}

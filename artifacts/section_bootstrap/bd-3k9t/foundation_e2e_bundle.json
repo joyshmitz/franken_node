@@ -1,0 +1,122 @@
+{
+  "artifacts": {
+    "log_jsonl": "artifacts/section_bootstrap/bd-3k9t/foundation_e2e_log.jsonl",
+    "stage_results_jsonl": "artifacts/section_bootstrap/bd-3k9t/stage_results.jsonl",
+    "summary_json": "artifacts/section_bootstrap/bd-3k9t/foundation_e2e_summary.json"
+  },
+  "bead_id": "bd-3k9t",
+  "replay_inputs": [
+    "artifacts/section_bootstrap/bd-n9r/resolved_config_snapshot.json",
+    "artifacts/section_bootstrap/bd-32e/init_snapshots.json",
+    "artifacts/section_bootstrap/bd-1pk/doctor_checks_matrix.json",
+    "transplant/TRANSPLANT_LOCKFILE.sha256",
+    "transplant/transplant_manifest.txt"
+  ],
+  "schema_version": "bootstrap-e2e-bundle-v1",
+  "stage_results": [
+    {
+      "actual_exit": 0,
+      "category": "clean",
+      "command": "python3 -c \"from pathlib import Path; s=Path('crates/franken-node/src/cli.rs').read_text(encoding='utf-8'); raise SystemExit(0 if 'Run(RunArgs)' in s else 1)\"",
+      "expected_exit": 0,
+      "expected_pattern": null,
+      "pattern_matched": true,
+      "stage_id": "run_surface_contract",
+      "status": "pass",
+      "stderr_path": "artifacts/section_bootstrap/bd-3k9t/stage_outputs/run_surface_contract.stderr",
+      "stdout_path": "artifacts/section_bootstrap/bd-3k9t/stage_outputs/run_surface_contract.stdout"
+    },
+    {
+      "actual_exit": 0,
+      "category": "clean",
+      "command": "tests/e2e/config_profile_resolution.sh",
+      "expected_exit": 0,
+      "expected_pattern": null,
+      "pattern_matched": true,
+      "stage_id": "config_profile_resolution",
+      "status": "pass",
+      "stderr_path": "artifacts/section_bootstrap/bd-3k9t/stage_outputs/config_profile_resolution.stderr",
+      "stdout_path": "artifacts/section_bootstrap/bd-3k9t/stage_outputs/config_profile_resolution.stdout"
+    },
+    {
+      "actual_exit": 0,
+      "category": "clean",
+      "command": "tests/e2e/init_profile_bootstrap.sh",
+      "expected_exit": 0,
+      "expected_pattern": null,
+      "pattern_matched": true,
+      "stage_id": "init_profile_bootstrap",
+      "status": "pass",
+      "stderr_path": "artifacts/section_bootstrap/bd-3k9t/stage_outputs/init_profile_bootstrap.stderr",
+      "stdout_path": "artifacts/section_bootstrap/bd-3k9t/stage_outputs/init_profile_bootstrap.stdout"
+    },
+    {
+      "actual_exit": 0,
+      "category": "clean",
+      "command": "tests/e2e/doctor_command_diagnostics.sh",
+      "expected_exit": 0,
+      "expected_pattern": null,
+      "pattern_matched": true,
+      "stage_id": "doctor_command_diagnostics",
+      "status": "pass",
+      "stderr_path": "artifacts/section_bootstrap/bd-3k9t/stage_outputs/doctor_command_diagnostics.stderr",
+      "stdout_path": "artifacts/section_bootstrap/bd-3k9t/stage_outputs/doctor_command_diagnostics.stdout"
+    },
+    {
+      "actual_exit": 2,
+      "category": "degraded",
+      "command": "transplant/verify_lockfile.sh --json",
+      "expected_exit": 2,
+      "expected_pattern": "Snapshot directory not found",
+      "pattern_matched": true,
+      "stage_id": "transplant_verify_missing_snapshot",
+      "status": "pass",
+      "stderr_path": "artifacts/section_bootstrap/bd-3k9t/stage_outputs/transplant_verify_missing_snapshot.stderr",
+      "stdout_path": "artifacts/section_bootstrap/bd-3k9t/stage_outputs/transplant_verify_missing_snapshot.stdout"
+    },
+    {
+      "actual_exit": 2,
+      "category": "drifted",
+      "command": "transplant/drift_detect.sh --json",
+      "expected_exit": 2,
+      "expected_pattern": "Not found:",
+      "pattern_matched": true,
+      "stage_id": "transplant_drift_probe_missing_snapshot",
+      "status": "pass",
+      "stderr_path": "artifacts/section_bootstrap/bd-3k9t/stage_outputs/transplant_drift_probe_missing_snapshot.stderr",
+      "stdout_path": "artifacts/section_bootstrap/bd-3k9t/stage_outputs/transplant_drift_probe_missing_snapshot.stdout"
+    }
+  ],
+  "summary": {
+    "bead_id": "bd-3k9t",
+    "coverage": {
+      "clean": 4,
+      "degraded": 1,
+      "drifted": 1
+    },
+    "fail_count": 0,
+    "missing_stage_ids": [],
+    "pass_count": 6,
+    "required_journeys": {
+      "config": true,
+      "doctor": true,
+      "init": true,
+      "run": true,
+      "transplant_integrity": true
+    },
+    "schema_version": "bootstrap-foundation-e2e-v1",
+    "stage_count": 6,
+    "stage_order": [
+      "run_surface_contract",
+      "config_profile_resolution",
+      "init_profile_bootstrap",
+      "doctor_command_diagnostics",
+      "transplant_verify_missing_snapshot",
+      "transplant_drift_probe_missing_snapshot"
+    ],
+    "suite": "foundation_bootstrap_suite",
+    "trace_id": "trace-bd-3k9t-foundation-e2e",
+    "verdict": "PASS"
+  },
+  "trace_id": "trace-bd-3k9t-foundation-e2e"
+}

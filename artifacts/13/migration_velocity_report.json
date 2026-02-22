@@ -1,0 +1,167 @@
+{
+  "bead_id": "bd-3agp",
+  "generated_at_utc": "2026-02-21T00:50:00Z",
+  "measurement_unit": "minutes",
+  "trace_id": "trace-bd-3agp-migration-velocity",
+  "required_velocity_ratio": 3.0,
+  "overall_velocity_ratio": 3.15,
+  "total_manual_minutes": 3450,
+  "total_tooled_minutes": 1095,
+  "cohort_size": 10,
+  "projects": [
+    {
+      "project_id": "cohort-express-001",
+      "archetype": "express_app",
+      "start_time_utc": "2026-02-18T09:00:00Z",
+      "end_time_utc": "2026-02-18T15:00:00Z",
+      "first_passing_test_time_utc": "2026-02-18T15:02:00Z",
+      "manual_migration_minutes": 360,
+      "tooled_migration_minutes": 100,
+      "manual_intervention_points": [
+        "Adjusted legacy middleware ordering in generated routing glue."
+      ],
+      "blockers_encountered": [
+        "Legacy path alias mismatch in two route modules."
+      ],
+      "ci_release_sample": true
+    },
+    {
+      "project_id": "cohort-fastify-001",
+      "archetype": "fastify_app",
+      "start_time_utc": "2026-02-18T09:30:00Z",
+      "end_time_utc": "2026-02-18T14:30:00Z",
+      "first_passing_test_time_utc": "2026-02-18T14:31:00Z",
+      "manual_migration_minutes": 300,
+      "tooled_migration_minutes": 90,
+      "manual_intervention_points": [
+        "Reconciled plugin registration order for one auth plugin."
+      ],
+      "blockers_encountered": [
+        "One plugin depended on undeclared env var at startup."
+      ],
+      "ci_release_sample": true
+    },
+    {
+      "project_id": "cohort-nextjs-001",
+      "archetype": "nextjs_app",
+      "start_time_utc": "2026-02-18T10:00:00Z",
+      "end_time_utc": "2026-02-18T18:00:00Z",
+      "first_passing_test_time_utc": "2026-02-18T18:05:00Z",
+      "manual_migration_minutes": 480,
+      "tooled_migration_minutes": 150,
+      "manual_intervention_points": [
+        "Updated build-time image loader configuration."
+      ],
+      "blockers_encountered": [
+        "SSR cache policy mismatch in one route segment."
+      ],
+      "ci_release_sample": true
+    },
+    {
+      "project_id": "cohort-cli-001",
+      "archetype": "cli_tool",
+      "start_time_utc": "2026-02-19T08:00:00Z",
+      "end_time_utc": "2026-02-19T11:00:00Z",
+      "first_passing_test_time_utc": "2026-02-19T11:01:00Z",
+      "manual_migration_minutes": 180,
+      "tooled_migration_minutes": 50,
+      "manual_intervention_points": [
+        "Adjusted one colorized output assertion for deterministic formatting."
+      ],
+      "blockers_encountered": [],
+      "ci_release_sample": false
+    },
+    {
+      "project_id": "cohort-library-001",
+      "archetype": "library_package",
+      "start_time_utc": "2026-02-19T09:00:00Z",
+      "end_time_utc": "2026-02-19T13:00:00Z",
+      "first_passing_test_time_utc": "2026-02-19T13:02:00Z",
+      "manual_migration_minutes": 240,
+      "tooled_migration_minutes": 70,
+      "manual_intervention_points": [
+        "Pinned one peer dependency range for test fixtures."
+      ],
+      "blockers_encountered": [],
+      "ci_release_sample": false
+    },
+    {
+      "project_id": "cohort-worker-001",
+      "archetype": "worker_service",
+      "start_time_utc": "2026-02-19T09:15:00Z",
+      "end_time_utc": "2026-02-19T12:45:00Z",
+      "first_passing_test_time_utc": "2026-02-19T12:46:00Z",
+      "manual_migration_minutes": 210,
+      "tooled_migration_minutes": 65,
+      "manual_intervention_points": [
+        "Adjusted retry policy constants for queue drain test parity."
+      ],
+      "blockers_encountered": [
+        "One flaky integration fixture needed deterministic seed lock."
+      ],
+      "ci_release_sample": false
+    },
+    {
+      "project_id": "cohort-ws-001",
+      "archetype": "websocket_server",
+      "start_time_utc": "2026-02-19T11:00:00Z",
+      "end_time_utc": "2026-02-19T15:30:00Z",
+      "first_passing_test_time_utc": "2026-02-19T15:33:00Z",
+      "manual_migration_minutes": 270,
+      "tooled_migration_minutes": 80,
+      "manual_intervention_points": [
+        "Aligned ping/pong timeout defaults with baseline behavior."
+      ],
+      "blockers_encountered": [],
+      "ci_release_sample": false
+    },
+    {
+      "project_id": "cohort-monorepo-001",
+      "archetype": "monorepo",
+      "start_time_utc": "2026-02-20T08:00:00Z",
+      "end_time_utc": "2026-02-20T18:00:00Z",
+      "first_passing_test_time_utc": "2026-02-20T18:06:00Z",
+      "manual_migration_minutes": 600,
+      "tooled_migration_minutes": 180,
+      "manual_intervention_points": [
+        "Split one workspace migration into staged subgraph rollout."
+      ],
+      "blockers_encountered": [
+        "Two packages had conflicting lockfile metadata pre-migration."
+      ],
+      "ci_release_sample": true
+    },
+    {
+      "project_id": "cohort-native-001",
+      "archetype": "native_addons_partial",
+      "start_time_utc": "2026-02-20T09:00:00Z",
+      "end_time_utc": "2026-02-20T15:30:00Z",
+      "first_passing_test_time_utc": "2026-02-20T15:36:00Z",
+      "manual_migration_minutes": 390,
+      "tooled_migration_minutes": 140,
+      "manual_intervention_points": [
+        "Applied compatibility shim for two native addon bindings."
+      ],
+      "blockers_encountered": [
+        "One native module required fallback execution path."
+      ],
+      "ci_release_sample": false
+    },
+    {
+      "project_id": "cohort-custom-build-001",
+      "archetype": "custom_build_pipeline",
+      "start_time_utc": "2026-02-20T10:00:00Z",
+      "end_time_utc": "2026-02-20T16:00:00Z",
+      "first_passing_test_time_utc": "2026-02-20T16:04:00Z",
+      "manual_migration_minutes": 420,
+      "tooled_migration_minutes": 170,
+      "manual_intervention_points": [
+        "Normalized custom transpiler stage order in generated build graph."
+      ],
+      "blockers_encountered": [
+        "One custom hook expected deprecated artifact naming pattern."
+      ],
+      "ci_release_sample": true
+    }
+  ]
+}

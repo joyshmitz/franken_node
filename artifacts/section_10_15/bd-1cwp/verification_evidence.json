@@ -1,0 +1,31 @@
+{
+  "bead_id": "bd-1cwp",
+  "section": "10.15",
+  "title": "Control-plane idempotency key enforcement",
+  "gate_script": "scripts/check_control_idempotency_adoption.py",
+  "test_suite": "tests/test_check_control_idempotency_adoption.py",
+  "timestamp": "2026-02-22T02:03:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "adoption_document": "docs/integration/control_idempotency_adoption.md",
+    "adoption_report": "artifacts/10.15/control_idempotency_report.json",
+    "key_derivation": "crates/franken-node/src/remote/idempotency.rs",
+    "dedupe_store": "crates/franken-node/src/remote/idempotency_store.rs",
+    "spec_contract": "docs/specs/section_10_15/bd-1cwp_contract.md",
+    "verification_script": "scripts/check_control_idempotency_adoption.py",
+    "unit_tests": "tests/test_check_control_idempotency_adoption.py"
+  },
+  "gate_checks_passed": 15,
+  "gate_checks_total": 15,
+  "python_test_count": 27,
+  "capabilities_verified": {
+    "retryable_requests": 4,
+    "non_retryable_requests": 1,
+    "canonical_key_derivation": true,
+    "canonical_dedupe_store": true,
+    "epoch_binding": true,
+    "no_custom_idempotency_violations": 0,
+    "event_codes": 5,
+    "invariants": 5
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "bead_id": "bd-3go4",
+  "section": "10.18",
+  "title": "VEF Coverage and Proof-Validity Metrics Integration",
+  "timestamp": "2026-02-22T00:00:00Z",
+  "spec_document": "docs/specs/vef_claim_integration.md",
+  "conformance_test": "tests/conformance/vef_claim_gate.rs",
+  "coverage_snapshot": "artifacts/10.18/vef_claim_coverage_snapshot.json",
+  "coverage_percentage": 100.0,
+  "verification_success_rate": 100.0,
+  "claims_gated": 3,
+  "claims_passed": 3,
+  "claims_blocked": 0,
+  "scoreboard_published": true,
+  "verdict": "PASS"
+}

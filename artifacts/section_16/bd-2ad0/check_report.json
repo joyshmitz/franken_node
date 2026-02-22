@@ -1,0 +1,110 @@
+{
+  "bead_id": "bd-2ad0",
+  "section": "16",
+  "gate_script": "check_reproducible_datasets.py",
+  "checks_passed": 20,
+  "checks_total": 20,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "source_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/tools/migration_incident_datasets.rs"
+    },
+    {
+      "check": "module_wiring",
+      "passed": true,
+      "detail": "tools/mod.rs"
+    },
+    {
+      "check": "dataset_types",
+      "passed": true,
+      "detail": "5/5 types"
+    },
+    {
+      "check": "struct_DatasetEntry",
+      "passed": true,
+      "detail": "DatasetEntry"
+    },
+    {
+      "check": "struct_DatasetProvenance",
+      "passed": true,
+      "detail": "DatasetProvenance"
+    },
+    {
+      "check": "struct_ReplayInstructions",
+      "passed": true,
+      "detail": "ReplayInstructions"
+    },
+    {
+      "check": "struct_DatasetBundle",
+      "passed": true,
+      "detail": "DatasetBundle"
+    },
+    {
+      "check": "struct_DatasetCatalog",
+      "passed": true,
+      "detail": "DatasetCatalog"
+    },
+    {
+      "check": "struct_ReproducibleDatasets",
+      "passed": true,
+      "detail": "ReproducibleDatasets"
+    },
+    {
+      "check": "content_hash_integrity",
+      "passed": true,
+      "detail": "SHA-256 content hashing"
+    },
+    {
+      "check": "provenance_metadata",
+      "passed": true,
+      "detail": "Provenance linked to source bead"
+    },
+    {
+      "check": "replay_instructions",
+      "passed": true,
+      "detail": "Replay with commands and deterministic flag"
+    },
+    {
+      "check": "schema_versioning",
+      "passed": true,
+      "detail": "rds-v1.0"
+    },
+    {
+      "check": "bundle_publication",
+      "passed": true,
+      "detail": "Bundle aggregation with hash"
+    },
+    {
+      "check": "catalog_generation",
+      "passed": true,
+      "detail": "Catalog with by_type counts"
+    },
+    {
+      "check": "event_codes",
+      "passed": true,
+      "detail": "12/12 codes"
+    },
+    {
+      "check": "invariants",
+      "passed": true,
+      "detail": "6/6 invariants"
+    },
+    {
+      "check": "audit_log",
+      "passed": true,
+      "detail": "JSONL audit export"
+    },
+    {
+      "check": "spec_alignment",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_16/bd-2ad0_contract.md"
+    },
+    {
+      "check": "test_coverage",
+      "passed": true,
+      "detail": "22 tests (>=22)"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+name: Migration Velocity Gate
+
+on:
+  pull_request:
+    paths:
+      - "docs/specs/section_13/bd-3agp_contract.md"
+      - "artifacts/13/migration_velocity_report.json"
+      - "scripts/check_migration_velocity_gate.py"
+      - "tests/test_check_migration_velocity_gate.py"
+  push:
+    branches: [main]
+    paths:
+      - "docs/specs/section_13/bd-3agp_contract.md"
+      - "artifacts/13/migration_velocity_report.json"
+      - "scripts/check_migration_velocity_gate.py"
+      - "tests/test_check_migration_velocity_gate.py"
+
+jobs:
+  migration-velocity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run migration velocity gate
+        run: |
+          python3 scripts/check_migration_velocity_gate.py --json > /tmp/migration_velocity_gate.json
+
+      - name: Upload gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-velocity-gate
+          path: /tmp/migration_velocity_gate.json

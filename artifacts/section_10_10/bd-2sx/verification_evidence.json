@@ -1,0 +1,44 @@
+{
+  "bead_id": "bd-2sx",
+  "title": "Revocation freshness gate for risky product actions",
+  "section": "10.10",
+  "status": "pass",
+  "timestamp": "2026-02-20T21:00:00Z",
+  "agent": "CrimsonCrane",
+  "deliverables": {
+    "spec": "docs/specs/section_10_10/bd-2sx_contract.md",
+    "policy": "docs/policy/revocation_freshness_gate.md",
+    "implementation": "crates/franken-node/src/security/revocation_freshness_gate.rs",
+    "verification_script": "scripts/check_revocation_freshness.py",
+    "unit_tests": "tests/test_check_revocation_freshness.py"
+  },
+  "rust_implementation": {
+    "types": ["SafetyTier", "FreshnessProof", "RevocationFreshnessGate", "FreshnessError", "GateDecision"],
+    "methods": ["check", "classify_action", "verify_proof"],
+    "event_codes": ["RFG-001", "RFG-002", "RFG-003", "RFG-004"],
+    "error_codes": ["ERR_RFG_STALE", "ERR_RFG_SERVICE_DOWN", "ERR_RFG_TAMPERED", "ERR_RFG_REPLAY", "ERR_RFG_UNAUTHENTICATED"],
+    "invariants": ["INV-RFG-GATE", "INV-RFG-PROOF", "INV-RFG-DEGRADE", "INV-RFG-SESSION"],
+    "safety_tiers": {
+      "Critical": "1 epoch, fail-closed",
+      "Standard": "5 epochs, owner-bypass",
+      "Advisory": "10 epochs, proceed-with-warning"
+    },
+    "unit_test_count": 33
+  },
+  "verification_checks": {
+    "spec_exists": true,
+    "policy_exists": true,
+    "impl_exists": true,
+    "mod_rs_registered": true,
+    "cargo_check_passes": true,
+    "all_event_codes_present": true,
+    "all_invariants_present": true,
+    "all_error_codes_present": true,
+    "all_tiers_documented": true,
+    "epoch_thresholds_documented": true,
+    "graceful_degradation_documented": true,
+    "replay_detection_implemented": true,
+    "signature_verification_implemented": true,
+    "unit_test_count_ge_25": true
+  }
+}

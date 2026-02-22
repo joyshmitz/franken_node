@@ -1,0 +1,185 @@
+{
+  "bead_id": "bd-1pk",
+  "gate_script": "doctor_command_diagnostics.sh",
+  "checks_passed": 34,
+  "checks_total": 34,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "exists_main.rs",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/main.rs"
+    },
+    {
+      "check": "exists_cli.rs",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/cli.rs"
+    },
+    {
+      "check": "exists_bootstrap_doctor_contract.md",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/bootstrap_doctor_contract.md"
+    },
+    {
+      "check": "doctor_args_json_flag",
+      "passed": true,
+      "detail": "--json"
+    },
+    {
+      "check": "doctor_args_trace_id_flag",
+      "passed": true,
+      "detail": "--trace-id"
+    },
+    {
+      "check": "doctor_args_trace_id_default",
+      "passed": true,
+      "detail": "doctor-bootstrap"
+    },
+    {
+      "check": "doctor_report_has_structured_logs",
+      "passed": true,
+      "detail": "DoctorReport structured logs"
+    },
+    {
+      "check": "doctor_report_has_merge_decisions",
+      "passed": true,
+      "detail": "merge provenance"
+    },
+    {
+      "check": "doctor_builder_with_cwd",
+      "passed": true,
+      "detail": "cwd injectable builder"
+    },
+    {
+      "check": "doctor_json_output_path",
+      "passed": true,
+      "detail": "json render"
+    },
+    {
+      "check": "doctor_human_output_path",
+      "passed": true,
+      "detail": "human render"
+    },
+    {
+      "check": "doctor_code_DR-CONFIG-001",
+      "passed": true,
+      "detail": "DR-CONFIG-001"
+    },
+    {
+      "check": "doctor_code_DR-CONFIG-002",
+      "passed": true,
+      "detail": "DR-CONFIG-002"
+    },
+    {
+      "check": "doctor_code_DR-PROFILE-003",
+      "passed": true,
+      "detail": "DR-PROFILE-003"
+    },
+    {
+      "check": "doctor_code_DR-TRUST-004",
+      "passed": true,
+      "detail": "DR-TRUST-004"
+    },
+    {
+      "check": "doctor_code_DR-MIGRATE-005",
+      "passed": true,
+      "detail": "DR-MIGRATE-005"
+    },
+    {
+      "check": "doctor_code_DR-OBS-006",
+      "passed": true,
+      "detail": "DR-OBS-006"
+    },
+    {
+      "check": "doctor_code_DR-ENV-007",
+      "passed": true,
+      "detail": "DR-ENV-007"
+    },
+    {
+      "check": "doctor_code_DR-CONFIG-008",
+      "passed": true,
+      "detail": "DR-CONFIG-008"
+    },
+    {
+      "check": "doctor_event_code_DOC-001",
+      "passed": true,
+      "detail": "DOC-001"
+    },
+    {
+      "check": "doctor_event_code_DOC-002",
+      "passed": true,
+      "detail": "DOC-002"
+    },
+    {
+      "check": "doctor_event_code_DOC-003",
+      "passed": true,
+      "detail": "DOC-003"
+    },
+    {
+      "check": "doctor_event_code_DOC-004",
+      "passed": true,
+      "detail": "DOC-004"
+    },
+    {
+      "check": "doctor_event_code_DOC-005",
+      "passed": true,
+      "detail": "DOC-005"
+    },
+    {
+      "check": "doctor_event_code_DOC-006",
+      "passed": true,
+      "detail": "DOC-006"
+    },
+    {
+      "check": "doctor_event_code_DOC-007",
+      "passed": true,
+      "detail": "DOC-007"
+    },
+    {
+      "check": "doctor_event_code_DOC-008",
+      "passed": true,
+      "detail": "DOC-008"
+    },
+    {
+      "check": "doctor_code_order_deterministic",
+      "passed": true,
+      "detail": "[14334, 14693, 15579, 16444, 17334, 18248, 19125, 19988]"
+    },
+    {
+      "check": "contract_has_matrix_and_schema",
+      "passed": true,
+      "detail": "matrix+schema sections"
+    },
+    {
+      "check": "matrix_written",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_bootstrap/bd-1pk/doctor_checks_matrix.json"
+    },
+    {
+      "check": "healthy_report_written",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_bootstrap/bd-1pk/doctor_report_healthy.json"
+    },
+    {
+      "check": "degraded_report_written",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_bootstrap/bd-1pk/doctor_report_degraded.json"
+    },
+    {
+      "check": "failure_report_written",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_bootstrap/bd-1pk/doctor_report_failure.json"
+    },
+    {
+      "check": "healthy_report_deterministic_hash",
+      "passed": true,
+      "detail": "b4e79d33da13773659cecf849739c4bbfd2f1a229117aae4dccd8e91bb3d8eb1"
+    }
+  ],
+  "sample_reports": {
+    "healthy": "artifacts/section_bootstrap/bd-1pk/doctor_report_healthy.json",
+    "degraded": "artifacts/section_bootstrap/bd-1pk/doctor_report_degraded.json",
+    "failure": "artifacts/section_bootstrap/bd-1pk/doctor_report_failure.json"
+  },
+  "doctor_matrix_path": "artifacts/section_bootstrap/bd-1pk/doctor_checks_matrix.json"
+}

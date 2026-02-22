@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://franken-node.dev/schemas/drill.json",
+  "title": "Disaster-Recovery Drill Scenario Schema",
+  "description": "Schema for franken_node DR drill scenario definitions.",
+  "type": "object",
+  "required": [
+    "scenario_id",
+    "title",
+    "category",
+    "severity",
+    "slo_seconds",
+    "drill_interval",
+    "fault_description",
+    "fault_injection_steps",
+    "recovery_steps",
+    "verification_steps",
+    "abort_conditions",
+    "related_runbook",
+    "cross_references"
+  ],
+  "properties": {
+    "scenario_id": {
+      "type": "string",
+      "pattern": "^DR-\\d{3}$",
+      "description": "Unique scenario identifier in DR-NNN format."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable scenario title."
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "evidence_ledger_loss",
+        "trust_artifact_corruption",
+        "epoch_barrier_failure",
+        "federation_partition",
+        "proof_pipeline_outage"
+      ],
+      "description": "Drill scenario category."
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "high"],
+      "description": "Scenario severity level."
+    },
+    "slo_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum acceptable recovery time in seconds."
+    },
+    "drill_interval": {
+      "type": "string",
+      "enum": ["weekly", "monthly"],
+      "description": "How often this drill should be executed."
+    },
+    "fault_description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Precise description of the fault being injected."
+    },
+    "fault_injection_steps": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Deterministic steps to inject the fault."
+    },
+    "recovery_steps": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Steps from the corresponding runbook to recover."
+    },
+    "verification_steps": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Steps to verify recovery was successful."
+    },
+    "abort_conditions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Conditions that trigger immediate drill abort."
+    },
+    "related_runbook": {
+      "type": "string",
+      "pattern": "^RB-\\d{3}$",
+      "description": "The runbook ID this drill exercises."
+    },
+    "cross_references": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Related beads, source files, and documentation."
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,31 @@
+{
+  "bead_id": "bd-3l8d",
+  "contract_field": "change_summary.benchmark_and_correctness_artifacts",
+  "required_event_codes": [
+    "CONTRACT_BENCH_CORRECT_VALIDATED",
+    "CONTRACT_BENCH_CORRECT_MISSING",
+    "CONTRACT_BENCH_CORRECT_INCOMPLETE"
+  ],
+  "benchmark_metric_requirements": [
+    "metric_name",
+    "unit",
+    "measured_value",
+    "baseline_value",
+    "delta",
+    "within_acceptable_bounds",
+    "artifact_path"
+  ],
+  "correctness_suite_requirements": [
+    "suite_name",
+    "pass_count",
+    "fail_count",
+    "coverage_percent",
+    "raw_output_artifact"
+  ],
+  "artifact_path_policy": {
+    "required_prefix": "artifacts/section_",
+    "must_exist": true,
+    "stable_filename": true
+  },
+  "status": "active"
+}

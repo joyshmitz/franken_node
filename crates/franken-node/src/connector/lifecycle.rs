@@ -7,7 +7,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// The eight mutually exclusive lifecycle states for a connector instance.
+/// The nine mutually exclusive lifecycle states for a connector instance.
+/// Includes `Cancelling` for the three-phase cancellation protocol (bd-1cs7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectorState {
@@ -17,32 +18,38 @@ pub enum ConnectorState {
     Configured,
     Active,
     Paused,
+    /// Cancelling: three-phase cancellation in progress (REQUEST->DRAIN->FINALIZE).
+    /// bd-1cs7: INV-CANP-THREE-PHASE
+    Cancelling,
     Stopped,
     Failed,
 }
 
 impl ConnectorState {
     /// All possible states, ordered by the canonical happy-path progression.
-    pub const ALL: [ConnectorState; 8] = [
+    pub const ALL: [ConnectorState; 9] = [
         Self::Discovered,
         Self::Verified,
         Self::Installed,
         Self::Configured,
         Self::Active,
         Self::Paused,
+        Self::Cancelling,
         Self::Stopped,
         Self::Failed,
     ];
 
     /// Returns the set of states that are legal targets from this state.
+    /// bd-1cs7: Active and Paused can enter Cancelling for orderly shutdown.
     pub fn legal_targets(&self) -> &'static [ConnectorState] {
         match self {
             Self::Discovered => &[Self::Verified, Self::Failed],
             Self::Verified => &[Self::Installed, Self::Failed],
             Self::Installed => &[Self::Configured, Self::Failed],
             Self::Configured => &[Self::Active, Self::Failed],
-            Self::Active => &[Self::Paused, Self::Stopped, Self::Failed],
-            Self::Paused => &[Self::Active, Self::Stopped, Self::Failed],
+            Self::Active => &[Self::Paused, Self::Cancelling, Self::Stopped, Self::Failed],
+            Self::Paused => &[Self::Active, Self::Cancelling, Self::Stopped, Self::Failed],
+            Self::Cancelling => &[Self::Stopped, Self::Failed],
             Self::Stopped => &[Self::Configured, Self::Failed],
             Self::Failed => &[Self::Discovered],
         }
@@ -62,6 +69,7 @@ impl ConnectorState {
             Self::Configured => "configured",
             Self::Active => "active",
             Self::Paused => "paused",
+            Self::Cancelling => "cancelling",
             Self::Stopped => "stopped",
             Self::Failed => "failed",
         }
@@ -239,16 +247,40 @@ mod tests {
     #[test]
     fn transition_matrix_covers_all_pairs() {
         let matrix = transition_matrix();
-        // 8 states, 7 non-self targets each = 56 entries
-        assert_eq!(matrix.len(), 56);
+        // 9 states, 8 non-self targets each = 72 entries
+        assert_eq!(matrix.len(), 72);
     }
 
     #[test]
     fn transition_matrix_legal_count() {
         let matrix = transition_matrix();
         let legal_count = matrix.iter().filter(|e| e.legal).count();
-        // 17 legal transitions per the spec
-        assert_eq!(legal_count, 17);
+        // 21 legal transitions (17 original + 2 into Cancelling + 2 from Cancelling)
+        assert_eq!(legal_count, 21);
+    }
+
+    #[test]
+    fn active_can_enter_cancelling() {
+        let state = transition(ConnectorState::Active, ConnectorState::Cancelling).unwrap();
+        assert_eq!(state, ConnectorState::Cancelling);
+    }
+
+    #[test]
+    fn paused_can_enter_cancelling() {
+        let state = transition(ConnectorState::Paused, ConnectorState::Cancelling).unwrap();
+        assert_eq!(state, ConnectorState::Cancelling);
+    }
+
+    #[test]
+    fn cancelling_reaches_stopped() {
+        let state = transition(ConnectorState::Cancelling, ConnectorState::Stopped).unwrap();
+        assert_eq!(state, ConnectorState::Stopped);
+    }
+
+    #[test]
+    fn cancelling_can_fail() {
+        let state = transition(ConnectorState::Cancelling, ConnectorState::Failed).unwrap();
+        assert_eq!(state, ConnectorState::Failed);
     }
 
     #[test]

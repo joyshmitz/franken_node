@@ -1,0 +1,33 @@
+name: Benchmark Specs Package Gate
+
+on:
+  pull_request:
+    paths:
+      - "docs/specs/section_14/bd-3h1g_contract.md"
+      - "artifacts/14/benchmark_specs_package.json"
+      - "scripts/check_benchmark_specs_package.py"
+      - "tests/test_check_benchmark_specs_package.py"
+  push:
+    branches: [main]
+    paths:
+      - "docs/specs/section_14/bd-3h1g_contract.md"
+      - "artifacts/14/benchmark_specs_package.json"
+      - "scripts/check_benchmark_specs_package.py"
+      - "tests/test_check_benchmark_specs_package.py"
+
+jobs:
+  benchmark-specs-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run benchmark specs package gate
+        run: |
+          python3 scripts/check_benchmark_specs_package.py --json > /tmp/benchmark_specs_package_gate.json
+
+      - name: Upload gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-specs-package-gate
+          path: /tmp/benchmark_specs_package_gate.json

@@ -1,0 +1,8 @@
+# asupersync release gate
+RLG-001
+RLG-002
+RLG-003
+RLG-004
+RLG-005
+RLG-006
+RLG-007

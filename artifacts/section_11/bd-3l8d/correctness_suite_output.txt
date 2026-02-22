@@ -1,0 +1,9 @@
+suite: tests/security/control_epoch_validity.rs
+passed: 6
+failed: 0
+coverage_percent: 92.1
+
+suite: tests/integration/frankentui_surface_migration.rs
+passed: 44
+failed: 0
+coverage_percent: 88.4

@@ -1,0 +1,168 @@
+{
+  "bead_id": "bd-3h1g",
+  "title": "Publish benchmark specs/harness/datasets/scoring formulas",
+  "section": "14",
+  "trace_id": "7c2a9a6bf59b252029a96e6cce5f5964da8f8b63253f10c1175dbf72e6c7a110",
+  "verdict": "PASS",
+  "total": 22,
+  "passed": 22,
+  "failed": 0,
+  "computed": {
+    "required_tracks": [
+      "adversarial_resilience",
+      "compatibility_correctness",
+      "containment_revocation_latency",
+      "performance_under_hardening",
+      "replay_determinism",
+      "security_trust"
+    ],
+    "track_weight_sum": 1.0,
+    "sample_overall_score": 0.9203,
+    "minimum_track_score": 0.75,
+    "minimum_overall_score": 0.85
+  },
+  "checks": [
+    {
+      "check": "file: contract",
+      "pass": true,
+      "detail": "docs/specs/section_14/bd-3h1g_contract.md"
+    },
+    {
+      "check": "file: benchmark package",
+      "pass": true,
+      "detail": "artifacts/14/benchmark_specs_package.json"
+    },
+    {
+      "check": "contract invariants present",
+      "pass": true,
+      "detail": "all invariants present"
+    },
+    {
+      "check": "contract event codes present",
+      "pass": true,
+      "detail": "all event codes present"
+    },
+    {
+      "check": "package JSON parse",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "package required top-level fields",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "package bead_id",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "trace_id format",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "track schema",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "required track coverage exact",
+      "pass": true,
+      "detail": "seen=['adversarial_resilience', 'compatibility_correctness', 'containment_revocation_latency', 'performance_under_hardening', 'replay_determinism', 'security_trust']"
+    },
+    {
+      "check": "track weights sum to 1.0",
+      "pass": true,
+      "detail": "sum=1.0000000000"
+    },
+    {
+      "check": "harness deterministic controls",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "dataset schema and integrity fields",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "dataset ids unique",
+      "pass": true,
+      "detail": "count=6 unique=6"
+    },
+    {
+      "check": "dataset track coverage exact",
+      "pass": true,
+      "detail": "seen=['adversarial_resilience', 'compatibility_correctness', 'containment_revocation_latency', 'performance_under_hardening', 'replay_determinism', 'security_trust']"
+    },
+    {
+      "check": "scoring formula contract",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sample scores cover required tracks",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "sample overall score matches weighted sum",
+      "pass": true,
+      "detail": "declared=0.9203 computed=0.9203"
+    },
+    {
+      "check": "sample score gates pass",
+      "pass": true,
+      "detail": "overall=0.9203"
+    },
+    {
+      "check": "determinism under track reordering",
+      "pass": true,
+      "detail": "forward=0.9203 reversed=0.9203"
+    },
+    {
+      "check": "adversarial perturbation flips verdict to fail",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "package event code coverage",
+      "pass": true,
+      "detail": "seen=['BSP-001', 'BSP-002', 'BSP-003', 'BSP-004', 'BSP-005', 'BSP-006']"
+    }
+  ],
+  "events": [
+    {
+      "event_code": "BSP-001",
+      "trace_id": "7c2a9a6bf59b252029a96e6cce5f5964da8f8b63253f10c1175dbf72e6c7a110",
+      "message": "Benchmark package loaded."
+    },
+    {
+      "event_code": "BSP-002",
+      "trace_id": "7c2a9a6bf59b252029a96e6cce5f5964da8f8b63253f10c1175dbf72e6c7a110",
+      "message": "Contract fields and invariants validated."
+    },
+    {
+      "event_code": "BSP-003",
+      "trace_id": "7c2a9a6bf59b252029a96e6cce5f5964da8f8b63253f10c1175dbf72e6c7a110",
+      "message": "Scoring formula validated."
+    },
+    {
+      "event_code": "BSP-004",
+      "trace_id": "7c2a9a6bf59b252029a96e6cce5f5964da8f8b63253f10c1175dbf72e6c7a110",
+      "message": "Determinism check executed."
+    },
+    {
+      "event_code": "BSP-005",
+      "trace_id": "7c2a9a6bf59b252029a96e6cce5f5964da8f8b63253f10c1175dbf72e6c7a110",
+      "message": "Adversarial perturbation check executed."
+    },
+    {
+      "event_code": "BSP-006",
+      "trace_id": "7c2a9a6bf59b252029a96e6cce5f5964da8f8b63253f10c1175dbf72e6c7a110",
+      "message": "Final verdict emitted: PASS."
+    }
+  ]
+}

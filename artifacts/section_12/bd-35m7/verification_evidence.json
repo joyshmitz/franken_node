@@ -1,0 +1,47 @@
+{
+  "bead_id": "bd-35m7",
+  "section": "12",
+  "title": "Risk control: trajectory-gaming camouflage",
+  "timestamp": "2026-02-21T00:00:00Z",
+  "verdict": "PASS",
+  "files": {
+    "contract": "docs/specs/section_12/bd-35m7_contract.md",
+    "risk_report": "artifacts/12/trajectory_gaming_camouflage_report.json",
+    "verification_script": "scripts/check_trajectory_gaming_camouflage.py",
+    "python_tests": "tests/test_check_trajectory_gaming_camouflage.py",
+    "check_report": "artifacts/section_12/bd-35m7/check_report.json",
+    "check_self_test": "artifacts/section_12/bd-35m7/check_self_test.json",
+    "unit_tests_output": "artifacts/section_12/bd-35m7/unit_tests.txt"
+  },
+  "metrics": {
+    "mimicry_pattern_count": 132,
+    "known_mimicry_recall_pct": 93.4,
+    "adaptive_rounds": 10,
+    "adaptive_min_round_recall_pct": 84.3,
+    "motif_randomization_unique": true,
+    "hybrid_behavioral_gaming_caught": true,
+    "corpus_update_interval_days": 37,
+    "python_verification_checks": 42,
+    "python_unit_tests": 20,
+    "event_codes": 5
+  },
+  "checks_summary": {
+    "passing": 42,
+    "failing": 0,
+    "total": 42
+  },
+  "commands": [
+    {
+      "command": "python3 scripts/check_trajectory_gaming_camouflage.py --self-test --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 scripts/check_trajectory_gaming_camouflage.py --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 -m unittest tests/test_check_trajectory_gaming_camouflage.py",
+      "status": "pass"
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "campaign_id": "bd-f5d-public-benchmark-campaign",
+  "score_formula_version": "2026.02",
+  "container": {
+    "image": "ghcr.io/franken-node/benchmark-harness:2026.02",
+    "digest": "sha256:0b6c4e8187f3ff2c5239ad7a1d2f5f38c04c6fd8fa8e508f49d42ad1883cfb14"
+  },
+  "hardware_profile": "c7i.4xlarge-equivalent",
+  "runtimes": {
+    "node": "22.3.1",
+    "bun": "1.2.7",
+    "franken_node": "0.9.0"
+  },
+  "workloads": [
+    "http_server_throughput",
+    "module_loading",
+    "cold_start",
+    "json_processing",
+    "file_io",
+    "child_process_spawning",
+    "stream_throughput",
+    "crypto_operations",
+    "url_parsing",
+    "compatibility_shim_overhead"
+  ],
+  "dimensions": [
+    "compatibility_correctness",
+    "performance",
+    "containment_revocation_latency",
+    "replay_determinism",
+    "adversarial_resilience",
+    "migration_speed_failure_rate"
+  ],
+  "smoke_subset": [
+    "http_server_throughput",
+    "cold_start",
+    "compatibility_shim_overhead"
+  ],
+  "methodology": {
+    "warmup_iterations": 5,
+    "measurement_iterations": 30,
+    "outlier_policy": "winsorize_p1_p99",
+    "confidence_interval": "95%"
+  },
+  "scoring_weights": {
+    "compatibility_correctness": 0.25,
+    "performance": 0.2,
+    "containment_revocation_latency": 0.15,
+    "replay_determinism": 0.1,
+    "adversarial_resilience": 0.2,
+    "migration_speed_failure_rate": 0.1
+  },
+  "reproduce_command": "scripts/run_benchmark_campaign.sh --baseline fixtures/benchmarks/campaign_results_baseline.json --candidate fixtures/benchmarks/campaign_results_candidate.json --output artifacts/section_10_9/bd-f5d/campaign_run.json",
+  "published_outputs": [
+    "artifacts/section_10_9/bd-f5d/campaign_run.json",
+    "artifacts/section_10_9/bd-f5d/public_report.md",
+    "artifacts/section_10_9/bd-f5d/diff_report.json"
+  ]
+}

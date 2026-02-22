@@ -1,0 +1,83 @@
+# Bootstrap Doctor Contract (`bd-1pk`)
+
+## Goal
+
+Define deterministic diagnostics output for `franken-node doctor` so operators and CI can detect readiness blockers with stable pass/warn/fail codes and actionable remediation.
+
+## Command Surface
+
+- `franken-node doctor [--config <path>] [--profile <profile>] [--json] [--trace-id <id>] [--verbose]`
+- `--json` emits machine-readable report.
+- default output is human-readable text.
+- `--trace-id` binds all check log events to a stable correlation identifier.
+
+## Determinism Contract
+
+For equivalent config/environment state, report semantics are deterministic:
+
+- check list is emitted in a fixed order
+- each check has stable `code`, `event_code`, and `scope`
+- status mapping is stable (`pass|warn|fail`)
+- remediation text is deterministic by status condition
+
+Runtime metadata (`generated_at_utc`, per-check `duration_ms`) may vary, but does not alter check ordering, status, or code identity.
+
+## Check Matrix
+
+| Code | Event Code | Scope | Pass Condition | Warn/Fail Condition | Remediation |
+|---|---|---|---|---|---|
+| `DR-CONFIG-001` | `DOC-001` | `config.resolve` | Resolver completed | N/A | N/A |
+| `DR-CONFIG-002` | `DOC-002` | `config.source` | Config file discovered | Warn when defaults-only | create `franken_node.toml` or pass `--config` |
+| `DR-PROFILE-003` | `DOC-003` | `profile.safety` | `strict` or `balanced` | Warn on `legacy-risky` | use `--profile balanced|strict` |
+| `DR-TRUST-004` | `DOC-004` | `registry.assurance` | `minimum_assurance_level >= 3` | Warn below target | raise assurance level to `3+` |
+| `DR-MIGRATE-005` | `DOC-005` | `migration.lockstep` | lockstep validation enabled | Warn when disabled | set `migration.require_lockstep_validation=true` |
+| `DR-OBS-006` | `DOC-006` | `observability.audit_events` | structured audit events enabled | Warn when disabled | set `observability.emit_structured_audit_events=true` |
+| `DR-ENV-007` | `DOC-007` | `environment.cwd` | working directory accessible | Fail when cwd unavailable | restore directory access / permissions |
+| `DR-CONFIG-008` | `DOC-008` | `config.provenance` | merge decisions present | Warn when missing | repair resolver provenance instrumentation |
+
+## Status Aggregation
+
+- `overall_status = fail` if any check is fail
+- else `overall_status = warn` if any check is warn
+- else `overall_status = pass`
+
+## Machine-Readable Report Schema (CI)
+
+Top-level fields:
+
+- `command`
+- `trace_id`
+- `generated_at_utc`
+- `selected_profile`
+- `source_path`
+- `overall_status`
+- `status_counts.{pass,warn,fail}`
+- `checks[]` with:
+  - `code`
+  - `event_code`
+  - `scope`
+  - `status`
+  - `message`
+  - `remediation`
+  - `duration_ms`
+- `structured_logs[]` with:
+  - `trace_id`
+  - `event_code`
+  - `check_code`
+  - `scope`
+  - `status`
+  - `duration_ms`
+- `merge_decision_count`
+- `merge_decisions[]`
+
+## CI Artifacts
+
+`bd-1pk` verification emits:
+
+- `artifacts/section_bootstrap/bd-1pk/doctor_contract_checks.json`
+- `artifacts/section_bootstrap/bd-1pk/doctor_checks_matrix.json`
+- `artifacts/section_bootstrap/bd-1pk/doctor_report_healthy.json`
+- `artifacts/section_bootstrap/bd-1pk/doctor_report_degraded.json`
+- `artifacts/section_bootstrap/bd-1pk/doctor_report_failure.json`
+- `artifacts/section_bootstrap/bd-1pk/verification_evidence.json`
+- `artifacts/section_bootstrap/bd-1pk/verification_summary.md`

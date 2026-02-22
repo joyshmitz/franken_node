@@ -1,0 +1,42 @@
+{
+  "bead_id": "bd-15t",
+  "section": "10.9",
+  "title": "Category-shift reporting pipeline with reproducible evidence bundles",
+  "timestamp": "2026-02-21T01:15:00Z",
+  "verdict": "PASS",
+  "files": {
+    "spec": "docs/specs/section_10_9/bd-15t_contract.md",
+    "implementation": "crates/franken-node/src/supply_chain/category_shift.rs",
+    "policy": "docs/policy/category_shift_reporting.md",
+    "verification_script": "scripts/check_category_shift.py",
+    "python_tests": "tests/test_check_category_shift.py"
+  },
+  "metrics": {
+    "python_checks_total": 83,
+    "python_checks_passing": 83,
+    "python_checks_failing": 0,
+    "rust_unit_tests": 34,
+    "structs_verified": 12,
+    "enums_verified": 6,
+    "event_codes_verified": 4,
+    "error_codes_verified": 4,
+    "invariants_verified": 4,
+    "functions_verified": 9,
+    "thresholds_verified": 3,
+    "spec_sections_verified": 9,
+    "policy_sections_verified": 8,
+    "simulation_checks": 10,
+    "report_dimensions": 5,
+    "output_formats": 2
+  },
+  "acceptance_criteria": {
+    "AC1_data_aggregation": "PASS — pipeline aggregates from 5 sources (benchmarks, security, migration, adoption, economics)",
+    "AC2_five_dimensions": "PASS — all 5 report dimensions populated with measurement data",
+    "AC3_artifact_integrity": "PASS — every claim references artifact with SHA-256 hash",
+    "AC4_reproduce_scripts": "PASS — reproduce-this-claim scripts generated for each claim",
+    "AC5_freshness_verification": "PASS — stale artifacts rejected (>30 day freshness window)",
+    "AC6_dual_format": "PASS — JSON and Markdown output formats with consistent claim IDs",
+    "AC7_historical_trending": "PASS — diff_reports() shows metric changes across report periods",
+    "AC8_idempotency": "PASS — pipeline produces identical reports from identical input"
+  }
+}

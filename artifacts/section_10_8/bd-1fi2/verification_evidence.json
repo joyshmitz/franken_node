@@ -1,0 +1,40 @@
+{
+  "bead_id": "bd-1fi2",
+  "section": "10.8",
+  "title": "Section 10.8 verification gate: Operational Readiness",
+  "timestamp": "2026-02-21T03:00:00Z",
+  "gate": true,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "files": {
+    "verification_script": "scripts/check_section_10_8_gate.py",
+    "python_tests": "tests/test_check_section_10_8_gate.py"
+  },
+  "metrics": {
+    "gate_checks_total": 36,
+    "gate_checks_passing": 36,
+    "gate_checks_failing": 0,
+    "python_unit_tests": 35,
+    "section_beads": 6,
+    "section_beads_passing": 6,
+    "implementation_files_verified": 5,
+    "policy_docs_verified": 4,
+    "spec_files_verified": 6
+  },
+  "section_beads": {
+    "bd-tg2": "PASS — Fleet control API for quarantine/revocation operations (108 checks, 52 Rust tests)",
+    "bd-3o6": "PASS — Structured observability + stable error taxonomy (30 checks, 81 Python tests)",
+    "bd-k6o": "PASS — Deterministic safe-mode startup and operation flags (93 Rust tests)",
+    "bd-f2y": "PASS — Incident bundle retention and export policy (34 checks, 40 Rust tests)",
+    "bd-nr4": "PASS — Operator runbooks for high-severity trust incidents (6 categories)",
+    "bd-3m6": "PASS — Disaster-recovery drills for control-plane failures (5 scenarios)"
+  },
+  "acceptance_criteria": {
+    "AC1_all_beads_pass": "PASS — 6/6 section beads have PASS verdicts",
+    "AC2_fleet_control": "PASS — Fleet quarantine/revocation API with 5 operations, convergence tracking, safe-start mode",
+    "AC3_observability": "PASS — Structured observability with FLEET-001..005 and SMO-001..004 event codes",
+    "AC4_safe_mode": "PASS — Deterministic safe-mode startup with INV-SMO invariants",
+    "AC5_dr_drills": "PASS — 5 DR scenarios with SLOs documented",
+    "AC6_deterministic_gate": "PASS — Gate verdict is deterministic and machine-readable"
+  }
+}

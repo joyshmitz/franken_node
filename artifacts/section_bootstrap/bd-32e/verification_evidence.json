@@ -1,0 +1,68 @@
+{
+  "bead_id": "bd-32e",
+  "generated_at_utc": "2026-02-22T01:46:49.792668+00:00",
+  "status": "implemented_with_baseline_quality_debt",
+  "implementation": {
+    "code_paths": [
+      "crates/franken-node/src/main.rs",
+      "crates/franken-node/src/cli.rs"
+    ],
+    "contract_path": "docs/specs/bootstrap_init_contract.md",
+    "test_paths": [
+      "tests/e2e/init_profile_bootstrap.sh",
+      "tests/test_init_profile_bootstrap_gate.py"
+    ]
+  },
+  "init_contract_gate": {
+    "path": "artifacts/section_bootstrap/bd-32e/init_contract_checks.json",
+    "verdict": "PASS",
+    "checks_passed": 18,
+    "checks_total": 18,
+    "snapshots_path": "artifacts/section_bootstrap/bd-32e/init_snapshots.json"
+  },
+  "python_validation": {
+    "py_compile": {
+      "command": "python3 -m py_compile tests/test_init_profile_bootstrap_gate.py",
+      "status": "pass",
+      "exit_code": 0
+    },
+    "pytest": {
+      "command": "pytest -q tests/test_init_profile_bootstrap_gate.py",
+      "status": "pass",
+      "exit_code": 0,
+      "summary": "4 passed"
+    }
+  },
+  "rch_quality": {
+    "bead_id": "bd-32e",
+    "schema_version": "rch-quality-summary-v1",
+    "commands": [
+      {
+        "name": "cargo fmt --check",
+        "runner": "rch exec --",
+        "exit_code": 1,
+        "status": "fail",
+        "log": "artifacts/section_bootstrap/bd-32e/rch_cargo_fmt_check.log"
+      },
+      {
+        "name": "cargo check --all-targets",
+        "runner": "rch exec --",
+        "exit_code": 101,
+        "status": "fail",
+        "log": "artifacts/section_bootstrap/bd-32e/rch_cargo_check_retry.log",
+        "notes": "retry run used to avoid transient rch sync race in initial attempt"
+      },
+      {
+        "name": "cargo clippy --all-targets -- -D warnings",
+        "runner": "rch exec --",
+        "exit_code": 101,
+        "status": "fail",
+        "log": "artifacts/section_bootstrap/bd-32e/rch_cargo_clippy.log"
+      }
+    ]
+  },
+  "notes": [
+    "Init contract gate and dedicated tests are green.",
+    "Global cargo fmt/check/clippy failures are pre-existing workspace debt outside bd-32e scope."
+  ]
+}

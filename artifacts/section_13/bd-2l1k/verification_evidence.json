@@ -1,0 +1,97 @@
+{
+  "bead_id": "bd-2l1k",
+  "section": "13",
+  "title": "Concrete target gate: 100% replay artifact coverage",
+  "generated_at": "2026-02-21T01:14:45Z",
+  "status": "pass",
+  "checks": [
+    {
+      "name": "replay_coverage_self_test",
+      "command": "python3 scripts/check_replay_coverage_gate.py --self-test --json",
+      "exit_code": 0,
+      "output_path": "artifacts/section_13/bd-2l1k/check_self_test.json"
+    },
+    {
+      "name": "replay_coverage_gate_validation",
+      "command": "python3 scripts/check_replay_coverage_gate.py --json",
+      "exit_code": 0,
+      "output_path": "artifacts/section_13/bd-2l1k/check_report.json",
+      "summary": {
+        "verdict": "PASS",
+        "required_count": 8,
+        "covered_count": 8,
+        "coverage_ratio": 1.0,
+        "minimum_required_coverage_ratio": 1.0,
+        "missing_incident_types": [],
+        "sla_days": 14,
+        "trace_id": "trace-bd-2l1k-replay-coverage"
+      }
+    },
+    {
+      "name": "replay_incident_rce",
+      "command": "python3 scripts/check_replay_coverage_gate.py --replay-incident rce --json",
+      "exit_code": 0,
+      "output_path": "artifacts/section_13/bd-2l1k/replay_rce.json",
+      "summary": {
+        "incident_type": "rce",
+        "deterministic": true,
+        "trace_match": true
+      }
+    },
+    {
+      "name": "unit_tests",
+      "command": "python3 -m unittest tests/test_check_replay_coverage_gate.py",
+      "exit_code": 0,
+      "output_path": "artifacts/section_13/bd-2l1k/unit_tests.txt",
+      "summary": "Ran 7 tests: OK"
+    },
+    {
+      "name": "cargo_check_all_targets_via_rch",
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "output_path": "artifacts/section_13/bd-2l1k/rch_cargo_check.log",
+      "note": "Pre-existing repository compile debt outside bd-2l1k scope."
+    },
+    {
+      "name": "cargo_clippy_all_targets_via_rch",
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "output_path": "artifacts/section_13/bd-2l1k/rch_cargo_clippy.log",
+      "note": "Pre-existing repository-wide clippy debt outside bd-2l1k scope."
+    },
+    {
+      "name": "cargo_fmt_check_via_rch",
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "output_path": "artifacts/section_13/bd-2l1k/rch_cargo_fmt_check.log",
+      "note": "Pre-existing repository formatting drift outside bd-2l1k scope."
+    }
+  ],
+  "acceptance_mapping": {
+    "all_required_high_severity_incident_types_enumerated": true,
+    "every_required_incident_has_replay_artifact": true,
+    "coverage_ratio_exactly_100_percent": true,
+    "replay_artifacts_include_required_state_and_trace_fields": true,
+    "deterministic_replay_runs_gte_10_for_each_incident": true,
+    "new_incident_sla_days_lte_14": true,
+    "replay_coverage_matrix_artifact_present": true,
+    "determinism_and_adversarial_checks_enforced": true
+  },
+  "contract_surface": {
+    "spec": "docs/specs/section_13/bd-2l1k_contract.md",
+    "canonical_matrix": "artifacts/13/replay_coverage_matrix.json",
+    "replay_artifacts_dir": "artifacts/13/replay_artifacts/",
+    "validator": "scripts/check_replay_coverage_gate.py",
+    "unit_tests": "tests/test_check_replay_coverage_gate.py",
+    "ci_gate": ".github/workflows/replay-coverage-gate.yml"
+  },
+  "required_event_codes": [
+    "RCG-001",
+    "RCG-002",
+    "RCG-003",
+    "RCG-004",
+    "RCG-005",
+    "RCG-006",
+    "RCG-007"
+  ]
+}

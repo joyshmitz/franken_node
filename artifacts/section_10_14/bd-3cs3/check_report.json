@@ -1,0 +1,157 @@
+{
+  "bead": "bd-3cs3",
+  "title": "Epoch-scoped key derivation for trust artifact authentication",
+  "section": "10.14",
+  "verdict": "PASS",
+  "summary": {
+    "passing_checks": 24,
+    "failing_checks": 0,
+    "total_checks": 24
+  },
+  "checks": [
+    {
+      "id": "EKS-FILE-IMPL",
+      "check": "implementation exists",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/security/epoch_scoped_keys.rs"
+    },
+    {
+      "id": "EKS-FILE-CONFORMANCE",
+      "check": "conformance test exists",
+      "pass": true,
+      "detail": "exists: tests/conformance/epoch_key_derivation.rs"
+    },
+    {
+      "id": "EKS-FILE-VECTORS",
+      "check": "vector artifact exists",
+      "pass": true,
+      "detail": "exists: artifacts/10.14/epoch_key_vectors.json"
+    },
+    {
+      "id": "EKS-MOD-REG",
+      "check": "security/mod.rs exports epoch_scoped_keys",
+      "pass": true,
+      "detail": "registered"
+    },
+    {
+      "id": "EKS-IMPL-TEST-COUNT",
+      "check": "impl has >= 10 unit tests",
+      "pass": true,
+      "detail": "11 tests"
+    },
+    {
+      "id": "EKS-IMPL-PUB-STRUCT-ROOTSECRET",
+      "check": "contains: pub struct RootSecret",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "id": "EKS-IMPL-PUB-STRUCT-DERIVEDKEY",
+      "check": "contains: pub struct DerivedKey",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "id": "EKS-IMPL-PUB-STRUCT-SIGNATURE",
+      "check": "contains: pub struct Signature",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "id": "EKS-IMPL-PUB-FN-DERIVE_EPOCH_KEY",
+      "check": "contains: pub fn derive_epoch_key(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "id": "EKS-IMPL-PUB-FN-SIGN_EPOCH_ARTIFACT",
+      "check": "contains: pub fn sign_epoch_artifact(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "id": "EKS-IMPL-PUB-FN-VERIFY_EPOCH_SIGNATURE",
+      "check": "contains: pub fn verify_epoch_signature(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "id": "EKS-IMPL-ZEROIZEONDROP",
+      "check": "contains: ZeroizeOnDrop",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "id": "EKS-IMPL-EPOCH_KEY_DERIVED",
+      "check": "contains: EPOCH_KEY_DERIVED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "id": "EKS-IMPL-EPOCH_SIG_VERIFIED",
+      "check": "contains: EPOCH_SIG_VERIFIED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "id": "EKS-IMPL-EPOCH_SIG_REJECTED",
+      "check": "contains: EPOCH_SIG_REJECTED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "id": "EKS-CONF-PUBLISHED_EPOCH_KEY_VECTORS_MATCH_DERIVA",
+      "check": "contains: published_epoch_key_vectors_match_derivation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "id": "EKS-CONF-VERIFY_REJECTS_CROSS_EPOCH_AND_CROSS_DOM",
+      "check": "contains: verify_rejects_cross_epoch_and_cross_domain_signatures",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "id": "EKS-CONF-DERIVATION_THROUGHPUT_MEETS_MINIMUM_BUDG",
+      "check": "contains: derivation_throughput_meets_minimum_budget",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "id": "EKS-CONF-ARTIFACTS/10.14/EPOCH_KEY_VECTORS.JSON",
+      "check": "contains: artifacts/10.14/epoch_key_vectors.json",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "id": "EKS-VECTOR-LIST",
+      "check": "vectors list exists",
+      "pass": true,
+      "detail": "type=list"
+    },
+    {
+      "id": "EKS-VECTOR-COUNT",
+      "check": "vector count >= 10",
+      "pass": true,
+      "detail": "count=10"
+    },
+    {
+      "id": "EKS-VECTOR-ROWS",
+      "check": "all vectors have valid root/epoch/domain/key fields",
+      "pass": true,
+      "detail": "invalid_rows=0"
+    },
+    {
+      "id": "EKS-SIG-KAT-PRESENT",
+      "check": "signature_kat object exists",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "id": "EKS-SIG-KAT-FIELDS",
+      "check": "signature_kat fields are valid",
+      "pass": true,
+      "detail": "valid"
+    }
+  ]
+}

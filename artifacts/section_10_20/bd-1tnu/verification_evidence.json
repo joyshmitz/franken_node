@@ -1,0 +1,69 @@
+{
+  "bead_id": "bd-1tnu",
+  "section": "10.20",
+  "title": "Trust barrier primitives and policy wiring",
+  "gate_script": "scripts/check_dgis_barrier.py",
+  "test_suite": "tests/test_check_dgis_barrier.py",
+  "timestamp": "2026-02-21T05:00:55.895111+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "spec_contract": "docs/specs/section_10_20/bd-1tnu_contract.md",
+    "barrier_primitives": "crates/franken-node/src/security/dgis/barrier_primitives.rs",
+    "dgis_mod": "crates/franken-node/src/security/dgis/mod.rs",
+    "verification_script": "scripts/check_dgis_barrier.py",
+    "unit_tests": "tests/test_check_dgis_barrier.py"
+  },
+  "barrier_types_implemented": [
+    "SandboxEscalation",
+    "CompositionFirewall",
+    "VerifiedForkPin",
+    "StagedRolloutFence"
+  ],
+  "rust_test_count": 24,
+  "python_test_count": 13,
+  "event_codes_defined": 15,
+  "gate_checks_passed": 11,
+  "gate_checks_total": 11,
+  "capabilities_verified": {
+    "sandbox_escalation": {
+      "min_tier_enforcement": true,
+      "denied_capability_blocking": true,
+      "escalation_direction_enforcement": true
+    },
+    "composition_firewall": {
+      "blocked_capability_enforcement": true,
+      "allow_list_override": true,
+      "boundary_scoped": true
+    },
+    "verified_fork_pin": {
+      "digest_verification": true,
+      "mismatch_rejection": true
+    },
+    "staged_rollout_fence": {
+      "phase_gate_enforcement": true,
+      "phase_advancement": true,
+      "rollback_to_canary": true,
+      "observation_tracking": true,
+      "auto_rollback_support": true
+    },
+    "composition": {
+      "multi_barrier_per_node": true,
+      "rollout_fence_conflict_detection": true
+    },
+    "override_mechanism": {
+      "signed_justification_required": true,
+      "audit_receipt_emission": true,
+      "principal_attribution": true
+    },
+    "audit_trail": {
+      "receipt_per_action": true,
+      "content_hash_deterministic": true,
+      "jsonl_export": true,
+      "trace_correlation_ids": true
+    },
+    "policy_engine": {
+      "barrier_plan_application": true,
+      "source_plan_id_traceability": true
+    }
+  }
+}

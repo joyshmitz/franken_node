@@ -1,0 +1,25 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "check": "canonical hash deterministic",
+      "pass": true,
+      "detail": "efbd0040190fb0871831e606c581f8a66db79d8e2bb836745a70051306956070"
+    },
+    {
+      "check": "section entry count",
+      "pass": true,
+      "detail": "count=9"
+    },
+    {
+      "check": "required event codes",
+      "pass": true,
+      "detail": "GATE_11_BEAD_CHECKED,GATE_11_CONTRACT_COVERAGE,GATE_11_EVALUATION_STARTED,GATE_11_VERDICT_EMITTED"
+    },
+    {
+      "check": "required field coverage list",
+      "pass": true,
+      "detail": "count=15"
+    }
+  ]
+}

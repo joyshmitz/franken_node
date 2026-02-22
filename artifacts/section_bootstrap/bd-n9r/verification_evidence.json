@@ -1,0 +1,99 @@
+{
+  "bead_id": "bd-n9r",
+  "section": "bootstrap",
+  "timestamp_utc": "2026-02-22T01:27:17Z",
+  "git_head": "f1d41ad9b488c06ff83cc4b4c259a9bbb48335e9",
+  "schema_version": "bootstrap-config-v1.0",
+  "implementation_paths": [
+    "crates/franken-node/src/config.rs",
+    "crates/franken-node/src/cli.rs",
+    "crates/franken-node/src/main.rs",
+    "config/franken_node.profile_examples.toml",
+    "docs/specs/bootstrap_config_contract.md",
+    "tests/e2e/config_profile_resolution.sh",
+    "tests/test_config_profile_resolution_gate.py",
+    "artifacts/section_bootstrap/bd-n9r/contract_checks.json",
+    "artifacts/section_bootstrap/bd-n9r/resolved_config_snapshot.json"
+  ],
+  "acceptance_criteria": [
+    {
+      "id": 1,
+      "status": "pass",
+      "detail": "Profile selection and merge precedence produce deterministic resolved config snapshots.",
+      "evidence": [
+        "Config::resolve with explicit precedence: CLI > env > profile-block > file-base > defaults",
+        "artifacts/section_bootstrap/bd-n9r/contract_checks.json verdict PASS (23/23)",
+        "artifacts/section_bootstrap/bd-n9r/resolved_config_snapshot.json"
+      ]
+    },
+    {
+      "id": 2,
+      "status": "pass",
+      "detail": "Invalid config and env overrides fail with stable actionable diagnostics.",
+      "evidence": [
+        "ConfigError variants include InvalidProfile, InvalidCompatibilityMode, EnvParseFailed, ValidationFailed",
+        "config.rs tests: resolve_rejects_invalid_env_bool, validation_rejects_assurance_level_out_of_range"
+      ]
+    },
+    {
+      "id": 3,
+      "status": "pass",
+      "detail": "init/doctor consume centralized config resolution without duplicated parsing logic.",
+      "evidence": [
+        "main.rs init branch calls Config::resolve",
+        "main.rs doctor branch calls Config::resolve and emits merge decisions in verbose mode"
+      ]
+    }
+  ],
+  "verification_runs": [
+    {
+      "name": "config_profile_resolution_e2e",
+      "command": "tests/e2e/config_profile_resolution.sh",
+      "runner": "local",
+      "exit_code": 0,
+      "result": "pass",
+      "summary": "PASS"
+    },
+    {
+      "name": "config_profile_resolution_gate_pytests",
+      "command": "pytest -q tests/test_config_profile_resolution_gate.py",
+      "runner": "local",
+      "exit_code": 0,
+      "result": "pass",
+      "summary": "4 passed"
+    },
+    {
+      "name": "python_compile_gate_test",
+      "command": "python3 -m py_compile tests/test_config_profile_resolution_gate.py",
+      "runner": "local",
+      "exit_code": 0,
+      "result": "pass"
+    },
+    {
+      "name": "cargo_fmt_check",
+      "command": "rch exec -- cargo fmt --check",
+      "runner": "rch",
+      "exit_code": 1,
+      "result": "fail_preexisting_workspace_format_drift",
+      "log": "artifacts/section_bootstrap/bd-n9r/rch_cargo_fmt_check.log"
+    },
+    {
+      "name": "cargo_check_all_targets",
+      "command": "rch exec -- cargo check --all-targets",
+      "runner": "rch",
+      "exit_code": 101,
+      "result": "fail_preexisting_workspace_compile_debt",
+      "log": "artifacts/section_bootstrap/bd-n9r/rch_cargo_check.log"
+    },
+    {
+      "name": "cargo_clippy_all_targets",
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "runner": "rch",
+      "exit_code": 101,
+      "result": "fail_preexisting_workspace_lint_compile_debt",
+      "log": "artifacts/section_bootstrap/bd-n9r/rch_cargo_clippy.log"
+    }
+  ],
+  "rch_quality_summary": "artifacts/section_bootstrap/bd-n9r/rch_quality_summary.json",
+  "overall_status": "pass_for_bd_n9r_scope_with_workspace_level_cargo_failures_documented"
+}

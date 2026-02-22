@@ -1,8 +1,15 @@
 pub mod audience_token;
+pub mod cancellation_injection;
+pub mod cancellation_protocol;
 pub mod control_epoch;
+pub mod control_lane_mapping;
+pub mod control_lane_policy;
 pub mod divergence_gate;
+pub mod dpor_exploration;
+pub mod epoch_transition_barrier;
 pub mod evidence_replay_gate;
 pub mod fork_detection;
 pub mod key_role_separation;
 pub mod marker_stream;
 pub mod mmr_proofs;
+pub mod transition_abort;

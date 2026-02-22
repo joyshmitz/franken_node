@@ -1,0 +1,150 @@
+{
+  "bead_id": "bd-12n3",
+  "section": "10.14",
+  "gate_script": "check_idempotency_key_derivation.py",
+  "checks_passed": 28,
+  "checks_total": 28,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "impl_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/remote/idempotency.rs"
+    },
+    {
+      "check": "mod_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/remote/mod.rs"
+    },
+    {
+      "check": "conformance_test_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/tests/conformance/idempotency_key_derivation.rs"
+    },
+    {
+      "check": "spec_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_14/bd-12n3_contract.md"
+    },
+    {
+      "check": "vectors_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/10.14/idempotency_vectors.json"
+    },
+    {
+      "check": "module_wiring",
+      "passed": true,
+      "detail": "remote/mod.rs exports idempotency"
+    },
+    {
+      "check": "impl_marker_pub const IDEMPOTENCY_DOMAIN_PREFIX",
+      "passed": true,
+      "detail": "pub const IDEMPOTENCY_DOMAIN_PREFIX"
+    },
+    {
+      "check": "impl_marker_pub struct IdempotencyKey",
+      "passed": true,
+      "detail": "pub struct IdempotencyKey"
+    },
+    {
+      "check": "impl_marker_pub struct IdempotencyKeyDeriver",
+      "passed": true,
+      "detail": "pub struct IdempotencyKeyDeriver"
+    },
+    {
+      "check": "impl_marker_pub fn derive_key(",
+      "passed": true,
+      "detail": "pub fn derive_key("
+    },
+    {
+      "check": "impl_marker_pub fn derive_registered_key(",
+      "passed": true,
+      "detail": "pub fn derive_registered_key("
+    },
+    {
+      "check": "impl_marker_pub fn collision_count(",
+      "passed": true,
+      "detail": "pub fn collision_count("
+    },
+    {
+      "check": "impl_marker_IK_KEY_DERIVED",
+      "passed": true,
+      "detail": "IK_KEY_DERIVED"
+    },
+    {
+      "check": "impl_marker_IK_DERIVATION_ERROR",
+      "passed": true,
+      "detail": "IK_DERIVATION_ERROR"
+    },
+    {
+      "check": "impl_marker_IK_VECTOR_VERIFIED",
+      "passed": true,
+      "detail": "IK_VECTOR_VERIFIED"
+    },
+    {
+      "check": "impl_marker_IK_COLLISION_CHECK_PASSED",
+      "passed": true,
+      "detail": "IK_COLLISION_CHECK_PASSED"
+    },
+    {
+      "check": "conf_marker_published_idempotency_vectors_match_derivation",
+      "passed": true,
+      "detail": "published_idempotency_vectors_match_derivation"
+    },
+    {
+      "check": "conf_marker_collision_check_10k_is_clean",
+      "passed": true,
+      "detail": "collision_check_10k_is_clean"
+    },
+    {
+      "check": "conf_marker_registry_rejection_happens_before_derivation",
+      "passed": true,
+      "detail": "registry_rejection_happens_before_derivation"
+    },
+    {
+      "check": "conf_marker_artifacts/10.14/idempotency_vectors.json",
+      "passed": true,
+      "detail": "artifacts/10.14/idempotency_vectors.json"
+    },
+    {
+      "check": "impl_test_count",
+      "passed": true,
+      "detail": "12 tests (>=12)"
+    },
+    {
+      "check": "vectors_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/10.14/idempotency_vectors.json"
+    },
+    {
+      "check": "vectors_parse_json",
+      "passed": true,
+      "detail": "parsed"
+    },
+    {
+      "check": "vectors_domain_prefix",
+      "passed": true,
+      "detail": "prefix='franken_node.idempotency.v1'"
+    },
+    {
+      "check": "vectors_list_type",
+      "passed": true,
+      "detail": "type=list"
+    },
+    {
+      "check": "vectors_count",
+      "passed": true,
+      "detail": "count=24"
+    },
+    {
+      "check": "vectors_row_shape",
+      "passed": true,
+      "detail": "invalid_rows=0"
+    },
+    {
+      "check": "vectors_recompute_match",
+      "passed": true,
+      "detail": "mismatched_rows=0"
+    }
+  ]
+}

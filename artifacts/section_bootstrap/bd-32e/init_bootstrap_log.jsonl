@@ -1,0 +1,2 @@
+{"ts":"2026-02-22T02:20:45Z","trace_id":"trace-bd-32e-init-e2e","event_code":"INIT-E2E-001","status":"info","detail":"Starting bd-32e init bootstrap gate."}
+{"ts":"2026-02-22T02:20:45Z","trace_id":"trace-bd-32e-init-e2e","event_code":"INIT-E2E-099","status":"pass","detail":"Init bootstrap gate passed."}

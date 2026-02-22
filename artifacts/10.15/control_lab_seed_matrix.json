@@ -1,0 +1,85 @@
+{
+  "bead": "bd-145n",
+  "section": "10.15",
+  "title": "Control Protocol Lab Seed Matrix",
+  "timestamp": "2026-02-22T02:07:00+00:00",
+  "seed_matrix": [
+    {
+      "seed": 0,
+      "scenario": "lab_lifecycle_start_stop",
+      "expected": "pass",
+      "actual": "pass",
+      "description": "Zero seed degenerate case"
+    },
+    {
+      "seed": 42,
+      "scenario": "lab_lifecycle_start_stop",
+      "expected": "pass",
+      "actual": "pass",
+      "description": "Standard deterministic seed"
+    },
+    {
+      "seed": 42,
+      "scenario": "lab_rollout_go_abort",
+      "expected": "pass",
+      "actual": "pass",
+      "description": "Rollout with standard seed"
+    },
+    {
+      "seed": 12345,
+      "scenario": "lab_epoch_commit_abort",
+      "expected": "pass",
+      "actual": "pass",
+      "description": "Epoch barrier moderate entropy"
+    },
+    {
+      "seed": 12345,
+      "scenario": "lab_saga_forward_compensate",
+      "expected": "pass",
+      "actual": "pass",
+      "description": "Saga compensation moderate entropy"
+    },
+    {
+      "seed": 18446744073709551615,
+      "scenario": "lab_evidence_capture_replay",
+      "expected": "pass",
+      "actual": "pass",
+      "description": "u64::MAX overflow boundary"
+    },
+    {
+      "seed": 3735928559,
+      "scenario": "lab_lifecycle_start_stop",
+      "expected": "pass",
+      "actual": "pass",
+      "description": "0xDEADBEEF sentinel seed"
+    },
+    {
+      "seed": 3735928559,
+      "scenario": "lab_rollout_go_abort",
+      "expected": "pass",
+      "actual": "pass",
+      "description": "Rollout with sentinel seed"
+    },
+    {
+      "seed": 0,
+      "scenario": "lab_epoch_commit_abort",
+      "expected": "pass",
+      "actual": "pass",
+      "description": "Epoch barrier zero seed"
+    },
+    {
+      "seed": 42,
+      "scenario": "lab_evidence_capture_replay",
+      "expected": "pass",
+      "actual": "pass",
+      "description": "Evidence replay standard seed"
+    }
+  ],
+  "summary": {
+    "total_entries": 10,
+    "passing": 10,
+    "failing": 0,
+    "scenarios_covered": 5,
+    "seeds_used": 5
+  }
+}

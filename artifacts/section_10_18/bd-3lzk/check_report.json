@@ -1,0 +1,176 @@
+{
+  "bead_id": "bd-3lzk",
+  "title": "VEF release claim gate",
+  "section": "10.18",
+  "verdict": "PASS",
+  "total": 31,
+  "passed": 31,
+  "failed": 0,
+  "summary": {
+    "derived_total_claims": 3,
+    "derived_passed_claims": 3,
+    "derived_failed_claims": 0,
+    "derived_release_decision": "allow"
+  },
+  "checks": [
+    {
+      "check": "spec file exists",
+      "pass": true,
+      "detail": "docs/conformance/vef_release_claim_gate.md"
+    },
+    {
+      "check": "report file exists",
+      "pass": true,
+      "detail": "artifacts/10.18/vef_release_gate_report.json"
+    },
+    {
+      "check": "spec claim id VEF-CLAIM-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec claim id VEF-CLAIM-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec claim id VEF-CLAIM-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code VEF-RELEASE-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code VEF-RELEASE-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code VEF-RELEASE-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code VEF-RELEASE-ERR-INPUT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code VEF-RELEASE-ERR-SIGNATURE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report parse",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report required top-level fields",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report bead id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report generated_at_utc RFC3339",
+      "pass": true,
+      "detail": "2026-02-21T01:27:00Z"
+    },
+    {
+      "check": "designated_claims list",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "no duplicate claim IDs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "required claim IDs present",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "claim VEF-CLAIM-001",
+      "pass": true,
+      "detail": "coverage/evidence satisfied"
+    },
+    {
+      "check": "claim VEF-CLAIM-002",
+      "pass": true,
+      "detail": "coverage/evidence satisfied"
+    },
+    {
+      "check": "claim VEF-CLAIM-003",
+      "pass": true,
+      "detail": "coverage/evidence satisfied"
+    },
+    {
+      "check": "summary object",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "summary total_claims",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "summary passed_claims",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "summary failed_claims",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "summary release_decision",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "signature verification",
+      "pass": true,
+      "detail": "signature valid"
+    },
+    {
+      "check": "signature idempotency",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "external verification",
+      "pass": true,
+      "detail": "signature valid"
+    },
+    {
+      "check": "events list",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event includes VEF-RELEASE-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event includes allow code",
+      "pass": true,
+      "detail": "found"
+    }
+  ],
+  "events": [
+    "VEF-RELEASE-001",
+    "VEF-RELEASE-002"
+  ]
+}

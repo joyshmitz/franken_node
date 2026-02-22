@@ -4,6 +4,7 @@
 //! Invariant breaks trigger hard alerts via stable error codes.
 //! Torn-tail recovery is deterministic.
 
+use sha2::Digest;
 use std::fmt;
 
 /// Genesis sentinel hash for sequence 0 (no predecessor).
@@ -80,20 +81,14 @@ impl Marker {
         timestamp: u64,
         trace_id: &str,
     ) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
         let canonical = format!(
             "{sequence}|{}|{payload_hash}|{prev_hash}|{timestamp}|{trace_id}",
             event_type.label()
         );
 
-        // Use a deterministic hash (simulating SHA-256 with a stable hasher for the crate).
-        // In production, this would use sha2::Sha256.
-        let mut hasher = DefaultHasher::new();
-        canonical.hash(&mut hasher);
-        let h = hasher.finish();
-        format!("{h:016x}{h:016x}{h:016x}{h:016x}", h = h)
+        let mut hasher = sha2::Sha256::new();
+        sha2::Digest::update(&mut hasher, canonical.as_bytes());
+        format!("{:x}", sha2::Digest::finalize(hasher))
     }
 }
 

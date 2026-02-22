@@ -1,0 +1,71 @@
+# Performance budgets for franken_node core workflows.
+# bd-3lh: Cold-start and p99 latency gates.
+#
+# Budget updates require a justification comment in the commit message.
+# See docs/specs/section_10_6/bd-3lh_contract.md for details.
+
+[meta]
+version = "1.0.0"
+min_iterations = 30
+warmup_iterations = 5
+early_warning_pct = 80
+
+# ---------------------------------------------------------------------------
+# Deployment profiles
+# ---------------------------------------------------------------------------
+
+[profiles.dev_local]
+description = "Developer laptop, iterative workflow"
+cold_start_ms = 500
+p99_latency_ms = 50
+
+[profiles.ci_dev]
+description = "CI pipeline, high iteration count"
+cold_start_ms = 200
+p99_latency_ms = 20
+
+[profiles.enterprise]
+description = "Enterprise production, strict SLA"
+cold_start_ms = 100
+p99_latency_ms = 10
+
+# ---------------------------------------------------------------------------
+# Per-workflow budget overrides (optional)
+# If absent, the profile default applies.
+# ---------------------------------------------------------------------------
+
+[workflows.migration_scan]
+description = "Migration scanner audit"
+# Migration scan is expected to be slower due to filesystem I/O
+[workflows.migration_scan.overrides.dev_local]
+cold_start_ms = 600
+p99_latency_ms = 80
+[workflows.migration_scan.overrides.ci_dev]
+cold_start_ms = 300
+p99_latency_ms = 40
+
+[workflows.compatibility_check]
+description = "Compatibility matrix evaluation"
+
+[workflows.policy_evaluation]
+description = "Policy gate evaluation"
+
+[workflows.trust_card_lookup]
+description = "Trust card materialization"
+
+[workflows.incident_replay]
+description = "Incident bundle replay"
+# Replay is compute-intensive and can be slower
+[workflows.incident_replay.overrides.dev_local]
+cold_start_ms = 800
+p99_latency_ms = 100
+[workflows.incident_replay.overrides.ci_dev]
+cold_start_ms = 400
+p99_latency_ms = 50
+
+# ---------------------------------------------------------------------------
+# Changelog
+# ---------------------------------------------------------------------------
+# 1.0.0 (2026-02-21): Initial budget definitions for bd-3lh.
+#   - 3 profiles: dev_local, ci_dev, enterprise
+#   - 5 workflows with overrides for migration_scan, incident_replay

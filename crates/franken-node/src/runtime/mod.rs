@@ -1,2 +1,10 @@
+pub mod anti_entropy;
+pub mod bounded_mask;
+pub mod checkpoint;
+pub mod checkpoint_guard;
 pub mod crash_loop_detector;
+pub mod epoch_guard;
+pub mod epoch_transition;
+pub mod lane_scheduler;
+pub mod region_tree;
 pub mod safe_mode;

@@ -1,0 +1,48 @@
+{
+  "bead_id": "bd-2d17",
+  "generated_at": "2026-02-21T05:10:00Z",
+  "commands": [
+    {
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "status": "baseline_fail",
+      "notes": [
+        "Pre-existing compile failures outside bd-2d17 scope",
+        "Representative errors: E0599 (missing sha2::Digest imports), E0502 borrow conflicts in vef_perf_budget_gate"
+      ]
+    },
+    {
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "status": "baseline_fail",
+      "notes": [
+        "Pre-existing clippy debt across workspace",
+        "Representative errors: unused imports/variables, manifest Capability construction errors (E0423), sha2 Digest trait scope errors (E0599)"
+      ]
+    },
+    {
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "status": "baseline_fail",
+      "notes": [
+        "Formatting diffs across many existing files not touched by bd-2d17"
+      ]
+    },
+    {
+      "command": "rch exec -- cargo clippy -p frankenengine-node --test dgis_migration_gate -- -D warnings",
+      "exit_code": 0,
+      "status": "pass",
+      "notes": [
+        "Targeted clippy for the new bd-2d17 integration test wrapper passed"
+      ]
+    },
+    {
+      "command": "rch exec -- cargo test -p frankenengine-node --test dgis_migration_gate",
+      "exit_code": 101,
+      "status": "baseline_fail",
+      "notes": [
+        "Targeted test invocation blocked by pre-existing bin compile failures outside bd-2d17 files"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+version = "1.0.0"
+bead_id = "bd-s6y"
+title = "Canonical Trust Protocol Vector Manifest"
+updated_at = "2026-02-22T00:00:00Z"
+
+[policy]
+fail_on_missing_required = true
+require_changelog_entry = true
+require_traceability = true
+default_parity_targets = ["native", "node", "bun"]
+
+[[sources]]
+source_id = "10.13-golden-vectors"
+section = "10.13"
+source_bead_id = "bd-3n2u"
+source_version = "1.0.0"
+suite_kind = "json_vectors"
+required = true
+globs = ["vectors/fnode_trust_vectors*.json"]
+entry_keys = ["vectors"]
+required_keys = ["schema_version", "vectors"]
+minimum_entries = 1
+parity_targets = ["native", "node", "bun"]
+publication_tag = "trust-protocol"
+
+[[sources]]
+source_id = "10.13-interop-vectors"
+section = "10.13"
+source_bead_id = "bd-35by"
+source_version = "1.0.0"
+suite_kind = "json_vectors"
+required = true
+globs = ["fixtures/interop/*vectors*.json"]
+entry_keys = ["test_vectors"]
+required_keys = ["test_vectors"]
+minimum_entries = 1
+parity_targets = ["native", "node", "bun"]
+publication_tag = "interop"
+
+[[sources]]
+source_id = "10.13-fuzz-corpus"
+section = "10.13"
+source_bead_id = "bd-29ct"
+source_version = "1.0.0"
+suite_kind = "directory_corpus"
+required = true
+paths = ["fuzz/corpus/migration", "fuzz/corpus/shim"]
+minimum_entries = 10
+parity_targets = []
+publication_tag = "fuzz-corpus"
+
+[[sources]]
+source_id = "10.14-vector-artifacts"
+section = "10.14"
+source_bead_id = "auto"
+source_version = "auto"
+suite_kind = "json_vectors"
+required = true
+globs = ["artifacts/10.14/*_vectors.json"]
+entry_keys = ["vectors", "inclusion_cases", "prefix_cases", "test_vectors"]
+required_keys = []
+minimum_entries = 1
+parity_targets = ["native", "node", "bun"]
+publication_tag = "control-plane-vectors"
+
+[metadata_overrides."artifacts/10.14/idempotency_vectors.json"]
+source_bead_id = "bd-12n3"
+source_version = "1.0.0"
+
+[metadata_overrides."artifacts/10.14/epoch_key_vectors.json"]
+source_bead_id = "bd-3cs3"
+source_version = "1.0.0"
+
+[metadata_overrides."artifacts/10.14/seed_derivation_vectors.json"]
+source_bead_id = "bd-29r6"
+source_version = "1.0.0"
+
+[metadata_overrides."artifacts/10.14/mmr_proof_vectors.json"]
+source_bead_id = "bd-1dar"
+source_version = "1.0.0"

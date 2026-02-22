@@ -1,0 +1,94 @@
+{
+  "bead": "bd-3u6o",
+  "section": "10.15",
+  "title": "Canonical Virtual Transport Fault Harness for Distributed Control Protocols",
+  "adoption_status": "documented",
+  "upstream_bead": "bd-2qqu",
+  "upstream_section": "10.14",
+  "upstream_source": "crates/franken-node/src/remote/virtual_transport_faults.rs",
+  "timestamp": "2026-02-21T12:00:00Z",
+  "protocols": [
+    {
+      "name": "remote_fencing",
+      "module": "connector/fencing.rs",
+      "description": "Distributed lock acquisition, release, and fencing token validation",
+      "fault_behaviors": {
+        "DROP": "retry then fail-closed",
+        "REORDER": "reject out-of-order tokens",
+        "CORRUPT": "integrity check rejects",
+        "PARTITION": "lease expires, fail-closed"
+      }
+    },
+    {
+      "name": "cross_node_rollout",
+      "module": "connector/rollout_state.rs",
+      "description": "Coordinated state transitions replicated to peer nodes",
+      "fault_behaviors": {
+        "DROP": "retry then abort",
+        "REORDER": "causal re-sequencing",
+        "CORRUPT": "hash mismatch rollback",
+        "PARTITION": "timeout abort"
+      }
+    },
+    {
+      "name": "epoch_barrier_participation",
+      "module": "control_plane/epoch_transition_barrier.rs",
+      "description": "Barrier-based epoch transitions requiring unanimous commit or abort",
+      "fault_behaviors": {
+        "DROP": "retry vote, abort on timeout",
+        "REORDER": "discard stale votes",
+        "CORRUPT": "treat as abstention",
+        "PARTITION": "barrier aborts"
+      }
+    },
+    {
+      "name": "distributed_saga_steps",
+      "module": "control_plane/transition_abort.rs",
+      "description": "Multi-step distributed sagas with forward execution and compensating rollback",
+      "fault_behaviors": {
+        "DROP": "retry then compensate",
+        "REORDER": "re-sequence via step numbers",
+        "CORRUPT": "reject and compensate",
+        "PARTITION": "compensate unreachable"
+      }
+    }
+  ],
+  "fault_classes": ["DROP", "REORDER", "CORRUPT", "PARTITION"],
+  "seeds_used": [0, 42, 12345, 3735928559, 18446744073709551615],
+  "summary": {
+    "total_tests": 20,
+    "passing": 20,
+    "failing": 0,
+    "seeds_used": 5,
+    "protocols_covered": 4,
+    "fault_classes_covered": 4
+  },
+  "invariants": [
+    "INV-VTF-DETERMINISTIC",
+    "INV-VTF-CORRECT-OR-FAIL",
+    "INV-VTF-NO-CUSTOM",
+    "INV-VTF-SEED-STABLE"
+  ],
+  "test_matrix": [
+    {"seed": 0, "protocol": "remote_fencing", "result": "pass"},
+    {"seed": 0, "protocol": "cross_node_rollout", "result": "pass"},
+    {"seed": 0, "protocol": "epoch_barrier_participation", "result": "pass"},
+    {"seed": 0, "protocol": "distributed_saga_steps", "result": "pass"},
+    {"seed": 42, "protocol": "remote_fencing", "result": "pass"},
+    {"seed": 42, "protocol": "cross_node_rollout", "result": "pass"},
+    {"seed": 42, "protocol": "epoch_barrier_participation", "result": "pass"},
+    {"seed": 42, "protocol": "distributed_saga_steps", "result": "pass"},
+    {"seed": 12345, "protocol": "remote_fencing", "result": "pass"},
+    {"seed": 12345, "protocol": "cross_node_rollout", "result": "pass"},
+    {"seed": 12345, "protocol": "epoch_barrier_participation", "result": "pass"},
+    {"seed": 12345, "protocol": "distributed_saga_steps", "result": "pass"},
+    {"seed": 3735928559, "protocol": "remote_fencing", "result": "pass"},
+    {"seed": 3735928559, "protocol": "cross_node_rollout", "result": "pass"},
+    {"seed": 3735928559, "protocol": "epoch_barrier_participation", "result": "pass"},
+    {"seed": 3735928559, "protocol": "distributed_saga_steps", "result": "pass"},
+    {"seed": 18446744073709551615, "protocol": "remote_fencing", "result": "pass"},
+    {"seed": 18446744073709551615, "protocol": "cross_node_rollout", "result": "pass"},
+    {"seed": 18446744073709551615, "protocol": "epoch_barrier_participation", "result": "pass"},
+    {"seed": 18446744073709551615, "protocol": "distributed_saga_steps", "result": "pass"}
+  ]
+}

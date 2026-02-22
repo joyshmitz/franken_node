@@ -1,0 +1,37 @@
+{
+  "bead_id": "bd-tg2",
+  "section": "10.8",
+  "title": "Fleet control API for quarantine/revocation operations",
+  "timestamp": "2026-02-21T02:00:00Z",
+  "verdict": "PASS",
+  "files": {
+    "spec": "docs/specs/section_10_8/bd-tg2_contract.md",
+    "implementation": "crates/franken-node/src/api/fleet_quarantine.rs",
+    "verification_script": "scripts/check_fleet_quarantine.py",
+    "python_tests": "tests/test_check_fleet_quarantine.py"
+  },
+  "metrics": {
+    "python_checks_total": 108,
+    "python_checks_passing": 108,
+    "python_checks_failing": 0,
+    "rust_unit_tests": 52,
+    "structs_verified": 14,
+    "event_codes_verified": 5,
+    "event_names_verified": 5,
+    "error_codes_verified": 5,
+    "invariants_verified": 5,
+    "functions_verified": 18,
+    "simulation_checks": 6,
+    "acceptance_criteria_verified": 8
+  },
+  "acceptance_criteria": {
+    "AC1_api_endpoints": "PASS — quarantine, revoke, release, status, reconcile implemented",
+    "AC2_scope_control": "PASS — zone/tenant scoping with blast-radius metadata",
+    "AC3_convergence_tracking": "PASS — ConvergenceState with progress_pct and eta_seconds",
+    "AC4_rollback": "PASS — release deterministically rolls back with INV-FLEET-ROLLBACK",
+    "AC5_decision_receipts": "PASS — DecisionReceipt on every operation (INV-FLEET-RECEIPT)",
+    "AC6_observability": "PASS — structured events FLEET-001 through FLEET-005 with trace IDs",
+    "AC7_safe_mode": "PASS — INV-FLEET-SAFE-START read-only until activation",
+    "AC8_incident_integration": "PASS — IncidentHandle with status tracking"
+  }
+}

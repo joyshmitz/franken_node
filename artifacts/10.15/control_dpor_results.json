@@ -1,0 +1,104 @@
+{
+  "bead_id": "bd-25oa",
+  "section": "10.15",
+  "title": "DPOR-style schedule exploration results for control-plane interactions",
+  "upstream_bead": "bd-22yy",
+  "upstream_module": "crates/franken-node/src/control_plane/dpor_exploration.rs",
+  "rust_test_file": "tests/lab/control_dpor_exploration.rs",
+  "generated_at_utc": "2026-02-21T00:00:00+00:00",
+  "schema_version": "cdpor-v1.0",
+  "exploration_budget": {
+    "max_interleavings_per_class": 10000,
+    "total_budget_per_ci_run": 40000,
+    "time_budget_per_class_sec": 120,
+    "memory_budget_bytes": 1073741824
+  },
+  "interaction_classes": [
+    {
+      "name": "epoch_transition_lease_renewal",
+      "operations_count": 6,
+      "safety_properties_count": 3,
+      "safety_properties": [
+        "no_split_brain",
+        "no_stale_lease",
+        "no_deadlock"
+      ],
+      "interleavings_explored": 10000,
+      "violations_found": 0,
+      "counterexamples": [],
+      "passed": true
+    },
+    {
+      "name": "remote_computation_evidence_emission",
+      "operations_count": 6,
+      "safety_properties_count": 3,
+      "safety_properties": [
+        "no_orphaned_evidence",
+        "no_exec_without_cap",
+        "evidence_before_release"
+      ],
+      "interleavings_explored": 10000,
+      "violations_found": 0,
+      "counterexamples": [],
+      "passed": true
+    },
+    {
+      "name": "cancellation_saga_compensation",
+      "operations_count": 7,
+      "safety_properties_count": 3,
+      "safety_properties": [
+        "no_leaked_obligations",
+        "reverse_compensation_order",
+        "clean_final_state"
+      ],
+      "interleavings_explored": 10000,
+      "violations_found": 0,
+      "counterexamples": [],
+      "passed": true
+    },
+    {
+      "name": "epoch_barrier_fencing_token",
+      "operations_count": 7,
+      "safety_properties_count": 3,
+      "safety_properties": [
+        "no_stale_write",
+        "fence_epoch_match",
+        "all_drain_before_commit"
+      ],
+      "interleavings_explored": 10000,
+      "violations_found": 0,
+      "counterexamples": [],
+      "passed": true
+    }
+  ],
+  "summary": {
+    "total_interleavings": 40000,
+    "classes_covered": 4,
+    "violations": 0,
+    "budget_respected": true,
+    "all_invariants_checked": true
+  },
+  "invariants_verified": [
+    "INV-DPOR-BOUNDED",
+    "INV-DPOR-INVARIANT-CHECK",
+    "INV-DPOR-COUNTEREXAMPLE",
+    "INV-DPOR-CANONICAL",
+    "INV-DPOR-NO-SPLIT-BRAIN",
+    "INV-DPOR-NO-ORPHANED-LEASE",
+    "INV-DPOR-NO-LEAKED-OBLIGATIONS",
+    "INV-DPOR-NO-INCONSISTENT-EVIDENCE",
+    "INV-DPOR-NO-STALE-WRITE"
+  ],
+  "event_codes": [
+    "DPR-001",
+    "DPR-002",
+    "DPR-003",
+    "DPR-004",
+    "DPR-005"
+  ],
+  "counterexample_format": {
+    "fields": ["model_name", "violated_property", "length", "steps"],
+    "step_fields": ["step_index", "operation_id", "actor", "state_summary"]
+  },
+  "verdict": "PASS"
+}

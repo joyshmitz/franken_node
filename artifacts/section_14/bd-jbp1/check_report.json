@@ -1,0 +1,105 @@
+{
+  "bead_id": "bd-jbp1",
+  "section": "14",
+  "gate_script": "check_replay_determinism_metrics.py",
+  "checks_passed": 19,
+  "checks_total": 19,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "source_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/tools/replay_determinism_metrics.rs"
+    },
+    {
+      "check": "module_wiring",
+      "passed": true,
+      "detail": "tools/mod.rs"
+    },
+    {
+      "check": "artifact_categories",
+      "passed": true,
+      "detail": "5/5 categories"
+    },
+    {
+      "check": "struct_ReplayRun",
+      "passed": true,
+      "detail": "ReplayRun"
+    },
+    {
+      "check": "struct_ComparisonResult",
+      "passed": true,
+      "detail": "ComparisonResult"
+    },
+    {
+      "check": "struct_ArtifactCompleteness",
+      "passed": true,
+      "detail": "ArtifactCompleteness"
+    },
+    {
+      "check": "struct_DeterminismReport",
+      "passed": true,
+      "detail": "DeterminismReport"
+    },
+    {
+      "check": "struct_RdmAuditRecord",
+      "passed": true,
+      "detail": "RdmAuditRecord"
+    },
+    {
+      "check": "struct_ReplayDeterminismMetrics",
+      "passed": true,
+      "detail": "ReplayDeterminismMetrics"
+    },
+    {
+      "check": "hash_comparison",
+      "passed": true,
+      "detail": "Hash-based output comparison"
+    },
+    {
+      "check": "divergence_detection",
+      "passed": true,
+      "detail": "Divergence severity classification"
+    },
+    {
+      "check": "artifact_tracking",
+      "passed": true,
+      "detail": "Artifact completeness tracking"
+    },
+    {
+      "check": "report_generation",
+      "passed": true,
+      "detail": "Report with determinism rate and completeness"
+    },
+    {
+      "check": "metric_versioning",
+      "passed": true,
+      "detail": "rdm-v1.0"
+    },
+    {
+      "check": "event_codes",
+      "passed": true,
+      "detail": "12/12 codes"
+    },
+    {
+      "check": "invariants",
+      "passed": true,
+      "detail": "6/6 invariants"
+    },
+    {
+      "check": "audit_log",
+      "passed": true,
+      "detail": "JSONL audit export"
+    },
+    {
+      "check": "spec_alignment",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_14/bd-jbp1_contract.md"
+    },
+    {
+      "check": "test_coverage",
+      "passed": true,
+      "detail": "23 tests (>=23)"
+    }
+  ]
+}

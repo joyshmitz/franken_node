@@ -1,0 +1,111 @@
+{
+  "bead_id": "bd-whxp",
+  "generated_at_utc": "2026-02-21T01:30:00Z",
+  "trace_id": "3f61deaf8a6a5ccf4d29a0bb2fdb68a7c09d98f554e6ff2d95cb3e8d968a31b2",
+  "required_minimum_replications": 2,
+  "required_claims": [
+    "migration_velocity_3x",
+    "compromise_reduction_10x",
+    "replay_coverage_100pct"
+  ],
+  "replications": [
+    {
+      "replication_id": "rep-opensec-20260218",
+      "organization": "OpenSec Labs",
+      "independent": true,
+      "executed_at_utc": "2026-02-18T16:45:00Z",
+      "source_url": "https://example.org/opensec/franken_node_replication_20260218",
+      "source_commit": "0a6c9a8f71a8380dcf23cc9eb7ae4b06f2d64511",
+      "evaluator_hash": "ba4515ec17b6e8f774f6fba6054b8b9f8e86c79940f9cf3d95b6c499f3c37c8b",
+      "environment_fingerprint": "ubuntu-22.04|x86_64|python3.12|runner-v2",
+      "disclosed_funding_conflict": false,
+      "claim_results": {
+        "migration_velocity_3x": {
+          "pass": true,
+          "evidence_uri": "https://example.org/opensec/evidence/migration_velocity.json",
+          "measured_value": "3.41x"
+        },
+        "compromise_reduction_10x": {
+          "pass": true,
+          "evidence_uri": "https://example.org/opensec/evidence/compromise_reduction.json",
+          "measured_value": "12.3x"
+        },
+        "replay_coverage_100pct": {
+          "pass": true,
+          "evidence_uri": "https://example.org/opensec/evidence/replay_coverage.json",
+          "measured_value": "100%"
+        }
+      }
+    },
+    {
+      "replication_id": "rep-boundaryproofs-20260219",
+      "organization": "Boundary Proofs Consortium",
+      "independent": true,
+      "executed_at_utc": "2026-02-19T10:12:00Z",
+      "source_url": "https://example.org/bpc/franken_node_replication_20260219",
+      "source_commit": "0a6c9a8f71a8380dcf23cc9eb7ae4b06f2d64511",
+      "evaluator_hash": "7f2fca1ab414035eb4d7fc1d7d2442be26d5eb44557af73f2ad8d2081f6f8d2d",
+      "environment_fingerprint": "debian-12|x86_64|python3.11|runner-v4",
+      "disclosed_funding_conflict": false,
+      "claim_results": {
+        "migration_velocity_3x": {
+          "pass": true,
+          "evidence_uri": "https://example.org/bpc/evidence/migration_velocity.json",
+          "measured_value": "3.22x"
+        },
+        "compromise_reduction_10x": {
+          "pass": true,
+          "evidence_uri": "https://example.org/bpc/evidence/compromise_reduction.json",
+          "measured_value": "10.9x"
+        },
+        "replay_coverage_100pct": {
+          "pass": true,
+          "evidence_uri": "https://example.org/bpc/evidence/replay_coverage.json",
+          "measured_value": "100%"
+        }
+      }
+    },
+    {
+      "replication_id": "rep-deltaaudit-20260220",
+      "organization": "Delta Audit Group",
+      "independent": false,
+      "executed_at_utc": "2026-02-20T08:05:00Z",
+      "source_url": "https://example.org/delta/franken_node_replication_20260220",
+      "source_commit": "0a6c9a8f71a8380dcf23cc9eb7ae4b06f2d64511",
+      "evaluator_hash": "7e20bc8f4328c2bcc3f950fe9ca58aa315f5715dfcf56240a68fc5a9a96cfc33",
+      "environment_fingerprint": "macos-14|arm64|python3.12|runner-v3",
+      "disclosed_funding_conflict": true,
+      "claim_results": {
+        "migration_velocity_3x": {
+          "pass": true,
+          "evidence_uri": "https://example.org/delta/evidence/migration_velocity.json",
+          "measured_value": "3.07x"
+        },
+        "compromise_reduction_10x": {
+          "pass": true,
+          "evidence_uri": "https://example.org/delta/evidence/compromise_reduction.json",
+          "measured_value": "10.2x"
+        },
+        "replay_coverage_100pct": {
+          "pass": true,
+          "evidence_uri": "https://example.org/delta/evidence/replay_coverage.json",
+          "measured_value": "100%"
+        }
+      }
+    }
+  ],
+  "summary": {
+    "replication_count": 3,
+    "independent_replication_count": 2,
+    "independent_replications_passing": 2,
+    "verdict": "PASS"
+  },
+  "event_codes": [
+    "IRG-001",
+    "IRG-002",
+    "IRG-003",
+    "IRG-004",
+    "IRG-005",
+    "IRG-006"
+  ]
+}

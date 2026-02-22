@@ -1,0 +1,485 @@
+{
+  "bead_id": "bd-10c",
+  "title": "Trust economics dashboard with attacker-ROI deltas",
+  "section": "10.9",
+  "gate": false,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 92,
+  "passed": 92,
+  "failed": 0,
+  "attack_categories": [
+    "credential_exfiltration",
+    "privilege_escalation",
+    "supply_chain_compromise",
+    "policy_evasion",
+    "data_exfiltration"
+  ],
+  "platforms": [
+    "node_js",
+    "bun",
+    "franken_node"
+  ],
+  "checks": [
+    {
+      "check": "rust_module_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/tools/trust_economics_dashboard.rs"
+    },
+    {
+      "check": "tools_mod_registration",
+      "pass": true,
+      "detail": "trust_economics_dashboard in tools/mod.rs"
+    },
+    {
+      "check": "type_AttackCategory",
+      "pass": true,
+      "detail": "AttackCategory defined"
+    },
+    {
+      "check": "type_Platform",
+      "pass": true,
+      "detail": "Platform defined"
+    },
+    {
+      "check": "type_PrivilegeLevel",
+      "pass": true,
+      "detail": "PrivilegeLevel defined"
+    },
+    {
+      "check": "type_OptimizationObjective",
+      "pass": true,
+      "detail": "OptimizationObjective defined"
+    },
+    {
+      "check": "type_AttackCost",
+      "pass": true,
+      "detail": "AttackCost defined"
+    },
+    {
+      "check": "type_AmplificationEntry",
+      "pass": true,
+      "detail": "AmplificationEntry defined"
+    },
+    {
+      "check": "type_ConfidenceInterval",
+      "pass": true,
+      "detail": "ConfidenceInterval defined"
+    },
+    {
+      "check": "type_PrivilegeRiskPrice",
+      "pass": true,
+      "detail": "PrivilegeRiskPrice defined"
+    },
+    {
+      "check": "type_PrivilegeRiskCurve",
+      "pass": true,
+      "detail": "PrivilegeRiskCurve defined"
+    },
+    {
+      "check": "type_PolicyRecommendation",
+      "pass": true,
+      "detail": "PolicyRecommendation defined"
+    },
+    {
+      "check": "type_ExpectedImpact",
+      "pass": true,
+      "detail": "ExpectedImpact defined"
+    },
+    {
+      "check": "type_ExpectedLossModel",
+      "pass": true,
+      "detail": "ExpectedLossModel defined"
+    },
+    {
+      "check": "type_TrustEconomicsReport",
+      "pass": true,
+      "detail": "TrustEconomicsReport defined"
+    },
+    {
+      "check": "type_TrustEconomicsDashboard",
+      "pass": true,
+      "detail": "TrustEconomicsDashboard defined"
+    },
+    {
+      "check": "type_DashboardConfig",
+      "pass": true,
+      "detail": "DashboardConfig defined"
+    },
+    {
+      "check": "type_TedAuditRecord",
+      "pass": true,
+      "detail": "TedAuditRecord defined"
+    },
+    {
+      "check": "attack_category_CredentialExfiltration",
+      "pass": true,
+      "detail": "CredentialExfiltration defined"
+    },
+    {
+      "check": "attack_category_PrivilegeEscalation",
+      "pass": true,
+      "detail": "PrivilegeEscalation defined"
+    },
+    {
+      "check": "attack_category_SupplyChainCompromise",
+      "pass": true,
+      "detail": "SupplyChainCompromise defined"
+    },
+    {
+      "check": "attack_category_PolicyEvasion",
+      "pass": true,
+      "detail": "PolicyEvasion defined"
+    },
+    {
+      "check": "attack_category_DataExfiltration",
+      "pass": true,
+      "detail": "DataExfiltration defined"
+    },
+    {
+      "check": "platform_NodeJs",
+      "pass": true,
+      "detail": "NodeJs defined"
+    },
+    {
+      "check": "platform_Bun",
+      "pass": true,
+      "detail": "Bun defined"
+    },
+    {
+      "check": "platform_FrankenNode",
+      "pass": true,
+      "detail": "FrankenNode defined"
+    },
+    {
+      "check": "privilege_level_Unrestricted",
+      "pass": true,
+      "detail": "Unrestricted defined"
+    },
+    {
+      "check": "privilege_level_Standard",
+      "pass": true,
+      "detail": "Standard defined"
+    },
+    {
+      "check": "privilege_level_Restricted",
+      "pass": true,
+      "detail": "Restricted defined"
+    },
+    {
+      "check": "privilege_level_Quarantined",
+      "pass": true,
+      "detail": "Quarantined defined"
+    },
+    {
+      "check": "objective_MinimizeExpectedLoss",
+      "pass": true,
+      "detail": "MinimizeExpectedLoss defined"
+    },
+    {
+      "check": "objective_MaximizeAttackerCost",
+      "pass": true,
+      "detail": "MaximizeAttackerCost defined"
+    },
+    {
+      "check": "objective_MinimizeOperationalOverhead",
+      "pass": true,
+      "detail": "MinimizeOperationalOverhead defined"
+    },
+    {
+      "check": "objective_BalancedOptimization",
+      "pass": true,
+      "detail": "BalancedOptimization defined"
+    },
+    {
+      "check": "event_code_TED-001",
+      "pass": true,
+      "detail": "TED-001 defined"
+    },
+    {
+      "check": "event_code_TED-002",
+      "pass": true,
+      "detail": "TED-002 defined"
+    },
+    {
+      "check": "event_code_TED-003",
+      "pass": true,
+      "detail": "TED-003 defined"
+    },
+    {
+      "check": "event_code_TED-004",
+      "pass": true,
+      "detail": "TED-004 defined"
+    },
+    {
+      "check": "event_code_TED-005",
+      "pass": true,
+      "detail": "TED-005 defined"
+    },
+    {
+      "check": "event_code_TED-006",
+      "pass": true,
+      "detail": "TED-006 defined"
+    },
+    {
+      "check": "event_code_TED-007",
+      "pass": true,
+      "detail": "TED-007 defined"
+    },
+    {
+      "check": "event_code_TED-008",
+      "pass": true,
+      "detail": "TED-008 defined"
+    },
+    {
+      "check": "event_code_TED-009",
+      "pass": true,
+      "detail": "TED-009 defined"
+    },
+    {
+      "check": "event_code_TED-010",
+      "pass": true,
+      "detail": "TED-010 defined"
+    },
+    {
+      "check": "event_code_TED-ERR-001",
+      "pass": true,
+      "detail": "TED-ERR-001 defined"
+    },
+    {
+      "check": "event_code_TED-ERR-002",
+      "pass": true,
+      "detail": "TED-ERR-002 defined"
+    },
+    {
+      "check": "invariant_INV-TED-QUANTIFIED",
+      "pass": true,
+      "detail": "INV-TED-QUANTIFIED defined"
+    },
+    {
+      "check": "invariant_INV-TED-DETERMINISTIC",
+      "pass": true,
+      "detail": "INV-TED-DETERMINISTIC defined"
+    },
+    {
+      "check": "invariant_INV-TED-VERSIONED",
+      "pass": true,
+      "detail": "INV-TED-VERSIONED defined"
+    },
+    {
+      "check": "invariant_INV-TED-CONFIDENCE",
+      "pass": true,
+      "detail": "INV-TED-CONFIDENCE defined"
+    },
+    {
+      "check": "invariant_INV-TED-GATED",
+      "pass": true,
+      "detail": "INV-TED-GATED defined"
+    },
+    {
+      "check": "invariant_INV-TED-COMPARATIVE",
+      "pass": true,
+      "detail": "INV-TED-COMPARATIVE defined"
+    },
+    {
+      "check": "amplification_logic",
+      "pass": true,
+      "detail": "three-way amplification factors"
+    },
+    {
+      "check": "privilege_risk_pricing",
+      "pass": true,
+      "detail": "damage + risk-adjusted price + annual loss"
+    },
+    {
+      "check": "posterior_updates",
+      "pass": true,
+      "detail": "Bayesian posterior with frequencies + effectiveness"
+    },
+    {
+      "check": "expected_loss_model",
+      "pass": true,
+      "detail": "ExpectedLossModel with loss calculation"
+    },
+    {
+      "check": "audit_logging",
+      "pass": true,
+      "detail": "audit records with JSONL export and trace IDs"
+    },
+    {
+      "check": "content_hash",
+      "pass": true,
+      "detail": "SHA-256 content hash"
+    },
+    {
+      "check": "model_version",
+      "pass": true,
+      "detail": "MODEL_VERSION constant and field"
+    },
+    {
+      "check": "confidence_intervals",
+      "pass": true,
+      "detail": "ConfidenceInterval with lower/upper/level"
+    },
+    {
+      "check": "inline_tests",
+      "pass": true,
+      "detail": "26 inline tests (need >= 20)"
+    },
+    {
+      "check": "spec_contract",
+      "pass": true,
+      "detail": "docs/specs/section_10_9/bd-10c_contract.md"
+    },
+    {
+      "check": "spec_attack_credential_exfiltration",
+      "pass": true,
+      "detail": "credential_exfiltration in spec"
+    },
+    {
+      "check": "spec_attack_privilege_escalation",
+      "pass": true,
+      "detail": "privilege_escalation in spec"
+    },
+    {
+      "check": "spec_attack_supply_chain_compromise",
+      "pass": true,
+      "detail": "supply_chain_compromise in spec"
+    },
+    {
+      "check": "spec_attack_policy_evasion",
+      "pass": true,
+      "detail": "policy_evasion in spec"
+    },
+    {
+      "check": "spec_attack_data_exfiltration",
+      "pass": true,
+      "detail": "data_exfiltration in spec"
+    },
+    {
+      "check": "spec_platform_Node.js",
+      "pass": true,
+      "detail": "Node.js in spec"
+    },
+    {
+      "check": "spec_platform_Bun",
+      "pass": true,
+      "detail": "Bun in spec"
+    },
+    {
+      "check": "spec_platform_franken_node",
+      "pass": true,
+      "detail": "franken_node in spec"
+    },
+    {
+      "check": "spec_INV-TED-QUANTIFIED",
+      "pass": true,
+      "detail": "INV-TED-QUANTIFIED in spec"
+    },
+    {
+      "check": "spec_INV-TED-DETERMINISTIC",
+      "pass": true,
+      "detail": "INV-TED-DETERMINISTIC in spec"
+    },
+    {
+      "check": "spec_INV-TED-VERSIONED",
+      "pass": true,
+      "detail": "INV-TED-VERSIONED in spec"
+    },
+    {
+      "check": "spec_INV-TED-CONFIDENCE",
+      "pass": true,
+      "detail": "INV-TED-CONFIDENCE in spec"
+    },
+    {
+      "check": "spec_INV-TED-GATED",
+      "pass": true,
+      "detail": "INV-TED-GATED in spec"
+    },
+    {
+      "check": "spec_INV-TED-COMPARATIVE",
+      "pass": true,
+      "detail": "INV-TED-COMPARATIVE in spec"
+    },
+    {
+      "check": "spec_event_TED-001",
+      "pass": true,
+      "detail": "TED-001 in spec"
+    },
+    {
+      "check": "spec_event_TED-002",
+      "pass": true,
+      "detail": "TED-002 in spec"
+    },
+    {
+      "check": "spec_event_TED-003",
+      "pass": true,
+      "detail": "TED-003 in spec"
+    },
+    {
+      "check": "spec_event_TED-004",
+      "pass": true,
+      "detail": "TED-004 in spec"
+    },
+    {
+      "check": "spec_event_TED-005",
+      "pass": true,
+      "detail": "TED-005 in spec"
+    },
+    {
+      "check": "spec_event_TED-006",
+      "pass": true,
+      "detail": "TED-006 in spec"
+    },
+    {
+      "check": "spec_event_TED-007",
+      "pass": true,
+      "detail": "TED-007 in spec"
+    },
+    {
+      "check": "spec_event_TED-008",
+      "pass": true,
+      "detail": "TED-008 in spec"
+    },
+    {
+      "check": "spec_event_TED-009",
+      "pass": true,
+      "detail": "TED-009 in spec"
+    },
+    {
+      "check": "spec_event_TED-010",
+      "pass": true,
+      "detail": "TED-010 in spec"
+    },
+    {
+      "check": "spec_event_TED-ERR-001",
+      "pass": true,
+      "detail": "TED-ERR-001 in spec"
+    },
+    {
+      "check": "spec_event_TED-ERR-002",
+      "pass": true,
+      "detail": "TED-ERR-002 in spec"
+    },
+    {
+      "check": "fixtures_dir",
+      "pass": true,
+      "detail": "fixtures/economic-models/"
+    },
+    {
+      "check": "model_fixture",
+      "pass": true,
+      "detail": "fixtures/economic-models/default_model.json"
+    },
+    {
+      "check": "model_fixture_schema",
+      "pass": true,
+      "detail": "attack_frequencies + defense_effectiveness"
+    },
+    {
+      "check": "scenario_fixture",
+      "pass": true,
+      "detail": "fixtures/economic-models/test_scenarios.json"
+    }
+  ]
+}

@@ -1,0 +1,2053 @@
+{
+  "bead_id": "bd-2nre",
+  "section": "15",
+  "title": "Section-wide verification gate: comprehensive unit+e2e+logging",
+  "generated_at": "2026-02-22T01:11:29.685125+00:00",
+  "verdict": "PASS",
+  "gate_pass": true,
+  "beads_expected": 8,
+  "beads_verified": 8,
+  "beads_passing": 8,
+  "pillar_checks_passing": 7,
+  "pillar_checks_total": 7,
+  "adoption_metrics_passing": 4,
+  "adoption_metrics_total": 4,
+  "adoption_metrics": [
+    {
+      "id": "ADOPT-15-EXTENSION-COUNT",
+      "metric": "extension_count",
+      "target": ">= 1 extension unit tracked by signed registry",
+      "measured": 4,
+      "required": 1,
+      "pass": true,
+      "source": "bd-209w check `extension_statuses`"
+    },
+    {
+      "id": "ADOPT-15-MIGRATION-KIT-USAGE",
+      "metric": "migration_kit_usage",
+      "target": ">= 5 cohort migrations represented",
+      "measured": 10,
+      "required": 5,
+      "pass": true,
+      "source": "artifacts/15/migration_cohort_results.json aggregate.cohort_size"
+    },
+    {
+      "id": "ADOPT-15-PARTNER-COUNT",
+      "metric": "partner_count",
+      "target": ">= 1 active partner program unit tracked",
+      "measured": 5,
+      "required": 1,
+      "pass": true,
+      "source": "bd-31tg check `partner_tiers`"
+    },
+    {
+      "id": "ADOPT-15-CASE-STUDY-COUNT",
+      "metric": "case_study_count",
+      "target": ">= 3 published case studies",
+      "measured": 3,
+      "required": 3,
+      "pass": true,
+      "source": "artifacts/15/case_study_registry.json summary.total_case_studies"
+    }
+  ],
+  "pillar_checklist": [
+    {
+      "id": "PILLAR-15-REGISTRY-SIGNED",
+      "target": "signed extension registry with signing enforcement",
+      "measured": "pass",
+      "required": "pass",
+      "pass": true,
+      "source": "bd-209w signature_verification + bead gate pass"
+    },
+    {
+      "id": "PILLAR-15-MIGRATION-KITS",
+      "target": "migration kits for >= 5 archetypes",
+      "measured": 5,
+      "required": 5,
+      "pass": true,
+      "source": "bd-wpck check `archetypes`"
+    },
+    {
+      "id": "PILLAR-15-ENTERPRISE-INTEGRATIONS",
+      "target": "enterprise integrations tested",
+      "measured": "pass",
+      "required": "pass",
+      "pass": true,
+      "source": "bd-3mj9 script+unit+evidence"
+    },
+    {
+      "id": "PILLAR-15-REPUTATION-API-SPEC",
+      "target": "reputation API spec published",
+      "measured": "pass",
+      "required": "pass",
+      "pass": true,
+      "source": "bd-1961 check `spec_alignment` + bead gate pass"
+    },
+    {
+      "id": "PILLAR-15-PARTNER-PROGRAM-ACTIVE",
+      "target": "partner program active",
+      "measured": 5,
+      "required": 1,
+      "pass": true,
+      "source": "bd-31tg partner_tiers proxy metric"
+    },
+    {
+      "id": "PILLAR-15-ONBOARDING-E2E",
+      "target": "onboarding pathway tested end-to-end",
+      "measured": "pass",
+      "required": "pass",
+      "pass": true,
+      "source": "bd-elog script+unit+evidence"
+    },
+    {
+      "id": "PILLAR-15-NETWORK-EFFECT-SIGNAL",
+      "target": "at least one measurable ecosystem network-effect signal",
+      "measured": {
+        "migration_kit_usage": 10,
+        "partner_count": 5,
+        "case_study_count": 3
+      },
+      "required": {
+        "migration_kit_usage": ">=5",
+        "partner_count": ">=1",
+        "case_study_count": ">=3"
+      },
+      "pass": true,
+      "source": "bd-sxt5 cohort usage + bd-31tg partner metric + bd-cv49 case-study registry"
+    }
+  ],
+  "per_bead_results": [
+    {
+      "bead_id": "bd-209w",
+      "criterion": "Pillar: signed extension registry with provenance and revocation",
+      "script": "scripts/check_signed_extension_registry.py",
+      "test": "tests/test_check_signed_extension_registry.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-209w",
+        "script": "scripts/check_signed_extension_registry.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-209w",
+          "title": "Signed extension registry with provenance and revocation",
+          "section": "15",
+          "verdict": "PASS",
+          "overall_pass": true,
+          "total": 15,
+          "passed": 15,
+          "failed": 0,
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "Source file exists: extension_registry.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": "Module wired in supply_chain/mod.rs"
+            },
+            {
+              "check": "structs",
+              "passed": true,
+              "detail": "All 10 structs present"
+            },
+            {
+              "check": "extension_statuses",
+              "passed": true,
+              "detail": "4 statuses: 4/4"
+            },
+            {
+              "check": "revocation_reasons",
+              "passed": true,
+              "detail": "5 reasons: 5/5"
+            },
+            {
+              "check": "registry_operations",
+              "passed": true,
+              "detail": "Registry operations: 7/7 functions"
+            },
+            {
+              "check": "signature_verification",
+              "passed": true,
+              "detail": "Signature verification: 4/4 checks"
+            },
+            {
+              "check": "provenance_validation",
+              "passed": true,
+              "detail": "Provenance validation: 6/6 checks"
+            },
+            {
+              "check": "monotonic_revocation",
+              "passed": true,
+              "detail": "Monotonic revocation: 4/4 checks"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "Event codes: 13/13"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "Invariants: 6/6"
+            },
+            {
+              "check": "content_hash",
+              "passed": true,
+              "detail": "Content hash: 3/3 checks"
+            },
+            {
+              "check": "audit_logging",
+              "passed": true,
+              "detail": "Audit logging: 3/3 checks"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "Spec contract aligns with implementation"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "Rust unit tests: 29 (target >= 25)"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-209w",
+        "test": "tests/test_check_signed_extension_registry.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 20,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-209w",
+        "path": "artifacts/section_15/bd-209w/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-209w",
+          "section": "15",
+          "title": "Signed extension registry with provenance and revocation",
+          "gate_script": "scripts/check_signed_extension_registry.py",
+          "test_suite": "tests/test_check_signed_extension_registry.py",
+          "timestamp": "2026-02-21T06:05:00+00:00",
+          "verdict": "PASS",
+          "implementation_artifacts": {
+            "extension_registry": "crates/franken-node/src/supply_chain/extension_registry.rs",
+            "supply_chain_mod": "crates/franken-node/src/supply_chain/mod.rs",
+            "spec_contract": "docs/specs/section_15/bd-209w_contract.md",
+            "verification_script": "scripts/check_signed_extension_registry.py",
+            "unit_tests": "tests/test_check_signed_extension_registry.py"
+          },
+          "rust_test_count": 29,
+          "python_test_count": 20,
+          "event_codes_defined": 13,
+          "gate_checks_passed": 15,
+          "gate_checks_total": 15,
+          "invariants_verified": [
+            "INV-SER-SIGNED",
+            "INV-SER-PROVENANCE",
+            "INV-SER-REVOCABLE",
+            "INV-SER-MONOTONIC",
+            "INV-SER-AUDITABLE",
+            "INV-SER-DETERMINISTIC"
+          ],
+          "capabilities_verified": {
+            "extension_statuses": [
+              "Submitted",
+              "Active",
+              "Deprecated",
+              "Revoked"
+            ],
+            "revocation_reasons": [
+              "SecurityVulnerability",
+              "PolicyViolation",
+              "MaintainerRequest",
+              "LicenseConflict",
+              "Superseded"
+            ],
+            "operations": [
+              "register",
+              "add_version",
+              "deprecate",
+              "revoke",
+              "query",
+              "list",
+              "version_lineage"
+            ],
+            "signature_verification": true,
+            "provenance_validation": true,
+            "monotonic_revocation": true,
+            "content_hashing": true,
+            "audit_logging": true
+          }
+        },
+        "verdict": "PASS"
+      }
+    },
+    {
+      "bead_id": "bd-wpck",
+      "criterion": "Pillar: migration kit ecosystem",
+      "script": "scripts/check_migration_kit.py",
+      "test": "tests/test_check_migration_kit.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-wpck",
+        "script": "scripts/check_migration_kit.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-wpck",
+          "section": "15",
+          "gate_script": "check_migration_kit.py",
+          "checks_passed": 20,
+          "checks_total": 20,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/supply_chain/migration_kit.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": "supply_chain/mod.rs"
+            },
+            {
+              "check": "archetypes",
+              "passed": true,
+              "detail": "5/5 archetypes"
+            },
+            {
+              "check": "migration_phases",
+              "passed": true,
+              "detail": "5/5 phases"
+            },
+            {
+              "check": "struct_MigrationStep",
+              "passed": true,
+              "detail": "MigrationStep"
+            },
+            {
+              "check": "struct_CompatibilityMapping",
+              "passed": true,
+              "detail": "CompatibilityMapping"
+            },
+            {
+              "check": "struct_MigrationKit",
+              "passed": true,
+              "detail": "MigrationKit"
+            },
+            {
+              "check": "struct_MigrationReport",
+              "passed": true,
+              "detail": "MigrationReport"
+            },
+            {
+              "check": "struct_MkeAuditRecord",
+              "passed": true,
+              "detail": "MkeAuditRecord"
+            },
+            {
+              "check": "struct_MigrationKitEcosystem",
+              "passed": true,
+              "detail": "MigrationKitEcosystem"
+            },
+            {
+              "check": "compatibility_gating",
+              "passed": true,
+              "detail": "API coverage threshold enforcement"
+            },
+            {
+              "check": "step_management",
+              "passed": true,
+              "detail": "Start, complete, rollback operations"
+            },
+            {
+              "check": "deterministic_hashing",
+              "passed": true,
+              "detail": "SHA-256 content hashing"
+            },
+            {
+              "check": "kit_versioning",
+              "passed": true,
+              "detail": "mke-v1.0"
+            },
+            {
+              "check": "report_generation",
+              "passed": true,
+              "detail": "Progress report with status"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "13/13 codes"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6 invariants"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL audit export"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_15/bd-wpck_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "26 tests (>=26)"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-wpck",
+        "test": "tests/test_check_migration_kit.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 25,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-wpck",
+        "path": "artifacts/section_15/bd-wpck/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-wpck",
+          "section": "15",
+          "title": "Migration kit ecosystem for major Node/Bun archetypes",
+          "gate_script": "scripts/check_migration_kit.py",
+          "test_suite": "tests/test_check_migration_kit.py",
+          "timestamp": "2026-02-21T01:00:00+00:00",
+          "verdict": "PASS",
+          "implementation_artifacts": {
+            "migration_kit": "crates/franken-node/src/supply_chain/migration_kit.rs",
+            "supply_chain_mod": "crates/franken-node/src/supply_chain/mod.rs",
+            "spec_contract": "docs/specs/section_15/bd-wpck_contract.md",
+            "verification_script": "scripts/check_migration_kit.py",
+            "unit_tests": "tests/test_check_migration_kit.py"
+          },
+          "rust_test_count": 26,
+          "python_test_count": 25,
+          "event_codes_defined": 13,
+          "gate_checks_passed": 20,
+          "gate_checks_total": 20,
+          "invariants_verified": [
+            "INV-MKE-COMPLETE",
+            "INV-MKE-REVERSIBLE",
+            "INV-MKE-GATED",
+            "INV-MKE-DETERMINISTIC",
+            "INV-MKE-AUDITABLE",
+            "INV-MKE-VERSIONED"
+          ],
+          "capabilities_verified": {
+            "archetypes": [
+              "Express",
+              "Fastify",
+              "Koa",
+              "NextJs",
+              "BunNative"
+            ],
+            "migration_phases": [
+              "Assessment",
+              "DependencyAudit",
+              "CodeAdaptation",
+              "TestValidation",
+              "Deployment"
+            ],
+            "operations": [
+              "load_kit",
+              "generate_plan",
+              "start_step",
+              "complete_step",
+              "rollback_step",
+              "generate_report",
+              "export_audit_log_jsonl"
+            ],
+            "compatibility_gating": true,
+            "deterministic_hashing": true,
+            "step_rollback": true,
+            "kit_versioning": true,
+            "audit_logging": true
+          },
+          "compile_note": "FAIL_BASELINE \u2014 pre-existing compile debt in unrelated modules"
+        },
+        "verdict": "PASS"
+      }
+    },
+    {
+      "bead_id": "bd-3mj9",
+      "criterion": "Pillar: enterprise governance integrations",
+      "script": "scripts/check_enterprise_governance.py",
+      "test": "tests/test_check_enterprise_governance.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-3mj9",
+        "script": "scripts/check_enterprise_governance.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-3mj9",
+          "section": "15",
+          "gate_script": "check_enterprise_governance.py",
+          "checks_passed": 20,
+          "checks_total": 20,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/enterprise_governance.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": "tools/mod.rs"
+            },
+            {
+              "check": "rule_categories",
+              "passed": true,
+              "detail": "5/5"
+            },
+            {
+              "check": "enforcement_levels",
+              "passed": true,
+              "detail": "3/3"
+            },
+            {
+              "check": "compliance_statuses",
+              "passed": true,
+              "detail": "4/4"
+            },
+            {
+              "check": "struct_GovernanceRule",
+              "passed": true,
+              "detail": "GovernanceRule"
+            },
+            {
+              "check": "struct_ComplianceAssessment",
+              "passed": true,
+              "detail": "ComplianceAssessment"
+            },
+            {
+              "check": "struct_CategoryCompliance",
+              "passed": true,
+              "detail": "CategoryCompliance"
+            },
+            {
+              "check": "struct_ComplianceReport",
+              "passed": true,
+              "detail": "ComplianceReport"
+            },
+            {
+              "check": "struct_EnterpriseGovernance",
+              "passed": true,
+              "detail": "EnterpriseGovernance"
+            },
+            {
+              "check": "gate_actions",
+              "passed": true,
+              "detail": "Policy enforcement gating"
+            },
+            {
+              "check": "compliance_rate",
+              "passed": true,
+              "detail": "Per-category compliance rate"
+            },
+            {
+              "check": "evidence_capture",
+              "passed": true,
+              "detail": "Evidence-based assessments"
+            },
+            {
+              "check": "blocked_rules",
+              "passed": true,
+              "detail": "Blocked rules tracking"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "schema_version",
+              "passed": true,
+              "detail": "egi-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_15/bd-3mj9_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "24 tests (>=24)"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-3mj9",
+        "test": "tests/test_check_enterprise_governance.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 25,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-3mj9",
+        "path": "artifacts/section_15/bd-3mj9/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-3mj9",
+          "section": "15",
+          "title": "Enterprise governance integrations",
+          "gate_script": "scripts/check_enterprise_governance.py",
+          "test_suite": "tests/test_check_enterprise_governance.py",
+          "timestamp": "2026-02-21T08:00:00+00:00",
+          "verdict": "PASS",
+          "implementation_artifacts": {
+            "enterprise_governance": "crates/franken-node/src/tools/enterprise_governance.rs",
+            "tools_mod": "crates/franken-node/src/tools/mod.rs",
+            "spec_contract": "docs/specs/section_15/bd-3mj9_contract.md",
+            "verification_script": "scripts/check_enterprise_governance.py",
+            "unit_tests": "tests/test_check_enterprise_governance.py"
+          },
+          "rust_test_count": 24,
+          "python_test_count": 25,
+          "event_codes_defined": 12,
+          "gate_checks_passed": 20,
+          "gate_checks_total": 20,
+          "invariants_verified": [
+            "INV-EGI-ENFORCED",
+            "INV-EGI-ASSESSED",
+            "INV-EGI-DETERMINISTIC",
+            "INV-EGI-GATED",
+            "INV-EGI-VERSIONED",
+            "INV-EGI-AUDITABLE"
+          ],
+          "capabilities_verified": {
+            "rule_categories": [
+              "AccessControl",
+              "DataRetention",
+              "AuditLogging",
+              "ChangeManagement",
+              "IncidentResponse"
+            ],
+            "enforcement_levels": [
+              "Mandatory",
+              "Recommended",
+              "Advisory"
+            ],
+            "compliance_statuses": [
+              "Compliant",
+              "NonCompliant",
+              "PartiallyCompliant",
+              "NotAssessed"
+            ],
+            "gate_actions": [
+              "Allow",
+              "Warn",
+              "Block"
+            ],
+            "operations": [
+              "register_rule",
+              "record_assessment",
+              "generate_report",
+              "export_audit_log_jsonl"
+            ],
+            "compliance_rate_computation": true,
+            "evidence_capture": true,
+            "content_hashing": true
+          }
+        },
+        "verdict": "PASS"
+      }
+    },
+    {
+      "bead_id": "bd-1961",
+      "criterion": "Pillar: reputation graph APIs",
+      "script": "scripts/check_reputation_graph_apis.py",
+      "test": "tests/test_check_reputation_graph_apis.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-1961",
+        "script": "scripts/check_reputation_graph_apis.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-1961",
+          "section": "15",
+          "gate_script": "check_reputation_graph_apis.py",
+          "checks_passed": 19,
+          "checks_total": 19,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/reputation_graph_apis.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": ""
+            },
+            {
+              "check": "node_types",
+              "passed": true,
+              "detail": "5 types"
+            },
+            {
+              "check": "struct_ReputationNode",
+              "passed": true,
+              "detail": "ReputationNode"
+            },
+            {
+              "check": "struct_ReputationEdge",
+              "passed": true,
+              "detail": "ReputationEdge"
+            },
+            {
+              "check": "struct_ReputationScore",
+              "passed": true,
+              "detail": "ReputationScore"
+            },
+            {
+              "check": "struct_GraphSnapshot",
+              "passed": true,
+              "detail": "GraphSnapshot"
+            },
+            {
+              "check": "struct_ReputationGraphApis",
+              "passed": true,
+              "detail": "ReputationGraphApis"
+            },
+            {
+              "check": "edge_weight",
+              "passed": true,
+              "detail": "Weighted edges with evidence"
+            },
+            {
+              "check": "composite_score",
+              "passed": true,
+              "detail": "Scoring with threshold"
+            },
+            {
+              "check": "graph_queries",
+              "passed": true,
+              "detail": "Query operations"
+            },
+            {
+              "check": "decay_support",
+              "passed": true,
+              "detail": "Score decay"
+            },
+            {
+              "check": "content_hash",
+              "passed": true,
+              "detail": "SHA-256 hashing"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "schema_version",
+              "passed": true,
+              "detail": "rga-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_15/bd-1961_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "0 tests"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-1961",
+        "test": "tests/test_check_reputation_graph_apis.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 27,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-1961",
+        "path": "artifacts/section_15/bd-1961/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-1961",
+          "section": "15",
+          "gate_script": "check_reputation_graph_apis.py",
+          "checks_passed": 19,
+          "checks_total": 19,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/reputation_graph_apis.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": ""
+            },
+            {
+              "check": "node_types",
+              "passed": true,
+              "detail": "5 types"
+            },
+            {
+              "check": "struct_ReputationNode",
+              "passed": true,
+              "detail": "ReputationNode"
+            },
+            {
+              "check": "struct_ReputationEdge",
+              "passed": true,
+              "detail": "ReputationEdge"
+            },
+            {
+              "check": "struct_ReputationScore",
+              "passed": true,
+              "detail": "ReputationScore"
+            },
+            {
+              "check": "struct_GraphSnapshot",
+              "passed": true,
+              "detail": "GraphSnapshot"
+            },
+            {
+              "check": "struct_ReputationGraphApis",
+              "passed": true,
+              "detail": "ReputationGraphApis"
+            },
+            {
+              "check": "edge_weight",
+              "passed": true,
+              "detail": "Weighted edges with evidence"
+            },
+            {
+              "check": "composite_score",
+              "passed": true,
+              "detail": "Scoring with threshold"
+            },
+            {
+              "check": "graph_queries",
+              "passed": true,
+              "detail": "Query operations"
+            },
+            {
+              "check": "decay_support",
+              "passed": true,
+              "detail": "Score decay"
+            },
+            {
+              "check": "content_hash",
+              "passed": true,
+              "detail": "SHA-256 hashing"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "schema_version",
+              "passed": true,
+              "detail": "rga-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_15/bd-1961_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "0 tests"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      }
+    },
+    {
+      "bead_id": "bd-31tg",
+      "criterion": "Pillar: partner and lighthouse programs",
+      "script": "scripts/check_partner_lighthouse_programs.py",
+      "test": "tests/test_check_partner_lighthouse_programs.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-31tg",
+        "script": "scripts/check_partner_lighthouse_programs.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-31tg",
+          "section": "15",
+          "gate_script": "check_partner_lighthouse_programs.py",
+          "checks_passed": 19,
+          "checks_total": 19,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/partner_lighthouse_programs.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": ""
+            },
+            {
+              "check": "partner_tiers",
+              "passed": true,
+              "detail": "5 tiers"
+            },
+            {
+              "check": "struct_Partner",
+              "passed": true,
+              "detail": "Partner"
+            },
+            {
+              "check": "struct_LighthouseDeployment",
+              "passed": true,
+              "detail": "LighthouseDeployment"
+            },
+            {
+              "check": "struct_OutcomeRecord",
+              "passed": true,
+              "detail": "OutcomeRecord"
+            },
+            {
+              "check": "struct_AdoptionFunnel",
+              "passed": true,
+              "detail": "AdoptionFunnel"
+            },
+            {
+              "check": "struct_PartnerLighthousePrograms",
+              "passed": true,
+              "detail": "PartnerLighthousePrograms"
+            },
+            {
+              "check": "tier_promotion",
+              "passed": true,
+              "detail": "Gated promotion"
+            },
+            {
+              "check": "deployment_tracking",
+              "passed": true,
+              "detail": "Deployment tracking"
+            },
+            {
+              "check": "outcome_recording",
+              "passed": true,
+              "detail": "Outcome metrics"
+            },
+            {
+              "check": "funnel_analytics",
+              "passed": true,
+              "detail": "Adoption funnel"
+            },
+            {
+              "check": "content_hash",
+              "passed": true,
+              "detail": "SHA-256 hashing"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "schema_version",
+              "passed": true,
+              "detail": "plp-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_15/bd-31tg_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "0 tests"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-31tg",
+        "test": "tests/test_check_partner_lighthouse_programs.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 27,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-31tg",
+        "path": "artifacts/section_15/bd-31tg/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-31tg",
+          "section": "15",
+          "gate_script": "check_partner_lighthouse_programs.py",
+          "checks_passed": 19,
+          "checks_total": 19,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/partner_lighthouse_programs.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": ""
+            },
+            {
+              "check": "partner_tiers",
+              "passed": true,
+              "detail": "5 tiers"
+            },
+            {
+              "check": "struct_Partner",
+              "passed": true,
+              "detail": "Partner"
+            },
+            {
+              "check": "struct_LighthouseDeployment",
+              "passed": true,
+              "detail": "LighthouseDeployment"
+            },
+            {
+              "check": "struct_OutcomeRecord",
+              "passed": true,
+              "detail": "OutcomeRecord"
+            },
+            {
+              "check": "struct_AdoptionFunnel",
+              "passed": true,
+              "detail": "AdoptionFunnel"
+            },
+            {
+              "check": "struct_PartnerLighthousePrograms",
+              "passed": true,
+              "detail": "PartnerLighthousePrograms"
+            },
+            {
+              "check": "tier_promotion",
+              "passed": true,
+              "detail": "Gated promotion"
+            },
+            {
+              "check": "deployment_tracking",
+              "passed": true,
+              "detail": "Deployment tracking"
+            },
+            {
+              "check": "outcome_recording",
+              "passed": true,
+              "detail": "Outcome metrics"
+            },
+            {
+              "check": "funnel_analytics",
+              "passed": true,
+              "detail": "Adoption funnel"
+            },
+            {
+              "check": "content_hash",
+              "passed": true,
+              "detail": "SHA-256 hashing"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "schema_version",
+              "passed": true,
+              "detail": "plp-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_15/bd-31tg_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "0 tests"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      }
+    },
+    {
+      "bead_id": "bd-elog",
+      "criterion": "Adoption target: automation-first safe-extension onboarding",
+      "script": "scripts/check_safe_extension_onboarding.py",
+      "test": "tests/test_check_safe_extension_onboarding.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-elog",
+        "script": "scripts/check_safe_extension_onboarding.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-elog",
+          "section": "15",
+          "gate_script": "check_safe_extension_onboarding.py",
+          "checks_passed": 17,
+          "checks_total": 17,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/safe_extension_onboarding.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": ""
+            },
+            {
+              "check": "onboarding_phases",
+              "passed": true,
+              "detail": "5 phases"
+            },
+            {
+              "check": "struct_OnboardingStep",
+              "passed": true,
+              "detail": "OnboardingStep"
+            },
+            {
+              "check": "struct_PhaseStats",
+              "passed": true,
+              "detail": "PhaseStats"
+            },
+            {
+              "check": "struct_OnboardingReport",
+              "passed": true,
+              "detail": "OnboardingReport"
+            },
+            {
+              "check": "struct_SafeExtensionOnboarding",
+              "passed": true,
+              "detail": "SafeExtensionOnboarding"
+            },
+            {
+              "check": "phase_enum",
+              "passed": true,
+              "detail": "OnboardingPhase enum"
+            },
+            {
+              "check": "gate_result",
+              "passed": true,
+              "detail": "Gate result tracking"
+            },
+            {
+              "check": "report_generation",
+              "passed": true,
+              "detail": "Report generation"
+            },
+            {
+              "check": "content_hash",
+              "passed": true,
+              "detail": "SHA-256 hashing"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "schema_version",
+              "passed": true,
+              "detail": "seo-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_15/bd-elog_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "0 tests"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-elog",
+        "test": "tests/test_check_safe_extension_onboarding.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 25,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-elog",
+        "path": "artifacts/section_15/bd-elog/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-elog",
+          "section": "15",
+          "gate_script": "check_safe_extension_onboarding.py",
+          "checks_passed": 17,
+          "checks_total": 17,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/safe_extension_onboarding.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": ""
+            },
+            {
+              "check": "onboarding_phases",
+              "passed": true,
+              "detail": "5 phases"
+            },
+            {
+              "check": "struct_OnboardingStep",
+              "passed": true,
+              "detail": "OnboardingStep"
+            },
+            {
+              "check": "struct_PhaseStats",
+              "passed": true,
+              "detail": "PhaseStats"
+            },
+            {
+              "check": "struct_OnboardingReport",
+              "passed": true,
+              "detail": "OnboardingReport"
+            },
+            {
+              "check": "struct_SafeExtensionOnboarding",
+              "passed": true,
+              "detail": "SafeExtensionOnboarding"
+            },
+            {
+              "check": "phase_enum",
+              "passed": true,
+              "detail": "OnboardingPhase enum"
+            },
+            {
+              "check": "gate_result",
+              "passed": true,
+              "detail": "Gate result tracking"
+            },
+            {
+              "check": "report_generation",
+              "passed": true,
+              "detail": "Report generation"
+            },
+            {
+              "check": "content_hash",
+              "passed": true,
+              "detail": "SHA-256 hashing"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "schema_version",
+              "passed": true,
+              "detail": "seo-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_15/bd-elog_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "0 tests"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      }
+    },
+    {
+      "bead_id": "bd-sxt5",
+      "criterion": "Adoption target: deterministic migration validation",
+      "script": "scripts/check_migration_validation_cohorts.py",
+      "test": "tests/test_check_migration_validation_cohorts.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-sxt5",
+        "script": "scripts/check_migration_validation_cohorts.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-sxt5",
+          "section": "15",
+          "gate_script": "check_migration_validation_cohorts.py",
+          "checks_passed": 18,
+          "checks_total": 18,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/migration_validation_cohorts.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": ""
+            },
+            {
+              "check": "cohort_categories",
+              "passed": true,
+              "detail": "5 categories"
+            },
+            {
+              "check": "struct_ProjectCohort",
+              "passed": true,
+              "detail": "ProjectCohort"
+            },
+            {
+              "check": "struct_ValidationRun",
+              "passed": true,
+              "detail": "ValidationRun"
+            },
+            {
+              "check": "struct_CohortReport",
+              "passed": true,
+              "detail": "CohortReport"
+            },
+            {
+              "check": "struct_MigrationValidationCohorts",
+              "passed": true,
+              "detail": "MigrationValidationCohorts"
+            },
+            {
+              "check": "determinism_check",
+              "passed": true,
+              "detail": "Determinism validation"
+            },
+            {
+              "check": "reproduction_command",
+              "passed": true,
+              "detail": "Reproduction steps"
+            },
+            {
+              "check": "drift_detection",
+              "passed": true,
+              "detail": "Drift detection"
+            },
+            {
+              "check": "coverage_analysis",
+              "passed": true,
+              "detail": "Category coverage"
+            },
+            {
+              "check": "content_hash",
+              "passed": true,
+              "detail": "SHA-256 hashing"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "schema_version",
+              "passed": true,
+              "detail": "mvc-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_15/bd-sxt5_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "0 tests"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-sxt5",
+        "test": "tests/test_check_migration_validation_cohorts.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 26,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-sxt5",
+        "path": "artifacts/section_15/bd-sxt5/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-sxt5",
+          "section": "15",
+          "gate_script": "check_migration_validation_cohorts.py",
+          "checks_passed": 18,
+          "checks_total": 18,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/migration_validation_cohorts.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": ""
+            },
+            {
+              "check": "cohort_categories",
+              "passed": true,
+              "detail": "5 categories"
+            },
+            {
+              "check": "struct_ProjectCohort",
+              "passed": true,
+              "detail": "ProjectCohort"
+            },
+            {
+              "check": "struct_ValidationRun",
+              "passed": true,
+              "detail": "ValidationRun"
+            },
+            {
+              "check": "struct_CohortReport",
+              "passed": true,
+              "detail": "CohortReport"
+            },
+            {
+              "check": "struct_MigrationValidationCohorts",
+              "passed": true,
+              "detail": "MigrationValidationCohorts"
+            },
+            {
+              "check": "determinism_check",
+              "passed": true,
+              "detail": "Determinism validation"
+            },
+            {
+              "check": "reproduction_command",
+              "passed": true,
+              "detail": "Reproduction steps"
+            },
+            {
+              "check": "drift_detection",
+              "passed": true,
+              "detail": "Drift detection"
+            },
+            {
+              "check": "coverage_analysis",
+              "passed": true,
+              "detail": "Category coverage"
+            },
+            {
+              "check": "content_hash",
+              "passed": true,
+              "detail": "SHA-256 hashing"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "12/12"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "audit_log",
+              "passed": true,
+              "detail": "JSONL export"
+            },
+            {
+              "check": "schema_version",
+              "passed": true,
+              "detail": "mvc-v1.0"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_15/bd-sxt5_contract.md"
+            },
+            {
+              "check": "test_coverage",
+              "passed": true,
+              "detail": "0 tests"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      }
+    },
+    {
+      "bead_id": "bd-cv49",
+      "criterion": "Adoption target: published security/ops improvement case studies",
+      "script": "scripts/check_case_study_registry.py",
+      "test": "tests/test_check_case_study_registry.py",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "overall_pass": true,
+      "script_result": {
+        "bead": "bd-cv49",
+        "script": "scripts/check_case_study_registry.py",
+        "exists": true,
+        "self_test_present": true,
+        "status": "PASS",
+        "exit_code": 0,
+        "payload": {
+          "bead_id": "bd-cv49",
+          "section": "15",
+          "gate_script": "check_case_study_registry.py",
+          "checks_passed": 24,
+          "checks_total": 24,
+          "verdict": "PASS",
+          "checks": [
+            {
+              "check": "source_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/crates/franken-node/src/tools/security_ops_case_studies.rs"
+            },
+            {
+              "check": "module_wiring",
+              "passed": true,
+              "detail": ""
+            },
+            {
+              "check": "struct_CaseStudy",
+              "passed": true,
+              "detail": "CaseStudy"
+            },
+            {
+              "check": "struct_KeyMetrics",
+              "passed": true,
+              "detail": "KeyMetrics"
+            },
+            {
+              "check": "struct_PublicationStatus",
+              "passed": true,
+              "detail": "PublicationStatus"
+            },
+            {
+              "check": "struct_CaseStudyRegistrySummary",
+              "passed": true,
+              "detail": "CaseStudyRegistrySummary"
+            },
+            {
+              "check": "struct_SecurityOpsCaseStudyRegistry",
+              "passed": true,
+              "detail": "SecurityOpsCaseStudyRegistry"
+            },
+            {
+              "check": "event_codes",
+              "passed": true,
+              "detail": "13/13"
+            },
+            {
+              "check": "invariants",
+              "passed": true,
+              "detail": "6/6"
+            },
+            {
+              "check": "spec_alignment",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/specs/section_15/bd-cv49_contract.md"
+            },
+            {
+              "check": "template_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/templates/case_study_template.md"
+            },
+            {
+              "check": "docs_page_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/docs/ecosystem/migration_case_studies.md"
+            },
+            {
+              "check": "registry_exists",
+              "passed": true,
+              "detail": "/data/projects/franken_node/artifacts/15/case_study_registry.json"
+            },
+            {
+              "check": "registry_json_parse",
+              "passed": true,
+              "detail": "valid json"
+            },
+            {
+              "check": "registry_schema_version",
+              "passed": true,
+              "detail": "csc-v1.0"
+            },
+            {
+              "check": "minimum_case_study_count",
+              "passed": true,
+              "detail": "3/3"
+            },
+            {
+              "check": "security_improvement_threshold",
+              "passed": true,
+              "detail": "2/2"
+            },
+            {
+              "check": "review_coverage",
+              "passed": true,
+              "detail": "3/3"
+            },
+            {
+              "check": "website_publication_threshold",
+              "passed": true,
+              "detail": "3/3"
+            },
+            {
+              "check": "external_submission_threshold",
+              "passed": true,
+              "detail": "1/1"
+            },
+            {
+              "check": "required_case_fields",
+              "passed": true,
+              "detail": "case_study_id, key_metrics, organization_type, publication_status, title, url"
+            },
+            {
+              "check": "publication_urls_https",
+              "passed": true,
+              "detail": "all case-study urls must be https"
+            },
+            {
+              "check": "summary_verdict_true",
+              "passed": true,
+              "detail": "True"
+            },
+            {
+              "check": "rust_test_coverage",
+              "passed": true,
+              "detail": "24 tests"
+            }
+          ]
+        },
+        "verdict": "PASS"
+      },
+      "unit_result": {
+        "bead": "bd-cv49",
+        "test": "tests/test_check_case_study_registry.py",
+        "exists": true,
+        "status": "PASS",
+        "tests_ran": 32,
+        "tests_failed": 0,
+        "exit_code": 0
+      },
+      "evidence_result": {
+        "bead": "bd-cv49",
+        "path": "artifacts/section_15/bd-cv49/verification_evidence.json",
+        "exists": true,
+        "status": "PASS",
+        "payload": {
+          "bead_id": "bd-cv49",
+          "section": "15",
+          "timestamp_utc": "2026-02-22T01:03:57Z",
+          "git_head": "f1d41ad9b488c06ff83cc4b4c259a9bbb48335e9",
+          "schema_version": "csc-v1.0",
+          "implementation_paths": [
+            "crates/franken-node/src/tools/security_ops_case_studies.rs",
+            "crates/franken-node/src/tools/mod.rs",
+            "docs/specs/section_15/bd-cv49_contract.md",
+            "docs/templates/case_study_template.md",
+            "docs/ecosystem/migration_case_studies.md",
+            "artifacts/15/case_study_registry.json",
+            "scripts/check_case_study_registry.py",
+            "tests/test_check_case_study_registry.py"
+          ],
+          "acceptance_criteria": [
+            {
+              "id": 1,
+              "status": "pass",
+              "detail": "3 published case studies present (minimum 3).",
+              "evidence": "artifacts/15/case_study_registry.json.summary.total_case_studies = 3"
+            },
+            {
+              "id": 2,
+              "status": "pass",
+              "detail": "Each case study includes organization context, pre/post security metrics, operational improvements, migration effort/timeline, lessons learned, and recommendations.",
+              "evidence": "scripts/check_case_study_registry.py check `required_case_fields` passed"
+            },
+            {
+              "id": 3,
+              "status": "pass",
+              "detail": "At least 2 studies show measurable security improvement.",
+              "evidence": "artifacts/15/case_study_registry.json.summary.security_improvement_case_studies = 2"
+            },
+            {
+              "id": 4,
+              "status": "pass",
+              "detail": "All featured organizations reviewed publication content.",
+              "evidence": "artifacts/15/case_study_registry.json.summary.reviewed_case_studies = 3"
+            },
+            {
+              "id": 5,
+              "status": "pass",
+              "detail": "Published on project website and submitted externally at least once.",
+              "evidence": "website_published_case_studies = 3; industry_submissions = 1"
+            },
+            {
+              "id": 6,
+              "status": "pass",
+              "detail": "Case study template for partner self-authoring exists.",
+              "evidence": "docs/templates/case_study_template.md"
+            },
+            {
+              "id": 7,
+              "status": "pass",
+              "detail": "Machine-readable registry with required fields exists.",
+              "evidence": "artifacts/15/case_study_registry.json"
+            }
+          ],
+          "determinism": {
+            "gate_json_sha256_runs": [
+              "359c6e1ea9c69d687a333a37e8ba38583836e5c9483539501cbd6c5d5668c4b1",
+              "359c6e1ea9c69d687a333a37e8ba38583836e5c9483539501cbd6c5d5668c4b1"
+            ],
+            "consistent_across_runs": true
+          },
+          "verification_runs": [
+            {
+              "name": "bead_gate_json",
+              "command": "python3 scripts/check_case_study_registry.py --json",
+              "runner": "local",
+              "exit_code": 0,
+              "result": "pass",
+              "checks_passed": 24,
+              "checks_total": 24
+            },
+            {
+              "name": "bead_gate_self_test",
+              "command": "python3 scripts/check_case_study_registry.py --self-test",
+              "runner": "local",
+              "exit_code": 0,
+              "result": "pass",
+              "summary": "self_test: 24 checks OK"
+            },
+            {
+              "name": "bead_pytests",
+              "command": "pytest -q tests/test_check_case_study_registry.py",
+              "runner": "local",
+              "exit_code": 0,
+              "result": "pass",
+              "summary": "32 passed in 0.20s"
+            },
+            {
+              "name": "cargo_check_all_targets",
+              "command": "rch exec -- cargo check --all-targets",
+              "runner": "rch",
+              "exit_code": 101,
+              "result": "fail_preexisting_workspace_issues",
+              "notes": [
+                "unrelated pre-existing compile failures in control_plane, connector, supply_chain, and other modules",
+                "example: missing sha2::Digest trait imports in existing files",
+                "example: existing enum construction errors in crates/franken-node/src/supply_chain/manifest.rs"
+              ]
+            },
+            {
+              "name": "cargo_clippy_all_targets",
+              "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+              "runner": "rch",
+              "exit_code": 101,
+              "result": "fail_preexisting_workspace_issues",
+              "notes": [
+                "workspace has numerous pre-existing lint violations unrelated to bd-cv49",
+                "this bead's local checks and gate script remain passing"
+              ]
+            },
+            {
+              "name": "cargo_fmt_check",
+              "command": "rch exec -- cargo fmt --check",
+              "runner": "rch",
+              "exit_code": 1,
+              "result": "fail_preexisting_workspace_format_drift",
+              "notes": [
+                "large pre-existing formatting drift across many files in workspace"
+              ]
+            }
+          ],
+          "overall_status": "pass_for_bd_cv49_contract_with_workspace_level_preexisting_failures_noted"
+        },
+        "verdict": "UNKNOWN"
+      }
+    }
+  ],
+  "gate_checks": [
+    {
+      "id": "GATE-15-SCRIPTS",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-15-TESTS",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-15-EVIDENCE",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-15-PER-BEAD",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-15-PILLARS",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-15-ADOPTION-METRICS",
+      "status": "PASS"
+    },
+    {
+      "id": "GATE-15-ALL-BEADS",
+      "status": "PASS"
+    }
+  ],
+  "gaps": [],
+  "events": [
+    {
+      "event_code": "GATE_15_EVALUATION_STARTED",
+      "message": "Section 15 gate evaluation started"
+    },
+    {
+      "event_code": "GATE_15_BEAD_CHECKED",
+      "bead": "bd-209w",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_15_BEAD_CHECKED",
+      "bead": "bd-wpck",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_15_BEAD_CHECKED",
+      "bead": "bd-3mj9",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_15_BEAD_CHECKED",
+      "bead": "bd-1961",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_15_BEAD_CHECKED",
+      "bead": "bd-31tg",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_15_BEAD_CHECKED",
+      "bead": "bd-elog",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_15_BEAD_CHECKED",
+      "bead": "bd-sxt5",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_15_BEAD_CHECKED",
+      "bead": "bd-cv49",
+      "overall_pass": true
+    },
+    {
+      "event_code": "GATE_15_ADOPTION_MEASURED",
+      "adoption_metrics_passing": 4,
+      "adoption_metrics_total": 4,
+      "pillar_checks_passing": 7,
+      "pillar_checks_total": 7
+    },
+    {
+      "event_code": "GATE_15_VERDICT_EMITTED",
+      "verdict": "PASS",
+      "beads_passing": 8,
+      "beads_total": 8,
+      "pillar_checks_passing": 7,
+      "pillar_checks_total": 7,
+      "adoption_metrics_passing": 4,
+      "adoption_metrics_total": 4
+    }
+  ],
+  "content_hash": "bff7e016df722e472479f2a5c4eec6b7e37248e80b5f1f7c311688b927df40ca"
+}

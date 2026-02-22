@@ -1,0 +1,139 @@
+{
+  "bead_id": "bd-35m7",
+  "title": "Risk control: trajectory-gaming camouflage",
+  "section": "12",
+  "trace_id": "trace-bd-35m7-trajectory-camouflage",
+  "mimicry_corpus": {
+    "pattern_count": 132,
+    "last_updated_date": "2026-01-15",
+    "update_interval_days": 37,
+    "quarterly_update_required_days": 92,
+    "new_patterns_added_recent_cycle": 4
+  },
+  "detection_model": {
+    "model_id": "mimicry-guard-v3.2",
+    "known_mimicry_recall_pct": 93.4,
+    "known_mimicry_threshold_pct": 90.0,
+    "known_pattern_flag_confidence_threshold_pct": 90.0,
+    "adaptive_attack_rounds": 10,
+    "adaptive_round_recall_pct": [
+      88.5,
+      87.4,
+      86.9,
+      85.8,
+      84.7,
+      84.3,
+      85.1,
+      86.2,
+      84.9,
+      85.6
+    ],
+    "adaptive_recall_threshold_pct": 80.0,
+    "retrained_after_new_pattern": true
+  },
+  "hybrid_signal_fusion": {
+    "channels": [
+      "behavioral",
+      "provenance",
+      "code_analysis",
+      "reputation"
+    ],
+    "fusion_policy": "deny_if_any_non_behavioral_critical_fail",
+    "gaming_behavioral_only_flagged": true,
+    "adjudications": [
+      {
+        "sample_id": "fusion-sample-1",
+        "behavioral_score_pct": 99.1,
+        "provenance_pass": false,
+        "code_analysis_pass": false,
+        "reputation_pass": true,
+        "flagged": true
+      }
+    ]
+  },
+  "motif_randomization": {
+    "trajectory_id": "traj-camouflage-17",
+    "evaluations": [
+      {
+        "evaluation_id": "eval-1",
+        "feature_subset_hash": "motif-set-a9f1",
+        "selected_features": [
+          "delta_entropy",
+          "operator_churn",
+          "call_stack_diversity"
+        ]
+      },
+      {
+        "evaluation_id": "eval-2",
+        "feature_subset_hash": "motif-set-c4d2",
+        "selected_features": [
+          "burstiness_index",
+          "edge_transition_rate",
+          "import_graph_skew"
+        ]
+      }
+    ],
+    "subsets_unique": true
+  },
+  "scenarios": [
+    {
+      "scenario": "A",
+      "name": "known-mimicry-pattern-flagged",
+      "flagged": true,
+      "confidence_pct": 92.3,
+      "minimum_required_confidence_pct": 90.0
+    },
+    {
+      "scenario": "B",
+      "name": "behavioral-gaming-suspicious-provenance",
+      "behavioral_channel_gamed": true,
+      "provenance_pass": false,
+      "code_analysis_pass": false,
+      "flagged": true
+    },
+    {
+      "scenario": "C",
+      "name": "same-trajectory-randomized-motifs",
+      "evaluation_ids": [
+        "eval-1",
+        "eval-2"
+      ],
+      "feature_subset_hashes": [
+        "motif-set-a9f1",
+        "motif-set-c4d2"
+      ],
+      "subsets_different": true
+    },
+    {
+      "scenario": "D",
+      "name": "new-pattern-added-and-retrained",
+      "new_pattern_added": true,
+      "retrained": true,
+      "post_retrain_recall_pct": 92.1,
+      "minimum_required_recall_pct": 90.0
+    },
+    {
+      "scenario": "E",
+      "name": "adaptive-adversary-10-rounds",
+      "rounds": 10,
+      "min_round_recall_pct": 84.3,
+      "minimum_required_recall_pct": 80.0,
+      "passes_threshold": true
+    }
+  ],
+  "event_codes": [
+    "TGC-001",
+    "TGC-002",
+    "TGC-003",
+    "TGC-004",
+    "TGC-005"
+  ],
+  "aggregate": {
+    "pattern_count": 132,
+    "known_mimicry_recall_pct": 93.4,
+    "adaptive_min_round_recall_pct": 84.3,
+    "motif_subsets_unique": true,
+    "hybrid_behavioral_gaming_flagged": true,
+    "update_interval_days": 37
+  }
+}

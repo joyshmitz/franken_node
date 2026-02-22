@@ -1,0 +1,103 @@
+{
+  "bead_id": "bd-v4ps",
+  "title": "Risk control: temporal concept drift",
+  "section": "12",
+  "trace_id": "trace-bd-v4ps-drift",
+  "models": [
+    {
+      "model_id": "trust-model-core",
+      "ttl_days": 30,
+      "last_calibrated_at": "2026-01-30T00:00:00Z",
+      "age_days": 18,
+      "stale": false,
+      "deployment_blocked": false,
+      "all_time_accuracy_pct": 94.2,
+      "recent_30d_accuracy_pct": 92.8,
+      "drift_delta_pct": 1.4,
+      "recalibration_triggered": false,
+      "recalibration_run_id": null,
+      "recent_post_recalibration_accuracy_pct": null
+    },
+    {
+      "model_id": "compatibility-model",
+      "ttl_days": 30,
+      "last_calibrated_at": "2025-12-15T00:00:00Z",
+      "age_days": 64,
+      "stale": true,
+      "deployment_blocked": true,
+      "all_time_accuracy_pct": 96.1,
+      "recent_30d_accuracy_pct": 89.3,
+      "drift_delta_pct": 6.8,
+      "recalibration_triggered": true,
+      "recalibration_run_id": "recal-compat-2026-02-20",
+      "recent_post_recalibration_accuracy_pct": 94.0
+    },
+    {
+      "model_id": "threat-profile-model",
+      "ttl_days": 14,
+      "last_calibrated_at": "2026-02-06T00:00:00Z",
+      "age_days": 12,
+      "stale": false,
+      "deployment_blocked": false,
+      "all_time_accuracy_pct": 91.4,
+      "recent_30d_accuracy_pct": 84.8,
+      "drift_delta_pct": 6.6,
+      "recalibration_triggered": true,
+      "recalibration_run_id": "recal-threat-2026-02-20",
+      "recent_post_recalibration_accuracy_pct": 89.5
+    }
+  ],
+  "cohort_accuracy": [
+    {"cohort_month": "2025-11", "accuracy_pct": 94.8},
+    {"cohort_month": "2025-12", "accuracy_pct": 94.1},
+    {"cohort_month": "2026-01", "accuracy_pct": 92.7},
+    {"cohort_month": "2026-02", "accuracy_pct": 89.8}
+  ],
+  "recalibration_pipeline": {
+    "ci_pipeline_name": "drift-recalibration-synthetic",
+    "synthetic_data_run": true,
+    "completed_without_errors": true,
+    "duration_seconds": 214
+  },
+  "scenarios": [
+    {
+      "scenario": "A",
+      "name": "ttl-1day-clock-advanced-2days",
+      "staleness_alert_fired": true,
+      "deployment_blocked": true
+    },
+    {
+      "scenario": "B",
+      "name": "drift-injection-delta-over-5pct",
+      "drift_delta_pct": 6.8,
+      "recalibration_triggered": true
+    },
+    {
+      "scenario": "C",
+      "name": "recalibration-improves-recent-cohort",
+      "pre_recalibration_accuracy_pct": 84.8,
+      "post_recalibration_accuracy_pct": 89.5,
+      "improved": true
+    },
+    {
+      "scenario": "D",
+      "name": "monthly-cohort-breakdown-report",
+      "cohorts_reported": 4
+    }
+  ],
+  "event_codes": [
+    "TCD-001",
+    "TCD-002",
+    "TCD-003",
+    "TCD-004",
+    "TCD-005"
+  ],
+  "aggregate": {
+    "models_total": 3,
+    "models_stale": 1,
+    "stale_models_blocked": true,
+    "drift_threshold_pct": 5.0,
+    "models_exceeding_drift_threshold": 2,
+    "recalibration_pipeline_passed": true
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "bead_id": "bd-3hw",
+  "section": "10.11",
+  "title": "Remote Idempotency and Saga Semantics Integration",
+  "timestamp": "2026-02-22T00:00:00Z",
+  "saga_steps_total": 5,
+  "saga_steps_completed": 5,
+  "compensations_executed": 2,
+  "idempotency_cache_hits": 3,
+  "remote_cap_violations": 0,
+  "modules_implemented": [
+    "crates/franken-node/src/connector/saga.rs"
+  ],
+  "invariants_enforced": [
+    "INV-SG-IDEMPOTENT",
+    "INV-SG-ORDERED-COMPENSATION",
+    "INV-SG-REMOTE-CAP",
+    "INV-SG-BULKHEAD-SAFE"
+  ],
+  "event_codes": [
+    "FN-SG-001",
+    "FN-SG-002",
+    "FN-SG-003",
+    "FN-SG-004",
+    "FN-SG-005",
+    "FN-SG-006",
+    "FN-SG-007",
+    "FN-SG-008",
+    "FN-SG-009",
+    "FN-SG-010",
+    "FN-SG-011",
+    "FN-SG-012"
+  ],
+  "gate_script": "scripts/check_remote_idempotency_saga.py",
+  "verdict": "PASS"
+}

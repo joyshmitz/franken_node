@@ -1,0 +1,98 @@
+{
+  "bead_id": "bd-3cpa",
+  "section": "13",
+  "title": "Concrete target gate: >=10x compromise reduction",
+  "generated_at": "2026-02-21T01:05:25Z",
+  "status": "pass",
+  "checks": [
+    {
+      "name": "compromise_reduction_self_test",
+      "command": "python3 scripts/check_compromise_reduction_gate.py --self-test --json",
+      "exit_code": 0,
+      "output_path": "artifacts/section_13/bd-3cpa/check_self_test.json"
+    },
+    {
+      "name": "compromise_reduction_gate_validation",
+      "command": "python3 scripts/check_compromise_reduction_gate.py --json",
+      "exit_code": 0,
+      "output_path": "artifacts/section_13/bd-3cpa/check_report.json",
+      "summary": {
+        "verdict": "PASS",
+        "compromise_reduction_ratio": 10.0,
+        "minimum_required_ratio": 10.0,
+        "baseline_compromised": 20,
+        "hardened_compromised": 2,
+        "total_attack_vectors": 20,
+        "containment_vectors": 4,
+        "missing_attack_classes": [],
+        "trace_id": "trace-bd-3cpa-compromise-reduction"
+      }
+    },
+    {
+      "name": "compromise_campaign_replay",
+      "command": "python3 scripts/check_compromise_reduction_gate.py --replay-campaign --json",
+      "exit_code": 0,
+      "output_path": "artifacts/section_13/bd-3cpa/campaign_replay.json",
+      "summary": {
+        "campaign_name": "host_compromise_adversarial_campaign_v1",
+        "total_attack_vectors": 20,
+        "ratio": 10.0
+      }
+    },
+    {
+      "name": "unit_tests",
+      "command": "python3 -m unittest tests/test_check_compromise_reduction_gate.py",
+      "exit_code": 0,
+      "output_path": "artifacts/section_13/bd-3cpa/unit_tests.txt",
+      "summary": "Ran 7 tests: OK"
+    },
+    {
+      "name": "cargo_check_all_targets_via_rch",
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "output_path": "artifacts/section_13/bd-3cpa/rch_cargo_check.log",
+      "note": "Pre-existing repository compile debt outside bd-3cpa scope."
+    },
+    {
+      "name": "cargo_clippy_all_targets_via_rch",
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "output_path": "artifacts/section_13/bd-3cpa/rch_cargo_clippy.log",
+      "note": "Pre-existing repository-wide clippy debt outside bd-3cpa scope."
+    },
+    {
+      "name": "cargo_fmt_check_via_rch",
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "output_path": "artifacts/section_13/bd-3cpa/rch_cargo_fmt_check.log",
+      "note": "Pre-existing repository formatting drift outside bd-3cpa scope."
+    }
+  ],
+  "acceptance_mapping": {
+    "identical_baseline_vs_hardened_campaign": true,
+    "attack_vectors_gte_20": true,
+    "required_attack_classes_covered": true,
+    "compromise_ratio_gte_10x": true,
+    "per_vector_description_outcomes_mitigation_documented": true,
+    "reproducible_scripted_campaign_command_present": true,
+    "containment_vectors_gte_3": true,
+    "overall_report_artifact_present": true,
+    "determinism_and_adversarial_checks_enforced": true
+  },
+  "contract_surface": {
+    "spec": "docs/specs/section_13/bd-3cpa_contract.md",
+    "canonical_report": "artifacts/13/compromise_reduction_report.json",
+    "validator": "scripts/check_compromise_reduction_gate.py",
+    "unit_tests": "tests/test_check_compromise_reduction_gate.py",
+    "ci_gate": ".github/workflows/compromise-reduction-gate.yml"
+  },
+  "required_event_codes": [
+    "CRG-001",
+    "CRG-002",
+    "CRG-003",
+    "CRG-004",
+    "CRG-005",
+    "CRG-006",
+    "CRG-007"
+  ]
+}

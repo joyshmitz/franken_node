@@ -1,0 +1,51 @@
+{
+  "bead_id": "bd-cuut",
+  "section": "10.15",
+  "title": "Control-plane lane mapping policy (Cancel/Timed/Ready)",
+  "gate_script": "scripts/check_control_lane_policy.py",
+  "timestamp": "2026-02-22T02:10:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "control_lane_policy": "crates/franken-node/src/control_plane/control_lane_policy.rs",
+    "control_plane_mod": "crates/franken-node/src/control_plane/mod.rs",
+    "spec_contract": "docs/specs/section_10_15/bd-cuut_contract.md",
+    "verification_script": "scripts/check_control_lane_policy.py",
+    "conformance_tests": "tests/conformance/control_lane_policy.rs",
+    "spec_overview": "docs/specs/control_lane_mapping.md"
+  },
+  "rust_test_count": 31,
+  "gate_checks_passing": 62,
+  "gate_checks_total": 62,
+  "event_codes_defined": 5,
+  "error_codes_defined": 8,
+  "invariants_verified": [
+    "INV-CLP-LANE-ASSIGNED",
+    "INV-CLP-BUDGET-SUM",
+    "INV-CLP-CANCEL-PRIORITY",
+    "INV-CLP-STARVATION-DETECT",
+    "INV-CLP-CANCEL-NO-STARVE",
+    "INV-CLP-PREEMPT"
+  ],
+  "lanes": {
+    "cancel": {
+      "tasks": ["cancellation_handler", "drain_operation", "region_close", "graceful_shutdown", "abort_compensation"],
+      "min_budget_percent": 20,
+      "starvation_threshold_ticks": 1,
+      "priority_rank": 0
+    },
+    "timed": {
+      "tasks": ["health_check", "lease_renewal", "epoch_transition", "epoch_seal", "transition_barrier", "deadline_enforcement", "fork_detection"],
+      "min_budget_percent": 30,
+      "starvation_threshold_ticks": 3,
+      "priority_rank": 1
+    },
+    "ready": {
+      "tasks": ["background_maintenance", "telemetry_flush", "evidence_archival", "marker_compaction", "audit_log_rotation", "metrics_export", "stale_entry_cleanup"],
+      "min_budget_percent": 50,
+      "starvation_threshold_ticks": 3,
+      "priority_rank": 2
+    }
+  },
+  "total_task_classes": 19,
+  "schema_version": "clp-v1.0"
+}

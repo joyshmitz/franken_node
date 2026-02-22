@@ -1,0 +1,110 @@
+{
+  "bead_id": "bd-3mj9",
+  "section": "15",
+  "gate_script": "check_enterprise_governance.py",
+  "checks_passed": 20,
+  "checks_total": 20,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "source_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/tools/enterprise_governance.rs"
+    },
+    {
+      "check": "module_wiring",
+      "passed": true,
+      "detail": "tools/mod.rs"
+    },
+    {
+      "check": "rule_categories",
+      "passed": true,
+      "detail": "5/5"
+    },
+    {
+      "check": "enforcement_levels",
+      "passed": true,
+      "detail": "3/3"
+    },
+    {
+      "check": "compliance_statuses",
+      "passed": true,
+      "detail": "4/4"
+    },
+    {
+      "check": "struct_GovernanceRule",
+      "passed": true,
+      "detail": "GovernanceRule"
+    },
+    {
+      "check": "struct_ComplianceAssessment",
+      "passed": true,
+      "detail": "ComplianceAssessment"
+    },
+    {
+      "check": "struct_CategoryCompliance",
+      "passed": true,
+      "detail": "CategoryCompliance"
+    },
+    {
+      "check": "struct_ComplianceReport",
+      "passed": true,
+      "detail": "ComplianceReport"
+    },
+    {
+      "check": "struct_EnterpriseGovernance",
+      "passed": true,
+      "detail": "EnterpriseGovernance"
+    },
+    {
+      "check": "gate_actions",
+      "passed": true,
+      "detail": "Policy enforcement gating"
+    },
+    {
+      "check": "compliance_rate",
+      "passed": true,
+      "detail": "Per-category compliance rate"
+    },
+    {
+      "check": "evidence_capture",
+      "passed": true,
+      "detail": "Evidence-based assessments"
+    },
+    {
+      "check": "blocked_rules",
+      "passed": true,
+      "detail": "Blocked rules tracking"
+    },
+    {
+      "check": "event_codes",
+      "passed": true,
+      "detail": "12/12"
+    },
+    {
+      "check": "invariants",
+      "passed": true,
+      "detail": "6/6"
+    },
+    {
+      "check": "audit_log",
+      "passed": true,
+      "detail": "JSONL export"
+    },
+    {
+      "check": "schema_version",
+      "passed": true,
+      "detail": "egi-v1.0"
+    },
+    {
+      "check": "spec_alignment",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_15/bd-3mj9_contract.md"
+    },
+    {
+      "check": "test_coverage",
+      "passed": true,
+      "detail": "24 tests (>=24)"
+    }
+  ]
+}

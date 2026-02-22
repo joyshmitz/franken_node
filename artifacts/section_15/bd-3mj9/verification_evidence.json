@@ -1,0 +1,35 @@
+{
+  "bead_id": "bd-3mj9",
+  "section": "15",
+  "title": "Enterprise governance integrations",
+  "gate_script": "scripts/check_enterprise_governance.py",
+  "test_suite": "tests/test_check_enterprise_governance.py",
+  "timestamp": "2026-02-21T08:00:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "enterprise_governance": "crates/franken-node/src/tools/enterprise_governance.rs",
+    "tools_mod": "crates/franken-node/src/tools/mod.rs",
+    "spec_contract": "docs/specs/section_15/bd-3mj9_contract.md",
+    "verification_script": "scripts/check_enterprise_governance.py",
+    "unit_tests": "tests/test_check_enterprise_governance.py"
+  },
+  "rust_test_count": 24,
+  "python_test_count": 25,
+  "event_codes_defined": 12,
+  "gate_checks_passed": 20,
+  "gate_checks_total": 20,
+  "invariants_verified": [
+    "INV-EGI-ENFORCED", "INV-EGI-ASSESSED", "INV-EGI-DETERMINISTIC",
+    "INV-EGI-GATED", "INV-EGI-VERSIONED", "INV-EGI-AUDITABLE"
+  ],
+  "capabilities_verified": {
+    "rule_categories": ["AccessControl", "DataRetention", "AuditLogging", "ChangeManagement", "IncidentResponse"],
+    "enforcement_levels": ["Mandatory", "Recommended", "Advisory"],
+    "compliance_statuses": ["Compliant", "NonCompliant", "PartiallyCompliant", "NotAssessed"],
+    "gate_actions": ["Allow", "Warn", "Block"],
+    "operations": ["register_rule", "record_assessment", "generate_report", "export_audit_log_jsonl"],
+    "compliance_rate_computation": true,
+    "evidence_capture": true,
+    "content_hashing": true
+  }
+}

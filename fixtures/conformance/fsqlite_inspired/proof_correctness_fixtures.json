@@ -1,0 +1,156 @@
+{
+  "domain": "proof_correctness",
+  "description": "Fixtures verifying that cryptographic proofs (hash chains, Merkle proofs, inclusion proofs) are correctly generated and verified.",
+  "fixtures": [
+    {
+      "conformance_id": "FSQL-PRF-001",
+      "domain": "proof_correctness",
+      "description": "Hash-chain link verification: H(prev_hash || payload) matches expected",
+      "input": {
+        "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "payload_hex": "48656c6c6f"
+      },
+      "expected": {
+        "link_valid": true,
+        "hash_deterministic": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-PRF-002",
+      "domain": "proof_correctness",
+      "description": "Merkle inclusion proof generation: proof path has ceil(log2(N)) elements",
+      "input": {
+        "leaves": ["a", "b", "c", "d", "e", "f", "g", "h"],
+        "target_index": 3
+      },
+      "expected": {
+        "proof_length": 3,
+        "proof_valid": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-PRF-003",
+      "domain": "proof_correctness",
+      "description": "Merkle inclusion proof verification succeeds for valid proof",
+      "input": {
+        "root": "expected_root_hash",
+        "leaf": "d",
+        "proof_path": ["sibling_hashes"],
+        "leaf_index": 3,
+        "total_leaves": 8
+      },
+      "expected": {
+        "verification": "pass"
+      }
+    },
+    {
+      "conformance_id": "FSQL-PRF-004",
+      "domain": "proof_correctness",
+      "description": "Empty-tree proof handling: proof for an empty tree is a special sentinel",
+      "input": {
+        "leaves": [],
+        "target_index": 0
+      },
+      "expected": {
+        "proof": "empty_sentinel",
+        "root": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "conformance_id": "FSQL-PRF-005",
+      "domain": "proof_correctness",
+      "description": "Single-element proof: proof path is empty, root equals leaf hash",
+      "input": {
+        "leaves": ["only_leaf"],
+        "target_index": 0
+      },
+      "expected": {
+        "proof_length": 0,
+        "root_equals_leaf_hash": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-PRF-006",
+      "domain": "proof_correctness",
+      "description": "Proof serialization round-trip: serialize then deserialize preserves all fields",
+      "input": {
+        "proof": {
+          "root": "aabbccdd",
+          "leaf_index": 2,
+          "path": ["11", "22", "33"],
+          "leaf_hash": "eeff0011"
+        }
+      },
+      "expected": {
+        "round_trip_equal": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-PRF-007",
+      "domain": "proof_correctness",
+      "description": "Tampered proof rejection: flipping one bit in proof path causes verification failure",
+      "input": {
+        "original_proof_valid": true,
+        "tamper": "flip_bit_in_path_element_0"
+      },
+      "expected": {
+        "verification": "fail",
+        "error_code": "PROOF_INVALID"
+      }
+    },
+    {
+      "conformance_id": "FSQL-PRF-008",
+      "domain": "proof_correctness",
+      "description": "Proof-of-absence verification: proves a leaf is NOT in the tree",
+      "input": {
+        "leaves": ["a", "b", "c"],
+        "absent_leaf": "d"
+      },
+      "expected": {
+        "absence_proven": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-PRF-009",
+      "domain": "proof_correctness",
+      "description": "Cross-epoch proof rejection: proof from epoch N is invalid in epoch M context",
+      "input": {
+        "proof_epoch": 5,
+        "verification_epoch": 7
+      },
+      "expected": {
+        "verification": "fail",
+        "error_code": "PROOF_EPOCH_MISMATCH"
+      }
+    },
+    {
+      "conformance_id": "FSQL-PRF-010",
+      "domain": "proof_correctness",
+      "description": "Batch proof verification: verifying N proofs returns N results",
+      "input": {
+        "proof_count": 5,
+        "valid_proofs": [0, 1, 2, 3],
+        "invalid_proofs": [4]
+      },
+      "expected": {
+        "results_count": 5,
+        "pass_count": 4,
+        "fail_count": 1
+      }
+    },
+    {
+      "conformance_id": "FSQL-PRF-011",
+      "domain": "proof_correctness",
+      "description": "Hash chain of length N has exactly N links, each referencing its predecessor",
+      "input": {
+        "chain_length": 10,
+        "genesis_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expected": {
+        "link_count": 10,
+        "all_links_valid": true,
+        "final_hash_deterministic": true
+      }
+    }
+  ]
+}

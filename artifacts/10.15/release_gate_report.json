@@ -1,0 +1,68 @@
+{
+  "bead_id": "bd-h93z",
+  "gate_version": "rlg-v1.0",
+  "generated_at_utc": "2026-02-22T02:56:57.750377Z",
+  "public_key_id": "mock-rlg-key-001",
+  "signature_algorithm": "sha256",
+  "feature_scope": "T1",
+  "artifact_statuses": [
+    {
+      "artifact_type": "evidence_entries",
+      "path": "artifacts/10.15/release_inputs/evidence_entries.json",
+      "present": true,
+      "schema_valid": true,
+      "signed": true
+    },
+    {
+      "artifact_type": "replay_verification",
+      "path": "artifacts/10.15/release_inputs/replay_verification_results.json",
+      "present": true,
+      "schema_valid": true,
+      "signed": true
+    },
+    {
+      "artifact_type": "cancellation_injection_report",
+      "path": "artifacts/10.15/release_inputs/cancellation_injection_report.json",
+      "present": true,
+      "schema_valid": true,
+      "signed": true
+    },
+    {
+      "artifact_type": "dpor_results",
+      "path": "artifacts/10.15/release_inputs/dpor_results.json",
+      "present": true,
+      "schema_valid": true,
+      "signed": true
+    },
+    {
+      "artifact_type": "epoch_validity",
+      "path": "artifacts/10.15/release_inputs/epoch_validity_results.json",
+      "present": true,
+      "schema_valid": true,
+      "signed": true
+    },
+    {
+      "artifact_type": "obligation_leak_oracle_report",
+      "path": "artifacts/10.15/release_inputs/obligation_leak_oracle_report.json",
+      "present": true,
+      "schema_valid": true,
+      "signed": true
+    }
+  ],
+  "waiver": null,
+  "summary": {
+    "required_count": 6,
+    "passing_count": 6,
+    "failing_count": 0
+  },
+  "verdict": "PASS",
+  "events": [
+    "RLG-001",
+    "RLG-002",
+    "RLG-007"
+  ],
+  "signing": {
+    "canonical_payload_sha256": "6d41e3c7ff98af19d82371cc1c3b1c3c8936e800e0bda0902678dea720ac160a",
+    "signature": "28cb8cf615b58c41c4086d7aa138eea5502c7370f49efd164a62fcae769c6769"
+  }
+}

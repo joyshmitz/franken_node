@@ -1,0 +1,21 @@
+{
+  "total_features": 12,
+  "covered_features": 9,
+  "coverage_pct": 75.0,
+  "covered": [
+    "changepoint_detection",
+    "control_channel_frames",
+    "hazard_functions",
+    "multi_stream_correlation",
+    "observation_models",
+    "schema_validation",
+    "serialization_round_trip",
+    "signature_verification",
+    "trust_receipt_encoding"
+  ],
+  "gaps": [
+    "epoch_key_derivation",
+    "idempotency_keys",
+    "seed_derivation"
+  ]
+}

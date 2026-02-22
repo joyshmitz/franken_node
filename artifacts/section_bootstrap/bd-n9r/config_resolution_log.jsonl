@@ -1,0 +1,2 @@
+{"ts":"2026-02-22T02:20:45Z","event_code":"CFG-E2E-001","status":"info","detail":"Starting bd-n9r config precedence verification"}
+{"ts":"2026-02-22T02:20:45Z","event_code":"CFG-E2E-099","status":"pass","detail":"Config precedence verification passed"}

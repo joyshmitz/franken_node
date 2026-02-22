@@ -1,0 +1,60 @@
+{
+  "bead_id": "bd-1f8v",
+  "section": "10.20",
+  "title": "Operator copilot guidance for dependency updates",
+  "gate_script": "scripts/check_dgis_copilot.py",
+  "test_suite": "tests/test_check_dgis_copilot.py",
+  "timestamp": "2026-02-21T05:12:09.951268+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "update_copilot": "crates/franken-node/src/security/dgis/update_copilot.rs",
+    "dgis_mod": "crates/franken-node/src/security/dgis/mod.rs",
+    "verification_script": "scripts/check_dgis_copilot.py",
+    "unit_tests": "tests/test_check_dgis_copilot.py"
+  },
+  "rust_test_count": 26,
+  "python_test_count": 16,
+  "event_codes_defined": 12,
+  "gate_checks_passed": 11,
+  "gate_checks_total": 11,
+  "capabilities_verified": {
+    "risk_delta": {
+      "pre_post_metrics": true,
+      "per_metric_breakdowns": [
+        "fan_out",
+        "betweenness_centrality",
+        "trust_bottleneck_score",
+        "transitive_dependency_count"
+      ],
+      "aggregate_risk_computation": true,
+      "risk_direction_detection": true
+    },
+    "containment": {
+      "blast_radius_estimate": true,
+      "barrier_recommendations": true,
+      "monitoring_intensification": true
+    },
+    "confidence": {
+      "confidence_score": true,
+      "uncertainty_bounds": true,
+      "data_quality_factors": true,
+      "calibration_notes": true
+    },
+    "policy_acknowledgement": {
+      "high_risk_gate": true,
+      "signed_receipt_validation": true,
+      "configurable_threshold": true
+    },
+    "mitigation_playbook": {
+      "barrier_configurations": true,
+      "staged_rollout_plan": true,
+      "monitoring_recommendations": true,
+      "rollback_instructions": true
+    },
+    "interaction_logging": {
+      "per_interaction_records": true,
+      "jsonl_export": true,
+      "trace_correlation_ids": true
+    }
+  }
+}

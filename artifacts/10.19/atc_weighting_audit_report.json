@@ -1,0 +1,60 @@
+{
+  "report_type": "atc_participation_weighting_audit",
+  "bead_id": "bd-2yvw",
+  "section": "10.19",
+  "generated_at": "2026-02-20T00:00:00Z",
+  "agent": "CrimsonCrane",
+  "policy_summary": {
+    "attestation_weight": 0.4,
+    "stake_weight": 0.3,
+    "reputation_weight": 0.3,
+    "new_participant_cap_fraction": 0.01,
+    "established_tenure_seconds": 2592000,
+    "established_interaction_count": 100,
+    "sybil_attenuation_factor": 0.1,
+    "sybil_cluster_min_size": 3
+  },
+  "invariant_verification": {
+    "INV-ATC-SYBIL-BOUND": {
+      "description": "100 Sybil identities have less aggregate weight than 5 honest established participants",
+      "verified": true,
+      "test": "hundred_sybils_less_than_five_honest"
+    },
+    "INV-ATC-WEIGHT-DETERMINISM": {
+      "description": "Identical inputs produce identical weights and content hash",
+      "verified": true,
+      "test": "weight_computation_is_deterministic"
+    },
+    "INV-ATC-NEW-NODE-CAP": {
+      "description": "New participant weight <= 1% of median established weight",
+      "verified": true,
+      "test": "new_participant_capped_at_one_percent_of_median"
+    },
+    "INV-ATC-STAKE-MONOTONE": {
+      "description": "Higher stake always produces higher stake component",
+      "verified": true,
+      "test": "higher_stake_produces_higher_weight"
+    },
+    "INV-ATC-ATTESTATION-REQUIRED": {
+      "description": "Zero-attestation participants receive zero weight",
+      "verified": true,
+      "test": "zero_attestation_participant_is_rejected"
+    },
+    "INV-ATC-AUDIT-COMPLETE": {
+      "description": "Every compute_weights call produces an audit record",
+      "verified": true,
+      "test": "audit_record_emitted_for_every_computation"
+    },
+    "INV-ATC-CLUSTER-ATTENUATION": {
+      "description": "Detected Sybil clusters have weight reduced by >= 90%",
+      "verified": true,
+      "test": "sybil_cluster_weight_reduced_by_ninety_percent"
+    }
+  },
+  "attestation_levels": [
+    {"level": "SelfSigned", "multiplier": 0.1},
+    {"level": "PeerVerified", "multiplier": 0.4},
+    {"level": "VerifierBacked", "multiplier": 0.8},
+    {"level": "AuthorityCertified", "multiplier": 1.0}
+  ]
+}

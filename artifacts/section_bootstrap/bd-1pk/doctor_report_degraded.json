@@ -1,0 +1,171 @@
+{
+  "checks": [
+    {
+      "code": "DR-CONFIG-001",
+      "duration_ms": 0,
+      "event_code": "DOC-001",
+      "message": "Configuration resolved successfully.",
+      "remediation": "No action required.",
+      "scope": "config.resolve",
+      "status": "pass"
+    },
+    {
+      "code": "DR-CONFIG-002",
+      "duration_ms": 0,
+      "event_code": "DOC-002",
+      "message": "No config file discovered; defaults are active.",
+      "remediation": "Create franken_node.toml or pass --config to lock deterministic project settings.",
+      "scope": "config.source",
+      "status": "warn"
+    },
+    {
+      "code": "DR-PROFILE-003",
+      "duration_ms": 0,
+      "event_code": "DOC-003",
+      "message": "Profile is legacy-risky.",
+      "remediation": "Prefer --profile balanced or --profile strict for stronger controls.",
+      "scope": "profile.safety",
+      "status": "warn"
+    },
+    {
+      "code": "DR-TRUST-004",
+      "duration_ms": 0,
+      "event_code": "DOC-004",
+      "message": "Registry assurance level is below bootstrap target (3).",
+      "remediation": "Raise registry.minimum_assurance_level to 3+.",
+      "scope": "registry.assurance",
+      "status": "warn"
+    },
+    {
+      "code": "DR-MIGRATE-005",
+      "duration_ms": 0,
+      "event_code": "DOC-005",
+      "message": "Lockstep validation requirement is disabled.",
+      "remediation": "Set migration.require_lockstep_validation=true for safer rollout validation.",
+      "scope": "migration.lockstep",
+      "status": "warn"
+    },
+    {
+      "code": "DR-OBS-006",
+      "duration_ms": 0,
+      "event_code": "DOC-006",
+      "message": "Structured audit events are disabled.",
+      "remediation": "Set observability.emit_structured_audit_events=true for stronger traceability.",
+      "scope": "observability.audit_events",
+      "status": "warn"
+    },
+    {
+      "code": "DR-ENV-007",
+      "duration_ms": 0,
+      "event_code": "DOC-007",
+      "message": "Current working directory is available: /workspace",
+      "remediation": "No action required.",
+      "scope": "environment.cwd",
+      "status": "pass"
+    },
+    {
+      "code": "DR-CONFIG-008",
+      "duration_ms": 0,
+      "event_code": "DOC-008",
+      "message": "Merge provenance recorded (3 decisions).",
+      "remediation": "No action required.",
+      "scope": "config.provenance",
+      "status": "pass"
+    }
+  ],
+  "command": "doctor",
+  "generated_at_utc": "2026-02-22T00:00:00Z",
+  "merge_decision_count": 3,
+  "merge_decisions": [
+    {
+      "field": "profile",
+      "stage": "default",
+      "value": "balanced"
+    },
+    {
+      "field": "profile",
+      "stage": "cli",
+      "value": "legacy-risky"
+    },
+    {
+      "field": "observability.emit_structured_audit_events",
+      "stage": "env",
+      "value": "false"
+    }
+  ],
+  "overall_status": "warn",
+  "selected_profile": "legacy-risky",
+  "source_path": null,
+  "status_counts": {
+    "fail": 0,
+    "pass": 3,
+    "warn": 5
+  },
+  "structured_logs": [
+    {
+      "check_code": "DR-CONFIG-001",
+      "duration_ms": 0,
+      "event_code": "DOC-001",
+      "scope": "config.resolve",
+      "status": "pass",
+      "trace_id": "doctor-degraded"
+    },
+    {
+      "check_code": "DR-CONFIG-002",
+      "duration_ms": 0,
+      "event_code": "DOC-002",
+      "scope": "config.source",
+      "status": "warn",
+      "trace_id": "doctor-degraded"
+    },
+    {
+      "check_code": "DR-PROFILE-003",
+      "duration_ms": 0,
+      "event_code": "DOC-003",
+      "scope": "profile.safety",
+      "status": "warn",
+      "trace_id": "doctor-degraded"
+    },
+    {
+      "check_code": "DR-TRUST-004",
+      "duration_ms": 0,
+      "event_code": "DOC-004",
+      "scope": "registry.assurance",
+      "status": "warn",
+      "trace_id": "doctor-degraded"
+    },
+    {
+      "check_code": "DR-MIGRATE-005",
+      "duration_ms": 0,
+      "event_code": "DOC-005",
+      "scope": "migration.lockstep",
+      "status": "warn",
+      "trace_id": "doctor-degraded"
+    },
+    {
+      "check_code": "DR-OBS-006",
+      "duration_ms": 0,
+      "event_code": "DOC-006",
+      "scope": "observability.audit_events",
+      "status": "warn",
+      "trace_id": "doctor-degraded"
+    },
+    {
+      "check_code": "DR-ENV-007",
+      "duration_ms": 0,
+      "event_code": "DOC-007",
+      "scope": "environment.cwd",
+      "status": "pass",
+      "trace_id": "doctor-degraded"
+    },
+    {
+      "check_code": "DR-CONFIG-008",
+      "duration_ms": 0,
+      "event_code": "DOC-008",
+      "scope": "config.provenance",
+      "status": "pass",
+      "trace_id": "doctor-degraded"
+    }
+  ],
+  "trace_id": "doctor-degraded"
+}

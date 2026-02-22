@@ -1,0 +1,12 @@
+{
+  "bead_id": "bd-sxt5",
+  "trace_id": "trace-bd-sxt5-e2e",
+  "verdict": "PASS",
+  "checks_passed": 10,
+  "checks_failed": 0,
+  "checks_total": 10,
+  "failed_checks": [],
+  "results_file": "/data/projects/franken_node/artifacts/15/migration_cohort_results.json",
+  "log_file": "/data/projects/franken_node/artifacts/15/migration_cohort_validation_log.jsonl",
+  "generated_at": "2026-02-22T00:58:01Z"
+}

@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "bead_id": "bd-3cpa",
+  "campaign_name": "host_compromise_adversarial_campaign_v1",
+  "total_attack_vectors": 20,
+  "baseline_compromised": 20,
+  "hardened_compromised": 2,
+  "containment_vectors": 4,
+  "compromise_reduction_ratio": 10.0,
+  "trace_id": "trace-bd-3cpa-compromise-reduction"
+}

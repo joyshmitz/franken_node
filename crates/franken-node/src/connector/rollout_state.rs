@@ -14,6 +14,8 @@ use crate::control_plane::control_epoch::{
     check_artifact_epoch,
 };
 
+use crate::control_plane::cancellation_protocol::{CancelPhase, CancellationRecord, DrainConfig};
+
 use super::health_gate::HealthGateResult;
 use super::lifecycle::ConnectorState;
 
@@ -53,6 +55,7 @@ impl fmt::Display for RolloutPhase {
 }
 
 /// The complete rollout state for a connector instance.
+/// bd-1cs7: includes optional cancellation record for three-phase protocol tracking.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RolloutState {
     pub connector_id: String,
@@ -64,6 +67,9 @@ pub struct RolloutState {
     pub activated_at: Option<String>,
     pub persisted_at: String,
     pub version: u32,
+    /// bd-1cs7: cancellation phase tracking for the three-phase protocol.
+    #[serde(default)]
+    pub cancel_phase: Option<CancelPhase>,
 }
 
 impl RolloutState {
@@ -100,7 +106,30 @@ impl RolloutState {
             activated_at: None,
             persisted_at: now_iso8601(),
             version: 1,
+            cancel_phase: None,
         }
+    }
+
+    /// bd-1cs7: Set the cancellation phase for three-phase protocol tracking.
+    pub fn set_cancel_phase(&mut self, phase: CancelPhase) {
+        self.cancel_phase = Some(phase);
+        self.bump_version();
+    }
+
+    /// bd-1cs7: Clear the cancellation phase (e.g., after finalization).
+    pub fn clear_cancel_phase(&mut self) {
+        self.cancel_phase = None;
+    }
+
+    /// bd-1cs7: Check if cancellation is active.
+    pub fn is_cancelling(&self) -> bool {
+        matches!(
+            self.cancel_phase,
+            Some(CancelPhase::CancelRequested)
+                | Some(CancelPhase::Draining)
+                | Some(CancelPhase::DrainComplete)
+                | Some(CancelPhase::Finalizing)
+        )
     }
 
     /// Advance the version and update the persistence timestamp.

@@ -1,0 +1,69 @@
+{
+  "bead_id": "bd-3l8d",
+  "title": "[11] Contract field: benchmark and correctness artifacts",
+  "timestamp_utc": "2026-02-21T00:56:59Z",
+  "deliverables": [
+    "docs/specs/section_11/bd-3l8d_contract.md",
+    "artifacts/11/benchmark_correctness_contract.json",
+    "docs/templates/change_summary_template.md",
+    "docs/change_summaries/example_change_summary.json",
+    "scripts/check_benchmark_correctness_artifacts.py",
+    "tests/test_check_benchmark_correctness_artifacts.py",
+    ".github/workflows/benchmark-correctness-artifacts-gate.yml"
+  ],
+  "contract_validation": {
+    "self_test": {
+      "command": "python3 scripts/check_benchmark_correctness_artifacts.py --self-test --json",
+      "result_path": "artifacts/section_11/bd-3l8d/check_self_test.json",
+      "ok": true
+    },
+    "changed_files_gate_check": {
+      "command": "python3 scripts/check_benchmark_correctness_artifacts.py --changed-files artifacts/section_11/bd-3l8d/changed_files_for_validation.txt --json",
+      "result_path": "artifacts/section_11/bd-3l8d/check_report.json",
+      "ok": true,
+      "validated_metric_count": 2,
+      "validated_suite_count": 2,
+      "event_codes_seen": [
+        "CONTRACT_BENCH_CORRECT_VALIDATED"
+      ]
+    },
+    "unit_tests": {
+      "command": "python3 -m unittest tests/test_check_benchmark_correctness_artifacts.py",
+      "result_path": "artifacts/section_11/bd-3l8d/unit_tests.txt",
+      "ok": true,
+      "tests_run": 9
+    },
+    "syntax_and_json_checks": {
+      "command": "python3 -m py_compile ... && jq ...",
+      "ok": true
+    }
+  },
+  "cargo_quality_gates_rch": [
+    {
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "log_path": "artifacts/section_11/bd-3l8d/rch_cargo_check.log",
+      "status": "failed",
+      "note": "Baseline workspace compile errors outside bead scope (e.g., Capability enum construction errors in supply_chain/manifest.rs)."
+    },
+    {
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "log_path": "artifacts/section_11/bd-3l8d/rch_cargo_clippy.log",
+      "status": "failed",
+      "note": "Baseline workspace lint errors outside bead scope (same upstream compile blockers)."
+    },
+    {
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "log_path": "artifacts/section_11/bd-3l8d/rch_cargo_fmt_check.log",
+      "status": "failed",
+      "note": "Pre-existing repository formatting drift in unrelated files."
+    }
+  ],
+  "overall_assessment": {
+    "bead_contract_and_gate_changes": "pass",
+    "workspace_global_cargo_state": "failing_preexisting",
+    "ready_to_close_bead": true
+  }
+}

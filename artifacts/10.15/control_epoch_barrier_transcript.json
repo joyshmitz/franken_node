@@ -1,0 +1,60 @@
+{
+  "bead": "bd-1hbw",
+  "section": "10.15",
+  "title": "Control-Plane Epoch Barrier Adoption Transcript",
+  "adoption_status": "documented",
+  "timestamp": "2026-02-22T02:05:00+00:00",
+  "canonical_barrier": "crates/franken-node/src/control_plane/epoch_transition_barrier.rs",
+  "barrier_participants": [
+    {
+      "participant_id": "connector_lifecycle",
+      "module": "connector/lifecycle.rs",
+      "role": "Drains in-flight lifecycle operations",
+      "drain_budget_ms": 5000
+    },
+    {
+      "participant_id": "rollout_engine",
+      "module": "connector/rollout_state.rs",
+      "role": "Drains in-flight rollout transitions",
+      "drain_budget_ms": 10000
+    },
+    {
+      "participant_id": "fencing_service",
+      "module": "connector/fencing.rs",
+      "role": "Drains fencing token operations",
+      "drain_budget_ms": 3000
+    },
+    {
+      "participant_id": "health_gate",
+      "module": "connector/health_gate.rs",
+      "role": "Pauses health checks during transition",
+      "drain_budget_ms": 2000
+    }
+  ],
+  "test_scenarios": {
+    "full_commit": {
+      "result": "committed",
+      "all_participants_arrived": true,
+      "all_participants_drained": true,
+      "epoch_before": 5,
+      "epoch_after": 6
+    },
+    "late_arrival_within_timeout": {
+      "result": "committed",
+      "late_participant": "health_gate",
+      "delay_ms": 2000,
+      "within_timeout": true
+    },
+    "timeout_abort": {
+      "result": "aborted",
+      "missing_participant": "fencing_service",
+      "all_remain_epoch": 5
+    },
+    "cancel_abort": {
+      "result": "aborted",
+      "cancel_point": "draining",
+      "deterministic": true,
+      "all_remain_epoch": 5
+    }
+  }
+}

@@ -15,11 +15,10 @@
 //! - INV-RFD-PROOF-SERIALIZABLE: RollbackProof is serializable for audit and
 //!   external verification.
 
-use std::collections::hash_map::DefaultHasher;
 use std::fmt;
-use std::hash::{Hash, Hasher};
 
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 
 use crate::control_plane::marker_stream::MarkerStream;
 
@@ -152,10 +151,9 @@ impl StateVector {
     /// For the crate's purposes we use a deterministic hasher.
     #[must_use]
     pub fn compute_state_hash(payload: &str) -> String {
-        let mut hasher = DefaultHasher::new();
-        payload.hash(&mut hasher);
-        let h = hasher.finish();
-        format!("{h:016x}{h:016x}{h:016x}{h:016x}")
+        let mut hasher = sha2::Sha256::new();
+        sha2::Digest::update(&mut hasher, payload.as_bytes());
+        format!("{:x}", sha2::Digest::finalize(hasher))
     }
 }
 

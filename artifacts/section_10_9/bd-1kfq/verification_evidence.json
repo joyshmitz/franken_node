@@ -1,0 +1,50 @@
+{
+  "bead_id": "bd-1kfq",
+  "section": "10.9",
+  "title": "Section 10.9 verification gate: comprehensive unit+e2e+logging",
+  "gate_script": "scripts/check_section_10_9_gate.py",
+  "test_suite": "tests/test_check_section_10_9_gate.py",
+  "timestamp": "2026-02-21T05:41:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "gate_script": "scripts/check_section_10_9_gate.py",
+    "unit_tests": "tests/test_check_section_10_9_gate.py"
+  },
+  "gate_checks_passed": 4,
+  "gate_checks_total": 4,
+  "python_test_count": 27,
+  "total_unit_tests_across_beads": 182,
+  "beads_verified": {
+    "count": 6,
+    "ids": ["bd-f5d", "bd-9is", "bd-1e0", "bd-m8p", "bd-10c", "bd-15t"],
+    "all_pass": true
+  },
+  "check_categories": [
+    "GATE109-SCRIPTS: 6/6 verification scripts PASS",
+    "GATE109-TESTS: 100% companion test coverage, 182 tests passed",
+    "GATE109-EVIDENCE: 6/6 evidence artifacts valid",
+    "GATE109-MOONSHOT-COVERAGE: all moonshot requirements met"
+  ],
+  "event_codes_verified": [
+    "GATE_10_9_EVALUATION_STARTED",
+    "GATE_10_9_BEAD_CHECKED",
+    "GATE_10_9_MOONSHOT_COVERAGE",
+    "GATE_10_9_VERDICT_EMITTED"
+  ],
+  "moonshot_capabilities_verified": {
+    "public_benchmark_infrastructure": true,
+    "adversarial_campaign_runner": true,
+    "migration_singularity_demo": true,
+    "verifier_economy_portal": true,
+    "trust_economics_dashboard": true,
+    "category_shift_reporting": true
+  },
+  "per_bead_results": [
+    {"bead": "bd-f5d", "name": "Public benchmark campaign infrastructure", "script_pass": true, "unit_pass": true, "evidence_pass": true},
+    {"bead": "bd-9is", "name": "Autonomous adversarial campaign runner", "script_pass": true, "unit_pass": true, "evidence_pass": true},
+    {"bead": "bd-1e0", "name": "Migration singularity demo pipeline", "script_pass": true, "unit_pass": true, "evidence_pass": true},
+    {"bead": "bd-m8p", "name": "Verifier economy portal", "script_pass": true, "unit_pass": true, "evidence_pass": true},
+    {"bead": "bd-10c", "name": "Trust economics dashboard", "script_pass": true, "unit_pass": true, "evidence_pass": true},
+    {"bead": "bd-15t", "name": "Category-shift reporting pipeline", "script_pass": true, "unit_pass": true, "evidence_pass": true}
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "bead_id": "bd-nr4",
+  "section": "10.8",
+  "title": "Operator runbooks for high-severity trust incidents",
+  "status": "pass",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "categories_covered": 6,
+  "md_runbooks": 6,
+  "json_runbooks": 6,
+  "schema_valid": true,
+  "event_codes_documented": ["ORB-001", "ORB-002", "ORB-003", "ORB-004"],
+  "invariants_documented": [
+    "INV-ORB-COMPLETE",
+    "INV-ORB-SCHEMA",
+    "INV-ORB-DRILL",
+    "INV-ORB-FRESH"
+  ],
+  "runbooks": [
+    {
+      "runbook_id": "RB-001",
+      "category": "trust_state_corruption",
+      "severity": "critical",
+      "md_file": "docs/runbooks/trust_state_corruption.md",
+      "json_file": "fixtures/runbooks/rb_001_trust_state_corruption.json"
+    },
+    {
+      "runbook_id": "RB-002",
+      "category": "mass_revocation_event",
+      "severity": "critical",
+      "md_file": "docs/runbooks/mass_revocation_event.md",
+      "json_file": "fixtures/runbooks/rb_002_mass_revocation_event.json"
+    },
+    {
+      "runbook_id": "RB-003",
+      "category": "fleet_quarantine_activation",
+      "severity": "high",
+      "md_file": "docs/runbooks/fleet_quarantine_activation.md",
+      "json_file": "fixtures/runbooks/rb_003_fleet_quarantine_activation.json"
+    },
+    {
+      "runbook_id": "RB-004",
+      "category": "epoch_transition_failure",
+      "severity": "critical",
+      "md_file": "docs/runbooks/epoch_transition_failure.md",
+      "json_file": "fixtures/runbooks/rb_004_epoch_transition_failure.json"
+    },
+    {
+      "runbook_id": "RB-005",
+      "category": "evidence_ledger_divergence",
+      "severity": "high",
+      "md_file": "docs/runbooks/evidence_ledger_divergence.md",
+      "json_file": "fixtures/runbooks/rb_005_evidence_ledger_divergence.json"
+    },
+    {
+      "runbook_id": "RB-006",
+      "category": "proof_pipeline_outage",
+      "severity": "high",
+      "md_file": "docs/runbooks/proof_pipeline_outage.md",
+      "json_file": "fixtures/runbooks/rb_006_proof_pipeline_outage.json"
+    }
+  ]
+}

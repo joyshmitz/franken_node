@@ -1,0 +1,65 @@
+{
+  "runbook_id": "RB-006",
+  "title": "Proof Pipeline Outage",
+  "category": "proof_pipeline_outage",
+  "severity": "high",
+  "operator_privilege_level": "p2",
+  "detection_signature": {
+    "metrics": [
+      "proof_pipeline_healthy == 0",
+      "proof_generation_queue_depth > 1000",
+      "proof_verification_latency_p99_seconds > 30"
+    ],
+    "log_patterns": [
+      "PROOF_PIPELINE_OUTAGE_DETECTED",
+      "proof_generation_stalled"
+    ]
+  },
+  "estimated_recovery_time": "30m",
+  "required_permissions": ["operator", "pipeline_admin"],
+  "steps": {
+    "containment": [
+      "Activate proof pipeline circuit breaker",
+      "Queue incoming proof requests (do not drop)",
+      "Switch to degraded verification mode if available",
+      "Alert proof infrastructure team"
+    ],
+    "investigation": [
+      "Identify pipeline stage failure (generation, aggregation, verification, storage)",
+      "Check proof worker health and resource utilization",
+      "Review recent pipeline configuration or dependency changes",
+      "Determine whether outage is upstream (input data) or downstream (output storage)",
+      "Assess backlog depth and estimated drain time"
+    ],
+    "repair": [
+      "Restart failed pipeline workers",
+      "Clear any poisoned proof requests from the queue",
+      "Scale pipeline workers if backlog exceeds capacity",
+      "Fix underlying configuration or dependency issue"
+    ],
+    "verification": [
+      "Confirm pipeline health check returns healthy",
+      "Validate proof generation latency returns to baseline",
+      "Verify backlog is draining at expected rate",
+      "Run end-to-end proof generation test with known input"
+    ],
+    "rollback": [
+      "If repair fails, drain queue to dead-letter storage",
+      "Restore pipeline from last known-good configuration",
+      "Re-process failed proofs from dead-letter queue",
+      "Escalate if pipeline cannot be restored within estimated recovery time"
+    ]
+  },
+  "cross_references": ["proof_pipeline", "verification_subsystem", "circuit_breaker"],
+  "drill_scenario": "Simulate proof pipeline outage by pausing proof worker processes in staging. Verify that detection fires, circuit breaker activates, requests are queued (not dropped), and pipeline recovery completes after workers are resumed.",
+  "command_references": [
+    "franken-node proofs queue status",
+    "franken-node proofs workers restart --all",
+    "POST /api/v1/proofs/workers/restart"
+  ],
+  "coverage_tags": [
+    "malicious-extension-detection"
+  ],
+  "last_reviewed": "2026-02-21",
+  "review_cadence": "per_release_cycle"
+}

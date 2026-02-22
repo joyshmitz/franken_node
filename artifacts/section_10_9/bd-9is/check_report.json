@@ -1,0 +1,296 @@
+{
+  "bead_id": "bd-9is",
+  "title": "Autonomous adversarial campaign runner with continuous updates",
+  "section": "10.9",
+  "gate": false,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 54,
+  "passed": 54,
+  "failed": 0,
+  "campaign_categories": [
+    "CAMP-MEI",
+    "CAMP-CEX",
+    "CAMP-PEV",
+    "CAMP-DPA",
+    "CAMP-SCC"
+  ],
+  "mutation_strategies": [
+    "MUT-PARAM",
+    "MUT-COMBO",
+    "MUT-TIMING",
+    "MUT-EVASION"
+  ],
+  "checks": [
+    {
+      "check": "rust_module_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/security/adversarial_runner.rs"
+    },
+    {
+      "check": "mod_registration",
+      "pass": true,
+      "detail": "adversarial_runner registered in security/mod.rs"
+    },
+    {
+      "check": "category_CAMP-MEI",
+      "pass": true,
+      "detail": "CAMP-MEI (MaliciousExtensionInjection)"
+    },
+    {
+      "check": "category_CAMP-CEX",
+      "pass": true,
+      "detail": "CAMP-CEX (CredentialExfiltration)"
+    },
+    {
+      "check": "category_CAMP-PEV",
+      "pass": true,
+      "detail": "CAMP-PEV (PolicyEvasion)"
+    },
+    {
+      "check": "category_CAMP-DPA",
+      "pass": true,
+      "detail": "CAMP-DPA (DelayedPayloadActivation)"
+    },
+    {
+      "check": "category_CAMP-SCC",
+      "pass": true,
+      "detail": "CAMP-SCC (SupplyChainCompromise)"
+    },
+    {
+      "check": "mutation_MUT-PARAM",
+      "pass": true,
+      "detail": "MUT-PARAM (ParameterVariation)"
+    },
+    {
+      "check": "mutation_MUT-COMBO",
+      "pass": true,
+      "detail": "MUT-COMBO (TechniqueCombination)"
+    },
+    {
+      "check": "mutation_MUT-TIMING",
+      "pass": true,
+      "detail": "MUT-TIMING (TimingVariation)"
+    },
+    {
+      "check": "mutation_MUT-EVASION",
+      "pass": true,
+      "detail": "MUT-EVASION (EvasionRefinement)"
+    },
+    {
+      "check": "event_code_ADV-RUN-001",
+      "pass": true,
+      "detail": "ADV-RUN-001 defined"
+    },
+    {
+      "check": "event_code_ADV-RUN-002",
+      "pass": true,
+      "detail": "ADV-RUN-002 defined"
+    },
+    {
+      "check": "event_code_ADV-RUN-003",
+      "pass": true,
+      "detail": "ADV-RUN-003 defined"
+    },
+    {
+      "check": "event_code_ADV-RUN-004",
+      "pass": true,
+      "detail": "ADV-RUN-004 defined"
+    },
+    {
+      "check": "event_code_ADV-RUN-005",
+      "pass": true,
+      "detail": "ADV-RUN-005 defined"
+    },
+    {
+      "check": "event_code_ADV-RUN-006",
+      "pass": true,
+      "detail": "ADV-RUN-006 defined"
+    },
+    {
+      "check": "event_code_ADV-RUN-ERR-001",
+      "pass": true,
+      "detail": "ADV-RUN-ERR-001 defined"
+    },
+    {
+      "check": "event_code_ADV-RUN-ERR-002",
+      "pass": true,
+      "detail": "ADV-RUN-ERR-002 defined"
+    },
+    {
+      "check": "invariant_INV-ACR-CORPUS",
+      "pass": true,
+      "detail": "INV-ACR-CORPUS defined"
+    },
+    {
+      "check": "invariant_INV-ACR-SANDBOX",
+      "pass": true,
+      "detail": "INV-ACR-SANDBOX defined"
+    },
+    {
+      "check": "invariant_INV-ACR-MUTATION",
+      "pass": true,
+      "detail": "INV-ACR-MUTATION defined"
+    },
+    {
+      "check": "invariant_INV-ACR-RESULTS",
+      "pass": true,
+      "detail": "INV-ACR-RESULTS defined"
+    },
+    {
+      "check": "invariant_INV-ACR-INTEGRATION",
+      "pass": true,
+      "detail": "INV-ACR-INTEGRATION defined"
+    },
+    {
+      "check": "invariant_INV-ACR-CONTINUOUS",
+      "pass": true,
+      "detail": "INV-ACR-CONTINUOUS defined"
+    },
+    {
+      "check": "invariant_INV-ACR-PROVENANCE",
+      "pass": true,
+      "detail": "INV-ACR-PROVENANCE defined"
+    },
+    {
+      "check": "runner_struct",
+      "pass": true,
+      "detail": "AdversarialRunner defined"
+    },
+    {
+      "check": "evaluate_method",
+      "pass": true,
+      "detail": "evaluate_results present"
+    },
+    {
+      "check": "corpus_builder",
+      "pass": true,
+      "detail": "build_default_corpus present"
+    },
+    {
+      "check": "inline_tests",
+      "pass": true,
+      "detail": "19 inline tests (need >= 10)"
+    },
+    {
+      "check": "runner_modes",
+      "pass": true,
+      "detail": "continuous + on_demand modes"
+    },
+    {
+      "check": "sandbox_verification",
+      "pass": true,
+      "detail": "sandbox_verified field present"
+    },
+    {
+      "check": "corpus_fixture_exists",
+      "pass": true,
+      "detail": "fixtures/campaigns/initial_corpus.json"
+    },
+    {
+      "check": "corpus_fixture_valid_json",
+      "pass": true,
+      "detail": "valid JSON object"
+    },
+    {
+      "check": "corpus_fixture_categories",
+      "pass": true,
+      "detail": "5 categories in fixture (need >= 5)"
+    },
+    {
+      "check": "corpus_fixture_campaign_count",
+      "pass": true,
+      "detail": "5 campaigns (need >= 5)"
+    },
+    {
+      "check": "spec_contract",
+      "pass": true,
+      "detail": "docs/specs/section_10_9/bd-9is_contract.md"
+    },
+    {
+      "check": "spec_category_CAMP-MEI",
+      "pass": true,
+      "detail": "CAMP-MEI in spec"
+    },
+    {
+      "check": "spec_category_CAMP-CEX",
+      "pass": true,
+      "detail": "CAMP-CEX in spec"
+    },
+    {
+      "check": "spec_category_CAMP-PEV",
+      "pass": true,
+      "detail": "CAMP-PEV in spec"
+    },
+    {
+      "check": "spec_category_CAMP-DPA",
+      "pass": true,
+      "detail": "CAMP-DPA in spec"
+    },
+    {
+      "check": "spec_category_CAMP-SCC",
+      "pass": true,
+      "detail": "CAMP-SCC in spec"
+    },
+    {
+      "check": "spec_mutation_MUT-PARAM",
+      "pass": true,
+      "detail": "MUT-PARAM in spec"
+    },
+    {
+      "check": "spec_mutation_MUT-COMBO",
+      "pass": true,
+      "detail": "MUT-COMBO in spec"
+    },
+    {
+      "check": "spec_mutation_MUT-TIMING",
+      "pass": true,
+      "detail": "MUT-TIMING in spec"
+    },
+    {
+      "check": "spec_mutation_MUT-EVASION",
+      "pass": true,
+      "detail": "MUT-EVASION in spec"
+    },
+    {
+      "check": "spec_event_ADV-RUN-001",
+      "pass": true,
+      "detail": "ADV-RUN-001 in spec"
+    },
+    {
+      "check": "spec_event_ADV-RUN-002",
+      "pass": true,
+      "detail": "ADV-RUN-002 in spec"
+    },
+    {
+      "check": "spec_event_ADV-RUN-003",
+      "pass": true,
+      "detail": "ADV-RUN-003 in spec"
+    },
+    {
+      "check": "spec_event_ADV-RUN-004",
+      "pass": true,
+      "detail": "ADV-RUN-004 in spec"
+    },
+    {
+      "check": "spec_event_ADV-RUN-005",
+      "pass": true,
+      "detail": "ADV-RUN-005 in spec"
+    },
+    {
+      "check": "spec_event_ADV-RUN-006",
+      "pass": true,
+      "detail": "ADV-RUN-006 in spec"
+    },
+    {
+      "check": "spec_event_ADV-RUN-ERR-001",
+      "pass": true,
+      "detail": "ADV-RUN-ERR-001 in spec"
+    },
+    {
+      "check": "spec_event_ADV-RUN-ERR-002",
+      "pass": true,
+      "detail": "ADV-RUN-ERR-002 in spec"
+    }
+  ]
+}

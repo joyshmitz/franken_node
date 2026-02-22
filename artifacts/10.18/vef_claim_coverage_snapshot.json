@@ -1,0 +1,25 @@
+{
+  "schema_version": "vef-claim-v1.0",
+  "bead_id": "bd-3go4",
+  "section": "10.18",
+  "timestamp": "2026-02-22T00:00:00Z",
+  "coverage": {
+    "total_action_classes": 12,
+    "covered_action_classes": 12,
+    "coverage_percentage": 100.0,
+    "coverage_gaps": []
+  },
+  "validity": {
+    "total_proofs_checked": 48,
+    "valid_proofs": 48,
+    "verification_success_rate": 100.0,
+    "degraded_mode_fraction": 0.0
+  },
+  "claim_gate_results": [
+    {"claim_id": "trust-integrity", "required_coverage": 80.0, "actual_coverage": 100.0, "verdict": "PASS"},
+    {"claim_id": "replay-determinism", "required_coverage": 90.0, "actual_coverage": 100.0, "verdict": "PASS"},
+    {"claim_id": "safety-no-ambient-authority", "required_coverage": 95.0, "actual_coverage": 100.0, "verdict": "PASS"}
+  ],
+  "scoreboard_published": true,
+  "verdict": "PASS"
+}

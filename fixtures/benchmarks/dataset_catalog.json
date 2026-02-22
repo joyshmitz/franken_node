@@ -1,0 +1,22 @@
+{
+  "datasets": [
+    {
+      "id": "wrk-http-mix-v1",
+      "workload": "http_server_throughput",
+      "download_url": "https://example.invalid/benchmarks/wrk-http-mix-v1.tar.zst",
+      "sha256": "ab546d2387cca035cb56b0f965f32ae5622ad940f9f117a3e4dcfa6fb181db26"
+    },
+    {
+      "id": "module-graph-20k-v2",
+      "workload": "module_loading",
+      "download_url": "https://example.invalid/benchmarks/module-graph-20k-v2.tar.zst",
+      "sha256": "7ad9823f052db6e83c572bce8d42f4cf5236daefe1e8de75a9ca0a36cb76bfde"
+    },
+    {
+      "id": "synthetic-migration-pack-v3",
+      "workload": "compatibility_shim_overhead",
+      "download_url": "https://example.invalid/benchmarks/synthetic-migration-pack-v3.tar.zst",
+      "sha256": "77b62208f4ebf65f34174af9ed53053431ac0a66b98ee38de0f7e2833acc004c"
+    }
+  ]
+}

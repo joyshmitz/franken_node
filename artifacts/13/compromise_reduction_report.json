@@ -1,0 +1,216 @@
+{
+  "bead_id": "bd-3cpa",
+  "generated_at_utc": "2026-02-21T00:59:00Z",
+  "trace_id": "trace-bd-3cpa-compromise-reduction",
+  "campaign_name": "host_compromise_adversarial_campaign_v1",
+  "campaign_version": "2026.02.21",
+  "reproducible_command": "python3 scripts/check_compromise_reduction_gate.py --replay-campaign --json",
+  "minimum_required_ratio": 10.0,
+  "baseline_compromised": 20,
+  "hardened_compromised": 2,
+  "compromise_reduction_ratio": 10.0,
+  "total_attack_vectors": 20,
+  "containment_vectors": 4,
+  "attack_vectors": [
+    {
+      "attack_id": "A01",
+      "attack_class": "rce_dependency",
+      "attack_description": "Inject malicious postinstall script through transitive dependency.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "blocked",
+      "mitigation": "Signed registry allowlist and provenance gate block tampered dependency.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A01 --profile baseline",
+      "containment_demonstrated": false
+    },
+    {
+      "attack_id": "A02",
+      "attack_class": "prototype_pollution",
+      "attack_description": "Exploit deep merge pollution to override runtime trust flags.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "blocked",
+      "mitigation": "Immutable policy object model and taint guard reject unsafe prototype writes.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A02 --profile baseline",
+      "containment_demonstrated": false
+    },
+    {
+      "attack_id": "A03",
+      "attack_class": "supply_chain_injection",
+      "attack_description": "Publish lookalike extension package with hidden payload.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "contained",
+      "mitigation": "Trust card quarantine isolates extension and blocks lateral movement.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A03 --profile baseline",
+      "containment_demonstrated": true
+    },
+    {
+      "attack_id": "A04",
+      "attack_class": "path_traversal",
+      "attack_description": "Use crafted archive paths to overwrite runtime policy files.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "blocked",
+      "mitigation": "Canonicalized sandbox path gate rejects traversal outside trusted root.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A04 --profile baseline",
+      "containment_demonstrated": false
+    },
+    {
+      "attack_id": "A05",
+      "attack_class": "ssrf",
+      "attack_description": "Pivot internal metadata service via extension fetch endpoint.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "blocked",
+      "mitigation": "Network capability scoping and metadata endpoint denylist prevent pivot.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A05 --profile baseline",
+      "containment_demonstrated": false
+    },
+    {
+      "attack_id": "A06",
+      "attack_class": "deserialization",
+      "attack_description": "Send crafted serialized payload to trigger arbitrary object construction.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "blocked",
+      "mitigation": "Strict schema-driven decode path rejects executable object payloads.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A06 --profile baseline",
+      "containment_demonstrated": false
+    },
+    {
+      "attack_id": "A07",
+      "attack_class": "privilege_escalation",
+      "attack_description": "Abuse stale admin session token to escalate tenant privileges.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "blocked",
+      "mitigation": "Session-authenticated control channel enforces monotonic anti-replay tokens.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A07 --profile baseline",
+      "containment_demonstrated": false
+    },
+    {
+      "attack_id": "A08",
+      "attack_class": "sandbox_escape",
+      "attack_description": "Escape extension sandbox via native host bridge bug.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "compromised",
+      "mitigation": "Known gap tracked for remediation in pending hardening backlog.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A08 --profile baseline",
+      "containment_demonstrated": false
+    },
+    {
+      "attack_id": "A09",
+      "attack_class": "memory_corruption",
+      "attack_description": "Trigger unsafe native parser edge case in addon boundary.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "contained",
+      "mitigation": "Crash-only isolation and quarantine supervisor contain compromised worker.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A09 --profile baseline",
+      "containment_demonstrated": true
+    },
+    {
+      "attack_id": "A10",
+      "attack_class": "command_injection",
+      "attack_description": "Inject shell metacharacters through migration helper CLI path.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "blocked",
+      "mitigation": "Command allow-graph and escaped argv execution reject injected shells.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A10 --profile baseline",
+      "containment_demonstrated": false
+    },
+    {
+      "attack_id": "A11",
+      "attack_class": "token_theft",
+      "attack_description": "Exfiltrate long-lived token from process environment.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "blocked",
+      "mitigation": "Ephemeral capability tokens and redaction policy reduce token exposure.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A11 --profile baseline",
+      "containment_demonstrated": false
+    },
+    {
+      "attack_id": "A12",
+      "attack_class": "build_poisoning",
+      "attack_description": "Poison generated build cache to inject malicious transpiled output.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "blocked",
+      "mitigation": "Content-addressed build attestations detect cache tampering.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A12 --profile baseline",
+      "containment_demonstrated": false
+    },
+    {
+      "attack_id": "A13",
+      "attack_class": "policy_bypass",
+      "attack_description": "Attempt to disable revocation freshness checks through env override.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "blocked",
+      "mitigation": "Immutable runtime profile disallows unsafe policy downgrades at runtime.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A13 --profile baseline",
+      "containment_demonstrated": false
+    },
+    {
+      "attack_id": "A14",
+      "attack_class": "registry_spoofing",
+      "attack_description": "Spoof registry endpoint and return unsigned extension payload.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "blocked",
+      "mitigation": "Mutual TLS pinning and signature verification reject spoofed registry.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A14 --profile baseline",
+      "containment_demonstrated": false
+    },
+    {
+      "attack_id": "A15",
+      "attack_class": "credential_stuffing",
+      "attack_description": "Use known leaked credentials against operator control endpoints.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "contained",
+      "mitigation": "Risk-adaptive auth and zone quarantine isolate suspicious sessions.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A15 --profile baseline",
+      "containment_demonstrated": true
+    },
+    {
+      "attack_id": "A16",
+      "attack_class": "confused_deputy",
+      "attack_description": "Exploit permissive plugin call chain to escalate delegated rights.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "blocked",
+      "mitigation": "Capability-context-first dispatch prevents rights amplification.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A16 --profile baseline",
+      "containment_demonstrated": false
+    },
+    {
+      "attack_id": "A17",
+      "attack_class": "websocket_hijack",
+      "attack_description": "Hijack stale websocket control channel during reconnect race.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "blocked",
+      "mitigation": "Monotonic channel nonces invalidate stale websocket handshakes.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A17 --profile baseline",
+      "containment_demonstrated": false
+    },
+    {
+      "attack_id": "A18",
+      "attack_class": "heap_spray",
+      "attack_description": "Exploit host parser with heap spray payload and crafted framing.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "compromised",
+      "mitigation": "Pending hardening task for parser memory-safe boundary rewrite.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A18 --profile baseline",
+      "containment_demonstrated": false
+    },
+    {
+      "attack_id": "A19",
+      "attack_class": "tenant_breakout",
+      "attack_description": "Abuse cross-tenant cache key collision to read neighbor secrets.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "contained",
+      "mitigation": "Tenant-scoped trust segmentation contains impacted tenant and rotates keys.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A19 --profile baseline",
+      "containment_demonstrated": true
+    },
+    {
+      "attack_id": "A20",
+      "attack_class": "api_gateway_smuggling",
+      "attack_description": "Smuggle split headers through gateway into privileged control route.",
+      "baseline_outcome": "compromised",
+      "franken_node_outcome": "blocked",
+      "mitigation": "Strict canonical request parser rejects dual-encoding header smuggling.",
+      "script_command": "python3 scripts/check_compromise_reduction_gate.py --simulate-attack A20 --profile baseline",
+      "containment_demonstrated": false
+    }
+  ]
+}

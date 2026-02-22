@@ -1,0 +1,84 @@
+{
+  "bead_id": "bd-2ut3",
+  "title": "[11] No-contract-no-merge gate",
+  "timestamp_utc": "2026-02-21T01:05:46Z",
+  "deliverables": [
+    "docs/specs/section_11/bd-2ut3_contract.md",
+    "scripts/check_no_contract_no_merge.py",
+    "tests/test_check_no_contract_no_merge.py",
+    ".github/workflows/no-contract-no-merge-gate.yml",
+    "docs/templates/change_summary_template.md",
+    "docs/change_summaries/example_change_summary.json"
+  ],
+  "gate_validation": {
+    "self_test": {
+      "command": "python3 scripts/check_no_contract_no_merge.py --self-test --json",
+      "result_path": "artifacts/section_11/bd-2ut3/check_self_test.json",
+      "ok": true
+    },
+    "changed_files_gate_check": {
+      "command": "python3 scripts/check_no_contract_no_merge.py --changed-files artifacts/section_11/bd-2ut3/changed_files_for_validation.txt --json",
+      "result_path": "artifacts/section_11/bd-2ut3/check_report.json",
+      "ok": true,
+      "summary_files_checked": [
+        "docs/change_summaries/example_change_summary.json"
+      ],
+      "event_codes_seen": [
+        "CONTRACT_NO_MERGE_VALIDATED"
+      ],
+      "override_applied": false
+    },
+    "unit_tests": {
+      "command": "python3 -m unittest tests/test_check_no_contract_no_merge.py",
+      "result_path": "artifacts/section_11/bd-2ut3/unit_tests.txt",
+      "ok": true,
+      "tests_run": 8
+    },
+    "regression_checks": {
+      "compatibility_threat": {
+        "result_path": "artifacts/section_11/bd-2ut3/regression_check_compatibility_threat.json",
+        "ok": true
+      },
+      "rollback_command": {
+        "result_path": "artifacts/section_11/bd-2ut3/regression_check_rollback_command.json",
+        "ok": true
+      },
+      "benchmark_correctness": {
+        "result_path": "artifacts/section_11/bd-2ut3/regression_check_benchmark_correctness.json",
+        "ok": true
+      }
+    },
+    "syntax_and_json_checks": {
+      "command": "python3 -m py_compile ... && jq ...",
+      "ok": true
+    }
+  },
+  "cargo_quality_gates_rch": [
+    {
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "log_path": "artifacts/section_11/bd-2ut3/rch_cargo_check.log",
+      "status": "failed",
+      "note": "Baseline workspace compile errors outside bead scope (Capability enum construction errors)."
+    },
+    {
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "log_path": "artifacts/section_11/bd-2ut3/rch_cargo_clippy.log",
+      "status": "failed",
+      "note": "Baseline workspace lint/compile blockers outside bead scope."
+    },
+    {
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "log_path": "artifacts/section_11/bd-2ut3/rch_cargo_fmt_check.log",
+      "status": "failed",
+      "note": "Pre-existing repository formatting drift in unrelated files."
+    }
+  ],
+  "overall_assessment": {
+    "no_contract_gate_changes": "pass",
+    "workspace_global_cargo_state": "failing_preexisting",
+    "ready_to_close_bead": true
+  }
+}

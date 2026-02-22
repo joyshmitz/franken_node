@@ -1,0 +1,86 @@
+{
+  "snapshot_id": "initial-matrix",
+  "timestamp": "2026-02-20T00:00:00Z",
+  "policy_config": {
+    "full_tier_min_ratio": 0.8,
+    "standard_tier_min_ratio": 0.4,
+    "limited_tier_min_ratio": 0.1,
+    "grace_period_seconds": 604800,
+    "grace_period_tier": "Standard",
+    "use_quality_adjustment": true
+  },
+  "tier_definitions": [
+    {
+      "tier": "Full",
+      "min_quality_adjusted_ratio": 0.8,
+      "feeds": ["raw_signals", "aggregated", "advisories", "indicators"]
+    },
+    {
+      "tier": "Standard",
+      "min_quality_adjusted_ratio": 0.4,
+      "feeds": ["aggregated", "advisories", "indicators"]
+    },
+    {
+      "tier": "Limited",
+      "min_quality_adjusted_ratio": 0.1,
+      "feeds": ["advisories"]
+    },
+    {
+      "tier": "Blocked",
+      "min_quality_adjusted_ratio": 0.0,
+      "feeds": []
+    }
+  ],
+  "sample_entries": [
+    {
+      "participant_id": "established-contributor-1",
+      "tier": "Full",
+      "contribution_ratio": 1.0,
+      "quality_adjusted_ratio": 0.95,
+      "contributions_made": 100,
+      "intelligence_consumed": 80,
+      "exception_active": false,
+      "grace_period_active": false
+    },
+    {
+      "participant_id": "moderate-contributor-1",
+      "tier": "Standard",
+      "contribution_ratio": 0.6,
+      "quality_adjusted_ratio": 0.48,
+      "contributions_made": 30,
+      "intelligence_consumed": 50,
+      "exception_active": false,
+      "grace_period_active": false
+    },
+    {
+      "participant_id": "freerider-1",
+      "tier": "Blocked",
+      "contribution_ratio": 0.002,
+      "quality_adjusted_ratio": 0.001,
+      "contributions_made": 1,
+      "intelligence_consumed": 500,
+      "exception_active": false,
+      "grace_period_active": false
+    },
+    {
+      "participant_id": "new-participant-1",
+      "tier": "Standard",
+      "contribution_ratio": 0.0,
+      "quality_adjusted_ratio": 0.0,
+      "contributions_made": 0,
+      "intelligence_consumed": 0,
+      "exception_active": false,
+      "grace_period_active": true
+    },
+    {
+      "participant_id": "research-partner-1",
+      "tier": "Standard",
+      "contribution_ratio": 0.0,
+      "quality_adjusted_ratio": 0.0,
+      "contributions_made": 0,
+      "intelligence_consumed": 100,
+      "exception_active": true,
+      "grace_period_active": false
+    }
+  ]
+}

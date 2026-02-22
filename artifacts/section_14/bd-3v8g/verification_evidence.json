@@ -1,0 +1,42 @@
+{
+  "bead_id": "bd-3v8g",
+  "section": "14",
+  "title": "Version benchmark standards with migration guidance",
+  "gate_script": "scripts/check_version_benchmark_standards.py",
+  "test_suite": "tests/test_check_version_benchmark_standards.py",
+  "timestamp": "2026-02-21T06:00:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "version_benchmark_standards": "crates/franken-node/src/tools/version_benchmark_standards.rs",
+    "tools_mod": "crates/franken-node/src/tools/mod.rs",
+    "spec_contract": "docs/specs/section_14/bd-3v8g_contract.md",
+    "verification_script": "scripts/check_version_benchmark_standards.py",
+    "unit_tests": "tests/test_check_version_benchmark_standards.py"
+  },
+  "rust_test_count": 28,
+  "python_test_count": 18,
+  "event_codes_defined": 12,
+  "gate_checks_passed": 13,
+  "gate_checks_total": 13,
+  "invariants_verified": [
+    "INV-BSV-SEMVER",
+    "INV-BSV-DETERMINISTIC",
+    "INV-BSV-MIGRATION-PATH",
+    "INV-BSV-BACKWARD-COMPAT",
+    "INV-BSV-VERSIONED",
+    "INV-BSV-GATED"
+  ],
+  "capabilities_verified": {
+    "standard_revisions": {
+      "initial_count": 3,
+      "versions": ["1.0.0", "1.1.0", "2.0.0"]
+    },
+    "compatibility_levels": ["FullyCompatible", "BackwardCompatible", "RequiresMigration", "Incompatible"],
+    "change_types": ["Breaking", "Feature", "Fix", "Deprecation"],
+    "migration_effort_levels": ["Trivial", "Low", "Medium", "High"],
+    "semantic_versioning": true,
+    "migration_guides": true,
+    "content_hashing": true,
+    "audit_logging": true
+  }
+}

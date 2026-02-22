@@ -1,0 +1,56 @@
+{
+  "bead_id": "bd-3u4",
+  "section": "10.11",
+  "title": "BOCPD Regime Detector",
+  "status": "pass",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "rust_module": "crates/franken-node/src/connector/bocpd.rs",
+  "structs_implemented": [
+    "BocpdConfig",
+    "BocpdDetector",
+    "RegimeShift",
+    "MultiStreamCorrelator",
+    "BocpdEvent",
+    "BocpdError",
+    "HazardFunction",
+    "ObservationModel",
+    "GaussianModel",
+    "PoissonModel",
+    "CategoricalModel"
+  ],
+  "methods_implemented": [
+    "new",
+    "observe",
+    "map_run_length",
+    "changepoint_probability",
+    "regime_history",
+    "observation_count",
+    "events",
+    "posterior_sum",
+    "stream_name",
+    "record_shift",
+    "recent_count",
+    "validate",
+    "evaluate",
+    "predictive_prob"
+  ],
+  "event_codes": ["BCP-001", "BCP-002", "BCP-003", "BCP-004", "BCP-005"],
+  "invariants": [
+    "INV-BCP-POSTERIOR",
+    "INV-BCP-MONOTONIC",
+    "INV-BCP-BOUNDED",
+    "INV-BCP-MIN-RUN"
+  ],
+  "error_codes": [
+    "ERR_BCP_INVALID_CONFIG",
+    "ERR_BCP_EMPTY_STREAM",
+    "ERR_BCP_MODEL_MISMATCH"
+  ],
+  "hazard_functions": ["Constant", "Geometric"],
+  "observation_models": ["Gaussian", "Poisson", "Categorical"],
+  "math_functions": ["ln_gamma", "student_t_pdf", "neg_binomial_pmf"],
+  "rust_test_count": 34,
+  "golden_vectors": "vectors/bocpd_regime_shifts.json",
+  "compilation": "pass"
+}

@@ -1,0 +1,164 @@
+{
+  "bead_id": "bd-3h1g",
+  "generated_at_utc": "2026-02-21T01:20:00Z",
+  "spec_version": "1.0.0",
+  "trace_id": "7c2a9a6bf59b252029a96e6cce5f5964da8f8b63253f10c1175dbf72e6c7a110",
+  "benchmark_tracks": [
+    {
+      "track_id": "compatibility_correctness",
+      "display_name": "Compatibility and Correctness",
+      "weight": 0.22,
+      "metric_ids": [
+        "api_behavior_equivalence_rate",
+        "compat_golden_pass_rate"
+      ],
+      "pass_threshold": 0.95
+    },
+    {
+      "track_id": "security_trust",
+      "display_name": "Security and Trust",
+      "weight": 0.2,
+      "metric_ids": [
+        "policy_enforcement_precision",
+        "unauthorized_action_block_rate"
+      ],
+      "pass_threshold": 0.9
+    },
+    {
+      "track_id": "performance_under_hardening",
+      "display_name": "Performance Under Hardening",
+      "weight": 0.18,
+      "metric_ids": [
+        "latency_p95_budget_pass_rate",
+        "latency_p99_budget_pass_rate"
+      ],
+      "pass_threshold": 0.85
+    },
+    {
+      "track_id": "containment_revocation_latency",
+      "display_name": "Containment and Revocation Latency",
+      "weight": 0.15,
+      "metric_ids": [
+        "containment_convergence_pass_rate",
+        "revocation_freshness_pass_rate"
+      ],
+      "pass_threshold": 0.88
+    },
+    {
+      "track_id": "replay_determinism",
+      "display_name": "Replay Determinism",
+      "weight": 0.13,
+      "metric_ids": [
+        "artifact_replay_hash_match_rate",
+        "decision_replay_equivalence_rate"
+      ],
+      "pass_threshold": 0.9
+    },
+    {
+      "track_id": "adversarial_resilience",
+      "display_name": "Adversarial Resilience",
+      "weight": 0.12,
+      "metric_ids": [
+        "redteam_detection_recall",
+        "policy_bypass_resistance_rate"
+      ],
+      "pass_threshold": 0.85
+    }
+  ],
+  "harness": {
+    "runner_command": "scripts/run_benchmark_campaign.sh --manifest fixtures/benchmarks/campaign_manifest.json",
+    "seed_policy": "fixed-seed-per-track",
+    "determinism_replays": 5,
+    "warmup_runs": 3,
+    "measured_runs": 12,
+    "isolation_mode": "containerized"
+  },
+  "datasets": [
+    {
+      "dataset_id": "compat_golden_v1",
+      "track_id": "compatibility_correctness",
+      "source_uri": "fixtures/benchmarks/datasets/compat_golden_v1.jsonl",
+      "records": 2400,
+      "sha256": "7b8d650f16c66e0f52fc6b0309f6f1dbde402bcfce2f6dd8766a2ccbbfd7f43a",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "dataset_id": "security_trust_eval_v1",
+      "track_id": "security_trust",
+      "source_uri": "fixtures/benchmarks/datasets/security_trust_eval_v1.jsonl",
+      "records": 1800,
+      "sha256": "d6f0a0e4f41beeb7d3e1000999853b58ed42af17f60730ad3f6a8cad4f4cf9f8",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "dataset_id": "hardening_perf_hotpath_v1",
+      "track_id": "performance_under_hardening",
+      "source_uri": "fixtures/benchmarks/datasets/hardening_perf_hotpath_v1.jsonl",
+      "records": 3200,
+      "sha256": "ccebd7cf9a3c1c1dcadf6f65ea0aca3404f808faddf1f80ad8ec6f487390c6d4",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "dataset_id": "containment_revocation_v1",
+      "track_id": "containment_revocation_latency",
+      "source_uri": "fixtures/benchmarks/datasets/containment_revocation_v1.jsonl",
+      "records": 1500,
+      "sha256": "6b4c558f18dbf8f2f3a63da398f945c38b4f01d713863263ee7034f6e7305f0c",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "dataset_id": "replay_determinism_v1",
+      "track_id": "replay_determinism",
+      "source_uri": "fixtures/benchmarks/datasets/replay_determinism_v1.jsonl",
+      "records": 2100,
+      "sha256": "f0607b289fe6c1053ed6cd65fffcd6786fef6dc0458f8b91c8645f98059d95e0",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "dataset_id": "adversarial_resilience_v1",
+      "track_id": "adversarial_resilience",
+      "source_uri": "fixtures/benchmarks/datasets/adversarial_resilience_v1.jsonl",
+      "records": 1700,
+      "sha256": "4efa2387576da507fd32f04ac5cb4fe5144fbe31e39446985503ce203897a2c0",
+      "license": "CC-BY-4.0"
+    }
+  ],
+  "scoring_formula": {
+    "normalization": "score in [0,1] from normalized metric aggregations",
+    "aggregate_formula": "aggregate_score = sum(weight_i * score_i)",
+    "minimum_track_score": 0.75,
+    "minimum_overall_score": 0.85,
+    "hard_fail_conditions": [
+      "any_track_below_minimum_track_score",
+      "overall_below_minimum_overall_score",
+      "missing_required_track_or_dataset"
+    ]
+  },
+  "sample_scores": {
+    "compatibility_correctness": 0.96,
+    "security_trust": 0.94,
+    "performance_under_hardening": 0.88,
+    "containment_revocation_latency": 0.9,
+    "replay_determinism": 0.93,
+    "adversarial_resilience": 0.89
+  },
+  "sample_overall_score": 0.9203,
+  "release_report_fields": [
+    "benchmark_run_id",
+    "track_scores",
+    "aggregate_score",
+    "pass_fail_verdict",
+    "seed_manifest_hash",
+    "dataset_hash_manifest",
+    "environment_fingerprint",
+    "trace_id"
+  ],
+  "event_codes": [
+    "BSP-001",
+    "BSP-002",
+    "BSP-003",
+    "BSP-004",
+    "BSP-005",
+    "BSP-006"
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "bead_id": "bd-38yt",
+  "section": "10.20",
+  "title": "DGIS performance/scale budgets and release claim gate",
+  "generated_at": "2026-02-21T05:09:02Z",
+  "status": "completed_with_baseline_workspace_failures",
+  "checks": [
+    {
+      "name": "py_compile",
+      "command": "python3 -m py_compile scripts/check_dgis_claim_gate.py tests/test_check_dgis_claim_gate.py",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "gate_self_test",
+      "command": "python3 scripts/check_dgis_claim_gate.py --self-test --json",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_20/bd-38yt/check_self_test.json"
+    },
+    {
+      "name": "gate_report",
+      "command": "python3 scripts/check_dgis_claim_gate.py --json",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_20/bd-38yt/check_report.json",
+      "summary": {
+        "verdict": "PASS",
+        "passed": 35,
+        "total": 35,
+        "release_decision": "allow",
+        "claims_validated": 4
+      }
+    },
+    {
+      "name": "unit_tests",
+      "command": "python3 -m unittest tests/test_check_dgis_claim_gate.py",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_20/bd-38yt/unit_tests.txt",
+      "summary": "Ran 8 tests: OK"
+    },
+    {
+      "name": "cargo_check_all_targets_via_rch",
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_20/bd-38yt/rch_cargo_check.log",
+      "note": "Pre-existing workspace compile debt outside bd-38yt scope."
+    },
+    {
+      "name": "cargo_clippy_all_targets_via_rch",
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_20/bd-38yt/rch_cargo_clippy.log",
+      "note": "Pre-existing workspace lint/compile debt outside bd-38yt scope."
+    },
+    {
+      "name": "cargo_fmt_check_via_rch",
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_20/bd-38yt/rch_cargo_fmt_check.log",
+      "note": "Pre-existing workspace formatting drift outside bd-38yt scope."
+    }
+  ],
+  "contract_surface": {
+    "workflow": ".github/workflows/dgis-claim-gate.yml",
+    "conformance_doc": "docs/conformance/dgis_release_claim_gate.md",
+    "perf_test": "tests/perf/dgis_budget_gate.rs",
+    "gate_report": "artifacts/10.20/dgis_release_gate_report.json",
+    "checker": "scripts/check_dgis_claim_gate.py",
+    "tests": "tests/test_check_dgis_claim_gate.py"
+  }
+}

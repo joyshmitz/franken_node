@@ -1,0 +1,39 @@
+{
+  "scenario_id": "DR-003",
+  "title": "Epoch Barrier Failure",
+  "category": "epoch_barrier_failure",
+  "severity": "critical",
+  "slo_seconds": 180,
+  "drill_interval": "weekly",
+  "fault_description": "Simulate an epoch transition timeout by injecting a mock clock that stalls the epoch barrier. Verifies that the hold-and-retry procedure correctly handles the failure and all peers converge to the same epoch.",
+  "fault_injection_steps": [
+    "Record current epoch number across all test peers",
+    "Inject mock clock that pauses time progression for the epoch barrier",
+    "Trigger an epoch transition request",
+    "Wait for epoch barrier timeout to fire",
+    "Record fault injection timestamp"
+  ],
+  "recovery_steps": [
+    "Detect epoch barrier timeout via monitoring",
+    "Hold current epoch to prevent partial transitions",
+    "Identify which peers failed to transition",
+    "Restore normal clock progression",
+    "Retry epoch transition with extended timeout",
+    "Verify all peers reach the new epoch"
+  ],
+  "verification_steps": [
+    "Confirm all peers report the same epoch number",
+    "Validate epoch state consistency across the fleet",
+    "Verify no split-epoch condition exists",
+    "Check that epoch barrier health metric is healthy",
+    "Confirm mock clock has been removed"
+  ],
+  "abort_conditions": [
+    "Split-epoch condition persists after retry",
+    "Peers enter divergent state that cannot be reconciled",
+    "Mock clock injection affects production-adjacent systems",
+    "Recovery time exceeds 3x SLO with no progress"
+  ],
+  "related_runbook": "RB-004",
+  "cross_references": ["bd-nr4", "bd-k6o", "fencing.rs", "epoch_management"]
+}

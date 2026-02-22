@@ -1,0 +1,38 @@
+{
+  "bead_id": "bd-876n",
+  "section": "10.14",
+  "title": "Cancellation injection at all await points for critical control workflows",
+  "gate_script": "scripts/check_cancellation_injection.py",
+  "test_suite": "tests/test_check_cancellation_injection.py",
+  "timestamp": "2026-02-22T01:40:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "cancellation_injection": "crates/franken-node/src/control_plane/cancellation_injection.rs",
+    "control_plane_mod": "crates/franken-node/src/control_plane/mod.rs",
+    "spec_contract": "docs/specs/section_10_14/bd-876n_contract.md",
+    "verification_script": "scripts/check_cancellation_injection.py",
+    "unit_tests": "tests/test_check_cancellation_injection.py"
+  },
+  "rust_test_count": 25,
+  "python_test_count": 41,
+  "event_codes_defined": 10,
+  "error_codes_defined": 8,
+  "gate_checks_passed": 33,
+  "gate_checks_total": 33,
+  "invariants_verified": [
+    "INV-CANCEL-LEAK-FREE",
+    "INV-CANCEL-HALFCOMMIT-FREE",
+    "INV-CANCEL-MATRIX-COMPLETE",
+    "INV-CANCEL-DETERMINISTIC",
+    "INV-CANCEL-BARRIER-SAFE",
+    "INV-CANCEL-SAGA-SAFE"
+  ],
+  "capabilities_verified": {
+    "workflows_covered": ["epoch_transition_barrier", "marker_stream_append", "root_pointer_publication", "evidence_commit", "eviction_saga"],
+    "operations": ["register_workflow", "run_cancel_case", "register_default_workflows", "detect_halfcommit", "has_leaks", "delta"],
+    "leak_detection": true,
+    "halfcommit_detection": true,
+    "cancel_matrix": true,
+    "audit_log_export": true
+  }
+}

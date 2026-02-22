@@ -1,0 +1,55 @@
+# franken-node configuration example with profile overlays.
+# Precedence in resolver:
+#   CLI > env > profile block > file base > defaults
+
+profile = "balanced"
+
+[compatibility]
+mode = "balanced"
+emit_divergence_receipts = true
+
+[migration]
+autofix = true
+require_lockstep_validation = true
+
+[trust]
+risky_requires_fresh_revocation = true
+dangerous_requires_fresh_revocation = true
+quarantine_on_high_risk = true
+
+[replay]
+persist_high_severity = true
+bundle_version = "v1"
+
+[registry]
+require_signatures = true
+require_provenance = true
+minimum_assurance_level = 3
+
+[fleet]
+convergence_timeout_seconds = 120
+
+[observability]
+namespace = "franken_node"
+emit_structured_audit_events = true
+
+# Profile-specific overlays:
+# Use [profiles.strict], [profiles.balanced], or [profiles."legacy-risky"]
+
+[profiles.strict.migration]
+autofix = false
+
+[profiles.strict.registry]
+minimum_assurance_level = 5
+
+[profiles.balanced.registry]
+minimum_assurance_level = 3
+
+[profiles."legacy-risky".compatibility]
+mode = "legacy-risky"
+emit_divergence_receipts = false
+
+[profiles."legacy-risky".registry]
+require_signatures = false
+require_provenance = false
+minimum_assurance_level = 1

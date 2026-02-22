@@ -1,0 +1,68 @@
+name: No Contract No Merge Gate
+
+on:
+  pull_request:
+    paths:
+      - "crates/franken-node/src/**"
+      - "crates/franken-engine/src/**"
+      - "crates/asupersync/src/**"
+      - "services/**"
+      - "docs/change_summaries/**"
+      - "docs/templates/change_summary_template.md"
+      - "scripts/check_no_contract_no_merge.py"
+      - "tests/test_check_no_contract_no_merge.py"
+  push:
+    branches: [main]
+    paths:
+      - "crates/franken-node/src/**"
+      - "crates/franken-engine/src/**"
+      - "crates/asupersync/src/**"
+      - "services/**"
+      - "docs/change_summaries/**"
+      - "docs/templates/change_summary_template.md"
+      - "scripts/check_no_contract_no_merge.py"
+      - "tests/test_check_no_contract_no_merge.py"
+
+jobs:
+  no-contract-no-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build changed-file list
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+            git diff --name-only "origin/${{ github.base_ref }}...HEAD" > /tmp/changed_files.txt
+          else
+            git diff --name-only HEAD~1...HEAD > /tmp/changed_files.txt
+          fi
+          cat /tmp/changed_files.txt
+
+      - name: Extract PR labels
+        id: labels
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            labels_csv="$(jq -r '[.pull_request.labels[].name] | join(",")' "$GITHUB_EVENT_PATH")"
+          else
+            labels_csv=""
+          fi
+          echo "labels_csv=$labels_csv" >> "$GITHUB_OUTPUT"
+          echo "labels=$labels_csv"
+
+      - name: Run no-contract-no-merge gate
+        run: |
+          python3 scripts/check_no_contract_no_merge.py \
+            --changed-files /tmp/changed_files.txt \
+            --labels "${{ steps.labels.outputs.labels_csv }}" \
+            --override-label contract-override \
+            --json > /tmp/no_contract_no_merge_gate.json
+
+      - name: Upload gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: no-contract-no-merge-gate
+          path: /tmp/no_contract_no_merge_gate.json

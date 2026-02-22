@@ -1,0 +1,100 @@
+{
+  "bead_id": "bd-lus",
+  "section": "10.11",
+  "gate_script": "check_scheduler_lanes.py",
+  "checks_passed": 18,
+  "checks_total": 18,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "lane_router_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/runtime/lane_router.rs"
+    },
+    {
+      "check": "bulkhead_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/runtime/bulkhead.rs"
+    },
+    {
+      "check": "config_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/config.rs"
+    },
+    {
+      "check": "spec_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_11/bd-lus_contract.md"
+    },
+    {
+      "check": "tests_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/tests/test_check_scheduler_lanes.py"
+    },
+    {
+      "check": "lane_event_codes",
+      "passed": true,
+      "detail": "4/4 present"
+    },
+    {
+      "check": "lane_core_types",
+      "passed": true,
+      "detail": "6/6 present"
+    },
+    {
+      "check": "lane_taxonomy",
+      "passed": true,
+      "detail": "4/4 lanes"
+    },
+    {
+      "check": "overflow_policies",
+      "passed": true,
+      "detail": "3/3 policies"
+    },
+    {
+      "check": "lane_operations",
+      "passed": true,
+      "detail": "4/4 operations"
+    },
+    {
+      "check": "unknown_lane_defaults_background",
+      "passed": true,
+      "detail": "default-to-background warning path present"
+    },
+    {
+      "check": "metrics_contract",
+      "passed": true,
+      "detail": "7/7 metrics"
+    },
+    {
+      "check": "bulkhead_surface",
+      "passed": true,
+      "detail": "7/7 markers"
+    },
+    {
+      "check": "runtime_config_contract",
+      "passed": true,
+      "detail": "7/7 markers"
+    },
+    {
+      "check": "lane_test_count",
+      "passed": true,
+      "detail": "10 tests (>=10)"
+    },
+    {
+      "check": "bulkhead_test_count",
+      "passed": true,
+      "detail": "10 tests (>=8)"
+    },
+    {
+      "check": "mixed_workload_integration_test",
+      "passed": true,
+      "detail": "100-op integration simulation present"
+    },
+    {
+      "check": "tests_reference_script",
+      "passed": true,
+      "detail": "test file references script + bead"
+    }
+  ]
+}

@@ -1,0 +1,105 @@
+{
+  "bead_id": "bd-2a6g",
+  "section": "14",
+  "gate_script": "check_containment_revocation_metrics.py",
+  "checks_passed": 19,
+  "checks_total": 19,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "source_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/tools/containment_revocation_metrics.rs"
+    },
+    {
+      "check": "module_wiring",
+      "passed": true,
+      "detail": "tools/mod.rs"
+    },
+    {
+      "check": "event_categories",
+      "passed": true,
+      "detail": "5/5 categories"
+    },
+    {
+      "check": "struct_Percentiles",
+      "passed": true,
+      "detail": "Percentiles"
+    },
+    {
+      "check": "struct_ContainmentEvent",
+      "passed": true,
+      "detail": "ContainmentEvent"
+    },
+    {
+      "check": "struct_CategoryMetrics",
+      "passed": true,
+      "detail": "CategoryMetrics"
+    },
+    {
+      "check": "struct_ContainmentReport",
+      "passed": true,
+      "detail": "ContainmentReport"
+    },
+    {
+      "check": "struct_CrmAuditRecord",
+      "passed": true,
+      "detail": "CrmAuditRecord"
+    },
+    {
+      "check": "struct_ContainmentRevocationMetrics",
+      "passed": true,
+      "detail": "ContainmentRevocationMetrics"
+    },
+    {
+      "check": "percentile_ordering",
+      "passed": true,
+      "detail": "p50 <= p95 <= p99 validation"
+    },
+    {
+      "check": "convergence_measurement",
+      "passed": true,
+      "detail": "Node convergence tracking"
+    },
+    {
+      "check": "slo_gating",
+      "passed": true,
+      "detail": "Per-category SLO thresholds"
+    },
+    {
+      "check": "report_generation",
+      "passed": true,
+      "detail": "Aggregated report with flagged categories"
+    },
+    {
+      "check": "metric_versioning",
+      "passed": true,
+      "detail": "crm-v1.0"
+    },
+    {
+      "check": "event_codes",
+      "passed": true,
+      "detail": "12/12 codes"
+    },
+    {
+      "check": "invariants",
+      "passed": true,
+      "detail": "6/6 invariants"
+    },
+    {
+      "check": "audit_log",
+      "passed": true,
+      "detail": "JSONL audit export"
+    },
+    {
+      "check": "spec_alignment",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_14/bd-2a6g_contract.md"
+    },
+    {
+      "check": "test_coverage",
+      "passed": true,
+      "detail": "24 tests (>=24)"
+    }
+  ]
+}

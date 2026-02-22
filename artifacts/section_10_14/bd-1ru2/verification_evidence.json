@@ -1,0 +1,69 @@
+{
+  "bead": "bd-1ru2",
+  "title": "Cancel-Safe Eviction Saga",
+  "verdict": "PASS",
+  "passed": 12,
+  "total": 12,
+  "checks": [
+    {
+      "check": "SOURCE_EXISTS",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/remote/eviction_saga.rs"
+    },
+    {
+      "check": "EVENT_CODES",
+      "passed": true,
+      "detail": "12/12 event codes"
+    },
+    {
+      "check": "INVARIANTS",
+      "passed": true,
+      "detail": "6/6 invariants"
+    },
+    {
+      "check": "CORE_TYPES",
+      "passed": true,
+      "detail": "5/5 types"
+    },
+    {
+      "check": "SAGA_PHASES",
+      "passed": true,
+      "detail": "8/8 saga phases defined"
+    },
+    {
+      "check": "COMPENSATION_MATRIX",
+      "passed": true,
+      "detail": "3/3 compensation actions"
+    },
+    {
+      "check": "REMOTECAP_GATING",
+      "passed": true,
+      "detail": "RemoteCap gate on saga start"
+    },
+    {
+      "check": "CANCEL_SAFETY",
+      "passed": true,
+      "detail": "cancel-safe compensation"
+    },
+    {
+      "check": "LEAK_DETECTION",
+      "passed": true,
+      "detail": "leak/orphan detection"
+    },
+    {
+      "check": "CRASH_RECOVERY",
+      "passed": true,
+      "detail": "crash recovery support"
+    },
+    {
+      "check": "AUDIT_TRAIL",
+      "passed": true,
+      "detail": "audit + trace export"
+    },
+    {
+      "check": "TEST_COVERAGE",
+      "passed": true,
+      "detail": "17 tests found"
+    }
+  ]
+}

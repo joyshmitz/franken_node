@@ -1,0 +1,27 @@
+{
+  "bead_id": "bd-1pk",
+  "schema_version": "rch-quality-summary-v1",
+  "commands": [
+    {
+      "name": "cargo fmt --check",
+      "runner": "rch exec --",
+      "exit_code": 1,
+      "status": "fail",
+      "log": "artifacts/section_bootstrap/bd-1pk/rch_cargo_fmt_check.log"
+    },
+    {
+      "name": "cargo check --all-targets",
+      "runner": "rch exec --",
+      "exit_code": 101,
+      "status": "fail",
+      "log": "artifacts/section_bootstrap/bd-1pk/rch_cargo_check.log"
+    },
+    {
+      "name": "cargo clippy --all-targets -- -D warnings",
+      "runner": "rch exec --",
+      "exit_code": 101,
+      "status": "fail",
+      "log": "artifacts/section_bootstrap/bd-1pk/rch_cargo_clippy.log"
+    }
+  ]
+}

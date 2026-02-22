@@ -1,0 +1,55 @@
+{
+  "bead_id": "bd-1vp",
+  "section": "10.10",
+  "title": "Zone/Tenant Trust Segmentation Policies",
+  "status": "pass",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "rust_module": "crates/franken-node/src/security/trust_zone.rs",
+  "structs_implemented": [
+    "ZonePolicy",
+    "TenantBinding",
+    "CrossZoneRequest",
+    "ZoneSegmentationEngine",
+    "SegmentationError",
+    "IsolationLevel",
+    "ZoneAuditEvent"
+  ],
+  "methods_implemented": [
+    "register_zone",
+    "bind_tenant",
+    "authorize_cross_zone",
+    "check_isolation",
+    "resolve_zone",
+    "delete_zone",
+    "check_delegation_depth",
+    "check_trust_ceiling",
+    "validate_key_zone"
+  ],
+  "event_codes": ["ZTS-001", "ZTS-002", "ZTS-003", "ZTS-004"],
+  "invariants": [
+    "INV-ZTS-ISOLATE",
+    "INV-ZTS-CEILING",
+    "INV-ZTS-DEPTH",
+    "INV-ZTS-BIND"
+  ],
+  "error_codes": [
+    "ERR_ZTS_CROSS_ZONE_VIOLATION",
+    "ERR_ZTS_TENANT_NOT_BOUND",
+    "ERR_ZTS_ZONE_NOT_FOUND",
+    "ERR_ZTS_DELEGATION_EXCEEDED",
+    "ERR_ZTS_ISOLATION_VIOLATION",
+    "ERR_ZTS_DUPLICATE_ZONE",
+    "ERR_ZTS_DUPLICATE_TENANT",
+    "ERR_ZTS_BRIDGE_INCOMPLETE",
+    "ERR_ZTS_FRESHNESS_STALE",
+    "ERR_ZTS_KEY_ZONE_MISMATCH"
+  ],
+  "rust_test_count": 63,
+  "isolation_levels": ["Strict", "Permissive", "Custom"],
+  "compilation": "pass",
+  "zone_count": 3,
+  "cross_zone_bridge_scenarios_tested": 5,
+  "boundary_violation_rejections": 4,
+  "checkpoint_coverage": "zone_create, zone_delete, tenant_bind, cross_zone_auth"
+}

@@ -1,0 +1,89 @@
+{
+  "bead_id": "bd-1naf",
+  "title": "BPET governance policy for thresholding/appeals/override workflows",
+  "section": "10.21",
+  "gate": true,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 14,
+  "passed": 14,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "file_spec_contract",
+      "pass": true,
+      "detail": "docs/specs/section_10_21/bd-1naf_contract.md"
+    },
+    {
+      "check": "file_policy_doc",
+      "pass": true,
+      "detail": "docs/policy/bpet_governance_policy.md"
+    },
+    {
+      "check": "file_policy_rust_test",
+      "pass": true,
+      "detail": "tests/policy/bpet_override_audit.rs"
+    },
+    {
+      "check": "file_governance_audit_log",
+      "pass": true,
+      "detail": "artifacts/10.21/bpet_governance_audit_log.jsonl"
+    },
+    {
+      "check": "policy_sections",
+      "pass": true,
+      "detail": "7/7 required policy sections"
+    },
+    {
+      "check": "policy_event_codes",
+      "pass": true,
+      "detail": "6/6 required event codes"
+    },
+    {
+      "check": "policy_hard_stop_clause",
+      "pass": true,
+      "detail": "hard-stop non-override clause present"
+    },
+    {
+      "check": "rust_test_fixture",
+      "pass": true,
+      "detail": "10 tests"
+    },
+    {
+      "check": "audit_entries_present",
+      "pass": true,
+      "detail": "6 entries"
+    },
+    {
+      "check": "audit_schema",
+      "pass": true,
+      "detail": "all entries include required base fields"
+    },
+    {
+      "check": "audit_event_code_coverage",
+      "pass": true,
+      "detail": "6/6 required event codes present"
+    },
+    {
+      "check": "audit_appeal_lifecycle",
+      "pass": true,
+      "detail": "appeal_filed + appeal_resolved present"
+    },
+    {
+      "check": "audit_override_signature",
+      "pass": true,
+      "detail": "override events contain signed rationale"
+    },
+    {
+      "check": "audit_override_bounds",
+      "pass": true,
+      "detail": "override TTL and dual-control bounds satisfied"
+    }
+  ],
+  "artifacts": {
+    "spec": "docs/specs/section_10_21/bd-1naf_contract.md",
+    "policy": "docs/policy/bpet_governance_policy.md",
+    "rust_test": "tests/policy/bpet_override_audit.rs",
+    "audit_log": "artifacts/10.21/bpet_governance_audit_log.jsonl"
+  }
+}

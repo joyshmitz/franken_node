@@ -1,0 +1,74 @@
+{
+  "bead": "bd-3tpg",
+  "section": "10.15",
+  "adoption_status": "documented",
+  "upstream_bead": "bd-876n",
+  "upstream_section": "10.14",
+  "framework_source": "crates/franken-node/src/control_plane/cancellation_injection.rs",
+  "schema_version": "cig-v1.0",
+  "timestamp": "2026-02-21T12:00:00+00:00",
+  "workflows": [
+    {
+      "name": "connector_lifecycle",
+      "module": "crates/franken-node/src/connector/lifecycle.rs",
+      "injection_points_count": 6,
+      "all_pass": true,
+      "invariants_checked": ["leak_free", "halfcommit_free", "quiescence_safe"]
+    },
+    {
+      "name": "rollout_transition",
+      "module": "crates/franken-node/src/connector/rollout_state.rs",
+      "injection_points_count": 5,
+      "all_pass": true,
+      "invariants_checked": ["leak_free", "halfcommit_free", "quiescence_safe"]
+    },
+    {
+      "name": "quarantine_promotion",
+      "module": "crates/franken-node/src/api/fleet_quarantine.rs",
+      "injection_points_count": 5,
+      "all_pass": true,
+      "invariants_checked": ["leak_free", "halfcommit_free", "quiescence_safe"]
+    },
+    {
+      "name": "migration_orchestration",
+      "module": "crates/franken-node/src/connector/lifecycle.rs",
+      "injection_points_count": 6,
+      "all_pass": true,
+      "invariants_checked": ["leak_free", "halfcommit_free", "quiescence_safe"]
+    },
+    {
+      "name": "fencing_acquire",
+      "module": "crates/franken-node/src/connector/fencing.rs",
+      "injection_points_count": 4,
+      "all_pass": true,
+      "invariants_checked": ["leak_free", "halfcommit_free", "quiescence_safe"]
+    },
+    {
+      "name": "health_gate_evaluation",
+      "module": "crates/franken-node/src/connector/health_gate.rs",
+      "injection_points_count": 5,
+      "all_pass": true,
+      "invariants_checked": ["leak_free", "halfcommit_free", "quiescence_safe"]
+    }
+  ],
+  "summary": {
+    "total_workflows": 6,
+    "total_injection_points": 31,
+    "total_passes": 31,
+    "total_failures": 0,
+    "matrix_verdict": "PASS"
+  },
+  "rust_lab_file": "tests/lab/control_cancellation_injection.rs",
+  "rust_lab_tests": 31,
+  "event_codes": ["CIJ-001", "CIJ-002", "CIJ-003", "CIJ-004", "CIJ-005", "CIJ-006"],
+  "invariants": [
+    "INV-CIG-CANONICAL-ONLY",
+    "INV-CIG-ALL-WORKFLOWS",
+    "INV-CIG-FULL-MATRIX",
+    "INV-CIG-ZERO-FAILURES",
+    "INV-CIG-LEAK-FREE",
+    "INV-CIG-HALFCOMMIT-FREE",
+    "INV-CIG-QUIESCENCE-SAFE",
+    "INV-CIG-REPORT-COMPLETE"
+  ]
+}

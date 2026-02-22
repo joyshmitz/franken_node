@@ -1,0 +1,127 @@
+{
+  "bead_id": "bd-3p9n",
+  "title": "Section 10.6 verification gate: Performance + Packaging",
+  "section": "10.6",
+  "gate": true,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 21,
+  "passed": 21,
+  "failed": 0,
+  "section_beads": [
+    "bd-k4s",
+    "bd-3lh",
+    "bd-38m",
+    "bd-2q5",
+    "bd-3kn",
+    "bd-2pw",
+    "bd-3q9"
+  ],
+  "checks": [
+    {
+      "check": "evidence_bd-k4s",
+      "pass": true,
+      "detail": "PASS: Build product-level benchmark suite with secure-extension sc"
+    },
+    {
+      "check": "evidence_bd-3lh",
+      "pass": true,
+      "detail": "PASS: Add cold-start and p99 latency gates for core workflows"
+    },
+    {
+      "check": "evidence_bd-38m",
+      "pass": true,
+      "detail": "PASS: Optimize lockstep harness throughput and memory profile"
+    },
+    {
+      "check": "evidence_bd-2q5",
+      "pass": true,
+      "detail": "PASS: Optimize migration scanner throughput for large monorepos"
+    },
+    {
+      "check": "evidence_bd-3kn",
+      "pass": true,
+      "detail": "PASS: Add packaging profiles for local/dev/enterprise deployments"
+    },
+    {
+      "check": "evidence_bd-2pw",
+      "pass": true,
+      "detail": "PASS: Add artifact signing and checksum verification for releases"
+    },
+    {
+      "check": "evidence_bd-3q9",
+      "pass": true,
+      "detail": "PASS: Add release rollback bundles with deterministic restore chec"
+    },
+    {
+      "check": "summary_bd-k4s",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_6/bd-k4s/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3lh",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_6/bd-3lh/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-38m",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_6/bd-38m/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2q5",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_6/bd-2q5/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3kn",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_6/bd-3kn/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-2pw",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_6/bd-2pw/verification_summary.md"
+    },
+    {
+      "check": "summary_bd-3q9",
+      "pass": true,
+      "detail": "exists: artifacts/section_10_6/bd-3q9/verification_summary.md"
+    },
+    {
+      "check": "all_evidence_present",
+      "pass": true,
+      "detail": "7/7 beads have evidence"
+    },
+    {
+      "check": "all_verdicts_pass",
+      "pass": true,
+      "detail": "7/7 PASS"
+    },
+    {
+      "check": "benchmark_suite_impl",
+      "pass": true,
+      "detail": "exists: crates/franken-node/src/tools/benchmark_suite.rs"
+    },
+    {
+      "check": "budgets_config",
+      "pass": true,
+      "detail": "exists: perf/budgets.toml"
+    },
+    {
+      "check": "packaging_profiles_doc",
+      "pass": true,
+      "detail": "exists: docs/policy/packaging_profiles.md"
+    },
+    {
+      "check": "artifact_signing_doc",
+      "pass": true,
+      "detail": "exists: docs/policy/artifact_signing_verification.md"
+    },
+    {
+      "check": "rollback_bundles_doc",
+      "pass": true,
+      "detail": "exists: docs/policy/release_rollback_bundles.md"
+    }
+  ]
+}

@@ -468,7 +468,21 @@ fn publish_root_internal(
     }
 
     let payload = serde_json::to_vec_pretty(root).map_err(RootPointerError::Serialize)?;
+    
+    let manifest_hash = hash_hex(&payload);
+    let auth_record = RootAuthRecord {
+        root_format_version: ROOT_POINTER_FORMAT_VERSION.to_string(),
+        root_hash: manifest_hash.clone(),
+        epoch: root.epoch,
+        issued_at: Utc::now().to_rfc3339(),
+        mac: sign_payload(&manifest_hash, signing_key),
+    };
+    let auth_payload = serde_json::to_vec_pretty(&auth_record).map_err(RootPointerError::Serialize)?;
+
     let mut trace = PublishTrace::default();
+
+    let temp_auth_path = dir.join(format!(".{}.tmp.{}", ROOT_POINTER_AUTH_FILE, Uuid::now_v7()));
+    let auth_path = root_auth_path(dir);
 
     let mut temp_file = OpenOptions::new()
         .create_new(true)
@@ -492,6 +506,29 @@ fn publish_root_internal(
         path: temp_path.display().to_string(),
         source,
     })?;
+
+    let mut temp_auth_file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temp_auth_path)
+        .map_err(|source| RootPointerError::Io {
+            step: "write_root_auth_temp",
+            path: temp_auth_path.display().to_string(),
+            source,
+        })?;
+    temp_auth_file
+        .write_all(&auth_payload)
+        .map_err(|source| RootPointerError::Io {
+            step: "write_root_auth_temp",
+            path: temp_auth_path.display().to_string(),
+            source,
+        })?;
+    temp_auth_file.flush().map_err(|source| RootPointerError::Io {
+        step: "write_root_auth_temp",
+        path: temp_auth_path.display().to_string(),
+        source,
+    })?;
+
     trace.steps.push(PublishStep::WriteTemp);
     maybe_crash(options.crash_after, PublishStep::WriteTemp)?;
 
@@ -502,6 +539,14 @@ fn publish_root_internal(
             path: temp_path.display().to_string(),
             source,
         })?;
+    temp_auth_file
+        .sync_all()
+        .map_err(|source| RootPointerError::Io {
+            step: "fsync_root_auth_temp",
+            path: temp_auth_path.display().to_string(),
+            source,
+        })?;
+
     trace.steps.push(PublishStep::FsyncTemp);
     maybe_crash(options.crash_after, PublishStep::FsyncTemp)?;
 
@@ -510,22 +555,18 @@ fn publish_root_internal(
         path: root_path.display().to_string(),
         source,
     })?;
+    fs::rename(&temp_auth_path, &auth_path).map_err(|source| RootPointerError::Io {
+        step: "rename_root_auth",
+        path: auth_path.display().to_string(),
+        source,
+    })?;
+
     trace.steps.push(PublishStep::Rename);
     maybe_crash(options.crash_after, PublishStep::Rename)?;
 
     sync_directory(dir)?;
     trace.steps.push(PublishStep::FsyncDir);
     maybe_crash(options.crash_after, PublishStep::FsyncDir)?;
-
-    let manifest_hash = hash_hex(&payload);
-    let auth_record = RootAuthRecord {
-        root_format_version: ROOT_POINTER_FORMAT_VERSION.to_string(),
-        root_hash: manifest_hash.clone(),
-        epoch: root.epoch,
-        issued_at: Utc::now().to_rfc3339(),
-        mac: sign_payload(&manifest_hash, signing_key),
-    };
-    write_root_auth_record(dir, &auth_record)?;
 
     let event_unsigned = UnsignedRootPublishEvent {
         event_code: ROOT_PUBLISH_COMPLETE.to_string(),
@@ -562,53 +603,6 @@ fn maybe_crash(
     if crash_after == Some(step) {
         return Err(RootPointerError::CrashInjected(step));
     }
-    Ok(())
-}
-
-fn write_root_auth_record(dir: &Path, record: &RootAuthRecord) -> Result<(), RootPointerError> {
-    let auth_path = root_auth_path(dir);
-    let temp_path = dir.join(format!(
-        ".{}.tmp.{}",
-        ROOT_POINTER_AUTH_FILE,
-        Uuid::now_v7()
-    ));
-    let payload = serde_json::to_vec_pretty(record).map_err(RootPointerError::Serialize)?;
-
-    let mut temp_file = OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&temp_path)
-        .map_err(|source| RootPointerError::Io {
-            step: "write_root_auth_temp",
-            path: temp_path.display().to_string(),
-            source,
-        })?;
-    temp_file
-        .write_all(&payload)
-        .map_err(|source| RootPointerError::Io {
-            step: "write_root_auth_temp",
-            path: temp_path.display().to_string(),
-            source,
-        })?;
-    temp_file.flush().map_err(|source| RootPointerError::Io {
-        step: "write_root_auth_temp",
-        path: temp_path.display().to_string(),
-        source,
-    })?;
-    temp_file
-        .sync_all()
-        .map_err(|source| RootPointerError::Io {
-            step: "fsync_root_auth_temp",
-            path: temp_path.display().to_string(),
-            source,
-        })?;
-
-    fs::rename(&temp_path, &auth_path).map_err(|source| RootPointerError::Io {
-        step: "rename_root_auth",
-        path: auth_path.display().to_string(),
-        source,
-    })?;
-    sync_directory(dir)?;
     Ok(())
 }
 

@@ -1,0 +1,65 @@
+{
+  "runbook_id": "RB-001",
+  "title": "Trust State Corruption",
+  "category": "trust_state_corruption",
+  "severity": "critical",
+  "operator_privilege_level": "p1",
+  "detection_signature": {
+    "metrics": [
+      "trust_integrity_check_failures > 0",
+      "trust_state_hash_mismatch_total > 0"
+    ],
+    "log_patterns": [
+      "TRUST_STATE_CORRUPTION_DETECTED",
+      "trust_state_integrity_check failed"
+    ]
+  },
+  "estimated_recovery_time": "30m",
+  "required_permissions": ["operator", "security_admin"],
+  "steps": {
+    "containment": [
+      "Activate safe mode via franken-node safe-mode enter --reason trust_corruption",
+      "Freeze all trust delegation operations",
+      "Block new trust chain extensions",
+      "Notify on-call security team via incident channel"
+    ],
+    "investigation": [
+      "Diff current trust state against last known-good snapshot",
+      "Identify divergence point in evidence ledger",
+      "Check for unauthorized trust mutations in audit log",
+      "Correlate with recent deployments or configuration changes",
+      "Determine scope of corruption (single node vs fleet-wide)"
+    ],
+    "repair": [
+      "Restore trust state from last verified snapshot",
+      "Re-derive trust chain from verified root of trust",
+      "Re-validate all trust delegations against policy",
+      "Replay evidence ledger entries from verified checkpoint"
+    ],
+    "verification": [
+      "Run full trust re-verification pass",
+      "Confirm trust state hash matches expected value",
+      "Validate evidence ledger consistency end-to-end",
+      "Verify all trust delegations are policy-compliant"
+    ],
+    "rollback": [
+      "Revert to previous epoch if repair fails",
+      "Restore pre-corruption trust state from backup",
+      "Invalidate trust tokens issued during corruption window",
+      "Escalate to security incident team if rollback also fails"
+    ]
+  },
+  "cross_references": ["bd-k6o", "safe_mode.rs", "state_model.rs"],
+  "drill_scenario": "Inject trust artifact integrity failure by modifying a trust state entry hash to an invalid value. Verify detection fires within 60 seconds, safe mode activates automatically, and the full containment-through-verification pipeline completes successfully.",
+  "command_references": [
+    "franken-node safe-mode enter --reason trust_corruption",
+    "franken-node trust verify --full",
+    "POST /api/v1/control/safe-mode/enter"
+  ],
+  "coverage_tags": [
+    "trust-anchor-compromise",
+    "malicious-extension-detection"
+  ],
+  "last_reviewed": "2026-02-21",
+  "review_cadence": "per_release_cycle"
+}

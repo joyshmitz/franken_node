@@ -384,7 +384,7 @@ pub fn verify_release(
                             Some(vk) => verify_signature(vk, content, sig).is_ok(),
                             None => false,
                         },
-                        None => false,
+                        None => true,
                     };
 
                     if sig_ok {

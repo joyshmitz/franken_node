@@ -1,0 +1,49 @@
+{
+  "bead_id": "bd-ac83",
+  "section": "10.14",
+  "title": "Named remote computation registry",
+  "generated_at": "2026-02-22T01:23:30Z",
+  "verdict": "PASS_SCOPE_WITH_BASELINE_WORKSPACE_FAILURES",
+  "static_checks": [
+    {
+      "check": "implementation_module_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/remote/computation_registry.rs"
+    },
+    {
+      "check": "remote_mod_export_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/remote/mod.rs"
+    },
+    {
+      "check": "main_exports_remote_module",
+      "pass": true,
+      "detail": "crates/franken-node/src/main.rs includes `pub mod remote;`"
+    },
+    {
+      "check": "conformance_test_exists",
+      "pass": true,
+      "detail": "tests/conformance/remote_name_registry.rs"
+    },
+    {
+      "check": "spec_contract_exists",
+      "pass": true,
+      "detail": "docs/specs/section_10_14/bd-ac83_contract.md"
+    },
+    {
+      "check": "catalog_artifact_exists",
+      "pass": true,
+      "detail": "artifacts/10.14/remote_registry_catalog.json"
+    },
+    {
+      "check": "catalog_names_match_contract",
+      "pass": true,
+      "detail": "4/4 entries match `^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.v[0-9]+$`"
+    }
+  ],
+  "catalog_validation": {
+    "registry_version": 1,
+    "entry_count": 4,
+    "canonical_valid": 4
+  }
+}

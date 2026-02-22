@@ -1,0 +1,77 @@
+{
+  "bead_id": "bd-lus",
+  "section": "10.11",
+  "title": "Product scheduler lane + global bulkhead integration",
+  "generated_at": "2026-02-22T02:29:51Z",
+  "status": "completed_with_baseline_workspace_failures",
+  "checks": [
+    {
+      "name": "implementation_surface_present",
+      "command": "test -f crates/franken-node/src/runtime/lane_router.rs && test -f crates/franken-node/src/runtime/bulkhead.rs && test -f docs/specs/section_10_11/bd-lus_contract.md",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "gate_script_json",
+      "command": "python3 scripts/check_scheduler_lanes.py --json",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_11/bd-lus/check_report_scheduler_lanes.json",
+      "summary": {
+        "verdict": "PASS",
+        "checks_passed": 18,
+        "checks_total": 18
+      }
+    },
+    {
+      "name": "gate_script_self_test",
+      "command": "python3 scripts/check_scheduler_lanes.py --self-test",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_11/bd-lus/check_scheduler_lanes_self_test.log"
+    },
+    {
+      "name": "pytest_gate_tests",
+      "command": "pytest -q tests/test_check_scheduler_lanes.py",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_11/bd-lus/pytest_check_scheduler_lanes.log",
+      "summary": {
+        "tests_passed": 8,
+        "tests_total": 8
+      }
+    },
+    {
+      "name": "cargo_check_all_targets_via_rch",
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_11/bd-lus/rch_cargo_check_all_targets.log",
+      "note": "Pre-existing workspace compile debt outside bd-lus scope."
+    },
+    {
+      "name": "cargo_clippy_all_targets_via_rch",
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_11/bd-lus/rch_cargo_clippy_all_targets.log",
+      "note": "Pre-existing workspace lint/compile debt outside bd-lus scope."
+    },
+    {
+      "name": "cargo_fmt_check_via_rch",
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_11/bd-lus/rch_cargo_fmt_check.log",
+      "note": "Pre-existing workspace formatting drift outside bd-lus scope."
+    }
+  ],
+  "contract_surface": {
+    "lane_router": "crates/franken-node/src/runtime/lane_router.rs",
+    "bulkhead": "crates/franken-node/src/runtime/bulkhead.rs",
+    "config": "crates/franken-node/src/config.rs",
+    "gate_script": "scripts/check_scheduler_lanes.py",
+    "gate_tests": "tests/test_check_scheduler_lanes.py",
+    "spec": "docs/specs/section_10_11/bd-lus_contract.md"
+  }
+}

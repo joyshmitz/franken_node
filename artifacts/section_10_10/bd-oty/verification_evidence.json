@@ -1,0 +1,53 @@
+{
+  "bead_id": "bd-oty",
+  "section": "10.10",
+  "title": "Session-authenticated control channel integration",
+  "timestamp": "2026-02-21T01:20:00Z",
+  "verdict": "PASS",
+  "files": {
+    "spec": "docs/specs/section_10_10/bd-oty_contract.md",
+    "policy": "docs/policy/session_authenticated_control.md",
+    "implementation": "crates/franken-node/src/api/session_auth.rs",
+    "upstream_control_channel": "crates/franken-node/src/connector/control_channel.rs",
+    "verification_script": "scripts/check_session_auth.py",
+    "python_tests": "tests/test_check_session_auth.py"
+  },
+  "metrics": {
+    "python_checks_total": 110,
+    "python_checks_passing": 110,
+    "python_checks_failing": 0,
+    "python_unit_tests": 35,
+    "rust_unit_tests": 44,
+    "structs_verified": 8,
+    "event_codes_verified": 4,
+    "error_codes_verified": 6,
+    "invariants_verified": 4,
+    "functions_verified": 14,
+    "spec_sections_verified": 11,
+    "policy_content_items_verified": 13,
+    "session_states_verified": 4,
+    "simulation_checks": 9,
+    "acceptance_criteria_verified": 8,
+    "serde_derives_verified": 6,
+    "key_role_integration_checks": 3,
+    "direction_integration_checks": 3
+  },
+  "acceptance_criteria": {
+    "AC1_session_requirement": "PASS - every control message requires active authenticated session (INV-SCC-SESSION-AUTH)",
+    "AC2_sequence_monotonicity": "PASS - per-direction sequence enforcement with strict and windowed modes (INV-SCC-MONOTONIC)",
+    "AC3_replay_window": "PASS - configurable replay window (default=0 for strict monotonicity)",
+    "AC4_role_key_separation": "PASS - Encryption role for exchange, Signing role for auth (INV-SCC-ROLE-KEYS)",
+    "AC5_terminated_rejects": "PASS - terminated sessions reject all messages with ERR_SCC_SESSION_TERMINATED (INV-SCC-TERMINATED)",
+    "AC6_concurrent_session_limit": "PASS - SessionManager enforces max_sessions with ERR_SCC_MAX_SESSIONS",
+    "AC7_traced_events": "PASS - all events include trace_id and session_id",
+    "AC8_unit_test_coverage": "PASS - 44 Rust tests covering lifecycle, sequence, replay, role keys"
+  },
+  "rust_compilation": {
+    "command": "rch exec 'cargo check --manifest-path crates/franken-node/Cargo.toml'",
+    "exit_code": 0
+  },
+  "upstream_dependencies": {
+    "bd-v97o": "connector::control_channel::Direction (per-direction sequence monotonicity)",
+    "bd-364": "control_plane::key_role_separation::KeyRole (role-separated keys)"
+  }
+}

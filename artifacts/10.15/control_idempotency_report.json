@@ -1,0 +1,58 @@
+{
+  "bead": "bd-1cwp",
+  "section": "10.15",
+  "title": "Control-Plane Idempotency Adoption Report",
+  "adoption_status": "documented",
+  "timestamp": "2026-02-22T02:02:00+00:00",
+  "canonical_primitives": {
+    "key_derivation": "crates/franken-node/src/remote/idempotency.rs",
+    "dedupe_store": "crates/franken-node/src/remote/idempotency_store.rs"
+  },
+  "retryable_requests": [
+    {
+      "request_type": "health_probe",
+      "computation_name": "connector.health_probe.v1",
+      "idempotency_key_derivation": "canonical",
+      "retry_policy": "2 retries, 1s backoff",
+      "dedup_enabled": true
+    },
+    {
+      "request_type": "rollout_notify",
+      "computation_name": "connector.rollout_notify.v1",
+      "idempotency_key_derivation": "canonical",
+      "retry_policy": "1 retry, 2s backoff",
+      "dedup_enabled": true
+    },
+    {
+      "request_type": "migration_step",
+      "computation_name": "connector.migration_step.v1",
+      "idempotency_key_derivation": "canonical",
+      "retry_policy": "3 retries, exponential",
+      "dedup_enabled": true
+    },
+    {
+      "request_type": "sync_delta",
+      "computation_name": "federation.sync_delta.v1",
+      "idempotency_key_derivation": "canonical",
+      "retry_policy": "2 retries, 3s backoff",
+      "dedup_enabled": true
+    }
+  ],
+  "non_retryable_requests": [
+    {
+      "request_type": "fencing_acquire",
+      "computation_name": "connector.fencing_acquire.v1",
+      "reason": "fail-fast semantics, no retry"
+    }
+  ],
+  "dedup_test_results": {
+    "same_key_same_payload": "dedup_hit",
+    "same_key_different_payload": "conflict_error",
+    "epoch_bound_key_rejection": "epoch_mismatch_error"
+  },
+  "custom_idempotency_scan": {
+    "directories_scanned": ["connector/", "federation/"],
+    "custom_derivation_found": 0,
+    "custom_dedup_found": 0
+  }
+}

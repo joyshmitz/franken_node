@@ -1,0 +1,31 @@
+{
+  "bead_id": "bd-3tpg",
+  "section": "10.15",
+  "title": "Canonical all-point cancellation injection gate for critical control workflows",
+  "gate_script": "scripts/check_control_cancel_injection.py",
+  "test_suite": "tests/test_check_control_cancel_injection.py",
+  "timestamp": "2026-02-21T12:00:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "adoption_document": "docs/testing/control_cancellation_injection.md",
+    "adoption_report": "artifacts/10.15/control_cancel_injection_report.json",
+    "upstream_source": "crates/franken-node/src/control_plane/cancellation_injection.rs",
+    "spec_contract": "docs/specs/section_10_15/bd-3tpg_contract.md",
+    "verification_script": "scripts/check_control_cancel_injection.py",
+    "unit_tests": "tests/test_check_control_cancel_injection.py",
+    "rust_lab_file": "tests/lab/control_cancellation_injection.rs"
+  },
+  "gate_checks_passed": 15,
+  "gate_checks_total": 15,
+  "python_test_count": 46,
+  "rust_lab_test_count": 31,
+  "capabilities_verified": {
+    "critical_workflows": 6,
+    "total_injection_points": 31,
+    "total_failures": 0,
+    "canonical_framework_used": true,
+    "no_custom_injection_violations": 0,
+    "event_codes": 6,
+    "invariants": 8
+  }
+}

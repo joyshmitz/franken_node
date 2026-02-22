@@ -1,0 +1,198 @@
+{
+  "drill_id": "drill-rb-001",
+  "trace_id": "trace-drill-rb-001",
+  "runbook_id": "RB-001",
+  "runbook_title": "Trust State Corruption",
+  "runbook_path": "fixtures/runbooks/rb_001_trust_state_corruption.json",
+  "status": "PASS",
+  "started_at": "2026-02-21T01:10:54.611883+00:00",
+  "completed_at": "2026-02-21T01:10:54.611934+00:00",
+  "steps_executed": 21,
+  "required_phases": [
+    "containment",
+    "investigation",
+    "repair",
+    "verification",
+    "rollback"
+  ],
+  "events": [
+    {
+      "event": "DRILL_STARTED",
+      "trace_id": "trace-drill-rb-001",
+      "status": "INFO"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "containment",
+      "step_index": 1,
+      "step": "Activate safe mode via franken-node safe-mode enter --reason trust_corruption",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "containment",
+      "step_index": 2,
+      "step": "Freeze all trust delegation operations",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "containment",
+      "step_index": 3,
+      "step": "Block new trust chain extensions",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "containment",
+      "step_index": 4,
+      "step": "Notify on-call security team via incident channel",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "investigation",
+      "step_index": 1,
+      "step": "Diff current trust state against last known-good snapshot",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "investigation",
+      "step_index": 2,
+      "step": "Identify divergence point in evidence ledger",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "investigation",
+      "step_index": 3,
+      "step": "Check for unauthorized trust mutations in audit log",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "investigation",
+      "step_index": 4,
+      "step": "Correlate with recent deployments or configuration changes",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "investigation",
+      "step_index": 5,
+      "step": "Determine scope of corruption (single node vs fleet-wide)",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "repair",
+      "step_index": 1,
+      "step": "Restore trust state from last verified snapshot",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "repair",
+      "step_index": 2,
+      "step": "Re-derive trust chain from verified root of trust",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "repair",
+      "step_index": 3,
+      "step": "Re-validate all trust delegations against policy",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "repair",
+      "step_index": 4,
+      "step": "Replay evidence ledger entries from verified checkpoint",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "verification",
+      "step_index": 1,
+      "step": "Run full trust re-verification pass",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "verification",
+      "step_index": 2,
+      "step": "Confirm trust state hash matches expected value",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "verification",
+      "step_index": 3,
+      "step": "Validate evidence ledger consistency end-to-end",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "verification",
+      "step_index": 4,
+      "step": "Verify all trust delegations are policy-compliant",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "rollback",
+      "step_index": 1,
+      "step": "Revert to previous epoch if repair fails",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "rollback",
+      "step_index": 2,
+      "step": "Restore pre-corruption trust state from backup",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "rollback",
+      "step_index": 3,
+      "step": "Invalidate trust tokens issued during corruption window",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-001",
+      "phase": "rollback",
+      "step_index": 4,
+      "step": "Escalate to security incident team if rollback also fails",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_COMPLETED",
+      "trace_id": "trace-drill-rb-001",
+      "status": "PASS"
+    }
+  ]
+}

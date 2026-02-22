@@ -1,0 +1,66 @@
+{
+  "bead": "bd-25oa",
+  "section": "10.15",
+  "adoption_status": "documented",
+  "upstream_bead": "bd-22yy",
+  "upstream_module": "crates/franken-node/src/control_plane/dpor_exploration.rs",
+  "interaction_classes": [
+    {
+      "name": "epoch_transition_lease_renewal",
+      "description": "Concurrent epoch transitions and lease renewals with shared fencing tokens",
+      "operations": 6,
+      "safety_properties": 3,
+      "interleavings_explored": 10000,
+      "violations_found": 0,
+      "coverage_pct": 100.0
+    },
+    {
+      "name": "remote_computation_evidence_emission",
+      "description": "Remote capability lifecycle interleaved with evidence emission and archival",
+      "operations": 6,
+      "safety_properties": 3,
+      "interleavings_explored": 10000,
+      "violations_found": 0,
+      "coverage_pct": 100.0
+    },
+    {
+      "name": "cancellation_saga_compensation",
+      "description": "Cancellation injection triggering saga compensation in reverse order",
+      "operations": 7,
+      "safety_properties": 3,
+      "interleavings_explored": 10000,
+      "violations_found": 0,
+      "coverage_pct": 100.0
+    },
+    {
+      "name": "epoch_barrier_fencing_token",
+      "description": "Epoch barriers with fencing token validation preventing stale writes",
+      "operations": 7,
+      "safety_properties": 3,
+      "interleavings_explored": 10000,
+      "violations_found": 0,
+      "coverage_pct": 100.0
+    }
+  ],
+  "summary": {
+    "total_interleavings": 40000,
+    "classes_covered": 4,
+    "violations": 0,
+    "budget_respected": true,
+    "time_budget_per_class_sec": 120,
+    "memory_budget_bytes": 1073741824,
+    "max_interleavings_per_class": 10000
+  },
+  "invariants_documented": [
+    "INV-DPOR-BOUNDED",
+    "INV-DPOR-INVARIANT-CHECK",
+    "INV-DPOR-COUNTEREXAMPLE",
+    "INV-DPOR-CANONICAL"
+  ],
+  "counterexample_format": {
+    "fields": ["model_name", "violated_property", "length", "steps"],
+    "step_fields": ["step_index", "operation_id", "actor", "state_summary"]
+  },
+  "schema_version": "cdpor-v1.0",
+  "generated_at_utc": "2026-02-21T00:00:00+00:00"
+}

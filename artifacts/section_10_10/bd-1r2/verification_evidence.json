@@ -1,0 +1,784 @@
+{
+  "bead": "bd-1r2",
+  "title": "Audience-bound token chains for control actions",
+  "section": "10.10",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing_checks": 154,
+    "failing_checks": 0,
+    "total_checks": 154
+  },
+  "checks": [
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "docs/specs/section_10_10/bd-1r2_contract.md"
+    },
+    {
+      "check": "file: implementation",
+      "pass": true,
+      "detail": "crates/franken-node/src/control_plane/audience_token.rs"
+    },
+    {
+      "check": "file: control_plane mod.rs",
+      "pass": true,
+      "detail": "crates/franken-node/src/control_plane/mod.rs"
+    },
+    {
+      "check": "file: policy doc",
+      "pass": true,
+      "detail": "docs/policy/audience_bound_tokens.md"
+    },
+    {
+      "check": "module registered in mod.rs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct TokenId(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub enum ActionScope",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct AudienceBoundToken",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct TokenError",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct TokenEvent",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct TokenChain",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "type: pub struct TokenValidator",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn new(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn as_str(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn label(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn all(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn hash(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn is_expired(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn has_valid_window(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn is_root(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn audience_contains(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn attenuation_violation(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn audience_mismatch(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn token_expired(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn replay_detected(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn append(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn depth(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn root(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn leaf(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn tokens(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn record_issuance(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn record_delegation(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn verify_chain(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn check_audience(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn advance_epoch(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn epoch_id(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn take_events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn events(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn tokens_issued(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn tokens_delegated(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn tokens_verified(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn tokens_rejected(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "method: pub fn nonce_count(",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: ABT-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: ABT-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: ABT-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event_code: ABT-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_code: ERR_ABT_ATTENUATION_VIOLATION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_code: ERR_ABT_AUDIENCE_MISMATCH",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_code: ERR_ABT_TOKEN_EXPIRED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "error_code: ERR_ABT_REPLAY_DETECTED",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-ABT-ATTENUATION",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-ABT-AUDIENCE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-ABT-EXPIRY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "invariant: INV-ABT-REPLAY",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "action_scope: Migrate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "action_scope: Rollback",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "action_scope: Promote",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "action_scope: Revoke",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "action_scope: Configure",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "token_field: token_id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "token_field: issuer",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "token_field: audience",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "token_field: capabilities",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "token_field: issued_at",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "token_field: expires_at",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "token_field: nonce",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "token_field: parent_token_hash",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "token_field: signature",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "token_field: max_delegation_depth",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_token_id_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_token_id_as_str",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_action_scope_labels",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_action_scope_all",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_action_scope_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_action_scope_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_root_token_creation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_token_hash_deterministic",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_token_hash_changes_with_id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_token_is_expired",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_token_has_valid_window",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_token_audience_contains",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_token_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_error_display",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_error_audience_mismatch",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_error_token_expired",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_error_replay_detected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_error_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_chain_new_root",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_chain_rejects_non_root_first",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_chain_single_hop_delegation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_chain_multi_hop_delegation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_chain_audience_escalation_rejected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_chain_scope_escalation_rejected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_chain_depth_limit_exceeded",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_chain_zero_validity_rejected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_chain_root_zero_validity_rejected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_chain_forged_parent_hash",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_chain_missing_parent_hash_on_delegate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_chain_empty_capabilities_valid",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_chain_tokens_accessor",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_chain_depth_20",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_validator_new",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_validator_record_issuance",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_validator_record_delegation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_validator_verify_chain_success",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_validator_audience_mismatch",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_validator_expired_token_rejected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_validator_expired_intermediate_rejected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_validator_nonce_replay_detected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_validator_advance_epoch_clears_nonces",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_validator_check_audience_pass",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_validator_check_audience_fail",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_validator_take_events_drains",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_validator_chain_integrity_violation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_validator_verify_deep_chain",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_event_codes_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_error_codes_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_invariant_tags_defined",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_delegate_with_all_parent_caps",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_chain_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_token_event_serde_roundtrip",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_validator_metrics_accumulate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_verify_rejects_after_leaf_audience_narrowed",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test: test_cross_audience_replay_rejected",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "test count >= 50",
+      "pass": true,
+      "detail": "55 tests found"
+    },
+    {
+      "check": "Serialize/Deserialize derives",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "SHA-256 usage",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "Send+Sync assertions",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: AudienceBoundToken",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: ActionScope",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: TokenChain",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: TokenValidator",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Invariants",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Event Codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Error Codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec: Acceptance Criteria",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: Token Issuance",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: Delegation Rules",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: Validation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: Invariants",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: Event Codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "policy: Error Codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "adversarial: forged parent_hash",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "adversarial: scope escalation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "adversarial: audience escalation",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "adversarial: cross-audience replay",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "adversarial: expired intermediate",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "adversarial: depth limit exceeded",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "depth: 1 (root-only)",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "depth: 5+ (multi-hop)",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "depth: 20 (deep chain)",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "validate_token: valid token accepted",
+      "pass": true,
+      "detail": "valid token structure"
+    },
+    {
+      "check": "validate_token: incomplete token rejected",
+      "pass": true,
+      "detail": "missing keys: ['nonce']"
+    }
+  ]
+}

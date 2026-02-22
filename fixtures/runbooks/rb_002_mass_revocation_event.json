@@ -1,0 +1,65 @@
+{
+  "runbook_id": "RB-002",
+  "title": "Mass Revocation Event",
+  "category": "mass_revocation_event",
+  "severity": "critical",
+  "operator_privilege_level": "p1",
+  "detection_signature": {
+    "metrics": [
+      "trust_revocations_per_minute > 100",
+      "active_trust_delegations_delta < -50"
+    ],
+    "log_patterns": [
+      "MASS_REVOCATION_EVENT_TRIGGERED",
+      "revocation_rate_threshold_exceeded"
+    ]
+  },
+  "estimated_recovery_time": "1h",
+  "required_permissions": ["operator", "security_admin", "revocation_authority"],
+  "steps": {
+    "containment": [
+      "Throttle revocation processing to prevent cascade",
+      "Activate fleet-wide revocation pause if rate exceeds 500/min",
+      "Snapshot current revocation state before further processing",
+      "Alert security operations center"
+    ],
+    "investigation": [
+      "Identify revocation source (automated policy vs manual operator action)",
+      "Audit revocation requests for unauthorized or anomalous patterns",
+      "Check whether revocation trigger was a compromised signing key",
+      "Determine blast radius: how many nodes and delegations are affected",
+      "Review recent CRL updates"
+    ],
+    "repair": [
+      "If revocations are legitimate, resume processing at controlled rate",
+      "If revocations are illegitimate, revert revocation batch from snapshot",
+      "Re-issue trust delegations for incorrectly revoked entities",
+      "Update revocation policy to prevent recurrence"
+    ],
+    "verification": [
+      "Confirm revocation list consistency across all fleet nodes",
+      "Validate that legitimate revocations are honored fleet-wide",
+      "Verify that incorrectly revoked entities have restored access",
+      "Run trust delegation audit"
+    ],
+    "rollback": [
+      "Restore pre-revocation trust state from snapshot",
+      "Re-process revocations selectively (legitimate only)",
+      "Coordinate fleet-wide epoch reset if full rollback needed",
+      "Escalate to governance board if policy-level changes required"
+    ]
+  },
+  "cross_references": ["bd-f2y", "revocation.rs", "trust_delegation_policy"],
+  "drill_scenario": "Simulate mass revocation by issuing 200 test revocations against a staging fleet. Verify that rate-limiting engages, containment procedures activate, and selective rollback restores test delegations correctly.",
+  "command_references": [
+    "franken-node trust revoke --batch fixtures/revocations/test_batch.json",
+    "franken-node trust delegations restore --from-snapshot snapshots/pre_revocation.json",
+    "POST /api/v1/trust/revocations/pause"
+  ],
+  "coverage_tags": [
+    "key-rotation-emergency",
+    "malicious-extension-detection"
+  ],
+  "last_reviewed": "2026-02-21",
+  "review_cadence": "per_release_cycle"
+}

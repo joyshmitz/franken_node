@@ -1,0 +1,9 @@
+{"ts":"2026-02-22T01:06:59Z","trace_id":"trace-bd-2a3-rch","event_code":"RCH-BASELINE-001","status":"info","detail":"Starting rch offloaded baseline sequence."}
+{"ts":"2026-02-22T01:06:59Z","trace_id":"trace-bd-2a3-rch","event_code":"RCH-BASELINE-002","status":"pass","detail":"rch doctor passed"}
+{"ts":"2026-02-22T01:06:59Z","trace_id":"trace-bd-2a3-rch","event_code":"RCH-BASELINE-010","status":"info","detail":"Starting cargo_fmt_check: cargo fmt --check"}
+{"ts":"2026-02-22T01:07:01Z","trace_id":"trace-bd-2a3-rch","event_code":"RCH-BASELINE-011","status":"fail","detail":"cargo_fmt_check failed with exit=1 (1864 ms) [BD2A3-FMT-FAIL]"}
+{"ts":"2026-02-22T01:07:01Z","trace_id":"trace-bd-2a3-rch","event_code":"RCH-BASELINE-010","status":"info","detail":"Starting cargo_check_all_targets: cargo check --all-targets"}
+{"ts":"2026-02-22T01:09:23Z","trace_id":"trace-bd-2a3-rch","event_code":"RCH-BASELINE-011","status":"fail","detail":"cargo_check_all_targets failed with exit=101 (141720 ms) [BD2A3-CHECK-FAIL]"}
+{"ts":"2026-02-22T01:09:23Z","trace_id":"trace-bd-2a3-rch","event_code":"RCH-BASELINE-010","status":"info","detail":"Starting cargo_clippy_all_targets: cargo clippy --all-targets -- -D warnings"}
+{"ts":"2026-02-22T01:10:55Z","trace_id":"trace-bd-2a3-rch","event_code":"RCH-BASELINE-011","status":"fail","detail":"cargo_clippy_all_targets failed with exit=101 (91709 ms) [BD2A3-CLIPPY-FAIL]"}
+{"ts":"2026-02-22T01:10:55Z","trace_id":"trace-bd-2a3-rch","event_code":"RCH-BASELINE-099","status":"warn","detail":"Baseline sequence completed with FAIL."}

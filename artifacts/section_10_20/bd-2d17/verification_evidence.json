@@ -1,0 +1,183 @@
+{
+  "bead_id": "bd-2d17",
+  "gate": "dgis_migration_gate_verification",
+  "generated_at": "2026-02-21T05:10:08.853548+00:00",
+  "verdict": "PASS",
+  "summary": {
+    "total_checks": 34,
+    "passing_checks": 34,
+    "failing_checks": 0
+  },
+  "checks": [
+    {
+      "id": "BD2D17-FILE-crates/franken-node/src/migration/mod.rs",
+      "status": "PASS",
+      "detail": "/data/projects/franken_node/crates/franken-node/src/migration/mod.rs"
+    },
+    {
+      "id": "BD2D17-FILE-crates/franken-node/src/migration/dgis_migration_gate.rs",
+      "status": "PASS",
+      "detail": "/data/projects/franken_node/crates/franken-node/src/migration/dgis_migration_gate.rs"
+    },
+    {
+      "id": "BD2D17-FILE-tests/integration/dgis_migration_gate.rs",
+      "status": "PASS",
+      "detail": "/data/projects/franken_node/tests/integration/dgis_migration_gate.rs"
+    },
+    {
+      "id": "BD2D17-FILE-crates/franken-node/tests/dgis_migration_gate.rs",
+      "status": "PASS",
+      "detail": "/data/projects/franken_node/crates/franken-node/tests/dgis_migration_gate.rs"
+    },
+    {
+      "id": "BD2D17-FILE-artifacts/10.20/dgis_migration_health_report.json",
+      "status": "PASS",
+      "detail": "/data/projects/franken_node/artifacts/10.20/dgis_migration_health_report.json"
+    },
+    {
+      "id": "BD2D17-RUST-SYMBOL-pub fn evaluate_admission",
+      "status": "PASS",
+      "detail": "required API symbol present"
+    },
+    {
+      "id": "BD2D17-RUST-SYMBOL-pub fn evaluate_progression_phase",
+      "status": "PASS",
+      "detail": "required API symbol present"
+    },
+    {
+      "id": "BD2D17-RUST-SYMBOL-pub fn suggest_replans",
+      "status": "PASS",
+      "detail": "required API symbol present"
+    },
+    {
+      "id": "BD2D17-RUST-SYMBOL-pub fn build_migration_health_report",
+      "status": "PASS",
+      "detail": "required API symbol present"
+    },
+    {
+      "id": "BD2D17-RUST-EVENT-DGIS-MIGRATE-001",
+      "status": "PASS",
+      "detail": "required event code present"
+    },
+    {
+      "id": "BD2D17-RUST-EVENT-DGIS-MIGRATE-002",
+      "status": "PASS",
+      "detail": "required event code present"
+    },
+    {
+      "id": "BD2D17-RUST-EVENT-DGIS-MIGRATE-003",
+      "status": "PASS",
+      "detail": "required event code present"
+    },
+    {
+      "id": "BD2D17-RUST-EVENT-DGIS-MIGRATE-004",
+      "status": "PASS",
+      "detail": "required event code present"
+    },
+    {
+      "id": "BD2D17-RUST-EVENT-DGIS-MIGRATE-005",
+      "status": "PASS",
+      "detail": "required event code present"
+    },
+    {
+      "id": "BD2D17-RUST-EVENT-DGIS-MIGRATE-006",
+      "status": "PASS",
+      "detail": "required event code present"
+    },
+    {
+      "id": "BD2D17-REPORT-OBJECT",
+      "status": "PASS",
+      "detail": "root object"
+    },
+    {
+      "id": "BD2D17-REPORT-PLAN-ID",
+      "status": "PASS",
+      "detail": "non-empty plan_id"
+    },
+    {
+      "id": "BD2D17-REPORT-EVALUATION-OBJECT",
+      "status": "PASS",
+      "detail": "evaluation object present"
+    },
+    {
+      "id": "BD2D17-REPORT-PHASE",
+      "status": "PASS",
+      "detail": "phase present"
+    },
+    {
+      "id": "BD2D17-REPORT-VERDICT",
+      "status": "PASS",
+      "detail": "valid verdict enum"
+    },
+    {
+      "id": "BD2D17-REPORT-BASELINE-cascade_risk",
+      "status": "PASS",
+      "detail": "baseline metrics populated"
+    },
+    {
+      "id": "BD2D17-REPORT-PROJECTED-cascade_risk",
+      "status": "PASS",
+      "detail": "projected metrics populated"
+    },
+    {
+      "id": "BD2D17-REPORT-BASELINE-fragility_findings",
+      "status": "PASS",
+      "detail": "baseline metrics populated"
+    },
+    {
+      "id": "BD2D17-REPORT-PROJECTED-fragility_findings",
+      "status": "PASS",
+      "detail": "projected metrics populated"
+    },
+    {
+      "id": "BD2D17-REPORT-BASELINE-articulation_points",
+      "status": "PASS",
+      "detail": "baseline metrics populated"
+    },
+    {
+      "id": "BD2D17-REPORT-PROJECTED-articulation_points",
+      "status": "PASS",
+      "detail": "projected metrics populated"
+    },
+    {
+      "id": "BD2D17-REPORT-DELTA-cascade",
+      "status": "PASS",
+      "detail": "cascade risk delta present"
+    },
+    {
+      "id": "BD2D17-REPORT-DELTA-fragility",
+      "status": "PASS",
+      "detail": "fragility delta present"
+    },
+    {
+      "id": "BD2D17-REPORT-DELTA-articulation",
+      "status": "PASS",
+      "detail": "articulation delta present"
+    },
+    {
+      "id": "BD2D17-REPORT-THRESHOLD-max_cascade_risk_delta",
+      "status": "PASS",
+      "detail": "threshold present"
+    },
+    {
+      "id": "BD2D17-REPORT-THRESHOLD-max_new_fragility_findings",
+      "status": "PASS",
+      "detail": "threshold present"
+    },
+    {
+      "id": "BD2D17-REPORT-THRESHOLD-max_new_articulation_points",
+      "status": "PASS",
+      "detail": "threshold present"
+    },
+    {
+      "id": "BD2D17-REPORT-EVENTS",
+      "status": "PASS",
+      "detail": "at least baseline + verdict events"
+    },
+    {
+      "id": "BD2D17-REPORT-EVENT-CODES",
+      "status": "PASS",
+      "detail": "baseline + gate decision code present"
+    }
+  ]
+}

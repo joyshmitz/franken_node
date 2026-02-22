@@ -1,0 +1,73 @@
+{
+  "bead_id": "bd-n9r",
+  "provenance": [
+    {
+      "field": "profile",
+      "stage": "default",
+      "value": "balanced"
+    },
+    {
+      "field": "profile",
+      "stage": "file",
+      "value": "balanced"
+    },
+    {
+      "field": "profile",
+      "stage": "env",
+      "value": "strict"
+    },
+    {
+      "field": "profile",
+      "stage": "cli",
+      "value": "legacy-risky"
+    }
+  ],
+  "resolved_config": {
+    "compatibility": {
+      "emit_divergence_receipts": true,
+      "mode": "balanced"
+    },
+    "fleet": {
+      "convergence_timeout_seconds": 120
+    },
+    "migration": {
+      "autofix": false,
+      "require_lockstep_validation": true
+    },
+    "observability": {
+      "emit_structured_audit_events": true,
+      "namespace": "franken_node"
+    },
+    "profile": "legacy-risky",
+    "registry": {
+      "minimum_assurance_level": 4,
+      "require_provenance": true,
+      "require_signatures": true
+    },
+    "replay": {
+      "bundle_version": "v1",
+      "persist_high_severity": true
+    },
+    "trust": {
+      "dangerous_requires_fresh_revocation": true,
+      "quarantine_on_high_risk": true,
+      "risky_requires_fresh_revocation": true
+    }
+  },
+  "schema_version": "config-resolution-snapshot-v1",
+  "selected_profile": "legacy-risky",
+  "simulated_inputs": {
+    "cli_profile": "legacy-risky",
+    "env_overrides": {
+      "migration": {
+        "autofix": false
+      },
+      "registry": {
+        "minimum_assurance_level": 4
+      }
+    },
+    "env_profile": "strict",
+    "file_profile": "balanced"
+  },
+  "source_precedence": "CLI > env > profile-block > file-base > defaults"
+}

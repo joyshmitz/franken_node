@@ -1,0 +1,275 @@
+{
+  "bead_id": "bd-ufk5",
+  "title": "VEF performance budget gates for p95/p99 hot paths",
+  "section": "10.18",
+  "gate": false,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 50,
+  "passed": 50,
+  "failed": 0,
+  "hot_paths": [
+    "receipt_emission",
+    "chain_append",
+    "checkpoint_computation",
+    "verification_gate_check",
+    "mode_transition"
+  ],
+  "modes": [
+    "normal",
+    "restricted",
+    "quarantine"
+  ],
+  "checks": [
+    {
+      "check": "rust_module_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/connector/vef_perf_budget.rs"
+    },
+    {
+      "check": "mod_registration",
+      "pass": true,
+      "detail": "vef_perf_budget registered in connector/mod.rs"
+    },
+    {
+      "check": "hot_path_receipt_emission",
+      "pass": true,
+      "detail": "hot path label receipt_emission in source"
+    },
+    {
+      "check": "hot_path_chain_append",
+      "pass": true,
+      "detail": "hot path label chain_append in source"
+    },
+    {
+      "check": "hot_path_checkpoint_computation",
+      "pass": true,
+      "detail": "hot path label checkpoint_computation in source"
+    },
+    {
+      "check": "hot_path_verification_gate_check",
+      "pass": true,
+      "detail": "hot path label verification_gate_check in source"
+    },
+    {
+      "check": "hot_path_mode_transition",
+      "pass": true,
+      "detail": "hot path label mode_transition in source"
+    },
+    {
+      "check": "mode_normal",
+      "pass": true,
+      "detail": "mode label normal in source"
+    },
+    {
+      "check": "mode_restricted",
+      "pass": true,
+      "detail": "mode label restricted in source"
+    },
+    {
+      "check": "mode_quarantine",
+      "pass": true,
+      "detail": "mode label quarantine in source"
+    },
+    {
+      "check": "event_code_VEF-PERF-001",
+      "pass": true,
+      "detail": "event code VEF-PERF-001 defined"
+    },
+    {
+      "check": "event_code_VEF-PERF-002",
+      "pass": true,
+      "detail": "event code VEF-PERF-002 defined"
+    },
+    {
+      "check": "event_code_VEF-PERF-003",
+      "pass": true,
+      "detail": "event code VEF-PERF-003 defined"
+    },
+    {
+      "check": "event_code_VEF-PERF-004",
+      "pass": true,
+      "detail": "event code VEF-PERF-004 defined"
+    },
+    {
+      "check": "event_code_VEF-PERF-005",
+      "pass": true,
+      "detail": "event code VEF-PERF-005 defined"
+    },
+    {
+      "check": "event_code_VEF-PERF-006",
+      "pass": true,
+      "detail": "event code VEF-PERF-006 defined"
+    },
+    {
+      "check": "event_code_VEF-PERF-ERR-001",
+      "pass": true,
+      "detail": "event code VEF-PERF-ERR-001 defined"
+    },
+    {
+      "check": "event_code_VEF-PERF-ERR-002",
+      "pass": true,
+      "detail": "event code VEF-PERF-ERR-002 defined"
+    },
+    {
+      "check": "invariant_INV-VEF-PBG-BUDGET",
+      "pass": true,
+      "detail": "invariant INV-VEF-PBG-BUDGET defined"
+    },
+    {
+      "check": "invariant_INV-VEF-PBG-GATE",
+      "pass": true,
+      "detail": "invariant INV-VEF-PBG-GATE defined"
+    },
+    {
+      "check": "invariant_INV-VEF-PBG-PROFILING",
+      "pass": true,
+      "detail": "invariant INV-VEF-PBG-PROFILING defined"
+    },
+    {
+      "check": "invariant_INV-VEF-PBG-MODE-AWARE",
+      "pass": true,
+      "detail": "invariant INV-VEF-PBG-MODE-AWARE defined"
+    },
+    {
+      "check": "invariant_INV-VEF-PBG-BASELINE",
+      "pass": true,
+      "detail": "invariant INV-VEF-PBG-BASELINE defined"
+    },
+    {
+      "check": "invariant_INV-VEF-PBG-REPRODUCIBLE",
+      "pass": true,
+      "detail": "invariant INV-VEF-PBG-REPRODUCIBLE defined"
+    },
+    {
+      "check": "budget_receipt_emission",
+      "pass": true,
+      "detail": "receipt_emission: p95=2.0 p99=5.0 cold=15.0"
+    },
+    {
+      "check": "budget_chain_append",
+      "pass": true,
+      "detail": "chain_append: p95=1.0 p99=3.0 cold=10.0"
+    },
+    {
+      "check": "budget_checkpoint_computation",
+      "pass": true,
+      "detail": "checkpoint_computation: p95=5.0 p99=12.0 cold=25.0"
+    },
+    {
+      "check": "budget_verification_gate_check",
+      "pass": true,
+      "detail": "verification_gate_check: p95=1.5 p99=4.0 cold=12.0"
+    },
+    {
+      "check": "budget_mode_transition",
+      "pass": true,
+      "detail": "mode_transition: p95=3.0 p99=8.0 cold=20.0"
+    },
+    {
+      "check": "multiplier_normal",
+      "pass": true,
+      "detail": "normal multiplier 1.0"
+    },
+    {
+      "check": "multiplier_restricted",
+      "pass": true,
+      "detail": "restricted multiplier 1.5"
+    },
+    {
+      "check": "multiplier_quarantine",
+      "pass": true,
+      "detail": "quarantine multiplier 2.0"
+    },
+    {
+      "check": "gate_struct",
+      "pass": true,
+      "detail": "VefOverheadGate defined"
+    },
+    {
+      "check": "evaluate_method",
+      "pass": true,
+      "detail": "evaluate method present"
+    },
+    {
+      "check": "csv_output",
+      "pass": true,
+      "detail": "to_csv method present"
+    },
+    {
+      "check": "inline_tests",
+      "pass": true,
+      "detail": "19 inline tests found (need >= 10)"
+    },
+    {
+      "check": "spec_contract",
+      "pass": true,
+      "detail": "docs/specs/section_10_18/bd-ufk5_contract.md"
+    },
+    {
+      "check": "spec_table_normal",
+      "pass": true,
+      "detail": "Normal Mode budget table in spec"
+    },
+    {
+      "check": "spec_table_restricted",
+      "pass": true,
+      "detail": "Restricted Mode budget table in spec"
+    },
+    {
+      "check": "spec_table_quarantine",
+      "pass": true,
+      "detail": "Quarantine Mode budget table in spec"
+    },
+    {
+      "check": "spec_event_VEF-PERF-001",
+      "pass": true,
+      "detail": "VEF-PERF-001 in spec"
+    },
+    {
+      "check": "spec_event_VEF-PERF-002",
+      "pass": true,
+      "detail": "VEF-PERF-002 in spec"
+    },
+    {
+      "check": "spec_event_VEF-PERF-003",
+      "pass": true,
+      "detail": "VEF-PERF-003 in spec"
+    },
+    {
+      "check": "spec_event_VEF-PERF-004",
+      "pass": true,
+      "detail": "VEF-PERF-004 in spec"
+    },
+    {
+      "check": "spec_event_VEF-PERF-005",
+      "pass": true,
+      "detail": "VEF-PERF-005 in spec"
+    },
+    {
+      "check": "spec_event_VEF-PERF-006",
+      "pass": true,
+      "detail": "VEF-PERF-006 in spec"
+    },
+    {
+      "check": "spec_event_VEF-PERF-ERR-001",
+      "pass": true,
+      "detail": "VEF-PERF-ERR-001 in spec"
+    },
+    {
+      "check": "spec_event_VEF-PERF-ERR-002",
+      "pass": true,
+      "detail": "VEF-PERF-ERR-002 in spec"
+    },
+    {
+      "check": "noise_tolerance",
+      "pass": true,
+      "detail": "cv and noise multiplier defined"
+    },
+    {
+      "check": "warmup_iterations",
+      "pass": true,
+      "detail": "warmup_iterations field present"
+    }
+  ]
+}

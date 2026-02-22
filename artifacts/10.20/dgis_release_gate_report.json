@@ -1,0 +1,111 @@
+{
+  "bead_id": "bd-38yt",
+  "generated_at_utc": "2026-02-21T05:03:00Z",
+  "gate_version": "1.0.0",
+  "public_key_id": "dgis-release-gate-v1",
+  "signature_algorithm": "sha256-canonical-v1",
+  "designated_claims": [
+    {
+      "claim_id": "DGIS-CLAIM-001",
+      "claim": "Graph ingestion latency is within p95/p99 budget at target graph scale.",
+      "target_scale": {
+        "nodes": 25000,
+        "edges": 180000,
+        "max_articulation_points": 320
+      },
+      "budget_p95_ms": 45.0,
+      "measured_p95_ms": 31.0,
+      "budget_p99_ms": 60.0,
+      "measured_p99_ms": 44.0,
+      "degradation_signal": "DGIS-PERF-005",
+      "required_signed_evidence": 1,
+      "signed_evidence_present": 1,
+      "evidence_refs": [
+        "tests/perf/dgis_budget_gate.rs",
+        "docs/conformance/dgis_release_claim_gate.md"
+      ]
+    },
+    {
+      "claim_id": "DGIS-CLAIM-002",
+      "claim": "Metric computation latency is within budget and degradation signal contract is present.",
+      "target_scale": {
+        "nodes": 25000,
+        "edges": 180000,
+        "max_articulation_points": 320
+      },
+      "budget_p95_ms": 70.0,
+      "measured_p95_ms": 61.0,
+      "budget_p99_ms": 95.0,
+      "measured_p99_ms": 83.0,
+      "degradation_signal": "DGIS-PERF-005",
+      "required_signed_evidence": 1,
+      "signed_evidence_present": 1,
+      "evidence_refs": [
+        "scripts/check_dgis_claim_gate.py",
+        "tests/test_check_dgis_claim_gate.py"
+      ]
+    },
+    {
+      "claim_id": "DGIS-CLAIM-003",
+      "claim": "Contagion simulation latency remains within p95/p99 budget for declared complexity.",
+      "target_scale": {
+        "nodes": 25000,
+        "edges": 180000,
+        "max_articulation_points": 320
+      },
+      "budget_p95_ms": 90.0,
+      "measured_p95_ms": 73.0,
+      "budget_p99_ms": 130.0,
+      "measured_p99_ms": 112.0,
+      "degradation_signal": "DGIS-PERF-005",
+      "required_signed_evidence": 1,
+      "signed_evidence_present": 1,
+      "evidence_refs": [
+        ".github/workflows/dgis-claim-gate.yml",
+        "tests/perf/dgis_budget_gate.rs"
+      ]
+    },
+    {
+      "claim_id": "DGIS-CLAIM-004",
+      "claim": "Economic ranking claim package has complete signed evidence artifacts.",
+      "target_scale": {
+        "nodes": 25000,
+        "edges": 180000,
+        "max_articulation_points": 320
+      },
+      "budget_p95_ms": 55.0,
+      "measured_p95_ms": 40.0,
+      "budget_p99_ms": 75.0,
+      "measured_p99_ms": 57.0,
+      "degradation_signal": "DGIS-PERF-005",
+      "required_signed_evidence": 2,
+      "signed_evidence_present": 2,
+      "evidence_refs": [
+        "artifacts/10.20/dgis_release_gate_report.json",
+        "docs/conformance/dgis_release_claim_gate.md"
+      ]
+    }
+  ],
+  "summary": {
+    "total_claims": 4,
+    "passed_claims": 4,
+    "failed_claims": 0,
+    "release_decision": "allow"
+  },
+  "events": [
+    {
+      "code": "DGIS-PERF-001",
+      "detail": "gate evaluation started",
+      "trace_id": "trace-bd-38yt-dgis-gate"
+    },
+    {
+      "code": "DGIS-PERF-002",
+      "detail": "all designated claims satisfied",
+      "trace_id": "trace-bd-38yt-dgis-gate"
+    }
+  ],
+  "signing": {
+    "canonical_payload_sha256": "5a605867baa74dc1f42d2f970f40d47ce48fbb9fd7449fb8f5c2dec517149969",
+    "signature": "0b12d3c9a1297984c2ab5c23467e670015886c1694f1c40e1fa375991642b822"
+  }
+}

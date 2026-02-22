@@ -1,0 +1,176 @@
+{
+  "schema_version": "wfm-v1.0",
+  "bead_id": "bd-2177",
+  "section": "10.15",
+  "generated_at": "2026-02-22T02:40:00Z",
+  "canonical_primitive_source": "docs/architecture/tri_kernel_ownership_contract.md#canonical_asupersync_primitives",
+  "canonical_primitives": [
+    "cx_propagation",
+    "region_ownership_scope",
+    "cancellation_protocol",
+    "obligation_tracking",
+    "remote_computation_registry",
+    "epoch_validity_window",
+    "evidence_ledger_emission"
+  ],
+  "workflows": [
+    {
+      "workflow_id": "connector_lifecycle",
+      "workflow_name": "Connector Lifecycle Orchestration",
+      "module_paths": [
+        "crates/franken-node/src/connector/lifecycle.rs"
+      ],
+      "required_primitives": [
+        "cx_propagation",
+        "region_ownership_scope",
+        "cancellation_protocol",
+        "obligation_tracking",
+        "remote_computation_registry",
+        "epoch_validity_window",
+        "evidence_ledger_emission"
+      ],
+      "cancellation_phase": "request->drain->finalize",
+      "mapped": true
+    },
+    {
+      "workflow_id": "rollout_transition",
+      "workflow_name": "Rollout State Transitions",
+      "module_paths": [
+        "crates/franken-node/src/connector/rollout_state.rs",
+        "crates/franken-node/src/connector/state_model.rs"
+      ],
+      "required_primitives": [
+        "cx_propagation",
+        "region_ownership_scope",
+        "cancellation_protocol",
+        "obligation_tracking",
+        "remote_computation_registry",
+        "epoch_validity_window",
+        "evidence_ledger_emission"
+      ],
+      "cancellation_phase": "request->drain->finalize",
+      "mapped": true
+    },
+    {
+      "workflow_id": "health_gate_evaluation",
+      "workflow_name": "Health-Gate Evaluation",
+      "module_paths": [
+        "crates/franken-node/src/connector/health_gate.rs"
+      ],
+      "required_primitives": [
+        "cx_propagation",
+        "region_ownership_scope",
+        "cancellation_protocol",
+        "obligation_tracking",
+        "remote_computation_registry",
+        "epoch_validity_window",
+        "evidence_ledger_emission"
+      ],
+      "cancellation_phase": "request->drain->finalize",
+      "mapped": true
+    },
+    {
+      "workflow_id": "publish_flow",
+      "workflow_name": "Publish Flow",
+      "module_paths": [
+        "crates/franken-node/src/connector/ecosystem_registry.rs",
+        "crates/franken-node/src/supply_chain/artifact_signing.rs",
+        "crates/franken-node/src/supply_chain/manifest.rs",
+        "crates/franken-node/src/connector/policy_checkpoint.rs"
+      ],
+      "required_primitives": [
+        "cx_propagation",
+        "region_ownership_scope",
+        "cancellation_protocol",
+        "obligation_tracking",
+        "remote_computation_registry",
+        "epoch_validity_window",
+        "evidence_ledger_emission"
+      ],
+      "cancellation_phase": "request->drain->finalize",
+      "mapped": true
+    },
+    {
+      "workflow_id": "revoke_flow",
+      "workflow_name": "Revoke Flow",
+      "module_paths": [
+        "crates/franken-node/src/connector/ecosystem_registry.rs",
+        "crates/franken-node/src/connector/lease_service.rs",
+        "crates/franken-node/src/security/revocation_freshness_gate.rs",
+        "crates/franken-node/src/connector/trust_fabric.rs"
+      ],
+      "required_primitives": [
+        "cx_propagation",
+        "region_ownership_scope",
+        "cancellation_protocol",
+        "obligation_tracking",
+        "remote_computation_registry",
+        "epoch_validity_window",
+        "evidence_ledger_emission"
+      ],
+      "cancellation_phase": "request->drain->finalize",
+      "mapped": true
+    },
+    {
+      "workflow_id": "quarantine_promotion",
+      "workflow_name": "Quarantine Promotion",
+      "module_paths": [
+        "crates/franken-node/src/connector/quarantine_promotion.rs"
+      ],
+      "required_primitives": [
+        "cx_propagation",
+        "region_ownership_scope",
+        "cancellation_protocol",
+        "obligation_tracking",
+        "remote_computation_registry",
+        "epoch_validity_window",
+        "evidence_ledger_emission"
+      ],
+      "cancellation_phase": "request->drain->finalize",
+      "mapped": true
+    },
+    {
+      "workflow_id": "migration_orchestration",
+      "workflow_name": "Migration Orchestration",
+      "module_paths": [
+        "crates/franken-node/src/connector/schema_migration.rs",
+        "crates/franken-node/src/connector/manifest_negotiation.rs"
+      ],
+      "required_primitives": [
+        "cx_propagation",
+        "region_ownership_scope",
+        "cancellation_protocol",
+        "obligation_tracking",
+        "remote_computation_registry",
+        "epoch_validity_window",
+        "evidence_ledger_emission"
+      ],
+      "cancellation_phase": "request->drain->finalize",
+      "mapped": true
+    },
+    {
+      "workflow_id": "fencing_token_ops",
+      "workflow_name": "Fencing Token Acquisition and Release",
+      "module_paths": [
+        "crates/franken-node/src/connector/fencing.rs"
+      ],
+      "required_primitives": [
+        "cx_propagation",
+        "region_ownership_scope",
+        "cancellation_protocol",
+        "obligation_tracking",
+        "remote_computation_registry",
+        "epoch_validity_window",
+        "evidence_ledger_emission"
+      ],
+      "cancellation_phase": "request->drain->finalize",
+      "mapped": true
+    }
+  ],
+  "summary": {
+    "total_workflows": 8,
+    "fully_mapped": 8,
+    "partially_mapped": 0,
+    "unmapped": 0
+  }
+}

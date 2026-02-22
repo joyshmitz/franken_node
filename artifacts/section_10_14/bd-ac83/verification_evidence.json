@@ -1,0 +1,55 @@
+{
+  "bead": "bd-ac83",
+  "title": "Remote Computation Registry",
+  "verdict": "PASS",
+  "passed": 9,
+  "total": 9,
+  "checks": [
+    {
+      "check": "SOURCE_EXISTS",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/remote/computation_registry.rs"
+    },
+    {
+      "check": "EVENT_CODES",
+      "passed": true,
+      "detail": "6/6 event codes"
+    },
+    {
+      "check": "ERROR_CODES",
+      "passed": true,
+      "detail": "5/5 error codes"
+    },
+    {
+      "check": "CANONICAL_NAME_VALIDATOR",
+      "passed": true,
+      "detail": "is_canonical_computation_name function present"
+    },
+    {
+      "check": "CORE_TYPES",
+      "passed": true,
+      "detail": "3/3 types"
+    },
+    {
+      "check": "REMOTECAP_GATING",
+      "passed": true,
+      "detail": "authorize_dispatch with RemoteCap integration"
+    },
+    {
+      "check": "CATALOG_ROUNDTRIP",
+      "passed": true,
+      "detail": "catalog serialization methods present"
+    },
+    {
+      "check": "AUDIT_TRAIL",
+      "passed": true,
+      "detail": "audit event recording present"
+    },
+    {
+      "check": "TEST_COVERAGE",
+      "passed": true,
+      "detail": "8 tests found"
+    }
+  ],
+  "timestamp": "2026-02-22T01:40:25Z"
+}

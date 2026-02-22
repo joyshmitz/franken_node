@@ -1,0 +1,35 @@
+{
+  "bead_id": "bd-3id1",
+  "section": "16",
+  "title": "External red-team and independent evaluations",
+  "gate_script": "scripts/check_redteam_evaluations.py",
+  "test_suite": "tests/test_check_redteam_evaluations.py",
+  "timestamp": "2026-02-21T07:00:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "redteam_evaluations": "crates/franken-node/src/tools/redteam_evaluations.rs",
+    "tools_mod": "crates/franken-node/src/tools/mod.rs",
+    "spec_contract": "docs/specs/section_16/bd-3id1_contract.md",
+    "verification_script": "scripts/check_redteam_evaluations.py",
+    "unit_tests": "tests/test_check_redteam_evaluations.py"
+  },
+  "rust_test_count": 22,
+  "python_test_count": 25,
+  "event_codes_defined": 12,
+  "gate_checks_passed": 20,
+  "gate_checks_total": 20,
+  "invariants_verified": [
+    "INV-RTE-SCOPED", "INV-RTE-DETERMINISTIC", "INV-RTE-CLASSIFIED",
+    "INV-RTE-TRACKED", "INV-RTE-VERSIONED", "INV-RTE-AUDITABLE"
+  ],
+  "capabilities_verified": {
+    "severity_levels": ["Critical", "High", "Medium", "Low", "Informational"],
+    "evaluation_types": ["RedTeam", "PenetrationTest", "SecurityAudit", "IndependentReview", "FormalVerification"],
+    "remediation_statuses": ["Open", "InProgress", "Resolved", "Verified"],
+    "operations": ["create_engagement", "add_finding", "update_remediation", "generate_catalog", "export_audit_log_jsonl"],
+    "scope_validation": true,
+    "confidence_scoring": true,
+    "status_machine": true,
+    "content_hashing": true
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "scenario_id": "DR-001",
+  "title": "Evidence Ledger Loss",
+  "category": "evidence_ledger_loss",
+  "severity": "high",
+  "slo_seconds": 300,
+  "drill_interval": "monthly",
+  "fault_description": "Simulate complete evidence ledger data loss by deleting ledger data files in an isolated test environment. Verifies that recovery from backup/snapshot restores full ledger consistency.",
+  "fault_injection_steps": [
+    "Checkpoint current ledger state and record hash",
+    "Delete all ledger data files in the isolated test directory",
+    "Verify ledger service reports data unavailable",
+    "Record fault injection timestamp"
+  ],
+  "recovery_steps": [
+    "Detect ledger loss via integrity check failure",
+    "Activate read-only mode to prevent further writes",
+    "Identify most recent verified backup/snapshot",
+    "Restore ledger data from backup",
+    "Replay any ledger entries written after backup timestamp",
+    "Verify restored ledger hash matches expected value"
+  ],
+  "verification_steps": [
+    "Confirm ledger service reports healthy status",
+    "Validate end-to-end ledger consistency check passes",
+    "Verify all cross-peer ledger hashes are consistent",
+    "Confirm no data loss beyond the backup/replay window",
+    "Check that read-only mode has been lifted"
+  ],
+  "abort_conditions": [
+    "Fault injection affects files outside the isolated test directory",
+    "Ledger service crashes unexpectedly during recovery",
+    "Backup restoration corrupts additional data",
+    "Recovery time exceeds 3x SLO with no progress"
+  ],
+  "related_runbook": "RB-005",
+  "cross_references": ["bd-nr4", "bd-f2y", "evidence_ledger", "transparency_log"]
+}

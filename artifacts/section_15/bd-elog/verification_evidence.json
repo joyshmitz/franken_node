@@ -1,0 +1,95 @@
+{
+  "bead_id": "bd-elog",
+  "section": "15",
+  "gate_script": "check_safe_extension_onboarding.py",
+  "checks_passed": 17,
+  "checks_total": 17,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "source_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/tools/safe_extension_onboarding.rs"
+    },
+    {
+      "check": "module_wiring",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "check": "onboarding_phases",
+      "passed": true,
+      "detail": "5 phases"
+    },
+    {
+      "check": "struct_OnboardingStep",
+      "passed": true,
+      "detail": "OnboardingStep"
+    },
+    {
+      "check": "struct_PhaseStats",
+      "passed": true,
+      "detail": "PhaseStats"
+    },
+    {
+      "check": "struct_OnboardingReport",
+      "passed": true,
+      "detail": "OnboardingReport"
+    },
+    {
+      "check": "struct_SafeExtensionOnboarding",
+      "passed": true,
+      "detail": "SafeExtensionOnboarding"
+    },
+    {
+      "check": "phase_enum",
+      "passed": true,
+      "detail": "OnboardingPhase enum"
+    },
+    {
+      "check": "gate_result",
+      "passed": true,
+      "detail": "Gate result tracking"
+    },
+    {
+      "check": "report_generation",
+      "passed": true,
+      "detail": "Report generation"
+    },
+    {
+      "check": "content_hash",
+      "passed": true,
+      "detail": "SHA-256 hashing"
+    },
+    {
+      "check": "event_codes",
+      "passed": true,
+      "detail": "12/12"
+    },
+    {
+      "check": "invariants",
+      "passed": true,
+      "detail": "6/6"
+    },
+    {
+      "check": "audit_log",
+      "passed": true,
+      "detail": "JSONL export"
+    },
+    {
+      "check": "schema_version",
+      "passed": true,
+      "detail": "seo-v1.0"
+    },
+    {
+      "check": "spec_alignment",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_15/bd-elog_contract.md"
+    },
+    {
+      "check": "test_coverage",
+      "passed": true,
+      "detail": "0 tests"
+    }
+  ]
+}

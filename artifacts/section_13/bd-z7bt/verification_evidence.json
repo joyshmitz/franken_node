@@ -1,0 +1,72 @@
+{
+  "bead_id": "bd-z7bt",
+  "section": "13",
+  "title": "Section-wide verification gate: comprehensive unit+e2e+logging",
+  "generated_at": "2026-02-21T01:41:14Z",
+  "status": "completed_with_baseline_workspace_failures",
+  "files": {
+    "gate_script": "scripts/check_section_13_gate.py",
+    "gate_tests": "tests/test_check_section_13_gate.py",
+    "gate_self_test": "artifacts/section_13/bd-z7bt/check_self_test.json",
+    "gate_report": "artifacts/section_13/bd-z7bt/check_report.json",
+    "gate_unit_tests_output": "artifacts/section_13/bd-z7bt/unit_tests.txt",
+    "section_summary": "artifacts/section_13/section_13_verification_summary.md",
+    "verification_summary": "artifacts/section_13/bd-z7bt/verification_summary.md"
+  },
+  "metrics": {
+    "section_beads_expected": 12,
+    "section_beads_verified": 12,
+    "overall_coverage_pct": 100.0,
+    "quantitative_targets_passing": 6,
+    "quantitative_targets_total": 6,
+    "gate_checks_total": 7,
+    "gate_checks_passing": 7,
+    "gate_checks_failing": 0,
+    "python_unit_tests": 9,
+    "content_hash": "1ab2704aa7d6f109c078711db9a644113081fb1210d541bbd93ce416b6188439"
+  },
+  "gate_checks": [
+    { "id": "GATE-13-SCRIPTS", "status": "PASS" },
+    { "id": "GATE-13-TESTS", "status": "PASS" },
+    { "id": "GATE-13-EVIDENCE", "status": "PASS" },
+    { "id": "GATE-13-MEASUREMENT-METHODOLOGY", "status": "PASS" },
+    { "id": "GATE-13-QUANTITATIVE-MEASUREMENTS", "status": "PASS" },
+    { "id": "GATE-13-QUANTITATIVE-THRESHOLD", "status": "PASS" },
+    { "id": "GATE-13-ALL-BEADS", "status": "PASS" }
+  ],
+  "commands": [
+    {
+      "command": "python3 scripts/check_section_13_gate.py --self-test --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 scripts/check_section_13_gate.py --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 -m unittest tests/test_check_section_13_gate.py",
+      "status": "pass"
+    },
+    {
+      "command": "rch exec -- cargo check --all-targets",
+      "status": "fail_baseline",
+      "exit_code": 101,
+      "log_path": "artifacts/section_13/bd-z7bt/rch_cargo_check.log",
+      "note": "Pre-existing workspace compile debt; E0423 in crates/franken-node/src/supply_chain/manifest.rs."
+    },
+    {
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "status": "fail_baseline",
+      "exit_code": 101,
+      "log_path": "artifacts/section_13/bd-z7bt/rch_cargo_clippy.log",
+      "note": "Pre-existing workspace lint/compile debt outside bd-z7bt scope."
+    },
+    {
+      "command": "rch exec -- cargo fmt --check",
+      "status": "fail_baseline",
+      "exit_code": 1,
+      "log_path": "artifacts/section_13/bd-z7bt/rch_cargo_fmt_check.log",
+      "note": "Pre-existing workspace formatting drift outside bd-z7bt scope."
+    }
+  ]
+}

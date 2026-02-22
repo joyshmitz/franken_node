@@ -4,8 +4,7 @@
 //! rules (earliest grant, purpose priority), and halts on dangerous-tier conflicts.
 //! Every conflict produces a reproducible fork log entry.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use sha2::{Digest, Sha256};
 
 /// Safety tier context for a lease conflict.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -245,13 +244,13 @@ pub fn resolve_conflict(
         }
     } else {
         // Fallback: deterministic hash-based
-        let mut ha = DefaultHasher::new();
-        a.lease_id.hash(&mut ha);
-        let score_a = ha.finish();
+        let mut ha = sha2::Sha256::new();
+        sha2::Digest::update(&mut ha, a.lease_id.as_bytes());
+        let score_a = format!("{:x}", sha2::Digest::finalize(ha));
 
-        let mut hb = DefaultHasher::new();
-        b.lease_id.hash(&mut hb);
-        let score_b = hb.finish();
+        let mut hb = sha2::Sha256::new();
+        sha2::Digest::update(&mut hb, b.lease_id.as_bytes());
+        let score_b = format!("{:x}", sha2::Digest::finalize(hb));
 
         if score_a >= score_b {
             (&a.lease_id, &b.lease_id, "hash_tiebreak")
@@ -296,11 +295,14 @@ pub fn fork_log_entry(
     }
 
     // Deterministic entry_id from conflict + trace
-    let mut hasher = DefaultHasher::new();
-    conflict.lease_a.hash(&mut hasher);
-    conflict.lease_b.hash(&mut hasher);
-    trace_id.hash(&mut hasher);
-    let entry_id = format!("fork-{:016x}", hasher.finish());
+    let mut hasher = sha2::Sha256::new();
+    sha2::Digest::update(&mut hasher, conflict.lease_a.as_bytes());
+    sha2::Digest::update(&mut hasher, b"|");
+    sha2::Digest::update(&mut hasher, conflict.lease_b.as_bytes());
+    sha2::Digest::update(&mut hasher, b"|");
+    sha2::Digest::update(&mut hasher, trace_id.as_bytes());
+    let hash_hex = format!("{:x}", sha2::Digest::finalize(hasher));
+    let entry_id = format!("fork-{}", &hash_hex[..16]);
 
     let (winner, rule, halted) = match resolution {
         Some(r) => (r.winner.clone(), r.rule_applied.clone(), r.halted),

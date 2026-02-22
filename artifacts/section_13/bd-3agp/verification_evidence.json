@@ -1,0 +1,83 @@
+{
+  "bead_id": "bd-3agp",
+  "section": "13",
+  "title": "Concrete target gate: >=3x migration velocity",
+  "generated_at": "2026-02-21T00:54:26Z",
+  "status": "pass",
+  "checks": [
+    {
+      "name": "velocity_self_test",
+      "command": "python3 scripts/check_migration_velocity_gate.py --self-test --json",
+      "exit_code": 0,
+      "output_path": "artifacts/section_13/bd-3agp/check_self_test.json"
+    },
+    {
+      "name": "velocity_gate_validation",
+      "command": "python3 scripts/check_migration_velocity_gate.py --json",
+      "exit_code": 0,
+      "output_path": "artifacts/section_13/bd-3agp/check_report.json",
+      "summary": {
+        "verdict": "PASS",
+        "overall_velocity_ratio": 3.1507,
+        "required_velocity_ratio": 3.0,
+        "cohort_size": 10,
+        "ci_release_sample_count": 5,
+        "missing_archetypes": [],
+        "trace_id": "trace-bd-3agp-migration-velocity"
+      }
+    },
+    {
+      "name": "unit_tests",
+      "command": "python3 -m unittest tests/test_check_migration_velocity_gate.py",
+      "exit_code": 0,
+      "output_path": "artifacts/section_13/bd-3agp/unit_tests.txt",
+      "summary": " OK"
+    },
+    {
+      "name": "cargo_check_all_targets_via_rch",
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "output_path": "artifacts/section_13/bd-3agp/rch_cargo_check.log",
+      "note": "Pre-existing repository compile debt outside bd-3agp scope."
+    },
+    {
+      "name": "cargo_clippy_all_targets_via_rch",
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "output_path": "artifacts/section_13/bd-3agp/rch_cargo_clippy.log",
+      "note": "Pre-existing repository-wide clippy debt outside bd-3agp scope."
+    },
+    {
+      "name": "cargo_fmt_check_via_rch",
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "output_path": "artifacts/section_13/bd-3agp/rch_cargo_fmt_check.log",
+      "note": "Pre-existing repository formatting drift outside bd-3agp scope."
+    }
+  ],
+  "acceptance_mapping": {
+    "velocity_ratio_definition_manual_over_tooled": true,
+    "cohort_size_gte_10": true,
+    "required_archetypes_covered": true,
+    "velocity_ratio_gte_3x": true,
+    "e2e_timing_fields_required": true,
+    "manual_intervention_and_blockers_documented": true,
+    "ci_sample_projects_gte_3": true,
+    "determinism_and_adversarial_checks_enforced": true
+  },
+  "contract_surface": {
+    "spec": "docs/specs/section_13/bd-3agp_contract.md",
+    "canonical_report": "artifacts/13/migration_velocity_report.json",
+    "validator": "scripts/check_migration_velocity_gate.py",
+    "unit_tests": "tests/test_check_migration_velocity_gate.py",
+    "ci_gate": ".github/workflows/migration-velocity-gate.yml"
+  },
+  "required_event_codes": [
+    "MVG-001",
+    "MVG-002",
+    "MVG-003",
+    "MVG-004",
+    "MVG-005",
+    "MVG-006"
+  ]
+}

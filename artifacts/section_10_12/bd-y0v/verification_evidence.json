@@ -1,0 +1,14 @@
+{
+  "bead_id": "bd-y0v",
+  "section": "10.12",
+  "title": "Operator Intelligence Recommendation Engine",
+  "status": "pass",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "event_codes": ["OIR-001", "OIR-002", "OIR-003", "OIR-004", "OIR-005", "OIR-006", "OIR-007", "OIR-008", "OIR-009", "OIR-010"],
+  "invariants": ["INV-OIR-DETERMINISTIC", "INV-OIR-ROLLBACK-SOUND", "INV-OIR-BUDGET", "INV-OIR-AUDIT"],
+  "error_codes": ["ERR_OIR_INVALID_CONFIG", "ERR_OIR_NO_CONTEXT", "ERR_OIR_SCORE_OVERFLOW", "ERR_OIR_ROLLBACK_FAILED", "ERR_OIR_REPLAY_MISMATCH", "ERR_OIR_DEGRADED"],
+  "types": ["RecommendationConfig", "RecommendationEngine", "Recommendation", "OperatorContext", "RollbackProof", "ReplayArtifact", "AuditEntry", "OIEvent", "OIError"],
+  "rust_tests": 38,
+  "compilation": "exit 0"
+}

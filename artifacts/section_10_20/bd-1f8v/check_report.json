@@ -1,0 +1,68 @@
+{
+  "gate": "dgis_update_copilot",
+  "bead": "bd-1f8v",
+  "section": "10.20",
+  "verdict": "PASS",
+  "passed": 11,
+  "total": 11,
+  "checks": [
+    {
+      "name": "source_exists",
+      "passed": true,
+      "message": "update_copilot.rs exists (41144 bytes)",
+      "details": {
+        "size": 41144
+      }
+    },
+    {
+      "name": "module_wiring",
+      "passed": true,
+      "message": "update_copilot properly wired into dgis module"
+    },
+    {
+      "name": "structs",
+      "passed": true,
+      "message": "all 15 required types present"
+    },
+    {
+      "name": "event_codes",
+      "passed": true,
+      "message": "12 event codes defined, all required present"
+    },
+    {
+      "name": "risk_delta",
+      "passed": true,
+      "message": "risk delta with per-metric breakdowns present"
+    },
+    {
+      "name": "containment",
+      "passed": true,
+      "message": "containment recommendations with blast radius present"
+    },
+    {
+      "name": "confidence",
+      "passed": true,
+      "message": "confidence output with uncertainty bounds present"
+    },
+    {
+      "name": "acknowledgement",
+      "passed": true,
+      "message": "policy acknowledgement gate with validation present"
+    },
+    {
+      "name": "playbook",
+      "passed": true,
+      "message": "mitigation playbook with barriers, rollout, monitoring present"
+    },
+    {
+      "name": "test_coverage",
+      "passed": true,
+      "message": "all 14 test patterns found"
+    },
+    {
+      "name": "interaction_logging",
+      "passed": true,
+      "message": "interaction logging with JSONL export present"
+    }
+  ]
+}

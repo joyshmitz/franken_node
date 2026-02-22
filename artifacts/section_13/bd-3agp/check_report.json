@@ -1,0 +1,126 @@
+{
+  "bead_id": "bd-3agp",
+  "title": "Migration velocity gate (>= 3x)",
+  "section": "13",
+  "trace_id": "trace-bd-3agp-migration-velocity",
+  "verdict": "PASS",
+  "total": 18,
+  "passed": 18,
+  "failed": 0,
+  "computed": {
+    "overall_velocity_ratio": 3.1507,
+    "required_velocity_ratio": 3.0,
+    "cohort_size": 10,
+    "ci_release_sample_count": 5,
+    "missing_archetypes": []
+  },
+  "checks": [
+    {
+      "check": "file: spec contract",
+      "pass": true,
+      "detail": "docs/specs/section_13/bd-3agp_contract.md"
+    },
+    {
+      "check": "file: migration velocity report",
+      "pass": true,
+      "detail": "artifacts/13/migration_velocity_report.json"
+    },
+    {
+      "check": "spec threshold >= 3x",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec archetype coverage",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report parse",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report required top-level fields",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report bead id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report unit minutes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cohort size >= 10",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "cohort_size matches project count",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "project entry schema",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "required archetypes covered",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "overall velocity ratio matches computed",
+      "pass": true,
+      "detail": "declared=3.15, computed=3.15"
+    },
+    {
+      "check": "velocity threshold >= 3x",
+      "pass": true,
+      "detail": "ratio=3.15, threshold=3.0"
+    },
+    {
+      "check": "ci sample coverage >= 3",
+      "pass": true,
+      "detail": "ci_release_sample projects=5"
+    },
+    {
+      "check": "determinism under reordering",
+      "pass": true,
+      "detail": "ratio=3.15068, reversed_ratio=3.15068"
+    },
+    {
+      "check": "adversarial perturbation flips threshold",
+      "pass": true,
+      "detail": "perturbed_ratio=2.10"
+    }
+  ],
+  "events": [
+    {
+      "event_code": "MVG-001",
+      "trace_id": "trace-bd-3agp-migration-velocity",
+      "message": "Velocity metrics computed (ratio=3.15)."
+    },
+    {
+      "event_code": "MVG-002",
+      "trace_id": "trace-bd-3agp-migration-velocity",
+      "message": "Velocity threshold met (>= 3x)."
+    },
+    {
+      "event_code": "MVG-006",
+      "trace_id": "trace-bd-3agp-migration-velocity",
+      "message": "Determinism validation executed."
+    }
+  ]
+}

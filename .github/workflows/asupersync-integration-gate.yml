@@ -1,0 +1,42 @@
+name: Asupersync Integration Gate
+
+on:
+  pull_request:
+    paths:
+      - "docs/conformance/asupersync_release_gate.md"
+      - "docs/specs/section_10_15/bd-h93z_contract.md"
+      - "scripts/check_release_gate.py"
+      - "tests/test_check_release_gate.py"
+      - "artifacts/10.15/release_gate_report.json"
+  push:
+    branches: [main]
+    paths:
+      - "docs/conformance/asupersync_release_gate.md"
+      - "docs/specs/section_10_15/bd-h93z_contract.md"
+      - "scripts/check_release_gate.py"
+      - "tests/test_check_release_gate.py"
+      - "artifacts/10.15/release_gate_report.json"
+
+jobs:
+  asupersync-release-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate sample gate report fixture
+        run: |
+          python3 scripts/check_release_gate.py --write-sample --json > /tmp/release_gate_fixture.json
+
+      - name: Validate release gate contract
+        run: |
+          python3 scripts/check_release_gate.py --json > /tmp/asupersync_release_gate.json
+
+      - name: Upload gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: asupersync-integration-gate
+          path: |
+            /tmp/release_gate_fixture.json
+            /tmp/asupersync_release_gate.json
+            artifacts/10.15/release_gate_report.json

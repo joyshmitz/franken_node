@@ -1,0 +1,17 @@
+module_path,function_name,invariant_violated,target_bead,migration_status,closure_criteria,exception_reason,exception_expiry
+connector/lifecycle.rs,transition,INV-MIG-EPOCH-SCOPED,bd-1cs7,completed,Transition calls check_artifact_epoch before state change,,
+connector/rollout_state.rs,persist_state,INV-MIG-DETERMINISTIC-SER,bd-1cwp,completed,Uses canonical_serializer for all persisted state,,
+connector/health_gate.rs,evaluate,INV-MIG-EPOCH-SCOPED,bd-145n,in_progress,Health gate results carry epoch scope tags,,
+connector/fencing.rs,validate_fence,INV-MIG-IDEMPOTENT,bd-3h63,in_progress,Fence validation is idempotent across replays,,
+connector/repair_controller.rs,run_cycle,INV-MIG-FAIL-CLOSED,bd-3014,not_started,Repair cycles reject stale-epoch directives,,
+connector/repair_controller.rs,emergency_repair,INV-MIG-FAIL-CLOSED,bd-3014,excepted,Emergency repair bypasses epoch checks for DR,Emergency repair path must bypass epoch checks for disaster recovery; gated by operator escalation token,2026-06-30
+connector/retention_policy.rs,enforce,INV-MIG-EPOCH-SCOPED,bd-25oa,not_started,Retention decisions are epoch-bounded,,
+connector/snapshot_policy.rs,should_snapshot,INV-MIG-DETERMINISTIC-SER,bd-3tpg,in_progress,Snapshot decisions use canonical serialization,,
+connector/activation_pipeline.rs,activate,INV-MIG-FAIL-CLOSED,bd-3u6o,not_started,Activation rejects artifacts from wrong epoch,,
+connector/quarantine_promotion.rs,promote,INV-MIG-IDEMPOTENT,bd-cuut,completed,Promotion is idempotent; replays produce same result,,
+conformance/protocol_harness.rs,run_harness,INV-MIG-EPOCH-SCOPED,bd-1hbw,in_progress,Harness results carry epoch metadata,,
+conformance/connector_method_validator.rs,validate_contract,INV-MIG-DETERMINISTIC-SER,bd-3014,not_started,Validation reports use canonical serialization,,
+conformance/connector_method_validator.rs,validate_legacy_v0,INV-MIG-DETERMINISTIC-SER,bd-3014,excepted,Legacy v0 connectors scheduled for deprecation,Legacy v0 connectors do not support epoch metadata; scheduled for deprecation in v2.0,2026-09-30
+supply_chain/artifact_signing.rs,sign_artifact,INV-MIG-EPOCH-SCOPED,bd-1cwp,completed,Signatures include epoch scope in signed payload,,
+supply_chain/manifest.rs,validate,INV-MIG-FAIL-CLOSED,bd-3h63,in_progress,Manifest validation rejects stale-epoch manifests,,
+supply_chain/provenance_gate.rs,check_provenance,INV-MIG-IDEMPOTENT,bd-25oa,not_started,Provenance checks produce identical results on replay,,

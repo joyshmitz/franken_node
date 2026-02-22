@@ -1,0 +1,39 @@
+{
+  "bead_id": "bd-2ad0",
+  "section": "16",
+  "title": "Reproducible migration and incident datasets",
+  "gate_script": "scripts/check_reproducible_datasets.py",
+  "test_suite": "tests/test_check_reproducible_datasets.py",
+  "timestamp": "2026-02-21T00:30:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "migration_incident_datasets": "crates/franken-node/src/tools/migration_incident_datasets.rs",
+    "tools_mod": "crates/franken-node/src/tools/mod.rs",
+    "spec_contract": "docs/specs/section_16/bd-2ad0_contract.md",
+    "verification_script": "scripts/check_reproducible_datasets.py",
+    "unit_tests": "tests/test_check_reproducible_datasets.py"
+  },
+  "rust_test_count": 22,
+  "python_test_count": 25,
+  "event_codes_defined": 12,
+  "gate_checks_passed": 20,
+  "gate_checks_total": 20,
+  "invariants_verified": [
+    "INV-RDS-INTEGRITY",
+    "INV-RDS-DETERMINISTIC",
+    "INV-RDS-PROVENANCE",
+    "INV-RDS-REPRODUCIBLE",
+    "INV-RDS-VERSIONED",
+    "INV-RDS-GATED"
+  ],
+  "capabilities_verified": {
+    "dataset_types": ["MigrationScenario", "SecurityIncident", "BenchmarkBaseline", "CompatibilityMatrix", "TrustEvidence"],
+    "operations": ["register_dataset", "publish_bundle", "generate_catalog", "export_audit_log_jsonl"],
+    "content_hashing": true,
+    "provenance_tracking": true,
+    "replay_instructions": true,
+    "schema_versioning": true,
+    "completeness_gating": true,
+    "audit_logging": true
+  }
+}

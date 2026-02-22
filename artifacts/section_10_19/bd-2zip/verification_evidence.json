@@ -1,0 +1,214 @@
+{
+  "bead_id": "bd-2zip",
+  "title": "ATC verifier APIs and proof artifacts",
+  "section": "10.19",
+  "verdict": "PASS",
+  "total": 39,
+  "passed": 39,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "spec file exists",
+      "pass": true,
+      "detail": "docs/specs/atc_verifier_contract.md"
+    },
+    {
+      "check": "report file exists",
+      "pass": true,
+      "detail": "artifacts/10.19/atc_verifier_report.json"
+    },
+    {
+      "check": "conformance test file exists",
+      "pass": true,
+      "detail": "tests/conformance/atc_verifier_apis.rs"
+    },
+    {
+      "check": "spec endpoint ATC-VERIFIER-ENDPOINT-001",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec endpoint ATC-VERIFIER-ENDPOINT-002",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec endpoint ATC-VERIFIER-ENDPOINT-003",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec endpoint ATC-VERIFIER-ENDPOINT-004",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec event code ATC-VERIFIER-001",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec event code ATC-VERIFIER-002",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec event code ATC-VERIFIER-003",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec event code ATC-VERIFIER-004",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec event code ATC-VERIFIER-005",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "spec event code ATC-VERIFIER-006",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "conformance token atc_verifier_contract_enforces_aggregate_only_visibility",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "conformance token atc_verifier_contract_is_deterministic",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "conformance token atc_verifier_contract_validates_proof_chain_continuity",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report parse",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report required top-level fields",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report bead id",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report generated_at_utc RFC3339",
+      "pass": true,
+      "detail": "2026-02-21T05:01:00Z"
+    },
+    {
+      "check": "dataset_commitment object",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "dataset commitment root hash format",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "dataset commitment raw data not included",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "metric_snapshots list",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "metric snapshots aggregate-only",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "determinism_checks object",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "determinism checks",
+      "pass": true,
+      "detail": "determinism satisfied"
+    },
+    {
+      "check": "proof_chain list",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "proof_chain continuity",
+      "pass": true,
+      "detail": "proof_chain valid"
+    },
+    {
+      "check": "verifier_outputs object",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "verifier output integrity_valid",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "verifier output metric_provenance_valid",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "verifier output deterministic",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "verifier output private_raw_data_required=false",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "evidence_refs list",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "evidence refs resolve",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "events list",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "required report events present",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "signature verification",
+      "pass": true,
+      "detail": "signature valid"
+    }
+  ],
+  "events": [
+    "ATC-VERIFIER-001",
+    "ATC-VERIFIER-002",
+    "ATC-VERIFIER-003",
+    "ATC-VERIFIER-004",
+    "ATC-VERIFIER-005",
+    "ATC-VERIFIER-006"
+  ]
+}

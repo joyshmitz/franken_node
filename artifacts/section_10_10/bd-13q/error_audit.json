@@ -1,0 +1,84 @@
+{
+  "bead_id": "bd-13q",
+  "section": "10.10",
+  "generated_at": "2026-02-21T01:12:00Z",
+  "source_registry": "artifacts/section_10_13/bd-novi/error_code_registry.json",
+  "surfaces": [
+    {
+      "surface": "cli",
+      "formatter": "ProductError::format_cli",
+      "mapped_errors": [
+        {
+          "canonical_code": "FRANKEN_PROTOCOL_AUTH_FAILED",
+          "surface_code": "FN-CTRL-FRANKEN_PROTOCOL_AUTH_FAILED",
+          "retryable": true,
+          "recovery_hint": "Re-authenticate with fresh credentials"
+        },
+        {
+          "canonical_code": "FRANKEN_CONNECTOR_LEASE_EXPIRED",
+          "surface_code": "FN-CTRL-FRANKEN_CONNECTOR_LEASE_EXPIRED",
+          "retryable": true,
+          "recovery_hint": "Re-negotiate lease with coordinator"
+        }
+      ],
+      "unmapped_errors": []
+    },
+    {
+      "surface": "json_api",
+      "formatter": "ProductError::format_json_api",
+      "mapped_errors": [
+        {
+          "canonical_code": "FRANKEN_PROTOCOL_AUTH_FAILED",
+          "surface_code": "FN-AUTH-FRANKEN_PROTOCOL_AUTH_FAILED",
+          "retryable": true,
+          "recovery_hint": "Re-authenticate with fresh credentials"
+        }
+      ],
+      "unmapped_errors": []
+    },
+    {
+      "surface": "protocol",
+      "formatter": "ProductError::format_protocol_frame",
+      "mapped_errors": [
+        {
+          "canonical_code": "FRANKEN_PROTOCOL_SEQUENCE_REGRESS",
+          "surface_code": "FN-TOK-FRANKEN_PROTOCOL_SEQUENCE_REGRESS",
+          "retryable": false,
+          "recovery_hint": "Reset channel and re-establish session"
+        }
+      ],
+      "unmapped_errors": []
+    },
+    {
+      "surface": "log",
+      "formatter": "ProductError::format_log_fields",
+      "mapped_errors": [
+        {
+          "canonical_code": "FRANKEN_CAPABILITY_NOT_AVAILABLE",
+          "surface_code": "FN-POL-FRANKEN_CAPABILITY_NOT_AVAILABLE",
+          "retryable": false,
+          "recovery_hint": "Check capability registry and provider status"
+        }
+      ],
+      "unmapped_errors": []
+    },
+    {
+      "surface": "sdk",
+      "formatter": "ProductError::format_sdk_payload",
+      "mapped_errors": [
+        {
+          "canonical_code": "FRANKEN_EGRESS_TIMEOUT",
+          "surface_code": "FN-MIG-FRANKEN_EGRESS_TIMEOUT",
+          "retryable": true,
+          "recovery_hint": "Retry with exponential backoff"
+        }
+      ],
+      "unmapped_errors": []
+    }
+  ],
+  "summary": {
+    "surface_count": 5,
+    "mapped_error_count": 6,
+    "unmapped_error_count": 0
+  }
+}

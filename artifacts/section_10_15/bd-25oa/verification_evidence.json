@@ -1,0 +1,85 @@
+{
+  "bead_id": "bd-25oa",
+  "section": "10.15",
+  "title": "Enforce canonical DPOR-style schedule exploration for control-plane interactions",
+  "generated_at": "2026-02-21T12:00:00Z",
+  "status": "pass",
+  "checks": [
+    {
+      "name": "verification_gate_script",
+      "command": "python3 scripts/check_control_dpor_scope.py --json",
+      "exit_code": 0,
+      "summary": {
+        "verdict": "PASS",
+        "passing": 106,
+        "failing": 0,
+        "total": 106
+      }
+    },
+    {
+      "name": "self_test",
+      "command": "python3 scripts/check_control_dpor_scope.py --self-test",
+      "exit_code": 0,
+      "summary": "self_test passed"
+    },
+    {
+      "name": "unit_tests",
+      "command": "python3 -m pytest tests/test_check_control_dpor_scope.py -v",
+      "exit_code": 0,
+      "summary": "65 passed in 0.28s"
+    }
+  ],
+  "implementation_artifacts": {
+    "scope_document": "docs/testing/control_dpor_scope.md",
+    "spec_contract": "docs/specs/section_10_15/bd-25oa_contract.md",
+    "rust_test_file": "tests/lab/control_dpor_exploration.rs",
+    "exploration_summary": "artifacts/10.15/control_dpor_exploration_summary.json",
+    "results_report": "artifacts/10.15/control_dpor_results.json",
+    "upstream_dpor_explorer": "crates/franken-node/src/control_plane/dpor_exploration.rs",
+    "verification_script": "scripts/check_control_dpor_scope.py",
+    "unit_tests": "tests/test_check_control_dpor_scope.py"
+  },
+  "gate_checks_passing": 106,
+  "gate_checks_total": 106,
+  "python_test_count": 65,
+  "rust_test_count": 19,
+  "interaction_classes": 4,
+  "invariants_verified": [
+    "INV-DPOR-BOUNDED",
+    "INV-DPOR-INVARIANT-CHECK",
+    "INV-DPOR-COUNTEREXAMPLE",
+    "INV-DPOR-CANONICAL",
+    "INV-DPOR-NO-SPLIT-BRAIN",
+    "INV-DPOR-NO-ORPHANED-LEASE",
+    "INV-DPOR-NO-LEAKED-OBLIGATIONS",
+    "INV-DPOR-NO-INCONSISTENT-EVIDENCE",
+    "INV-DPOR-NO-STALE-WRITE"
+  ],
+  "event_codes_defined": [
+    "DPR-001",
+    "DPR-002",
+    "DPR-003",
+    "DPR-004",
+    "DPR-005",
+    "CDP-001",
+    "CDP-002",
+    "CDP-003",
+    "CDP-004",
+    "CDP-005",
+    "CDP-006",
+    "CDP-007",
+    "CDP-008"
+  ],
+  "upstream_bead": "bd-22yy",
+  "upstream_types_verified": [
+    "DporExplorer",
+    "ProtocolModel",
+    "Operation",
+    "SafetyProperty",
+    "Counterexample",
+    "CounterexampleStep",
+    "ExplorationBudget",
+    "ExplorationResult"
+  ],
+  "schema_version": "cdpor-v1.0"
+}

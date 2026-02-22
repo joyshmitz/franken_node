@@ -1,0 +1,13 @@
+{
+  "bead_id": "bd-33kj",
+  "section": "10.15",
+  "title": "Claim-Language Policy for Trust/Replay Claims",
+  "timestamp": "2026-02-22T00:00:00Z",
+  "policy_document": "docs/policy/claim_language_asupersync_requirements.md",
+  "gate_test": "tests/conformance/claim_language_gate.rs",
+  "gate_report": "artifacts/10.15/claim_language_gate_report.json",
+  "claim_types_defined": ["trust", "replay", "safety"],
+  "prohibited_patterns_count": 5,
+  "approved_templates_count": 6,
+  "verdict": "PASS"
+}

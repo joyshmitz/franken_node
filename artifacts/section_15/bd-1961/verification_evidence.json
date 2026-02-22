@@ -1,0 +1,105 @@
+{
+  "bead_id": "bd-1961",
+  "section": "15",
+  "gate_script": "check_reputation_graph_apis.py",
+  "checks_passed": 19,
+  "checks_total": 19,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "source_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/tools/reputation_graph_apis.rs"
+    },
+    {
+      "check": "module_wiring",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "check": "node_types",
+      "passed": true,
+      "detail": "5 types"
+    },
+    {
+      "check": "struct_ReputationNode",
+      "passed": true,
+      "detail": "ReputationNode"
+    },
+    {
+      "check": "struct_ReputationEdge",
+      "passed": true,
+      "detail": "ReputationEdge"
+    },
+    {
+      "check": "struct_ReputationScore",
+      "passed": true,
+      "detail": "ReputationScore"
+    },
+    {
+      "check": "struct_GraphSnapshot",
+      "passed": true,
+      "detail": "GraphSnapshot"
+    },
+    {
+      "check": "struct_ReputationGraphApis",
+      "passed": true,
+      "detail": "ReputationGraphApis"
+    },
+    {
+      "check": "edge_weight",
+      "passed": true,
+      "detail": "Weighted edges with evidence"
+    },
+    {
+      "check": "composite_score",
+      "passed": true,
+      "detail": "Scoring with threshold"
+    },
+    {
+      "check": "graph_queries",
+      "passed": true,
+      "detail": "Query operations"
+    },
+    {
+      "check": "decay_support",
+      "passed": true,
+      "detail": "Score decay"
+    },
+    {
+      "check": "content_hash",
+      "passed": true,
+      "detail": "SHA-256 hashing"
+    },
+    {
+      "check": "event_codes",
+      "passed": true,
+      "detail": "12/12"
+    },
+    {
+      "check": "invariants",
+      "passed": true,
+      "detail": "6/6"
+    },
+    {
+      "check": "audit_log",
+      "passed": true,
+      "detail": "JSONL export"
+    },
+    {
+      "check": "schema_version",
+      "passed": true,
+      "detail": "rga-v1.0"
+    },
+    {
+      "check": "spec_alignment",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_15/bd-1961_contract.md"
+    },
+    {
+      "check": "test_coverage",
+      "passed": true,
+      "detail": "0 tests"
+    }
+  ]
+}

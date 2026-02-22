@@ -1,0 +1,40 @@
+{
+  "bead_id": "bd-1vsr",
+  "section": "10.14",
+  "title": "Transition abort semantics on timeout/cancellation with force policy",
+  "gate_script": "scripts/check_transition_abort.py",
+  "test_suite": "tests/test_check_transition_abort.py",
+  "timestamp": "2026-02-22T01:35:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "transition_abort": "crates/franken-node/src/control_plane/transition_abort.rs",
+    "control_plane_mod": "crates/franken-node/src/control_plane/mod.rs",
+    "spec_contract": "docs/specs/section_10_14/bd-1vsr_contract.md",
+    "verification_script": "scripts/check_transition_abort.py",
+    "unit_tests": "tests/test_check_transition_abort.py"
+  },
+  "rust_test_count": 23,
+  "python_test_count": 37,
+  "event_codes_defined": 10,
+  "error_codes_defined": 8,
+  "gate_checks_passed": 29,
+  "gate_checks_total": 29,
+  "invariants_verified": [
+    "INV-ABORT-NO-PARTIAL",
+    "INV-ABORT-ALL-NOTIFIED",
+    "INV-ABORT-FORCE-EXPLICIT",
+    "INV-ABORT-FORCE-SCOPED",
+    "INV-ABORT-FORCE-AUDITED",
+    "INV-ABORT-FORCE-BOUNDED"
+  ],
+  "capabilities_verified": {
+    "abort_reasons": ["Timeout", "Cancellation", "ParticipantFailure"],
+    "operations": ["validate_force_policy", "record_abort", "record_force_transition", "verify_no_partial_state", "policy_hash", "export_audit_log_jsonl"],
+    "force_policy_validation": true,
+    "force_policy_scoped": true,
+    "force_policy_audited": true,
+    "no_partial_state_verification": true,
+    "audit_log_export": true
+  },
+  "compile_note": "FAIL_BASELINE — pre-existing compile debt in unrelated modules"
+}

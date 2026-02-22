@@ -1,0 +1,35 @@
+name: Replay Coverage Gate
+
+on:
+  pull_request:
+    paths:
+      - "docs/specs/section_13/bd-2l1k_contract.md"
+      - "artifacts/13/replay_coverage_matrix.json"
+      - "artifacts/13/replay_artifacts/**"
+      - "scripts/check_replay_coverage_gate.py"
+      - "tests/test_check_replay_coverage_gate.py"
+  push:
+    branches: [main]
+    paths:
+      - "docs/specs/section_13/bd-2l1k_contract.md"
+      - "artifacts/13/replay_coverage_matrix.json"
+      - "artifacts/13/replay_artifacts/**"
+      - "scripts/check_replay_coverage_gate.py"
+      - "tests/test_check_replay_coverage_gate.py"
+
+jobs:
+  replay-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run replay coverage gate
+        run: |
+          python3 scripts/check_replay_coverage_gate.py --json > /tmp/replay_coverage_gate.json
+
+      - name: Upload gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: replay-coverage-gate
+          path: /tmp/replay_coverage_gate.json

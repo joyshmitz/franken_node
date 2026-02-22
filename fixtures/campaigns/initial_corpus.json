@@ -1,0 +1,100 @@
+{
+  "version": "1.0.0",
+  "campaigns": [
+    {
+      "campaign_id": "CAMP-MEI-001",
+      "category": "MaliciousExtensionInjection",
+      "version": "1.0.0",
+      "title": "Native code loading via disguised extension",
+      "attack_vector": "Load a .node addon from an extension claiming pure-JS",
+      "target_component": "extension_host",
+      "expected_defense": "sandbox blocks native code loading; trust card rejects",
+      "severity": "Critical",
+      "success_criteria": {
+        "defense_held": true,
+        "max_detection_time_ms": 100,
+        "audit_event_emitted": true
+      },
+      "payload": {},
+      "mutations_applied": [],
+      "parent_campaign_id": null,
+      "created_at": "2026-02-21T00:00:00Z"
+    },
+    {
+      "campaign_id": "CAMP-CEX-001",
+      "category": "CredentialExfiltration",
+      "version": "1.0.0",
+      "title": "Environment variable credential harvest",
+      "attack_vector": "Enumerate process.env for AWS_SECRET, DATABASE_URL, API_KEY patterns",
+      "target_component": "runtime_sandbox",
+      "expected_defense": "env var access restricted to declared manifest scope",
+      "severity": "Critical",
+      "success_criteria": {
+        "defense_held": true,
+        "max_detection_time_ms": 50,
+        "audit_event_emitted": true
+      },
+      "payload": {},
+      "mutations_applied": [],
+      "parent_campaign_id": null,
+      "created_at": "2026-02-21T00:00:00Z"
+    },
+    {
+      "campaign_id": "CAMP-PEV-001",
+      "category": "PolicyEvasion",
+      "version": "1.0.0",
+      "title": "TOCTOU race on trust policy check",
+      "attack_vector": "Request policy check then swap payload before execution gate",
+      "target_component": "trust_policy_engine",
+      "expected_defense": "atomic check-and-execute prevents TOCTOU; audit logged",
+      "severity": "High",
+      "success_criteria": {
+        "defense_held": true,
+        "max_detection_time_ms": 200,
+        "audit_event_emitted": true
+      },
+      "payload": {},
+      "mutations_applied": [],
+      "parent_campaign_id": null,
+      "created_at": "2026-02-21T00:00:00Z"
+    },
+    {
+      "campaign_id": "CAMP-DPA-001",
+      "category": "DelayedPayloadActivation",
+      "version": "1.0.0",
+      "title": "Time-delayed privilege escalation",
+      "attack_vector": "Extension passes initial trust check, activates restricted API after 5m",
+      "target_component": "extension_host",
+      "expected_defense": "continuous monitoring detects behavioral change; quarantine triggered",
+      "severity": "High",
+      "success_criteria": {
+        "defense_held": true,
+        "max_detection_time_ms": 500,
+        "audit_event_emitted": true
+      },
+      "payload": {},
+      "mutations_applied": [],
+      "parent_campaign_id": null,
+      "created_at": "2026-02-21T00:00:00Z"
+    },
+    {
+      "campaign_id": "CAMP-SCC-001",
+      "category": "SupplyChainCompromise",
+      "version": "1.0.0",
+      "title": "Typosquatting dependency substitution",
+      "attack_vector": "Publish malicious package with name similar to popular dep",
+      "target_component": "registry",
+      "expected_defense": "provenance check rejects unsigned/unverified package",
+      "severity": "Critical",
+      "success_criteria": {
+        "defense_held": true,
+        "max_detection_time_ms": 100,
+        "audit_event_emitted": true
+      },
+      "payload": {},
+      "mutations_applied": [],
+      "parent_campaign_id": null,
+      "created_at": "2026-02-21T00:00:00Z"
+    }
+  ]
+}

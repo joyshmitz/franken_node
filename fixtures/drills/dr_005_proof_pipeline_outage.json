@@ -1,0 +1,38 @@
+{
+  "scenario_id": "DR-005",
+  "title": "Proof Pipeline Outage",
+  "category": "proof_pipeline_outage",
+  "severity": "high",
+  "slo_seconds": 300,
+  "drill_interval": "monthly",
+  "fault_description": "Kill the proof generation service process to simulate a complete pipeline outage. Verifies that pending proofs are queued (not dropped), circuit breaker activates, and the pipeline recovers after service restart.",
+  "fault_injection_steps": [
+    "Record current proof pipeline health metrics and queue depth",
+    "Send SIGKILL to the proof generation service process",
+    "Verify proof pipeline reports unhealthy status",
+    "Record fault injection timestamp and initial queue depth"
+  ],
+  "recovery_steps": [
+    "Detect proof pipeline outage via health monitoring",
+    "Activate proof pipeline circuit breaker",
+    "Queue incoming proof requests (verify none are dropped)",
+    "Restart the proof generation service",
+    "Verify pipeline health check returns healthy",
+    "Drain queued proofs and verify processing"
+  ],
+  "verification_steps": [
+    "Confirm proof pipeline health metric is healthy",
+    "Validate proof generation latency returns to baseline",
+    "Verify queued proof backlog has been fully drained",
+    "Run end-to-end proof generation test with known input",
+    "Confirm no proof requests were dropped during outage"
+  ],
+  "abort_conditions": [
+    "Proof requests are being dropped instead of queued",
+    "Pipeline restart causes cascading failures in dependent services",
+    "Queue depth exceeds capacity, risking data loss",
+    "Recovery time exceeds 3x SLO with no progress"
+  ],
+  "related_runbook": "RB-006",
+  "cross_references": ["bd-nr4", "proof_pipeline", "circuit_breaker", "verification_subsystem"]
+}

@@ -1,0 +1,187 @@
+{
+  "bead_id": "bd-3ex",
+  "section": "10.7",
+  "title": "Verifier CLI conformance contract tests",
+  "contract_path": "spec/verifier_cli_contract.toml",
+  "contract_version": "2.0.0",
+  "checks": [
+    {
+      "check": "contract_loadable",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "check": "exit_code_taxonomy",
+      "passed": true,
+      "detail": "expect pass=0 fail=1 error=2 skipped=3"
+    },
+    {
+      "check": "error_format_contract",
+      "passed": true,
+      "detail": "required_fields include error_code/message/remediation"
+    },
+    {
+      "check": "required_command_ids",
+      "passed": true,
+      "detail": "found=verify-module,verify-migration,verify-compatibility,verify-corpus"
+    },
+    {
+      "check": "cli_exposes_required_subcommands",
+      "passed": true,
+      "detail": "module/migration/compatibility/corpus variants present"
+    },
+    {
+      "check": "main_routes_required_subcommands",
+      "passed": true,
+      "detail": "main.rs routes required verifier command variants"
+    },
+    {
+      "check": "scenario_count",
+      "passed": true,
+      "detail": "count=5"
+    },
+    {
+      "check": "default_scenario_coverage",
+      "passed": true,
+      "detail": "each required command has a *_default scenario"
+    },
+    {
+      "check": "scenario:verify_module_default:snapshot_exists",
+      "passed": true,
+      "detail": "tests/contract/snapshots/verify_module_default.json"
+    },
+    {
+      "check": "scenario:verify_module_default:snapshot_json",
+      "passed": true,
+      "detail": "tests/contract/snapshots/verify_module_default.json:ok"
+    },
+    {
+      "check": "scenario:verify_module_default:snapshot_match",
+      "passed": true,
+      "detail": "exact"
+    },
+    {
+      "check": "scenario:verify_migration_default:snapshot_exists",
+      "passed": true,
+      "detail": "tests/contract/snapshots/verify_migration_default.json"
+    },
+    {
+      "check": "scenario:verify_migration_default:snapshot_json",
+      "passed": true,
+      "detail": "tests/contract/snapshots/verify_migration_default.json:ok"
+    },
+    {
+      "check": "scenario:verify_migration_default:snapshot_match",
+      "passed": true,
+      "detail": "exact"
+    },
+    {
+      "check": "scenario:verify_compatibility_default:snapshot_exists",
+      "passed": true,
+      "detail": "tests/contract/snapshots/verify_compatibility_default.json"
+    },
+    {
+      "check": "scenario:verify_compatibility_default:snapshot_json",
+      "passed": true,
+      "detail": "tests/contract/snapshots/verify_compatibility_default.json:ok"
+    },
+    {
+      "check": "scenario:verify_compatibility_default:snapshot_match",
+      "passed": true,
+      "detail": "exact"
+    },
+    {
+      "check": "scenario:verify_corpus_default:snapshot_exists",
+      "passed": true,
+      "detail": "tests/contract/snapshots/verify_corpus_default.json"
+    },
+    {
+      "check": "scenario:verify_corpus_default:snapshot_json",
+      "passed": true,
+      "detail": "tests/contract/snapshots/verify_corpus_default.json:ok"
+    },
+    {
+      "check": "scenario:verify_corpus_default:snapshot_match",
+      "passed": true,
+      "detail": "exact"
+    },
+    {
+      "check": "scenario:verify_module_invalid_compat:snapshot_exists",
+      "passed": true,
+      "detail": "tests/contract/snapshots/verify_module_invalid_compat.json"
+    },
+    {
+      "check": "scenario:verify_module_invalid_compat:snapshot_json",
+      "passed": true,
+      "detail": "tests/contract/snapshots/verify_module_invalid_compat.json:ok"
+    },
+    {
+      "check": "scenario:verify_module_invalid_compat:snapshot_match",
+      "passed": true,
+      "detail": "exact"
+    },
+    {
+      "check": "snapshot_updates",
+      "passed": true,
+      "detail": "update-snapshots disabled"
+    },
+    {
+      "check": "breaking_change_enforcement",
+      "passed": true,
+      "detail": "breaking_failures=0"
+    }
+  ],
+  "snapshot_diffs": [
+    {
+      "scenario_id": "verify_module_default",
+      "breaking": false,
+      "additive_only": false,
+      "exact": true,
+      "added_fields": [],
+      "removed_fields": [],
+      "changed_fields": []
+    },
+    {
+      "scenario_id": "verify_migration_default",
+      "breaking": false,
+      "additive_only": false,
+      "exact": true,
+      "added_fields": [],
+      "removed_fields": [],
+      "changed_fields": []
+    },
+    {
+      "scenario_id": "verify_compatibility_default",
+      "breaking": false,
+      "additive_only": false,
+      "exact": true,
+      "added_fields": [],
+      "removed_fields": [],
+      "changed_fields": []
+    },
+    {
+      "scenario_id": "verify_corpus_default",
+      "breaking": false,
+      "additive_only": false,
+      "exact": true,
+      "added_fields": [],
+      "removed_fields": [],
+      "changed_fields": []
+    },
+    {
+      "scenario_id": "verify_module_invalid_compat",
+      "breaking": false,
+      "additive_only": false,
+      "exact": true,
+      "added_fields": [],
+      "removed_fields": [],
+      "changed_fields": []
+    }
+  ],
+  "passed": 25,
+  "failed": 0,
+  "total": 25,
+  "verdict": "PASS",
+  "all_passed": true,
+  "status": "pass"
+}

@@ -1,0 +1,75 @@
+{
+  "bead_id": "bd-24du",
+  "section": "10.19",
+  "title": "ATC degraded/offline modes with local-first fallback",
+  "generated_at": "2026-02-21T05:02:10Z",
+  "status": "completed_with_baseline_workspace_failures",
+  "checks": [
+    {
+      "name": "spec_contract_exists",
+      "command": "test -f docs/specs/atc_degraded_mode.md",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "docs/specs/atc_degraded_mode.md"
+    },
+    {
+      "name": "integration_contract_test_exists",
+      "command": "test -f tests/integration/atc_partition_fallback.rs",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "tests/integration/atc_partition_fallback.rs"
+    },
+    {
+      "name": "events_artifact_contract",
+      "command": "python3 - <<'PY' ... validate artifacts/10.19/atc_degraded_mode_events.jsonl ... PY",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_19/bd-24du/check_report.json",
+      "summary": {
+        "verdict": "PASS",
+        "total_events": 11,
+        "trace_count": 2,
+        "missing_required_codes": []
+      }
+    },
+    {
+      "name": "cargo_test_atc_partition_fallback_via_rch",
+      "command": "rch exec -- cargo test -p frankenengine-node --test atc_partition_fallback",
+      "exit_code": 101,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_19/bd-24du/rch_test_atc_partition_fallback.log",
+      "note": "Pre-existing workspace compile debt outside bd-24du scope."
+    },
+    {
+      "name": "cargo_check_all_targets_via_rch",
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_19/bd-24du/rch_cargo_check_all_targets.log",
+      "note": "Pre-existing workspace compile debt outside bd-24du scope."
+    },
+    {
+      "name": "cargo_clippy_all_targets_via_rch",
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_19/bd-24du/rch_cargo_clippy_all_targets.log",
+      "note": "Pre-existing workspace lint/compile debt outside bd-24du scope."
+    },
+    {
+      "name": "cargo_fmt_check_via_rch",
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_19/bd-24du/rch_cargo_fmt_check.log",
+      "note": "Pre-existing workspace formatting drift and missing module outside bd-24du scope."
+    }
+  ],
+  "contract_surface": {
+    "spec": "docs/specs/atc_degraded_mode.md",
+    "integration_test": "tests/integration/atc_partition_fallback.rs",
+    "wrapper_test": "crates/franken-node/tests/atc_partition_fallback.rs",
+    "events_artifact": "artifacts/10.19/atc_degraded_mode_events.jsonl",
+    "events_check_report": "artifacts/section_10_19/bd-24du/check_report.json"
+  }
+}

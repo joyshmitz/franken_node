@@ -72,8 +72,12 @@ fn host_matches(pattern: &str, host: &str) -> bool {
     if pattern == "*" {
         return true;
     }
-    if let Some(suffix) = pattern.strip_prefix("*.") {
-        host.ends_with(suffix) && host.len() > suffix.len()
+    if let Some(suffix) = pattern.strip_prefix("*") {
+        if suffix.starts_with('.') {
+            host.ends_with(suffix) && host.len() > suffix.len()
+        } else {
+            false
+        }
     } else {
         pattern == host
     }

@@ -1,0 +1,193 @@
+{
+  "bead_id": "bd-2177",
+  "section": "10.15",
+  "gate_script": "check_workflow_primitive_map.py",
+  "trace_id": "bd-2177-trace",
+  "verdict": "PASS",
+  "checks_passed": 12,
+  "checks_total": 12,
+  "workflow_counts": {
+    "total": 8,
+    "mapped": 8,
+    "partial": 0,
+    "unmapped": 0
+  },
+  "checks": [
+    {
+      "check": "contract_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/architecture/tri_kernel_ownership_contract.md"
+    },
+    {
+      "check": "matrix_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/10.15/workflow_primitive_matrix.json"
+    },
+    {
+      "check": "io_and_parse",
+      "passed": true,
+      "detail": "contract and matrix loaded"
+    },
+    {
+      "check": "canonical_primitives_loaded",
+      "passed": true,
+      "detail": "loaded=7"
+    },
+    {
+      "check": "workflows_is_list",
+      "passed": true,
+      "detail": "type=list"
+    },
+    {
+      "check": "workflow_entry_shapes",
+      "passed": true,
+      "detail": "dict_entries=8/8"
+    },
+    {
+      "check": "required_workflows_present",
+      "passed": true,
+      "detail": "all required workflows present"
+    },
+    {
+      "check": "critical_workflow_primitive_coverage",
+      "passed": true,
+      "detail": "all critical workflows include full primitive set"
+    },
+    {
+      "check": "primitive_references_known",
+      "passed": true,
+      "detail": "all primitive references are canonical"
+    },
+    {
+      "check": "critical_workflows_mapped_or_exceptioned",
+      "passed": true,
+      "detail": "all critical workflows mapped or exception-approved"
+    },
+    {
+      "check": "summary_counts_consistent",
+      "passed": true,
+      "detail": "summary counts match workflow entries"
+    },
+    {
+      "check": "canonical_vocab_alignment",
+      "passed": true,
+      "detail": "required primitive vocabulary present in contract"
+    }
+  ],
+  "events": [
+    {
+      "event_code": "WFM-004",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "connector_lifecycle",
+      "status": "pass",
+      "detail": "7 primitive reference(s) valid"
+    },
+    {
+      "event_code": "WFM-001",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "connector_lifecycle",
+      "status": "pass",
+      "detail": "Connector Lifecycle Orchestration mapped"
+    },
+    {
+      "event_code": "WFM-004",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "rollout_transition",
+      "status": "pass",
+      "detail": "7 primitive reference(s) valid"
+    },
+    {
+      "event_code": "WFM-001",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "rollout_transition",
+      "status": "pass",
+      "detail": "Rollout State Transitions mapped"
+    },
+    {
+      "event_code": "WFM-004",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "health_gate_evaluation",
+      "status": "pass",
+      "detail": "7 primitive reference(s) valid"
+    },
+    {
+      "event_code": "WFM-001",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "health_gate_evaluation",
+      "status": "pass",
+      "detail": "Health-Gate Evaluation mapped"
+    },
+    {
+      "event_code": "WFM-004",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "publish_flow",
+      "status": "pass",
+      "detail": "7 primitive reference(s) valid"
+    },
+    {
+      "event_code": "WFM-001",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "publish_flow",
+      "status": "pass",
+      "detail": "Publish Flow mapped"
+    },
+    {
+      "event_code": "WFM-004",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "revoke_flow",
+      "status": "pass",
+      "detail": "7 primitive reference(s) valid"
+    },
+    {
+      "event_code": "WFM-001",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "revoke_flow",
+      "status": "pass",
+      "detail": "Revoke Flow mapped"
+    },
+    {
+      "event_code": "WFM-004",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "quarantine_promotion",
+      "status": "pass",
+      "detail": "7 primitive reference(s) valid"
+    },
+    {
+      "event_code": "WFM-001",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "quarantine_promotion",
+      "status": "pass",
+      "detail": "Quarantine Promotion mapped"
+    },
+    {
+      "event_code": "WFM-004",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "migration_orchestration",
+      "status": "pass",
+      "detail": "7 primitive reference(s) valid"
+    },
+    {
+      "event_code": "WFM-001",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "migration_orchestration",
+      "status": "pass",
+      "detail": "Migration Orchestration mapped"
+    },
+    {
+      "event_code": "WFM-004",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "fencing_token_ops",
+      "status": "pass",
+      "detail": "7 primitive reference(s) valid"
+    },
+    {
+      "event_code": "WFM-001",
+      "trace_id": "bd-2177-trace",
+      "workflow_id": "fencing_token_ops",
+      "status": "pass",
+      "detail": "Fencing Token Acquisition and Release mapped"
+    }
+  ],
+  "contract_path": "/data/projects/franken_node/docs/architecture/tri_kernel_ownership_contract.md",
+  "matrix_path": "/data/projects/franken_node/artifacts/10.15/workflow_primitive_matrix.json"
+}

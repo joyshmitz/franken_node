@@ -1,0 +1,39 @@
+{
+  "bead_id": "bd-2wsm",
+  "section": "10.14",
+  "title": "Epoch transition barrier protocol across core services with drain requirements",
+  "gate_script": "scripts/check_epoch_barrier.py",
+  "test_suite": "tests/test_check_epoch_barrier.py",
+  "timestamp": "2026-02-22T01:30:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "epoch_transition_barrier": "crates/franken-node/src/control_plane/epoch_transition_barrier.rs",
+    "control_plane_mod": "crates/franken-node/src/control_plane/mod.rs",
+    "spec_contract": "docs/specs/section_10_14/bd-2wsm_contract.md",
+    "verification_script": "scripts/check_epoch_barrier.py",
+    "unit_tests": "tests/test_check_epoch_barrier.py"
+  },
+  "rust_test_count": 38,
+  "python_test_count": 43,
+  "event_codes_defined": 10,
+  "error_codes_defined": 8,
+  "gate_checks_passed": 35,
+  "gate_checks_total": 35,
+  "invariants_verified": [
+    "INV-BARRIER-ALL-ACK",
+    "INV-BARRIER-NO-PARTIAL",
+    "INV-BARRIER-ABORT-SAFE",
+    "INV-BARRIER-SERIALIZED",
+    "INV-BARRIER-TRANSCRIPT",
+    "INV-BARRIER-TIMEOUT"
+  ],
+  "capabilities_verified": {
+    "barrier_phases": ["Proposed", "Draining", "Committed", "Aborted"],
+    "operations": ["propose", "record_drain_ack", "try_commit", "abort", "record_drain_failure", "check_participant_timeouts", "register_participant", "unregister_participant", "export_jsonl"],
+    "concurrent_barrier_rejection": true,
+    "per_participant_timeouts": true,
+    "abort_safe_epoch_preservation": true,
+    "full_audit_transcript": true,
+    "config_validation": true
+  }
+}

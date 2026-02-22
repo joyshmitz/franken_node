@@ -1,0 +1,52 @@
+{
+  "bead_id": "bd-1id0",
+  "section": "10.15",
+  "title": "Publish tri-kernel ownership contract with explicit interface boundaries",
+  "schema_version": "own-v1.0",
+  "timestamp": "2026-02-22T02:20:00+00:00",
+  "verdict": "PASS",
+  "kernels": {
+    "franken_engine": {
+      "plane": "execution",
+      "owns": ["runtime internals", "extension host sandbox", "low-level remote/effect primitives"]
+    },
+    "asupersync": {
+      "plane": "correctness-control",
+      "owns": ["cancellation protocol", "lane scheduling", "epoch barriers", "deterministic replay"]
+    },
+    "franken_node": {
+      "plane": "product",
+      "owns": ["user/operator surfaces", "policy orchestration", "evidence consumption"]
+    }
+  },
+  "hri_owners": {
+    "HRI-01": "asupersync",
+    "HRI-02": "asupersync",
+    "HRI-03": "asupersync",
+    "HRI-04": "asupersync",
+    "HRI-05": "asupersync",
+    "HRI-06": "asupersync",
+    "HRI-07": "asupersync",
+    "HRI-08": "asupersync",
+    "HRI-09": "asupersync",
+    "HRI-10": "franken_node"
+  },
+  "event_codes": ["OWN-001", "OWN-002", "OWN-003", "OWN-004"],
+  "boundary_rules": 5,
+  "waiver_fields": 7,
+  "verification_checks": {
+    "check_script": "scripts/check_ownership_violations.py",
+    "check_result": "PASS (0 violations)",
+    "test_suite": "tests/test_check_ownership_violations.py",
+    "test_suite_result": "14/14 PASS",
+    "conformance_tests": "tests/conformance/ownership_boundary_checks.rs"
+  },
+  "artifacts": {
+    "architecture_doc": "docs/architecture/tri_kernel_ownership_contract.md",
+    "waiver_registry": "docs/governance/ownership_boundary_waivers.json",
+    "conformance_tests": "tests/conformance/ownership_boundary_checks.rs",
+    "spec_contract": "docs/specs/section_10_15/bd-1id0_contract.md",
+    "evidence": "artifacts/section_10_15/bd-1id0/verification_evidence.json",
+    "summary": "artifacts/section_10_15/bd-1id0/verification_summary.md"
+  }
+}

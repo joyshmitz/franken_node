@@ -1,0 +1,36 @@
+{
+  "bead_id": "bd-10ee",
+  "section": "16",
+  "title": "Transparent technical reports",
+  "gate_script": "scripts/check_transparent_reports.py",
+  "test_suite": "tests/test_check_transparent_reports.py",
+  "timestamp": "2026-02-21T07:30:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "transparent_reports": "crates/franken-node/src/tools/transparent_reports.rs",
+    "tools_mod": "crates/franken-node/src/tools/mod.rs",
+    "spec_contract": "docs/specs/section_16/bd-10ee_contract.md",
+    "verification_script": "scripts/check_transparent_reports.py",
+    "unit_tests": "tests/test_check_transparent_reports.py"
+  },
+  "rust_test_count": 22,
+  "python_test_count": 27,
+  "event_codes_defined": 12,
+  "gate_checks_passed": 22,
+  "gate_checks_total": 22,
+  "invariants_verified": [
+    "INV-TR-TRANSPARENT", "INV-TR-DETERMINISTIC", "INV-TR-TIMELINE",
+    "INV-TR-CORRECTIVE", "INV-TR-VERSIONED", "INV-TR-AUDITABLE"
+  ],
+  "capabilities_verified": {
+    "report_categories": ["SecurityIncident", "PerformanceRegression", "DataIntegrity", "ServiceOutage", "ComplianceGap"],
+    "required_sections": 7,
+    "action_statuses": ["Identified", "Planned", "Implemented", "Verified"],
+    "operations": ["create_report", "add_corrective_action", "update_action_status", "generate_catalog", "export_audit_log_jsonl"],
+    "timeline_tracking": true,
+    "root_cause_analysis": true,
+    "lessons_learned": true,
+    "content_hashing": true,
+    "status_machine": true
+  }
+}

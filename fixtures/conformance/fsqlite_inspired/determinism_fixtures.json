@@ -1,0 +1,146 @@
+{
+  "domain": "determinism",
+  "description": "Fixtures verifying that operations produce identical output for identical input.",
+  "fixtures": [
+    {
+      "conformance_id": "FSQL-DET-001",
+      "domain": "determinism",
+      "description": "SHA-256 digest of a fixed byte string is stable across invocations",
+      "input": {
+        "algorithm": "sha256",
+        "data_hex": "64657465726d696e69736d2d666978747572652d303031"
+      },
+      "expected": {
+        "digest_hex": "a6a8f36a4d45a886e67b8e5a1f3fbbd80c46a1ebc59c42c93378b05db47c2a0f"
+      }
+    },
+    {
+      "conformance_id": "FSQL-DET-002",
+      "domain": "determinism",
+      "description": "SHA-256 of empty input is the well-known empty hash",
+      "input": {
+        "algorithm": "sha256",
+        "data_hex": ""
+      },
+      "expected": {
+        "digest_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "conformance_id": "FSQL-DET-003",
+      "domain": "determinism",
+      "description": "BTreeMap iteration order is sorted by key regardless of insertion order",
+      "input": {
+        "entries_insert_order": [
+          {"key": "zebra", "value": 1},
+          {"key": "alpha", "value": 2},
+          {"key": "mango", "value": 3}
+        ]
+      },
+      "expected": {
+        "iteration_order": ["alpha", "mango", "zebra"]
+      }
+    },
+    {
+      "conformance_id": "FSQL-DET-004",
+      "domain": "determinism",
+      "description": "Canonical JSON serialization produces byte-identical output for equivalent objects",
+      "input": {
+        "object": {"b_key": 2, "a_key": 1}
+      },
+      "expected": {
+        "canonical_json": "{\"a_key\":1,\"b_key\":2}"
+      }
+    },
+    {
+      "conformance_id": "FSQL-DET-005",
+      "domain": "determinism",
+      "description": "CBOR round-trip preserves exact bytes for a deterministic struct",
+      "input": {
+        "fields": {"epoch": 42, "nonce": "abc123"}
+      },
+      "expected": {
+        "round_trip_equal": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-DET-006",
+      "domain": "determinism",
+      "description": "Epoch key derivation from master secret and epoch number is reproducible",
+      "input": {
+        "master_secret_hex": "0102030405060708091011121314151617181920212223242526272829303132",
+        "epoch": 7,
+        "context": "epoch-key-derive"
+      },
+      "expected": {
+        "derived_key_deterministic": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-DET-007",
+      "domain": "determinism",
+      "description": "Marker hash chain produces identical hashes for identical payloads and sequence",
+      "input": {
+        "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "sequence": 0,
+        "payload_hex": "deadbeef"
+      },
+      "expected": {
+        "hash_deterministic": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-DET-008",
+      "domain": "determinism",
+      "description": "Sorting a list of UUIDs produces identical output regardless of initial order",
+      "input": {
+        "uuids": [
+          "550e8400-e29b-41d4-a716-446655440000",
+          "123e4567-e89b-12d3-a456-426614174000",
+          "987fcdeb-51a2-3b4c-d567-890abcdef012"
+        ]
+      },
+      "expected": {
+        "sorted_order": [
+          "123e4567-e89b-12d3-a456-426614174000",
+          "550e8400-e29b-41d4-a716-446655440000",
+          "987fcdeb-51a2-3b4c-d567-890abcdef012"
+        ]
+      }
+    },
+    {
+      "conformance_id": "FSQL-DET-009",
+      "domain": "determinism",
+      "description": "HMAC-SHA256 with fixed key and message is deterministic",
+      "input": {
+        "key_hex": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+        "message": "determinism-test"
+      },
+      "expected": {
+        "hmac_deterministic": true
+      }
+    },
+    {
+      "conformance_id": "FSQL-DET-010",
+      "domain": "determinism",
+      "description": "Hex encoding of fixed bytes is stable",
+      "input": {
+        "bytes": [0, 1, 127, 128, 255]
+      },
+      "expected": {
+        "hex_string": "00017f80ff"
+      }
+    },
+    {
+      "conformance_id": "FSQL-DET-011",
+      "domain": "determinism",
+      "description": "Base64 encoding of fixed bytes is stable across invocations",
+      "input": {
+        "bytes_hex": "48656c6c6f"
+      },
+      "expected": {
+        "base64": "SGVsbG8="
+      }
+    }
+  ]
+}

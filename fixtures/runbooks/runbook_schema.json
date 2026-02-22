@@ -1,0 +1,165 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://franken-node.dev/schemas/runbook.json",
+  "title": "Operator Runbook Schema",
+  "description": "Schema for franken_node operator runbooks for high-severity trust incidents.",
+  "type": "object",
+  "required": [
+    "runbook_id",
+    "title",
+    "category",
+    "severity",
+    "operator_privilege_level",
+    "detection_signature",
+    "estimated_recovery_time",
+    "required_permissions",
+    "steps",
+    "cross_references",
+    "drill_scenario",
+    "command_references",
+    "coverage_tags",
+    "last_reviewed",
+    "review_cadence"
+  ],
+  "properties": {
+    "runbook_id": {
+      "type": "string",
+      "pattern": "^RB-\\d{3}$",
+      "description": "Unique runbook identifier in RB-NNN format."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable runbook title."
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "trust_state_corruption",
+        "mass_revocation_event",
+        "fleet_quarantine_activation",
+        "epoch_transition_failure",
+        "evidence_ledger_divergence",
+        "proof_pipeline_outage"
+      ],
+      "description": "Snake_case incident category identifier."
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "high"],
+      "description": "Incident severity level."
+    },
+    "operator_privilege_level": {
+      "type": "string",
+      "enum": ["p1", "p2", "p3"],
+      "description": "Minimum operator privilege tier required."
+    },
+    "detection_signature": {
+      "type": "object",
+      "required": ["metrics", "log_patterns"],
+      "properties": {
+        "metrics": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Prometheus-style metric conditions for alerting."
+        },
+        "log_patterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Structured log patterns for detection."
+        }
+      },
+      "additionalProperties": false
+    },
+    "estimated_recovery_time": {
+      "type": "string",
+      "pattern": "^\\d+[mh]$",
+      "description": "Estimated time to recover (e.g. '30m', '2h')."
+    },
+    "required_permissions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Operator roles required to execute this runbook."
+    },
+    "steps": {
+      "type": "object",
+      "required": [
+        "containment",
+        "investigation",
+        "repair",
+        "verification",
+        "rollback"
+      ],
+      "properties": {
+        "containment": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Immediate containment actions."
+        },
+        "investigation": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Root cause investigation steps."
+        },
+        "repair": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Repair and remediation actions."
+        },
+        "verification": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Post-repair verification steps."
+        },
+        "rollback": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Rollback procedures if repair fails."
+        }
+      },
+      "additionalProperties": false
+    },
+    "cross_references": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Related beads, source files, and documentation."
+    },
+    "drill_scenario": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Description of drill exercise for operational readiness."
+    },
+    "command_references": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Explicit CLI/API commands used by operators in this runbook."
+    },
+    "coverage_tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Canonical high-severity incident taxonomy coverage tags."
+    },
+    "last_reviewed": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "Date this runbook was last validated."
+    },
+    "review_cadence": {
+      "type": "string",
+      "enum": ["per_release_cycle"],
+      "description": "Required re-validation cadence."
+    }
+  },
+  "additionalProperties": false
+}

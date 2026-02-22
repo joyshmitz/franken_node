@@ -1,0 +1,53 @@
+{
+  "bead_id": "bd-2ut3",
+  "changed_file_count": 2,
+  "changed_files_source": "artifacts/section_11/bd-2ut3/changed_files_for_validation.txt",
+  "errors": [],
+  "events": [
+    {
+      "event_code": "CONTRACT_NO_MERGE_VALIDATED",
+      "message": "no-contract-no-merge contract validated: docs/change_summaries/example_change_summary.json",
+      "severity": "info",
+      "summary_file": "docs/change_summaries/example_change_summary.json",
+      "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26"
+    }
+  ],
+  "example": "docs/change_summaries/example_change_summary.json",
+  "labels": [],
+  "ok": true,
+  "override_applied": false,
+  "override_label": "contract-override",
+  "override_label_present": false,
+  "required_event_codes": [
+    "CONTRACT_NO_MERGE_INCOMPLETE",
+    "CONTRACT_NO_MERGE_MISSING",
+    "CONTRACT_NO_MERGE_OVERRIDE",
+    "CONTRACT_NO_MERGE_VALIDATED"
+  ],
+  "requires_contract": true,
+  "subsystem_change_count": 1,
+  "summary_directory": "docs/change_summaries",
+  "summary_files_checked": [
+    "docs/change_summaries/example_change_summary.json"
+  ],
+  "template": "docs/templates/change_summary_template.md",
+  "validated_summaries": [
+    {
+      "errors": [],
+      "events": [
+        {
+          "event_code": "CONTRACT_NO_MERGE_VALIDATED",
+          "message": "no-contract-no-merge contract validated: docs/change_summaries/example_change_summary.json",
+          "severity": "info",
+          "summary_file": "docs/change_summaries/example_change_summary.json",
+          "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26"
+        }
+      ],
+      "ok": true,
+      "summary_file": "docs/change_summaries/example_change_summary.json",
+      "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26",
+      "warnings": []
+    }
+  ],
+  "warnings": []
+}

@@ -1,0 +1,75 @@
+{
+  "bead_id": "bd-11rz",
+  "section": "10.19",
+  "title": "ATC-backed release claim gate",
+  "generated_at": "2026-02-21T04:58:58Z",
+  "status": "completed_with_baseline_workspace_failures",
+  "checks": [
+    {
+      "name": "py_compile",
+      "command": "python3 -m py_compile scripts/check_atc_claim_gate.py tests/test_check_atc_claim_gate.py",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "gate_self_test",
+      "command": "python3 scripts/check_atc_claim_gate.py --self-test --json",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_19/bd-11rz/check_self_test.json"
+    },
+    {
+      "name": "gate_report",
+      "command": "python3 scripts/check_atc_claim_gate.py --json",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_19/bd-11rz/check_report.json",
+      "summary": {
+        "verdict": "PASS",
+        "passed": 31,
+        "total": 31,
+        "release_decision": "allow",
+        "claims_validated": 3
+      }
+    },
+    {
+      "name": "unit_tests",
+      "command": "python3 -m unittest tests/test_check_atc_claim_gate.py",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_19/bd-11rz/unit_tests.txt",
+      "summary": "Ran 7 tests: OK"
+    },
+    {
+      "name": "cargo_check_all_targets_via_rch",
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 101,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_19/bd-11rz/rch_cargo_check.log",
+      "note": "Pre-existing workspace compile debt outside bd-11rz scope."
+    },
+    {
+      "name": "cargo_clippy_all_targets_via_rch",
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "exit_code": 101,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_19/bd-11rz/rch_cargo_clippy.log",
+      "note": "Pre-existing workspace lint/compile debt outside bd-11rz scope."
+    },
+    {
+      "name": "cargo_fmt_check_via_rch",
+      "command": "rch exec -- cargo fmt --check",
+      "exit_code": 1,
+      "status": "FAIL_BASELINE",
+      "output_path": "artifacts/section_10_19/bd-11rz/rch_cargo_fmt_check.log",
+      "note": "Pre-existing workspace formatting drift outside bd-11rz scope."
+    }
+  ],
+  "contract_surface": {
+    "workflow": ".github/workflows/atc-claim-gate.yml",
+    "conformance_doc": "docs/conformance/atc_release_claim_gate.md",
+    "gate_report": "artifacts/10.19/atc_release_gate_report.json",
+    "checker": "scripts/check_atc_claim_gate.py",
+    "tests": "tests/test_check_atc_claim_gate.py"
+  }
+}

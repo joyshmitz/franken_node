@@ -1,0 +1,6 @@
+workflow_id,phase,request_ms,drain_start_ms,drain_complete_ms,finalize_ms,drain_duration_ms,timed_out,leaks,budget_ms,actual_ms,within_budget,resources_released
+lifecycle_shutdown,finalized,1000,1100,4200,4300,3100,false,,5000,3100,true,3
+rollout_cancel,finalized,1000,1100,3500,3600,2400,false,,3000,2400,true,2
+publish_abort,finalized,1000,1050,2100,2150,1050,false,,2000,1050,true,1
+health_check_cancel,finalized,1000,1020,1400,1450,380,false,,1000,380,true,0
+epoch_transition_cancel,finalized,1000,1100,2900,3000,1800,false,,3000,1800,true,2

@@ -1,0 +1,55 @@
+{
+  "bead_id": "bd-4jh9",
+  "title": "VEF degraded-mode policy for proof lag/outage with explicit SLOs",
+  "section": "10.18",
+  "gate": "vef_degraded_mode_verification",
+  "verdict": "PASS",
+  "timestamp": "2026-02-21T01:55:00Z",
+  "artifacts": {
+    "spec": "docs/specs/section_10_18/bd-4jh9_contract.md",
+    "policy": "docs/policy/vef_degraded_mode_policy.md",
+    "implementation": "crates/franken-node/src/security/vef_degraded_mode.rs",
+    "module_wiring": "crates/franken-node/src/security/mod.rs",
+    "verification_script": "scripts/check_vef_degraded_mode.py",
+    "unit_tests": "tests/test_check_vef_degraded_mode.py"
+  },
+  "checks": {
+    "cargo_check": "PASS",
+    "rust_unit_tests": 28,
+    "python_verification_checks": 107,
+    "python_unit_tests": 62,
+    "self_test_checks": 21
+  },
+  "coverage": {
+    "degraded_mode_tiers": ["normal", "restricted", "quarantine", "halt"],
+    "slo_metrics": ["proof_lag_secs", "backlog_depth", "error_rate", "heartbeat_age_secs"],
+    "event_codes": ["VEF-DEGRADE-001", "VEF-DEGRADE-002", "VEF-DEGRADE-003", "VEF-DEGRADE-004", "VEF-DEGRADE-ERR-001"],
+    "action_risk_levels": ["HighRisk", "LowRisk", "HealthCheck"],
+    "transition_paths_tested": [
+      "normal -> restricted",
+      "normal -> quarantine (skip restricted)",
+      "normal -> halt (skip both)",
+      "restricted -> quarantine",
+      "restricted -> halt",
+      "quarantine -> halt",
+      "halt -> quarantine (with stabilization)",
+      "quarantine -> restricted (with stabilization)",
+      "restricted -> normal (with stabilization)"
+    ],
+    "invariants_verified": [
+      "INV-VEF-DM-DETERMINISTIC",
+      "INV-VEF-DM-AUDIT",
+      "INV-VEF-DM-ESCALATE-IMMEDIATE",
+      "INV-VEF-DM-DEESCALATE-STABILIZED",
+      "INV-VEF-DM-RECOVERY-RECEIPT"
+    ]
+  },
+  "acceptance_criteria": {
+    "deterministic_transitions": "PASS",
+    "configurable_slo_thresholds": "PASS",
+    "audit_events_with_required_fields": "PASS",
+    "recovery_receipts_with_required_fields": "PASS",
+    "no_silent_transitions": "PASS",
+    "mode_enforcement_consistent": "PASS"
+  }
+}

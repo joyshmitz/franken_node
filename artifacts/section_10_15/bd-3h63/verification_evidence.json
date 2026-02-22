@@ -1,0 +1,33 @@
+{
+  "gate": "saga_wrappers_verification",
+  "bead": "bd-3h63",
+  "section": "10.15",
+  "verdict": "PASS",
+  "timestamp": "2026-02-21T12:00:00Z",
+  "checks": [
+    {"id": "SOURCE_EXISTS", "status": "PASS", "details": {"file": "crates/franken-node/src/connector/saga.rs"}},
+    {"id": "EVENT_CODES", "status": "PASS", "details": {"count": 8, "codes": ["SAG-001", "SAG-002", "SAG-003", "SAG-004", "SAG-005", "SAG-006", "SAG-007", "SAG-008"]}},
+    {"id": "INVARIANTS", "status": "PASS", "details": {"count": 5, "invariants": ["INV-SAGA-TERMINAL", "INV-SAGA-REVERSE-COMP", "INV-SAGA-IDEMPOTENT-COMP", "INV-SAGA-DETERMINISTIC", "INV-SAGA-AUDITABLE"]}},
+    {"id": "CORE_TYPES", "status": "PASS", "details": {"types": ["SagaExecutor", "SagaInstance", "SagaStepDef", "StepOutcome", "CompensationTrace", "SagaState"]}},
+    {"id": "COMPENSATION_REVERSE", "status": "PASS", "details": {"method": "compensate", "reverse_iteration": true}},
+    {"id": "TERMINAL_STATES", "status": "PASS", "details": {"states": ["Committed", "Compensated"]}},
+    {"id": "TRACE_EXPORT", "status": "PASS", "details": {"method": "export_trace", "type": "CompensationTrace"}},
+    {"id": "AUDIT_TRAIL", "status": "PASS", "details": {"method": "export_audit_log_jsonl", "format": "JSONL"}},
+    {"id": "TEST_COVERAGE", "status": "PASS", "details": {"rust_tests": 22, "min_required": 12}},
+    {"id": "MODULE_REGISTERED", "status": "PASS"},
+    {"id": "SPEC_EXISTS", "status": "PASS"}
+  ],
+  "summary": {
+    "total_checks": 11,
+    "passing_checks": 11,
+    "failing_checks": 0,
+    "rust_unit_tests": 22,
+    "python_unit_tests": 30
+  },
+  "artifacts": {
+    "spec": "docs/specs/section_10_15/bd-3h63_contract.md",
+    "implementation": "crates/franken-node/src/connector/saga.rs",
+    "verification_script": "scripts/check_saga_wrappers.py",
+    "python_tests": "tests/test_check_saga_wrappers.py"
+  }
+}

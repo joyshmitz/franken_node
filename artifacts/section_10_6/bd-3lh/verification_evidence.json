@@ -1,0 +1,98 @@
+{
+  "bead_id": "bd-3lh",
+  "title": "Cold-start and p99 latency gates for core workflows",
+  "section": "10.6",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 17,
+  "passed": 17,
+  "failed": 0,
+  "profile": "ci_dev",
+  "checks": [
+    {
+      "check": "spec_exists",
+      "pass": true,
+      "detail": "exists: docs/specs/section_10_6/bd-3lh_contract.md"
+    },
+    {
+      "check": "budgets_exists",
+      "pass": true,
+      "detail": "exists: perf/budgets.toml"
+    },
+    {
+      "check": "spec_keyword_cold_start",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword_p99",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword_flamegraph",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_keyword_profiles",
+      "pass": true,
+      "detail": "all 3 profiles present"
+    },
+    {
+      "check": "spec_keyword_early_warning",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec_event_codes",
+      "pass": true,
+      "detail": "all 8 present"
+    },
+    {
+      "check": "spec_invariants",
+      "pass": true,
+      "detail": "all 5 present"
+    },
+    {
+      "check": "budgets_has_profiles",
+      "pass": true,
+      "detail": "all 3 profiles present"
+    },
+    {
+      "check": "budgets_has_workflows",
+      "pass": true,
+      "detail": "all 5 workflows present"
+    },
+    {
+      "check": "budgets_version",
+      "pass": true,
+      "detail": "version: 1.0.0"
+    },
+    {
+      "check": "budgets_min_iterations",
+      "pass": true,
+      "detail": "min_iterations: 30 (>= 30 required)"
+    },
+    {
+      "check": "budget_resolution",
+      "pass": true,
+      "detail": "migration_scan dev_local override: cold_start=600ms"
+    },
+    {
+      "check": "budget_values_positive",
+      "pass": true,
+      "detail": "all budgets > 0"
+    },
+    {
+      "check": "budget_enterprise_stricter",
+      "pass": true,
+      "detail": "enterprise < dev_local"
+    },
+    {
+      "check": "percentile_computation",
+      "pass": true,
+      "detail": "p99 of [1..100] = 99.01 (expected ~99.01)"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "command": "verify module",
+  "contract_version": "2.0.0",
+  "schema_version": "verifier-cli-contract-v1",
+  "compat_version": 9,
+  "verdict": "ERROR",
+  "status": "error",
+  "exit_code": 2,
+  "reason": "unsupported --compat-version=9; supported versions: 2 or 1"
+}

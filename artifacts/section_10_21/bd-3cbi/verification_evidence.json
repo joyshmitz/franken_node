@@ -1,0 +1,89 @@
+{
+  "bead_id": "bd-3cbi",
+  "section": "10.21",
+  "title": "Integrate BPET risk into economic trust layer and operator copilot recommendation engine",
+  "gate_script": "scripts/check_bpet_economic.py",
+  "test_suite": "tests/test_check_bpet_economic.py",
+  "timestamp": "2026-02-21T05:30:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "economic_integration": "crates/franken-node/src/security/bpet/economic_integration.rs",
+    "bpet_mod": "crates/franken-node/src/security/bpet/mod.rs",
+    "verification_script": "scripts/check_bpet_economic.py",
+    "unit_tests": "tests/test_check_bpet_economic.py"
+  },
+  "rust_test_count": 22,
+  "python_test_count": 16,
+  "event_codes_defined": 10,
+  "gate_checks_passed": 11,
+  "gate_checks_total": 11,
+  "capabilities_verified": {
+    "propensity_scoring": {
+      "trajectory_analysis": true,
+      "trend_computation": true,
+      "multi_metric_combination": true,
+      "bounded_output": true,
+      "metrics": [
+        "maintainer_activity_score",
+        "commit_velocity",
+        "issue_response_time_hours",
+        "dependency_churn_rate",
+        "security_patch_latency_hours",
+        "contributor_diversity_index"
+      ]
+    },
+    "economic_pricing": {
+      "risk_adjusted_cost": true,
+      "insurance_premium_equivalent": true,
+      "loading_factor": true,
+      "confidence_propagation": true
+    },
+    "intervention_roi": {
+      "roi_ratio_computation": true,
+      "payback_period_days": true,
+      "recommendation_tiers": [
+        "StronglyRecommended",
+        "Recommended",
+        "Marginal",
+        "NotRecommended"
+      ],
+      "default_interventions": [
+        "fork_and_maintain",
+        "sponsor_maintainer",
+        "sandbox_barriers",
+        "replace_dependency"
+      ]
+    },
+    "motif_matching": {
+      "historical_motif_library": true,
+      "indicator_threshold_matching": true,
+      "score_based_ranking": true,
+      "default_motifs": [
+        "Abandoned Critical Package",
+        "Sudden Maintainer Turnover",
+        "Slow Quality Decay"
+      ]
+    },
+    "operator_guidance": {
+      "full_guidance_generation": true,
+      "summary_text": true,
+      "trace_correlation_ids": true
+    },
+    "mitigation_playbook": {
+      "urgency_levels": [
+        "Routine",
+        "Elevated",
+        "Urgent",
+        "Critical"
+      ],
+      "recommended_actions": true,
+      "monitoring_escalation": true,
+      "fallback_strategy": true
+    },
+    "audit_logging": {
+      "per_interaction_records": true,
+      "jsonl_export": true,
+      "trace_correlation_ids": true
+    }
+  }
+}

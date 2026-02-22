@@ -1,0 +1,20 @@
+{
+  "schema_version": "corpus-v1.0",
+  "bead_id": "bd-2ja",
+  "section": "10.7",
+  "timestamp": "2026-02-22T00:00:00Z",
+  "fixtures": [
+    {"fixture_id": "FIX-FS-001", "api_surface": "fs.readFile", "band": "core", "expected_behavior": "Read file contents as buffer", "node_version": "22.x", "inputs": {"path": "test.txt"}, "expected_outputs": {"type": "Buffer"}, "deterministic": true, "spec_section": "10.2"},
+    {"fixture_id": "FIX-FS-002", "api_surface": "fs.writeFile", "band": "core", "expected_behavior": "Write string to file", "node_version": "22.x", "inputs": {"path": "out.txt", "data": "hello"}, "expected_outputs": {"success": true}, "deterministic": true, "spec_section": "10.2"},
+    {"fixture_id": "FIX-PROC-001", "api_surface": "process.env", "band": "core", "expected_behavior": "Access environment variables", "node_version": "22.x", "inputs": {"key": "PATH"}, "expected_outputs": {"type": "string"}, "deterministic": true, "spec_section": "10.2"},
+    {"fixture_id": "FIX-NET-001", "api_surface": "net.createServer", "band": "high_value", "expected_behavior": "Create TCP server", "node_version": "22.x", "inputs": {"port": 0}, "expected_outputs": {"listening": true}, "deterministic": true, "spec_section": "10.2"},
+    {"fixture_id": "FIX-MOD-001", "api_surface": "module.require", "band": "core", "expected_behavior": "Require CommonJS module", "node_version": "22.x", "inputs": {"module": "path"}, "expected_outputs": {"type": "object"}, "deterministic": true, "spec_section": "10.2"},
+    {"fixture_id": "FIX-CLI-001", "api_surface": "process.argv", "band": "core", "expected_behavior": "Access CLI arguments", "node_version": "22.x", "inputs": {"args": ["--version"]}, "expected_outputs": {"type": "array"}, "deterministic": true, "spec_section": "10.2"},
+    {"fixture_id": "FIX-EDGE-001", "api_surface": "fs.readFile", "band": "edge", "expected_behavior": "Read nonexistent file throws ENOENT", "node_version": "22.x", "inputs": {"path": "/nonexistent"}, "expected_outputs": {"error_code": "ENOENT"}, "edge_cases": ["missing file"], "deterministic": true, "spec_section": "10.2"},
+    {"fixture_id": "FIX-UNSAFE-001", "api_surface": "vm.runInNewContext", "band": "unsafe", "expected_behavior": "Execute code in sandbox context", "node_version": "22.x", "inputs": {"code": "1+1"}, "expected_outputs": {"result": 2}, "known_divergences": [{"runtime": "bun", "description": "vm module has limited support"}], "deterministic": true, "spec_section": "10.2"}
+  ],
+  "summary": {
+    "total_fixtures": 8,
+    "by_band": {"core": 5, "high_value": 1, "edge": 1, "unsafe": 1}
+  }
+}

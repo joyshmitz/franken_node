@@ -1,0 +1,11 @@
+{"event_code": "BGATE-001", "trace_id": "trace-bd-3ohj-foundation-gate", "dimension": "gate", "status": "start", "detail": "Bootstrap foundation verification gate started"}
+{"event_code": "BGATE-020", "trace_id": "trace-bd-3ohj-foundation-gate", "dimension": "evidence", "status": "pass", "check_id": "BGATE-PARSE-INTEGRITY", "detail": "ok"}
+{"event_code": "BGATE-020", "trace_id": "trace-bd-3ohj-foundation-gate", "dimension": "traceability", "status": "pass", "check_id": "BGATE-TRACEABILITY-EVIDENCE", "detail": "ok=bd-n9r,bd-1pk,bd-32e,bd-2a3,bd-3k9t bad="}
+{"event_code": "BGATE-020", "trace_id": "trace-bd-3ohj-foundation-gate", "dimension": "unit_evidence", "status": "pass", "check_id": "BGATE-UPSTREAM-CONTRACTS", "detail": "n9r/pk1/e32 contracts PASS + k9 report PASS"}
+{"event_code": "BGATE-020", "trace_id": "trace-bd-3ohj-foundation-gate", "dimension": "e2e", "status": "pass", "check_id": "BGATE-E2E-OUTCOMES", "detail": "summary_verdict=PASS"}
+{"event_code": "BGATE-020", "trace_id": "trace-bd-3ohj-foundation-gate", "dimension": "matrix", "status": "pass", "check_id": "BGATE-MATRIX-COVERAGE-CONTRACT", "detail": "matrix families + deterministic fixture contract + canonical gate path"}
+{"event_code": "BGATE-020", "trace_id": "trace-bd-3ohj-foundation-gate", "dimension": "docs", "status": "pass", "check_id": "BGATE-DOCS-NAVIGATION", "detail": "matrix markdown + harness spec references resolved"}
+{"event_code": "BGATE-020", "trace_id": "trace-bd-3ohj-foundation-gate", "dimension": "baseline", "status": "pass", "check_id": "BGATE-BASELINE-DOCUMENTED", "detail": "bd-2a3 expected baseline FAIL captured with deterministic status codes and pass-for-scope evidence"}
+{"event_code": "BGATE-020", "trace_id": "trace-bd-3ohj-foundation-gate", "dimension": "logging", "status": "pass", "check_id": "BGATE-LOG-STABILITY", "detail": "single-trace structured logs + required event code coverage"}
+{"event_code": "BGATE-020", "trace_id": "trace-bd-3ohj-foundation-gate", "dimension": "determinism", "status": "pass", "check_id": "BGATE-DETERMINISM-GUARD", "detail": "stable baseline hashes + canonical foundation stage order"}
+{"event_code": "BGATE-099", "trace_id": "trace-bd-3ohj-foundation-gate", "dimension": "gate", "status": "pass", "detail": "verdict=PASS; failing_dimensions=none"}

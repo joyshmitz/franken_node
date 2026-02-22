@@ -1,0 +1,392 @@
+{
+  "bead_id": "bd-wzjl",
+  "title": "Security and trust co-metrics for benchmark suite",
+  "section": "14",
+  "gate": false,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 73,
+  "passed": 73,
+  "failed": 0,
+  "security_categories": [
+    "SECM-SANDBOX",
+    "SECM-REVOCATION",
+    "SECM-POLICY",
+    "SECM-ATTESTATION",
+    "SECM-QUARANTINE"
+  ],
+  "trust_categories": [
+    "TRUSTM-CARD",
+    "TRUSTM-VEF",
+    "TRUSTM-EPOCH",
+    "TRUSTM-EVIDENCE",
+    "TRUSTM-REPUTATION"
+  ],
+  "checks": [
+    {
+      "check": "rust_module_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/tools/security_trust_metrics.rs"
+    },
+    {
+      "check": "tools_mod_registration",
+      "pass": true,
+      "detail": "security_trust_metrics in tools/mod.rs"
+    },
+    {
+      "check": "type_SecurityMetricCategory",
+      "pass": true,
+      "detail": "SecurityMetricCategory defined"
+    },
+    {
+      "check": "type_TrustMetricCategory",
+      "pass": true,
+      "detail": "TrustMetricCategory defined"
+    },
+    {
+      "check": "type_ConfidenceInterval",
+      "pass": true,
+      "detail": "ConfidenceInterval defined"
+    },
+    {
+      "check": "type_MetricMeasurement",
+      "pass": true,
+      "detail": "MetricMeasurement defined"
+    },
+    {
+      "check": "type_MetricThreshold",
+      "pass": true,
+      "detail": "MetricThreshold defined"
+    },
+    {
+      "check": "type_MetricGateResult",
+      "pass": true,
+      "detail": "MetricGateResult defined"
+    },
+    {
+      "check": "type_CoMetricReport",
+      "pass": true,
+      "detail": "CoMetricReport defined"
+    },
+    {
+      "check": "type_CoMetricConfig",
+      "pass": true,
+      "detail": "CoMetricConfig defined"
+    },
+    {
+      "check": "type_CoMetricEngine",
+      "pass": true,
+      "detail": "CoMetricEngine defined"
+    },
+    {
+      "check": "security_category_SECM-SANDBOX",
+      "pass": true,
+      "detail": "SECM-SANDBOX defined"
+    },
+    {
+      "check": "security_category_SECM-REVOCATION",
+      "pass": true,
+      "detail": "SECM-REVOCATION defined"
+    },
+    {
+      "check": "security_category_SECM-POLICY",
+      "pass": true,
+      "detail": "SECM-POLICY defined"
+    },
+    {
+      "check": "security_category_SECM-ATTESTATION",
+      "pass": true,
+      "detail": "SECM-ATTESTATION defined"
+    },
+    {
+      "check": "security_category_SECM-QUARANTINE",
+      "pass": true,
+      "detail": "SECM-QUARANTINE defined"
+    },
+    {
+      "check": "trust_category_TRUSTM-CARD",
+      "pass": true,
+      "detail": "TRUSTM-CARD defined"
+    },
+    {
+      "check": "trust_category_TRUSTM-VEF",
+      "pass": true,
+      "detail": "TRUSTM-VEF defined"
+    },
+    {
+      "check": "trust_category_TRUSTM-EPOCH",
+      "pass": true,
+      "detail": "TRUSTM-EPOCH defined"
+    },
+    {
+      "check": "trust_category_TRUSTM-EVIDENCE",
+      "pass": true,
+      "detail": "TRUSTM-EVIDENCE defined"
+    },
+    {
+      "check": "trust_category_TRUSTM-REPUTATION",
+      "pass": true,
+      "detail": "TRUSTM-REPUTATION defined"
+    },
+    {
+      "check": "event_code_SECM-001",
+      "pass": true,
+      "detail": "SECM-001 defined"
+    },
+    {
+      "check": "event_code_SECM-002",
+      "pass": true,
+      "detail": "SECM-002 defined"
+    },
+    {
+      "check": "event_code_SECM-003",
+      "pass": true,
+      "detail": "SECM-003 defined"
+    },
+    {
+      "check": "event_code_SECM-004",
+      "pass": true,
+      "detail": "SECM-004 defined"
+    },
+    {
+      "check": "event_code_SECM-005",
+      "pass": true,
+      "detail": "SECM-005 defined"
+    },
+    {
+      "check": "event_code_SECM-006",
+      "pass": true,
+      "detail": "SECM-006 defined"
+    },
+    {
+      "check": "event_code_SECM-007",
+      "pass": true,
+      "detail": "SECM-007 defined"
+    },
+    {
+      "check": "event_code_SECM-008",
+      "pass": true,
+      "detail": "SECM-008 defined"
+    },
+    {
+      "check": "event_code_SECM-009",
+      "pass": true,
+      "detail": "SECM-009 defined"
+    },
+    {
+      "check": "event_code_SECM-010",
+      "pass": true,
+      "detail": "SECM-010 defined"
+    },
+    {
+      "check": "event_code_SECM-ERR-001",
+      "pass": true,
+      "detail": "SECM-ERR-001 defined"
+    },
+    {
+      "check": "event_code_SECM-ERR-002",
+      "pass": true,
+      "detail": "SECM-ERR-002 defined"
+    },
+    {
+      "check": "invariant_INV-SECM-QUANTIFIED",
+      "pass": true,
+      "detail": "INV-SECM-QUANTIFIED defined"
+    },
+    {
+      "check": "invariant_INV-SECM-DETERMINISTIC",
+      "pass": true,
+      "detail": "INV-SECM-DETERMINISTIC defined"
+    },
+    {
+      "check": "invariant_INV-SECM-THRESHOLDED",
+      "pass": true,
+      "detail": "INV-SECM-THRESHOLDED defined"
+    },
+    {
+      "check": "invariant_INV-SECM-CONFIDENCE",
+      "pass": true,
+      "detail": "INV-SECM-CONFIDENCE defined"
+    },
+    {
+      "check": "invariant_INV-SECM-VERSIONED",
+      "pass": true,
+      "detail": "INV-SECM-VERSIONED defined"
+    },
+    {
+      "check": "invariant_INV-SECM-GATED",
+      "pass": true,
+      "detail": "INV-SECM-GATED defined"
+    },
+    {
+      "check": "gate_behavior",
+      "pass": true,
+      "detail": "threshold + overall_pass + category requirements"
+    },
+    {
+      "check": "confidence_intervals",
+      "pass": true,
+      "detail": "ConfidenceInterval with lower/upper/level"
+    },
+    {
+      "check": "formula_versioning",
+      "pass": true,
+      "detail": "scoring formula version constant and field"
+    },
+    {
+      "check": "content_hash",
+      "pass": true,
+      "detail": "content hash with compute_hash"
+    },
+    {
+      "check": "inline_tests",
+      "pass": true,
+      "detail": "18 inline tests (need >= 15)"
+    },
+    {
+      "check": "spec_contract",
+      "pass": true,
+      "detail": "docs/specs/section_14/bd-wzjl_contract.md"
+    },
+    {
+      "check": "spec_security_SECM-SANDBOX",
+      "pass": true,
+      "detail": "SECM-SANDBOX in spec"
+    },
+    {
+      "check": "spec_security_SECM-REVOCATION",
+      "pass": true,
+      "detail": "SECM-REVOCATION in spec"
+    },
+    {
+      "check": "spec_security_SECM-POLICY",
+      "pass": true,
+      "detail": "SECM-POLICY in spec"
+    },
+    {
+      "check": "spec_security_SECM-ATTESTATION",
+      "pass": true,
+      "detail": "SECM-ATTESTATION in spec"
+    },
+    {
+      "check": "spec_security_SECM-QUARANTINE",
+      "pass": true,
+      "detail": "SECM-QUARANTINE in spec"
+    },
+    {
+      "check": "spec_trust_TRUSTM-CARD",
+      "pass": true,
+      "detail": "TRUSTM-CARD in spec"
+    },
+    {
+      "check": "spec_trust_TRUSTM-VEF",
+      "pass": true,
+      "detail": "TRUSTM-VEF in spec"
+    },
+    {
+      "check": "spec_trust_TRUSTM-EPOCH",
+      "pass": true,
+      "detail": "TRUSTM-EPOCH in spec"
+    },
+    {
+      "check": "spec_trust_TRUSTM-EVIDENCE",
+      "pass": true,
+      "detail": "TRUSTM-EVIDENCE in spec"
+    },
+    {
+      "check": "spec_trust_TRUSTM-REPUTATION",
+      "pass": true,
+      "detail": "TRUSTM-REPUTATION in spec"
+    },
+    {
+      "check": "spec_INV-SECM-QUANTIFIED",
+      "pass": true,
+      "detail": "INV-SECM-QUANTIFIED in spec"
+    },
+    {
+      "check": "spec_INV-SECM-DETERMINISTIC",
+      "pass": true,
+      "detail": "INV-SECM-DETERMINISTIC in spec"
+    },
+    {
+      "check": "spec_INV-SECM-THRESHOLDED",
+      "pass": true,
+      "detail": "INV-SECM-THRESHOLDED in spec"
+    },
+    {
+      "check": "spec_INV-SECM-CONFIDENCE",
+      "pass": true,
+      "detail": "INV-SECM-CONFIDENCE in spec"
+    },
+    {
+      "check": "spec_INV-SECM-VERSIONED",
+      "pass": true,
+      "detail": "INV-SECM-VERSIONED in spec"
+    },
+    {
+      "check": "spec_INV-SECM-GATED",
+      "pass": true,
+      "detail": "INV-SECM-GATED in spec"
+    },
+    {
+      "check": "spec_event_SECM-001",
+      "pass": true,
+      "detail": "SECM-001 in spec"
+    },
+    {
+      "check": "spec_event_SECM-002",
+      "pass": true,
+      "detail": "SECM-002 in spec"
+    },
+    {
+      "check": "spec_event_SECM-003",
+      "pass": true,
+      "detail": "SECM-003 in spec"
+    },
+    {
+      "check": "spec_event_SECM-004",
+      "pass": true,
+      "detail": "SECM-004 in spec"
+    },
+    {
+      "check": "spec_event_SECM-005",
+      "pass": true,
+      "detail": "SECM-005 in spec"
+    },
+    {
+      "check": "spec_event_SECM-006",
+      "pass": true,
+      "detail": "SECM-006 in spec"
+    },
+    {
+      "check": "spec_event_SECM-007",
+      "pass": true,
+      "detail": "SECM-007 in spec"
+    },
+    {
+      "check": "spec_event_SECM-008",
+      "pass": true,
+      "detail": "SECM-008 in spec"
+    },
+    {
+      "check": "spec_event_SECM-009",
+      "pass": true,
+      "detail": "SECM-009 in spec"
+    },
+    {
+      "check": "spec_event_SECM-010",
+      "pass": true,
+      "detail": "SECM-010 in spec"
+    },
+    {
+      "check": "spec_event_SECM-ERR-001",
+      "pass": true,
+      "detail": "SECM-ERR-001 in spec"
+    },
+    {
+      "check": "spec_event_SECM-ERR-002",
+      "pass": true,
+      "detail": "SECM-ERR-002 in spec"
+    }
+  ]
+}

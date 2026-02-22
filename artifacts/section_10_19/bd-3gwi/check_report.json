@@ -1,0 +1,336 @@
+{
+  "bead_id": "bd-3gwi",
+  "title": "Contribution-weighted intelligence access policy and reciprocity controls",
+  "section": "10.19",
+  "gate": false,
+  "verdict": "PASS",
+  "overall_pass": true,
+  "total": 57,
+  "passed": 57,
+  "failed": 0,
+  "required_types": [
+    "AccessTier",
+    "ContributionMetrics",
+    "AccessDecision",
+    "AccessAuditEntry",
+    "ReciprocityMatrix",
+    "ReciprocityMatrixEntry",
+    "ReciprocityConfig",
+    "ReciprocityEngine"
+  ],
+  "event_codes": [
+    "ATC-RCP-001",
+    "ATC-RCP-002",
+    "ATC-RCP-003",
+    "ATC-RCP-004",
+    "ATC-RCP-005",
+    "ATC-RCP-006",
+    "ATC-RCP-007",
+    "ATC-RCP-008",
+    "ATC-RCP-009",
+    "ATC-RCP-010",
+    "ATC-RCP-ERR-001",
+    "ATC-RCP-ERR-002"
+  ],
+  "invariants": [
+    "INV-ATC-RECIPROCITY-DETERMINISM",
+    "INV-ATC-TIER-MONOTONE",
+    "INV-ATC-FREERIDER-BOUND",
+    "INV-ATC-EXCEPTION-AUDITED",
+    "INV-ATC-GRACE-BOUNDED",
+    "INV-ATC-ACCESS-LOGGED"
+  ],
+  "access_tiers": [
+    "Blocked",
+    "Limited",
+    "Standard",
+    "Full"
+  ],
+  "checks": [
+    {
+      "check": "rust_module_exists",
+      "pass": true,
+      "detail": "crates/franken-node/src/federation/atc_reciprocity.rs"
+    },
+    {
+      "check": "federation_mod_registration",
+      "pass": true,
+      "detail": "atc_reciprocity in federation/mod.rs"
+    },
+    {
+      "check": "type_AccessTier",
+      "pass": true,
+      "detail": "AccessTier defined"
+    },
+    {
+      "check": "type_ContributionMetrics",
+      "pass": true,
+      "detail": "ContributionMetrics defined"
+    },
+    {
+      "check": "type_AccessDecision",
+      "pass": true,
+      "detail": "AccessDecision defined"
+    },
+    {
+      "check": "type_AccessAuditEntry",
+      "pass": true,
+      "detail": "AccessAuditEntry defined"
+    },
+    {
+      "check": "type_ReciprocityMatrix",
+      "pass": true,
+      "detail": "ReciprocityMatrix defined"
+    },
+    {
+      "check": "type_ReciprocityMatrixEntry",
+      "pass": true,
+      "detail": "ReciprocityMatrixEntry defined"
+    },
+    {
+      "check": "type_ReciprocityConfig",
+      "pass": true,
+      "detail": "ReciprocityConfig defined"
+    },
+    {
+      "check": "type_ReciprocityEngine",
+      "pass": true,
+      "detail": "ReciprocityEngine defined"
+    },
+    {
+      "check": "access_tier_Blocked",
+      "pass": true,
+      "detail": "Blocked tier defined"
+    },
+    {
+      "check": "access_tier_Limited",
+      "pass": true,
+      "detail": "Limited tier defined"
+    },
+    {
+      "check": "access_tier_Standard",
+      "pass": true,
+      "detail": "Standard tier defined"
+    },
+    {
+      "check": "access_tier_Full",
+      "pass": true,
+      "detail": "Full tier defined"
+    },
+    {
+      "check": "event_code_ATC-RCP-001",
+      "pass": true,
+      "detail": "ATC-RCP-001 defined"
+    },
+    {
+      "check": "event_code_ATC-RCP-002",
+      "pass": true,
+      "detail": "ATC-RCP-002 defined"
+    },
+    {
+      "check": "event_code_ATC-RCP-003",
+      "pass": true,
+      "detail": "ATC-RCP-003 defined"
+    },
+    {
+      "check": "event_code_ATC-RCP-004",
+      "pass": true,
+      "detail": "ATC-RCP-004 defined"
+    },
+    {
+      "check": "event_code_ATC-RCP-005",
+      "pass": true,
+      "detail": "ATC-RCP-005 defined"
+    },
+    {
+      "check": "event_code_ATC-RCP-006",
+      "pass": true,
+      "detail": "ATC-RCP-006 defined"
+    },
+    {
+      "check": "event_code_ATC-RCP-007",
+      "pass": true,
+      "detail": "ATC-RCP-007 defined"
+    },
+    {
+      "check": "event_code_ATC-RCP-008",
+      "pass": true,
+      "detail": "ATC-RCP-008 defined"
+    },
+    {
+      "check": "event_code_ATC-RCP-009",
+      "pass": true,
+      "detail": "ATC-RCP-009 defined"
+    },
+    {
+      "check": "event_code_ATC-RCP-010",
+      "pass": true,
+      "detail": "ATC-RCP-010 defined"
+    },
+    {
+      "check": "event_code_ATC-RCP-ERR-001",
+      "pass": true,
+      "detail": "ATC-RCP-ERR-001 defined"
+    },
+    {
+      "check": "event_code_ATC-RCP-ERR-002",
+      "pass": true,
+      "detail": "ATC-RCP-ERR-002 defined"
+    },
+    {
+      "check": "invariant_INV-ATC-RECIPROCITY-DETERMINISM",
+      "pass": true,
+      "detail": "INV-ATC-RECIPROCITY-DETERMINISM defined"
+    },
+    {
+      "check": "invariant_INV-ATC-TIER-MONOTONE",
+      "pass": true,
+      "detail": "INV-ATC-TIER-MONOTONE defined"
+    },
+    {
+      "check": "invariant_INV-ATC-FREERIDER-BOUND",
+      "pass": true,
+      "detail": "INV-ATC-FREERIDER-BOUND defined"
+    },
+    {
+      "check": "invariant_INV-ATC-EXCEPTION-AUDITED",
+      "pass": true,
+      "detail": "INV-ATC-EXCEPTION-AUDITED defined"
+    },
+    {
+      "check": "invariant_INV-ATC-GRACE-BOUNDED",
+      "pass": true,
+      "detail": "INV-ATC-GRACE-BOUNDED defined"
+    },
+    {
+      "check": "invariant_INV-ATC-ACCESS-LOGGED",
+      "pass": true,
+      "detail": "INV-ATC-ACCESS-LOGGED defined"
+    },
+    {
+      "check": "freerider_controls",
+      "pass": true,
+      "detail": "contribution ratio + blocking + threshold"
+    },
+    {
+      "check": "grace_period",
+      "pass": true,
+      "detail": "grace period with configurable tier"
+    },
+    {
+      "check": "exception_paths",
+      "pass": true,
+      "detail": "exception paths with audit"
+    },
+    {
+      "check": "audit_logging",
+      "pass": true,
+      "detail": "audit log with JSONL export and content hash"
+    },
+    {
+      "check": "batch_evaluation",
+      "pass": true,
+      "detail": "batch evaluation with reciprocity matrix"
+    },
+    {
+      "check": "inline_tests",
+      "pass": true,
+      "detail": "21 inline tests (need >= 15)"
+    },
+    {
+      "check": "spec_contract",
+      "pass": true,
+      "detail": "docs/specs/section_10_19/bd-3gwi_contract.md"
+    },
+    {
+      "check": "spec_INV-ATC-RECIPROCITY-DETERMINISM",
+      "pass": true,
+      "detail": "INV-ATC-RECIPROCITY-DETERMINISM in spec"
+    },
+    {
+      "check": "spec_INV-ATC-TIER-MONOTONE",
+      "pass": true,
+      "detail": "INV-ATC-TIER-MONOTONE in spec"
+    },
+    {
+      "check": "spec_INV-ATC-FREERIDER-BOUND",
+      "pass": true,
+      "detail": "INV-ATC-FREERIDER-BOUND in spec"
+    },
+    {
+      "check": "spec_INV-ATC-EXCEPTION-AUDITED",
+      "pass": true,
+      "detail": "INV-ATC-EXCEPTION-AUDITED in spec"
+    },
+    {
+      "check": "spec_INV-ATC-GRACE-BOUNDED",
+      "pass": true,
+      "detail": "INV-ATC-GRACE-BOUNDED in spec"
+    },
+    {
+      "check": "spec_INV-ATC-ACCESS-LOGGED",
+      "pass": true,
+      "detail": "INV-ATC-ACCESS-LOGGED in spec"
+    },
+    {
+      "check": "spec_event_ATC-RCP-001",
+      "pass": true,
+      "detail": "ATC-RCP-001 in spec"
+    },
+    {
+      "check": "spec_event_ATC-RCP-002",
+      "pass": true,
+      "detail": "ATC-RCP-002 in spec"
+    },
+    {
+      "check": "spec_event_ATC-RCP-003",
+      "pass": true,
+      "detail": "ATC-RCP-003 in spec"
+    },
+    {
+      "check": "spec_event_ATC-RCP-004",
+      "pass": true,
+      "detail": "ATC-RCP-004 in spec"
+    },
+    {
+      "check": "spec_event_ATC-RCP-005",
+      "pass": true,
+      "detail": "ATC-RCP-005 in spec"
+    },
+    {
+      "check": "spec_event_ATC-RCP-006",
+      "pass": true,
+      "detail": "ATC-RCP-006 in spec"
+    },
+    {
+      "check": "spec_event_ATC-RCP-007",
+      "pass": true,
+      "detail": "ATC-RCP-007 in spec"
+    },
+    {
+      "check": "spec_event_ATC-RCP-008",
+      "pass": true,
+      "detail": "ATC-RCP-008 in spec"
+    },
+    {
+      "check": "spec_event_ATC-RCP-009",
+      "pass": true,
+      "detail": "ATC-RCP-009 in spec"
+    },
+    {
+      "check": "spec_event_ATC-RCP-010",
+      "pass": true,
+      "detail": "ATC-RCP-010 in spec"
+    },
+    {
+      "check": "spec_event_ATC-RCP-ERR-001",
+      "pass": true,
+      "detail": "ATC-RCP-ERR-001 in spec"
+    },
+    {
+      "check": "spec_event_ATC-RCP-ERR-002",
+      "pass": true,
+      "detail": "ATC-RCP-ERR-002 in spec"
+    }
+  ]
+}

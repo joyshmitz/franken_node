@@ -1,0 +1,85 @@
+{
+  "bead": "bd-v4l0",
+  "title": "Remote Bulkhead",
+  "section": "10.14",
+  "verdict": "PASS",
+  "passed": 15,
+  "total": 15,
+  "checks": [
+    {
+      "check": "SOURCE_EXISTS",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/remote/remote_bulkhead.rs"
+    },
+    {
+      "check": "EVENT_CODES",
+      "passed": true,
+      "detail": "8/8 event codes"
+    },
+    {
+      "check": "EVENT_CODES_MODULE",
+      "passed": true,
+      "detail": "event_codes module present"
+    },
+    {
+      "check": "ERROR_CODES",
+      "passed": true,
+      "detail": "9/9 error codes"
+    },
+    {
+      "check": "CORE_TYPES",
+      "passed": true,
+      "detail": "6/6 types"
+    },
+    {
+      "check": "REMOTECAP_GATING",
+      "passed": true,
+      "detail": "RemoteCap gating on acquire"
+    },
+    {
+      "check": "DRAIN_MODE",
+      "passed": true,
+      "detail": "drain mode on cap reduction"
+    },
+    {
+      "check": "LATENCY_TRACKING",
+      "passed": true,
+      "detail": "p99 latency tracking with target gate"
+    },
+    {
+      "check": "BACKPRESSURE_POLICY",
+      "passed": true,
+      "detail": "Reject and Queue policies implemented"
+    },
+    {
+      "check": "CORE_OPERATIONS",
+      "passed": true,
+      "detail": "3/3 operations"
+    },
+    {
+      "check": "PERMIT_LIFECYCLE",
+      "passed": true,
+      "detail": "permit issuance and tracking"
+    },
+    {
+      "check": "QUEUE_TIMEOUT",
+      "passed": true,
+      "detail": "queue timeout eviction implemented"
+    },
+    {
+      "check": "SERDE_DERIVES",
+      "passed": true,
+      "detail": "Serialize/Deserialize on public types"
+    },
+    {
+      "check": "TEST_COVERAGE",
+      "passed": true,
+      "detail": "12 tests found (minimum 10)"
+    },
+    {
+      "check": "SPEC_CONTRACT",
+      "passed": true,
+      "detail": "exists"
+    }
+  ]
+}

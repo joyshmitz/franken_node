@@ -1,0 +1,24 @@
+{
+  "incident_type": "sandbox_escape",
+  "initial_state_snapshot": "snap-sandbox_escape-v1",
+  "input_sequence": [
+    "seed-fixture-sandbox_escape",
+    "execute-attack-sandbox_escape",
+    "capture-runtime-trace"
+  ],
+  "expected_behavior_trace": [
+    "attack-attempt-detected",
+    "policy-gate-evaluated",
+    "mitigation-applied"
+  ],
+  "actual_behavior_trace": [
+    "attack-attempt-detected",
+    "policy-gate-evaluated",
+    "mitigation-applied"
+  ],
+  "divergence_point": "none",
+  "last_verified_utc": "2026-02-21T01:00:00Z",
+  "deterministic_runs": 10,
+  "deterministic_match": true,
+  "reproduction_command": "python3 scripts/check_replay_coverage_gate.py --replay-incident sandbox_escape --json"
+}

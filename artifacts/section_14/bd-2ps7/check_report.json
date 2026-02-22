@@ -1,0 +1,95 @@
+{
+  "bead_id": "bd-2ps7",
+  "section": "14",
+  "gate_script": "check_adversarial_resilience_metrics.py",
+  "checks_passed": 17,
+  "checks_total": 17,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "source_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/tools/adversarial_resilience_metrics.rs"
+    },
+    {
+      "check": "module_wiring",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "check": "campaign_types",
+      "passed": true,
+      "detail": "5 types"
+    },
+    {
+      "check": "struct_ResilienceMetric",
+      "passed": true,
+      "detail": "ResilienceMetric"
+    },
+    {
+      "check": "struct_CampaignStats",
+      "passed": true,
+      "detail": "CampaignStats"
+    },
+    {
+      "check": "struct_ResilienceReport",
+      "passed": true,
+      "detail": "ResilienceReport"
+    },
+    {
+      "check": "struct_AdversarialResilienceMetrics",
+      "passed": true,
+      "detail": "AdversarialResilienceMetrics"
+    },
+    {
+      "check": "detection_rate",
+      "passed": true,
+      "detail": "Detection + block rates"
+    },
+    {
+      "check": "resilience_score",
+      "passed": true,
+      "detail": "Weighted scoring"
+    },
+    {
+      "check": "threshold_gating",
+      "passed": true,
+      "detail": "Threshold enforcement"
+    },
+    {
+      "check": "flagged_campaigns",
+      "passed": true,
+      "detail": "Below-threshold flagging"
+    },
+    {
+      "check": "event_codes",
+      "passed": true,
+      "detail": "12/12"
+    },
+    {
+      "check": "invariants",
+      "passed": true,
+      "detail": "6/6"
+    },
+    {
+      "check": "audit_log",
+      "passed": true,
+      "detail": "JSONL export"
+    },
+    {
+      "check": "metric_version",
+      "passed": true,
+      "detail": "arm-v1.0"
+    },
+    {
+      "check": "spec_alignment",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_14/bd-2ps7_contract.md"
+    },
+    {
+      "check": "test_coverage",
+      "passed": true,
+      "detail": "0 tests"
+    }
+  ]
+}

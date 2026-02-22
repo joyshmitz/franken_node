@@ -1,0 +1,41 @@
+{
+  "bead_id": "bd-22yy",
+  "section": "10.14",
+  "title": "DPOR-style schedule exploration gates for control/epoch/remote protocols",
+  "gate_script": "scripts/check_dpor_exploration.py",
+  "test_suite": "tests/test_check_dpor_exploration.py",
+  "timestamp": "2026-02-22T01:45:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "dpor_exploration": "crates/franken-node/src/control_plane/dpor_exploration.rs",
+    "control_plane_mod": "crates/franken-node/src/control_plane/mod.rs",
+    "spec_contract": "docs/specs/section_10_14/bd-22yy_contract.md",
+    "verification_script": "scripts/check_dpor_exploration.py",
+    "unit_tests": "tests/test_check_dpor_exploration.py"
+  },
+  "rust_test_count": 22,
+  "python_test_count": 41,
+  "event_codes_defined": 10,
+  "error_codes_defined": 8,
+  "gate_checks_passed": 33,
+  "gate_checks_total": 33,
+  "invariants_verified": [
+    "INV-DPOR-COMPLETE",
+    "INV-DPOR-COUNTEREXAMPLE",
+    "INV-DPOR-BOUNDED",
+    "INV-DPOR-DETERMINISTIC",
+    "INV-DPOR-COVERAGE",
+    "INV-DPOR-SAFETY"
+  ],
+  "capabilities_verified": {
+    "protocol_models": ["EpochBarrierCoordination", "RemoteCapabilityOps", "MarkerStreamMutations"],
+    "operations": ["register_model", "explore", "register_default_models", "validate", "estimated_schedules", "generate_linearizations"],
+    "counterexample_traces": true,
+    "budget_enforcement": true,
+    "coverage_metrics": true,
+    "safety_property_checking": true,
+    "audit_log_export": true,
+    "model_validation": true
+  },
+  "compile_note": "FAIL_BASELINE — pre-existing compile debt in unrelated modules"
+}

@@ -1,0 +1,78 @@
+{
+  "bead_id": "bd-2yvw",
+  "title": "Sybil-resistant participation controls for ATC federation",
+  "section": "10.19",
+  "timestamp": "2026-02-20T00:00:00Z",
+  "agent": "CrimsonCrane",
+  "deliverables": {
+    "spec_contract": {
+      "path": "docs/specs/section_10_19/bd-2yvw_contract.md",
+      "status": "CREATED"
+    },
+    "rust_module": {
+      "path": "crates/franken-node/src/federation/atc_participation_weighting.rs",
+      "status": "CREATED",
+      "registered_in": [
+        "crates/franken-node/src/federation/mod.rs",
+        "crates/franken-node/src/main.rs"
+      ]
+    },
+    "federation_mod": {
+      "path": "crates/franken-node/src/federation/mod.rs",
+      "status": "CREATED"
+    },
+    "check_script": {
+      "path": "scripts/check_atc_participation.py",
+      "status": "CREATED",
+      "total_checks": 61,
+      "passed": 61,
+      "failed": 0
+    },
+    "unit_tests": {
+      "path": "tests/test_check_atc_participation.py",
+      "status": "CREATED",
+      "total_tests": 24,
+      "passed": 24,
+      "failed": 0
+    },
+    "check_report": {
+      "path": "artifacts/section_10_19/bd-2yvw/check_report.json",
+      "status": "CREATED"
+    }
+  },
+  "verification_results": {
+    "check_script": {
+      "verdict": "PASS",
+      "total": 61,
+      "passed": 61,
+      "failed": 0
+    },
+    "unit_tests": {
+      "verdict": "PASS",
+      "total": 24,
+      "passed": 24,
+      "failed": 0
+    },
+    "self_test": {
+      "verdict": "PASS"
+    },
+    "cargo_check": {
+      "verdict": "FAIL_BASELINE",
+      "detail": "Pre-existing workspace compile errors in unrelated modules. Not introduced by this bead."
+    }
+  },
+  "implementation_summary": {
+    "types_implemented": 10,
+    "event_codes": 10,
+    "invariants": 7,
+    "inline_tests": 19,
+    "attestation_levels": 4,
+    "weight_components": ["attestation", "stake", "reputation"],
+    "sybil_controls": [
+      "cluster_detection",
+      "cluster_attenuation_90pct",
+      "new_participant_cap_1pct",
+      "zero_attestation_rejection"
+    ]
+  }
+}

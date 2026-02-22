@@ -1,0 +1,28 @@
+{
+  "bead_id": "bd-1hbw",
+  "section": "10.15",
+  "title": "Epoch transition barrier integration across control services",
+  "gate_script": "scripts/check_epoch_barrier_adoption.py",
+  "test_suite": "tests/test_check_epoch_barrier_adoption.py",
+  "timestamp": "2026-02-22T02:06:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "adoption_document": "docs/integration/control_epoch_barrier_adoption.md",
+    "barrier_transcript": "artifacts/10.15/control_epoch_barrier_transcript.json",
+    "canonical_barrier": "crates/franken-node/src/control_plane/epoch_transition_barrier.rs",
+    "spec_contract": "docs/specs/section_10_15/bd-1hbw_contract.md",
+    "verification_script": "scripts/check_epoch_barrier_adoption.py",
+    "unit_tests": "tests/test_check_epoch_barrier_adoption.py"
+  },
+  "gate_checks_passed": 13,
+  "gate_checks_total": 13,
+  "python_test_count": 23,
+  "capabilities_verified": {
+    "barrier_participants": 4,
+    "abort_semantics": ["timeout", "cancel", "drain_failure"],
+    "no_custom_barrier_violations": 0,
+    "test_scenarios": ["full_commit", "timeout_abort", "cancel_abort"],
+    "event_codes": 6,
+    "invariants": 5
+  }
+}

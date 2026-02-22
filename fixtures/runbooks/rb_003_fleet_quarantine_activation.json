@@ -1,0 +1,65 @@
+{
+  "runbook_id": "RB-003",
+  "title": "Fleet Quarantine Activation",
+  "category": "fleet_quarantine_activation",
+  "severity": "high",
+  "operator_privilege_level": "p2",
+  "detection_signature": {
+    "metrics": [
+      "fleet_quarantine_active == 1",
+      "quarantined_nodes_total > 0"
+    ],
+    "log_patterns": [
+      "FLEET_QUARANTINE_ACTIVATED",
+      "node_quarantine_enforced"
+    ]
+  },
+  "estimated_recovery_time": "45m",
+  "required_permissions": ["operator", "fleet_admin"],
+  "steps": {
+    "containment": [
+      "Confirm quarantine scope (partial fleet vs full fleet)",
+      "Isolate quarantined nodes from non-quarantined fleet segments",
+      "Disable automatic workload scheduling to quarantined nodes",
+      "Preserve quarantine trigger evidence for post-incident review"
+    ],
+    "investigation": [
+      "Identify quarantine trigger condition (health check failure, trust violation, policy breach)",
+      "Review health gate status for affected nodes",
+      "Check for correlated infrastructure events (network partition, storage failure)",
+      "Determine whether quarantine is due to a single root cause or multiple independent failures",
+      "Assess operator workload impact and SLA implications"
+    ],
+    "repair": [
+      "Address root cause on quarantined nodes (patch, configuration fix, restart)",
+      "Clear quarantine flags on nodes that pass health verification",
+      "Gradually re-admit nodes to fleet (canary pattern: 10%, 25%, 50%, 100%)",
+      "Update quarantine trigger thresholds if they were too sensitive"
+    ],
+    "verification": [
+      "Run fleet health check",
+      "Confirm all re-admitted nodes pass trust verification",
+      "Validate workload scheduling resumes normally",
+      "Verify no residual quarantine flags on healthy nodes"
+    ],
+    "rollback": [
+      "If repair causes further degradation, re-quarantine affected nodes",
+      "Restore workload to known-good node subset",
+      "Escalate if quarantine cannot be lifted within estimated recovery time",
+      "Consider fleet-wide safe mode if quarantine scope exceeds 50% of nodes"
+    ]
+  },
+  "cross_references": ["bd-3o6", "quarantine_store.rs", "health_gate.rs", "rollout_state.rs"],
+  "drill_scenario": "Trigger quarantine on a staging fleet subset (3 nodes) by injecting a health check failure. Verify quarantine activation, investigate root cause, repair the simulated failure, and re-admit nodes through the graduated process.",
+  "command_references": [
+    "franken-node quarantine list --status active",
+    "franken-node quarantine promote --node <node-id>",
+    "POST /api/v1/fleet/quarantine/activate"
+  ],
+  "coverage_tags": [
+    "fleet-wide-quarantine-escalation",
+    "malicious-extension-detection"
+  ],
+  "last_reviewed": "2026-02-21",
+  "review_cadence": "per_release_cycle"
+}

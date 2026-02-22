@@ -1,0 +1,47 @@
+{
+  "bead_id": "bd-2a3",
+  "trace_id": "trace-bd-2a3-rch",
+  "generated_at": "2026-02-22T01:10:55Z",
+  "verdict": "FAIL",
+  "rch_doctor_exit_code": 0,
+  "rch_doctor_log": "artifacts/section_bootstrap/bd-2a3/rch_doctor.log",
+  "command_log": "artifacts/section_bootstrap/bd-2a3/rch_command_log.jsonl",
+  "checks_total": 3,
+  "checks_passed": 0,
+  "checks_failed": 3,
+  "checks": [
+    {
+      "check_id": "cargo_fmt_check",
+      "class_code": "BD2A3-FMT",
+      "status_code": "BD2A3-FMT-FAIL",
+      "command": "cargo fmt --check",
+      "status": "fail",
+      "exit_code": 1,
+      "elapsed_ms": 1864,
+      "output_log": "artifacts/section_bootstrap/bd-2a3/cargo_fmt_check.log",
+      "excerpt": "106:     /// Authentication failed (401).\n219:     /// Scope validation failed.\n237:\u001b(B\u001b[m     /// Rollback failed during release.\n308:\u001b(B\u001b[m\u001b[31m-                FleetControlError::rollback_failed(incident_id, \"incident not found\")\n310:\u001b(B\u001b[m\u001b[32m+            .ok_or_else(|| FleetControlError::rollback_failed(incident_id, \"incident not found\"))?;\n313:             return Err(FleetControlError::rollback_failed(\n1343:                 write!(f, \"preimage construction failed: {reason}\")\n2213:     /// Quorum failed: insufficient acks."
+    },
+    {
+      "check_id": "cargo_check_all_targets",
+      "class_code": "BD2A3-CHECK",
+      "status_code": "BD2A3-CHECK-FAIL",
+      "command": "cargo check --all-targets",
+      "status": "fail",
+      "exit_code": 101,
+      "elapsed_ms": 141720,
+      "output_log": "artifacts/section_bootstrap/bd-2a3/cargo_check_all_targets.log",
+      "excerpt": "98:\u001b[1m\u001b[91merror[E0599]\u001b[0m\u001b[1m: no function or associated item named `new` found for struct `CoreWrapper<T>` in the current scope\u001b[0m\n117:\u001b[1m\u001b[91merror[E0599]\u001b[0m\u001b[1m: no function or associated item named `new` found for struct `CoreWrapper<T>` in the current scope\u001b[0m\n138:\u001b[1m\u001b[33mwarning\u001b[0m: build failed, waiting for other jobs to finish...\n143:\u001b[1m\u001b[94m12\u001b[0m \u001b[1m\u001b[94m|\u001b[0m use super::error::{ApiError, ProblemDetail};\n264:\u001b[1m\u001b[91merror[E0423]\u001b[0m\u001b[1m: expected function, tuple struct or tuple variant, found enum `Capability`\u001b[0m\n277:\u001b[1m\u001b[91merror[E0423]\u001b[0m\u001b[1m: expected function, tuple struct or tuple variant, found enum `Capability`\u001b[0m\n290:\u001b[1m\u001b[91merror[E0423]\u001b[0m\u001b[1m: expected function, tuple struct or tuple variant, found enum `Capability`\u001b[0m\n311:\u001b[1m\u001b[91merror[E0599]\u001b[0m\u001b[1m: no function or associated item named `new` found for struct `CoreWrapper<T>` in the current scope\u001b[0m"
+    },
+    {
+      "check_id": "cargo_clippy_all_targets",
+      "class_code": "BD2A3-CLIPPY",
+      "status_code": "BD2A3-CLIPPY-FAIL",
+      "command": "cargo clippy --all-targets -- -D warnings",
+      "status": "fail",
+      "exit_code": 101,
+      "elapsed_ms": 91709,
+      "output_log": "artifacts/section_bootstrap/bd-2a3/cargo_clippy_all_targets.log",
+      "excerpt": "38:\u001b[1m\u001b[91merror[E0599]\u001b[0m\u001b[1m: no function or associated item named `new` found for struct `hmac::digest::core_api::CoreWrapper<T>` in the current scope\u001b[0m\n59:\u001b[1m\u001b[33mwarning\u001b[0m: build failed, waiting for other jobs to finish...\n140:\u001b[1m\u001b[91merror[E0599]\u001b[0m\u001b[1m: no function or associated item named `new` found for struct `sha2::digest::core_api::CoreWrapper<T>` in the current scope\u001b[0m\n163:\u001b[1m\u001b[94m12\u001b[0m \u001b[1m\u001b[94m|\u001b[0m use super::error::{ApiError, ProblemDetail};\n283:\u001b[1m\u001b[91merror[E0423]\u001b[0m\u001b[1m: expected function, tuple struct or tuple variant, found enum `Capability`\u001b[0m\n308:\u001b[1m\u001b[91merror[E0423]\u001b[0m\u001b[1m: expected function, tuple struct or tuple variant, found enum `Capability`\u001b[0m\n321:\u001b[1m\u001b[91merror[E0423]\u001b[0m\u001b[1m: expected function, tuple struct or tuple variant, found enum `Capability`\u001b[0m\n392:\u001b[1m\u001b[91merror[E0599]\u001b[0m\u001b[1m: no function or associated item named `new` found for struct `sha2::digest::core_api::CoreWrapper<T>` in the current scope\u001b[0m"
+    }
+  ]
+}

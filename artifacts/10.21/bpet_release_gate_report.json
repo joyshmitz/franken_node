@@ -1,0 +1,127 @@
+{
+  "bead_id": "bd-3v9l",
+  "generated_at_utc": "2026-02-21T05:12:00Z",
+  "gate_version": "1.0.0",
+  "public_key_id": "bpet-release-gate-v1",
+  "signature_algorithm": "sha256-canonical-v1",
+  "designated_claims": [
+    {
+      "claim_id": "BPET-CLAIM-001",
+      "claim": "Trajectory scoring latency is within p95/p99 budget at target phenotype scale.",
+      "target_scale": {
+        "phenotypes": 12000,
+        "trajectories": 320000,
+        "history_days": 365
+      },
+      "budget_p95_ms": 40.0,
+      "measured_p95_ms": 29.0,
+      "budget_p99_ms": 58.0,
+      "measured_p99_ms": 43.0,
+      "budget_storage_mb": 220.0,
+      "measured_storage_mb": 180.0,
+      "degradation_signal": "BPET-PERF-005",
+      "required_calibration_artifacts": 1,
+      "calibration_artifacts_present": 1,
+      "required_signed_provenance": 1,
+      "signed_provenance_present": 1,
+      "evidence_refs": [
+        "tests/perf/bpet_budget_gate.rs",
+        "docs/conformance/bpet_release_claim_gate.md"
+      ]
+    },
+    {
+      "claim_id": "BPET-CLAIM-002",
+      "claim": "Drift/regime analysis latency remains within budget with degradation signaling contract.",
+      "target_scale": {
+        "phenotypes": 12000,
+        "trajectories": 320000,
+        "history_days": 365
+      },
+      "budget_p95_ms": 65.0,
+      "measured_p95_ms": 52.0,
+      "budget_p99_ms": 92.0,
+      "measured_p99_ms": 71.0,
+      "budget_storage_mb": 260.0,
+      "measured_storage_mb": 210.0,
+      "degradation_signal": "BPET-PERF-005",
+      "required_calibration_artifacts": 1,
+      "calibration_artifacts_present": 1,
+      "required_signed_provenance": 1,
+      "signed_provenance_present": 1,
+      "evidence_refs": [
+        "scripts/check_bpet_claim_gate.py",
+        "tests/test_check_bpet_claim_gate.py"
+      ]
+    },
+    {
+      "claim_id": "BPET-CLAIM-003",
+      "claim": "Lineage persistence remains within latency and storage overhead budgets.",
+      "target_scale": {
+        "phenotypes": 12000,
+        "trajectories": 320000,
+        "history_days": 365
+      },
+      "budget_p95_ms": 55.0,
+      "measured_p95_ms": 41.0,
+      "budget_p99_ms": 82.0,
+      "measured_p99_ms": 64.0,
+      "budget_storage_mb": 310.0,
+      "measured_storage_mb": 255.0,
+      "degradation_signal": "BPET-PERF-005",
+      "required_calibration_artifacts": 1,
+      "calibration_artifacts_present": 1,
+      "required_signed_provenance": 1,
+      "signed_provenance_present": 1,
+      "evidence_refs": [
+        ".github/workflows/bpet-claim-gate.yml",
+        "tests/perf/bpet_budget_gate.rs"
+      ]
+    },
+    {
+      "claim_id": "BPET-CLAIM-004",
+      "claim": "Predictive release claim package contains signed calibration and provenance artifacts.",
+      "target_scale": {
+        "phenotypes": 12000,
+        "trajectories": 320000,
+        "history_days": 365
+      },
+      "budget_p95_ms": 48.0,
+      "measured_p95_ms": 33.0,
+      "budget_p99_ms": 70.0,
+      "measured_p99_ms": 51.0,
+      "budget_storage_mb": 240.0,
+      "measured_storage_mb": 190.0,
+      "degradation_signal": "BPET-PERF-005",
+      "required_calibration_artifacts": 2,
+      "calibration_artifacts_present": 2,
+      "required_signed_provenance": 2,
+      "signed_provenance_present": 2,
+      "evidence_refs": [
+        "artifacts/10.21/bpet_release_gate_report.json",
+        "docs/conformance/bpet_release_claim_gate.md"
+      ]
+    }
+  ],
+  "summary": {
+    "total_claims": 4,
+    "passed_claims": 4,
+    "failed_claims": 0,
+    "release_decision": "allow"
+  },
+  "events": [
+    {
+      "code": "BPET-PERF-001",
+      "detail": "gate evaluation started",
+      "trace_id": "trace-bd-3v9l-bpet-gate"
+    },
+    {
+      "code": "BPET-PERF-002",
+      "detail": "all designated claims satisfied",
+      "trace_id": "trace-bd-3v9l-bpet-gate"
+    }
+  ],
+  "signing": {
+    "canonical_payload_sha256": "15eae61d8909093f3ba64b8fedee0dcf4ceb38d1a84a9197383342a3ac25dde1",
+    "signature": "01f2f4bedbe5fe142eb3836dd17ce67cfcb650082720adcbadfb2b76163f9151"
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "model_version": "ted-v1.0",
+  "description": "Default expected-loss model parameters for trust economics dashboard",
+  "attack_frequencies": {
+    "credential_exfiltration": 0.1,
+    "privilege_escalation": 0.1,
+    "supply_chain_compromise": 0.1,
+    "policy_evasion": 0.1,
+    "data_exfiltration": 0.1
+  },
+  "defense_effectiveness": {
+    "credential_exfiltration": 0.5,
+    "privilege_escalation": 0.5,
+    "supply_chain_compromise": 0.5,
+    "policy_evasion": 0.5,
+    "data_exfiltration": 0.5
+  },
+  "operational_costs": {
+    "credential_exfiltration": 1000.0,
+    "privilege_escalation": 1000.0,
+    "supply_chain_compromise": 1000.0,
+    "policy_evasion": 1000.0,
+    "data_exfiltration": 1000.0
+  },
+  "prior_weight": 1.0,
+  "cost_weights": {
+    "time_hours": 50.0,
+    "compute_units": 10.0,
+    "tooling_sophistication": 200.0,
+    "detection_risk": 500.0
+  },
+  "attack_costs": {
+    "credential_exfiltration": {
+      "node_js": {"time": 2.0, "compute": 1.0, "tooling": 0.3, "detection": 0.2},
+      "bun": {"time": 4.0, "compute": 1.5, "tooling": 0.4, "detection": 0.3},
+      "franken_node": {"time": 16.0, "compute": 5.0, "tooling": 0.8, "detection": 0.7}
+    },
+    "privilege_escalation": {
+      "node_js": {"time": 4.0, "compute": 2.0, "tooling": 0.5, "detection": 0.3},
+      "bun": {"time": 6.0, "compute": 3.0, "tooling": 0.6, "detection": 0.4},
+      "franken_node": {"time": 24.0, "compute": 10.0, "tooling": 0.9, "detection": 0.8}
+    },
+    "supply_chain_compromise": {
+      "node_js": {"time": 8.0, "compute": 3.0, "tooling": 0.6, "detection": 0.1},
+      "bun": {"time": 10.0, "compute": 4.0, "tooling": 0.7, "detection": 0.2},
+      "franken_node": {"time": 40.0, "compute": 15.0, "tooling": 0.95, "detection": 0.85}
+    },
+    "policy_evasion": {
+      "node_js": {"time": 1.0, "compute": 0.5, "tooling": 0.2, "detection": 0.1},
+      "bun": {"time": 3.0, "compute": 1.0, "tooling": 0.3, "detection": 0.2},
+      "franken_node": {"time": 12.0, "compute": 4.0, "tooling": 0.7, "detection": 0.6}
+    },
+    "data_exfiltration": {
+      "node_js": {"time": 3.0, "compute": 2.0, "tooling": 0.4, "detection": 0.2},
+      "bun": {"time": 5.0, "compute": 3.0, "tooling": 0.5, "detection": 0.3},
+      "franken_node": {"time": 20.0, "compute": 8.0, "tooling": 0.85, "detection": 0.75}
+    }
+  }
+}

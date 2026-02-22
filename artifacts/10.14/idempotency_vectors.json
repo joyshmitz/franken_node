@@ -1,0 +1,150 @@
+{
+  "schema_version": "ik-v1.0",
+  "domain_prefix": "franken_node.idempotency.v1",
+  "vectors": [
+    {
+      "computation_name": "core.remote_compute.v1",
+      "epoch": 0,
+      "request_bytes_hex": "",
+      "expected_key_hex": "ce4ecce7f7e0ac63e720b6fdd5bbecf8172adbd84db7c121212c70afc89cfac8"
+    },
+    {
+      "computation_name": "core.remote_compute.v1",
+      "epoch": 1,
+      "request_bytes_hex": "7b7d",
+      "expected_key_hex": "ba91e925ee52f6d66f9cecfff07364b74a8217faedc71ffed529cdc94122e2dc"
+    },
+    {
+      "computation_name": "core.remote_compute.v1",
+      "epoch": 1,
+      "request_bytes_hex": "7b2278223a317d",
+      "expected_key_hex": "b0b63b0e776de79da18f374daa0c06f220fd87b63c0cff7fd3d55fbff6d3adc6"
+    },
+    {
+      "computation_name": "core.remote_compute.v1",
+      "epoch": 2,
+      "request_bytes_hex": "7b2278223a317d",
+      "expected_key_hex": "83fc992958befb59a8b7b8017420e2840be42c033db96159d8037e5b8736f993"
+    },
+    {
+      "computation_name": "core.audit.v1",
+      "epoch": 1,
+      "request_bytes_hex": "7b2278223a317d",
+      "expected_key_hex": "f87b003fc61c62be78fb831720eaa580c3f46294942ecd21849ca13bc3249fe8"
+    },
+    {
+      "computation_name": "core.telemetry_export.v1",
+      "epoch": 1,
+      "request_bytes_hex": "7b2278223a317d",
+      "expected_key_hex": "bcd1cff816ee8c5fe71f0e0988cb6d71c654a126dec8e72354f14b697336bc8f"
+    },
+    {
+      "computation_name": "core.remote_compute.v1",
+      "epoch": 42,
+      "request_bytes_hex": "7061796c6f61642d616c706861",
+      "expected_key_hex": "c4318f592f0c3782ace92600d56b6336b5b6dbfaae11ed683de59d12d02a35f8"
+    },
+    {
+      "computation_name": "core.remote_compute.v1",
+      "epoch": 43,
+      "request_bytes_hex": "7061796c6f61642d616c706861",
+      "expected_key_hex": "41641fdb78c9070c1b9932ad423bc1708643080a5f20fc45825bdc8e76dd4631"
+    },
+    {
+      "computation_name": "core.remote_compute.v1",
+      "epoch": 42,
+      "request_bytes_hex": "7061796c6f61642d62657461",
+      "expected_key_hex": "52b854fca9d67c387c3e7c40c7d22f58f426f2d1f5bb65028122d5a18f9350fe"
+    },
+    {
+      "computation_name": "core.remote_compute.v1",
+      "epoch": 99,
+      "request_bytes_hex": "00",
+      "expected_key_hex": "c04c6dc0aa3712f7ff56eb603dac4ae6c8a93b047b90d773a9ba392d343afd52"
+    },
+    {
+      "computation_name": "core.remote_compute.v1",
+      "epoch": 99,
+      "request_bytes_hex": "0001",
+      "expected_key_hex": "6ad90a2c6732f010366ee34350ae3565f4138f7b889ab3b6d37177bb9e8f26cc"
+    },
+    {
+      "computation_name": "core.remote_compute.v1",
+      "epoch": 99,
+      "request_bytes_hex": "00010203",
+      "expected_key_hex": "1f09332c8da779849092f46a173d63886ad43b630f5c58315d0b3186a31101a1"
+    },
+    {
+      "computation_name": "core.audit.v1",
+      "epoch": 7,
+      "request_bytes_hex": "72657472792d31",
+      "expected_key_hex": "d3c17921386bb92ac65337285b2bf2efad1250258aa637e815275c1f1c995e5c"
+    },
+    {
+      "computation_name": "core.audit.v1",
+      "epoch": 8,
+      "request_bytes_hex": "72657472792d31",
+      "expected_key_hex": "3efcddde5544d595cb08d792fca9c925da4919d7ae47e4c5b2951302b3be2f22"
+    },
+    {
+      "computation_name": "core.audit.v1",
+      "epoch": 7,
+      "request_bytes_hex": "72657472792d32",
+      "expected_key_hex": "8d58d8ffdd47ed8324d5995221bbfc6ec401472b024fa9f594ea709efc1fc6e3"
+    },
+    {
+      "computation_name": "core.telemetry_export.v1",
+      "epoch": 5,
+      "request_bytes_hex": "6d6574726963733a6370753d302e37",
+      "expected_key_hex": "ecbc5e56b800c726bb94096ce76d37fab090f31fe513b871ec4940d231964baf"
+    },
+    {
+      "computation_name": "core.telemetry_export.v1",
+      "epoch": 6,
+      "request_bytes_hex": "6d6574726963733a6370753d302e37",
+      "expected_key_hex": "754f917e0d5ced5087d2b19a05beb26bda2447d7fb105708e4caffc2cd5db55e"
+    },
+    {
+      "computation_name": "core.telemetry_export.v1",
+      "epoch": 5,
+      "request_bytes_hex": "6d6574726963733a6370753d302e39",
+      "expected_key_hex": "041418b92f8690c5506f38cf4976265693ec3229f7a9452d83b7164d0f3d645d"
+    },
+    {
+      "computation_name": "core.remote_compute.v1",
+      "epoch": 9223372036854775808,
+      "request_bytes_hex": "6c617267652d65706f6368",
+      "expected_key_hex": "54cb2e03196383ce785223fbccf6e949ed20cce5235c34ce13ffe993d3bc264a"
+    },
+    {
+      "computation_name": "core.remote_compute.v1",
+      "epoch": 18446744073709551615,
+      "request_bytes_hex": "6d61782d65706f6368",
+      "expected_key_hex": "3d6a60c91aadebbbd5b54a1733139a79d167e5e02028f1426181d1c938cb22d2"
+    },
+    {
+      "computation_name": "core.remote_compute.v1",
+      "epoch": 17,
+      "request_bytes_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "expected_key_hex": "98c71678774d7b5dff91d784176a080f5478f969a53f5512eb411c9764d76af3"
+    },
+    {
+      "computation_name": "core.remote_compute.v1",
+      "epoch": 17,
+      "request_bytes_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "expected_key_hex": "8a0d0478ea7fb98166c207cb2016280140504dabbd4890652d6a91abae16e78d"
+    },
+    {
+      "computation_name": "core.remote_compute.v1",
+      "epoch": 17,
+      "request_bytes_hex": "61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+      "expected_key_hex": "ca9d9ec89f05e6f3fbadb42515b13f6ff85fa1008e811208ec985af400562632"
+    },
+    {
+      "computation_name": "core.audit.v1",
+      "epoch": 17,
+      "request_bytes_hex": "61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+      "expected_key_hex": "97676bb99825b94a8c29c226b8ce15a51bf1c123ae6b39027a87e2dd967d98dc"
+    }
+  ]
+}

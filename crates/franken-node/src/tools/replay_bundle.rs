@@ -223,12 +223,24 @@ pub fn generate_replay_bundle(
             .then_with(|| left.original_index.cmp(&right.original_index))
     });
 
+    let mut original_to_new = vec![0_u64; event_log.len()];
+    for (new_index, event) in prepared.iter().enumerate() {
+        original_to_new[event.original_index] = u64::try_from(new_index + 1).unwrap_or(u64::MAX);
+    }
+
     let timeline: Vec<TimelineEvent> = prepared
         .iter()
         .enumerate()
         .map(|(index, event)| {
             let sequence_number = u64::try_from(index + 1).unwrap_or(u64::MAX);
-            let causal_parent = match event.causal_parent {
+            let mapped_parent = event.causal_parent.and_then(|p| {
+                if p > 0 && (p as usize) <= event_log.len() {
+                    Some(original_to_new[(p - 1) as usize])
+                } else {
+                    None
+                }
+            });
+            let causal_parent = match mapped_parent {
                 Some(parent) if parent < sequence_number => Some(parent),
                 _ => None,
             };

@@ -1,0 +1,50 @@
+{
+  "bead_id": "bd-390",
+  "section": "10.11",
+  "title": "Anti-Entropy Reconciliation",
+  "status": "pass",
+  "verdict": "PASS",
+  "overall_pass": true,
+  "rust_module": "crates/franken-node/src/runtime/anti_entropy.rs",
+  "structs_implemented": [
+    "ReconciliationConfig",
+    "TrustRecord",
+    "TrustState",
+    "ReconciliationResult",
+    "ReconciliationEvent",
+    "ReconciliationError",
+    "AntiEntropyReconciler"
+  ],
+  "methods_implemented": [
+    "new",
+    "validate",
+    "compute_delta",
+    "detect_fork",
+    "reconcile",
+    "events",
+    "reconciliation_count",
+    "insert",
+    "root_digest",
+    "current_epoch",
+    "record_ids",
+    "verify_mmr_proof",
+    "digest"
+  ],
+  "event_codes": ["FN-AE-001", "FN-AE-002", "FN-AE-003", "FN-AE-004", "FN-AE-005", "FN-AE-006", "FN-AE-007", "FN-AE-008"],
+  "invariants": [
+    "INV-AE-DELTA",
+    "INV-AE-ATOMIC",
+    "INV-AE-EPOCH",
+    "INV-AE-PROOF"
+  ],
+  "error_codes": [
+    "ERR_AE_INVALID_CONFIG",
+    "ERR_AE_EPOCH_VIOLATION",
+    "ERR_AE_PROOF_INVALID",
+    "ERR_AE_FORK_DETECTED",
+    "ERR_AE_CANCELLED",
+    "ERR_AE_BATCH_EXCEEDED"
+  ],
+  "rust_test_count": 34,
+  "compilation": "pass"
+}

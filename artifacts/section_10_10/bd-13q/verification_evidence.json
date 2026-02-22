@@ -1,0 +1,95 @@
+{
+  "bead_id": "bd-13q",
+  "title": "Stable product error namespace adoption",
+  "section": "10.10",
+  "status": "completed_with_baseline_workspace_failures",
+  "timestamp": "2026-02-21T01:25:20Z",
+  "agent": "MagentaSparrow",
+  "deliverables": {
+    "spec": "docs/specs/section_10_10/bd-13q_contract.md",
+    "implementation": "crates/franken-node/src/connector/error_surface.rs",
+    "verification_script": "scripts/check_error_namespace.py",
+    "compat_script": "scripts/check_error_compat.py",
+    "coverage_script": "scripts/check_error_coverage.py",
+    "unit_tests": "tests/test_check_error_namespace.py",
+    "audit": "artifacts/section_10_10/bd-13q/error_audit.json"
+  },
+  "command_results": [
+    {
+      "command": "python3 -m py_compile scripts/check_error_namespace.py scripts/check_error_compat.py scripts/check_error_coverage.py tests/test_check_error_namespace.py",
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "command": "python3 scripts/check_error_compat.py --self-test --json",
+      "status": "PASS",
+      "exit_code": 0,
+      "output": "artifacts/section_10_10/bd-13q/check_error_compat_self_test.json"
+    },
+    {
+      "command": "python3 scripts/check_error_coverage.py --self-test --json",
+      "status": "PASS",
+      "exit_code": 0,
+      "output": "artifacts/section_10_10/bd-13q/check_error_coverage_self_test.json"
+    },
+    {
+      "command": "python3 scripts/check_error_namespace.py --self-test --json",
+      "status": "PASS",
+      "exit_code": 0,
+      "output": "artifacts/section_10_10/bd-13q/check_error_namespace_self_test.json"
+    },
+    {
+      "command": "python3 scripts/check_error_compat.py --json",
+      "status": "PASS",
+      "exit_code": 0,
+      "output": "artifacts/section_10_10/bd-13q/check_error_compat_report.json"
+    },
+    {
+      "command": "python3 scripts/check_error_coverage.py --json",
+      "status": "PASS",
+      "exit_code": 0,
+      "output": "artifacts/section_10_10/bd-13q/check_error_coverage_report.json"
+    },
+    {
+      "command": "python3 scripts/check_error_namespace.py --json",
+      "status": "PASS",
+      "exit_code": 0,
+      "output": "artifacts/section_10_10/bd-13q/check_error_namespace_report.json",
+      "summary": {
+        "verdict": "PASS",
+        "passed": 32,
+        "total": 32
+      }
+    },
+    {
+      "command": "python3 -m unittest tests/test_check_error_namespace.py",
+      "status": "PASS",
+      "exit_code": 0,
+      "output": "artifacts/section_10_10/bd-13q/unit_tests.txt",
+      "summary": {
+        "tests_ran": 6
+      }
+    },
+    {
+      "command": "rch exec -- cargo check -p frankenengine-node --all-targets",
+      "status": "FAIL_BASELINE",
+      "exit_code": 101,
+      "output": "artifacts/section_10_10/bd-13q/rch_cargo_check.log",
+      "error_excerpt": "error[E0423] in crates/franken-node/src/supply_chain/manifest.rs:405,474 (Capability enum construction)"
+    },
+    {
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "status": "FAIL_BASELINE",
+      "exit_code": 101,
+      "output": "artifacts/section_10_10/bd-13q/rch_cargo_clippy.log",
+      "error_excerpt": "pre-existing cross-workspace lint/compile debt; includes E0423 and multiple -D warnings violations"
+    },
+    {
+      "command": "rch exec -- cargo fmt --check",
+      "status": "FAIL_BASELINE",
+      "exit_code": 1,
+      "output": "artifacts/section_10_10/bd-13q/rch_cargo_fmt_check.log",
+      "error_excerpt": "pre-existing formatting drift in unrelated files"
+    }
+  ]
+}

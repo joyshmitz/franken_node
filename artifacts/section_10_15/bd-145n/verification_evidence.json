@@ -1,0 +1,21 @@
+{
+  "bead_id": "bd-145n",
+  "section": "10.15",
+  "title": "Deterministic lab runtime scenarios for control protocols",
+  "gate_script": "scripts/check_control_lab_scenarios.py",
+  "test_suite": "tests/test_check_control_lab_scenarios.py",
+  "timestamp": "2026-02-22T02:08:00+00:00",
+  "verdict": "PASS",
+  "gate_checks_passed": 11,
+  "gate_checks_total": 11,
+  "python_test_count": 18,
+  "capabilities_verified": {
+    "scenarios": 5,
+    "seeds": 5,
+    "matrix_entries": 10,
+    "all_pass": true,
+    "seed_controlled": true,
+    "mock_clock": true,
+    "replay_guarantee": true
+  }
+}

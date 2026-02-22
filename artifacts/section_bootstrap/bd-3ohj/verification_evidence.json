@@ -1,0 +1,127 @@
+{
+  "bead_id": "bd-3ohj",
+  "section": "bootstrap",
+  "title": "Foundation verification gate: comprehensive unit+e2e+logging",
+  "generated_at_utc": "2026-02-22T02:49:56Z",
+  "verdict": "PASS",
+  "status": "implemented_with_baseline_quality_debt",
+  "implementation": {
+    "gate_script": "scripts/check_bootstrap_foundation_gate.py",
+    "unit_tests": "tests/test_check_bootstrap_foundation_gate.py",
+    "gate_report": "artifacts/section_bootstrap/bd-3ohj/check_report.json",
+    "structured_gate_log": "artifacts/section_bootstrap/bd-3ohj/foundation_gate_log.jsonl",
+    "canonical_gate_verdict": "artifacts/bootstrap/bootstrap/gate_verdict/bd-3ohj_bootstrap_gate.json",
+    "sample_reports": {
+      "pass": "artifacts/section_bootstrap/bd-3ohj/sample_pass_report.json",
+      "partial": "artifacts/section_bootstrap/bd-3ohj/sample_partial_report.json",
+      "fail": "artifacts/section_bootstrap/bd-3ohj/sample_fail_report.json"
+    }
+  },
+  "gate_report_summary": {
+    "verdict": "PASS",
+    "checks_passed": 9,
+    "checks_total": 9,
+    "failing_dimensions": [],
+    "content_hash": "59225884b60df80eac4bd2af4071f8828f353d9927daf18c60ee0d303018cdf8"
+  },
+  "upstream_traceability": [
+    {
+      "bead_id": "bd-n9r",
+      "verification_evidence": "artifacts/section_bootstrap/bd-n9r/verification_evidence.json",
+      "contract_report": "artifacts/section_bootstrap/bd-n9r/contract_checks.json",
+      "status": "pass"
+    },
+    {
+      "bead_id": "bd-1pk",
+      "verification_evidence": "artifacts/section_bootstrap/bd-1pk/verification_evidence.json",
+      "contract_report": "artifacts/section_bootstrap/bd-1pk/doctor_contract_checks.json",
+      "status": "pass"
+    },
+    {
+      "bead_id": "bd-32e",
+      "verification_evidence": "artifacts/section_bootstrap/bd-32e/verification_evidence.json",
+      "contract_report": "artifacts/section_bootstrap/bd-32e/init_contract_checks.json",
+      "status": "pass"
+    },
+    {
+      "bead_id": "bd-2a3",
+      "verification_evidence": "artifacts/section_bootstrap/bd-2a3/verification_evidence.json",
+      "contract_report": "artifacts/section_bootstrap/bd-2a3/baseline_checks.json",
+      "status": "pass_for_scope_with_baseline_failures_documented"
+    },
+    {
+      "bead_id": "bd-3k9t",
+      "verification_evidence": "artifacts/section_bootstrap/bd-3k9t/verification_evidence.json",
+      "contract_report": "artifacts/section_bootstrap/bd-3k9t/check_report.json",
+      "status": "pass"
+    }
+  ],
+  "docs_navigation_inputs": [
+    "docs/verification/BOOTSTRAP_TEST_MATRIX.md",
+    "docs/verification/bootstrap_test_matrix.json",
+    "docs/specs/bootstrap_e2e_harness.md"
+  ],
+  "validation_runs": [
+    {
+      "name": "py_compile_gate_and_tests",
+      "command": "python3 -m py_compile scripts/check_bootstrap_foundation_gate.py tests/test_check_bootstrap_foundation_gate.py",
+      "exit_code": 0,
+      "result": "pass"
+    },
+    {
+      "name": "gate_self_test",
+      "command": "python3 scripts/check_bootstrap_foundation_gate.py --self-test",
+      "exit_code": 0,
+      "result": "pass",
+      "artifact": "artifacts/section_bootstrap/bd-3ohj/check_self_test.txt"
+    },
+    {
+      "name": "gate_unit_tests",
+      "command": "python3 -m unittest tests/test_check_bootstrap_foundation_gate.py",
+      "exit_code": 0,
+      "result": "pass",
+      "artifact": "artifacts/section_bootstrap/bd-3ohj/unit_tests.txt"
+    },
+    {
+      "name": "gate_report_generation",
+      "command": "python3 scripts/check_bootstrap_foundation_gate.py --json --write --emit-samples",
+      "exit_code": 0,
+      "result": "pass",
+      "artifact": "artifacts/section_bootstrap/bd-3ohj/check_report.json"
+    }
+  ],
+  "rch_quality": {
+    "commands": [
+      {
+        "name": "cargo fmt --check",
+        "runner": "rch exec --",
+        "exit_code": 1,
+        "status": "fail",
+        "log": "artifacts/section_bootstrap/bd-3ohj/rch_cargo_fmt_check.log"
+      },
+      {
+        "name": "cargo check --all-targets",
+        "runner": "rch exec -- env CARGO_TARGET_DIR=/tmp/rch_target_franken_node_bd3ohj_check_<ts>",
+        "exit_code": 0,
+        "status": "pass",
+        "log": "artifacts/section_bootstrap/bd-3ohj/rch_cargo_check.log"
+      },
+      {
+        "name": "cargo clippy --all-targets -- -D warnings",
+        "runner": "rch exec -- env CARGO_TARGET_DIR=/tmp/rch_target_franken_node_bd3ohj_clippy_<ts>",
+        "exit_code": 101,
+        "status": "fail",
+        "log": "artifacts/section_bootstrap/bd-3ohj/rch_cargo_clippy.log",
+        "notable_errors": [
+          "clippy::useless_vec violations",
+          "unused_must_use in security/vef_degraded_mode.rs"
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "Gate is fail-closed on missing/invalid evidence and unstable trace/event logs.",
+    "bd-2a3 baseline FAIL is explicitly treated as expected debt with deterministic status codes.",
+    "Workspace cargo fmt/clippy failures remain baseline debt outside bd-3ohj scope."
+  ]
+}

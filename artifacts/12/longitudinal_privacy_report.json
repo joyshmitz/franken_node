@@ -1,0 +1,76 @@
+{
+  "bead_id": "bd-1rff",
+  "title": "Risk control: longitudinal privacy/re-identification",
+  "section": "12",
+  "trace_id": "trace-bd-1rff-longitudinal-privacy",
+  "storage": {
+    "raw_trajectory_storage_enabled": false,
+    "sketch_algorithm": "count-min-sketch+hll",
+    "sketch_records_persisted": 1000,
+    "raw_records_persisted": 0
+  },
+  "reconstruction_test": {
+    "trajectories_attempted": 100,
+    "exact_reconstruction_succeeded": false
+  },
+  "query_policy": {
+    "minimum_cohort_size_k": 50,
+    "blocked_error_code": "ERR_INSUFFICIENT_COHORT_SIZE",
+    "queries": [
+      {"query_id": "q-small-30", "cohort_size": 30, "blocked": true, "error_code": "ERR_INSUFFICIENT_COHORT_SIZE"},
+      {"query_id": "q-large-120", "cohort_size": 120, "blocked": false, "error_code": null}
+    ]
+  },
+  "temporal_aggregation": {
+    "minimum_epoch_minutes": 60,
+    "incoming_resolution_minutes": 5,
+    "stored_resolution_minutes": 60,
+    "sub_hour_inputs_bucketed": true
+  },
+  "linkage_attack": {
+    "sketches_analyzed": 1000,
+    "auxiliary_data_profile": "maximal",
+    "successful_links": 7,
+    "success_rate_pct": 0.7,
+    "threshold_pct": 1.0
+  },
+  "scenarios": [
+    {
+      "scenario": "A",
+      "name": "reconstruct-100-trajectories",
+      "reconstruction_failed": true
+    },
+    {
+      "scenario": "B",
+      "name": "cohort-30-query-block",
+      "blocked": true,
+      "error_code": "ERR_INSUFFICIENT_COHORT_SIZE"
+    },
+    {
+      "scenario": "C",
+      "name": "sub-hour-bucketed-to-hour",
+      "bucketed_to_minutes": 60,
+      "bucketing_applied": true
+    },
+    {
+      "scenario": "D",
+      "name": "linkage-attack-1000-sketches",
+      "linkage_success_rate_pct": 0.7,
+      "below_threshold": true
+    }
+  ],
+  "event_codes": [
+    "LPR-001",
+    "LPR-002",
+    "LPR-003",
+    "LPR-004",
+    "LPR-005"
+  ],
+  "aggregate": {
+    "sketch_records_persisted": 1000,
+    "raw_records_persisted": 0,
+    "minimum_cohort_size_k": 50,
+    "minimum_epoch_minutes": 60,
+    "linkage_success_rate_pct": 0.7
+  }
+}

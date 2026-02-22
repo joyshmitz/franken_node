@@ -1,0 +1,38 @@
+{
+  "scenario_id": "DR-004",
+  "title": "Federation Partition",
+  "category": "federation_partition",
+  "severity": "high",
+  "slo_seconds": 600,
+  "drill_interval": "monthly",
+  "fault_description": "Simulate a network partition between federation peers by applying firewall rules that block inter-peer communication. Verifies that split-brain prevention activates and reconciliation succeeds after partition heals.",
+  "fault_injection_steps": [
+    "Record current federation peer state and trust sync status",
+    "Apply firewall rules to block communication between peer groups",
+    "Verify peers detect connectivity loss within expected timeout",
+    "Record fault injection timestamp and partition topology"
+  ],
+  "recovery_steps": [
+    "Detect federation partition via peer health monitoring",
+    "Activate split-brain prevention (read-only for minority partition)",
+    "Identify partition boundaries and affected peers",
+    "Remove firewall rules to heal the partition",
+    "Trigger anti-entropy reconciliation between peer groups",
+    "Verify trust state convergence across all peers"
+  ],
+  "verification_steps": [
+    "Confirm all peers report connected status",
+    "Validate trust state hashes are consistent across peers",
+    "Verify no conflicting trust decisions were made during partition",
+    "Check that anti-entropy reconciliation completed successfully",
+    "Confirm firewall rules have been fully removed"
+  ],
+  "abort_conditions": [
+    "Firewall rules affect traffic outside the drill scope",
+    "Split-brain condition results in conflicting trust decisions that cannot be reconciled",
+    "Partition healing does not restore connectivity within 2x SLO",
+    "Recovery time exceeds 3x SLO with no progress"
+  ],
+  "related_runbook": "RB-005",
+  "cross_references": ["bd-nr4", "federation", "anti_entropy", "peer_health"]
+}

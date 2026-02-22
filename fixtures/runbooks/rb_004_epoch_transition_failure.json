@@ -1,0 +1,64 @@
+{
+  "runbook_id": "RB-004",
+  "title": "Epoch Transition Failure",
+  "category": "epoch_transition_failure",
+  "severity": "critical",
+  "operator_privilege_level": "p1",
+  "detection_signature": {
+    "metrics": [
+      "epoch_transition_failures_total > 0",
+      "epoch_transition_duration_seconds > 300"
+    ],
+    "log_patterns": [
+      "EPOCH_TRANSITION_FAILURE",
+      "epoch_finalization_timeout"
+    ]
+  },
+  "estimated_recovery_time": "1h",
+  "required_permissions": ["operator", "security_admin", "epoch_authority"],
+  "steps": {
+    "containment": [
+      "Halt epoch transition to prevent partial state",
+      "Activate safe mode if trust state is in an inconsistent epoch boundary",
+      "Freeze all trust delegations that depend on the new epoch",
+      "Notify epoch governance authority"
+    ],
+    "investigation": [
+      "Identify failure point in epoch transition sequence (preparation, commit, finalization)",
+      "Check epoch boundary conditions: all prerequisites met, quorum achieved",
+      "Verify epoch transition signatures from all required signatories",
+      "Review evidence ledger for incomplete epoch boundary entries",
+      "Determine whether failure is transient (timeout) or permanent (state corruption)"
+    ],
+    "repair": [
+      "If transient: retry epoch transition with extended timeout",
+      "If signature missing: request re-signing from absent signatory",
+      "If state corruption: restore pre-transition epoch state from checkpoint",
+      "Re-execute epoch transition with corrected preconditions"
+    ],
+    "verification": [
+      "Confirm new epoch is fully committed and finalized",
+      "Validate epoch transition receipt with all required signatures",
+      "Verify trust state is consistent with new epoch parameters",
+      "Run epoch consistency check"
+    ],
+    "rollback": [
+      "Revert to previous epoch state from pre-transition checkpoint",
+      "Invalidate any partial epoch state artifacts",
+      "Reset epoch transition sequence to initial state",
+      "Escalate to epoch governance for manual resolution if repeated failures"
+    ]
+  },
+  "cross_references": ["bd-k6o", "fencing.rs", "state_model.rs"],
+  "drill_scenario": "Simulate epoch transition failure by withholding one signatory approval in staging. Verify that the timeout fires, containment activates, and the retry-with-re-signing path completes successfully.",
+  "command_references": [
+    "franken-node epoch status",
+    "franken-node epoch retry --timeout 600",
+    "POST /api/v1/control/epoch/retry"
+  ],
+  "coverage_tags": [
+    "control-plane-split-brain"
+  ],
+  "last_reviewed": "2026-02-21",
+  "review_cadence": "per_release_cycle"
+}

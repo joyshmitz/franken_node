@@ -1,0 +1,100 @@
+{
+  "bead_id": "bd-32e",
+  "gate_script": "init_profile_bootstrap.sh",
+  "checks_passed": 18,
+  "checks_total": 18,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "exists_main.rs",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/main.rs"
+    },
+    {
+      "check": "exists_cli.rs",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/cli.rs"
+    },
+    {
+      "check": "exists_bootstrap_init_contract.md",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/bootstrap_init_contract.md"
+    },
+    {
+      "check": "exists_franken_node.profile_examples.toml",
+      "passed": true,
+      "detail": "/data/projects/franken_node/config/franken_node.profile_examples.toml"
+    },
+    {
+      "check": "cli_init_overwrite_flag",
+      "passed": true,
+      "detail": "pub overwrite: bool"
+    },
+    {
+      "check": "cli_init_backup_flag",
+      "passed": true,
+      "detail": "pub backup_existing: bool"
+    },
+    {
+      "check": "cli_init_json_flag",
+      "passed": true,
+      "detail": "pub json: bool"
+    },
+    {
+      "check": "cli_init_trace_id_flag",
+      "passed": true,
+      "detail": "pub trace_id: String"
+    },
+    {
+      "check": "init_trace_id_default",
+      "passed": true,
+      "detail": "init-bootstrap"
+    },
+    {
+      "check": "init_profile_template_embedded",
+      "passed": true,
+      "detail": "PROFILE_EXAMPLES_TEMPLATE"
+    },
+    {
+      "check": "init_flag_validation",
+      "passed": true,
+      "detail": "validate_init_flags("
+    },
+    {
+      "check": "init_write_policy_function",
+      "passed": true,
+      "detail": "apply_init_write_policy("
+    },
+    {
+      "check": "init_mutual_exclusion_error",
+      "passed": true,
+      "detail": "--overwrite and --backup-existing are mutually exclusive"
+    },
+    {
+      "check": "init_writes_profile_example_file",
+      "passed": true,
+      "detail": "franken_node.profile_examples.toml"
+    },
+    {
+      "check": "init_non_destructive_default",
+      "passed": true,
+      "detail": "refusing to overwrite existing file"
+    },
+    {
+      "check": "init_contract_sections_present",
+      "passed": true,
+      "detail": "policy+schema"
+    },
+    {
+      "check": "snapshots_written",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_bootstrap/bd-32e/init_snapshots.json"
+    },
+    {
+      "check": "snapshots_hash_stable",
+      "passed": true,
+      "detail": "f9d4c6d3cf494aee3fd677e3f19c5507b9657b80d39c081ed7cbc26783550ece"
+    }
+  ],
+  "snapshots_path": "artifacts/section_bootstrap/bd-32e/init_snapshots.json"
+}

@@ -1,0 +1,35 @@
+{
+  "bead_id": "bd-2l4i",
+  "section": "14",
+  "title": "Section-wide verification gate: comprehensive unit+e2e+logging",
+  "gate_script": "scripts/check_section_14_gate.py",
+  "test_suite": "tests/test_check_section_14_gate.py",
+  "timestamp": "2026-02-21T03:30:00+00:00",
+  "verdict": "PASS",
+  "beads_expected": 10,
+  "beads_passing": 10,
+  "gate_checks_passed": 6,
+  "gate_checks_total": 6,
+  "python_test_count": 14,
+  "section_beads": [
+    {"bead": "bd-3h1g", "title": "Benchmark specs/harness/datasets/scoring formulas", "verdict": "PASS"},
+    {"bead": "bd-wzjl", "title": "Security and trust co-metrics", "verdict": "PASS"},
+    {"bead": "bd-yz3t", "title": "Verifier toolkit", "verdict": "PASS"},
+    {"bead": "bd-3v8g", "title": "Version benchmark standards", "verdict": "PASS"},
+    {"bead": "bd-18ie", "title": "Metric: compatibility correctness", "verdict": "PASS"},
+    {"bead": "bd-ka0n", "title": "Metric: performance under hardening", "verdict": "PASS"},
+    {"bead": "bd-2a6g", "title": "Metric: containment/revocation latency", "verdict": "PASS"},
+    {"bead": "bd-jbp1", "title": "Metric: replay determinism", "verdict": "PASS"},
+    {"bead": "bd-2ps7", "title": "Metric: adversarial resilience", "verdict": "PASS"},
+    {"bead": "bd-2fkq", "title": "Metric: migration speed/failure-rate", "verdict": "PASS"}
+  ],
+  "gate_checks": [
+    "GATE-14-SCRIPTS",
+    "GATE-14-TESTS",
+    "GATE-14-EVIDENCE",
+    "GATE-14-PUBLICATION",
+    "GATE-14-METRIC-FAMILIES",
+    "GATE-14-ALL-BEADS"
+  ],
+  "compile_note": "FAIL_BASELINE — pre-existing compile debt in unrelated modules"
+}

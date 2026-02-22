@@ -1,0 +1,12 @@
+{
+  "timestamp_utc": "2026-02-22T01:26:47Z",
+  "doctor_exit": 0,
+  "fmt_exit": 1,
+  "check_exit": 101,
+  "clippy_exit": 101,
+  "durations_seconds": {
+    "fmt": 2,
+    "check": 156,
+    "clippy": 106
+  }
+}

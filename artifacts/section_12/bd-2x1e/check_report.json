@@ -1,0 +1,655 @@
+{
+  "gate": "section_12_comprehensive_gate",
+  "bead_id": "bd-2x1e",
+  "section": "12",
+  "title": "Section-wide verification gate: comprehensive unit+e2e+logging",
+  "gate_pass": true,
+  "verdict": "PASS",
+  "timestamp": "2026-02-21T01:04:36.375965+00:00",
+  "trace_id": "trace-bd-2x1e-section-gate",
+  "beads_tested": [
+    "bd-s4cu",
+    "bd-38ri",
+    "bd-kiqr",
+    "bd-3jc1",
+    "bd-2w4u",
+    "bd-1nab",
+    "bd-13yn",
+    "bd-1n1t",
+    "bd-paui",
+    "bd-v4ps",
+    "bd-1rff",
+    "bd-35m7"
+  ],
+  "per_bead_results": [
+    {
+      "bead_id": "bd-s4cu",
+      "risk": "compatibility illusion",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "scenario_passes": 1,
+      "scenario_source": "verification_evidence_fallback",
+      "overall_pass": true,
+      "risk_status": "mitigated"
+    },
+    {
+      "bead_id": "bd-38ri",
+      "risk": "scope explosion",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "scenario_passes": 1,
+      "scenario_source": "verification_evidence_fallback",
+      "overall_pass": true,
+      "risk_status": "mitigated"
+    },
+    {
+      "bead_id": "bd-kiqr",
+      "risk": "trust-system complexity",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "scenario_passes": 1,
+      "scenario_source": "verification_evidence_fallback",
+      "overall_pass": true,
+      "risk_status": "mitigated"
+    },
+    {
+      "bead_id": "bd-3jc1",
+      "risk": "migration friction persistence",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "scenario_passes": 6,
+      "scenario_source": "artifacts/section_12/bd-3jc1/check_report.json",
+      "overall_pass": true,
+      "risk_status": "mitigated"
+    },
+    {
+      "bead_id": "bd-2w4u",
+      "risk": "hardening perf regression",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "scenario_passes": 8,
+      "scenario_source": "artifacts/section_12/bd-2w4u/check_report.json",
+      "overall_pass": true,
+      "risk_status": "mitigated"
+    },
+    {
+      "bead_id": "bd-1nab",
+      "risk": "federated privacy leakage",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "scenario_passes": 8,
+      "scenario_source": "artifacts/section_12/bd-1nab/check_report.json",
+      "overall_pass": true,
+      "risk_status": "mitigated"
+    },
+    {
+      "bead_id": "bd-13yn",
+      "risk": "signal poisoning and Sybil",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "scenario_passes": 1,
+      "scenario_source": "verification_evidence_fallback",
+      "overall_pass": true,
+      "risk_status": "mitigated"
+    },
+    {
+      "bead_id": "bd-1n1t",
+      "risk": "topology blind spots",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "scenario_passes": 8,
+      "scenario_source": "artifacts/section_12/bd-1n1t/check_report.json",
+      "overall_pass": true,
+      "risk_status": "mitigated"
+    },
+    {
+      "bead_id": "bd-paui",
+      "risk": "topological choke-point false positives",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "scenario_passes": 8,
+      "scenario_source": "artifacts/section_12/bd-paui/check_report.json",
+      "overall_pass": true,
+      "risk_status": "mitigated"
+    },
+    {
+      "bead_id": "bd-v4ps",
+      "risk": "temporal concept drift",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "scenario_passes": 8,
+      "scenario_source": "artifacts/section_12/bd-v4ps/check_report.json",
+      "overall_pass": true,
+      "risk_status": "mitigated"
+    },
+    {
+      "bead_id": "bd-1rff",
+      "risk": "longitudinal privacy/re-identification",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "scenario_passes": 8,
+      "scenario_source": "artifacts/section_12/bd-1rff/check_report.json",
+      "overall_pass": true,
+      "risk_status": "mitigated"
+    },
+    {
+      "bead_id": "bd-35m7",
+      "risk": "trajectory-gaming camouflage",
+      "script_pass": true,
+      "unit_pass": true,
+      "evidence_pass": true,
+      "scenario_passes": 10,
+      "scenario_source": "artifacts/section_12/bd-35m7/check_report.json",
+      "overall_pass": true,
+      "risk_status": "mitigated"
+    }
+  ],
+  "overall_coverage_pct": 100.0,
+  "checks": [
+    {
+      "id": "GATE-SCRIPTS",
+      "status": "PASS",
+      "details": {
+        "total": 12,
+        "passing": 12,
+        "results": [
+          {
+            "bead": "bd-s4cu",
+            "script": "scripts/check_risk_compatibility.py",
+            "exists": true,
+            "self_test_present": true,
+            "status": "PASS",
+            "exit_code": 0,
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-38ri",
+            "script": "scripts/check_scope_explosion.py",
+            "exists": true,
+            "self_test_present": true,
+            "status": "PASS",
+            "exit_code": 0,
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-kiqr",
+            "script": "scripts/check_trust_complexity.py",
+            "exists": true,
+            "self_test_present": true,
+            "status": "PASS",
+            "exit_code": 0,
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-3jc1",
+            "script": "scripts/check_migration_friction_persistence.py",
+            "exists": true,
+            "self_test_present": true,
+            "status": "PASS",
+            "exit_code": 0,
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-2w4u",
+            "script": "scripts/check_hardening_perf_regression.py",
+            "exists": true,
+            "self_test_present": true,
+            "status": "PASS",
+            "exit_code": 0,
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-1nab",
+            "script": "scripts/check_federated_privacy_leakage.py",
+            "exists": true,
+            "self_test_present": true,
+            "status": "PASS",
+            "exit_code": 0,
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-13yn",
+            "script": "scripts/check_signal_sybil.py",
+            "exists": true,
+            "self_test_present": true,
+            "status": "PASS",
+            "exit_code": 0,
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-1n1t",
+            "script": "scripts/check_topology_blind_spots.py",
+            "exists": true,
+            "self_test_present": true,
+            "status": "PASS",
+            "exit_code": 0,
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-paui",
+            "script": "scripts/check_chokepoint_false_positives.py",
+            "exists": true,
+            "self_test_present": true,
+            "status": "PASS",
+            "exit_code": 0,
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-v4ps",
+            "script": "scripts/check_temporal_concept_drift.py",
+            "exists": true,
+            "self_test_present": true,
+            "status": "PASS",
+            "exit_code": 0,
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-1rff",
+            "script": "scripts/check_longitudinal_privacy.py",
+            "exists": true,
+            "self_test_present": true,
+            "status": "PASS",
+            "exit_code": 0,
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-35m7",
+            "script": "scripts/check_trajectory_gaming_camouflage.py",
+            "exists": true,
+            "self_test_present": true,
+            "status": "PASS",
+            "exit_code": 0,
+            "verdict": "PASS"
+          }
+        ]
+      }
+    },
+    {
+      "id": "GATE-TESTS",
+      "status": "PASS",
+      "details": {
+        "total": 12,
+        "passing": 12,
+        "tests_ran": 358,
+        "results": [
+          {
+            "bead": "bd-s4cu",
+            "test": "tests/test_check_risk_compatibility.py",
+            "exists": true,
+            "status": "PASS",
+            "tests_ran": 21,
+            "tests_failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-38ri",
+            "test": "tests/test_check_scope_explosion.py",
+            "exists": true,
+            "status": "PASS",
+            "tests_ran": 23,
+            "tests_failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-kiqr",
+            "test": "tests/test_check_trust_complexity.py",
+            "exists": true,
+            "status": "PASS",
+            "tests_ran": 37,
+            "tests_failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-3jc1",
+            "test": "tests/test_check_migration_friction_persistence.py",
+            "exists": true,
+            "status": "PASS",
+            "tests_ran": 18,
+            "tests_failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-2w4u",
+            "test": "tests/test_check_hardening_perf_regression.py",
+            "exists": true,
+            "status": "PASS",
+            "tests_ran": 21,
+            "tests_failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-1nab",
+            "test": "tests/test_check_federated_privacy_leakage.py",
+            "exists": true,
+            "status": "PASS",
+            "tests_ran": 20,
+            "tests_failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-13yn",
+            "test": "tests/test_check_signal_sybil.py",
+            "exists": true,
+            "status": "PASS",
+            "tests_ran": 73,
+            "tests_failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-1n1t",
+            "test": "tests/test_check_topology_blind_spots.py",
+            "exists": true,
+            "status": "PASS",
+            "tests_ran": 70,
+            "tests_failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-paui",
+            "test": "tests/test_check_chokepoint_false_positives.py",
+            "exists": true,
+            "status": "PASS",
+            "tests_ran": 20,
+            "tests_failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-v4ps",
+            "test": "tests/test_check_temporal_concept_drift.py",
+            "exists": true,
+            "status": "PASS",
+            "tests_ran": 17,
+            "tests_failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-1rff",
+            "test": "tests/test_check_longitudinal_privacy.py",
+            "exists": true,
+            "status": "PASS",
+            "tests_ran": 18,
+            "tests_failed": 0,
+            "exit_code": 0
+          },
+          {
+            "bead": "bd-35m7",
+            "test": "tests/test_check_trajectory_gaming_camouflage.py",
+            "exists": true,
+            "status": "PASS",
+            "tests_ran": 20,
+            "tests_failed": 0,
+            "exit_code": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "GATE-EVIDENCE",
+      "status": "PASS",
+      "details": {
+        "total": 12,
+        "passing": 12,
+        "results": [
+          {
+            "bead": "bd-s4cu",
+            "path": "artifacts/section_12/bd-s4cu/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-38ri",
+            "path": "artifacts/section_12/bd-38ri/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-kiqr",
+            "path": "artifacts/section_12/bd-kiqr/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-3jc1",
+            "path": "artifacts/section_12/bd-3jc1/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-2w4u",
+            "path": "artifacts/section_12/bd-2w4u/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-1nab",
+            "path": "artifacts/section_12/bd-1nab/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-13yn",
+            "path": "artifacts/section_12/bd-13yn/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-1n1t",
+            "path": "artifacts/section_12/bd-1n1t/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-paui",
+            "path": "artifacts/section_12/bd-paui/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-v4ps",
+            "path": "artifacts/section_12/bd-v4ps/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-1rff",
+            "path": "artifacts/section_12/bd-1rff/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          },
+          {
+            "bead": "bd-35m7",
+            "path": "artifacts/section_12/bd-35m7/verification_evidence.json",
+            "status": "PASS",
+            "verdict": "PASS"
+          }
+        ]
+      }
+    },
+    {
+      "id": "GATE-RISK-COVERAGE",
+      "status": "PASS",
+      "details": {
+        "covered": 12,
+        "total": 12,
+        "results": [
+          {
+            "bead": "bd-s4cu",
+            "scenario_passes": 1,
+            "source": "verification_evidence_fallback",
+            "status": "PASS"
+          },
+          {
+            "bead": "bd-38ri",
+            "scenario_passes": 1,
+            "source": "verification_evidence_fallback",
+            "status": "PASS"
+          },
+          {
+            "bead": "bd-kiqr",
+            "scenario_passes": 1,
+            "source": "verification_evidence_fallback",
+            "status": "PASS"
+          },
+          {
+            "bead": "bd-3jc1",
+            "scenario_passes": 6,
+            "source": "artifacts/section_12/bd-3jc1/check_report.json",
+            "status": "PASS"
+          },
+          {
+            "bead": "bd-2w4u",
+            "scenario_passes": 8,
+            "source": "artifacts/section_12/bd-2w4u/check_report.json",
+            "status": "PASS"
+          },
+          {
+            "bead": "bd-1nab",
+            "scenario_passes": 8,
+            "source": "artifacts/section_12/bd-1nab/check_report.json",
+            "status": "PASS"
+          },
+          {
+            "bead": "bd-13yn",
+            "scenario_passes": 1,
+            "source": "verification_evidence_fallback",
+            "status": "PASS"
+          },
+          {
+            "bead": "bd-1n1t",
+            "scenario_passes": 8,
+            "source": "artifacts/section_12/bd-1n1t/check_report.json",
+            "status": "PASS"
+          },
+          {
+            "bead": "bd-paui",
+            "scenario_passes": 8,
+            "source": "artifacts/section_12/bd-paui/check_report.json",
+            "status": "PASS"
+          },
+          {
+            "bead": "bd-v4ps",
+            "scenario_passes": 8,
+            "source": "artifacts/section_12/bd-v4ps/check_report.json",
+            "status": "PASS"
+          },
+          {
+            "bead": "bd-1rff",
+            "scenario_passes": 8,
+            "source": "artifacts/section_12/bd-1rff/check_report.json",
+            "status": "PASS"
+          },
+          {
+            "bead": "bd-35m7",
+            "scenario_passes": 10,
+            "source": "artifacts/section_12/bd-35m7/check_report.json",
+            "status": "PASS"
+          }
+        ]
+      }
+    }
+  ],
+  "events": [
+    {
+      "event": "GATE_12_EVALUATION_STARTED",
+      "trace_id": "trace-bd-2x1e-section-gate",
+      "section": "12",
+      "timestamp": "2026-02-21T01:04:35.064583+00:00"
+    },
+    {
+      "event": "GATE_12_BEAD_CHECKED",
+      "trace_id": "trace-bd-2x1e-section-gate",
+      "bead": "bd-s4cu",
+      "status": "PASS"
+    },
+    {
+      "event": "GATE_12_BEAD_CHECKED",
+      "trace_id": "trace-bd-2x1e-section-gate",
+      "bead": "bd-38ri",
+      "status": "PASS"
+    },
+    {
+      "event": "GATE_12_BEAD_CHECKED",
+      "trace_id": "trace-bd-2x1e-section-gate",
+      "bead": "bd-kiqr",
+      "status": "PASS"
+    },
+    {
+      "event": "GATE_12_BEAD_CHECKED",
+      "trace_id": "trace-bd-2x1e-section-gate",
+      "bead": "bd-3jc1",
+      "status": "PASS"
+    },
+    {
+      "event": "GATE_12_BEAD_CHECKED",
+      "trace_id": "trace-bd-2x1e-section-gate",
+      "bead": "bd-2w4u",
+      "status": "PASS"
+    },
+    {
+      "event": "GATE_12_BEAD_CHECKED",
+      "trace_id": "trace-bd-2x1e-section-gate",
+      "bead": "bd-1nab",
+      "status": "PASS"
+    },
+    {
+      "event": "GATE_12_BEAD_CHECKED",
+      "trace_id": "trace-bd-2x1e-section-gate",
+      "bead": "bd-13yn",
+      "status": "PASS"
+    },
+    {
+      "event": "GATE_12_BEAD_CHECKED",
+      "trace_id": "trace-bd-2x1e-section-gate",
+      "bead": "bd-1n1t",
+      "status": "PASS"
+    },
+    {
+      "event": "GATE_12_BEAD_CHECKED",
+      "trace_id": "trace-bd-2x1e-section-gate",
+      "bead": "bd-paui",
+      "status": "PASS"
+    },
+    {
+      "event": "GATE_12_BEAD_CHECKED",
+      "trace_id": "trace-bd-2x1e-section-gate",
+      "bead": "bd-v4ps",
+      "status": "PASS"
+    },
+    {
+      "event": "GATE_12_BEAD_CHECKED",
+      "trace_id": "trace-bd-2x1e-section-gate",
+      "bead": "bd-1rff",
+      "status": "PASS"
+    },
+    {
+      "event": "GATE_12_BEAD_CHECKED",
+      "trace_id": "trace-bd-2x1e-section-gate",
+      "bead": "bd-35m7",
+      "status": "PASS"
+    },
+    {
+      "event": "GATE_12_RISK_COVERAGE",
+      "trace_id": "trace-bd-2x1e-section-gate",
+      "status": "PASS",
+      "covered": 12,
+      "total": 12
+    },
+    {
+      "event": "GATE_12_VERDICT_EMITTED",
+      "trace_id": "trace-bd-2x1e-section-gate",
+      "status": "PASS"
+    }
+  ],
+  "content_hash": "8e9be4d6f34e9f0c9c8f98b31b5753b8af8c0cdfaddf1d0e699b5d958824369c"
+}

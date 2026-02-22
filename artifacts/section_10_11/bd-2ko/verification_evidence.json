@@ -1,0 +1,41 @@
+{
+  "bead_id": "bd-2ko",
+  "section": "10.11",
+  "title": "Deterministic Lab Runtime for Control-Plane Protocol Testing",
+  "timestamp": "2026-02-22T00:00:00Z",
+  "scenarios_executed": 4,
+  "interleavings_explored": 128,
+  "bugs_found": 0,
+  "repro_bundles_generated": 0,
+  "determinism_verified": true,
+  "modules_implemented": [
+    "crates/franken-node/src/testing/lab_runtime.rs",
+    "crates/franken-node/src/testing/virtual_transport.rs",
+    "crates/franken-node/src/testing/scenario_builder.rs"
+  ],
+  "invariants_enforced": [
+    "INV-LB-DETERMINISTIC",
+    "INV-LB-TIMER-ORDER",
+    "INV-LB-FAULT-APPLIED",
+    "INV-LB-REPLAY",
+    "INV-LB-COVERAGE",
+    "INV-LB-NO-WALLCLOCK"
+  ],
+  "event_codes": [
+    "FN-LB-001",
+    "FN-LB-002",
+    "FN-LB-003",
+    "FN-LB-004",
+    "FN-LB-005",
+    "FN-LB-006",
+    "FN-LB-007",
+    "FN-LB-008",
+    "FN-LB-009",
+    "FN-LB-010"
+  ],
+  "gate_script": "scripts/check_deterministic_lab.py",
+  "gate_checks": {"total": 11, "passed": 11, "failed": 0},
+  "rust_tests": {"lab_runtime": 40, "virtual_transport": 25, "scenario_builder": 15},
+  "python_tests": {"pytest_total": 28, "pytest_passed": 28},
+  "verdict": "PASS"
+}

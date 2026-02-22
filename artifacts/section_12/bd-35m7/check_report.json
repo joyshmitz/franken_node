@@ -1,0 +1,224 @@
+{
+  "bead_id": "bd-35m7",
+  "title": "Risk control: trajectory-gaming camouflage",
+  "section": "12",
+  "overall_pass": true,
+  "verdict": "PASS",
+  "summary": {
+    "passing": 42,
+    "failing": 0,
+    "total": 42
+  },
+  "checks": [
+    {
+      "check": "file: contract doc",
+      "pass": true,
+      "detail": "exists: docs/specs/section_12/bd-35m7_contract.md"
+    },
+    {
+      "check": "file: trajectory-gaming camouflage report",
+      "pass": true,
+      "detail": "exists: artifacts/12/trajectory_gaming_camouflage_report.json"
+    },
+    {
+      "check": "contract: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "contract: term INV-TGC-MIMICRY-CORPUS",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-TGC-RECALL",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-TGC-HYBRID-FUSION",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-TGC-RANDOMIZATION",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term INV-TGC-ADAPTIVE",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario A",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario B",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario C",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario D",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "contract: term Scenario E",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "report: exists",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report: valid json",
+      "pass": true,
+      "detail": "valid"
+    },
+    {
+      "check": "mimicry corpus: pattern count >=100",
+      "pass": true,
+      "detail": "pattern_count=132"
+    },
+    {
+      "check": "mimicry corpus: refreshed at least quarterly",
+      "pass": true,
+      "detail": "interval_days=37 required<=92"
+    },
+    {
+      "check": "detection: known-mimicry recall >=90%",
+      "pass": true,
+      "detail": "recall=93.4 threshold=90.0"
+    },
+    {
+      "check": "detection: adaptive adversary rounds == 10",
+      "pass": true,
+      "detail": "rounds=10"
+    },
+    {
+      "check": "detection: adaptive minimum recall >=80%",
+      "pass": true,
+      "detail": "min_recall=84.3 threshold=80.0"
+    },
+    {
+      "check": "hybrid fusion: required channels present",
+      "pass": true,
+      "detail": "channels=['behavioral', 'code_analysis', 'provenance', 'reputation']"
+    },
+    {
+      "check": "hybrid fusion: non-behavioral failures are flagged",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "motif randomization: two evaluations use different subsets",
+      "pass": true,
+      "detail": "subset_hashes=['motif-set-a9f1', 'motif-set-c4d2']"
+    },
+    {
+      "check": "scenario A: known mimicry flagged >=90% confidence",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario B: behavioral gaming + suspicious provenance is flagged",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario C: same trajectory uses randomized motifs",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario D: new pattern + retrain keeps recall >=90%",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "scenario E: adaptive adversary 10-round recall >=80%",
+      "pass": true,
+      "detail": "validated"
+    },
+    {
+      "check": "events: TGC-001",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: TGC-002",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: TGC-003",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: TGC-004",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "events: TGC-005",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "check": "logs: trace id present",
+      "pass": true,
+      "detail": "trace-bd-35m7-trajectory-camouflage"
+    },
+    {
+      "check": "aggregate: pattern_count matches corpus",
+      "pass": true,
+      "detail": "reported=132 computed=132"
+    },
+    {
+      "check": "aggregate: known recall matches model",
+      "pass": true,
+      "detail": "reported=93.4 computed=93.4"
+    },
+    {
+      "check": "aggregate: adaptive min recall matches model",
+      "pass": true,
+      "detail": "reported=84.3 computed=84.3"
+    },
+    {
+      "check": "aggregate: motif uniqueness flag matches recomputation",
+      "pass": true,
+      "detail": "reported=True computed=True"
+    },
+    {
+      "check": "aggregate: hybrid gaming flag matches recomputation",
+      "pass": true,
+      "detail": "reported=True computed=True"
+    },
+    {
+      "check": "aggregate: update interval matches corpus",
+      "pass": true,
+      "detail": "reported=37 corpus=37"
+    },
+    {
+      "check": "determinism: adaptive-round order-insensitive evaluation",
+      "pass": true,
+      "detail": "stable"
+    },
+    {
+      "check": "adversarial: motif-subset reuse is detected",
+      "pass": true,
+      "detail": "adversarial_unique=False"
+    }
+  ]
+}

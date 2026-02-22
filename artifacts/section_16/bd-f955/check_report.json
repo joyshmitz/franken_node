@@ -1,0 +1,95 @@
+{
+  "bead_id": "bd-f955",
+  "title": "open trust and compatibility specs",
+  "section": "16",
+  "verdict": "PASS",
+  "total": 16,
+  "passed": 16,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "spec_exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_16/bd-f955_open_trust_compatibility_specs.md"
+    },
+    {
+      "check": "artifact_exists",
+      "pass": true,
+      "detail": "/data/projects/franken_node/artifacts/16/open_trust_compatibility_specs.json"
+    },
+    {
+      "check": "spec_required_headings",
+      "pass": true,
+      "detail": "all present"
+    },
+    {
+      "check": "spec_event_codes",
+      "pass": true,
+      "detail": "all present"
+    },
+    {
+      "check": "spec_invariants",
+      "pass": true,
+      "detail": "all present"
+    },
+    {
+      "check": "artifact_parse",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "artifact_required_top_fields",
+      "pass": true,
+      "detail": "all present"
+    },
+    {
+      "check": "artifact_bead_id",
+      "pass": true,
+      "detail": "bd-f955"
+    },
+    {
+      "check": "artifact_section",
+      "pass": true,
+      "detail": "16"
+    },
+    {
+      "check": "artifact_spec_version",
+      "pass": true,
+      "detail": "1.0.0"
+    },
+    {
+      "check": "artifact_published_documents",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "artifact_event_codes",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "artifact_compatibility_matrix",
+      "pass": true,
+      "detail": "count=6"
+    },
+    {
+      "check": "artifact_trust_requirements",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "artifact_invariants",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "artifact_release_gate",
+      "pass": true,
+      "detail": "found"
+    }
+  ],
+  "artifacts": {
+    "spec": "docs/specs/section_16/bd-f955_open_trust_compatibility_specs.md",
+    "machine_artifact": "artifacts/16/open_trust_compatibility_specs.json"
+  }
+}

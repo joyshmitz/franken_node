@@ -47,19 +47,20 @@ fn paged_response<T: Clone>(
     all: &[T],
     pagination: Pagination,
 ) -> Result<ApiResponse<Vec<T>>, TrustCardError> {
+    let per_page = pagination.per_page.max(1);
     let total_items = all.len();
-    let data = paginate(all, pagination.page, pagination.per_page)?;
+    let data = paginate(all, pagination.page, per_page)?;
     let total_pages = if total_items == 0 {
         0
     } else {
-        (total_items - 1) / pagination.per_page + 1
+        (total_items - 1) / per_page + 1
     };
     Ok(ApiResponse {
         ok: true,
         data,
         page: Some(PageMeta {
             page: pagination.page,
-            per_page: pagination.per_page,
+            per_page,
             total_items,
             total_pages,
         }),

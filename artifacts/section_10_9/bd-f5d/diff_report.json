@@ -1,0 +1,62 @@
+{
+  "campaign_id": "bd-f5d-public-benchmark-campaign",
+  "baseline_label": "baseline",
+  "candidate_label": "candidate",
+  "rows": [
+    {
+      "workload": "child_process_spawning",
+      "p95_delta_pct": -3.2,
+      "throughput_delta_pct": 2.941
+    },
+    {
+      "workload": "cold_start",
+      "p95_delta_pct": -3.953,
+      "throughput_delta_pct": 4.774
+    },
+    {
+      "workload": "compatibility_shim_overhead",
+      "p95_delta_pct": -6.522,
+      "throughput_delta_pct": 3.835
+    },
+    {
+      "workload": "crypto_operations",
+      "p95_delta_pct": -7.018,
+      "throughput_delta_pct": 2.758
+    },
+    {
+      "workload": "file_io",
+      "p95_delta_pct": -4.403,
+      "throughput_delta_pct": 4.626
+    },
+    {
+      "workload": "http_server_throughput",
+      "p95_delta_pct": -3.053,
+      "throughput_delta_pct": 3.495
+    },
+    {
+      "workload": "json_processing",
+      "p95_delta_pct": -2.817,
+      "throughput_delta_pct": 2.652
+    },
+    {
+      "workload": "module_loading",
+      "p95_delta_pct": -3.483,
+      "throughput_delta_pct": 6.338
+    },
+    {
+      "workload": "stream_throughput",
+      "p95_delta_pct": -3.96,
+      "throughput_delta_pct": 2.809
+    },
+    {
+      "workload": "url_parsing",
+      "p95_delta_pct": -5.882,
+      "throughput_delta_pct": 1.499
+    }
+  ],
+  "summary": {
+    "compatibility_target_met": true,
+    "migration_velocity_target_met": true,
+    "compromise_reduction_target_met": true
+  }
+}

@@ -1,0 +1,196 @@
+{
+  "bead_id": "bd-3v9l",
+  "title": "BPET release claim gate",
+  "section": "10.21",
+  "verdict": "PASS",
+  "total": 35,
+  "passed": 35,
+  "failed": 0,
+  "summary": {
+    "derived_total_claims": 4,
+    "derived_passed_claims": 4,
+    "derived_failed_claims": 0,
+    "derived_release_decision": "allow"
+  },
+  "checks": [
+    {
+      "check": "spec file exists",
+      "pass": true,
+      "detail": "docs/conformance/bpet_release_claim_gate.md"
+    },
+    {
+      "check": "report file exists",
+      "pass": true,
+      "detail": "artifacts/10.21/bpet_release_gate_report.json"
+    },
+    {
+      "check": "spec claim id BPET-CLAIM-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec claim id BPET-CLAIM-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec claim id BPET-CLAIM-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec claim id BPET-CLAIM-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code BPET-PERF-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code BPET-PERF-002",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code BPET-PERF-003",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code BPET-PERF-004",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code BPET-PERF-005",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code BPET-PERF-ERR-INPUT",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "spec event code BPET-PERF-ERR-SIGNATURE",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report parse",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report required top-level fields",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "report bead id",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "report generated_at_utc RFC3339",
+      "pass": true,
+      "detail": "2026-02-21T05:12:00Z"
+    },
+    {
+      "check": "designated_claims list",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "no duplicate claim IDs",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "required claim IDs present",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "check": "claim BPET-CLAIM-001",
+      "pass": true,
+      "detail": "latency/storage/evidence requirements satisfied"
+    },
+    {
+      "check": "claim BPET-CLAIM-002",
+      "pass": true,
+      "detail": "latency/storage/evidence requirements satisfied"
+    },
+    {
+      "check": "claim BPET-CLAIM-003",
+      "pass": true,
+      "detail": "latency/storage/evidence requirements satisfied"
+    },
+    {
+      "check": "claim BPET-CLAIM-004",
+      "pass": true,
+      "detail": "latency/storage/evidence requirements satisfied"
+    },
+    {
+      "check": "summary object",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "summary total_claims",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "summary passed_claims",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "summary failed_claims",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "summary release_decision",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "signature verification",
+      "pass": true,
+      "detail": "signature valid"
+    },
+    {
+      "check": "signature idempotency",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "external verification",
+      "pass": true,
+      "detail": "signature valid"
+    },
+    {
+      "check": "events list",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event includes BPET-PERF-001",
+      "pass": true,
+      "detail": "found"
+    },
+    {
+      "check": "event includes allow code",
+      "pass": true,
+      "detail": "found"
+    }
+  ],
+  "events": [
+    "BPET-PERF-001",
+    "BPET-PERF-002"
+  ]
+}

@@ -16,6 +16,7 @@ use epoch_scoped_keys::{
 };
 use serde::Deserialize;
 use std::fs;
+use std::time::Instant;
 
 #[derive(Debug, Deserialize)]
 struct VectorBundle {
@@ -85,4 +86,28 @@ fn verify_rejects_cross_epoch_and_cross_domain_signatures() {
         &root_secret,
     );
     assert!(domain_mismatch.is_err());
+}
+
+#[test]
+fn derivation_throughput_meets_minimum_budget() {
+    let root_secret =
+        RootSecret::from_hex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+            .expect("root secret");
+    let iterations: u64 = 10_000;
+
+    let start = Instant::now();
+    for i in 0..iterations {
+        let epoch = ControlEpoch::new(1 + (i % 257));
+        let domain = if i % 2 == 0 { "marker" } else { "manifest" };
+        let _ = derive_epoch_key(&root_secret, epoch, domain);
+    }
+    let elapsed = start.elapsed().as_secs_f64();
+    let keys_per_second = iterations as f64 / elapsed.max(f64::MIN_POSITIVE);
+
+    assert!(
+        keys_per_second >= 10_000.0,
+        "expected >= 10_000 keys/sec, got {:.2} keys/sec over {} iterations",
+        keys_per_second,
+        iterations
+    );
 }

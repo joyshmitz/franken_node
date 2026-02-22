@@ -1,0 +1,50 @@
+{
+  "bead_id": "bd-3l8d",
+  "changed_file_count": 2,
+  "changed_files_source": "artifacts/section_11/bd-2ut3/changed_files_for_validation.txt",
+  "errors": [],
+  "events": [
+    {
+      "event_code": "CONTRACT_BENCH_CORRECT_VALIDATED",
+      "message": "benchmark/correctness artifacts validated: docs/change_summaries/example_change_summary.json",
+      "severity": "info",
+      "summary_file": "docs/change_summaries/example_change_summary.json",
+      "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26"
+    }
+  ],
+  "example": "docs/change_summaries/example_change_summary.json",
+  "ok": true,
+  "required_event_codes": [
+    "CONTRACT_BENCH_CORRECT_INCOMPLETE",
+    "CONTRACT_BENCH_CORRECT_MISSING",
+    "CONTRACT_BENCH_CORRECT_VALIDATED"
+  ],
+  "requires_contract": true,
+  "subsystem_change_count": 1,
+  "summary_directory": "docs/change_summaries",
+  "summary_files_checked": [
+    "docs/change_summaries/example_change_summary.json"
+  ],
+  "template": "docs/templates/change_summary_template.md",
+  "validated_summaries": [
+    {
+      "errors": [],
+      "events": [
+        {
+          "event_code": "CONTRACT_BENCH_CORRECT_VALIDATED",
+          "message": "benchmark/correctness artifacts validated: docs/change_summaries/example_change_summary.json",
+          "severity": "info",
+          "summary_file": "docs/change_summaries/example_change_summary.json",
+          "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26"
+        }
+      ],
+      "ok": true,
+      "summary_file": "docs/change_summaries/example_change_summary.json",
+      "trace_correlation": "51875766994010cfc89f49d7a7021aae399f3e183a09572625e9d523f7627b26",
+      "validated_metric_count": 2,
+      "validated_suite_count": 2,
+      "warnings": []
+    }
+  ],
+  "warnings": []
+}

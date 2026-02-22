@@ -1,0 +1,124 @@
+{
+  "bead_id": "bd-n9r",
+  "gate_script": "config_profile_resolution.sh",
+  "checks_passed": 23,
+  "checks_total": 23,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "exists_config.rs",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/config.rs"
+    },
+    {
+      "check": "exists_cli.rs",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/cli.rs"
+    },
+    {
+      "check": "exists_main.rs",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/main.rs"
+    },
+    {
+      "check": "exists_franken_node.profile_examples.toml",
+      "passed": true,
+      "detail": "/data/projects/franken_node/config/franken_node.profile_examples.toml"
+    },
+    {
+      "check": "exists_bootstrap_config_contract.md",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/bootstrap_config_contract.md"
+    },
+    {
+      "check": "resolver_entrypoint",
+      "passed": true,
+      "detail": "Config::resolve"
+    },
+    {
+      "check": "env_override_layer",
+      "passed": true,
+      "detail": "env layer"
+    },
+    {
+      "check": "merge_decision_struct",
+      "passed": true,
+      "detail": "MergeDecision"
+    },
+    {
+      "check": "merge_stage_enum",
+      "passed": true,
+      "detail": "MergeStage"
+    },
+    {
+      "check": "precedence_doc_string",
+      "passed": true,
+      "detail": "resolver precedence"
+    },
+    {
+      "check": "contract_precedence_doc",
+      "passed": true,
+      "detail": "contract precedence"
+    },
+    {
+      "check": "main_init_uses_resolver",
+      "passed": true,
+      "detail": "count=2"
+    },
+    {
+      "check": "main_doctor_outputs_decisions",
+      "passed": true,
+      "detail": "doctor merge tracing"
+    },
+    {
+      "check": "cli_init_config_option",
+      "passed": true,
+      "detail": "InitArgs --config"
+    },
+    {
+      "check": "cli_doctor_config_option",
+      "passed": true,
+      "detail": "count=3"
+    },
+    {
+      "check": "cli_profile_options",
+      "passed": true,
+      "detail": "count=2"
+    },
+    {
+      "check": "example_profile_present",
+      "passed": true,
+      "detail": "balanced"
+    },
+    {
+      "check": "example_profiles_table",
+      "passed": true,
+      "detail": "profiles table"
+    },
+    {
+      "check": "example_profiles_strict",
+      "passed": true,
+      "detail": "profiles.strict"
+    },
+    {
+      "check": "example_profiles_balanced",
+      "passed": true,
+      "detail": "profiles.balanced"
+    },
+    {
+      "check": "example_profiles_legacy",
+      "passed": true,
+      "detail": "profiles.legacy-risky"
+    },
+    {
+      "check": "snapshot_written",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_bootstrap/bd-n9r/resolved_config_snapshot.json"
+    },
+    {
+      "check": "snapshot_sha256",
+      "passed": true,
+      "detail": "182eebca3e72c9220e4522f4114e1ff3f869f84af1f66a32b0de0d76c98f159a"
+    }
+  ]
+}

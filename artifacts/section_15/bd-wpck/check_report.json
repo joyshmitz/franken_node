@@ -1,0 +1,110 @@
+{
+  "bead_id": "bd-wpck",
+  "section": "15",
+  "gate_script": "check_migration_kit.py",
+  "checks_passed": 20,
+  "checks_total": 20,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "source_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/supply_chain/migration_kit.rs"
+    },
+    {
+      "check": "module_wiring",
+      "passed": true,
+      "detail": "supply_chain/mod.rs"
+    },
+    {
+      "check": "archetypes",
+      "passed": true,
+      "detail": "5/5 archetypes"
+    },
+    {
+      "check": "migration_phases",
+      "passed": true,
+      "detail": "5/5 phases"
+    },
+    {
+      "check": "struct_MigrationStep",
+      "passed": true,
+      "detail": "MigrationStep"
+    },
+    {
+      "check": "struct_CompatibilityMapping",
+      "passed": true,
+      "detail": "CompatibilityMapping"
+    },
+    {
+      "check": "struct_MigrationKit",
+      "passed": true,
+      "detail": "MigrationKit"
+    },
+    {
+      "check": "struct_MigrationReport",
+      "passed": true,
+      "detail": "MigrationReport"
+    },
+    {
+      "check": "struct_MkeAuditRecord",
+      "passed": true,
+      "detail": "MkeAuditRecord"
+    },
+    {
+      "check": "struct_MigrationKitEcosystem",
+      "passed": true,
+      "detail": "MigrationKitEcosystem"
+    },
+    {
+      "check": "compatibility_gating",
+      "passed": true,
+      "detail": "API coverage threshold enforcement"
+    },
+    {
+      "check": "step_management",
+      "passed": true,
+      "detail": "Start, complete, rollback operations"
+    },
+    {
+      "check": "deterministic_hashing",
+      "passed": true,
+      "detail": "SHA-256 content hashing"
+    },
+    {
+      "check": "kit_versioning",
+      "passed": true,
+      "detail": "mke-v1.0"
+    },
+    {
+      "check": "report_generation",
+      "passed": true,
+      "detail": "Progress report with status"
+    },
+    {
+      "check": "event_codes",
+      "passed": true,
+      "detail": "13/13 codes"
+    },
+    {
+      "check": "invariants",
+      "passed": true,
+      "detail": "6/6 invariants"
+    },
+    {
+      "check": "audit_log",
+      "passed": true,
+      "detail": "JSONL audit export"
+    },
+    {
+      "check": "spec_alignment",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_15/bd-wpck_contract.md"
+    },
+    {
+      "check": "test_coverage",
+      "passed": true,
+      "detail": "26 tests (>=26)"
+    }
+  ]
+}

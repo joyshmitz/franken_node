@@ -107,9 +107,9 @@ pub struct HardwareFingerprint(pub String);
 
 impl HardwareFingerprint {
     pub fn from_info(info: &str) -> Self {
-        let mut hasher = DefaultHasher::new();
-        info.hash(&mut hasher);
-        HardwareFingerprint(format!("{:016x}", hasher.finish()))
+        let mut hasher = Sha256::new();
+        hasher.update(info.as_bytes());
+        HardwareFingerprint(format!("{:x}", hasher.finalize()))
     }
 }
 
@@ -144,9 +144,9 @@ impl SignedPolicyBundle {
     /// Compute the SHA-256-like hash of this bundle for chain linking.
     pub fn bundle_hash(&self) -> String {
         let json = serde_json::to_string(self).unwrap_or_default();
-        let mut hasher = DefaultHasher::new();
-        json.hash(&mut hasher);
-        format!("{:016x}", hasher.finish())
+        let mut hasher = Sha256::new();
+        hasher.update(json.as_bytes());
+        format!("{:x}", hasher.finalize())
     }
 }
 
@@ -189,13 +189,16 @@ pub enum HarnessOutcome {
 // HMAC-SHA256 signing (deterministic, using std hash for portability)
 // ---------------------------------------------------------------------------
 
+use sha2::{Digest, Sha256};
+
 /// Compute HMAC-SHA256-like signature using the given key.
 /// Uses a deterministic keyed hash for portability (no external crypto dep).
 pub fn hmac_sign(payload: &str, key: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    key.hash(&mut hasher);
-    payload.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let mut hasher = Sha256::new();
+    hasher.update(key.as_bytes());
+    hasher.update(b"|");
+    hasher.update(payload.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 /// Verify an HMAC signature.

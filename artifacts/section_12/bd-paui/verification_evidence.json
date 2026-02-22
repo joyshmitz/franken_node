@@ -1,0 +1,47 @@
+{
+  "bead_id": "bd-paui",
+  "section": "12",
+  "title": "Risk control: topological choke-point false positives",
+  "timestamp": "2026-02-21T00:00:00Z",
+  "verdict": "PASS",
+  "files": {
+    "contract": "docs/specs/section_12/bd-paui_contract.md",
+    "risk_report": "artifacts/12/chokepoint_false_positive_report.json",
+    "verification_script": "scripts/check_chokepoint_false_positives.py",
+    "python_tests": "tests/test_check_chokepoint_false_positives.py",
+    "check_report": "artifacts/section_12/bd-paui/check_report.json",
+    "check_self_test": "artifacts/section_12/bd-paui/check_self_test.json",
+    "unit_tests_output": "artifacts/section_12/bd-paui/unit_tests.txt"
+  },
+  "metrics": {
+    "rules_total": 3,
+    "rules_enforced": 1,
+    "rules_rejected": 1,
+    "min_replay_operations": 1000,
+    "max_false_positive_rate_enforced_pct": 0.6,
+    "all_enforced_net_positive": true,
+    "all_stage_durations_min_24h": true,
+    "python_verification_checks": 39,
+    "python_unit_tests": 20,
+    "event_codes": 5
+  },
+  "checks_summary": {
+    "passing": 39,
+    "failing": 0,
+    "total": 39
+  },
+  "commands": [
+    {
+      "command": "python3 scripts/check_chokepoint_false_positives.py --self-test --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 scripts/check_chokepoint_false_positives.py --json",
+      "status": "pass"
+    },
+    {
+      "command": "python3 -m unittest tests/test_check_chokepoint_false_positives.py",
+      "status": "pass"
+    }
+  ]
+}

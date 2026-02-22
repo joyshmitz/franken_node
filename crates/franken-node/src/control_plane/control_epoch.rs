@@ -12,6 +12,7 @@
 //! - INV-EPOCH-NO-GAP: epoch advances by exactly 1 per call
 
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use std::fmt;
 
 /// Stable event codes for structured logging.
@@ -103,19 +104,15 @@ impl EpochTransition {
         manifest_hash: &str,
         trace_id: &str,
     ) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
         let canonical = format!(
             "epoch_transition|{}|{}|{timestamp}|{manifest_hash}|{trace_id}",
             old_epoch.value(),
             new_epoch.value()
         );
 
-        let mut hasher = DefaultHasher::new();
-        canonical.hash(&mut hasher);
-        let h = hasher.finish();
-        format!("mac:{h:016x}")
+        let mut hasher = sha2::Sha256::new();
+        sha2::Digest::update(&mut hasher, canonical.as_bytes());
+        format!("mac:{:x}", sha2::Digest::finalize(hasher))
     }
 
     /// Verify the MAC on this transition event.

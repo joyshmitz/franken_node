@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "incident_type": "rce",
+  "artifact_path": "artifacts/13/replay_artifacts/rce_replay.json",
+  "deterministic": true,
+  "deterministic_runs": 10,
+  "trace_match": true,
+  "divergence_point": "none",
+  "artifact_snapshot": "snap-rce-v1"
+}

@@ -1,0 +1,42 @@
+{
+  "bead_id": "bd-364",
+  "section": "10.10",
+  "title": "Key-role separation for control-plane signing",
+  "timestamp": "2026-02-21T01:00:00Z",
+  "verdict": "PASS",
+  "files": {
+    "spec": "docs/specs/section_10_10/bd-364_contract.md",
+    "implementation": "crates/franken-node/src/control_plane/key_role_separation.rs",
+    "policy": "docs/policy/key_role_separation.md",
+    "verification_script": "scripts/check_key_role_separation.py",
+    "python_tests": "tests/test_check_key_role_separation.py"
+  },
+  "metrics": {
+    "python_checks_total": 94,
+    "python_checks_passing": 94,
+    "python_checks_failing": 0,
+    "rust_unit_tests": 50,
+    "python_unit_tests": 32,
+    "types_verified": 4,
+    "methods_verified": 8,
+    "error_codes_verified": 4,
+    "event_codes_verified": 4,
+    "invariants_verified": 4,
+    "roles_verified": 4,
+    "role_tags_verified": 4,
+    "binding_fields_verified": 6,
+    "spec_content_verified": 8,
+    "policy_content_verified": 7
+  },
+  "acceptance_criteria": {
+    "AC1_key_role_enum": "PASS — KeyRole enum with Signing, Encryption, Issuance, Attestation + 2-byte tags",
+    "AC2_key_role_binding": "PASS — KeyRoleBinding struct with key_id, role, public_key_bytes, bound_at, bound_by, max_validity_seconds",
+    "AC3_role_exclusivity": "PASS — binding same key to second role returns RoleSeparationViolation",
+    "AC4_verify_role_guard": "PASS — verify_role rejects mismatched usage with KRS_KEY_ROLE_MISMATCH",
+    "AC5_rotation_atomic": "PASS — rotate atomically revokes old key and binds new key",
+    "AC6_structured_events": "PASS — events emitted for bind, revoke, rotate, violation with trace IDs",
+    "AC7_unit_tests": "PASS — 50+ Rust tests cover all scenarios",
+    "AC8_verification_script": "PASS — check_key_role_separation.py --json = 94/94 checks",
+    "AC9_evidence": "PASS — this file"
+  }
+}

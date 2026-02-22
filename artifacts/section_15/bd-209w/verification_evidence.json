@@ -1,0 +1,39 @@
+{
+  "bead_id": "bd-209w",
+  "section": "15",
+  "title": "Signed extension registry with provenance and revocation",
+  "gate_script": "scripts/check_signed_extension_registry.py",
+  "test_suite": "tests/test_check_signed_extension_registry.py",
+  "timestamp": "2026-02-21T06:05:00+00:00",
+  "verdict": "PASS",
+  "implementation_artifacts": {
+    "extension_registry": "crates/franken-node/src/supply_chain/extension_registry.rs",
+    "supply_chain_mod": "crates/franken-node/src/supply_chain/mod.rs",
+    "spec_contract": "docs/specs/section_15/bd-209w_contract.md",
+    "verification_script": "scripts/check_signed_extension_registry.py",
+    "unit_tests": "tests/test_check_signed_extension_registry.py"
+  },
+  "rust_test_count": 29,
+  "python_test_count": 20,
+  "event_codes_defined": 13,
+  "gate_checks_passed": 15,
+  "gate_checks_total": 15,
+  "invariants_verified": [
+    "INV-SER-SIGNED",
+    "INV-SER-PROVENANCE",
+    "INV-SER-REVOCABLE",
+    "INV-SER-MONOTONIC",
+    "INV-SER-AUDITABLE",
+    "INV-SER-DETERMINISTIC"
+  ],
+  "capabilities_verified": {
+    "extension_statuses": ["Submitted", "Active", "Deprecated", "Revoked"],
+    "revocation_reasons": ["SecurityVulnerability", "PolicyViolation", "MaintainerRequest", "LicenseConflict", "Superseded"],
+    "operations": ["register", "add_version", "deprecate", "revoke", "query", "list", "version_lineage"],
+    "signature_verification": true,
+    "provenance_validation": true,
+    "monotonic_revocation": true,
+    "content_hashing": true,
+    "audit_logging": true
+  }
+}

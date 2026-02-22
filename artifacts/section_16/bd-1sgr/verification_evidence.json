@@ -1,0 +1,100 @@
+{
+  "bead_id": "bd-1sgr",
+  "section": "16",
+  "gate_script": "check_report_output_contract.py",
+  "checks_passed": 18,
+  "checks_total": 18,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "source_exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/tools/report_output_contract.rs"
+    },
+    {
+      "check": "module_wiring",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "check": "report_types",
+      "passed": true,
+      "detail": "5 types"
+    },
+    {
+      "check": "required_artifacts",
+      "passed": true,
+      "detail": "5 required artifact types"
+    },
+    {
+      "check": "struct_ReportBundle",
+      "passed": true,
+      "detail": "ReportBundle"
+    },
+    {
+      "check": "struct_ArtifactEntry",
+      "passed": true,
+      "detail": "ArtifactEntry"
+    },
+    {
+      "check": "struct_OutputCatalog",
+      "passed": true,
+      "detail": "OutputCatalog"
+    },
+    {
+      "check": "struct_ReportOutputContract",
+      "passed": true,
+      "detail": "ReportOutputContract"
+    },
+    {
+      "check": "integrity_verification",
+      "passed": true,
+      "detail": "SHA-256 hashing"
+    },
+    {
+      "check": "completeness_checking",
+      "passed": true,
+      "detail": "Completeness validation"
+    },
+    {
+      "check": "reproducibility",
+      "passed": true,
+      "detail": "Reproduction instructions"
+    },
+    {
+      "check": "catalog_generation",
+      "passed": true,
+      "detail": "Catalog with completeness"
+    },
+    {
+      "check": "event_codes",
+      "passed": true,
+      "detail": "12/12"
+    },
+    {
+      "check": "invariants",
+      "passed": true,
+      "detail": "6/6"
+    },
+    {
+      "check": "audit_log",
+      "passed": true,
+      "detail": "JSONL export"
+    },
+    {
+      "check": "contract_version",
+      "passed": true,
+      "detail": "roc-v1.0"
+    },
+    {
+      "check": "spec_alignment",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_16/bd-1sgr_contract.md"
+    },
+    {
+      "check": "test_coverage",
+      "passed": true,
+      "detail": "0 tests"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "incident_type": "denial_of_service",
+  "initial_state_snapshot": "snap-denial_of_service-v1",
+  "input_sequence": [
+    "seed-fixture-denial_of_service",
+    "execute-attack-denial_of_service",
+    "capture-runtime-trace"
+  ],
+  "expected_behavior_trace": [
+    "attack-attempt-detected",
+    "policy-gate-evaluated",
+    "mitigation-applied"
+  ],
+  "actual_behavior_trace": [
+    "attack-attempt-detected",
+    "policy-gate-evaluated",
+    "mitigation-applied"
+  ],
+  "divergence_point": "none",
+  "last_verified_utc": "2026-02-21T01:00:00Z",
+  "deterministic_runs": 10,
+  "deterministic_match": true,
+  "reproduction_command": "python3 scripts/check_replay_coverage_gate.py --replay-incident denial_of_service --json"
+}

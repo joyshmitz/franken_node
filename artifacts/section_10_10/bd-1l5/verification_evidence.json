@@ -1,0 +1,38 @@
+{
+  "bead_id": "bd-1l5",
+  "section": "10.10",
+  "title": "Canonical product trust object IDs with domain separation",
+  "timestamp": "2026-02-21T01:25:00Z",
+  "verdict": "PASS",
+  "files": {
+    "spec": "docs/specs/section_10_10/bd-1l5_contract.md",
+    "implementation": "crates/franken-node/src/connector/trust_object_id.rs",
+    "verification_script": "scripts/check_trust_object_ids.py",
+    "python_tests": "tests/test_check_trust_object_ids.py"
+  },
+  "metrics": {
+    "python_checks_total": 96,
+    "python_checks_passing": 96,
+    "python_checks_failing": 0,
+    "rust_unit_tests": 52,
+    "structs_verified": 7,
+    "event_codes_verified": 2,
+    "error_codes_verified": 4,
+    "invariants_verified": 4,
+    "functions_verified": 12,
+    "domain_prefixes_verified": 6,
+    "derivation_modes_verified": 2,
+    "spec_sections_verified": 9,
+    "simulation_checks": 9,
+    "acceptance_criteria_verified": 7
+  },
+  "acceptance_criteria": {
+    "AC1_domain_prefixes": "PASS — 6 domain prefixes (ext:, tcard:, rcpt:, pchk:, migr:, vclaim:) registered",
+    "AC2_derivation_modes": "PASS — content-addressed and context-addressed derivation",
+    "AC3_parse_validate": "PASS — parse/validate round-trip for all domain prefixes",
+    "AC4_cross_domain": "PASS — cross-domain collisions structurally impossible via prefix scheme",
+    "AC5_representations": "PASS — short-form (8 hex chars) and full-form representations",
+    "AC6_deterministic": "PASS — same inputs always produce identical IDs",
+    "AC7_sha256": "PASS — SHA-256 with 256-bit digest (>= 128 bits collision resistance)"
+  }
+}
