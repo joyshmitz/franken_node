@@ -23,7 +23,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
-use std::time::Instant;
 
 // ---------------------------------------------------------------------------
 // Event codes

@@ -22,7 +22,6 @@
 //! - `RGN-005`: Quiescence timeout
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};

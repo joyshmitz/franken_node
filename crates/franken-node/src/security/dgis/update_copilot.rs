@@ -633,7 +633,7 @@ impl UpdateCopilot {
     fn generate_playbook(
         &self,
         proposal: &UpdateProposal,
-        delta: &RiskDelta,
+        _delta: &RiskDelta,
         containment: &ContainmentRecommendation,
     ) -> MitigationPlaybook {
         let phases = vec![

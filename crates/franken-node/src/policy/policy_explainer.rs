@@ -17,7 +17,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::bayesian_diagnostics::{BayesianDiagnostics, CandidateRef, DiagnosticConfidence};
-use super::decision_engine::{BlockedCandidate, DecisionOutcome, DecisionReason, GuardrailId};
+use super::decision_engine::{DecisionOutcome, DecisionReason, GuardrailId};
 
 // ---------------------------------------------------------------------------
 // Event codes

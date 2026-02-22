@@ -9,14 +9,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::error::{ApiError, ProblemDetail};
 use super::fleet_control_routes;
 use super::middleware::{
-    EndpointGroup, EndpointLifecycle, LatencyMetrics, RateLimitConfig, RateLimiter, RequestLog,
-    RouteMetadata, ServiceMetrics, default_rate_limit, execute_middleware_chain,
+    EndpointGroup, RateLimitConfig, RateLimiter, RequestLog,
+    RouteMetadata, ServiceMetrics, default_rate_limit,
 };
 use super::operator_routes;
-use super::trust_card_routes::ApiResponse;
 use super::verifier_routes;
 
 // ── Service Configuration ──────────────────────────────────────────────────

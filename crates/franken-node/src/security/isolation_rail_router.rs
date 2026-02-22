@@ -579,7 +579,12 @@ impl RailRouter {
         }
 
         // Perform the elevation.
-        let p = self.placements.get_mut(workload_id).unwrap();
+        let p = self.placements.get_mut(workload_id).ok_or_else(|| {
+            RailRouterError::WorkloadRejected {
+                workload_id: workload_id.to_string(),
+                reason: "workload vanished during elevation".to_string(),
+            }
+        })?;
         p.rail = target_rail;
         p.elevation_count += 1;
         let updated = p.clone();

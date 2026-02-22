@@ -382,7 +382,7 @@ impl VerifierSdk {
         &self,
         capsule: &super::replay_capsule::ReplayCapsule,
     ) -> Result<VerificationReport, SdkError> {
-        use super::replay_capsule::ReplayCapsule;
+        
 
         if capsule.capsule_id.is_empty() {
             return Err(SdkError::MalformedCapsule(

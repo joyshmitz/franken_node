@@ -501,7 +501,11 @@ impl ProofGenerator {
         // Call the backend
         match self.backend.generate(&proof_request) {
             Ok(proof) => {
-                let status = self.requests.get_mut(request_id).unwrap();
+                let status = self.requests.get_mut(request_id).ok_or_else(|| {
+                    ProofGeneratorError::internal(format!(
+                        "request {request_id} vanished after generation"
+                    ))
+                })?;
                 status.status = ProofStatus::Complete;
                 status.proof = Some(proof.clone());
                 status.completed_at_millis = Some(now_millis);
@@ -518,7 +522,11 @@ impl ProofGenerator {
                 Ok(proof)
             }
             Err(err) => {
-                let status = self.requests.get_mut(request_id).unwrap();
+                let status = self.requests.get_mut(request_id).ok_or_else(|| {
+                    ProofGeneratorError::internal(format!(
+                        "request {request_id} vanished after generation"
+                    ))
+                })?;
                 status.status = ProofStatus::Failed;
                 status.error = Some(err.clone());
                 status.completed_at_millis = Some(now_millis);

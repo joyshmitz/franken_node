@@ -309,8 +309,9 @@ impl AntiEntropyReconciler {
         let common = local_ids.intersection(&remote_ids);
 
         for id in common {
-            let local_rec = local.get(id).unwrap();
-            let remote_rec = remote.get(id).unwrap();
+            let (Some(local_rec), Some(remote_rec)) = (local.get(id), remote.get(id)) else {
+                continue;
+            };
             if local_rec.digest() != remote_rec.digest() {
                 return Some(id.clone());
             }

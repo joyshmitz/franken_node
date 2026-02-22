@@ -437,7 +437,7 @@ impl ControlLanePolicy {
     pub fn assign_task(
         &mut self,
         tc: ControlTaskClass,
-        task_id: &str,
+        _task_id: &str,
         trace_id: &str,
         timestamp_ms: u64,
     ) -> Result<ControlLane, String> {

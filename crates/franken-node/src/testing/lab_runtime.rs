@@ -504,7 +504,7 @@ impl ReproBundle {
 
     /// Deserialize from JSON.
     pub fn from_json(s: &str) -> Result<Self, LabError> {
-        serde_json::from_str(s).map_err(|e| LabError::ReplayDivergence {
+        serde_json::from_str(s).map_err(|_e| LabError::ReplayDivergence {
             expected_events: 0,
             actual_events: 0,
         })

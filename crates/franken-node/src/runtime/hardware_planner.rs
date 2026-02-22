@@ -1369,7 +1369,7 @@ mod tests {
     #[test]
     fn placement_rejected_empty_capabilities() {
         let mut planner = make_planner();
-        let req = workload("wl-1", &[], 50, "default");
+        let _req = workload("wl-1", &[], 50, "default");
         // required_capabilities is empty from caps(&[])
         // but our workload helper uses caps() which will produce empty set for empty slice
         let req = WorkloadRequest {

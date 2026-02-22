@@ -465,8 +465,8 @@ impl CompatGateService {
     ) -> Vec<&CompatReceipt> {
         self.receipts
             .iter()
-            .filter(|r| scope.is_none() || r.scope == scope.unwrap())
-            .filter(|r| severity.is_none() || r.severity == severity.unwrap())
+            .filter(|r| scope.map_or(true, |s| r.scope == s))
+            .filter(|r| severity.map_or(true, |s| r.severity == s))
             .collect()
     }
 

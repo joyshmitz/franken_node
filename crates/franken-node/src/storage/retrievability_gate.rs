@@ -15,7 +15,6 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fmt;
-use std::time::Duration;
 
 // ---------------------------------------------------------------------------
 // Event codes

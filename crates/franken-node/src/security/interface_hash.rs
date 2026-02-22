@@ -13,8 +13,8 @@ use std::fmt;
 
 /// Compute a domain-separated hash: H(domain || ":" || data).
 ///
-/// Uses SipHash (DefaultHasher) for deterministic, non-cryptographic
-/// hashing. In production this would use SHA-256 or BLAKE3.
+/// Uses SHA-256 and stores the first 16 hexadecimal characters for
+/// compatibility with existing fixtures.
 pub fn compute_hash(domain: &str, data: &[u8]) -> InterfaceHash {
     let mut hasher = sha2::Sha256::new();
     // Domain separation: hash domain tag first, then separator, then data
@@ -49,9 +49,13 @@ pub fn verify_hash(
         return Err(RejectionCode::MalformedHash);
     }
 
+    if expected.data_len != data.len() {
+        return Err(RejectionCode::HashMismatch);
+    }
+
     // Recompute and compare
     let computed = compute_hash(domain, data);
-    if computed.hash_hex != expected.hash_hex {
+    if !computed.hash_hex.eq_ignore_ascii_case(&expected.hash_hex) {
         return Err(RejectionCode::HashMismatch);
     }
 
@@ -304,6 +308,21 @@ mod tests {
         };
         let result = verify_hash(&h, "test", b"data");
         assert_eq!(result, Err(RejectionCode::MalformedHash));
+    }
+
+    #[test]
+    fn verify_uppercase_hash_hex() {
+        let mut h = compute_hash("connector.v1", b"hello");
+        h.hash_hex = h.hash_hex.to_ascii_uppercase();
+        assert!(verify_hash(&h, "connector.v1", b"hello").is_ok());
+    }
+
+    #[test]
+    fn verify_data_len_mismatch() {
+        let mut h = compute_hash("connector.v1", b"hello");
+        h.data_len += 1;
+        let result = verify_hash(&h, "connector.v1", b"hello");
+        assert_eq!(result, Err(RejectionCode::HashMismatch));
     }
 
     // === AdmissionTelemetry ===

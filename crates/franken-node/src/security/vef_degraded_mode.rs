@@ -1157,8 +1157,8 @@ mod tests {
         engine.observe_metrics(&bad, 1000, "corr-health");
 
         // Perform some actions to increment counter
-        engine.evaluate_action(ActionRisk::HighRisk, "policy.change");
-        engine.evaluate_action(ActionRisk::LowRisk, "read.data");
+        let _ = engine.evaluate_action(ActionRisk::HighRisk, "policy.change");
+        let _ = engine.evaluate_action(ActionRisk::LowRisk, "read.data");
 
         let good = ProofLagMetrics {
             proof_lag_secs: 10,

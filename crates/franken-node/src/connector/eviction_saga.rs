@@ -18,7 +18,6 @@
 //! - **INV-ES-DURABLE-PHASES**: Phase transitions are persisted; crash recovery
 //!   resumes from the last committed phase.
 
-use std::collections::HashMap;
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 

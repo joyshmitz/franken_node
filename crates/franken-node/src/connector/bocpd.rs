@@ -174,7 +174,7 @@ impl Default for GaussianModel {
 
 /// Sufficient statistics for Gaussian model.
 #[derive(Debug, Clone)]
-struct GaussianSuffStats {
+pub(crate) struct GaussianSuffStats {
     n: f64,
     mean: f64,
     sum_sq: f64,
@@ -200,7 +200,7 @@ impl GaussianSuffStats {
 
 impl GaussianModel {
     /// Compute the predictive probability (Student-t) for a new observation.
-    pub fn predictive_prob(&self, stats: &GaussianSuffStats, x: f64) -> f64 {
+    pub(crate) fn predictive_prob(&self, stats: &GaussianSuffStats, x: f64) -> f64 {
         let n = stats.n;
         let kappa_n = self.kappa0 + n;
         let mu_n = (self.kappa0 * self.mu0 + n * stats.mean) / kappa_n;
@@ -277,7 +277,7 @@ impl Default for PoissonModel {
 
 /// Sufficient statistics for Poisson model.
 #[derive(Debug, Clone)]
-struct PoissonSuffStats {
+pub(crate) struct PoissonSuffStats {
     n: f64,
     sum: f64,
 }
@@ -295,7 +295,7 @@ impl PoissonSuffStats {
 
 impl PoissonModel {
     /// Negative binomial predictive probability.
-    pub fn predictive_prob(&self, stats: &PoissonSuffStats, x: f64) -> f64 {
+    pub(crate) fn predictive_prob(&self, stats: &PoissonSuffStats, x: f64) -> f64 {
         let alpha_n = self.alpha0 + stats.sum;
         let beta_n = self.beta0 + stats.n;
         let k = x.round() as u64;
@@ -330,7 +330,7 @@ impl Default for CategoricalModel {
 
 /// Sufficient statistics for Categorical model.
 #[derive(Debug, Clone)]
-struct CategoricalSuffStats {
+pub(crate) struct CategoricalSuffStats {
     counts: Vec<f64>,
 }
 
@@ -350,7 +350,7 @@ impl CategoricalSuffStats {
 
 impl CategoricalModel {
     /// Dirichlet-Categorical predictive probability.
-    pub fn predictive_prob(&self, stats: &CategoricalSuffStats, category: usize) -> f64 {
+    pub(crate) fn predictive_prob(&self, stats: &CategoricalSuffStats, category: usize) -> f64 {
         if category >= self.k {
             return 1e-300;
         }

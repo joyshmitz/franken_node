@@ -470,7 +470,9 @@ impl SessionManager {
             timestamp,
         });
 
-        Ok(self.sessions.get(&session_id).unwrap())
+        self.sessions
+            .get(&session_id)
+            .ok_or_else(|| SessionError::NoSession { session_id })
     }
 
     /// Process an authenticated message within a session.
@@ -611,7 +613,12 @@ impl SessionManager {
         }
 
         // Advance session sequence counter
-        let session_mut = self.sessions.get_mut(session_id).unwrap();
+        let session_mut =
+            self.sessions
+                .get_mut(session_id)
+                .ok_or_else(|| SessionError::NoSession {
+                    session_id: session_id.to_string(),
+                })?;
         match direction {
             MessageDirection::Send => {
                 if sequence >= session_mut.send_seq {

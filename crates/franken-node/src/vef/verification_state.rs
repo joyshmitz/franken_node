@@ -237,7 +237,12 @@ impl VerificationStateManager {
         }
 
         // Apply transition
-        let state = self.states.get_mut(&req.entity_id).unwrap();
+        let state = self
+            .states
+            .get_mut(&req.entity_id)
+            .ok_or(VefStateError::PolicyMissing {
+                entity_id: req.entity_id.clone(),
+            })?;
         state.current_risk_level = req.target_risk_level;
         state.transition_count += 1;
 

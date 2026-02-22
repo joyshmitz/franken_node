@@ -692,6 +692,15 @@ impl AttestationLedger {
 
         // INV-ZKA-SCHEMA-VERSIONED: check schema version
         if !invariants::check_schema_versioned(attestation) {
+            self.record_audit(
+                format!("audit-{}-schema", aid),
+                event_codes::FN_ZK_004.to_string(),
+                Some(aid.clone()),
+                Some(pid.clone()),
+                trace_id.clone(),
+                now_ms,
+                "Missing schema version".to_string(),
+            );
             return ZkVerificationResult::Rejected {
                 attestation_id: aid,
                 policy_id: pid,

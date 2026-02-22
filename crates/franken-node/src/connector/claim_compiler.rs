@@ -544,11 +544,7 @@ impl ClaimCompiler {
 
         // All validations passed; commit (INV-CLMC-SCOREBOARD-ATOMIC)
         for claim in claims {
-            let summary = if claim.normalised_text.len() > 120 {
-                format!("{}...", &claim.normalised_text[..117])
-            } else {
-                claim.normalised_text.clone()
-            };
+            let summary = summarize_claim_text(&claim.normalised_text);
 
             let entry = ScoreEntry {
                 claim_id: claim.claim_id.clone(),
@@ -667,6 +663,28 @@ fn validate_evidence_uri(uri: &str) -> bool {
     }
     // Require a scheme (e.g. "https://", "file://", "urn:")
     trimmed.contains("://") || trimmed.starts_with("urn:")
+}
+
+/// Return an UTF-8-safe prefix capped by character count.
+fn utf8_prefix(input: &str, max_chars: usize) -> &str {
+    if max_chars == 0 {
+        return "";
+    }
+    match input.char_indices().nth(max_chars) {
+        Some((idx, _)) => &input[..idx],
+        None => input,
+    }
+}
+
+/// Create a stable scoreboard summary string without slicing into UTF-8 code points.
+fn summarize_claim_text(normalised_text: &str) -> String {
+    const MAX_SUMMARY_CHARS: usize = 120;
+    const BODY_CHARS: usize = 117;
+    if normalised_text.chars().count() > MAX_SUMMARY_CHARS {
+        format!("{}...", utf8_prefix(normalised_text, BODY_CHARS))
+    } else {
+        normalised_text.to_string()
+    }
 }
 
 /// Compute SHA-256 digest binding claim text to evidence links.
@@ -890,6 +908,19 @@ mod tests {
         assert_eq!(snapshot.entry_count, 2);
         assert!(snapshot.entries.contains_key("batch-a"));
         assert!(snapshot.entries.contains_key("batch-b"));
+    }
+
+    #[test]
+    fn publish_batch_summary_truncation_handles_unicode() {
+        let mut compiler = make_compiler();
+        let mut raw = valid_raw_claim("unicode-summary");
+        raw.claim_text = "🙂".repeat(130);
+        let compiled = compiler.compile_claim(&raw).unwrap();
+        let snapshot = compiler.publish_batch(&[compiled]).unwrap();
+        let entry = snapshot.entries.get("unicode-summary").unwrap();
+
+        assert!(entry.claim_summary.ends_with("..."));
+        assert_eq!(entry.claim_summary.chars().count(), 120);
     }
 
     #[test]

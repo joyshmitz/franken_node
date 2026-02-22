@@ -4,7 +4,7 @@
 //! rules (earliest grant, purpose priority), and halts on dangerous-tier conflicts.
 //! Every conflict produces a reproducible fork log entry.
 
-use sha2::{Digest, Sha256};
+use sha2::Digest;
 
 /// Safety tier context for a lease conflict.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

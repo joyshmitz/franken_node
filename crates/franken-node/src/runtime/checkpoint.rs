@@ -527,7 +527,7 @@ fn derive_checkpoint_id(
     iteration_count: u64,
     epoch: u64,
     progress_state_hash: &str,
-    previous_checkpoint_hash: Option<&str>,
+    _previous_checkpoint_hash: Option<&str>,
 ) -> CheckpointId {
     let mut hasher = Sha256::new();
     hasher.update(orchestration_id.as_bytes());

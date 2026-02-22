@@ -543,10 +543,15 @@ impl OptimizationGovernor {
             return decision;
         }
 
-        // 2. Check if knob is locked (INV-GOV-KNOBS-ONLY)
-        if let Some(state) = self.knob_states.get(&proposal.knob) {
-            if state.locked {
-                let decision = GovernorDecision::Rejected(RejectionReason::KnobLocked);
+        // 2. Ensure target knob exists and proposal baseline matches current state.
+        let (current_value, knob_locked) = match self.knob_states.get(&proposal.knob) {
+            Some(state) => (state.value, state.locked),
+            None => {
+                let reason = RejectionReason::InvalidProposal(format!(
+                    "target knob `{}` is not configured",
+                    proposal.knob
+                ));
+                let decision = GovernorDecision::Rejected(reason);
                 self.record(
                     &proposal.proposal_id,
                     proposal.knob,
@@ -556,9 +561,38 @@ impl OptimizationGovernor {
                 );
                 return decision;
             }
+        };
+
+        if proposal.old_value != current_value {
+            let reason = RejectionReason::InvalidProposal(format!(
+                "stale old_value for `{}`: expected current {}, got {}",
+                proposal.knob, current_value, proposal.old_value
+            ));
+            let decision = GovernorDecision::Rejected(reason);
+            self.record(
+                &proposal.proposal_id,
+                proposal.knob,
+                &decision,
+                event_codes::GOV_004,
+                &proposal.trace_id,
+            );
+            return decision;
         }
 
-        // 3. Shadow evaluate (INV-GOV-SHADOW-BEFORE-APPLY)
+        // 3. Check if knob is locked (INV-GOV-KNOBS-ONLY)
+        if knob_locked {
+            let decision = GovernorDecision::Rejected(RejectionReason::KnobLocked);
+            self.record(
+                &proposal.proposal_id,
+                proposal.knob,
+                &decision,
+                event_codes::GOV_004,
+                &proposal.trace_id,
+            );
+            return decision;
+        }
+
+        // 4. Shadow evaluate (INV-GOV-SHADOW-BEFORE-APPLY)
         let shadow = self.shadow_evaluate(&proposal);
 
         if !shadow.within_envelope {
@@ -588,10 +622,11 @@ impl OptimizationGovernor {
             return decision;
         }
 
-        // 4. Approved -- apply the knob change
-        if let Some(state) = self.knob_states.get_mut(&proposal.knob) {
-            state.value = proposal.new_value;
-        }
+        // 5. Approved -- apply the knob change
+        self.knob_states
+            .get_mut(&proposal.knob)
+            .expect("knob existence checked above")
+            .value = proposal.new_value;
 
         self.applied.insert(
             proposal.proposal_id.clone(),
@@ -1046,6 +1081,40 @@ mod tests {
             GovernorDecision::Rejected(RejectionReason::InvalidProposal(_)) => {}
             other => panic!("expected InvalidProposal rejection, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_submit_rejects_unknown_knob_configuration() {
+        let envelope = default_envelope();
+        let knob_states = BTreeMap::new();
+        let mut gov = OptimizationGovernor::new(envelope, knob_states);
+        let decision = gov.submit(good_proposal("p_unknown_knob"));
+
+        match &decision {
+            GovernorDecision::Rejected(RejectionReason::InvalidProposal(msg)) => {
+                assert!(msg.contains("not configured"));
+            }
+            other => panic!("expected InvalidProposal rejection, got {other:?}"),
+        }
+        assert_eq!(gov.applied_count(), 0);
+        assert_eq!(gov.decision_log()[0].event_code, event_codes::GOV_004);
+    }
+
+    #[test]
+    fn test_submit_rejects_stale_old_value() {
+        let mut gov = OptimizationGovernor::with_defaults();
+        let mut p = good_proposal("p_stale");
+        p.old_value = 63; // current default for concurrency_limit is 64
+
+        let decision = gov.submit(p);
+        match &decision {
+            GovernorDecision::Rejected(RejectionReason::InvalidProposal(msg)) => {
+                assert!(msg.contains("stale old_value"));
+            }
+            other => panic!("expected InvalidProposal rejection, got {other:?}"),
+        }
+        assert_eq!(gov.applied_count(), 0);
+        assert_eq!(gov.knob_value(&RuntimeKnob::ConcurrencyLimit), Some(64));
     }
 
     // --- Live check and auto-revert tests ---

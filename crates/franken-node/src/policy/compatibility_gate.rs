@@ -795,7 +795,7 @@ mod tests {
 
     #[test]
     fn test_mode_query() {
-        let mut engine = test_engine();
+        let engine = test_engine();
         let mode = engine.query_mode("tenant-1").unwrap();
         assert_eq!(mode.mode, CompatMode::Balanced);
         assert!(!mode.receipt_signature.is_empty());

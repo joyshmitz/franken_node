@@ -16,6 +16,7 @@ use super::middleware::{
     TraceContext,
 };
 use super::trust_card_routes::ApiResponse;
+use super::utf8_prefix;
 
 // ── Response Types ─────────────────────────────────────────────────────────
 
@@ -185,7 +186,7 @@ pub fn acquire_lease(
     trace: &TraceContext,
     request: &LeaseAcquireRequest,
 ) -> Result<ApiResponse<Lease>, ApiError> {
-    let lease_id = format!("lease-{}", &trace.trace_id[..trace.trace_id.len().min(12)]);
+    let lease_id = format!("lease-{}", utf8_prefix(&trace.trace_id, 12));
     let now = chrono::Utc::now();
     let expires = now + chrono::Duration::seconds(i64::from(request.ttl_seconds));
 
@@ -209,7 +210,7 @@ pub fn acquire_lease(
 pub fn release_lease(
     _identity: &AuthIdentity,
     _trace: &TraceContext,
-    lease_id: &str,
+    _lease_id: &str,
 ) -> Result<ApiResponse<bool>, ApiError> {
     // Skeleton: always succeeds.
     Ok(ApiResponse {
@@ -225,7 +226,7 @@ pub fn execute_fence(
     trace: &TraceContext,
     request: &FencingRequest,
 ) -> Result<ApiResponse<FencingResult>, ApiError> {
-    let operation_id = format!("fence-{}", &trace.trace_id[..trace.trace_id.len().min(12)]);
+    let operation_id = format!("fence-{}", utf8_prefix(&trace.trace_id, 12));
 
     let result = FencingResult {
         operation_id,
@@ -249,7 +250,7 @@ pub fn execute_coordination(
     trace: &TraceContext,
     request: &CoordinationRequest,
 ) -> Result<ApiResponse<CoordinationResult>, ApiError> {
-    let command_id = format!("coord-{}", &trace.trace_id[..trace.trace_id.len().min(12)]);
+    let command_id = format!("coord-{}", utf8_prefix(&trace.trace_id, 12));
 
     let result = CoordinationResult {
         command_id,
@@ -339,6 +340,24 @@ mod tests {
         assert!(result.data.lease_id.starts_with("lease-"));
         assert_eq!(result.data.resource, "control-plane-lock");
         assert_eq!(result.data.holder, "fleet-admin-1");
+    }
+
+    #[test]
+    fn acquire_lease_handles_unicode_trace_id() {
+        let identity = admin_identity();
+        let trace = TraceContext {
+            trace_id: "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂".to_string(),
+            span_id: "0000000000000003".to_string(),
+            trace_flags: 1,
+        };
+        let request = LeaseAcquireRequest {
+            resource: "control-plane-lock".to_string(),
+            ttl_seconds: 300,
+        };
+
+        let result = acquire_lease(&identity, &trace, &request).expect("acquire");
+        let expected: String = trace.trace_id.chars().take(12).collect();
+        assert_eq!(result.data.lease_id, format!("lease-{expected}"));
     }
 
     #[test]

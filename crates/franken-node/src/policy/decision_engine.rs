@@ -248,8 +248,7 @@ mod tests {
     use super::*;
     use crate::policy::bayesian_diagnostics::CandidateRef;
     use crate::policy::guardrail_monitor::{
-        DurabilityLossGuardrail, EvidenceEmissionGuardrail, GuardrailMonitorSet,
-        HardeningRegressionGuardrail, MemoryBudgetGuardrail, SystemState,
+        GuardrailMonitorSet, MemoryBudgetGuardrail, SystemState,
     };
     use crate::policy::hardening_state_machine::HardeningLevel;
 

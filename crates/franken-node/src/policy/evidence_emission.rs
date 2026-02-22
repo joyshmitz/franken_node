@@ -13,7 +13,7 @@
 use std::fmt;
 
 use crate::observability::evidence_ledger::{
-    DecisionKind, EvidenceEntry, EvidenceLedger, LedgerCapacity,
+    DecisionKind, EvidenceEntry, EvidenceLedger,
 };
 
 /// Stable event codes for structured logging.
@@ -489,6 +489,7 @@ pub fn build_evidence_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::observability::evidence_ledger::LedgerCapacity;
 
     fn make_ledger() -> EvidenceLedger {
         EvidenceLedger::new(LedgerCapacity::new(100, 100_000))

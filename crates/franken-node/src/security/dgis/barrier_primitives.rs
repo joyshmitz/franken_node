@@ -9,7 +9,7 @@
 //! All primitives are independently testable, composable (multiple barriers per node),
 //! and produce audit receipts for every enforcement action.
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};

@@ -819,7 +819,7 @@ mod tests {
 
     #[test]
     fn test_gossip_rejects_stale() {
-        let mut node1 = make_node("n1");
+        let node1 = make_node("n1");
         let mut node2 = make_node("n2");
         // Make node2 ahead.
         node2.add_trust_card("card-1").unwrap();

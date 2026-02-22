@@ -13,6 +13,7 @@ use super::middleware::{
     TraceContext,
 };
 use super::trust_card_routes::ApiResponse;
+use super::utf8_prefix;
 
 // ── Response Types ─────────────────────────────────────────────────────────
 
@@ -137,11 +138,11 @@ pub fn route_metadata() -> Vec<RouteMetadata> {
 
 /// Handle `POST /v1/verifier/conformance`.
 pub fn trigger_conformance(
-    identity: &AuthIdentity,
+    _identity: &AuthIdentity,
     trace: &TraceContext,
-    request: &ConformanceTriggerRequest,
+    _request: &ConformanceTriggerRequest,
 ) -> Result<ApiResponse<ConformanceResult>, ApiError> {
-    let check_id = format!("chk-{}", &trace.trace_id[..trace.trace_id.len().min(12)]);
+    let check_id = format!("chk-{}", utf8_prefix(&trace.trace_id, 12));
 
     let findings = vec![
         ConformanceFinding {
@@ -221,8 +222,8 @@ pub fn get_evidence(
 /// Handle `GET /v1/verifier/audit-log`.
 pub fn query_audit_log(
     _identity: &AuthIdentity,
-    trace: &TraceContext,
-    query: &AuditLogQuery,
+    _trace: &TraceContext,
+    _query: &AuditLogQuery,
 ) -> Result<ApiResponse<Vec<AuditLogEntry>>, ApiError> {
     // Skeleton: return empty audit log.
     let entries: Vec<AuditLogEntry> = Vec::new();
@@ -319,5 +320,23 @@ mod tests {
         };
         let result = trigger_conformance(&identity, &trace, &request).expect("conformance");
         assert!(result.data.check_id.starts_with("chk-"));
+    }
+
+    #[test]
+    fn conformance_check_id_handles_unicode_trace() {
+        let identity = test_identity();
+        let trace = TraceContext {
+            trace_id: "測試🙂識別子🙂trace🙂".to_string(),
+            span_id: "0000000000000002".to_string(),
+            trace_flags: 1,
+        };
+        let request = ConformanceTriggerRequest {
+            scope: None,
+            verbose: false,
+        };
+
+        let result = trigger_conformance(&identity, &trace, &request).expect("conformance");
+        let expected: String = trace.trace_id.chars().take(12).collect();
+        assert_eq!(result.data.check_id, format!("chk-{expected}"));
     }
 }

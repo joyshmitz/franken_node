@@ -1029,13 +1029,27 @@ impl StakingLedger {
             .clone();
 
         if record.state != StakeState::UnderAppeal {
+            let target = if upheld {
+                StakeState::Slashed
+            } else {
+                StakeState::Active
+            };
+            self.emit_audit(
+                STAKE_007,
+                current_time,
+                &record.publisher_id,
+                stake_id,
+                "resolve_appeal",
+                None,
+                &format!(
+                    "rejected: stake {} state={} expected=under_appeal",
+                    stake_id.0, record.state
+                ),
+                vec![INV_STAKE_AUDIT_COMPLETE.to_string()],
+            );
             return Err(StakingError::InvalidTransition {
                 from: record.state,
-                to: if upheld {
-                    StakeState::Slashed
-                } else {
-                    StakeState::Active
-                },
+                to: target,
                 code: ERR_STAKE_INVALID_TRANSITION,
             });
         }

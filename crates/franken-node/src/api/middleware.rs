@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use super::error::ApiError;
+use super::utf8_prefix;
 
 // ── Trace Context ──────────────────────────────────────────────────────────
 
@@ -141,7 +142,7 @@ pub fn authenticate(
                 });
             }
             Ok(AuthIdentity {
-                principal: format!("apikey:{}", &key[..key.len().min(8)]),
+                principal: format!("apikey:{}", utf8_prefix(key, 8)),
                 method: AuthMethod::ApiKey,
                 roles: vec!["operator".to_string()],
             })
@@ -164,7 +165,7 @@ pub fn authenticate(
                 });
             }
             Ok(AuthIdentity {
-                principal: format!("token:{}", &token[..token.len().min(8)]),
+                principal: format!("token:{}", utf8_prefix(token, 8)),
                 method: AuthMethod::BearerToken,
                 roles: vec!["operator".to_string(), "verifier".to_string()],
             })
@@ -213,7 +214,7 @@ pub enum AuthzDecision {
 pub fn authorize(
     identity: &AuthIdentity,
     hook: &PolicyHook,
-    trace_id: &str,
+    _trace_id: &str,
 ) -> Result<AuthzDecision, ApiError> {
     if hook.required_roles.is_empty() {
         return Ok(AuthzDecision::Allow);
@@ -634,6 +635,22 @@ mod tests {
         let result = authenticate(Some("Bearer mytoken-abc"), &AuthMethod::BearerToken, "t-3");
         let identity = result.expect("auth bearer");
         assert!(identity.principal.starts_with("token:"));
+    }
+
+    #[test]
+    fn authenticate_api_key_handles_unicode_without_panicking() {
+        let result = authenticate(Some("ApiKey 🔐鍵🙂abc123"), &AuthMethod::ApiKey, "t-2u");
+        let identity = result.expect("auth api key");
+        let expected: String = "🔐鍵🙂abc123".chars().take(8).collect();
+        assert_eq!(identity.principal, format!("apikey:{expected}"));
+    }
+
+    #[test]
+    fn authenticate_bearer_handles_unicode_without_panicking() {
+        let result = authenticate(Some("Bearer 令牌🙂abcXYZ"), &AuthMethod::BearerToken, "t-3u");
+        let identity = result.expect("auth bearer");
+        let expected: String = "令牌🙂abcXYZ".chars().take(8).collect();
+        assert_eq!(identity.principal, format!("token:{expected}"));
     }
 
     #[test]

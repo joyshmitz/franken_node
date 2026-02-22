@@ -5,7 +5,6 @@
 //! Consumes expected-loss scoring, integrates degraded-mode status, and records every
 //! recommendation in the audit trail.
 
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};

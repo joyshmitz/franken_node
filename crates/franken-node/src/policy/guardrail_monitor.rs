@@ -14,7 +14,6 @@
 
 use std::fmt;
 
-use super::correctness_envelope::CorrectnessEnvelope;
 use super::hardening_state_machine::HardeningLevel;
 
 /// Stable event codes for structured logging.

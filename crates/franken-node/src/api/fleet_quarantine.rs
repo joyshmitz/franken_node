@@ -27,6 +27,7 @@ use super::middleware::{
     TraceContext,
 };
 use super::trust_card_routes::ApiResponse;
+use super::utf8_prefix;
 
 // ── Event Codes ───────────────────────────────────────────────────────────
 
@@ -912,14 +913,14 @@ pub fn handle_release(
     let result = FleetActionResult {
         operation_id: format!(
             "fleet-op-release-{}",
-            &trace.trace_id[..trace.trace_id.len().min(8)]
+            utf8_prefix(&trace.trace_id, 8)
         ),
         action_type: "release".to_string(),
         success: true,
         receipt: DecisionReceipt {
             receipt_id: format!(
                 "rcpt-release-{}",
-                &trace.trace_id[..trace.trace_id.len().min(8)]
+                utf8_prefix(&trace.trace_id, 8)
             ),
             issuer: identity.principal.clone(),
             issued_at: chrono::Utc::now().to_rfc3339(),
@@ -1581,6 +1582,24 @@ mod tests {
         let result = handle_reconcile(&admin_identity(), &test_trace()).expect("handle reconcile");
         assert!(result.ok);
         assert_eq!(result.data.action_type, "reconcile");
+    }
+
+    #[test]
+    fn handle_release_uses_utf8_safe_trace_prefix() {
+        let identity = admin_identity();
+        let trace = TraceContext {
+            trace_id: "🙂🙂🙂🙂🙂🙂🙂🙂🙂".to_string(),
+            span_id: "0000000000000001".to_string(),
+            trace_flags: 1,
+        };
+        let request = ReleaseRequest {
+            incident_id: "inc-1".to_string(),
+        };
+
+        let result = handle_release(&identity, &trace, &request).expect("release");
+        let expected: String = trace.trace_id.chars().take(8).collect();
+        assert_eq!(result.data.operation_id, format!("fleet-op-release-{expected}"));
+        assert_eq!(result.data.receipt.receipt_id, format!("rcpt-release-{expected}"));
     }
 
     // ── Serde round-trip tests ────────────────────────────────────────────

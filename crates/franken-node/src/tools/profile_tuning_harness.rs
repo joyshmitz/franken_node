@@ -12,9 +12,7 @@
 //! - **INV-PT-CHAIN**: Each bundle references the previous bundle's hash.
 
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
 use std::fmt;
-use std::hash::{Hash, Hasher};
 
 // ---------------------------------------------------------------------------
 // Event codes
