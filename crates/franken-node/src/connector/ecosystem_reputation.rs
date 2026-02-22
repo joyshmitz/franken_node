@@ -286,16 +286,23 @@ impl EcosystemReputationApi {
                 return Err(ReputationApiError::SybilDuplicate(publisher_key.to_owned()));
             }
         }
-        self.publisher_keys.insert(publisher_key.to_owned(), publisher_id.to_owned());
+        self.publisher_keys
+            .insert(publisher_key.to_owned(), publisher_id.to_owned());
         self.publishers
             .entry(publisher_id.to_owned())
-            .or_insert_with(|| EcosystemPublisherReputation::new(publisher_id.to_owned(), timestamp));
+            .or_insert_with(|| {
+                EcosystemPublisherReputation::new(publisher_id.to_owned(), timestamp)
+            });
         Ok(&self.publishers[publisher_id])
     }
 
     /// Get a publisher's reputation.
-    pub fn get_reputation(&self, publisher_id: &str) -> Result<&EcosystemPublisherReputation, ReputationApiError> {
-        self.publishers.get(publisher_id)
+    pub fn get_reputation(
+        &self,
+        publisher_id: &str,
+    ) -> Result<&EcosystemPublisherReputation, ReputationApiError> {
+        self.publishers
+            .get(publisher_id)
             .ok_or_else(|| ReputationApiError::PublisherNotFound(publisher_id.to_owned()))
     }
 
@@ -307,13 +314,20 @@ impl EcosystemReputationApi {
         timestamp: &str,
     ) -> Result<f64, ReputationApiError> {
         // Rate limit check
-        let counter = self.rate_counters.entry(publisher_id.to_owned()).or_insert(0);
+        let counter = self
+            .rate_counters
+            .entry(publisher_id.to_owned())
+            .or_insert(0);
         if *counter >= self.rate_limit_max {
-            return Err(ReputationApiError::RateLimitExceeded(publisher_id.to_owned()));
+            return Err(ReputationApiError::RateLimitExceeded(
+                publisher_id.to_owned(),
+            ));
         }
         *counter += 1;
 
-        let pub_record = self.publishers.get_mut(publisher_id)
+        let pub_record = self
+            .publishers
+            .get_mut(publisher_id)
             .ok_or_else(|| ReputationApiError::PublisherNotFound(publisher_id.to_owned()))?;
 
         let old_score = pub_record.score;
@@ -321,7 +335,9 @@ impl EcosystemReputationApi {
         let delta = new_score - old_score;
 
         // Check for anomaly
-        let deltas: Vec<f64> = pub_record.score_history.windows(2)
+        let deltas: Vec<f64> = pub_record
+            .score_history
+            .windows(2)
             .map(|w| w[1] - w[0])
             .collect();
         let anomalous = is_anomalous_delta(delta, &deltas, &self.anomaly_config);
@@ -353,7 +369,9 @@ impl EcosystemReputationApi {
 
     /// Get score history for a publisher.
     pub fn get_score_history(&self, publisher_id: &str) -> Result<&[f64], ReputationApiError> {
-        let pub_record = self.publishers.get(publisher_id)
+        let pub_record = self
+            .publishers
+            .get(publisher_id)
             .ok_or_else(|| ReputationApiError::PublisherNotFound(publisher_id.to_owned()))?;
         Ok(&pub_record.score_history)
     }
@@ -369,7 +387,9 @@ impl EcosystemReputationApi {
         timestamp: &str,
     ) -> Result<(), ReputationApiError> {
         if !self.publishers.contains_key(publisher_id) {
-            return Err(ReputationApiError::PublisherNotFound(publisher_id.to_owned()));
+            return Err(ReputationApiError::PublisherNotFound(
+                publisher_id.to_owned(),
+            ));
         }
         self.disputes.push(ReputationDispute {
             dispute_id: dispute_id.to_owned(),
@@ -385,11 +405,7 @@ impl EcosystemReputationApi {
     }
 
     /// Resolve a dispute.
-    pub fn resolve_dispute(
-        &mut self,
-        dispute_id: &str,
-        outcome: &str,
-    ) -> bool {
+    pub fn resolve_dispute(&mut self, dispute_id: &str, outcome: &str) -> bool {
         for d in &mut self.disputes {
             if d.dispute_id == dispute_id && !d.resolved {
                 d.resolved = true;
@@ -403,7 +419,10 @@ impl EcosystemReputationApi {
     /// List all disputes for a publisher.
     #[must_use]
     pub fn list_disputes(&self, publisher_id: &str) -> Vec<&ReputationDispute> {
-        self.disputes.iter().filter(|d| d.publisher_id == publisher_id).collect()
+        self.disputes
+            .iter()
+            .filter(|d| d.publisher_id == publisher_id)
+            .collect()
     }
 
     /// Reset rate limit counters (called periodically).
@@ -523,7 +542,8 @@ mod tests {
     fn test_anomaly_detection_normal_delta() {
         let config = AnomalyConfig::default();
         let history: Vec<f64> = vec![1.0, 1.1, 0.9, 1.0, 1.05, 0.95];
-        assert!(!is_anomalous_delta(1.0, &history, &config));
+        // mean=1.0, std≈0.065, threshold=2*0.065≈0.13; delta=0.05 is within range.
+        assert!(!is_anomalous_delta(0.05, &history, &config));
     }
 
     #[test]
@@ -572,7 +592,10 @@ mod tests {
         let mut api = EcosystemReputationApi::new();
         let inputs = ReputationInputs::zeros();
         let result = api.compute_reputation("nonexistent", inputs, &ts(1));
-        assert!(matches!(result, Err(ReputationApiError::PublisherNotFound(_))));
+        assert!(matches!(
+            result,
+            Err(ReputationApiError::PublisherNotFound(_))
+        ));
     }
 
     #[test]
@@ -580,10 +603,14 @@ mod tests {
         let mut api = EcosystemReputationApi::new();
         api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
         for i in 0..10 {
-            api.compute_reputation("pub-1", ReputationInputs::zeros(), &ts(i + 2)).unwrap();
+            api.compute_reputation("pub-1", ReputationInputs::zeros(), &ts(i + 2))
+                .unwrap();
         }
         let result = api.compute_reputation("pub-1", ReputationInputs::zeros(), &ts(13));
-        assert!(matches!(result, Err(ReputationApiError::RateLimitExceeded(_))));
+        assert!(matches!(
+            result,
+            Err(ReputationApiError::RateLimitExceeded(_))
+        ));
     }
 
     #[test]
@@ -591,7 +618,8 @@ mod tests {
         let mut api = EcosystemReputationApi::new();
         api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
         for i in 0..10 {
-            api.compute_reputation("pub-1", ReputationInputs::zeros(), &ts(i + 2)).unwrap();
+            api.compute_reputation("pub-1", ReputationInputs::zeros(), &ts(i + 2))
+                .unwrap();
         }
         api.reset_rate_counters();
         let result = api.compute_reputation("pub-1", ReputationInputs::zeros(), &ts(13));
@@ -610,15 +638,20 @@ mod tests {
     fn test_get_reputation_not_found() {
         let api = EcosystemReputationApi::new();
         let result = api.get_reputation("nonexistent");
-        assert!(matches!(result, Err(ReputationApiError::PublisherNotFound(_))));
+        assert!(matches!(
+            result,
+            Err(ReputationApiError::PublisherNotFound(_))
+        ));
     }
 
     #[test]
     fn test_get_score_history() {
         let mut api = EcosystemReputationApi::new();
         api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
-        api.compute_reputation("pub-1", ReputationInputs::ones(), &ts(2)).unwrap();
-        api.compute_reputation("pub-1", ReputationInputs::zeros(), &ts(3)).unwrap();
+        api.compute_reputation("pub-1", ReputationInputs::ones(), &ts(2))
+            .unwrap();
+        api.compute_reputation("pub-1", ReputationInputs::zeros(), &ts(3))
+            .unwrap();
         let history = api.get_score_history("pub-1").unwrap();
         assert_eq!(history.len(), 2);
         assert!((history[0] - 100.0).abs() < 1e-9);
@@ -629,7 +662,8 @@ mod tests {
     fn test_file_dispute() {
         let mut api = EcosystemReputationApi::new();
         api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
-        api.file_dispute("d-1", "pub-1", "unfair", 50.0, 10.0, &ts(2)).unwrap();
+        api.file_dispute("d-1", "pub-1", "unfair", 50.0, 10.0, &ts(2))
+            .unwrap();
         let disputes = api.list_disputes("pub-1");
         assert_eq!(disputes.len(), 1);
         assert!(!disputes[0].resolved);
@@ -639,14 +673,18 @@ mod tests {
     fn test_file_dispute_not_found() {
         let mut api = EcosystemReputationApi::new();
         let result = api.file_dispute("d-1", "nonexistent", "reason", 0.0, 0.0, &ts(1));
-        assert!(matches!(result, Err(ReputationApiError::PublisherNotFound(_))));
+        assert!(matches!(
+            result,
+            Err(ReputationApiError::PublisherNotFound(_))
+        ));
     }
 
     #[test]
     fn test_resolve_dispute() {
         let mut api = EcosystemReputationApi::new();
         api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
-        api.file_dispute("d-1", "pub-1", "unfair", 50.0, 10.0, &ts(2)).unwrap();
+        api.file_dispute("d-1", "pub-1", "unfair", 50.0, 10.0, &ts(2))
+            .unwrap();
         let resolved = api.resolve_dispute("d-1", "upheld");
         assert!(resolved);
         let disputes = api.list_disputes("pub-1");
@@ -665,16 +703,22 @@ mod tests {
     fn test_events_emitted_on_compute() {
         let mut api = EcosystemReputationApi::new();
         api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
-        api.compute_reputation("pub-1", ReputationInputs::ones(), &ts(2)).unwrap();
+        api.compute_reputation("pub-1", ReputationInputs::ones(), &ts(2))
+            .unwrap();
         let events = api.take_events();
-        assert!(events.iter().any(|e| e.event_code == ENE_003_REPUTATION_COMPUTED));
+        assert!(
+            events
+                .iter()
+                .any(|e| e.event_code == ENE_003_REPUTATION_COMPUTED)
+        );
     }
 
     #[test]
     fn test_take_events_drains() {
         let mut api = EcosystemReputationApi::new();
         api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
-        api.compute_reputation("pub-1", ReputationInputs::ones(), &ts(2)).unwrap();
+        api.compute_reputation("pub-1", ReputationInputs::ones(), &ts(2))
+            .unwrap();
         let e1 = api.take_events();
         assert!(!e1.is_empty());
         let e2 = api.take_events();

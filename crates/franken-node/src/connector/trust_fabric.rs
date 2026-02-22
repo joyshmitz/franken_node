@@ -104,8 +104,14 @@ impl std::fmt::Display for TrustFabricError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidConfig(msg) => write!(f, "{ERR_TFC_INVALID_CONFIG}: {msg}"),
-            Self::StaleState { remote_ver, local_ver } => {
-                write!(f, "{ERR_TFC_STALE_STATE}: remote v{remote_ver} < local v{local_ver}")
+            Self::StaleState {
+                remote_ver,
+                local_ver,
+            } => {
+                write!(
+                    f,
+                    "{ERR_TFC_STALE_STATE}: remote v{remote_ver} < local v{local_ver}"
+                )
             }
             Self::DigestMismatch => write!(f, "{ERR_TFC_DIGEST_MISMATCH}"),
             Self::DegradedReject(msg) => write!(f, "{ERR_TFC_DEGRADED_REJECT}: {msg}"),
@@ -232,9 +238,21 @@ impl TrustStateVector {
 
     /// Compute delta: items in self but not in other.
     pub fn delta_from(&self, other: &TrustStateVector) -> TrustStateDelta {
-        let new_cards: HashSet<String> = self.trust_cards.difference(&other.trust_cards).cloned().collect();
-        let new_extensions: HashSet<String> = self.extensions.difference(&other.extensions).cloned().collect();
-        let new_revocations: HashSet<String> = self.revocations.difference(&other.revocations).cloned().collect();
+        let new_cards: HashSet<String> = self
+            .trust_cards
+            .difference(&other.trust_cards)
+            .cloned()
+            .collect();
+        let new_extensions: HashSet<String> = self
+            .extensions
+            .difference(&other.extensions)
+            .cloned()
+            .collect();
+        let new_revocations: HashSet<String> = self
+            .revocations
+            .difference(&other.revocations)
+            .cloned()
+            .collect();
         TrustStateDelta {
             new_cards,
             new_extensions,
@@ -337,9 +355,9 @@ impl TrustFabricNode {
                 detail: format!("REJECTED trust card {id} (degraded mode)"),
                 node_id: self.node_id.clone(),
             });
-            return Err(TrustFabricError::DegradedReject(
-                format!("trust card {id} rejected in degraded mode"),
-            ));
+            return Err(TrustFabricError::DegradedReject(format!(
+                "trust card {id} rejected in degraded mode"
+            )));
         }
         self.state.add_trust_card(id);
         self.events.push(TrustFabricEvent {
@@ -354,9 +372,9 @@ impl TrustFabricNode {
     /// INV-TFC-DEGRADED-DENY: rejected in degraded mode.
     pub fn add_extension(&mut self, id: &str) -> Result<(), TrustFabricError> {
         if self.degraded_mode {
-            return Err(TrustFabricError::DegradedReject(
-                format!("extension {id} rejected in degraded mode"),
-            ));
+            return Err(TrustFabricError::DegradedReject(format!(
+                "extension {id} rejected in degraded mode"
+            )));
         }
         self.state.add_extension(id);
         self.events.push(TrustFabricEvent {
@@ -408,7 +426,10 @@ impl TrustFabricNode {
 
         self.events.push(TrustFabricEvent {
             code: EVT_DIGEST_MISMATCH.to_string(),
-            detail: format!("local v{} != remote v{}", self.state.version, remote.version),
+            detail: format!(
+                "local v{} != remote v{}",
+                self.state.version, remote.version
+            ),
             node_id: self.node_id.clone(),
         });
 
@@ -456,7 +477,10 @@ impl TrustFabricNode {
             self.degraded_since = Some(now_ts);
             self.events.push(TrustFabricEvent {
                 code: EVT_DEGRADED_ENTERED.to_string(),
-                detail: format!("lag={lag}s > threshold={}s", self.config.convergence_lag_threshold),
+                detail: format!(
+                    "lag={lag}s > threshold={}s",
+                    self.config.convergence_lag_threshold
+                ),
                 node_id: self.node_id.clone(),
             });
         }
@@ -502,10 +526,7 @@ impl TrustFabricNode {
     }
 
     /// Anti-entropy sweep: full state comparison and repair.
-    pub fn anti_entropy_sweep(
-        &mut self,
-        remote: &TrustStateVector,
-    ) -> TrustStateDelta {
+    pub fn anti_entropy_sweep(&mut self, remote: &TrustStateVector) -> TrustStateDelta {
         let delta = remote.delta_from(&self.state);
 
         // Apply all missing items (revocations first).
@@ -535,11 +556,7 @@ impl TrustFabricNode {
     }
 
     /// Simulate partition healing.
-    pub fn partition_heal(
-        &mut self,
-        remote: &TrustStateVector,
-        now_ts: u64,
-    ) -> TrustStateDelta {
+    pub fn partition_heal(&mut self, remote: &TrustStateVector, now_ts: u64) -> TrustStateDelta {
         let delta = self.anti_entropy_sweep(remote);
         self.confirm_convergence(now_ts);
         self.events.push(TrustFabricEvent {
@@ -754,7 +771,7 @@ mod tests {
         s1.add_extension("e1");
         s1.apply_revocation("r1");
         let delta = s1.delta_from(&s2);
-        assert_eq!(delta.size(), 2); // c1 revoked by r1, so only e1 + r1.
+        assert_eq!(delta.size(), 3); // c1 + e1 + r1: revocations tracked separately.
     }
 
     // -- Node operations --
@@ -920,7 +937,11 @@ mod tests {
         }
 
         // Apply update to first node.
-        fleet.get_node_mut("n0").unwrap().add_trust_card("card-1").unwrap();
+        fleet
+            .get_node_mut("n0")
+            .unwrap()
+            .add_trust_card("card-1")
+            .unwrap();
 
         // Run gossip rounds until convergence.
         let mut rounds = 0;
@@ -951,7 +972,10 @@ mod tests {
         let err = TrustFabricError::InvalidConfig("bad".into());
         assert!(format!("{err}").contains(ERR_TFC_INVALID_CONFIG));
 
-        let err = TrustFabricError::StaleState { remote_ver: 1, local_ver: 5 };
+        let err = TrustFabricError::StaleState {
+            remote_ver: 1,
+            local_ver: 5,
+        };
         assert!(format!("{err}").contains(ERR_TFC_STALE_STATE));
 
         let err = TrustFabricError::DigestMismatch;

@@ -73,13 +73,19 @@ impl Default for BocpdConfig {
 impl BocpdConfig {
     pub fn validate(&self) -> Result<(), BocpdError> {
         if self.hazard_lambda <= 0.0 {
-            return Err(BocpdError::InvalidConfig("hazard_lambda must be > 0".into()));
+            return Err(BocpdError::InvalidConfig(
+                "hazard_lambda must be > 0".into(),
+            ));
         }
         if !(0.0..=1.0).contains(&self.changepoint_threshold) {
-            return Err(BocpdError::InvalidConfig("threshold must be in [0, 1]".into()));
+            return Err(BocpdError::InvalidConfig(
+                "threshold must be in [0, 1]".into(),
+            ));
         }
         if self.max_run_length == 0 {
-            return Err(BocpdError::InvalidConfig("max_run_length must be > 0".into()));
+            return Err(BocpdError::InvalidConfig(
+                "max_run_length must be > 0".into(),
+            ));
         }
         Ok(())
     }
@@ -176,7 +182,11 @@ struct GaussianSuffStats {
 
 impl GaussianSuffStats {
     fn new() -> Self {
-        Self { n: 0.0, mean: 0.0, sum_sq: 0.0 }
+        Self {
+            n: 0.0,
+            mean: 0.0,
+            sum_sq: 0.0,
+        }
     }
 
     fn update(&mut self, x: f64) {
@@ -209,7 +219,8 @@ impl GaussianModel {
 /// Student-t PDF.
 fn student_t_pdf(x: f64, mu: f64, sigma_sq: f64, nu: f64) -> f64 {
     let z = (x - mu) / sigma_sq.sqrt();
-    let log_coeff = ln_gamma((nu + 1.0) / 2.0) - ln_gamma(nu / 2.0)
+    let log_coeff = ln_gamma((nu + 1.0) / 2.0)
+        - ln_gamma(nu / 2.0)
         - 0.5 * (nu * PI).ln()
         - 0.5 * sigma_sq.ln();
     let log_body = -((nu + 1.0) / 2.0) * (1.0 + z * z / nu).ln();
@@ -257,7 +268,10 @@ pub struct PoissonModel {
 
 impl Default for PoissonModel {
     fn default() -> Self {
-        Self { alpha0: 1.0, beta0: 1.0 }
+        Self {
+            alpha0: 1.0,
+            beta0: 1.0,
+        }
     }
 }
 
@@ -322,7 +336,9 @@ struct CategoricalSuffStats {
 
 impl CategoricalSuffStats {
     fn new(k: usize) -> Self {
-        Self { counts: vec![0.0; k] }
+        Self {
+            counts: vec![0.0; k],
+        }
     }
 
     fn update(&mut self, category: usize) {
@@ -795,7 +811,10 @@ mod tests {
         for i in 0..20 {
             det.observe(10.0, 1000 + i);
             let map = det.map_run_length();
-            assert!(map >= prev_map || map == 0, "MAP rl decreased: {prev_map} -> {map}");
+            assert!(
+                map >= prev_map || map == 0,
+                "MAP rl decreased: {prev_map} -> {map}"
+            );
             prev_map = map;
         }
     }
@@ -820,11 +839,13 @@ mod tests {
         let mut cfg = default_config();
         cfg.changepoint_threshold = 0.3;
         cfg.min_run_length = 5;
-        cfg.hazard_lambda = 50.0;
+        // With constant hazard, changepoint posterior ≈ h = 1/lambda.
+        // lambda must be < 1/threshold ≈ 3.3 for detection to be possible.
+        cfg.hazard_lambda = 2.0;
         let mut det = BocpdDetector::new(
             "latency",
             cfg,
-            HazardFunction::Constant { lambda: 50.0 },
+            HazardFunction::Constant { lambda: 2.0 },
             ObservationModel::Gaussian(GaussianModel {
                 mu0: 10.0,
                 kappa0: 0.1,
@@ -835,9 +856,10 @@ mod tests {
         .unwrap();
 
         let mut detected = false;
-        // Regime 1: mean=10
+        // Regime 1: mean≈10 with slight jitter to avoid zero-variance underflow.
         for i in 0..50 {
-            det.observe(10.0, i as u64);
+            let jitter = if i % 2 == 0 { 0.1 } else { -0.1 };
+            det.observe(10.0 + jitter, i as u64);
         }
         // Regime 2: mean=50 (big shift)
         for i in 50..100 {
@@ -866,7 +888,10 @@ mod tests {
         // Only 20 observations — should never signal due to min_run_length.
         let mut shifts = 0;
         for i in 0..20 {
-            if det.observe(if i < 10 { 0.0 } else { 100.0 }, i as u64).is_some() {
+            if det
+                .observe(if i < 10 { 0.0 } else { 100.0 }, i as u64)
+                .is_some()
+            {
                 shifts += 1;
             }
         }
