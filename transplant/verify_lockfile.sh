@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-# transplant/verify_lockfile.sh — Verify transplant snapshot against lockfile
-# Usage: ./transplant/verify_lockfile.sh [--json] [--quiet]
+# transplant/verify_lockfile.sh — Verify transplant snapshot against lockfile.
+#
+# Usage:
+#   ./transplant/verify_lockfile.sh \
+#     [--json] \
+#     [--quiet] \
+#     [--lockfile PATH] \
+#     [--snapshot-dir PATH]
 #
 # Exit codes:
 #   0 = PASS (all entries verified, no extras)
-#   1 = FAIL (mismatches, missing files, or extras detected)
-#   2 = ERROR (lockfile not found, parse error, etc.)
+#   1 = FAIL (mismatches, missing files, extras, parse/count problems)
+#   2 = ERROR (lockfile/snapshot missing, invalid usage)
 
 set -euo pipefail
 
@@ -16,20 +22,64 @@ SNAPSHOT_DIR="${SCRIPT_DIR}/pi_agent_rust"
 JSON_OUTPUT=false
 QUIET=false
 
-for arg in "$@"; do
-  case "$arg" in
-    --json) JSON_OUTPUT=true ;;
-    --quiet) QUIET=true ;;
+usage() {
+  cat <<'USAGE'
+Usage: verify_lockfile.sh [options]
+  --json                 Output structured JSON report.
+  --quiet                Suppress mismatch/missing/extra line diagnostics.
+  --lockfile PATH        Override lockfile path.
+  --snapshot-dir PATH    Override snapshot directory.
+  --help, -h             Show this help.
+USAGE
+}
+
+discover_snapshot_files() {
+  if command -v fd >/dev/null 2>&1; then
+    fd --type file .
+  else
+    find . -type f -print
+  fi
+}
+
+to_json_array() {
+  if [ "$#" -eq 0 ]; then
+    echo "[]"
+    return
+  fi
+  printf '%s\n' "$@" \
+    | python3 -c 'import json,sys; print(json.dumps([line.rstrip("\n") for line in sys.stdin if line.strip()]))'
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json)
+      JSON_OUTPUT=true
+      shift
+      ;;
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    --lockfile)
+      LOCKFILE="$2"
+      shift 2
+      ;;
+    --snapshot-dir)
+      SNAPSHOT_DIR="$2"
+      shift 2
+      ;;
     --help|-h)
-      echo "Usage: $0 [--json] [--quiet]"
-      echo "  --json   Output structured JSON report"
-      echo "  --quiet  Suppress progress output (exit code only)"
+      usage
       exit 0
+      ;;
+    *)
+      echo "ERROR: Unknown argument: $1" >&2
+      usage >&2
+      exit 2
       ;;
   esac
 done
 
-# Validate prerequisites
 if [ ! -f "$LOCKFILE" ]; then
   echo "ERROR: Lockfile not found: $LOCKFILE" >&2
   exit 2
@@ -39,99 +89,161 @@ if [ ! -d "$SNAPSHOT_DIR" ]; then
   exit 2
 fi
 
-# Parse header
-EXPECTED_COUNT=$(grep '^# entries:' "$LOCKFILE" | awk '{print $3}')
-SOURCE_ROOT=$(grep '^# source_root:' "$LOCKFILE" | sed 's/^# source_root: //')
-GENERATED_UTC=$(grep '^# generated_utc:' "$LOCKFILE" | sed 's/^# generated_utc: //')
+EXPECTED_COUNT="$(awk '/^# entries:/{print $3; exit}' "$LOCKFILE")"
+SOURCE_ROOT="$(awk -F': ' '/^# source_root:/{print $2; exit}' "$LOCKFILE")"
+GENERATED_UTC="$(awk -F': ' '/^# generated_utc:/{print $2; exit}' "$LOCKFILE")"
 
-# Count actual entries
-ACTUAL_COUNT=$(grep -v '^#' "$LOCKFILE" | grep -v '^$' | wc -l | tr -d ' ')
-
-if [ "$EXPECTED_COUNT" != "$ACTUAL_COUNT" ]; then
-  echo "FAIL:COUNT — header says $EXPECTED_COUNT entries but found $ACTUAL_COUNT" >&2
-  exit 1
+if ! [[ "$EXPECTED_COUNT" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: Invalid or missing '# entries:' header in $LOCKFILE" >&2
+  exit 2
 fi
 
-# Verify each entry
+declare -A LOCKFILE_HASHES=()
+declare -a LOCKFILE_PATHS=()
+declare -a PARSE_ERRORS=()
+
+while IFS= read -r line; do
+  [[ -z "$line" || "$line" == \#* ]] && continue
+  if [[ "$line" =~ ^([0-9a-f]{64})[[:space:]][[:space:]](.+)$ ]]; then
+    expected_hash="${BASH_REMATCH[1]}"
+    relpath="${BASH_REMATCH[2]}"
+    if [ -n "${LOCKFILE_HASHES[$relpath]+x}" ]; then
+      PARSE_ERRORS+=("duplicate-path:$relpath")
+      continue
+    fi
+    LOCKFILE_HASHES["$relpath"]="$expected_hash"
+    LOCKFILE_PATHS+=("$relpath")
+  else
+    PARSE_ERRORS+=("$line")
+  fi
+done < "$LOCKFILE"
+
+ACTUAL_COUNT="${#LOCKFILE_PATHS[@]}"
+COUNT_MISMATCH=0
+if [ "$EXPECTED_COUNT" -ne "$ACTUAL_COUNT" ]; then
+  COUNT_MISMATCH=1
+  $QUIET || echo "COUNT_MISMATCH: header=$EXPECTED_COUNT entries=$ACTUAL_COUNT" >&2
+fi
+
+declare -a MISMATCH_FILES=()
+declare -a MISSING_FILES=()
+declare -a EXTRA_FILES=()
 PASS=0
-MISMATCH=0
-MISSING=0
-MISMATCH_FILES=""
-MISSING_FILES=""
 
-while IFS='  ' read -r expected_hash relpath; do
-  [ -z "$expected_hash" ] && continue
+for relpath in "${LOCKFILE_PATHS[@]}"; do
   filepath="${SNAPSHOT_DIR}/${relpath}"
-
   if [ ! -f "$filepath" ]; then
-    MISSING=$((MISSING + 1))
-    MISSING_FILES="${MISSING_FILES}${relpath}\n"
+    MISSING_FILES+=("$relpath")
     $QUIET || echo "MISSING: $relpath" >&2
     continue
   fi
 
-  actual_hash=$(sha256sum "$filepath" | awk '{print $1}')
+  expected_hash="${LOCKFILE_HASHES[$relpath]}"
+  actual_hash="$(sha256sum "$filepath" | awk '{print $1}')"
   if [ "$actual_hash" = "$expected_hash" ]; then
     PASS=$((PASS + 1))
   else
-    MISMATCH=$((MISMATCH + 1))
-    MISMATCH_FILES="${MISMATCH_FILES}${relpath}\n"
+    MISMATCH_FILES+=("$relpath")
     $QUIET || echo "MISMATCH: $relpath (expected ${expected_hash:0:16}... got ${actual_hash:0:16}...)" >&2
   fi
-done < <(grep -v '^#' "$LOCKFILE" | grep -v '^$')
+done
 
-# Scan for extra files not in lockfile
-LOCKFILE_PATHS=$(grep -v '^#' "$LOCKFILE" | grep -v '^$' | awk '{print $2}' | sort)
-SNAPSHOT_PATHS=$(cd "$SNAPSHOT_DIR" && fd --type file . | sed 's|^\./||' | sort)
-EXTRA_FILES=$(comm -13 <(echo "$LOCKFILE_PATHS") <(echo "$SNAPSHOT_PATHS") | grep -v '^$' || true)
-if [ -z "$EXTRA_FILES" ]; then
-  EXTRA_COUNT=0
-else
-  EXTRA_COUNT=$(echo "$EXTRA_FILES" | wc -l | tr -d ' ')
+while IFS= read -r relpath; do
+  [ -z "$relpath" ] && continue
+  if [ -z "${LOCKFILE_HASHES[$relpath]+x}" ]; then
+    EXTRA_FILES+=("$relpath")
+    $QUIET || echo "EXTRA: $relpath" >&2
+  fi
+done < <(
+  cd "$SNAPSHOT_DIR"
+  discover_snapshot_files \
+    | sed -e 's|^\./||' -e 's|^/||' -e 's/\r$//' \
+    | LC_ALL=C sort -u
+)
+
+MISMATCH_COUNT="${#MISMATCH_FILES[@]}"
+MISSING_COUNT="${#MISSING_FILES[@]}"
+EXTRA_COUNT="${#EXTRA_FILES[@]}"
+PARSE_ERROR_COUNT="${#PARSE_ERRORS[@]}"
+
+declare -a FAILING_CATEGORIES=()
+if [ "$PARSE_ERROR_COUNT" -gt 0 ]; then FAILING_CATEGORIES+=("parse"); fi
+if [ "$COUNT_MISMATCH" -eq 1 ]; then FAILING_CATEGORIES+=("count"); fi
+if [ "$MISMATCH_COUNT" -gt 0 ]; then FAILING_CATEGORIES+=("mismatch"); fi
+if [ "$MISSING_COUNT" -gt 0 ]; then FAILING_CATEGORIES+=("missing"); fi
+if [ "$EXTRA_COUNT" -gt 0 ]; then FAILING_CATEGORIES+=("extra"); fi
+
+VERDICT="PASS"
+if [ "$PARSE_ERROR_COUNT" -gt 0 ]; then
+  VERDICT="FAIL:PARSE"
+elif [ "$COUNT_MISMATCH" -eq 1 ]; then
+  VERDICT="FAIL:COUNT"
+elif [ "$MISMATCH_COUNT" -gt 0 ]; then
+  VERDICT="FAIL:MISMATCH"
+elif [ "$MISSING_COUNT" -gt 0 ]; then
+  VERDICT="FAIL:MISSING"
+elif [ "$EXTRA_COUNT" -gt 0 ]; then
+  VERDICT="FAIL:EXTRA"
 fi
 
-# Determine verdict
-VERDICT="PASS"
-if [ "$MISMATCH" -gt 0 ]; then VERDICT="FAIL:MISMATCH"; fi
-if [ "$MISSING" -gt 0 ]; then VERDICT="FAIL:MISSING"; fi
-if [ "$EXTRA_COUNT" -gt 0 ] && [ -n "$EXTRA_FILES" ]; then VERDICT="FAIL:EXTRA"; fi
-
-# Output
+TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if $JSON_OUTPUT; then
+  mismatch_json="$(to_json_array "${MISMATCH_FILES[@]}")"
+  missing_json="$(to_json_array "${MISSING_FILES[@]}")"
+  extra_json="$(to_json_array "${EXTRA_FILES[@]}")"
+  parse_json="$(to_json_array "${PARSE_ERRORS[@]}")"
+  categories_json="$(to_json_array "${FAILING_CATEGORIES[@]}")"
+
   cat <<ENDJSON
 {
   "verdict": "$VERDICT",
   "lockfile": "$(basename "$LOCKFILE")",
-  "snapshot_dir": "$(basename "$SNAPSHOT_DIR")",
+  "snapshot_dir": "$SNAPSHOT_DIR",
   "source_root": "$SOURCE_ROOT",
   "generated_utc": "$GENERATED_UTC",
   "expected_entries": $EXPECTED_COUNT,
+  "parsed_entries": $ACTUAL_COUNT,
   "verified_ok": $PASS,
-  "mismatched": $MISMATCH,
-  "missing": $MISSING,
+  "mismatched": $MISMATCH_COUNT,
+  "missing": $MISSING_COUNT,
   "extra": $EXTRA_COUNT,
-  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  "parse_errors": $PARSE_ERROR_COUNT,
+  "count_mismatch": $COUNT_MISMATCH,
+  "failing_categories": $categories_json,
+  "details": {
+    "mismatched_files": $mismatch_json,
+    "missing_files": $missing_json,
+    "extra_files": $extra_json,
+    "parse_error_lines": $parse_json
+  },
+  "timestamp": "$TIMESTAMP"
 }
 ENDJSON
 else
   echo ""
   echo "=== Transplant Lockfile Verification ==="
-  echo "Lockfile:    $(basename "$LOCKFILE")"
-  echo "Snapshot:    $(basename "$SNAPSHOT_DIR")/"
-  echo "Source:      $SOURCE_ROOT"
-  echo "Generated:   $GENERATED_UTC"
+  echo "Lockfile:       $(basename "$LOCKFILE")"
+  echo "Snapshot dir:   $SNAPSHOT_DIR"
+  echo "Source root:    $SOURCE_ROOT"
+  echo "Generated UTC:  $GENERATED_UTC"
   echo ""
-  echo "Entries:     $EXPECTED_COUNT"
-  echo "Verified OK: $PASS"
-  echo "Mismatched:  $MISMATCH"
-  echo "Missing:     $MISSING"
-  echo "Extra:       $EXTRA_COUNT"
+  echo "Expected count: $EXPECTED_COUNT"
+  echo "Parsed entries: $ACTUAL_COUNT"
+  echo "Verified OK:    $PASS"
+  echo "Mismatched:     $MISMATCH_COUNT"
+  echo "Missing:        $MISSING_COUNT"
+  echo "Extra:          $EXTRA_COUNT"
+  echo "Parse errors:   $PARSE_ERROR_COUNT"
   echo ""
-  echo "Verdict:     $VERDICT"
+  if [ "${#FAILING_CATEGORIES[@]}" -gt 0 ]; then
+    echo "Failing categories: ${FAILING_CATEGORIES[*]}"
+  else
+    echo "Failing categories: none"
+  fi
+  echo "Verdict:        $VERDICT"
 fi
 
 if [ "$VERDICT" = "PASS" ]; then
   exit 0
-else
-  exit 1
 fi
+exit 1

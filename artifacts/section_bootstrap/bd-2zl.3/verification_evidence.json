@@ -1,0 +1,21 @@
+{
+  "bead": "bd-2zl.3",
+  "generated_at_utc": "2026-02-22T18:01:41Z",
+  "touched": [
+    "tests/test_transplant_lockfile_scripts.py"
+  ],
+  "command": {
+    "cmd": "python3 -m unittest tests/test_transplant_lockfile_scripts.py -v",
+    "exit_code": 0,
+    "tests_run": 6,
+    "failures": 0,
+    "errors": 0,
+    "log_path": "artifacts/section_bootstrap/bd-2zl.3/unittest_transplant_lockfile_scripts.log",
+    "exit_path": "artifacts/section_bootstrap/bd-2zl.3/unittest_transplant_lockfile_scripts.exit"
+  },
+  "new_cases": [
+    "test_generate_rejects_invalid_generated_utc",
+    "test_verify_reports_parse_error_for_malformed_entry",
+    "test_verify_reports_count_mismatch_for_bad_header"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "bead": "bd-175t",
+  "generated_at_utc": "2026-02-22T17:55:22Z",
+  "pre_fix": {
+    "command": "rch exec -- cargo test -p frankenengine-node --test cx_first_api_gate -- --nocapture",
+    "exit_code": 101,
+    "log_path": "artifacts/section_10_15/bd-175t/rch_cx_first_api_gate_pre_fix.log",
+    "exit_path": "artifacts/section_10_15/bd-175t/rch_cx_first_api_gate_pre_fix.exit",
+    "signature": "Io(NotFound) when ast-grep binary is missing"
+  },
+  "post_fix": {
+    "command": "rch exec -- env CARGO_TARGET_DIR=target/rch_bd175t_postfix cargo test -p frankenengine-node --test cx_first_api_gate -- --nocapture",
+    "exit_code": 0,
+    "log_path": "artifacts/section_10_15/bd-175t/rch_cx_first_api_gate_post_fix.log",
+    "exit_path": "artifacts/section_10_15/bd-175t/rch_cx_first_api_gate_post_fix.exit",
+    "tests": {
+      "total": 7,
+      "passed": 7,
+      "failed": 0
+    },
+    "contains_test": "falls_back_to_syn_when_ast_grep_binary_missing"
+  },
+  "stalled_attempt": {
+    "log_path": "artifacts/section_10_15/bd-175t/rch_cx_first_api_gate_post_fix_stalled.log",
+    "reason": "artifact lock wait on shared target"
+  }
+}

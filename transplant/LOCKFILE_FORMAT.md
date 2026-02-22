@@ -2,7 +2,7 @@
 
 ## Version
 
-v1 (2026-02-20)
+v1.1 (2026-02-22)
 
 ## Purpose
 
@@ -13,7 +13,7 @@ The transplant lockfile provides tamper detection for snapshot assets transplant
 ```
 # TRANSPLANT LOCKFILE (sha256)
 # source_root: <absolute path to source repo>
-# manifest: <relative path to manifest file>
+# manifest: <manifest identifier/path>
 # entries: <integer count of hash entries>
 # generated_utc: <ISO-8601 UTC timestamp>
 
@@ -27,28 +27,27 @@ The transplant lockfile provides tamper detection for snapshot assets transplant
 | Field | Required | Description |
 |-------|----------|-------------|
 | `source_root` | yes | Absolute path to the upstream source repository at generation time |
-| `manifest` | yes | Relative path to the file inventory (transplant_manifest.txt) |
-| `entries` | yes | Exact count of hash entries (must match actual line count) |
-| `generated_utc` | yes | ISO-8601 UTC timestamp of lockfile generation |
+| `manifest` | yes | Manifest identifier/path used to derive file inventory |
+| `entries` | yes | Exact count of hash entries (must match parsed entry count) |
+| `generated_utc` | yes | ISO-8601 UTC timestamp metadata |
+
+### Deterministic Generation Rules
+
+- Generator sorts relative paths using `LC_ALL=C sort -u`.
+- Relative paths are normalized to remove leading `./` or `/`.
+- Default `generated_utc` is fixed to `1970-01-01T00:00:00Z` for reproducibility.
+- Override timestamp only when needed via:
+  - `--generated-utc <YYYY-MM-DDTHH:MM:SSZ|now>`
+  - `TRANSPLANT_LOCKFILE_GENERATED_UTC=<...>`
+
+With the default timestamp behavior, equivalent inputs produce byte-identical lockfiles.
 
 ### Entry Format
 
 Each non-comment, non-empty line is a hash entry:
-- Two space-separated fields: `<sha256hex>  <relative-path>`
+- Two-space separator: `<sha256hex>  <relative-path>`
 - `sha256hex`: lowercase hexadecimal SHA-256 digest (64 characters)
-- `relative-path`: path relative to the snapshot root, using forward slashes
-- Separator: two spaces (matching `sha256sum -c` format)
-
-### Canonical Ordering
-
-Entries are ordered by the file discovery order at generation time. For verification purposes, ordering does not affect correctness — verification is path-keyed.
-
-### Path Normalization
-
-- Paths use forward slashes regardless of platform
-- No leading `./` prefix
-- No trailing slashes
-- UTF-8 encoding
+- `relative-path`: UTF-8 path relative to snapshot root
 
 ## Verification Semantics
 
@@ -57,21 +56,23 @@ Entries are ordered by the file discovery order at generation time. For verifica
 | Outcome | Meaning |
 |---------|---------|
 | `PASS` | All entries match: same files, same hashes, no extras |
+| `FAIL:PARSE` | One or more lockfile entries are malformed or duplicate |
+| `FAIL:COUNT` | Header `entries` does not match parsed entry count |
 | `FAIL:MISMATCH` | One or more files have different SHA-256 digests |
 | `FAIL:MISSING` | One or more lockfile entries have no corresponding file |
 | `FAIL:EXTRA` | Files exist in snapshot that are not in the lockfile |
-| `FAIL:COUNT` | Header entry count does not match actual entry count |
 
 ### Verification Algorithm
 
-1. Parse header; validate `entries` count matches actual entry count
-2. For each entry, compute SHA-256 of the corresponding file under snapshot root
-3. Compare computed digest against lockfile digest
-4. Scan snapshot directory for files not present in lockfile
-5. Emit structured verification report
+1. Parse header; validate `entries` is present and numeric.
+2. Parse each entry line using strict `<64-hex><two spaces><path>` format.
+3. Reject duplicate paths and malformed lines as parse failures.
+4. Compute SHA-256 for each listed file under snapshot root.
+5. Detect extra files in snapshot not represented in lockfile.
+6. Emit structured report including failing categories and detailed path lists.
 
 ## Downstream Consumers
 
 - `bd-29q`: Drift detection workflow uses lockfile as baseline
-- CI pipeline: Pre-merge verification gate
+- CI pipeline: pre-merge verification gate
 - `bd-3k9t`: E2E test scripts validate restore → lockfile → verify flow

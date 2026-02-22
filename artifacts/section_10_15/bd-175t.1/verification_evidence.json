@@ -1,0 +1,15 @@
+{
+  "bead_id": "bd-175t.1",
+  "timestamp_utc": "2026-02-22T17:53:24Z",
+  "command": "rch exec -- cargo test -p frankenengine-node --test cx_first_api_gate -- --nocapture",
+  "exit_code": 0,
+  "result": {
+    "tests_passed": 7,
+    "tests_failed": 0,
+    "contains_fallback_test_pass": true
+  },
+  "notes": [
+    "Fallback test for missing ast-grep passed on worker run",
+    "Warnings observed in unrelated modules; no targeted test failure"
+  ]
+}

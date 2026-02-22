@@ -2,7 +2,7 @@
 # source_root: /data/projects/pi_agent_rust
 # manifest: transplant_manifest.txt
 # entries: 369
-# generated_utc: 2026-02-20T08:15:46Z
+# generated_utc: 1970-01-01T00:00:00Z
 
 af287a5fa1f0da73c75630afc04eb37679757cc07c2146369e1614e3a092371e  docs/capability-prompts.md
 025a2d5fd2a28e9d1de1052966fece45ebd8b85588609730f478c98039344813  docs/conformance-operator-playbook.md

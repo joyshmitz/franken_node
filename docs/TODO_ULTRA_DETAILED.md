@@ -5,7 +5,7 @@
 - [x] Create dedicated extension-host crate in `/dp/franken_engine/crates/franken-extension-host`.
 - [x] Copy extension-host-related Pi Rust source/docs/tests snapshot into `transplant/pi_agent_rust`.
 - [x] Generate transplant manifest with deterministic file list (`transplant_manifest.txt`).
-- [ ] Hash each transplanted file and persist a lockfile for tamper detection.
+- [x] Hash each transplanted file and persist a lockfile for tamper detection.
 - [ ] Add replay script to re-sync from upstream `pi_agent_rust` and detect drift.
 
 ## 1. Extension Host Core Assimilation
