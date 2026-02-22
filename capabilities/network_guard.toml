@@ -1,0 +1,16 @@
+# Capability Profile: network_guard
+# Schema: cap-v1.0
+
+[metadata]
+name = "network_guard"
+version = "1.0.0"
+risk_level = "high"
+description = "Network egress and ingress control subsystem"
+
+[capabilities]
+
+[capabilities."cap:network:listen"]
+justification = "Binds listening sockets for inbound traffic"
+
+[capabilities."cap:network:connect"]
+justification = "Establishes outbound connections for egress checks"

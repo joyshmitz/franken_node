@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://franken-node.dev/schemas/migration_artifact/ma-v1.0",
+  "title": "Migration Artifact (ma-v1.0)",
+  "description": "Structured, versioned format for migration outputs including rollback receipts, confidence intervals, precondition proofs, and verifier-friendly validation metadata.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "plan_id",
+    "plan_version",
+    "preconditions",
+    "steps",
+    "rollback_receipt",
+    "confidence_interval",
+    "verifier_metadata",
+    "signature",
+    "content_hash",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "ma-v1.0",
+      "description": "Schema version for this artifact format."
+    },
+    "plan_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique migration plan identifier."
+    },
+    "plan_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Plan version number."
+    },
+    "preconditions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Precondition assertions that must hold before migration."
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/MigrationStep" },
+      "description": "Ordered migration steps."
+    },
+    "rollback_receipt": {
+      "$ref": "#/$defs/RollbackReceipt",
+      "description": "Receipt proving that a rollback path exists and has been validated."
+    },
+    "confidence_interval": {
+      "$ref": "#/$defs/ConfidenceInterval",
+      "description": "Confidence metrics for the migration plan."
+    },
+    "verifier_metadata": {
+      "$ref": "#/$defs/VerifierMetadata",
+      "description": "Metadata for external verifiers to independently validate the migration."
+    },
+    "signature": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Cryptographic signature over the artifact."
+    },
+    "content_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 content hash for determinism verification."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp of artifact creation (RFC 3339)."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "MigrationStep": {
+      "type": "object",
+      "required": [
+        "action_type",
+        "target_resource",
+        "pre_state_hash",
+        "post_state_hash",
+        "rollback_action",
+        "estimated_duration_ms"
+      ],
+      "properties": {
+        "action_type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Type of action (e.g. schema_upgrade, data_migration, config_update)."
+        },
+        "target_resource": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The resource being modified."
+        },
+        "pre_state_hash": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Hash of the pre-migration state."
+        },
+        "post_state_hash": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Hash of the expected post-migration state."
+        },
+        "rollback_action": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Description of the rollback action for this step."
+        },
+        "estimated_duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Estimated duration of this step in milliseconds."
+        }
+      },
+      "additionalProperties": false
+    },
+    "RollbackReceipt": {
+      "type": "object",
+      "required": [
+        "original_state_ref",
+        "rollback_procedure_hash",
+        "max_rollback_time_ms",
+        "signer_identity",
+        "signature"
+      ],
+      "properties": {
+        "original_state_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the original state snapshot."
+        },
+        "rollback_procedure_hash": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Hash of the rollback procedure."
+        },
+        "max_rollback_time_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum time allowed for rollback in milliseconds."
+        },
+        "signer_identity": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identity of the signer who certified the rollback path."
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Signature over the rollback receipt fields."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ConfidenceInterval": {
+      "type": "object",
+      "required": [
+        "probability",
+        "dry_run_success_rate",
+        "historical_similarity",
+        "precondition_coverage",
+        "rollback_validation"
+      ],
+      "properties": {
+        "probability": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Overall success probability."
+        },
+        "dry_run_success_rate": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Success rate from dry-run executions."
+        },
+        "historical_similarity": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Similarity score to historically successful migrations."
+        },
+        "precondition_coverage": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Fraction of preconditions verified."
+        },
+        "rollback_validation": {
+          "type": "boolean",
+          "description": "Whether rollback was validated end-to-end."
+        }
+      },
+      "additionalProperties": false
+    },
+    "VerifierMetadata": {
+      "type": "object",
+      "required": [
+        "replay_capsule_refs",
+        "expected_state_hashes",
+        "assertion_schemas",
+        "verification_procedures"
+      ],
+      "properties": {
+        "replay_capsule_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "References to replay capsules."
+        },
+        "expected_state_hashes": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "string" },
+          "description": "Expected state hashes at verification checkpoints."
+        },
+        "assertion_schemas": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "JSON Schema URIs for assertion validation."
+        },
+        "verification_procedures": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Descriptions of verification procedures."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

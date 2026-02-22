@@ -1,0 +1,51 @@
+name: Adjacent Substrate Gate
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/adjacent-substrate-gate.yml"
+      - "artifacts/10.16/adjacent_substrate_policy_manifest.json"
+      - "artifacts/10.16/waiver_registry.json"
+      - "artifacts/10.16/adjacent_substrate_gate_report.json"
+      - "scripts/check_substrate_gate.py"
+      - "tests/test_check_substrate_gate.py"
+      - "tests/conformance/adjacent_substrate_gate.rs"
+      - "docs/architecture/adjacent_substrate_policy.md"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/adjacent-substrate-gate.yml"
+      - "artifacts/10.16/adjacent_substrate_policy_manifest.json"
+      - "artifacts/10.16/waiver_registry.json"
+      - "artifacts/10.16/adjacent_substrate_gate_report.json"
+      - "scripts/check_substrate_gate.py"
+      - "tests/test_check_substrate_gate.py"
+      - "tests/conformance/adjacent_substrate_gate.rs"
+      - "docs/architecture/adjacent_substrate_policy.md"
+
+jobs:
+  adjacent-substrate-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run gate self-test
+        run: |
+          python3 scripts/check_substrate_gate.py --self-test
+
+      - name: Build and validate adjacent substrate gate report
+        run: |
+          python3 scripts/check_substrate_gate.py --build-report --json > /tmp/adjacent_substrate_gate_validation.json
+
+      - name: Run unit tests
+        run: |
+          python3 -m unittest tests/test_check_substrate_gate.py
+
+      - name: Upload gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: adjacent-substrate-gate
+          path: |
+            artifacts/10.16/adjacent_substrate_gate_report.json
+            /tmp/adjacent_substrate_gate_validation.json

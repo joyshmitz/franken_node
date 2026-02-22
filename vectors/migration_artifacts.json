@@ -1,0 +1,127 @@
+{
+  "version": "1.0.0",
+  "description": "Reference migration artifact vectors for bd-3hm (Section 10.12)",
+  "schema_ref": "spec/migration_artifact_schema.json",
+  "artifacts": [
+    {
+      "schema_version": "ma-v1.0",
+      "plan_id": "plan-ref-001",
+      "plan_version": 1,
+      "preconditions": [
+        "database_schema_v2_exists",
+        "backup_snapshot_valid",
+        "no_active_transactions"
+      ],
+      "steps": [
+        {
+          "action_type": "schema_upgrade",
+          "target_resource": "trust_store.db",
+          "pre_state_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "post_state_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "rollback_action": "restore_schema_v1",
+          "estimated_duration_ms": 5000
+        },
+        {
+          "action_type": "data_migration",
+          "target_resource": "trust_cards_table",
+          "pre_state_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "post_state_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "rollback_action": "restore_trust_cards_backup",
+          "estimated_duration_ms": 30000
+        },
+        {
+          "action_type": "config_update",
+          "target_resource": "node_config.toml",
+          "pre_state_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "post_state_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "rollback_action": "restore_config_backup",
+          "estimated_duration_ms": 1000
+        }
+      ],
+      "rollback_receipt": {
+        "original_state_ref": "snapshot://trust_store/2026-02-21T00:00:00Z",
+        "rollback_procedure_hash": "1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd",
+        "max_rollback_time_ms": 60000,
+        "signer_identity": "operator://fleet-admin@example.com",
+        "signature": "sig_rollback_abababababababababababababababababababababababababababababababab"
+      },
+      "confidence_interval": {
+        "probability": 0.95,
+        "dry_run_success_rate": 0.98,
+        "historical_similarity": 0.90,
+        "precondition_coverage": 1.0,
+        "rollback_validation": true
+      },
+      "verifier_metadata": {
+        "replay_capsule_refs": [
+          "capsule://migration/plan-ref-001/run-1",
+          "capsule://migration/plan-ref-001/run-2"
+        ],
+        "expected_state_hashes": {
+          "checkpoint_0": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+          "checkpoint_1": "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3"
+        },
+        "assertion_schemas": [
+          "schema://migration-artifact/ma-v1.0"
+        ],
+        "verification_procedures": [
+          "Replay capsule run-1 and compare post-state hashes",
+          "Verify rollback receipt signature against operator key"
+        ]
+      },
+      "signature": "sig_artifact_cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "created_at": "2026-02-21T00:00:00Z"
+    },
+    {
+      "schema_version": "ma-v1.0",
+      "plan_id": "plan-ref-002",
+      "plan_version": 2,
+      "preconditions": [
+        "node_healthy",
+        "quorum_available"
+      ],
+      "steps": [
+        {
+          "action_type": "config_update",
+          "target_resource": "runtime_config.toml",
+          "pre_state_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "post_state_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+          "rollback_action": "restore_runtime_config_v1",
+          "estimated_duration_ms": 500
+        }
+      ],
+      "rollback_receipt": {
+        "original_state_ref": "snapshot://runtime/2026-02-21T01:00:00Z",
+        "rollback_procedure_hash": "abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01",
+        "max_rollback_time_ms": 10000,
+        "signer_identity": "operator://ops-lead@example.com",
+        "signature": "sig_rb_0202020202020202020202020202020202020202020202020202020202020202"
+      },
+      "confidence_interval": {
+        "probability": 0.99,
+        "dry_run_success_rate": 1.0,
+        "historical_similarity": 0.95,
+        "precondition_coverage": 1.0,
+        "rollback_validation": true
+      },
+      "verifier_metadata": {
+        "replay_capsule_refs": [
+          "capsule://migration/plan-ref-002/run-1"
+        ],
+        "expected_state_hashes": {
+          "checkpoint_final": "3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "assertion_schemas": [
+          "schema://migration-artifact/ma-v1.0"
+        ],
+        "verification_procedures": [
+          "Replay capsule run-1 and verify final config hash"
+        ]
+      },
+      "signature": "sig_art_0303030303030303030303030303030303030303030303030303030303030303",
+      "content_hash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      "created_at": "2026-02-21T01:00:00Z"
+    }
+  ]
+}

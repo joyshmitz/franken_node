@@ -1,0 +1,58 @@
+# Security-Critical Module Inventory
+#
+# Each entry defines a module path, its required capabilities, and risk level.
+# Used by the ambient-authority audit gate (bd-3vm) to enforce Architecture
+# Invariant #10: "no ambient authority."
+#
+# Schema version: aa-v1.0
+
+[inventory]
+version = "aa-v1.0"
+
+[[inventory.modules]]
+module_path = "crate::security::network_guard"
+required_capabilities = ["network_egress", "policy_evaluation"]
+risk_level = "critical"
+description = "SSRF and network egress policy enforcement"
+
+[[inventory.modules]]
+module_path = "crate::security::interface_hash"
+required_capabilities = ["signature_verification"]
+risk_level = "high"
+description = "Interface integrity hash verification"
+
+[[inventory.modules]]
+module_path = "crate::supply_chain::artifact_signing"
+required_capabilities = ["key_access", "artifact_signing"]
+risk_level = "critical"
+description = "Cryptographic artifact signing"
+
+[[inventory.modules]]
+module_path = "crate::control_plane::control_epoch"
+required_capabilities = ["epoch_store_access", "trust_state_mutation"]
+risk_level = "critical"
+description = "Epoch lifecycle and trust-state transitions"
+
+[[inventory.modules]]
+module_path = "crate::control_plane::fork_detection"
+required_capabilities = ["epoch_store_access", "signature_verification"]
+risk_level = "high"
+description = "Fork detection and split-brain prevention"
+
+[[inventory.modules]]
+module_path = "crate::security::ssrf_policy"
+required_capabilities = ["network_egress", "policy_evaluation"]
+risk_level = "critical"
+description = "SSRF policy rule evaluation"
+
+[[inventory.modules]]
+module_path = "crate::supply_chain::manifest"
+required_capabilities = ["file_system_read", "signature_verification"]
+risk_level = "high"
+description = "Supply-chain manifest verification"
+
+[[inventory.modules]]
+module_path = "crate::connector::lease_conflict"
+required_capabilities = ["trust_state_mutation", "epoch_store_access"]
+risk_level = "medium"
+description = "Lease conflict resolution with trust implications"

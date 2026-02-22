@@ -39,6 +39,8 @@ EVENT_CODES = [
 INVARIANTS = [
     "INV-OBL-TWO-PHASE",
     "INV-OBL-NO-LEAK",
+    "INV-OBL-BUDGET-BOUND",
+    "INV-OBL-DROP-SAFE",
     "INV-OBL-ATOMIC-COMMIT",
     "INV-OBL-ROLLBACK-SAFE",
     "INV-OBL-AUDIT-COMPLETE",
@@ -62,6 +64,8 @@ CORE_TYPES = [
     "ObligationAuditRecord",
     "LeakScanResult",
     "LeakOracleReport",
+    "FlowObligationCounts",
+    "ObligationGuard",
 ]
 
 TRACKED_FLOWS = [

@@ -1,0 +1,19 @@
+# Capability Profile: epoch_guard
+# Schema: cap-v1.0
+
+[metadata]
+name = "epoch_guard"
+version = "1.0.0"
+risk_level = "critical"
+description = "Epoch transition guard and attestation subsystem"
+
+[capabilities]
+
+[capabilities."cap:crypto:sign"]
+justification = "Signs epoch transition attestations"
+
+[capabilities."cap:crypto:verify"]
+justification = "Verifies prior epoch signatures"
+
+[capabilities."cap:trust:read"]
+justification = "Reads trust state for epoch validation"

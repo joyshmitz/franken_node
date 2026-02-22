@@ -1,0 +1,16 @@
+# Capability Profile: artifact_signing
+# Schema: cap-v1.0
+
+[metadata]
+name = "artifact_signing"
+version = "1.0.0"
+risk_level = "critical"
+description = "Build and release artifact signing subsystem"
+
+[capabilities]
+
+[capabilities."cap:crypto:sign"]
+justification = "Signs build and release artifacts"
+
+[capabilities."cap:crypto:derive"]
+justification = "Derives per-artifact signing keys"

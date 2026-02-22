@@ -12,6 +12,9 @@ pub mod lifecycle;
 #[path = "../../crates/franken-node/src/connector/health_gate.rs"]
 pub mod health_gate;
 
+#[path = "../../crates/franken-node/src/connector/cancellation_protocol.rs"]
+pub mod cancellation_protocol;
+
 #[path = "../../crates/franken-node/src/connector/rollout_state.rs"]
 pub mod rollout_state;
 

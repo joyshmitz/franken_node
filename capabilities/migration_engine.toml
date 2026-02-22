@@ -1,0 +1,19 @@
+# Capability Profile: migration_engine
+# Schema: cap-v1.0
+
+[metadata]
+name = "migration_engine"
+version = "1.0.0"
+risk_level = "medium"
+description = "Data migration engine for schema and state transitions"
+
+[capabilities]
+
+[capabilities."cap:fs:read"]
+justification = "Reads migration data files"
+
+[capabilities."cap:fs:write"]
+justification = "Writes migrated data output"
+
+[capabilities."cap:crypto:verify"]
+justification = "Verifies signatures on migration bundles"

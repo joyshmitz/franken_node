@@ -92,7 +92,7 @@ class TestInvariants(unittest.TestCase):
             self.assertTrue(check["passed"], f"{inv}: {check['detail']}")
 
     def test_invariant_count(self):
-        self.assertEqual(len(checker.INVARIANTS), 6)
+        self.assertEqual(len(checker.INVARIANTS), 8)
 
 
 class TestErrorCodes(unittest.TestCase):
@@ -116,7 +116,7 @@ class TestCoreTypes(unittest.TestCase):
             self.assertTrue(check["passed"], f"{typ}: {check['detail']}")
 
     def test_type_count(self):
-        self.assertEqual(len(checker.CORE_TYPES), 8)
+        self.assertEqual(len(checker.CORE_TYPES), 10)
 
 
 class TestTrackedFlows(unittest.TestCase):

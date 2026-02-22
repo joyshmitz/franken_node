@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://franken-node.dev/schemas/evidence_bundle/ver-v1.0",
+  "title": "Evidence Bundle (ver-v1.0)",
+  "description": "Self-contained evidence bundle for independent verification of claims, migration artifacts, trust state, and replay capsules.",
+  "type": "object",
+  "required": [
+    "claim",
+    "evidence_items",
+    "self_contained"
+  ],
+  "properties": {
+    "claim": {
+      "$ref": "#/$defs/Claim",
+      "description": "The verifiable claim being supported by this bundle."
+    },
+    "evidence_items": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/Evidence" },
+      "description": "Evidence items supporting the claim."
+    },
+    "self_contained": {
+      "type": "boolean",
+      "description": "Whether this bundle contains all evidence needed for offline verification."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Claim": {
+      "type": "object",
+      "required": [
+        "claim_id",
+        "claim_type",
+        "subject",
+        "assertion",
+        "evidence_refs",
+        "timestamp"
+      ],
+      "properties": {
+        "claim_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique claim identifier."
+        },
+        "claim_type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Type of claim (e.g. migration_safety, trust_integrity)."
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The subject of the claim."
+        },
+        "assertion": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The assertion being made about the subject."
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "References to evidence items supporting this claim."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of claim creation (RFC 3339)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "Evidence": {
+      "type": "object",
+      "required": [
+        "evidence_id",
+        "claim_ref",
+        "artifacts",
+        "verification_procedure"
+      ],
+      "properties": {
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique evidence identifier."
+        },
+        "claim_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the claim this evidence supports."
+        },
+        "artifacts": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "string" },
+          "description": "Map of artifact name to artifact value (signatures, hashes, timestamps)."
+        },
+        "verification_procedure": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Description of the verification procedure for this evidence."
+        }
+      },
+      "additionalProperties": false
+    },
+    "VerificationResult": {
+      "type": "object",
+      "required": [
+        "verdict",
+        "confidence_score",
+        "checked_assertions",
+        "execution_timestamp",
+        "verifier_identity",
+        "artifact_binding_hash",
+        "verifier_signature"
+      ],
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": ["pass", "fail", "inconclusive"],
+          "description": "Verification verdict."
+        },
+        "confidence_score": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Confidence score of the verification."
+        },
+        "checked_assertions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AssertionResult" },
+          "description": "Individual assertion check results."
+        },
+        "execution_timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of verification execution."
+        },
+        "verifier_identity": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identity of the verifier."
+        },
+        "artifact_binding_hash": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Hash binding the result to its evidence."
+        },
+        "verifier_signature": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Signature over the verification result."
+        }
+      },
+      "additionalProperties": false
+    },
+    "AssertionResult": {
+      "type": "object",
+      "required": [
+        "assertion",
+        "passed",
+        "detail"
+      ],
+      "properties": {
+        "assertion": {
+          "type": "string",
+          "description": "Name of the assertion checked."
+        },
+        "passed": {
+          "type": "boolean",
+          "description": "Whether the assertion passed."
+        },
+        "detail": {
+          "type": "string",
+          "description": "Detail about the assertion result."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ReplayResult": {
+      "type": "object",
+      "required": [
+        "verdict",
+        "expected_output_hash",
+        "actual_output_hash",
+        "replay_duration_ms"
+      ],
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": ["pass", "fail", "inconclusive"],
+          "description": "Replay verdict."
+        },
+        "expected_output_hash": {
+          "type": "string",
+          "description": "Expected output hash."
+        },
+        "actual_output_hash": {
+          "type": "string",
+          "description": "Actual output hash from replay."
+        },
+        "replay_duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Replay duration in milliseconds."
+        }
+      },
+      "additionalProperties": false
+    },
+    "TransparencyLogEntry": {
+      "type": "object",
+      "required": [
+        "result_hash",
+        "timestamp",
+        "verifier_id",
+        "merkle_proof"
+      ],
+      "properties": {
+        "result_hash": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Hash of the verification result."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of the log entry."
+        },
+        "verifier_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identity of the verifier."
+        },
+        "merkle_proof": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Merkle proof chain."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -6,9 +6,8 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = os.path.join(ROOT, "scripts", "check_cancellation_protocol.py")
 
-spec = importlib.util.spec_from_file_location("check_cancellation_protocol", SCRIPT)
+spec = importlib.util.spec_from_file_location("check_cp", SCRIPT)
 mod = importlib.util.module_from_spec(spec)
-sys.modules["check_cancellation_protocol"] = mod
 spec.loader.exec_module(mod)
 
 
@@ -47,158 +46,98 @@ class TestIndividualChecks:
     def results(self):
         return {r["check"]: r for r in mod._checks()}
 
-    def test_source_exists(self, results):
-        assert results["source_exists"]["passed"]
+    # ── File existence ────────────────────────────────────────────────
+    def test_source_exists(self, results): assert results["source_exists"]["passed"]
+    def test_module_wiring(self, results): assert results["module_wiring"]["passed"]
+    def test_spec_contract_exists(self, results): assert results["spec_contract_exists"]["passed"]
+    def test_conformance_test_exists(self, results): assert results["conformance_test_exists"]["passed"]
+    def test_timing_csv_exists(self, results): assert results["timing_csv_exists"]["passed"]
+    def test_evidence_exists(self, results): assert results["evidence_exists"]["passed"]
+    def test_summary_exists(self, results): assert results["summary_exists"]["passed"]
 
-    def test_module_wiring(self, results):
-        assert results["module_wiring"]["passed"]
+    # ── Phase enum ────────────────────────────────────────────────────
+    def test_phase_Idle(self, results): assert results["phase_Idle"]["passed"]
+    def test_phase_Requested(self, results): assert results["phase_Requested"]["passed"]
+    def test_phase_Draining(self, results): assert results["phase_Draining"]["passed"]
+    def test_phase_Finalizing(self, results): assert results["phase_Finalizing"]["passed"]
+    def test_phase_Completed(self, results): assert results["phase_Completed"]["passed"]
 
-    def test_spec_contract_exists(self, results):
-        assert results["spec_contract_exists"]["passed"]
+    # ── Core types ────────────────────────────────────────────────────
+    def test_type_CancellationPhase(self, results): assert results["type_CancellationPhase"]["passed"]
+    def test_type_CancellationBudget(self, results): assert results["type_CancellationBudget"]["passed"]
+    def test_type_CancellationProtocol(self, results): assert results["type_CancellationProtocol"]["passed"]
+    def test_type_CancellationAuditEvent(self, results): assert results["type_CancellationAuditEvent"]["passed"]
+    def test_type_ResourceTracker(self, results): assert results["type_ResourceTracker"]["passed"]
+    def test_type_ResourceGuard(self, results): assert results["type_ResourceGuard"]["passed"]
+    def test_type_PhaseTransitionResult(self, results): assert results["type_PhaseTransitionResult"]["passed"]
+    def test_type_TimingRow(self, results): assert results["type_TimingRow"]["passed"]
+    def test_type_WorkflowKind(self, results): assert results["type_WorkflowKind"]["passed"]
 
-    def test_conformance_test_exists(self, results):
-        assert results["conformance_test_exists"]["passed"]
+    # ── Workflow coverage ─────────────────────────────────────────────
+    def test_workflow_coverage(self, results): assert results["workflow_coverage"]["passed"]
 
-    def test_timing_csv_exists(self, results):
-        assert results["timing_csv_exists"]["passed"]
+    # ── Core operations ───────────────────────────────────────────────
+    def test_fn_request(self, results): assert results["fn_request"]["passed"]
+    def test_fn_drain(self, results): assert results["fn_drain"]["passed"]
+    def test_fn_finalize(self, results): assert results["fn_finalize"]["passed"]
+    def test_fn_run_full(self, results): assert results["fn_run_full"]["passed"]
+    def test_fn_force_finalize(self, results): assert results["fn_force_finalize"]["passed"]
 
-    def test_evidence_exists(self, results):
-        assert results["evidence_exists"]["passed"]
+    # ── Budget features ───────────────────────────────────────────────
+    def test_budget_timeout_ms(self, results): assert results["budget_timeout_ms"]["passed"]
+    def test_budget_is_exceeded(self, results): assert results["budget_is_exceeded"]["passed"]
+    def test_budget_from_kind(self, results): assert results["budget_from_kind"]["passed"]
 
-    def test_summary_exists(self, results):
-        assert results["summary_exists"]["passed"]
+    # ── Resource tracking ─────────────────────────────────────────────
+    def test_resource_acquire(self, results): assert results["resource_acquire"]["passed"]
+    def test_resource_release(self, results): assert results["resource_release"]["passed"]
+    def test_resource_has_leaks(self, results): assert results["resource_has_leaks"]["passed"]
+    def test_resource_release_all(self, results): assert results["resource_release_all"]["passed"]
 
-    def test_type_CancelPhase(self, results):
-        assert results["type_CancelPhase"]["passed"]
+    # ── Drop safety ───────────────────────────────────────────────────
+    def test_drop_safety(self, results): assert results["drop_safety"]["passed"]
 
-    def test_type_CancelProtocolError(self, results):
-        assert results["type_CancelProtocolError"]["passed"]
+    # ── Child propagation ─────────────────────────────────────────────
+    def test_fn_register_child(self, results): assert results["fn_register_child"]["passed"]
+    def test_fn_complete_child(self, results): assert results["fn_complete_child"]["passed"]
 
-    def test_type_DrainConfig(self, results):
-        assert results["type_DrainConfig"]["passed"]
+    # ── Audit features ────────────────────────────────────────────────
+    def test_audit_log(self, results): assert results["audit_log"]["passed"]
 
-    def test_type_CancelAuditEvent(self, results):
-        assert results["type_CancelAuditEvent"]["passed"]
+    # ── Timing CSV ────────────────────────────────────────────────────
+    def test_fn_generate_timing_csv(self, results): assert results["fn_generate_timing_csv"]["passed"]
 
-    def test_type_ResourceTracker(self, results):
-        assert results["type_ResourceTracker"]["passed"]
+    # ── Codes and invariants ──────────────────────────────────────────
+    def test_event_codes(self, results): assert results["event_codes"]["passed"]
+    def test_error_codes(self, results): assert results["error_codes"]["passed"]
+    def test_invariants(self, results): assert results["invariants"]["passed"]
+    def test_schema_version(self, results): assert results["schema_version"]["passed"]
+    def test_bead_id(self, results): assert results["bead_id"]["passed"]
 
-    def test_type_CancellationRecord(self, results):
-        assert results["type_CancellationRecord"]["passed"]
+    # ── Integration: lifecycle ────────────────────────────────────────
+    def test_lifecycle_cancelling_state(self, results): assert results["lifecycle_cancelling_state"]["passed"]
+    def test_lifecycle_cancel_transition(self, results): assert results["lifecycle_cancel_transition"]["passed"]
 
-    def test_type_CancellationProtocol(self, results):
-        assert results["type_CancellationProtocol"]["passed"]
+    # ── Integration: rollout_state ────────────────────────────────────
+    def test_rollout_cancel_phase(self, results): assert results["rollout_cancel_phase"]["passed"]
+    def test_rollout_set_cancel(self, results): assert results["rollout_set_cancel"]["passed"]
+    def test_rollout_is_cancelling(self, results): assert results["rollout_is_cancelling"]["passed"]
+    def test_rollout_imports_cancel(self, results): assert results["rollout_imports_cancel"]["passed"]
 
-    def test_phase_Idle(self, results):
-        assert results["phase_Idle"]["passed"]
+    # ── Test coverage ─────────────────────────────────────────────────
+    def test_test_coverage(self, results): assert results["test_coverage"]["passed"]
 
-    def test_phase_CancelRequested(self, results):
-        assert results["phase_CancelRequested"]["passed"]
+    # ── Timing CSV content ────────────────────────────────────────────
+    def test_timing_csv_header(self, results): assert results["timing_csv_header"]["passed"]
+    def test_timing_csv_has_rows(self, results): assert results["timing_csv_has_rows"]["passed"]
 
-    def test_phase_Draining(self, results):
-        assert results["phase_Draining"]["passed"]
-
-    def test_phase_DrainComplete(self, results):
-        assert results["phase_DrainComplete"]["passed"]
-
-    def test_phase_Finalizing(self, results):
-        assert results["phase_Finalizing"]["passed"]
-
-    def test_phase_Finalized(self, results):
-        assert results["phase_Finalized"]["passed"]
-
-    def test_fn_request_cancel(self, results):
-        assert results["fn_request_cancel"]["passed"]
-
-    def test_fn_start_drain(self, results):
-        assert results["fn_start_drain"]["passed"]
-
-    def test_fn_complete_drain(self, results):
-        assert results["fn_complete_drain"]["passed"]
-
-    def test_fn_finalize(self, results):
-        assert results["fn_finalize"]["passed"]
-
-    def test_drain_timeout_ms(self, results):
-        assert results["drain_timeout_ms"]["passed"]
-
-    def test_force_on_timeout(self, results):
-        assert results["force_on_timeout"]["passed"]
-
-    def test_default_drain_timeout(self, results):
-        assert results["default_drain_timeout"]["passed"]
-
-    def test_resource_tracker_clean(self, results):
-        assert results["resource_tracker_clean"]["passed"]
-
-    def test_resource_tracker_leaks(self, results):
-        assert results["resource_tracker_leaks"]["passed"]
-
-    def test_audit_log(self, results):
-        assert results["audit_log"]["passed"]
-
-    def test_audit_event_schema(self, results):
-        assert results["audit_event_schema"]["passed"]
-
-    def test_event_codes(self, results):
-        assert results["event_codes"]["passed"]
-
-    def test_error_codes(self, results):
-        assert results["error_codes"]["passed"]
-
-    def test_invariants(self, results):
-        assert results["invariants"]["passed"]
-
-    def test_schema_version(self, results):
-        assert results["schema_version"]["passed"]
-
-    def test_idempotent_cancel(self, results):
-        assert results["idempotent_cancel"]["passed"]
-
-    def test_lifecycle_cancelling_state(self, results):
-        assert results["lifecycle_cancelling_state"]["passed"]
-
-    def test_lifecycle_cancel_transition(self, results):
-        assert results["lifecycle_cancel_transition"]["passed"]
-
-    def test_rollout_cancel_phase(self, results):
-        assert results["rollout_cancel_phase"]["passed"]
-
-    def test_rollout_set_cancel(self, results):
-        assert results["rollout_set_cancel"]["passed"]
-
-    def test_rollout_is_cancelling(self, results):
-        assert results["rollout_is_cancelling"]["passed"]
-
-    def test_rollout_imports_cancel(self, results):
-        assert results["rollout_imports_cancel"]["passed"]
-
-    def test_fn_active_count(self, results):
-        assert results["fn_active_count"]["passed"]
-
-    def test_fn_finalized_count(self, results):
-        assert results["fn_finalized_count"]["passed"]
-
-    def test_fn_current_phase(self, results):
-        assert results["fn_current_phase"]["passed"]
-
-    def test_fn_get_record(self, results):
-        assert results["fn_get_record"]["passed"]
-
-    def test_fn_timing_report(self, results):
-        assert results["fn_timing_report"]["passed"]
-
-    def test_fn_readiness_check(self, results):
-        assert results["fn_readiness_check"]["passed"]
-
-    def test_test_coverage(self, results):
-        assert results["test_coverage"]["passed"]
-
-    def test_timing_csv_header(self, results):
-        assert results["timing_csv_header"]["passed"]
-
-    def test_timing_csv_has_rows(self, results):
-        assert results["timing_csv_has_rows"]["passed"]
+    # ── Spec contract sections ────────────────────────────────────────
+    def test_spec_invariants(self, results): assert results["spec_invariants"]["passed"]
+    def test_spec_event_codes(self, results): assert results["spec_event_codes"]["passed"]
+    def test_spec_error_codes(self, results): assert results["spec_error_codes"]["passed"]
+    def test_spec_acceptance_criteria(self, results): assert results["spec_acceptance_criteria"]["passed"]
+    def test_spec_three_phase_protocol(self, results): assert results["spec_three_phase_protocol"]["passed"]
+    def test_spec_gate_behavior(self, results): assert results["spec_gate_behavior"]["passed"]
 
 
 class TestOverall:

@@ -1,0 +1,19 @@
+# Capability Profile: trust_fabric
+# Schema: cap-v1.0
+
+[metadata]
+name = "trust_fabric"
+version = "1.0.0"
+risk_level = "high"
+description = "Trust-fabric convergence and peer gossip subsystem"
+
+[capabilities]
+
+[capabilities."cap:trust:read"]
+justification = "Reads trust state for convergence checks"
+
+[capabilities."cap:trust:write"]
+justification = "Writes updated trust state after convergence"
+
+[capabilities."cap:network:connect"]
+justification = "Connects to peer nodes for trust gossip"
