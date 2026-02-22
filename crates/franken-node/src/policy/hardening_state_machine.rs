@@ -433,7 +433,9 @@ mod tests {
     #[test]
     fn escalate_baseline_to_standard() {
         let mut sm = HardeningStateMachine::new();
-        let r = sm.escalate(HardeningLevel::Standard, 1000, &tid(1)).unwrap();
+        let r = sm
+            .escalate(HardeningLevel::Standard, 1000, &tid(1))
+            .unwrap();
         assert_eq!(r.from_level, HardeningLevel::Baseline);
         assert_eq!(r.to_level, HardeningLevel::Standard);
         assert_eq!(sm.current_level(), HardeningLevel::Standard);
@@ -442,7 +444,8 @@ mod tests {
     #[test]
     fn escalate_standard_to_enhanced() {
         let mut sm = HardeningStateMachine::with_level(HardeningLevel::Standard);
-        sm.escalate(HardeningLevel::Enhanced, 1000, &tid(1)).unwrap();
+        sm.escalate(HardeningLevel::Enhanced, 1000, &tid(1))
+            .unwrap();
         assert_eq!(sm.current_level(), HardeningLevel::Enhanced);
     }
 
@@ -456,7 +459,8 @@ mod tests {
     #[test]
     fn escalate_maximum_to_critical() {
         let mut sm = HardeningStateMachine::with_level(HardeningLevel::Maximum);
-        sm.escalate(HardeningLevel::Critical, 1000, &tid(1)).unwrap();
+        sm.escalate(HardeningLevel::Critical, 1000, &tid(1))
+            .unwrap();
         assert_eq!(sm.current_level(), HardeningLevel::Critical);
     }
 
@@ -471,7 +475,8 @@ mod tests {
     fn escalate_full_chain() {
         let mut sm = HardeningStateMachine::new();
         for (i, level) in HardeningLevel::all().iter().enumerate().skip(1) {
-            sm.escalate(*level, 1000 + i as u64, &tid(i as u32)).unwrap();
+            sm.escalate(*level, 1000 + i as u64, &tid(i as u32))
+                .unwrap();
         }
         assert_eq!(sm.current_level(), HardeningLevel::Critical);
         assert_eq!(sm.transition_count(), 4);
@@ -482,7 +487,9 @@ mod tests {
     #[test]
     fn regression_same_level_rejected() {
         let mut sm = HardeningStateMachine::with_level(HardeningLevel::Standard);
-        let err = sm.escalate(HardeningLevel::Standard, 1000, &tid(1)).unwrap_err();
+        let err = sm
+            .escalate(HardeningLevel::Standard, 1000, &tid(1))
+            .unwrap_err();
         assert_eq!(err.code(), "HARDEN_ILLEGAL_REGRESSION");
         assert_eq!(sm.current_level(), HardeningLevel::Standard);
     }
@@ -490,14 +497,18 @@ mod tests {
     #[test]
     fn regression_lower_level_rejected() {
         let mut sm = HardeningStateMachine::with_level(HardeningLevel::Enhanced);
-        let err = sm.escalate(HardeningLevel::Standard, 1000, &tid(1)).unwrap_err();
+        let err = sm
+            .escalate(HardeningLevel::Standard, 1000, &tid(1))
+            .unwrap_err();
         assert_eq!(err.code(), "HARDEN_ILLEGAL_REGRESSION");
     }
 
     #[test]
     fn regression_to_baseline_rejected() {
         let mut sm = HardeningStateMachine::with_level(HardeningLevel::Critical);
-        let err = sm.escalate(HardeningLevel::Baseline, 1000, &tid(1)).unwrap_err();
+        let err = sm
+            .escalate(HardeningLevel::Baseline, 1000, &tid(1))
+            .unwrap_err();
         assert_eq!(err.code(), "HARDEN_ILLEGAL_REGRESSION");
     }
 
@@ -573,8 +584,10 @@ mod tests {
         let mut sm = HardeningStateMachine::new();
 
         // Baseline -> Standard -> Enhanced
-        sm.escalate(HardeningLevel::Standard, 1000, &tid(1)).unwrap();
-        sm.escalate(HardeningLevel::Enhanced, 1001, &tid(2)).unwrap();
+        sm.escalate(HardeningLevel::Standard, 1000, &tid(1))
+            .unwrap();
+        sm.escalate(HardeningLevel::Enhanced, 1001, &tid(2))
+            .unwrap();
 
         // Governance rollback: Enhanced -> Standard
         let artifact = valid_artifact();
@@ -647,9 +660,12 @@ mod tests {
     fn replay_determinism() {
         // Run the same escalation sequence and verify replay matches
         let mut live = HardeningStateMachine::new();
-        live.escalate(HardeningLevel::Standard, 1000, &tid(1)).unwrap();
-        live.escalate(HardeningLevel::Enhanced, 1001, &tid(2)).unwrap();
-        live.escalate(HardeningLevel::Maximum, 1002, &tid(3)).unwrap();
+        live.escalate(HardeningLevel::Standard, 1000, &tid(1))
+            .unwrap();
+        live.escalate(HardeningLevel::Enhanced, 1001, &tid(2))
+            .unwrap();
+        live.escalate(HardeningLevel::Maximum, 1002, &tid(3))
+            .unwrap();
 
         let replayed = HardeningStateMachine::replay_transitions(live.transition_log());
         assert_eq!(replayed.current_level(), live.current_level());
@@ -690,7 +706,9 @@ mod tests {
     #[test]
     fn transition_trigger_escalation() {
         let mut sm = HardeningStateMachine::new();
-        let r = sm.escalate(HardeningLevel::Standard, 1000, &tid(1)).unwrap();
+        let r = sm
+            .escalate(HardeningLevel::Standard, 1000, &tid(1))
+            .unwrap();
         assert_eq!(r.trigger, TransitionTrigger::Escalation);
     }
 

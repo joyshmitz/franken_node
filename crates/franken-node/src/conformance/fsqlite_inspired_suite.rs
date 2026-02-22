@@ -111,11 +111,17 @@ impl ConformanceId {
     }
 
     pub fn domain(&self) -> Option<ConformanceDomain> {
-        if self.0.starts_with("FSQL-DET") { Some(ConformanceDomain::Determinism) }
-        else if self.0.starts_with("FSQL-IDP") { Some(ConformanceDomain::Idempotency) }
-        else if self.0.starts_with("FSQL-EPO") { Some(ConformanceDomain::EpochValidity) }
-        else if self.0.starts_with("FSQL-PRF") { Some(ConformanceDomain::ProofCorrectness) }
-        else { None }
+        if self.0.starts_with("FSQL-DET") {
+            Some(ConformanceDomain::Determinism)
+        } else if self.0.starts_with("FSQL-IDP") {
+            Some(ConformanceDomain::Idempotency)
+        } else if self.0.starts_with("FSQL-EPO") {
+            Some(ConformanceDomain::EpochValidity)
+        } else if self.0.starts_with("FSQL-PRF") {
+            Some(ConformanceDomain::ProofCorrectness)
+        } else {
+            None
+        }
     }
 }
 
@@ -180,14 +186,35 @@ pub struct ConformanceAuditRecord {
 /// Conformance suite errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConformanceError {
-    DeterminismMismatch { id: String, expected: String, actual: String },
-    IdempotencyViolation { id: String, detail: String },
-    EpochInvariantBroken { id: String, detail: String },
-    ProofInvalid { id: String, detail: String },
-    DuplicateId { id: String },
-    FixtureParse { detail: String },
-    ReleaseBlocked { fail_count: usize },
-    MissingDomain { domain: String },
+    DeterminismMismatch {
+        id: String,
+        expected: String,
+        actual: String,
+    },
+    IdempotencyViolation {
+        id: String,
+        detail: String,
+    },
+    EpochInvariantBroken {
+        id: String,
+        detail: String,
+    },
+    ProofInvalid {
+        id: String,
+        detail: String,
+    },
+    DuplicateId {
+        id: String,
+    },
+    FixtureParse {
+        detail: String,
+    },
+    ReleaseBlocked {
+        fail_count: usize,
+    },
+    MissingDomain {
+        domain: String,
+    },
 }
 
 impl ConformanceError {
@@ -208,8 +235,19 @@ impl ConformanceError {
 impl fmt::Display for ConformanceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::DeterminismMismatch { id, expected, actual } => {
-                write!(f, "{}: {} expected={} actual={}", self.code(), id, expected, actual)
+            Self::DeterminismMismatch {
+                id,
+                expected,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "{}: {} expected={} actual={}",
+                    self.code(),
+                    id,
+                    expected,
+                    actual
+                )
             }
             Self::IdempotencyViolation { id, detail } => {
                 write!(f, "{}: {} {}", self.code(), id, detail)
@@ -302,7 +340,11 @@ impl ConformanceSuiteRunner {
             conformance_id: String::new(),
             domain: String::new(),
             timestamp_ms,
-            detail: format!("suite_version={} fixture_count={}", SUITE_VERSION, self.fixtures.len()),
+            detail: format!(
+                "suite_version={} fixture_count={}",
+                SUITE_VERSION,
+                self.fixtures.len()
+            ),
             trace_id: trace_id.to_string(),
             schema_version: SCHEMA_VERSION.to_string(),
         });
@@ -352,7 +394,10 @@ impl ConformanceSuiteRunner {
             conformance_id: String::new(),
             domain: String::new(),
             timestamp_ms,
-            detail: format!("pass={} fail={} release_eligible={}", pass_count, fail_count, release_eligible),
+            detail: format!(
+                "pass={} fail={} release_eligible={}",
+                pass_count, fail_count, release_eligible
+            ),
             trace_id: trace_id.to_string(),
             schema_version: SCHEMA_VERSION.to_string(),
         });
@@ -372,7 +417,9 @@ impl ConformanceSuiteRunner {
     /// Check release eligibility.
     /// INV-CONF-RELEASE-GATE
     pub fn check_release_gate(&self) -> Result<(), ConformanceError> {
-        let fail_count = self.results.iter()
+        let fail_count = self
+            .results
+            .iter()
             .filter(|r| !matches!(r.result, ConformanceTestResult::Pass))
             .count();
         if fail_count > 0 {
@@ -810,7 +857,10 @@ mod tests {
     #[test]
     fn domain_display() {
         assert_eq!(ConformanceDomain::Determinism.to_string(), "determinism");
-        assert_eq!(ConformanceDomain::EpochValidity.to_string(), "epoch_validity");
+        assert_eq!(
+            ConformanceDomain::EpochValidity.to_string(),
+            "epoch_validity"
+        );
     }
 
     // ---- ConformanceId ----
@@ -895,13 +945,15 @@ mod tests {
     #[test]
     fn run_all_with_failure_blocks_release() {
         let mut runner = ConformanceSuiteRunner::new();
-        runner.register_fixture(ConformanceFixture {
-            conformance_id: ConformanceId::new(ConformanceDomain::Determinism, 1),
-            domain: ConformanceDomain::Determinism,
-            description: "fail test".to_string(),
-            input: serde_json::json!({}),
-            expected: serde_json::json!({}),
-        }).unwrap();
+        runner
+            .register_fixture(ConformanceFixture {
+                conformance_id: ConformanceId::new(ConformanceDomain::Determinism, 1),
+                domain: ConformanceDomain::Determinism,
+                description: "fail test".to_string(),
+                input: serde_json::json!({}),
+                expected: serde_json::json!({}),
+            })
+            .unwrap();
         let report = runner.run_all(1000, "t1", |_| ConformanceTestResult::Fail {
             expected: "x".to_string(),
             actual: "y".to_string(),
@@ -922,13 +974,15 @@ mod tests {
     #[test]
     fn release_gate_blocks_on_failure() {
         let mut runner = ConformanceSuiteRunner::new();
-        runner.register_fixture(ConformanceFixture {
-            conformance_id: ConformanceId::new(ConformanceDomain::Determinism, 1),
-            domain: ConformanceDomain::Determinism,
-            description: "test".to_string(),
-            input: serde_json::json!({}),
-            expected: serde_json::json!({}),
-        }).unwrap();
+        runner
+            .register_fixture(ConformanceFixture {
+                conformance_id: ConformanceId::new(ConformanceDomain::Determinism, 1),
+                domain: ConformanceDomain::Determinism,
+                description: "test".to_string(),
+                input: serde_json::json!({}),
+                expected: serde_json::json!({}),
+            })
+            .unwrap();
         runner.run_all(1000, "t1", |_| ConformanceTestResult::Fail {
             expected: "a".to_string(),
             actual: "b".to_string(),
@@ -958,13 +1012,15 @@ mod tests {
     #[test]
     fn verify_domain_coverage_fails_if_missing() {
         let mut runner = ConformanceSuiteRunner::new();
-        runner.register_fixture(ConformanceFixture {
-            conformance_id: ConformanceId::new(ConformanceDomain::Determinism, 1),
-            domain: ConformanceDomain::Determinism,
-            description: "test".to_string(),
-            input: serde_json::json!({}),
-            expected: serde_json::json!({}),
-        }).unwrap();
+        runner
+            .register_fixture(ConformanceFixture {
+                conformance_id: ConformanceId::new(ConformanceDomain::Determinism, 1),
+                domain: ConformanceDomain::Determinism,
+                description: "test".to_string(),
+                input: serde_json::json!({}),
+                expected: serde_json::json!({}),
+            })
+            .unwrap();
         let err = runner.verify_domain_coverage().unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CONF_MISSING_DOMAIN);
     }
@@ -992,7 +1048,10 @@ mod tests {
         let log = runner.audit_log();
         assert!(!log.is_empty());
         assert_eq!(log[0].event_code, event_codes::CONFORMANCE_SUITE_START);
-        assert_eq!(log.last().unwrap().event_code, event_codes::CONFORMANCE_SUITE_COMPLETE);
+        assert_eq!(
+            log.last().unwrap().event_code,
+            event_codes::CONFORMANCE_SUITE_COMPLETE
+        );
     }
 
     #[test]
@@ -1016,8 +1075,11 @@ mod tests {
             .chain(builtin_epoch_fixtures())
             .chain(builtin_proof_fixtures())
         {
-            assert!(ids.insert(f.conformance_id.as_str().to_string()),
-                "duplicate ID: {}", f.conformance_id);
+            assert!(
+                ids.insert(f.conformance_id.as_str().to_string()),
+                "duplicate ID: {}",
+                f.conformance_id
+            );
         }
     }
 
@@ -1026,10 +1088,23 @@ mod tests {
     #[test]
     fn error_display_all_variants() {
         let errors: Vec<ConformanceError> = vec![
-            ConformanceError::DeterminismMismatch { id: "x".into(), expected: "a".into(), actual: "b".into() },
-            ConformanceError::IdempotencyViolation { id: "x".into(), detail: "d".into() },
-            ConformanceError::EpochInvariantBroken { id: "x".into(), detail: "d".into() },
-            ConformanceError::ProofInvalid { id: "x".into(), detail: "d".into() },
+            ConformanceError::DeterminismMismatch {
+                id: "x".into(),
+                expected: "a".into(),
+                actual: "b".into(),
+            },
+            ConformanceError::IdempotencyViolation {
+                id: "x".into(),
+                detail: "d".into(),
+            },
+            ConformanceError::EpochInvariantBroken {
+                id: "x".into(),
+                detail: "d".into(),
+            },
+            ConformanceError::ProofInvalid {
+                id: "x".into(),
+                detail: "d".into(),
+            },
             ConformanceError::DuplicateId { id: "x".into() },
             ConformanceError::FixtureParse { detail: "d".into() },
             ConformanceError::ReleaseBlocked { fail_count: 3 },

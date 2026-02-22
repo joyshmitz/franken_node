@@ -192,7 +192,11 @@ impl EvictionSagaManager {
 
     pub fn init(trace_id: &str) -> Self {
         let mut mgr = Self::new();
-        mgr.log(event_codes::ES_SAGA_START, trace_id, serde_json::json!({"init": true}));
+        mgr.log(
+            event_codes::ES_SAGA_START,
+            trace_id,
+            serde_json::json!({"init": true}),
+        );
         mgr
     }
 
@@ -205,7 +209,12 @@ impl EvictionSagaManager {
     }
 
     /// Start a new eviction saga.
-    pub fn start_saga(&mut self, artifact_id: &str, has_remote_cap: bool, trace_id: &str) -> Result<String, String> {
+    pub fn start_saga(
+        &mut self,
+        artifact_id: &str,
+        has_remote_cap: bool,
+        trace_id: &str,
+    ) -> Result<String, String> {
         if !has_remote_cap {
             return Err("RemoteCap required for upload phase".to_string());
         }
@@ -216,8 +225,11 @@ impl EvictionSagaManager {
         let mut saga = SagaInstance::new(&saga_id, artifact_id);
         saga.has_remote_cap = has_remote_cap;
 
-        self.log(event_codes::ES_SAGA_START, trace_id,
-            serde_json::json!({"saga_id": &saga_id, "artifact_id": artifact_id}));
+        self.log(
+            event_codes::ES_SAGA_START,
+            trace_id,
+            serde_json::json!({"saga_id": &saga_id, "artifact_id": artifact_id}),
+        );
 
         self.sagas.insert(saga_id.clone(), saga);
         Ok(saga_id)
@@ -225,7 +237,9 @@ impl EvictionSagaManager {
 
     /// Advance saga to Uploading phase.
     pub fn begin_upload(&mut self, saga_id: &str, trace_id: &str) -> Result<(), String> {
-        let saga = self.sagas.get_mut(saga_id)
+        let saga = self
+            .sagas
+            .get_mut(saga_id)
             .ok_or_else(|| format!("saga not found: {saga_id}"))?;
 
         if saga.phase != SagaPhase::Created {
@@ -233,14 +247,19 @@ impl EvictionSagaManager {
         }
 
         saga.record_transition(SagaPhase::Uploading, "upload_started");
-        self.log(event_codes::ES_PHASE_UPLOAD, trace_id,
-            serde_json::json!({"saga_id": saga_id}));
+        self.log(
+            event_codes::ES_PHASE_UPLOAD,
+            trace_id,
+            serde_json::json!({"saga_id": saga_id}),
+        );
         Ok(())
     }
 
     /// Complete upload and advance to Verifying.
     pub fn complete_upload(&mut self, saga_id: &str, trace_id: &str) -> Result<(), String> {
-        let saga = self.sagas.get_mut(saga_id)
+        let saga = self
+            .sagas
+            .get_mut(saga_id)
             .ok_or_else(|| format!("saga not found: {saga_id}"))?;
 
         if saga.phase != SagaPhase::Uploading {
@@ -249,14 +268,19 @@ impl EvictionSagaManager {
 
         saga.l3_present = true;
         saga.record_transition(SagaPhase::Verifying, "upload_complete");
-        self.log(event_codes::ES_PHASE_VERIFY, trace_id,
-            serde_json::json!({"saga_id": saga_id}));
+        self.log(
+            event_codes::ES_PHASE_VERIFY,
+            trace_id,
+            serde_json::json!({"saga_id": saga_id}),
+        );
         Ok(())
     }
 
     /// Complete verification and advance to Retiring.
     pub fn complete_verify(&mut self, saga_id: &str, trace_id: &str) -> Result<(), String> {
-        let saga = self.sagas.get_mut(saga_id)
+        let saga = self
+            .sagas
+            .get_mut(saga_id)
             .ok_or_else(|| format!("saga not found: {saga_id}"))?;
 
         if saga.phase != SagaPhase::Verifying {
@@ -265,14 +289,19 @@ impl EvictionSagaManager {
 
         saga.l3_verified = true;
         saga.record_transition(SagaPhase::Retiring, "verification_passed");
-        self.log(event_codes::ES_PHASE_RETIRE, trace_id,
-            serde_json::json!({"saga_id": saga_id}));
+        self.log(
+            event_codes::ES_PHASE_RETIRE,
+            trace_id,
+            serde_json::json!({"saga_id": saga_id}),
+        );
         Ok(())
     }
 
     /// Complete retirement (L2 removed).
     pub fn complete_retire(&mut self, saga_id: &str, trace_id: &str) -> Result<(), String> {
-        let saga = self.sagas.get_mut(saga_id)
+        let saga = self
+            .sagas
+            .get_mut(saga_id)
             .ok_or_else(|| format!("saga not found: {saga_id}"))?;
 
         if saga.phase != SagaPhase::Retiring {
@@ -281,16 +310,25 @@ impl EvictionSagaManager {
 
         saga.l2_present = false;
         saga.record_transition(SagaPhase::Complete, "retirement_complete");
-        self.log(event_codes::ES_SAGA_COMPLETE, trace_id,
-            serde_json::json!({"saga_id": saga_id}));
+        self.log(
+            event_codes::ES_SAGA_COMPLETE,
+            trace_id,
+            serde_json::json!({"saga_id": saga_id}),
+        );
         Ok(())
     }
 
     /// Cancel/compensate a saga at its current phase.
-    pub fn cancel_saga(&mut self, saga_id: &str, trace_id: &str) -> Result<CompensationAction, String> {
+    pub fn cancel_saga(
+        &mut self,
+        saga_id: &str,
+        trace_id: &str,
+    ) -> Result<CompensationAction, String> {
         // Extract values from saga with immutable borrow first
         let (action, phase_str) = {
-            let saga = self.sagas.get(saga_id)
+            let saga = self
+                .sagas
+                .get(saga_id)
                 .ok_or_else(|| format!("saga not found: {saga_id}"))?;
             let action = saga.compensation_action();
             let phase_str = format!("{}", saga.phase);
@@ -325,15 +363,24 @@ impl EvictionSagaManager {
         saga.record_transition(SagaPhase::Compensated, "compensation_complete");
         // Drop mutable borrow before logging
         let action_str = format!("{action}");
-        self.log(event_codes::ES_COMPENSATION_COMPLETE, trace_id,
-            serde_json::json!({"saga_id": saga_id, "action": action_str}));
+        self.log(
+            event_codes::ES_COMPENSATION_COMPLETE,
+            trace_id,
+            serde_json::json!({"saga_id": saga_id, "action": action_str}),
+        );
 
         Ok(action)
     }
 
     /// Recover a saga from a persisted phase (crash recovery).
-    pub fn recover_saga(&mut self, saga_id: &str, trace_id: &str) -> Result<CompensationAction, String> {
-        let saga = self.sagas.get(saga_id)
+    pub fn recover_saga(
+        &mut self,
+        saga_id: &str,
+        trace_id: &str,
+    ) -> Result<CompensationAction, String> {
+        let saga = self
+            .sagas
+            .get(saga_id)
             .ok_or_else(|| format!("saga not found: {saga_id}"))?;
 
         let action = saga.compensation_action();
@@ -359,9 +406,16 @@ impl EvictionSagaManager {
         }
 
         let passed = orphans.is_empty();
-        let event_code = if passed { event_codes::ES_LEAK_CHECK_PASSED } else { event_codes::ES_LEAK_CHECK_FAILED };
-        self.log(event_code, trace_id,
-            serde_json::json!({"orphans": orphans.len()}));
+        let event_code = if passed {
+            event_codes::ES_LEAK_CHECK_PASSED
+        } else {
+            event_codes::ES_LEAK_CHECK_FAILED
+        };
+        self.log(
+            event_code,
+            trace_id,
+            serde_json::json!({"orphans": orphans.len()}),
+        );
 
         LeakCheckResult {
             orphans_found: orphans.len(),
@@ -377,7 +431,8 @@ impl EvictionSagaManager {
 
     /// Export audit log as JSONL.
     pub fn export_audit_log_jsonl(&self) -> String {
-        self.audit_log.iter()
+        self.audit_log
+            .iter()
             .map(|r| serde_json::to_string(r).unwrap_or_default())
             .collect::<Vec<_>>()
             .join("\n")
@@ -385,7 +440,8 @@ impl EvictionSagaManager {
 
     /// Export saga traces as JSONL.
     pub fn export_saga_trace_jsonl(&self) -> String {
-        self.sagas.values()
+        self.sagas
+            .values()
             .flat_map(|s| s.transitions.iter())
             .map(|t| serde_json::to_string(t).unwrap_or_default())
             .collect::<Vec<_>>()
@@ -576,7 +632,10 @@ mod tests {
     #[test]
     fn test_compensation_action_created_phase() {
         let saga = SagaInstance::new("s1", "a1");
-        assert!(matches!(saga.compensation_action(), CompensationAction::None));
+        assert!(matches!(
+            saga.compensation_action(),
+            CompensationAction::None
+        ));
     }
 
     #[test]

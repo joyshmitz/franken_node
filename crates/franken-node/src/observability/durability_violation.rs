@@ -223,25 +223,33 @@ impl ViolationBundle {
 
     /// Serialize as JSON for export.
     pub fn to_json(&self) -> String {
-        let events_json: Vec<String> = self.causal_event_sequence.iter().map(|e| {
-            format!(
-                r#"{{"type":"{}","timestamp_ms":{},"description":"{}","evidence_ref":{}}}"#,
-                e.event_type.label(),
-                e.timestamp_ms,
-                e.description,
-                match &e.evidence_ref {
-                    Some(r) => format!("\"{}\"", r),
-                    None => "null".to_string(),
-                }
-            )
-        }).collect();
+        let events_json: Vec<String> = self
+            .causal_event_sequence
+            .iter()
+            .map(|e| {
+                format!(
+                    r#"{{"type":"{}","timestamp_ms":{},"description":"{}","evidence_ref":{}}}"#,
+                    e.event_type.label(),
+                    e.timestamp_ms,
+                    e.description,
+                    match &e.evidence_ref {
+                        Some(r) => format!("\"{}\"", r),
+                        None => "null".to_string(),
+                    }
+                )
+            })
+            .collect();
 
-        let artifacts_json: Vec<String> = self.failed_artifacts.iter().map(|a| {
-            format!(
-                r#"{{"path":"{}","expected_hash":"{}","actual_hash":"{}","reason":"{}"}}"#,
-                a.artifact_path, a.expected_hash, a.actual_hash, a.failure_reason
-            )
-        }).collect();
+        let artifacts_json: Vec<String> = self
+            .failed_artifacts
+            .iter()
+            .map(|a| {
+                format!(
+                    r#"{{"path":"{}","expected_hash":"{}","actual_hash":"{}","reason":"{}"}}"#,
+                    a.artifact_path, a.expected_hash, a.actual_hash, a.failure_reason
+                )
+            })
+            .collect();
 
         format!(
             r#"{{"bundle_id":"{}","event_count":{},"artifact_count":{},"hardening_level":"{}","epoch_id":{},"timestamp_ms":{},"causal_events":[{}],"failed_artifacts":[{}]}}"#,
@@ -400,8 +408,11 @@ pub struct DurabilityHaltedError {
 impl fmt::Display for DurabilityHaltedError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
-            f, "{}: bundle_id={}, scope={}",
-            event_codes::VIOLATION_OP_REJECTED, self.bundle_id, self.scope
+            f,
+            "{}: bundle_id={}, scope={}",
+            event_codes::VIOLATION_OP_REJECTED,
+            self.bundle_id,
+            self.scope
         )
     }
 }
@@ -468,14 +479,12 @@ mod tests {
                     evidence_ref: None,
                 },
             ],
-            artifacts: vec![
-                FailedArtifact {
-                    artifact_path: "objects/abc123".into(),
-                    expected_hash: "deadbeef".into(),
-                    actual_hash: "00000000".into(),
-                    failure_reason: "hash mismatch after repair".into(),
-                },
-            ],
+            artifacts: vec![FailedArtifact {
+                artifact_path: "objects/abc123".into(),
+                expected_hash: "deadbeef".into(),
+                actual_hash: "00000000".into(),
+                failure_reason: "hash mismatch after repair".into(),
+            }],
             proofs: ProofContext {
                 failed_proofs: vec!["proof-abc".into()],
                 missing_proofs: vec!["proof-def".into()],
@@ -500,11 +509,23 @@ mod tests {
 
     #[test]
     fn causal_event_type_labels() {
-        assert_eq!(CausalEventType::GuardrailRejection.label(), "guardrail_rejection");
-        assert_eq!(CausalEventType::HardeningEscalation.label(), "hardening_escalation");
+        assert_eq!(
+            CausalEventType::GuardrailRejection.label(),
+            "guardrail_rejection"
+        );
+        assert_eq!(
+            CausalEventType::HardeningEscalation.label(),
+            "hardening_escalation"
+        );
         assert_eq!(CausalEventType::RepairFailed.label(), "repair_failed");
-        assert_eq!(CausalEventType::IntegrityCheckFailed.label(), "integrity_check_failed");
-        assert_eq!(CausalEventType::ArtifactUnverifiable.label(), "artifact_unverifiable");
+        assert_eq!(
+            CausalEventType::IntegrityCheckFailed.label(),
+            "integrity_check_failed"
+        );
+        assert_eq!(
+            CausalEventType::ArtifactUnverifiable.label(),
+            "artifact_unverifiable"
+        );
     }
 
     #[test]
@@ -559,7 +580,10 @@ mod tests {
     #[test]
     fn halt_policy_display() {
         assert_eq!(HaltPolicy::HaltAll.to_string(), "halt_all");
-        assert_eq!(HaltPolicy::HaltScope("db".into()).to_string(), "halt_scope(db)");
+        assert_eq!(
+            HaltPolicy::HaltScope("db".into()).to_string(),
+            "halt_scope(db)"
+        );
         assert_eq!(HaltPolicy::WarnOnly.to_string(), "warn_only");
     }
 
@@ -698,9 +722,8 @@ mod tests {
 
     #[test]
     fn detector_halt_scope_blocks_only_matching() {
-        let mut detector = DurabilityViolationDetector::new(
-            HaltPolicy::HaltScope("scope-a".into())
-        );
+        let mut detector =
+            DurabilityViolationDetector::new(HaltPolicy::HaltScope("scope-a".into()));
         let ctx = make_context();
         detector.generate_bundle(&ctx);
 
@@ -802,9 +825,7 @@ mod tests {
 
     #[test]
     fn is_scope_halted_with_matching_scope() {
-        let mut detector = DurabilityViolationDetector::new(
-            HaltPolicy::HaltScope("db".into())
-        );
+        let mut detector = DurabilityViolationDetector::new(HaltPolicy::HaltScope("db".into()));
         let ctx = make_context();
         detector.generate_bundle(&ctx);
 

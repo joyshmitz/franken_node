@@ -119,18 +119,34 @@ pub struct ForegroundLatencySample {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BulkheadError {
     RemoteCapRequired,
-    AtCapacity { cap: usize, in_flight: usize },
-    QueueSaturated { max_depth: usize },
+    AtCapacity {
+        cap: usize,
+        in_flight: usize,
+    },
+    QueueSaturated {
+        max_depth: usize,
+    },
     Queued {
         request_id: String,
         position: usize,
         timeout_ms: u64,
     },
-    QueueTimeout { request_id: String },
-    UnknownRequest { request_id: String },
-    UnknownPermit { permit_id: u64 },
-    Draining { in_flight: usize, target_cap: usize },
-    InvalidConfig { reason: String },
+    QueueTimeout {
+        request_id: String,
+    },
+    UnknownRequest {
+        request_id: String,
+    },
+    UnknownPermit {
+        permit_id: u64,
+    },
+    Draining {
+        in_flight: usize,
+        target_cap: usize,
+    },
+    InvalidConfig {
+        reason: String,
+    },
 }
 
 impl BulkheadError {
@@ -342,7 +358,10 @@ impl RemoteBulkhead {
             self.log_event(
                 event_codes::RB_DRAIN_ACTIVE,
                 now_ms,
-                format!("drain required in_flight={} target_cap={new_cap}", self.in_flight),
+                format!(
+                    "drain required in_flight={} target_cap={new_cap}",
+                    self.in_flight
+                ),
             );
         } else {
             self.draining_target = None;
@@ -422,9 +441,7 @@ impl RemoteBulkhead {
                     self.log_event(
                         event_codes::RB_REQUEST_REJECTED,
                         now_ms,
-                        format!(
-                            "request_id={request_id} queue saturated max_depth={max_depth}"
-                        ),
+                        format!("request_id={request_id} queue saturated max_depth={max_depth}"),
                     );
                     return Err(BulkheadError::QueueSaturated { max_depth });
                 }
@@ -669,7 +686,9 @@ mod tests {
     #[test]
     fn remote_cap_is_required() {
         let mut b = bulkhead_reject(2);
-        let err = b.acquire(false, "no-cap", 1).expect_err("must require capability");
+        let err = b
+            .acquire(false, "no-cap", 1)
+            .expect_err("must require capability");
         assert!(matches!(err, BulkheadError::RemoteCapRequired));
     }
 

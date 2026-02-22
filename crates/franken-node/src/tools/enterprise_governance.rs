@@ -249,11 +249,15 @@ impl EnterpriseGovernance {
         rule.created_at = Utc::now().to_rfc3339();
         let rid = rule.rule_id.clone();
 
-        self.log(event_codes::EGI_RULE_REGISTERED, trace_id, serde_json::json!({
-            "rule_id": &rid,
-            "category": rule.category.label(),
-            "enforcement": rule.enforcement.label(),
-        }));
+        self.log(
+            event_codes::EGI_RULE_REGISTERED,
+            trace_id,
+            serde_json::json!({
+                "rule_id": &rid,
+                "category": rule.category.label(),
+                "enforcement": rule.enforcement.label(),
+            }),
+        );
 
         self.rules.insert(rid.clone(), rule);
         Ok(rid)
@@ -266,30 +270,46 @@ impl EnterpriseGovernance {
         trace_id: &str,
     ) -> Result<String, String> {
         if !self.rules.contains_key(&assessment.rule_id) {
-            self.log(event_codes::EGI_ERR_RULE_NOT_FOUND, trace_id, serde_json::json!({
-                "rule_id": &assessment.rule_id,
-            }));
+            self.log(
+                event_codes::EGI_ERR_RULE_NOT_FOUND,
+                trace_id,
+                serde_json::json!({
+                    "rule_id": &assessment.rule_id,
+                }),
+            );
             return Err(format!("Rule {} not found", assessment.rule_id));
         }
 
         assessment.timestamp = Utc::now().to_rfc3339();
         let aid = assessment.assessment_id.clone();
 
-        self.log(event_codes::EGI_ASSESSMENT_RECORDED, trace_id, serde_json::json!({
-            "assessment_id": &aid,
-            "rule_id": &assessment.rule_id,
-            "status": assessment.status.label(),
-        }));
+        self.log(
+            event_codes::EGI_ASSESSMENT_RECORDED,
+            trace_id,
+            serde_json::json!({
+                "assessment_id": &aid,
+                "rule_id": &assessment.rule_id,
+                "status": assessment.status.label(),
+            }),
+        );
 
-        self.log(event_codes::EGI_EVIDENCE_ATTACHED, trace_id, serde_json::json!({
-            "assessment_id": &aid,
-            "evidence_length": assessment.evidence.len(),
-        }));
+        self.log(
+            event_codes::EGI_EVIDENCE_ATTACHED,
+            trace_id,
+            serde_json::json!({
+                "assessment_id": &aid,
+                "evidence_length": assessment.evidence.len(),
+            }),
+        );
 
-        self.log(event_codes::EGI_COMPLIANCE_CHECKED, trace_id, serde_json::json!({
-            "assessment_id": &aid,
-            "compliant": assessment.status == ComplianceStatus::Compliant,
-        }));
+        self.log(
+            event_codes::EGI_COMPLIANCE_CHECKED,
+            trace_id,
+            serde_json::json!({
+                "assessment_id": &aid,
+                "compliant": assessment.status == ComplianceStatus::Compliant,
+            }),
+        );
 
         self.assessments.push(assessment);
         Ok(aid)
@@ -304,17 +324,20 @@ impl EnterpriseGovernance {
         }
 
         // Aggregate by category — use owned data to avoid borrowing self.rules during self.log()
-        let mut cat_data: BTreeMap<RuleCategory, Vec<(String, EnforcementLevel, ComplianceStatus)>> =
-            BTreeMap::new();
+        let mut cat_data: BTreeMap<
+            RuleCategory,
+            Vec<(String, EnforcementLevel, ComplianceStatus)>,
+        > = BTreeMap::new();
         for rule in self.rules.values() {
             let rule_status = latest
                 .get(&rule.rule_id)
                 .map(|a| a.status)
                 .unwrap_or(ComplianceStatus::NotAssessed);
-            cat_data
-                .entry(rule.category)
-                .or_default()
-                .push((rule.rule_id.clone(), rule.enforcement, rule_status));
+            cat_data.entry(rule.category).or_default().push((
+                rule.rule_id.clone(),
+                rule.enforcement,
+                rule_status,
+            ));
         }
 
         let mut categories = Vec::new();
@@ -347,11 +370,15 @@ impl EnterpriseGovernance {
                 0.0
             };
 
-            self.log(event_codes::EGI_CATEGORY_AGGREGATED, trace_id, serde_json::json!({
-                "category": cat.label(),
-                "total": total,
-                "compliant": compliant,
-            }));
+            self.log(
+                event_codes::EGI_CATEGORY_AGGREGATED,
+                trace_id,
+                serde_json::json!({
+                    "category": cat.label(),
+                    "total": total,
+                    "compliant": compliant,
+                }),
+            );
 
             categories.push(CategoryCompliance {
                 category: *cat,
@@ -366,10 +393,14 @@ impl EnterpriseGovernance {
 
         // Determine gate action
         let gate_action = if !blocked_rules.is_empty() {
-            self.log(event_codes::EGI_ERR_GATE_BLOCKED, trace_id, serde_json::json!({
-                "blocked_count": blocked_rules.len(),
-                "blocked_rules": &blocked_rules,
-            }));
+            self.log(
+                event_codes::EGI_ERR_GATE_BLOCKED,
+                trace_id,
+                serde_json::json!({
+                    "blocked_count": blocked_rules.len(),
+                    "blocked_rules": &blocked_rules,
+                }),
+            );
             GateAction::Block
         } else if categories.iter().any(|c| c.partially_compliant > 0) {
             GateAction::Warn
@@ -377,9 +408,13 @@ impl EnterpriseGovernance {
             GateAction::Allow
         };
 
-        self.log(event_codes::EGI_POLICY_GATED, trace_id, serde_json::json!({
-            "gate_action": format!("{:?}", gate_action),
-        }));
+        self.log(
+            event_codes::EGI_POLICY_GATED,
+            trace_id,
+            serde_json::json!({
+                "gate_action": format!("{:?}", gate_action),
+            }),
+        );
 
         let hash_input = serde_json::json!({
             "total_rules": self.rules.len(),
@@ -389,14 +424,22 @@ impl EnterpriseGovernance {
         .to_string();
         let content_hash = hex::encode(Sha256::digest(hash_input.as_bytes()));
 
-        self.log(event_codes::EGI_REPORT_GENERATED, trace_id, serde_json::json!({
-            "total_rules": self.rules.len(),
-            "categories": categories.len(),
-        }));
+        self.log(
+            event_codes::EGI_REPORT_GENERATED,
+            trace_id,
+            serde_json::json!({
+                "total_rules": self.rules.len(),
+                "categories": categories.len(),
+            }),
+        );
 
-        self.log(event_codes::EGI_VERSION_EMBEDDED, trace_id, serde_json::json!({
-            "schema_version": &self.schema_version,
-        }));
+        self.log(
+            event_codes::EGI_VERSION_EMBEDDED,
+            trace_id,
+            serde_json::json!({
+                "schema_version": &self.schema_version,
+            }),
+        );
 
         ComplianceReport {
             report_id: Uuid::now_v7().to_string(),
@@ -504,18 +547,28 @@ mod tests {
     #[test]
     fn register_valid_rule() {
         let mut engine = EnterpriseGovernance::default();
-        assert!(engine
-            .register_rule(
-                sample_rule("r-1", RuleCategory::AccessControl, EnforcementLevel::Mandatory),
-                &trace(),
-            )
-            .is_ok());
+        assert!(
+            engine
+                .register_rule(
+                    sample_rule(
+                        "r-1",
+                        RuleCategory::AccessControl,
+                        EnforcementLevel::Mandatory
+                    ),
+                    &trace(),
+                )
+                .is_ok()
+        );
     }
 
     #[test]
     fn register_empty_title_fails() {
         let mut engine = EnterpriseGovernance::default();
-        let mut r = sample_rule("r-1", RuleCategory::AccessControl, EnforcementLevel::Mandatory);
+        let mut r = sample_rule(
+            "r-1",
+            RuleCategory::AccessControl,
+            EnforcementLevel::Mandatory,
+        );
         r.title = String::new();
         assert!(engine.register_rule(r, &trace()).is_err());
     }
@@ -525,7 +578,11 @@ mod tests {
         let mut engine = EnterpriseGovernance::default();
         engine
             .register_rule(
-                sample_rule("r-1", RuleCategory::AccessControl, EnforcementLevel::Mandatory),
+                sample_rule(
+                    "r-1",
+                    RuleCategory::AccessControl,
+                    EnforcementLevel::Mandatory,
+                ),
                 &trace(),
             )
             .unwrap();
@@ -540,27 +597,35 @@ mod tests {
         let mut engine = EnterpriseGovernance::default();
         engine
             .register_rule(
-                sample_rule("r-1", RuleCategory::AccessControl, EnforcementLevel::Mandatory),
+                sample_rule(
+                    "r-1",
+                    RuleCategory::AccessControl,
+                    EnforcementLevel::Mandatory,
+                ),
                 &trace(),
             )
             .unwrap();
-        assert!(engine
-            .record_assessment(
-                sample_assessment("a-1", "r-1", ComplianceStatus::Compliant),
-                &trace(),
-            )
-            .is_ok());
+        assert!(
+            engine
+                .record_assessment(
+                    sample_assessment("a-1", "r-1", ComplianceStatus::Compliant),
+                    &trace(),
+                )
+                .is_ok()
+        );
     }
 
     #[test]
     fn record_assessment_missing_rule_fails() {
         let mut engine = EnterpriseGovernance::default();
-        assert!(engine
-            .record_assessment(
-                sample_assessment("a-1", "nonexistent", ComplianceStatus::Compliant),
-                &trace(),
-            )
-            .is_err());
+        assert!(
+            engine
+                .record_assessment(
+                    sample_assessment("a-1", "nonexistent", ComplianceStatus::Compliant),
+                    &trace(),
+                )
+                .is_err()
+        );
     }
 
     #[test]
@@ -568,7 +633,11 @@ mod tests {
         let mut engine = EnterpriseGovernance::default();
         engine
             .register_rule(
-                sample_rule("r-1", RuleCategory::AccessControl, EnforcementLevel::Mandatory),
+                sample_rule(
+                    "r-1",
+                    RuleCategory::AccessControl,
+                    EnforcementLevel::Mandatory,
+                ),
                 &trace(),
             )
             .unwrap();
@@ -596,7 +665,11 @@ mod tests {
         let mut engine = EnterpriseGovernance::default();
         engine
             .register_rule(
-                sample_rule("r-1", RuleCategory::AccessControl, EnforcementLevel::Mandatory),
+                sample_rule(
+                    "r-1",
+                    RuleCategory::AccessControl,
+                    EnforcementLevel::Mandatory,
+                ),
                 &trace(),
             )
             .unwrap();
@@ -616,7 +689,11 @@ mod tests {
         let mut engine = EnterpriseGovernance::default();
         engine
             .register_rule(
-                sample_rule("r-1", RuleCategory::AccessControl, EnforcementLevel::Mandatory),
+                sample_rule(
+                    "r-1",
+                    RuleCategory::AccessControl,
+                    EnforcementLevel::Mandatory,
+                ),
                 &trace(),
             )
             .unwrap();
@@ -636,7 +713,11 @@ mod tests {
         let mut engine = EnterpriseGovernance::default();
         engine
             .register_rule(
-                sample_rule("r-1", RuleCategory::DataRetention, EnforcementLevel::Advisory),
+                sample_rule(
+                    "r-1",
+                    RuleCategory::DataRetention,
+                    EnforcementLevel::Advisory,
+                ),
                 &trace(),
             )
             .unwrap();
@@ -655,7 +736,11 @@ mod tests {
         let mut engine = EnterpriseGovernance::default();
         engine
             .register_rule(
-                sample_rule("r-1", RuleCategory::AuditLogging, EnforcementLevel::Recommended),
+                sample_rule(
+                    "r-1",
+                    RuleCategory::AuditLogging,
+                    EnforcementLevel::Recommended,
+                ),
                 &trace(),
             )
             .unwrap();
@@ -674,13 +759,21 @@ mod tests {
         let mut engine = EnterpriseGovernance::default();
         engine
             .register_rule(
-                sample_rule("r-1", RuleCategory::AccessControl, EnforcementLevel::Mandatory),
+                sample_rule(
+                    "r-1",
+                    RuleCategory::AccessControl,
+                    EnforcementLevel::Mandatory,
+                ),
                 &trace(),
             )
             .unwrap();
         engine
             .register_rule(
-                sample_rule("r-2", RuleCategory::DataRetention, EnforcementLevel::Recommended),
+                sample_rule(
+                    "r-2",
+                    RuleCategory::DataRetention,
+                    EnforcementLevel::Recommended,
+                ),
                 &trace(),
             )
             .unwrap();
@@ -716,13 +809,21 @@ mod tests {
         let mut engine = EnterpriseGovernance::default();
         engine
             .register_rule(
-                sample_rule("r-1", RuleCategory::AccessControl, EnforcementLevel::Mandatory),
+                sample_rule(
+                    "r-1",
+                    RuleCategory::AccessControl,
+                    EnforcementLevel::Mandatory,
+                ),
                 &trace(),
             )
             .unwrap();
         engine
             .register_rule(
-                sample_rule("r-2", RuleCategory::AccessControl, EnforcementLevel::Mandatory),
+                sample_rule(
+                    "r-2",
+                    RuleCategory::AccessControl,
+                    EnforcementLevel::Mandatory,
+                ),
                 &trace(),
             )
             .unwrap();
@@ -750,7 +851,11 @@ mod tests {
         let mut engine = EnterpriseGovernance::default();
         engine
             .register_rule(
-                sample_rule("r-1", RuleCategory::AccessControl, EnforcementLevel::Mandatory),
+                sample_rule(
+                    "r-1",
+                    RuleCategory::AccessControl,
+                    EnforcementLevel::Mandatory,
+                ),
                 &trace(),
             )
             .unwrap();
@@ -762,11 +867,19 @@ mod tests {
         let mut engine = EnterpriseGovernance::default();
         engine
             .register_rule(
-                sample_rule("r-1", RuleCategory::AccessControl, EnforcementLevel::Mandatory),
+                sample_rule(
+                    "r-1",
+                    RuleCategory::AccessControl,
+                    EnforcementLevel::Mandatory,
+                ),
                 &trace(),
             )
             .unwrap();
-        let codes: Vec<&str> = engine.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        let codes: Vec<&str> = engine
+            .audit_log()
+            .iter()
+            .map(|r| r.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::EGI_RULE_REGISTERED));
     }
 
@@ -775,13 +888,16 @@ mod tests {
         let mut engine = EnterpriseGovernance::default();
         engine
             .register_rule(
-                sample_rule("r-1", RuleCategory::AccessControl, EnforcementLevel::Mandatory),
+                sample_rule(
+                    "r-1",
+                    RuleCategory::AccessControl,
+                    EnforcementLevel::Mandatory,
+                ),
                 &trace(),
             )
             .unwrap();
         let jsonl = engine.export_audit_log_jsonl().unwrap();
-        let first: serde_json::Value =
-            serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+        let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert!(first["event_code"].is_string());
     }
 
@@ -796,7 +912,11 @@ mod tests {
         let mut engine = EnterpriseGovernance::default();
         engine
             .register_rule(
-                sample_rule("r-1", RuleCategory::AccessControl, EnforcementLevel::Mandatory),
+                sample_rule(
+                    "r-1",
+                    RuleCategory::AccessControl,
+                    EnforcementLevel::Mandatory,
+                ),
                 &trace(),
             )
             .unwrap();

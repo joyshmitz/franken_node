@@ -124,7 +124,11 @@ pub struct CompilerConfig {
 }
 
 impl CompilerConfig {
-    pub fn new(signer_id: impl Into<String>, signing_key: impl Into<String>, now_epoch_ms: u64) -> Self {
+    pub fn new(
+        signer_id: impl Into<String>,
+        signing_key: impl Into<String>,
+        now_epoch_ms: u64,
+    ) -> Self {
         Self {
             signer_id: signer_id.into(),
             signing_key: signing_key.into(),
@@ -378,7 +382,10 @@ impl ScoreboardPipeline {
     ) -> ScoreboardUpdateResult {
         // INV-SCOREBOARD-FRESH-LINKS: reject stale evidence
         for contract in contracts {
-            if self.config.now_epoch_ms.saturating_sub(contract.compiled_at_epoch_ms)
+            if self
+                .config
+                .now_epoch_ms
+                .saturating_sub(contract.compiled_at_epoch_ms)
                 > self.config.max_evidence_age_ms
             {
                 return ScoreboardUpdateResult::Rejected {
@@ -442,7 +449,10 @@ impl ScoreboardPipeline {
     ) -> Option<ScoreboardSnapshot> {
         // Check freshness first
         for contract in contracts {
-            if self.config.now_epoch_ms.saturating_sub(contract.compiled_at_epoch_ms)
+            if self
+                .config
+                .now_epoch_ms
+                .saturating_sub(contract.compiled_at_epoch_ms)
                 > self.config.max_evidence_age_ms
             {
                 return None;
@@ -503,7 +513,10 @@ fn compute_entry_digest(
     hex::encode(hasher.finalize())
 }
 
-fn compute_snapshot_digest(snapshot_id: &str, entries: &BTreeMap<String, ScoreboardEntry>) -> String {
+fn compute_snapshot_digest(
+    snapshot_id: &str,
+    entries: &BTreeMap<String, ScoreboardEntry>,
+) -> String {
     let mut hasher = Sha256::new();
     hasher.update(snapshot_id.as_bytes());
     for (key, entry) in entries {
@@ -555,7 +568,10 @@ mod tests {
         let claim = make_test_claim("c1", "src-1");
         let result = cc.compile(&claim);
         match result {
-            CompilationResult::Compiled { contract, event_code } => {
+            CompilationResult::Compiled {
+                contract,
+                event_code,
+            } => {
                 assert_eq!(contract.claim_id, "c1");
                 assert_eq!(event_code, event_codes::CLAIM_CONTRACT_GENERATED);
                 assert!(!contract.contract_digest.is_empty());
@@ -764,7 +780,9 @@ mod tests {
                 _ => None,
             })
             .collect();
-        let snapshot = sb.build_snapshot("snap-ordered", &contracts).expect("snapshot");
+        let snapshot = sb
+            .build_snapshot("snap-ordered", &contracts)
+            .expect("snapshot");
         let keys: Vec<_> = snapshot.entries.keys().collect();
         let mut sorted = keys.clone();
         sorted.sort();
@@ -780,7 +798,9 @@ mod tests {
             CompilationResult::Compiled { contract, .. } => contract,
             _ => panic!("expected compiled"),
         };
-        let s1 = sb.build_snapshot("snap-det", &[contract.clone()]).expect("s1");
+        let s1 = sb
+            .build_snapshot("snap-det", &[contract.clone()])
+            .expect("s1");
         let s2 = sb.build_snapshot("snap-det", &[contract]).expect("s2");
         assert_eq!(s1.snapshot_digest, s2.snapshot_digest);
     }
@@ -811,10 +831,22 @@ mod tests {
 
     #[test]
     fn rejection_reason_codes_are_correct() {
-        assert_eq!(ClaimRejectionReason::SyntaxInvalid.code(), error_codes::ERR_CLAIM_SYNTAX_INVALID);
-        assert_eq!(ClaimRejectionReason::EvidenceMissing.code(), error_codes::ERR_CLAIM_EVIDENCE_MISSING);
-        assert_eq!(ClaimRejectionReason::Unverifiable.code(), error_codes::ERR_CLAIM_UNVERIFIABLE);
-        assert_eq!(ClaimRejectionReason::Blocked.code(), error_codes::ERR_CLAIM_BLOCKED);
+        assert_eq!(
+            ClaimRejectionReason::SyntaxInvalid.code(),
+            error_codes::ERR_CLAIM_SYNTAX_INVALID
+        );
+        assert_eq!(
+            ClaimRejectionReason::EvidenceMissing.code(),
+            error_codes::ERR_CLAIM_EVIDENCE_MISSING
+        );
+        assert_eq!(
+            ClaimRejectionReason::Unverifiable.code(),
+            error_codes::ERR_CLAIM_UNVERIFIABLE
+        );
+        assert_eq!(
+            ClaimRejectionReason::Blocked.code(),
+            error_codes::ERR_CLAIM_BLOCKED
+        );
     }
 
     #[test]
@@ -859,20 +891,47 @@ mod tests {
 
     #[test]
     fn invariant_constants_match_spec() {
-        assert_eq!(invariants::INV_CLAIM_EXECUTABLE_CONTRACT, "INV-CLAIM-EXECUTABLE-CONTRACT");
-        assert_eq!(invariants::INV_CLAIM_BLOCK_UNVERIFIABLE, "INV-CLAIM-BLOCK-UNVERIFIABLE");
-        assert_eq!(invariants::INV_SCOREBOARD_SIGNED_EVIDENCE, "INV-SCOREBOARD-SIGNED-EVIDENCE");
-        assert_eq!(invariants::INV_SCOREBOARD_FRESH_LINKS, "INV-SCOREBOARD-FRESH-LINKS");
+        assert_eq!(
+            invariants::INV_CLAIM_EXECUTABLE_CONTRACT,
+            "INV-CLAIM-EXECUTABLE-CONTRACT"
+        );
+        assert_eq!(
+            invariants::INV_CLAIM_BLOCK_UNVERIFIABLE,
+            "INV-CLAIM-BLOCK-UNVERIFIABLE"
+        );
+        assert_eq!(
+            invariants::INV_SCOREBOARD_SIGNED_EVIDENCE,
+            "INV-SCOREBOARD-SIGNED-EVIDENCE"
+        );
+        assert_eq!(
+            invariants::INV_SCOREBOARD_FRESH_LINKS,
+            "INV-SCOREBOARD-FRESH-LINKS"
+        );
     }
 
     // --- Event code constants ---
 
     #[test]
     fn event_code_constants_match_spec() {
-        assert_eq!(event_codes::CLAIM_COMPILATION_START, "CLAIM_COMPILATION_START");
-        assert_eq!(event_codes::CLAIM_CONTRACT_GENERATED, "CLAIM_CONTRACT_GENERATED");
-        assert_eq!(event_codes::CLAIM_VERIFICATION_LINKED, "CLAIM_VERIFICATION_LINKED");
-        assert_eq!(event_codes::SCOREBOARD_UPDATE_PUBLISHED, "SCOREBOARD_UPDATE_PUBLISHED");
-        assert_eq!(event_codes::SCOREBOARD_EVIDENCE_SIGNED, "SCOREBOARD_EVIDENCE_SIGNED");
+        assert_eq!(
+            event_codes::CLAIM_COMPILATION_START,
+            "CLAIM_COMPILATION_START"
+        );
+        assert_eq!(
+            event_codes::CLAIM_CONTRACT_GENERATED,
+            "CLAIM_CONTRACT_GENERATED"
+        );
+        assert_eq!(
+            event_codes::CLAIM_VERIFICATION_LINKED,
+            "CLAIM_VERIFICATION_LINKED"
+        );
+        assert_eq!(
+            event_codes::SCOREBOARD_UPDATE_PUBLISHED,
+            "SCOREBOARD_UPDATE_PUBLISHED"
+        );
+        assert_eq!(
+            event_codes::SCOREBOARD_EVIDENCE_SIGNED,
+            "SCOREBOARD_EVIDENCE_SIGNED"
+        );
     }
 }

@@ -186,8 +186,10 @@ impl DecisionEngine {
             // Per-candidate guardrail filter.
             if candidate.guardrail_filtered {
                 blocking_ids.push(GuardrailId::new("per_candidate_guardrail"));
-                blocking_reasons
-                    .push(format!("candidate {} blocked by guardrail filter", candidate.candidate_ref.0));
+                blocking_reasons.push(format!(
+                    "candidate {} blocked by guardrail filter",
+                    candidate.candidate_ref.0
+                ));
             }
 
             if blocking_ids.is_empty() {
@@ -368,7 +370,11 @@ mod tests {
 
         // Both candidates blocked by the same system-level guardrail
         for b in &outcome.blocked {
-            assert!(b.blocked_by.iter().any(|g| g.as_str() == "evidence_emission"));
+            assert!(
+                b.blocked_by
+                    .iter()
+                    .any(|g| g.as_str() == "evidence_emission")
+            );
         }
     }
 
@@ -437,10 +443,12 @@ mod tests {
 
         let outcome = engine().decide(&candidates, &default_monitors(), &state);
         assert!(outcome.chosen.is_none());
-        assert!(outcome.blocked[0]
-            .blocked_by
-            .iter()
-            .any(|g| g.as_str() == "durability_budget"));
+        assert!(
+            outcome.blocked[0]
+                .blocked_by
+                .iter()
+                .any(|g| g.as_str() == "durability_budget")
+        );
     }
 
     // ── Hardening regression blocks all ──
@@ -453,10 +461,12 @@ mod tests {
 
         let outcome = engine().decide(&candidates, &default_monitors(), &state);
         assert!(outcome.chosen.is_none());
-        assert!(outcome.blocked[0]
-            .blocked_by
-            .iter()
-            .any(|g| g.as_str() == "hardening_regression"));
+        assert!(
+            outcome.blocked[0]
+                .blocked_by
+                .iter()
+                .any(|g| g.as_str() == "hardening_regression")
+        );
     }
 
     // ── Epoch propagation ──

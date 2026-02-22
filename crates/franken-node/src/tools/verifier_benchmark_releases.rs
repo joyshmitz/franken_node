@@ -67,7 +67,13 @@ pub enum ReleaseType {
 
 impl ReleaseType {
     pub fn all() -> &'static [ReleaseType] {
-        &[Self::VerifierTool, Self::BenchmarkSuite, Self::TestHarness, Self::ComplianceChecker, Self::DocumentationKit]
+        &[
+            Self::VerifierTool,
+            Self::BenchmarkSuite,
+            Self::TestHarness,
+            Self::ComplianceChecker,
+            Self::DocumentationKit,
+        ]
     }
     pub fn label(&self) -> &'static str {
         match self {
@@ -167,55 +173,105 @@ impl Default for VerifierBenchmarkReleases {
 }
 
 impl VerifierBenchmarkReleases {
-    pub fn create_release(&mut self, mut release: ToolRelease, trace_id: &str) -> Result<String, String> {
+    pub fn create_release(
+        &mut self,
+        mut release: ToolRelease,
+        trace_id: &str,
+    ) -> Result<String, String> {
         if release.version.is_empty() {
-            self.log(event_codes::VBR_ERR_INVALID_RELEASE, trace_id, serde_json::json!({"reason": "empty version"}));
+            self.log(
+                event_codes::VBR_ERR_INVALID_RELEASE,
+                trace_id,
+                serde_json::json!({"reason": "empty version"}),
+            );
             return Err("version must not be empty".to_string());
         }
         release.created_at = Utc::now().to_rfc3339();
         release.status = ReleaseStatus::Draft;
         release.download_count = 0;
         let rid = release.release_id.clone();
-        self.log(event_codes::VBR_RELEASE_CREATED, trace_id, serde_json::json!({"release_id": &rid, "type": release.release_type.label()}));
+        self.log(
+            event_codes::VBR_RELEASE_CREATED,
+            trace_id,
+            serde_json::json!({"release_id": &rid, "type": release.release_type.label()}),
+        );
         self.releases.insert(rid.clone(), release);
         Ok(rid)
     }
 
-    pub fn add_artifact(&mut self, release_id: &str, artifact: ReleaseArtifact, trace_id: &str) -> Result<(), String> {
+    pub fn add_artifact(
+        &mut self,
+        release_id: &str,
+        artifact: ReleaseArtifact,
+        trace_id: &str,
+    ) -> Result<(), String> {
         if !self.releases.contains_key(release_id) {
             return Err(format!("release not found: {release_id}"));
         }
-        self.log(event_codes::VBR_ARTIFACT_ADDED, trace_id, serde_json::json!({"release_id": release_id, "artifact": &artifact.filename}));
-        self.releases.get_mut(release_id).unwrap().artifacts.push(artifact);
+        self.log(
+            event_codes::VBR_ARTIFACT_ADDED,
+            trace_id,
+            serde_json::json!({"release_id": release_id, "artifact": &artifact.filename}),
+        );
+        self.releases
+            .get_mut(release_id)
+            .unwrap()
+            .artifacts
+            .push(artifact);
         Ok(())
     }
 
     pub fn publish_release(&mut self, release_id: &str, trace_id: &str) -> Result<(), String> {
-        let quality = self.releases.get(release_id)
+        let quality = self
+            .releases
+            .get(release_id)
             .ok_or_else(|| format!("release not found: {release_id}"))?
             .quality_score;
 
         if quality < MIN_QUALITY_SCORE {
-            self.log(event_codes::VBR_ERR_QUALITY_BELOW_THRESHOLD, trace_id, serde_json::json!({"score": quality, "min": MIN_QUALITY_SCORE}));
+            self.log(
+                event_codes::VBR_ERR_QUALITY_BELOW_THRESHOLD,
+                trace_id,
+                serde_json::json!({"score": quality, "min": MIN_QUALITY_SCORE}),
+            );
             return Err(format!("quality {quality} < {MIN_QUALITY_SCORE}"));
         }
-        self.log(event_codes::VBR_QUALITY_CHECKED, trace_id, serde_json::json!({"score": quality, "meets": true}));
+        self.log(
+            event_codes::VBR_QUALITY_CHECKED,
+            trace_id,
+            serde_json::json!({"score": quality, "meets": true}),
+        );
 
         let rel = self.releases.get_mut(release_id).unwrap();
         rel.status = ReleaseStatus::Published;
-        self.log(event_codes::VBR_STATUS_CHANGED, trace_id, serde_json::json!({"release_id": release_id, "status": "published"}));
+        self.log(
+            event_codes::VBR_STATUS_CHANGED,
+            trace_id,
+            serde_json::json!({"release_id": release_id, "status": "published"}),
+        );
         Ok(())
     }
 
     pub fn deprecate_release(&mut self, release_id: &str, trace_id: &str) -> Result<(), String> {
-        let rel = self.releases.get_mut(release_id)
+        let rel = self
+            .releases
+            .get_mut(release_id)
             .ok_or_else(|| format!("release not found: {release_id}"))?;
         rel.status = ReleaseStatus::Deprecated;
-        self.log(event_codes::VBR_STATUS_CHANGED, trace_id, serde_json::json!({"release_id": release_id, "status": "deprecated"}));
+        self.log(
+            event_codes::VBR_STATUS_CHANGED,
+            trace_id,
+            serde_json::json!({"release_id": release_id, "status": "deprecated"}),
+        );
         Ok(())
     }
 
-    pub fn record_download(&mut self, release_id: &str, context: &str, trace_id: &str) -> Result<String, String> {
+    pub fn record_download(
+        &mut self,
+        release_id: &str,
+        context: &str,
+        trace_id: &str,
+    ) -> Result<String, String> {
         if !self.releases.contains_key(release_id) {
             return Err(format!("release not found: {release_id}"));
         }
@@ -227,33 +283,70 @@ impl VerifierBenchmarkReleases {
             timestamp: Utc::now().to_rfc3339(),
         });
         self.releases.get_mut(release_id).unwrap().download_count += 1;
-        self.log(event_codes::VBR_DOWNLOAD_RECORDED, trace_id, serde_json::json!({"release_id": release_id}));
+        self.log(
+            event_codes::VBR_DOWNLOAD_RECORDED,
+            trace_id,
+            serde_json::json!({"release_id": release_id}),
+        );
         Ok(did)
     }
 
-    pub fn update_changelog(&mut self, release_id: &str, changelog: &str, trace_id: &str) -> Result<(), String> {
-        let rel = self.releases.get_mut(release_id)
+    pub fn update_changelog(
+        &mut self,
+        release_id: &str,
+        changelog: &str,
+        trace_id: &str,
+    ) -> Result<(), String> {
+        let rel = self
+            .releases
+            .get_mut(release_id)
             .ok_or_else(|| format!("release not found: {release_id}"))?;
         rel.changelog = changelog.to_string();
-        self.log(event_codes::VBR_CHANGELOG_UPDATED, trace_id, serde_json::json!({"release_id": release_id}));
+        self.log(
+            event_codes::VBR_CHANGELOG_UPDATED,
+            trace_id,
+            serde_json::json!({"release_id": release_id}),
+        );
         Ok(())
     }
 
     pub fn generate_metrics(&mut self, trace_id: &str) -> AdoptionMetrics {
         let total = self.releases.len();
-        let published = self.releases.values().filter(|r| matches!(r.status, ReleaseStatus::Published)).count();
+        let published = self
+            .releases
+            .values()
+            .filter(|r| matches!(r.status, ReleaseStatus::Published))
+            .count();
         let total_dl: u64 = self.releases.values().map(|r| r.download_count).sum();
         let mut by_type: BTreeMap<String, u64> = BTreeMap::new();
         for r in self.releases.values() {
-            *by_type.entry(r.release_type.label().to_string()).or_default() += r.download_count;
+            *by_type
+                .entry(r.release_type.label().to_string())
+                .or_default() += r.download_count;
         }
         let hash_input = format!("{total}:{published}:{total_dl}:{}", &self.schema_version);
         let content_hash = hex::encode(Sha256::digest(hash_input.as_bytes()));
 
-        self.log(event_codes::VBR_METRICS_COMPUTED, trace_id, serde_json::json!({"total": total}));
-        self.log(event_codes::VBR_COMPAT_GENERATED, trace_id, serde_json::json!({"types": by_type.len()}));
-        self.log(event_codes::VBR_VERSION_EMBEDDED, trace_id, serde_json::json!({"version": &self.schema_version}));
-        self.log(event_codes::VBR_CATALOG_GENERATED, trace_id, serde_json::json!({"releases": total}));
+        self.log(
+            event_codes::VBR_METRICS_COMPUTED,
+            trace_id,
+            serde_json::json!({"total": total}),
+        );
+        self.log(
+            event_codes::VBR_COMPAT_GENERATED,
+            trace_id,
+            serde_json::json!({"types": by_type.len()}),
+        );
+        self.log(
+            event_codes::VBR_VERSION_EMBEDDED,
+            trace_id,
+            serde_json::json!({"version": &self.schema_version}),
+        );
+        self.log(
+            event_codes::VBR_CATALOG_GENERATED,
+            trace_id,
+            serde_json::json!({"releases": total}),
+        );
 
         AdoptionMetrics {
             metrics_id: Uuid::now_v7().to_string(),
@@ -267,13 +360,21 @@ impl VerifierBenchmarkReleases {
         }
     }
 
-    pub fn releases(&self) -> &BTreeMap<String, ToolRelease> { &self.releases }
-    pub fn downloads(&self) -> &[DownloadRecord] { &self.downloads }
-    pub fn audit_log(&self) -> &[VbrAuditRecord] { &self.audit_log }
+    pub fn releases(&self) -> &BTreeMap<String, ToolRelease> {
+        &self.releases
+    }
+    pub fn downloads(&self) -> &[DownloadRecord] {
+        &self.downloads
+    }
+    pub fn audit_log(&self) -> &[VbrAuditRecord] {
+        &self.audit_log
+    }
 
     pub fn export_audit_log_jsonl(&self) -> Result<String, serde_json::Error> {
         let mut lines = Vec::with_capacity(self.audit_log.len());
-        for r in &self.audit_log { lines.push(serde_json::to_string(r)?); }
+        for r in &self.audit_log {
+            lines.push(serde_json::to_string(r)?);
+        }
         Ok(lines.join("\n"))
     }
 
@@ -292,7 +393,9 @@ impl VerifierBenchmarkReleases {
 mod tests {
     use super::*;
 
-    fn trace() -> String { Uuid::now_v7().to_string() }
+    fn trace() -> String {
+        Uuid::now_v7().to_string()
+    }
 
     fn sample_release(id: &str, rt: ReleaseType) -> ToolRelease {
         ToolRelease {
@@ -308,44 +411,70 @@ mod tests {
         }
     }
 
-    #[test] fn five_release_types() { assert_eq!(ReleaseType::all().len(), 5); }
-    #[test] fn type_labels_nonempty() { for t in ReleaseType::all() { assert!(!t.label().is_empty()); } }
+    #[test]
+    fn five_release_types() {
+        assert_eq!(ReleaseType::all().len(), 5);
+    }
+    #[test]
+    fn type_labels_nonempty() {
+        for t in ReleaseType::all() {
+            assert!(!t.label().is_empty());
+        }
+    }
 
-    #[test] fn create_release_ok() {
+    #[test]
+    fn create_release_ok() {
         let mut e = VerifierBenchmarkReleases::default();
-        assert!(e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace()).is_ok());
+        assert!(
+            e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace())
+                .is_ok()
+        );
         assert_eq!(e.releases().len(), 1);
     }
 
-    #[test] fn create_empty_version_fails() {
+    #[test]
+    fn create_empty_version_fails() {
         let mut e = VerifierBenchmarkReleases::default();
         let mut r = sample_release("r1", ReleaseType::VerifierTool);
         r.version.clear();
         assert!(e.create_release(r, &trace()).is_err());
     }
 
-    #[test] fn create_sets_timestamp() {
+    #[test]
+    fn create_sets_timestamp() {
         let mut e = VerifierBenchmarkReleases::default();
-        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace()).unwrap();
+        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace())
+            .unwrap();
         assert!(!e.releases()["r1"].created_at.is_empty());
     }
 
-    #[test] fn add_artifact() {
+    #[test]
+    fn add_artifact() {
         let mut e = VerifierBenchmarkReleases::default();
-        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace()).unwrap();
-        let art = ReleaseArtifact { artifact_id: "a1".into(), release_id: "r1".into(), filename: "tool.tar.gz".into(), content_hash: "abc".into(), size_bytes: 1024 };
+        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace())
+            .unwrap();
+        let art = ReleaseArtifact {
+            artifact_id: "a1".into(),
+            release_id: "r1".into(),
+            filename: "tool.tar.gz".into(),
+            content_hash: "abc".into(),
+            size_bytes: 1024,
+        };
         assert!(e.add_artifact("r1", art, &trace()).is_ok());
         assert_eq!(e.releases()["r1"].artifacts.len(), 1);
     }
 
-    #[test] fn publish_with_quality() {
+    #[test]
+    fn publish_with_quality() {
         let mut e = VerifierBenchmarkReleases::default();
-        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace()).unwrap();
+        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace())
+            .unwrap();
         assert!(e.publish_release("r1", &trace()).is_ok());
         assert_eq!(e.releases()["r1"].status, ReleaseStatus::Published);
     }
 
-    #[test] fn publish_low_quality_fails() {
+    #[test]
+    fn publish_low_quality_fails() {
         let mut e = VerifierBenchmarkReleases::default();
         let mut r = sample_release("r1", ReleaseType::VerifierTool);
         r.quality_score = 0.5;
@@ -353,96 +482,138 @@ mod tests {
         assert!(e.publish_release("r1", &trace()).is_err());
     }
 
-    #[test] fn deprecate_release() {
+    #[test]
+    fn deprecate_release() {
         let mut e = VerifierBenchmarkReleases::default();
-        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace()).unwrap();
+        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace())
+            .unwrap();
         e.deprecate_release("r1", &trace()).unwrap();
         assert_eq!(e.releases()["r1"].status, ReleaseStatus::Deprecated);
     }
 
-    #[test] fn record_download() {
+    #[test]
+    fn record_download() {
         let mut e = VerifierBenchmarkReleases::default();
-        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace()).unwrap();
+        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace())
+            .unwrap();
         e.record_download("r1", "ci-pipeline", &trace()).unwrap();
         assert_eq!(e.releases()["r1"].download_count, 1);
         assert_eq!(e.downloads().len(), 1);
     }
 
-    #[test] fn download_missing_release() {
+    #[test]
+    fn download_missing_release() {
         let mut e = VerifierBenchmarkReleases::default();
         assert!(e.record_download("missing", "ctx", &trace()).is_err());
     }
 
-    #[test] fn update_changelog() {
+    #[test]
+    fn update_changelog() {
         let mut e = VerifierBenchmarkReleases::default();
-        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace()).unwrap();
-        e.update_changelog("r1", "v1.0.0 initial release", &trace()).unwrap();
+        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace())
+            .unwrap();
+        e.update_changelog("r1", "v1.0.0 initial release", &trace())
+            .unwrap();
         assert!(e.releases()["r1"].changelog.contains("initial"));
     }
 
-    #[test] fn generate_metrics_empty() {
+    #[test]
+    fn generate_metrics_empty() {
         let mut e = VerifierBenchmarkReleases::default();
         let m = e.generate_metrics(&trace());
         assert_eq!(m.total_releases, 0);
         assert_eq!(m.schema_version, SCHEMA_VERSION);
     }
 
-    #[test] fn metrics_tracks_downloads() {
+    #[test]
+    fn metrics_tracks_downloads() {
         let mut e = VerifierBenchmarkReleases::default();
-        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace()).unwrap();
+        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace())
+            .unwrap();
         e.record_download("r1", "test", &trace()).unwrap();
         let m = e.generate_metrics(&trace());
         assert_eq!(m.total_downloads, 1);
     }
 
-    #[test] fn metrics_hash_deterministic() {
+    #[test]
+    fn metrics_hash_deterministic() {
         let mut e1 = VerifierBenchmarkReleases::default();
         let mut e2 = VerifierBenchmarkReleases::default();
-        assert_eq!(e1.generate_metrics(&trace()).content_hash, e2.generate_metrics(&trace()).content_hash);
+        assert_eq!(
+            e1.generate_metrics(&trace()).content_hash,
+            e2.generate_metrics(&trace()).content_hash
+        );
     }
 
-    #[test] fn four_statuses() {
-        let statuses = [ReleaseStatus::Draft, ReleaseStatus::Published, ReleaseStatus::Deprecated, ReleaseStatus::Archived];
+    #[test]
+    fn four_statuses() {
+        let statuses = [
+            ReleaseStatus::Draft,
+            ReleaseStatus::Published,
+            ReleaseStatus::Deprecated,
+            ReleaseStatus::Archived,
+        ];
         assert_eq!(statuses.len(), 4);
     }
 
-    #[test] fn metrics_by_type() {
+    #[test]
+    fn metrics_by_type() {
         let mut e = VerifierBenchmarkReleases::default();
-        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace()).unwrap();
-        e.create_release(sample_release("r2", ReleaseType::BenchmarkSuite), &trace()).unwrap();
+        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace())
+            .unwrap();
+        e.create_release(sample_release("r2", ReleaseType::BenchmarkSuite), &trace())
+            .unwrap();
         let m = e.generate_metrics(&trace());
         assert_eq!(m.downloads_by_type.len(), 2);
     }
 
-    #[test] fn audit_populated() {
+    #[test]
+    fn audit_populated() {
         let mut e = VerifierBenchmarkReleases::default();
-        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace()).unwrap();
+        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace())
+            .unwrap();
         assert!(!e.audit_log().is_empty());
     }
 
-    #[test] fn audit_has_codes() {
+    #[test]
+    fn audit_has_codes() {
         let mut e = VerifierBenchmarkReleases::default();
-        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace()).unwrap();
-        let codes: Vec<&str> = e.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace())
+            .unwrap();
+        let codes: Vec<&str> = e
+            .audit_log()
+            .iter()
+            .map(|r| r.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::VBR_RELEASE_CREATED));
     }
 
-    #[test] fn export_jsonl() {
+    #[test]
+    fn export_jsonl() {
         let mut e = VerifierBenchmarkReleases::default();
-        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace()).unwrap();
+        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace())
+            .unwrap();
         let jsonl = e.export_audit_log_jsonl().unwrap();
         let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert!(first["event_code"].is_string());
     }
 
-    #[test] fn default_version() {
+    #[test]
+    fn default_version() {
         let e = VerifierBenchmarkReleases::default();
         assert_eq!(e.schema_version, SCHEMA_VERSION);
     }
 
-    #[test] fn artifact_missing_release_fails() {
+    #[test]
+    fn artifact_missing_release_fails() {
         let mut e = VerifierBenchmarkReleases::default();
-        let art = ReleaseArtifact { artifact_id: "a1".into(), release_id: "missing".into(), filename: "f.tar.gz".into(), content_hash: "h".into(), size_bytes: 1 };
+        let art = ReleaseArtifact {
+            artifact_id: "a1".into(),
+            release_id: "missing".into(),
+            filename: "f.tar.gz".into(),
+            content_hash: "h".into(),
+            size_bytes: 1,
+        };
         assert!(e.add_artifact("missing", art, &trace()).is_err());
     }
 }

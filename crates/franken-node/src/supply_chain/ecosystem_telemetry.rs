@@ -114,13 +114,8 @@ impl Default for DataGovernance {
             collection_enabled: false, // Opt-in by default.
             min_aggregation_k: 5,
             retention: RetentionPolicy::default(),
-            collected_categories: vec![
-                "trust_metrics".to_owned(),
-                "adoption_metrics".to_owned(),
-            ],
-            published_categories: vec![
-                "aggregate_trust_metrics".to_owned(),
-            ],
+            collected_categories: vec!["trust_metrics".to_owned(), "adoption_metrics".to_owned()],
+            published_categories: vec!["aggregate_trust_metrics".to_owned()],
         }
     }
 }
@@ -354,7 +349,8 @@ impl TelemetryPipeline {
         // Enforce resource budget.
         if self.data_points.len() >= self.resource_budget.max_in_memory_points {
             // Evict oldest raw data points.
-            self.data_points.retain(|p| p.aggregation != AggregationLevel::Raw);
+            self.data_points
+                .retain(|p| p.aggregation != AggregationLevel::Raw);
         }
 
         self.data_points.push(point);
@@ -380,15 +376,13 @@ impl TelemetryPipeline {
                 continue;
             }
 
-            let current_avg: f64 =
-                values.iter().sum::<f64>() / values.len() as f64;
+            let current_avg: f64 = values.iter().sum::<f64>() / values.len() as f64;
 
             if let Some(&baseline_val) = baseline.get(metric) {
                 if baseline_val.abs() < f64::EPSILON {
                     continue;
                 }
-                let deviation_pct =
-                    ((current_avg - baseline_val) / baseline_val * 100.0).abs();
+                let deviation_pct = ((current_avg - baseline_val) / baseline_val * 100.0).abs();
 
                 if deviation_pct > self.anomaly_config.deviation_threshold_pct {
                     let anomaly_type = match metric {
@@ -421,7 +415,11 @@ impl TelemetryPipeline {
                     };
 
                     let alert = AnomalyAlert {
-                        alert_id: format!("alert-{}-{}", anomaly_type as u8, self.anomaly_alerts.len()),
+                        alert_id: format!(
+                            "alert-{}-{}",
+                            anomaly_type as u8,
+                            self.anomaly_alerts.len()
+                        ),
                         detected_at: String::new(), // Caller should set.
                         anomaly_type,
                         severity,
@@ -497,13 +495,11 @@ impl TelemetryPipeline {
                 AdoptionMetricKind::ExtensionsPublished,
             )),
             compromise_reduction_factor: 1.0, // Placeholder — computed from external benchmark.
-            provenance_coverage: self.compute_metric_avg(MetricKind::Trust(
-                TrustMetricKind::ProvenanceCoverageRate,
-            )),
+            provenance_coverage: self
+                .compute_metric_avg(MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate)),
             certification_distribution: BTreeMap::new(), // Populated from live data.
-            avg_quarantine_resolution_secs: self.compute_metric_avg(MetricKind::Trust(
-                TrustMetricKind::QuarantineResolutionTime,
-            )),
+            avg_quarantine_resolution_secs: self
+                .compute_metric_avg(MetricKind::Trust(TrustMetricKind::QuarantineResolutionTime)),
             active_alerts: self.anomaly_alerts.clone(),
         }
     }
@@ -560,12 +556,7 @@ impl TelemetryPipeline {
 mod tests {
     use super::*;
 
-    fn make_point(
-        id: &str,
-        metric: MetricKind,
-        value: f64,
-        ts: &str,
-    ) -> TelemetryDataPoint {
+    fn make_point(id: &str, metric: MetricKind, value: f64, ts: &str) -> TelemetryDataPoint {
         TelemetryDataPoint {
             point_id: id.to_owned(),
             timestamp: ts.to_owned(),
@@ -687,7 +678,12 @@ mod tests {
 
         let metric = MetricKind::Trust(TrustMetricKind::QuarantineResolutionTime);
         for i in 0..5 {
-            pipeline.ingest(make_point(&format!("q{i}"), metric, 3600.0, &ts(i as u32 + 1)));
+            pipeline.ingest(make_point(
+                &format!("q{i}"),
+                metric,
+                3600.0,
+                &ts(i as u32 + 1),
+            ));
         }
 
         let mut baseline = BTreeMap::new();
@@ -706,7 +702,12 @@ mod tests {
 
         let metric = MetricKind::Trust(TrustMetricKind::ReputationDistribution);
         for i in 0..5 {
-            pipeline.ingest(make_point(&format!("r{i}"), metric, 20.0, &ts(i as u32 + 1)));
+            pipeline.ingest(make_point(
+                &format!("r{i}"),
+                metric,
+                20.0,
+                &ts(i as u32 + 1),
+            ));
         }
 
         let mut baseline = BTreeMap::new();
@@ -714,7 +715,10 @@ mod tests {
 
         let alerts = pipeline.detect_anomalies(&baseline);
         assert!(!alerts.is_empty());
-        assert_eq!(alerts[0].anomaly_type, AnomalyType::ReputationDistributionShift);
+        assert_eq!(
+            alerts[0].anomaly_type,
+            AnomalyType::ReputationDistributionShift
+        );
     }
 
     #[test]
@@ -725,7 +729,12 @@ mod tests {
 
         let metric = MetricKind::Trust(TrustMetricKind::RevocationPropagationLatency);
         for i in 0..5 {
-            pipeline.ingest(make_point(&format!("d{i}"), metric, 7200.0, &ts(i as u32 + 1)));
+            pipeline.ingest(make_point(
+                &format!("d{i}"),
+                metric,
+                7200.0,
+                &ts(i as u32 + 1),
+            ));
         }
 
         let mut baseline = BTreeMap::new();
@@ -733,7 +742,10 @@ mod tests {
 
         let alerts = pipeline.detect_anomalies(&baseline);
         assert!(!alerts.is_empty());
-        assert_eq!(alerts[0].anomaly_type, AnomalyType::RevocationPropagationDelay);
+        assert_eq!(
+            alerts[0].anomaly_type,
+            AnomalyType::RevocationPropagationDelay
+        );
     }
 
     #[test]
@@ -744,7 +756,12 @@ mod tests {
 
         let metric = MetricKind::Adoption(AdoptionMetricKind::ExtensionsPublished);
         for i in 0..5 {
-            pipeline.ingest(make_point(&format!("v{i}"), metric, 500.0, &ts(i as u32 + 1)));
+            pipeline.ingest(make_point(
+                &format!("v{i}"),
+                metric,
+                500.0,
+                &ts(i as u32 + 1),
+            ));
         }
 
         let mut baseline = BTreeMap::new();
@@ -752,7 +769,10 @@ mod tests {
 
         let alerts = pipeline.detect_anomalies(&baseline);
         assert!(!alerts.is_empty());
-        assert_eq!(alerts[0].anomaly_type, AnomalyType::PublicationVolumeAnomaly);
+        assert_eq!(
+            alerts[0].anomaly_type,
+            AnomalyType::PublicationVolumeAnomaly
+        );
     }
 
     #[test]
@@ -763,7 +783,12 @@ mod tests {
 
         let metric = MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate);
         for i in 0..5 {
-            pipeline.ingest(make_point(&format!("p{i}"), metric, 0.88, &ts(i as u32 + 1)));
+            pipeline.ingest(make_point(
+                &format!("p{i}"),
+                metric,
+                0.88,
+                &ts(i as u32 + 1),
+            ));
         }
 
         let mut baseline = BTreeMap::new();
@@ -794,7 +819,12 @@ mod tests {
 
         let metric = MetricKind::Trust(TrustMetricKind::CertificationDistribution);
         for i in 0..10 {
-            pipeline.ingest(make_point(&format!("p{i}"), metric, i as f64, &ts(i as u32 + 1)));
+            pipeline.ingest(make_point(
+                &format!("p{i}"),
+                metric,
+                i as f64,
+                &ts(i as u32 + 1),
+            ));
         }
         // Should not exceed budget significantly.
         assert!(pipeline.stored_count() <= 10);
@@ -835,7 +865,12 @@ mod tests {
         pipeline.enable_collection();
         let metric = MetricKind::Trust(TrustMetricKind::CertificationDistribution);
         for i in 0..10 {
-            pipeline.ingest(make_point(&format!("p{i}"), metric, i as f64, &ts(i as u32 + 1)));
+            pipeline.ingest(make_point(
+                &format!("p{i}"),
+                metric,
+                i as f64,
+                &ts(i as u32 + 1),
+            ));
         }
 
         let result = pipeline.query(&TelemetryQuery {

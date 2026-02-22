@@ -214,9 +214,9 @@ impl SweepSchedulerConfig {
     pub fn default_config() -> Self {
         Self {
             hysteresis_threshold: 3,
-            green_interval_ms: 300_000,  // 5 minutes
-            yellow_interval_ms: 60_000,  // 1 minute
-            red_interval_ms: 10_000,     // 10 seconds
+            green_interval_ms: 300_000, // 5 minutes
+            yellow_interval_ms: 60_000, // 1 minute
+            red_interval_ms: 10_000,    // 10 seconds
             yellow_rejection_threshold: 2,
             red_rejection_threshold: 5,
             low_repairability_threshold: 0.5,
@@ -423,7 +423,7 @@ impl IntegritySweepScheduler {
     /// Export decisions as CSV rows for trajectory artifact.
     pub fn to_csv(&self) -> String {
         let mut out = String::from(
-            "timestamp,band,interval_ms,depth,rejection_count,escalation_count,repairability_avg,hysteresis_count\n"
+            "timestamp,band,interval_ms,depth,rejection_count,escalation_count,repairability_avg,hysteresis_count\n",
         );
         for d in &self.decisions {
             let mut rej = "0";
@@ -746,7 +746,13 @@ mod tests {
         let mut intervals = Vec::new();
 
         for i in 1..=5 {
-            let evidence = EvidenceTrajectory::new(i * 2, i as u32, 0.9 - (i as f64 * 0.1), Trend::Degrading, i as u64);
+            let evidence = EvidenceTrajectory::new(
+                i * 2,
+                i as u32,
+                0.9 - (i as f64 * 0.1),
+                Trend::Degrading,
+                i as u64,
+            );
             sched.update_trajectory(&evidence);
             intervals.push(sched.next_sweep_interval().as_millis());
         }

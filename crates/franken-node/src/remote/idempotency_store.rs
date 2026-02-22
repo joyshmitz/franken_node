@@ -257,14 +257,17 @@ impl IdempotencyDedupeStore {
             if entry.is_expired(now_secs) {
                 Action::Expired
             } else if entry.payload_hash != payload_hash {
-                Action::Conflict { expected_hash: entry.payload_hash.clone() }
+                Action::Conflict {
+                    expected_hash: entry.payload_hash.clone(),
+                }
             } else {
                 match &entry.status {
-                    EntryStatus::Complete => {
-                        Action::Duplicate(
-                            entry.outcome.clone().expect("complete entry must have outcome"),
-                        )
-                    }
+                    EntryStatus::Complete => Action::Duplicate(
+                        entry
+                            .outcome
+                            .clone()
+                            .expect("complete entry must have outcome"),
+                    ),
                     EntryStatus::Processing => Action::InFlight,
                     EntryStatus::Abandoned => Action::RetryAbandoned,
                 }
@@ -327,23 +330,23 @@ impl IdempotencyDedupeStore {
         }
 
         let entry = DedupeEntry {
-                key,
-                payload_hash,
-                status: EntryStatus::Processing,
-                outcome: None,
-                created_at_secs: now_secs,
-                ttl_secs: self.ttl_secs,
-            };
-            self.entries.insert(key_hex.clone(), entry);
-            self.total_new += 1;
-            self.log(
-                event_codes::ID_ENTRY_NEW,
-                trace_id,
-                serde_json::json!({
-                    "key_hex": &key_hex,
-                    "invariant": invariants::INV_IDS_AUDITABLE,
-                }),
-            );
+            key,
+            payload_hash,
+            status: EntryStatus::Processing,
+            outcome: None,
+            created_at_secs: now_secs,
+            ttl_secs: self.ttl_secs,
+        };
+        self.entries.insert(key_hex.clone(), entry);
+        self.total_new += 1;
+        self.log(
+            event_codes::ID_ENTRY_NEW,
+            trace_id,
+            serde_json::json!({
+                "key_hex": &key_hex,
+                "invariant": invariants::INV_IDS_AUDITABLE,
+            }),
+        );
 
         DedupeResult::New
     }
@@ -615,9 +618,7 @@ mod tests {
         let key = test_key(6);
 
         store.check_or_insert(key, b"ttl-payload", 1000, "t6");
-        store
-            .complete(key, b"res".to_vec(), 1001, "t6")
-            .unwrap();
+        store.complete(key, b"res".to_vec(), 1001, "t6").unwrap();
 
         // Within TTL -> Duplicate.
         let r1 = store.check_or_insert(key, b"ttl-payload", 1050, "t6");
@@ -719,9 +720,7 @@ mod tests {
         let key = test_key(60);
 
         store.check_or_insert(key, b"s1", 1000, "ts");
-        store
-            .complete(key, b"sr".to_vec(), 1001, "ts")
-            .unwrap();
+        store.complete(key, b"sr".to_vec(), 1001, "ts").unwrap();
 
         // Duplicate.
         store.check_or_insert(key, b"s1", 1002, "ts");
@@ -776,9 +775,7 @@ mod tests {
         let mut store = IdempotencyDedupeStore::new(3600);
         let key = test_key(80);
         store.check_or_insert(key, b"ac", 1000, "tac");
-        store
-            .complete(key, b"r1".to_vec(), 1001, "tac")
-            .unwrap();
+        store.complete(key, b"r1".to_vec(), 1001, "tac").unwrap();
         let err = store
             .complete(key, b"r2".to_vec(), 1002, "tac")
             .unwrap_err();

@@ -74,7 +74,13 @@ pub enum ApiFamily {
 
 impl ApiFamily {
     pub fn all() -> &'static [ApiFamily] {
-        &[Self::Core, Self::Extension, Self::Management, Self::Telemetry, Self::Migration]
+        &[
+            Self::Core,
+            Self::Extension,
+            Self::Management,
+            Self::Telemetry,
+            Self::Migration,
+        ]
     }
 
     pub fn label(&self) -> &'static str {
@@ -246,56 +252,84 @@ impl CompatibilityCorrectnessMetrics {
         trace_id: &str,
     ) -> Result<String, String> {
         if metric.total_tests == 0 {
-            self.log(event_codes::CCM_ERR_INVALID_METRIC, trace_id, serde_json::json!({
-                "metric_id": &metric.metric_id,
-                "reason": "total_tests must be > 0",
-            }));
+            self.log(
+                event_codes::CCM_ERR_INVALID_METRIC,
+                trace_id,
+                serde_json::json!({
+                    "metric_id": &metric.metric_id,
+                    "reason": "total_tests must be > 0",
+                }),
+            );
             return Err("total_tests must be > 0".to_string());
         }
 
         if metric.passed_tests > metric.total_tests {
-            self.log(event_codes::CCM_ERR_INVALID_METRIC, trace_id, serde_json::json!({
-                "metric_id": &metric.metric_id,
-                "reason": "passed_tests > total_tests",
-            }));
+            self.log(
+                event_codes::CCM_ERR_INVALID_METRIC,
+                trace_id,
+                serde_json::json!({
+                    "metric_id": &metric.metric_id,
+                    "reason": "passed_tests > total_tests",
+                }),
+            );
             return Err("passed_tests cannot exceed total_tests".to_string());
         }
 
         metric.timestamp = Utc::now().to_rfc3339();
         let metric_id = metric.metric_id.clone();
 
-        self.log(event_codes::CCM_METRIC_SUBMITTED, trace_id, serde_json::json!({
-            "metric_id": &metric_id,
-            "api_family": metric.api_family.label(),
-            "risk_band": metric.risk_band.label(),
-        }));
+        self.log(
+            event_codes::CCM_METRIC_SUBMITTED,
+            trace_id,
+            serde_json::json!({
+                "metric_id": &metric_id,
+                "api_family": metric.api_family.label(),
+                "risk_band": metric.risk_band.label(),
+            }),
+        );
 
         let rate = metric.correctness_rate();
-        self.log(event_codes::CCM_CORRECTNESS_COMPUTED, trace_id, serde_json::json!({
-            "metric_id": &metric_id,
-            "correctness_rate": rate,
-        }));
+        self.log(
+            event_codes::CCM_CORRECTNESS_COMPUTED,
+            trace_id,
+            serde_json::json!({
+                "metric_id": &metric_id,
+                "correctness_rate": rate,
+            }),
+        );
 
         // Check threshold
         if !metric.meets_threshold() {
-            self.log(event_codes::CCM_ERR_BELOW_THRESHOLD, trace_id, serde_json::json!({
-                "metric_id": &metric_id,
-                "rate": rate,
-                "threshold": metric.risk_band.threshold(),
-            }));
+            self.log(
+                event_codes::CCM_ERR_BELOW_THRESHOLD,
+                trace_id,
+                serde_json::json!({
+                    "metric_id": &metric_id,
+                    "rate": rate,
+                    "threshold": metric.risk_band.threshold(),
+                }),
+            );
         }
 
-        self.log(event_codes::CCM_THRESHOLD_CHECKED, trace_id, serde_json::json!({
-            "metric_id": &metric_id,
-            "meets_threshold": metric.meets_threshold(),
-        }));
+        self.log(
+            event_codes::CCM_THRESHOLD_CHECKED,
+            trace_id,
+            serde_json::json!({
+                "metric_id": &metric_id,
+                "meets_threshold": metric.meets_threshold(),
+            }),
+        );
 
         // Regression check
         if metric.regressions > 0 {
-            self.log(event_codes::CCM_REGRESSION_DETECTED, trace_id, serde_json::json!({
-                "metric_id": &metric_id,
-                "regressions": metric.regressions,
-            }));
+            self.log(
+                event_codes::CCM_REGRESSION_DETECTED,
+                trace_id,
+                serde_json::json!({
+                    "metric_id": &metric_id,
+                    "regressions": metric.regressions,
+                }),
+            );
         }
 
         self.metrics.push(metric);
@@ -356,7 +390,11 @@ impl CompatibilityCorrectnessMetrics {
                 correctness_rate: rate,
                 threshold,
                 meets_threshold: meets,
-                mean_detect_ms: if metrics.is_empty() { 0.0 } else { detect_sum / metrics.len() as f64 },
+                mean_detect_ms: if metrics.is_empty() {
+                    0.0
+                } else {
+                    detect_sum / metrics.len() as f64
+                },
             });
         }
 
@@ -374,15 +412,23 @@ impl CompatibilityCorrectnessMetrics {
         .to_string();
         let content_hash = hex::encode(Sha256::digest(hash_input.as_bytes()));
 
-        self.log(event_codes::CCM_REPORT_GENERATED, trace_id, serde_json::json!({
-            "total_metrics": self.metrics.len(),
-            "segments": segments.len(),
-            "flagged": flagged.len(),
-        }));
+        self.log(
+            event_codes::CCM_REPORT_GENERATED,
+            trace_id,
+            serde_json::json!({
+                "total_metrics": self.metrics.len(),
+                "segments": segments.len(),
+                "flagged": flagged.len(),
+            }),
+        );
 
-        self.log(event_codes::CCM_VERSION_EMBEDDED, trace_id, serde_json::json!({
-            "metric_version": &self.config.metric_version,
-        }));
+        self.log(
+            event_codes::CCM_VERSION_EMBEDDED,
+            trace_id,
+            serde_json::json!({
+                "metric_version": &self.config.metric_version,
+            }),
+        );
 
         CorrectnessReport {
             report_id: Uuid::now_v7().to_string(),
@@ -431,9 +477,17 @@ impl CompatibilityCorrectnessMetrics {
 mod tests {
     use super::*;
 
-    fn trace() -> String { Uuid::now_v7().to_string() }
+    fn trace() -> String {
+        Uuid::now_v7().to_string()
+    }
 
-    fn sample_metric(id: &str, family: ApiFamily, band: RiskBand, total: u64, passed: u64) -> CorrectnessMetric {
+    fn sample_metric(
+        id: &str,
+        family: ApiFamily,
+        band: RiskBand,
+        total: u64,
+        passed: u64,
+    ) -> CorrectnessMetric {
         CorrectnessMetric {
             metric_id: id.to_string(),
             api_family: family,
@@ -549,14 +603,18 @@ mod tests {
     #[test]
     fn report_segments_by_pair() {
         let mut engine = CompatibilityCorrectnessMetrics::default();
-        engine.submit_metric(
-            sample_metric("m1", ApiFamily::Core, RiskBand::High, 1000, 998),
-            &trace(),
-        ).unwrap();
-        engine.submit_metric(
-            sample_metric("m2", ApiFamily::Extension, RiskBand::Low, 500, 480),
-            &trace(),
-        ).unwrap();
+        engine
+            .submit_metric(
+                sample_metric("m1", ApiFamily::Core, RiskBand::High, 1000, 998),
+                &trace(),
+            )
+            .unwrap();
+        engine
+            .submit_metric(
+                sample_metric("m2", ApiFamily::Extension, RiskBand::Low, 500, 480),
+                &trace(),
+            )
+            .unwrap();
         let report = engine.generate_report(&trace());
         assert_eq!(report.segments.len(), 2);
     }
@@ -564,10 +622,12 @@ mod tests {
     #[test]
     fn report_flags_below_threshold() {
         let mut engine = CompatibilityCorrectnessMetrics::default();
-        engine.submit_metric(
-            sample_metric("m1", ApiFamily::Core, RiskBand::Critical, 1000, 900),
-            &trace(),
-        ).unwrap();
+        engine
+            .submit_metric(
+                sample_metric("m1", ApiFamily::Core, RiskBand::Critical, 1000, 900),
+                &trace(),
+            )
+            .unwrap();
         let report = engine.generate_report(&trace());
         assert_eq!(report.flagged_segments.len(), 1);
     }
@@ -603,7 +663,11 @@ mod tests {
         let mut m = sample_metric("m1", ApiFamily::Core, RiskBand::High, 1000, 995);
         m.regressions = 3;
         engine.submit_metric(m, &trace()).unwrap();
-        let codes: Vec<&str> = engine.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        let codes: Vec<&str> = engine
+            .audit_log()
+            .iter()
+            .map(|r| r.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::CCM_REGRESSION_DETECTED));
     }
 
@@ -612,31 +676,41 @@ mod tests {
     #[test]
     fn audit_log_populated() {
         let mut engine = CompatibilityCorrectnessMetrics::default();
-        engine.submit_metric(
-            sample_metric("m1", ApiFamily::Core, RiskBand::High, 1000, 998),
-            &trace(),
-        ).unwrap();
+        engine
+            .submit_metric(
+                sample_metric("m1", ApiFamily::Core, RiskBand::High, 1000, 998),
+                &trace(),
+            )
+            .unwrap();
         assert!(engine.audit_log().len() >= 3);
     }
 
     #[test]
     fn audit_log_has_event_codes() {
         let mut engine = CompatibilityCorrectnessMetrics::default();
-        engine.submit_metric(
-            sample_metric("m1", ApiFamily::Core, RiskBand::High, 1000, 998),
-            &trace(),
-        ).unwrap();
-        let codes: Vec<&str> = engine.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        engine
+            .submit_metric(
+                sample_metric("m1", ApiFamily::Core, RiskBand::High, 1000, 998),
+                &trace(),
+            )
+            .unwrap();
+        let codes: Vec<&str> = engine
+            .audit_log()
+            .iter()
+            .map(|r| r.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::CCM_METRIC_SUBMITTED));
     }
 
     #[test]
     fn export_jsonl() {
         let mut engine = CompatibilityCorrectnessMetrics::default();
-        engine.submit_metric(
-            sample_metric("m1", ApiFamily::Core, RiskBand::High, 1000, 998),
-            &trace(),
-        ).unwrap();
+        engine
+            .submit_metric(
+                sample_metric("m1", ApiFamily::Core, RiskBand::High, 1000, 998),
+                &trace(),
+            )
+            .unwrap();
         let jsonl = engine.export_audit_log_jsonl().unwrap();
         let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert!(first["event_code"].is_string());
@@ -647,10 +721,12 @@ mod tests {
     #[test]
     fn overall_correctness_computed() {
         let mut engine = CompatibilityCorrectnessMetrics::default();
-        engine.submit_metric(
-            sample_metric("m1", ApiFamily::Core, RiskBand::High, 1000, 900),
-            &trace(),
-        ).unwrap();
+        engine
+            .submit_metric(
+                sample_metric("m1", ApiFamily::Core, RiskBand::High, 1000, 900),
+                &trace(),
+            )
+            .unwrap();
         let report = engine.generate_report(&trace());
         assert!((report.overall_correctness - 0.9).abs() < 0.01);
     }

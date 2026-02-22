@@ -70,7 +70,11 @@ pub struct SemVer {
 
 impl SemVer {
     pub fn new(major: u32, minor: u32, patch: u32) -> Self {
-        Self { major, minor, patch }
+        Self {
+            major,
+            minor,
+            patch,
+        }
     }
 
     pub fn label(&self) -> String {
@@ -249,16 +253,24 @@ impl BenchmarkVersioning {
 
     /// Register a new standard revision.
     pub fn register_revision(&mut self, revision: StandardRevision, trace_id: &str) {
-        self.log(event_codes::BSV_REVISION_REGISTERED, trace_id, serde_json::json!({
-            "version": revision.version.label(),
-            "title": &revision.title,
-            "tracks": revision.track_count,
-        }));
+        self.log(
+            event_codes::BSV_REVISION_REGISTERED,
+            trace_id,
+            serde_json::json!({
+                "version": revision.version.label(),
+                "title": &revision.title,
+                "tracks": revision.track_count,
+            }),
+        );
 
         if revision.deprecated {
-            self.log(event_codes::BSV_DEPRECATION_NOTICED, trace_id, serde_json::json!({
-                "version": revision.version.label(),
-            }));
+            self.log(
+                event_codes::BSV_DEPRECATION_NOTICED,
+                trace_id,
+                serde_json::json!({
+                    "version": revision.version.label(),
+                }),
+            );
         }
 
         self.revisions.insert(revision.version.clone(), revision);
@@ -315,19 +327,27 @@ impl BenchmarkVersioning {
             content_hash,
         };
 
-        self.log(event_codes::BSV_MIGRATION_COMPUTED, trace_id, serde_json::json!({
-            "from": from.label(),
-            "to": to.label(),
-            "compatibility": format!("{:?}", compatibility),
-            "steps": guide.migration_steps.len(),
-        }));
-
-        if guide.compatibility == CompatibilityLevel::RequiresMigration {
-            self.log(event_codes::BSV_BREAKING_DETECTED, trace_id, serde_json::json!({
+        self.log(
+            event_codes::BSV_MIGRATION_COMPUTED,
+            trace_id,
+            serde_json::json!({
                 "from": from.label(),
                 "to": to.label(),
-                "breaking_count": guide.breaking_changes.len(),
-            }));
+                "compatibility": format!("{:?}", compatibility),
+                "steps": guide.migration_steps.len(),
+            }),
+        );
+
+        if guide.compatibility == CompatibilityLevel::RequiresMigration {
+            self.log(
+                event_codes::BSV_BREAKING_DETECTED,
+                trace_id,
+                serde_json::json!({
+                    "from": from.label(),
+                    "to": to.label(),
+                    "breaking_count": guide.breaking_changes.len(),
+                }),
+            );
         }
 
         Some(guide)
@@ -341,11 +361,15 @@ impl BenchmarkVersioning {
         trace_id: &str,
     ) -> Option<CompatibilityLevel> {
         let guide = self.compute_migration(from, to, trace_id)?;
-        self.log(event_codes::BSV_COMPAT_CHECKED, trace_id, serde_json::json!({
-            "from": from.label(),
-            "to": to.label(),
-            "level": format!("{:?}", guide.compatibility),
-        }));
+        self.log(
+            event_codes::BSV_COMPAT_CHECKED,
+            trace_id,
+            serde_json::json!({
+                "from": from.label(),
+                "to": to.label(),
+                "level": format!("{:?}", guide.compatibility),
+            }),
+        );
         Some(guide.compatibility)
     }
 
@@ -378,10 +402,14 @@ impl BenchmarkVersioning {
             content_hash,
         };
 
-        self.log(event_codes::BSV_REPORT_GENERATED, trace_id, serde_json::json!({
-            "report_id": &report.report_id,
-            "revisions": report.revisions_registered,
-        }));
+        self.log(
+            event_codes::BSV_REPORT_GENERATED,
+            trace_id,
+            serde_json::json!({
+                "report_id": &report.report_id,
+                "revisions": report.revisions_registered,
+            }),
+        );
 
         report
     }
@@ -447,13 +475,11 @@ impl BenchmarkVersioning {
             scoring_formula_version: "sf-v1.1".to_string(),
             harness_version: "h-v1.0".to_string(),
             deprecated: false,
-            changelog: vec![
-                ChangelogEntry {
-                    change_type: ChangeType::Feature,
-                    description: "Added trust_co_metrics track".to_string(),
-                    affected_tracks: vec!["trust_co_metrics".to_string()],
-                },
-            ],
+            changelog: vec![ChangelogEntry {
+                change_type: ChangeType::Feature,
+                description: "Added trust_co_metrics track".to_string(),
+                affected_tracks: vec!["trust_co_metrics".to_string()],
+            }],
         };
 
         let v2 = StandardRevision {
@@ -669,11 +695,7 @@ mod tests {
     fn migration_v1_to_v1_1_backward_compatible() {
         let mut engine = BenchmarkVersioning::new();
         let guide = engine
-            .compute_migration(
-                &SemVer::new(1, 0, 0),
-                &SemVer::new(1, 1, 0),
-                &make_trace(),
-            )
+            .compute_migration(&SemVer::new(1, 0, 0), &SemVer::new(1, 1, 0), &make_trace())
             .unwrap();
         assert_eq!(guide.compatibility, CompatibilityLevel::BackwardCompatible);
         assert!(guide.breaking_changes.is_empty());
@@ -684,11 +706,7 @@ mod tests {
     fn migration_v1_to_v2_requires_migration() {
         let mut engine = BenchmarkVersioning::new();
         let guide = engine
-            .compute_migration(
-                &SemVer::new(1, 0, 0),
-                &SemVer::new(2, 0, 0),
-                &make_trace(),
-            )
+            .compute_migration(&SemVer::new(1, 0, 0), &SemVer::new(2, 0, 0), &make_trace())
             .unwrap();
         assert_eq!(guide.compatibility, CompatibilityLevel::RequiresMigration);
         assert!(!guide.breaking_changes.is_empty());
@@ -698,11 +716,7 @@ mod tests {
     fn migration_same_version_fully_compatible() {
         let mut engine = BenchmarkVersioning::new();
         let guide = engine
-            .compute_migration(
-                &SemVer::new(1, 0, 0),
-                &SemVer::new(1, 0, 0),
-                &make_trace(),
-            )
+            .compute_migration(&SemVer::new(1, 0, 0), &SemVer::new(1, 0, 0), &make_trace())
             .unwrap();
         assert_eq!(guide.compatibility, CompatibilityLevel::FullyCompatible);
     }
@@ -711,11 +725,7 @@ mod tests {
     fn migration_has_steps() {
         let mut engine = BenchmarkVersioning::new();
         let guide = engine
-            .compute_migration(
-                &SemVer::new(1, 0, 0),
-                &SemVer::new(2, 0, 0),
-                &make_trace(),
-            )
+            .compute_migration(&SemVer::new(1, 0, 0), &SemVer::new(2, 0, 0), &make_trace())
             .unwrap();
         assert!(guide.migration_steps.len() >= 3);
     }
@@ -724,11 +734,7 @@ mod tests {
     fn migration_has_content_hash() {
         let mut engine = BenchmarkVersioning::new();
         let guide = engine
-            .compute_migration(
-                &SemVer::new(1, 0, 0),
-                &SemVer::new(2, 0, 0),
-                &make_trace(),
-            )
+            .compute_migration(&SemVer::new(1, 0, 0), &SemVer::new(2, 0, 0), &make_trace())
             .unwrap();
         assert_eq!(guide.content_hash.len(), 64);
     }
@@ -760,11 +766,8 @@ mod tests {
     #[test]
     fn nonexistent_version_returns_none() {
         let mut engine = BenchmarkVersioning::new();
-        let result = engine.compute_migration(
-            &SemVer::new(1, 0, 0),
-            &SemVer::new(9, 9, 9),
-            &make_trace(),
-        );
+        let result =
+            engine.compute_migration(&SemVer::new(1, 0, 0), &SemVer::new(9, 9, 9), &make_trace());
         assert!(result.is_none());
     }
 
@@ -774,11 +777,7 @@ mod tests {
     fn patch_migration_trivial_effort() {
         let mut engine = BenchmarkVersioning::new();
         let guide = engine
-            .compute_migration(
-                &SemVer::new(1, 0, 0),
-                &SemVer::new(1, 1, 0),
-                &make_trace(),
-            )
+            .compute_migration(&SemVer::new(1, 0, 0), &SemVer::new(1, 1, 0), &make_trace())
             .unwrap();
         assert_eq!(guide.estimated_effort, MigrationEffort::Trivial);
     }
@@ -787,11 +786,7 @@ mod tests {
     fn breaking_migration_medium_or_higher() {
         let mut engine = BenchmarkVersioning::new();
         let guide = engine
-            .compute_migration(
-                &SemVer::new(1, 0, 0),
-                &SemVer::new(2, 0, 0),
-                &make_trace(),
-            )
+            .compute_migration(&SemVer::new(1, 0, 0), &SemVer::new(2, 0, 0), &make_trace())
             .unwrap();
         assert!(matches!(
             guide.estimated_effort,
@@ -835,22 +830,14 @@ mod tests {
     fn migration_logged() {
         let mut engine = BenchmarkVersioning::new();
         let initial_log_count = engine.audit_log().len();
-        engine.compute_migration(
-            &SemVer::new(1, 0, 0),
-            &SemVer::new(2, 0, 0),
-            &make_trace(),
-        );
+        engine.compute_migration(&SemVer::new(1, 0, 0), &SemVer::new(2, 0, 0), &make_trace());
         assert!(engine.audit_log().len() > initial_log_count);
     }
 
     #[test]
     fn breaking_change_logged() {
         let mut engine = BenchmarkVersioning::new();
-        engine.compute_migration(
-            &SemVer::new(1, 0, 0),
-            &SemVer::new(2, 0, 0),
-            &make_trace(),
-        );
+        engine.compute_migration(&SemVer::new(1, 0, 0), &SemVer::new(2, 0, 0), &make_trace());
         let has_breaking = engine
             .audit_log()
             .iter()

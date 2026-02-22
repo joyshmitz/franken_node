@@ -122,7 +122,9 @@ impl IdempotencyError {
 impl fmt::Display for IdempotencyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyComputationName => write!(f, "{}: computation_name cannot be empty", self.code()),
+            Self::EmptyComputationName => {
+                write!(f, "{}: computation_name cannot be empty", self.code())
+            }
             Self::EmptyDomainPrefix => write!(f, "{}: domain_prefix cannot be empty", self.code()),
             Self::InvalidHex { reason } => write!(f, "{}: {reason}", self.code()),
             Self::RegistryRejected { reason } => write!(f, "{}: {reason}", self.code()),
@@ -208,7 +210,9 @@ impl IdempotencyKeyDeriver {
     ) -> Result<IdempotencyKey, IdempotencyError> {
         registry
             .validate_computation_name(computation_name, trace_id)
-            .map_err(|reason| IdempotencyError::RegistryRejected { reason: reason.to_string() })?;
+            .map_err(|reason| IdempotencyError::RegistryRejected {
+                reason: reason.to_string(),
+            })?;
         self.derive_key(computation_name, epoch, request_bytes)
     }
 
@@ -283,7 +287,9 @@ mod tests {
     #[test]
     fn different_computation_names_produce_different_keys() {
         let deriver = IdempotencyKeyDeriver::default();
-        let a = deriver.derive_key("core.remote_compute.v1", 7, b"payload").unwrap();
+        let a = deriver
+            .derive_key("core.remote_compute.v1", 7, b"payload")
+            .unwrap();
         let b = deriver.derive_key("core.audit.v1", 7, b"payload").unwrap();
         assert_ne!(a, b);
     }

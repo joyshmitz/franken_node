@@ -238,28 +238,40 @@ impl BenchmarkMethodology {
         // Validate required sections
         for sec in REQUIRED_SECTIONS {
             if !pub_entry.sections.contains_key(*sec) {
-                self.log(event_codes::BMP_ERR_MISSING_SECTION, trace_id, serde_json::json!({
-                    "pub_id": &pub_entry.pub_id,
-                    "missing_section": sec,
-                }));
+                self.log(
+                    event_codes::BMP_ERR_MISSING_SECTION,
+                    trace_id,
+                    serde_json::json!({
+                        "pub_id": &pub_entry.pub_id,
+                        "missing_section": sec,
+                    }),
+                );
                 return Err(format!("Missing required section: {}", sec));
             }
         }
 
-        self.log(event_codes::BMP_SECTION_VALIDATED, trace_id, serde_json::json!({
-            "pub_id": &pub_entry.pub_id,
-            "sections": pub_entry.sections.len(),
-        }));
+        self.log(
+            event_codes::BMP_SECTION_VALIDATED,
+            trace_id,
+            serde_json::json!({
+                "pub_id": &pub_entry.pub_id,
+                "sections": pub_entry.sections.len(),
+            }),
+        );
 
         // Validate reproducibility checklist
         if pub_entry.reproducibility_checklist.is_empty() {
             return Err("Reproducibility checklist must not be empty".to_string());
         }
 
-        self.log(event_codes::BMP_CHECKLIST_VERIFIED, trace_id, serde_json::json!({
-            "pub_id": &pub_entry.pub_id,
-            "checklist_items": pub_entry.reproducibility_checklist.len(),
-        }));
+        self.log(
+            event_codes::BMP_CHECKLIST_VERIFIED,
+            trace_id,
+            serde_json::json!({
+                "pub_id": &pub_entry.pub_id,
+                "checklist_items": pub_entry.reproducibility_checklist.len(),
+            }),
+        );
 
         // Compute content hash
         let hash_input = serde_json::json!({
@@ -276,21 +288,33 @@ impl BenchmarkMethodology {
 
         let pub_id = pub_entry.pub_id.clone();
 
-        self.log(event_codes::BMP_INTEGRITY_VERIFIED, trace_id, serde_json::json!({
-            "pub_id": &pub_id,
-            "content_hash": &pub_entry.content_hash,
-        }));
+        self.log(
+            event_codes::BMP_INTEGRITY_VERIFIED,
+            trace_id,
+            serde_json::json!({
+                "pub_id": &pub_id,
+                "content_hash": &pub_entry.content_hash,
+            }),
+        );
 
-        self.log(event_codes::BMP_VERSION_EMBEDDED, trace_id, serde_json::json!({
-            "pub_id": &pub_id,
-            "pub_version": &pub_entry.pub_version,
-        }));
+        self.log(
+            event_codes::BMP_VERSION_EMBEDDED,
+            trace_id,
+            serde_json::json!({
+                "pub_id": &pub_id,
+                "pub_version": &pub_entry.pub_version,
+            }),
+        );
 
         self.publications.insert(pub_id.clone(), pub_entry);
 
-        self.log(event_codes::BMP_PUBLICATION_CREATED, trace_id, serde_json::json!({
-            "pub_id": &pub_id,
-        }));
+        self.log(
+            event_codes::BMP_PUBLICATION_CREATED,
+            trace_id,
+            serde_json::json!({
+                "pub_id": &pub_id,
+            }),
+        );
 
         Ok(pub_id)
     }
@@ -304,18 +328,24 @@ impl BenchmarkMethodology {
     ) -> Result<(), String> {
         // Check current status and valid transitions (read-only borrow)
         let current_status = {
-            let pub_entry = self.publications.get(pub_id)
+            let pub_entry = self
+                .publications
+                .get(pub_id)
                 .ok_or_else(|| format!("Publication {} not found", pub_id))?;
             pub_entry.status
         };
 
         let valid = current_status.valid_transitions();
         if !valid.contains(&new_status) {
-            self.log(event_codes::BMP_ERR_INVALID_TRANSITION, trace_id, serde_json::json!({
-                "pub_id": pub_id,
-                "from": current_status.label(),
-                "to": new_status.label(),
-            }));
+            self.log(
+                event_codes::BMP_ERR_INVALID_TRANSITION,
+                trace_id,
+                serde_json::json!({
+                    "pub_id": pub_id,
+                    "from": current_status.label(),
+                    "to": new_status.label(),
+                }),
+            );
             return Err(format!(
                 "Cannot transition from {} to {}",
                 current_status.label(),
@@ -328,10 +358,14 @@ impl BenchmarkMethodology {
         pub_entry.status = new_status;
         pub_entry.updated_at = Utc::now().to_rfc3339();
 
-        self.log(event_codes::BMP_STATUS_CHANGED, trace_id, serde_json::json!({
-            "pub_id": pub_id,
-            "new_status": new_status.label(),
-        }));
+        self.log(
+            event_codes::BMP_STATUS_CHANGED,
+            trace_id,
+            serde_json::json!({
+                "pub_id": pub_id,
+                "new_status": new_status.label(),
+            }),
+        );
 
         Ok(())
     }
@@ -348,12 +382,20 @@ impl BenchmarkMethodology {
         }
 
         let cite_id = citation.cite_id.clone();
-        self.log(event_codes::BMP_CITATION_ADDED, trace_id, serde_json::json!({
-            "pub_id": pub_id,
-            "cite_id": &cite_id,
-        }));
+        self.log(
+            event_codes::BMP_CITATION_ADDED,
+            trace_id,
+            serde_json::json!({
+                "pub_id": pub_id,
+                "cite_id": &cite_id,
+            }),
+        );
 
-        self.publications.get_mut(pub_id).unwrap().citations.push(citation);
+        self.publications
+            .get_mut(pub_id)
+            .unwrap()
+            .citations
+            .push(citation);
         Ok(())
     }
 
@@ -363,8 +405,12 @@ impl BenchmarkMethodology {
         let mut by_status = BTreeMap::new();
 
         for pub_entry in self.publications.values() {
-            *by_topic.entry(pub_entry.topic.label().to_string()).or_insert(0) += 1;
-            *by_status.entry(pub_entry.status.label().to_string()).or_insert(0) += 1;
+            *by_topic
+                .entry(pub_entry.topic.label().to_string())
+                .or_insert(0) += 1;
+            *by_status
+                .entry(pub_entry.status.label().to_string())
+                .or_insert(0) += 1;
         }
 
         let hash_input = serde_json::json!({
@@ -375,9 +421,13 @@ impl BenchmarkMethodology {
         .to_string();
         let content_hash = hex::encode(Sha256::digest(hash_input.as_bytes()));
 
-        self.log(event_codes::BMP_CATALOG_GENERATED, trace_id, serde_json::json!({
-            "total": self.publications.len(),
-        }));
+        self.log(
+            event_codes::BMP_CATALOG_GENERATED,
+            trace_id,
+            serde_json::json!({
+                "total": self.publications.len(),
+            }),
+        );
 
         PublicationCatalog {
             catalog_id: Uuid::now_v7().to_string(),
@@ -392,7 +442,8 @@ impl BenchmarkMethodology {
 
     /// Search publications by topic.
     pub fn search_by_topic(&self, topic: MethodologyTopic) -> Vec<&Publication> {
-        self.publications.values()
+        self.publications
+            .values()
             .filter(|p| p.topic == topic)
             .collect()
     }
@@ -432,7 +483,9 @@ impl BenchmarkMethodology {
 mod tests {
     use super::*;
 
-    fn trace() -> String { Uuid::now_v7().to_string() }
+    fn trace() -> String {
+        Uuid::now_v7().to_string()
+    }
 
     fn sample_pub(id: &str, topic: MethodologyTopic) -> Publication {
         let mut sections = BTreeMap::new();
@@ -448,8 +501,14 @@ mod tests {
             sections,
             citations: vec![],
             reproducibility_checklist: vec![
-                ChecklistItem { item: "Data available".to_string(), verified: true },
-                ChecklistItem { item: "Code available".to_string(), verified: true },
+                ChecklistItem {
+                    item: "Data available".to_string(),
+                    verified: true,
+                },
+                ChecklistItem {
+                    item: "Code available".to_string(),
+                    verified: true,
+                },
             ],
             content_hash: String::new(),
             pub_version: String::new(),
@@ -529,33 +588,77 @@ mod tests {
     #[test]
     fn draft_to_review() {
         let mut engine = BenchmarkMethodology::default();
-        engine.create_publication(sample_pub("pub-1", MethodologyTopic::BenchmarkDesign), &trace()).unwrap();
-        assert!(engine.transition_status("pub-1", PubStatus::Review, &trace()).is_ok());
+        engine
+            .create_publication(
+                sample_pub("pub-1", MethodologyTopic::BenchmarkDesign),
+                &trace(),
+            )
+            .unwrap();
+        assert!(
+            engine
+                .transition_status("pub-1", PubStatus::Review, &trace())
+                .is_ok()
+        );
     }
 
     #[test]
     fn review_to_published() {
         let mut engine = BenchmarkMethodology::default();
-        engine.create_publication(sample_pub("pub-1", MethodologyTopic::BenchmarkDesign), &trace()).unwrap();
-        engine.transition_status("pub-1", PubStatus::Review, &trace()).unwrap();
-        assert!(engine.transition_status("pub-1", PubStatus::Published, &trace()).is_ok());
+        engine
+            .create_publication(
+                sample_pub("pub-1", MethodologyTopic::BenchmarkDesign),
+                &trace(),
+            )
+            .unwrap();
+        engine
+            .transition_status("pub-1", PubStatus::Review, &trace())
+            .unwrap();
+        assert!(
+            engine
+                .transition_status("pub-1", PubStatus::Published, &trace())
+                .is_ok()
+        );
     }
 
     #[test]
     fn draft_to_published_fails() {
         let mut engine = BenchmarkMethodology::default();
-        engine.create_publication(sample_pub("pub-1", MethodologyTopic::BenchmarkDesign), &trace()).unwrap();
-        assert!(engine.transition_status("pub-1", PubStatus::Published, &trace()).is_err());
+        engine
+            .create_publication(
+                sample_pub("pub-1", MethodologyTopic::BenchmarkDesign),
+                &trace(),
+            )
+            .unwrap();
+        assert!(
+            engine
+                .transition_status("pub-1", PubStatus::Published, &trace())
+                .is_err()
+        );
     }
 
     #[test]
     fn archived_cannot_transition() {
         let mut engine = BenchmarkMethodology::default();
-        engine.create_publication(sample_pub("pub-1", MethodologyTopic::BenchmarkDesign), &trace()).unwrap();
-        engine.transition_status("pub-1", PubStatus::Review, &trace()).unwrap();
-        engine.transition_status("pub-1", PubStatus::Published, &trace()).unwrap();
-        engine.transition_status("pub-1", PubStatus::Archived, &trace()).unwrap();
-        assert!(engine.transition_status("pub-1", PubStatus::Draft, &trace()).is_err());
+        engine
+            .create_publication(
+                sample_pub("pub-1", MethodologyTopic::BenchmarkDesign),
+                &trace(),
+            )
+            .unwrap();
+        engine
+            .transition_status("pub-1", PubStatus::Review, &trace())
+            .unwrap();
+        engine
+            .transition_status("pub-1", PubStatus::Published, &trace())
+            .unwrap();
+        engine
+            .transition_status("pub-1", PubStatus::Archived, &trace())
+            .unwrap();
+        assert!(
+            engine
+                .transition_status("pub-1", PubStatus::Draft, &trace())
+                .is_err()
+        );
     }
 
     // === Citations ===
@@ -563,7 +666,12 @@ mod tests {
     #[test]
     fn add_citation() {
         let mut engine = BenchmarkMethodology::default();
-        engine.create_publication(sample_pub("pub-1", MethodologyTopic::BenchmarkDesign), &trace()).unwrap();
+        engine
+            .create_publication(
+                sample_pub("pub-1", MethodologyTopic::BenchmarkDesign),
+                &trace(),
+            )
+            .unwrap();
         let cite = Citation {
             cite_id: "cite-1".to_string(),
             title: "Test Paper".to_string(),
@@ -572,7 +680,10 @@ mod tests {
             url: Some("https://example.com".to_string()),
         };
         assert!(engine.add_citation("pub-1", cite, &trace()).is_ok());
-        assert_eq!(engine.publications().get("pub-1").unwrap().citations.len(), 1);
+        assert_eq!(
+            engine.publications().get("pub-1").unwrap().citations.len(),
+            1
+        );
     }
 
     // === Catalog ===
@@ -587,8 +698,18 @@ mod tests {
     #[test]
     fn catalog_counts_by_topic() {
         let mut engine = BenchmarkMethodology::default();
-        engine.create_publication(sample_pub("pub-1", MethodologyTopic::BenchmarkDesign), &trace()).unwrap();
-        engine.create_publication(sample_pub("pub-2", MethodologyTopic::VerifierArchitecture), &trace()).unwrap();
+        engine
+            .create_publication(
+                sample_pub("pub-1", MethodologyTopic::BenchmarkDesign),
+                &trace(),
+            )
+            .unwrap();
+        engine
+            .create_publication(
+                sample_pub("pub-2", MethodologyTopic::VerifierArchitecture),
+                &trace(),
+            )
+            .unwrap();
         let catalog = engine.generate_catalog(&trace());
         assert_eq!(catalog.total_publications, 2);
         assert!(catalog.by_topic.contains_key("benchmark_design"));
@@ -615,8 +736,18 @@ mod tests {
     #[test]
     fn search_by_topic() {
         let mut engine = BenchmarkMethodology::default();
-        engine.create_publication(sample_pub("pub-1", MethodologyTopic::BenchmarkDesign), &trace()).unwrap();
-        engine.create_publication(sample_pub("pub-2", MethodologyTopic::VerifierArchitecture), &trace()).unwrap();
+        engine
+            .create_publication(
+                sample_pub("pub-1", MethodologyTopic::BenchmarkDesign),
+                &trace(),
+            )
+            .unwrap();
+        engine
+            .create_publication(
+                sample_pub("pub-2", MethodologyTopic::VerifierArchitecture),
+                &trace(),
+            )
+            .unwrap();
         let results = engine.search_by_topic(MethodologyTopic::BenchmarkDesign);
         assert_eq!(results.len(), 1);
     }
@@ -625,14 +756,24 @@ mod tests {
 
     #[test]
     fn four_statuses() {
-        let statuses = [PubStatus::Draft, PubStatus::Review, PubStatus::Published, PubStatus::Archived];
+        let statuses = [
+            PubStatus::Draft,
+            PubStatus::Review,
+            PubStatus::Published,
+            PubStatus::Archived,
+        ];
         assert_eq!(statuses.len(), 4);
     }
 
     #[test]
     fn catalog_tracks_by_status() {
         let mut engine = BenchmarkMethodology::default();
-        engine.create_publication(sample_pub("pub-1", MethodologyTopic::BenchmarkDesign), &trace()).unwrap();
+        engine
+            .create_publication(
+                sample_pub("pub-1", MethodologyTopic::BenchmarkDesign),
+                &trace(),
+            )
+            .unwrap();
         let catalog = engine.generate_catalog(&trace());
         assert!(catalog.by_status.contains_key("draft"));
     }
@@ -642,14 +783,24 @@ mod tests {
     #[test]
     fn audit_log_populated() {
         let mut engine = BenchmarkMethodology::default();
-        engine.create_publication(sample_pub("pub-1", MethodologyTopic::BenchmarkDesign), &trace()).unwrap();
+        engine
+            .create_publication(
+                sample_pub("pub-1", MethodologyTopic::BenchmarkDesign),
+                &trace(),
+            )
+            .unwrap();
         assert!(engine.audit_log().len() >= 4);
     }
 
     #[test]
     fn export_jsonl() {
         let mut engine = BenchmarkMethodology::default();
-        engine.create_publication(sample_pub("pub-1", MethodologyTopic::BenchmarkDesign), &trace()).unwrap();
+        engine
+            .create_publication(
+                sample_pub("pub-1", MethodologyTopic::BenchmarkDesign),
+                &trace(),
+            )
+            .unwrap();
         let jsonl = engine.export_audit_log_jsonl().unwrap();
         let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert!(first["event_code"].is_string());

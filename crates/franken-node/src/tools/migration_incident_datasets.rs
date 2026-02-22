@@ -223,45 +223,66 @@ impl ReproducibleDatasets {
         if entry.content_hash.len() != 64
             || !entry.content_hash.chars().all(|c| c.is_ascii_hexdigit())
         {
-            self.log(event_codes::RDS_ERR_INTEGRITY, trace_id, serde_json::json!({
-                "dataset_id": &entry.dataset_id,
-                "reason": "invalid content hash",
-            }));
+            self.log(
+                event_codes::RDS_ERR_INTEGRITY,
+                trace_id,
+                serde_json::json!({
+                    "dataset_id": &entry.dataset_id,
+                    "reason": "invalid content hash",
+                }),
+            );
             return Err("Invalid content hash (must be 64 hex chars)".to_string());
         }
 
-        self.log(event_codes::RDS_INTEGRITY_VERIFIED, trace_id, serde_json::json!({
-            "dataset_id": &entry.dataset_id,
-            "hash": &entry.content_hash,
-        }));
+        self.log(
+            event_codes::RDS_INTEGRITY_VERIFIED,
+            trace_id,
+            serde_json::json!({
+                "dataset_id": &entry.dataset_id,
+                "hash": &entry.content_hash,
+            }),
+        );
 
         // Check completeness
         if entry.record_count < self.config.min_records_per_dataset {
-            self.log(event_codes::RDS_ERR_INCOMPLETE, trace_id, serde_json::json!({
-                "dataset_id": &entry.dataset_id,
-                "records": entry.record_count,
-                "minimum": self.config.min_records_per_dataset,
-            }));
+            self.log(
+                event_codes::RDS_ERR_INCOMPLETE,
+                trace_id,
+                serde_json::json!({
+                    "dataset_id": &entry.dataset_id,
+                    "records": entry.record_count,
+                    "minimum": self.config.min_records_per_dataset,
+                }),
+            );
             return Err(format!(
                 "Dataset has {} records, minimum is {}",
                 entry.record_count, self.config.min_records_per_dataset
             ));
         }
 
-        self.log(event_codes::RDS_COMPLETENESS_CHECKED, trace_id, serde_json::json!({
-            "dataset_id": &entry.dataset_id,
-            "records": entry.record_count,
-        }));
+        self.log(
+            event_codes::RDS_COMPLETENESS_CHECKED,
+            trace_id,
+            serde_json::json!({
+                "dataset_id": &entry.dataset_id,
+                "records": entry.record_count,
+            }),
+        );
 
         // Validate replay instructions
-        if self.config.require_replay_instructions && entry.replay_instructions.commands.is_empty() {
+        if self.config.require_replay_instructions && entry.replay_instructions.commands.is_empty()
+        {
             return Err("Replay instructions must include at least one command".to_string());
         }
 
-        self.log(event_codes::RDS_REPLAY_VALIDATED, trace_id, serde_json::json!({
-            "dataset_id": &entry.dataset_id,
-            "deterministic": entry.replay_instructions.deterministic,
-        }));
+        self.log(
+            event_codes::RDS_REPLAY_VALIDATED,
+            trace_id,
+            serde_json::json!({
+                "dataset_id": &entry.dataset_id,
+                "deterministic": entry.replay_instructions.deterministic,
+            }),
+        );
 
         // Set schema version and timestamp
         entry.schema_version = self.config.schema_version.clone();
@@ -269,17 +290,25 @@ impl ReproducibleDatasets {
 
         let dataset_id = entry.dataset_id.clone();
 
-        self.log(event_codes::RDS_PROVENANCE_ATTACHED, trace_id, serde_json::json!({
-            "dataset_id": &dataset_id,
-            "source_bead": &entry.source_bead,
-            "source_system": &entry.provenance.source_system,
-        }));
+        self.log(
+            event_codes::RDS_PROVENANCE_ATTACHED,
+            trace_id,
+            serde_json::json!({
+                "dataset_id": &dataset_id,
+                "source_bead": &entry.source_bead,
+                "source_system": &entry.provenance.source_system,
+            }),
+        );
 
         self.datasets.insert(dataset_id.clone(), entry);
 
-        self.log(event_codes::RDS_DATASET_REGISTERED, trace_id, serde_json::json!({
-            "dataset_id": &dataset_id,
-        }));
+        self.log(
+            event_codes::RDS_DATASET_REGISTERED,
+            trace_id,
+            serde_json::json!({
+                "dataset_id": &dataset_id,
+            }),
+        );
 
         Ok(dataset_id)
     }
@@ -314,11 +343,15 @@ impl ReproducibleDatasets {
             published_at: Utc::now().to_rfc3339(),
         };
 
-        self.log(event_codes::RDS_BUNDLE_PUBLISHED, trace_id, serde_json::json!({
-            "bundle_id": &bundle.bundle_id,
-            "datasets": dataset_ids.len(),
-            "total_records": total_records,
-        }));
+        self.log(
+            event_codes::RDS_BUNDLE_PUBLISHED,
+            trace_id,
+            serde_json::json!({
+                "bundle_id": &bundle.bundle_id,
+                "datasets": dataset_ids.len(),
+                "total_records": total_records,
+            }),
+        );
 
         self.bundles.push(bundle.clone());
         Ok(bundle)
@@ -330,7 +363,9 @@ impl ReproducibleDatasets {
         let mut total_records = 0;
 
         for ds in self.datasets.values() {
-            *by_type.entry(ds.dataset_type.label().to_string()).or_insert(0) += 1;
+            *by_type
+                .entry(ds.dataset_type.label().to_string())
+                .or_insert(0) += 1;
             total_records += ds.record_count;
         }
 
@@ -353,11 +388,15 @@ impl ReproducibleDatasets {
             content_hash,
         };
 
-        self.log(event_codes::RDS_CATALOG_GENERATED, trace_id, serde_json::json!({
-            "catalog_id": &catalog.catalog_id,
-            "total_datasets": catalog.total_datasets,
-            "total_records": catalog.total_records,
-        }));
+        self.log(
+            event_codes::RDS_CATALOG_GENERATED,
+            trace_id,
+            serde_json::json!({
+                "catalog_id": &catalog.catalog_id,
+                "total_datasets": catalog.total_datasets,
+                "total_records": catalog.total_records,
+            }),
+        );
 
         catalog
     }
@@ -498,18 +537,20 @@ mod tests {
     #[test]
     fn publish_bundle_success() {
         let mut engine = ReproducibleDatasets::default();
-        engine.register_dataset(
-            sample_entry("ds-1", DatasetType::MigrationScenario, 500),
-            &make_trace(),
-        ).unwrap();
-        engine.register_dataset(
-            sample_entry("ds-2", DatasetType::SecurityIncident, 300),
-            &make_trace(),
-        ).unwrap();
-        let bundle = engine.publish_bundle(
-            &["ds-1".to_string(), "ds-2".to_string()],
-            &make_trace(),
-        );
+        engine
+            .register_dataset(
+                sample_entry("ds-1", DatasetType::MigrationScenario, 500),
+                &make_trace(),
+            )
+            .unwrap();
+        engine
+            .register_dataset(
+                sample_entry("ds-2", DatasetType::SecurityIncident, 300),
+                &make_trace(),
+            )
+            .unwrap();
+        let bundle =
+            engine.publish_bundle(&["ds-1".to_string(), "ds-2".to_string()], &make_trace());
         assert!(bundle.is_ok());
         let b = bundle.unwrap();
         assert_eq!(b.total_records, 800);
@@ -526,14 +567,15 @@ mod tests {
     #[test]
     fn bundle_has_hash() {
         let mut engine = ReproducibleDatasets::default();
-        engine.register_dataset(
-            sample_entry("ds-1", DatasetType::MigrationScenario, 500),
-            &make_trace(),
-        ).unwrap();
-        let bundle = engine.publish_bundle(
-            &["ds-1".to_string()],
-            &make_trace(),
-        ).unwrap();
+        engine
+            .register_dataset(
+                sample_entry("ds-1", DatasetType::MigrationScenario, 500),
+                &make_trace(),
+            )
+            .unwrap();
+        let bundle = engine
+            .publish_bundle(&["ds-1".to_string()], &make_trace())
+            .unwrap();
         assert_eq!(bundle.bundle_hash.len(), 64);
     }
 
@@ -542,14 +584,18 @@ mod tests {
     #[test]
     fn catalog_counts_datasets() {
         let mut engine = ReproducibleDatasets::default();
-        engine.register_dataset(
-            sample_entry("ds-1", DatasetType::MigrationScenario, 500),
-            &make_trace(),
-        ).unwrap();
-        engine.register_dataset(
-            sample_entry("ds-2", DatasetType::SecurityIncident, 300),
-            &make_trace(),
-        ).unwrap();
+        engine
+            .register_dataset(
+                sample_entry("ds-1", DatasetType::MigrationScenario, 500),
+                &make_trace(),
+            )
+            .unwrap();
+        engine
+            .register_dataset(
+                sample_entry("ds-2", DatasetType::SecurityIncident, 300),
+                &make_trace(),
+            )
+            .unwrap();
         let catalog = engine.generate_catalog(&make_trace());
         assert_eq!(catalog.total_datasets, 2);
         assert_eq!(catalog.total_records, 800);
@@ -558,10 +604,12 @@ mod tests {
     #[test]
     fn catalog_has_by_type() {
         let mut engine = ReproducibleDatasets::default();
-        engine.register_dataset(
-            sample_entry("ds-1", DatasetType::MigrationScenario, 500),
-            &make_trace(),
-        ).unwrap();
+        engine
+            .register_dataset(
+                sample_entry("ds-1", DatasetType::MigrationScenario, 500),
+                &make_trace(),
+            )
+            .unwrap();
         let catalog = engine.generate_catalog(&make_trace());
         assert!(catalog.by_type.contains_key("migration_scenario"));
     }
@@ -594,21 +642,29 @@ mod tests {
     #[test]
     fn registration_generates_audit_entries() {
         let mut engine = ReproducibleDatasets::default();
-        engine.register_dataset(
-            sample_entry("ds-1", DatasetType::MigrationScenario, 500),
-            &make_trace(),
-        ).unwrap();
+        engine
+            .register_dataset(
+                sample_entry("ds-1", DatasetType::MigrationScenario, 500),
+                &make_trace(),
+            )
+            .unwrap();
         assert!(engine.audit_log().len() >= 4);
     }
 
     #[test]
     fn audit_log_has_event_codes() {
         let mut engine = ReproducibleDatasets::default();
-        engine.register_dataset(
-            sample_entry("ds-1", DatasetType::MigrationScenario, 500),
-            &make_trace(),
-        ).unwrap();
-        let codes: Vec<&str> = engine.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        engine
+            .register_dataset(
+                sample_entry("ds-1", DatasetType::MigrationScenario, 500),
+                &make_trace(),
+            )
+            .unwrap();
+        let codes: Vec<&str> = engine
+            .audit_log()
+            .iter()
+            .map(|r| r.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::RDS_DATASET_REGISTERED));
         assert!(codes.contains(&event_codes::RDS_INTEGRITY_VERIFIED));
     }
@@ -616,13 +672,14 @@ mod tests {
     #[test]
     fn export_jsonl() {
         let mut engine = ReproducibleDatasets::default();
-        engine.register_dataset(
-            sample_entry("ds-1", DatasetType::MigrationScenario, 500),
-            &make_trace(),
-        ).unwrap();
+        engine
+            .register_dataset(
+                sample_entry("ds-1", DatasetType::MigrationScenario, 500),
+                &make_trace(),
+            )
+            .unwrap();
         let jsonl = engine.export_audit_log_jsonl().unwrap();
-        let first: serde_json::Value =
-            serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+        let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert!(first["event_code"].is_string());
     }
 
@@ -652,11 +709,15 @@ mod tests {
     #[test]
     fn catalog_includes_bundles() {
         let mut engine = ReproducibleDatasets::default();
-        engine.register_dataset(
-            sample_entry("ds-1", DatasetType::BenchmarkBaseline, 200),
-            &make_trace(),
-        ).unwrap();
-        engine.publish_bundle(&["ds-1".to_string()], &make_trace()).unwrap();
+        engine
+            .register_dataset(
+                sample_entry("ds-1", DatasetType::BenchmarkBaseline, 200),
+                &make_trace(),
+            )
+            .unwrap();
+        engine
+            .publish_bundle(&["ds-1".to_string()], &make_trace())
+            .unwrap();
         let catalog = engine.generate_catalog(&make_trace());
         assert_eq!(catalog.bundles.len(), 1);
     }
@@ -664,12 +725,18 @@ mod tests {
     #[test]
     fn bundles_accumulated() {
         let mut engine = ReproducibleDatasets::default();
-        engine.register_dataset(
-            sample_entry("ds-1", DatasetType::MigrationScenario, 500),
-            &make_trace(),
-        ).unwrap();
-        engine.publish_bundle(&["ds-1".to_string()], &make_trace()).unwrap();
-        engine.publish_bundle(&["ds-1".to_string()], &make_trace()).unwrap();
+        engine
+            .register_dataset(
+                sample_entry("ds-1", DatasetType::MigrationScenario, 500),
+                &make_trace(),
+            )
+            .unwrap();
+        engine
+            .publish_bundle(&["ds-1".to_string()], &make_trace())
+            .unwrap();
+        engine
+            .publish_bundle(&["ds-1".to_string()], &make_trace())
+            .unwrap();
         assert_eq!(engine.bundles().len(), 2);
     }
 }

@@ -69,11 +69,23 @@ pub struct RegistryCatalog {
 /// Stable errors for computation registry operations.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ComputationRegistryError {
-    UnknownComputation { name: String },
-    MalformedComputationName { name: String },
-    DuplicateComputation { name: String },
-    VersionRegression { current: u64, requested: u64 },
-    InvalidComputationEntry { name: String, reason: String },
+    UnknownComputation {
+        name: String,
+    },
+    MalformedComputationName {
+        name: String,
+    },
+    DuplicateComputation {
+        name: String,
+    },
+    VersionRegression {
+        current: u64,
+        requested: u64,
+    },
+    InvalidComputationEntry {
+        name: String,
+        reason: String,
+    },
     DispatchDenied {
         code: String,
         compatibility_code: Option<String>,
@@ -218,9 +230,7 @@ impl ComputationRegistry {
                 Some(entry.name.clone()),
                 "registration rejected due malformed computation name".to_string(),
             );
-            return Err(ComputationRegistryError::MalformedComputationName {
-                name: entry.name,
-            });
+            return Err(ComputationRegistryError::MalformedComputationName { name: entry.name });
         }
         if entry.description.is_empty() {
             return Err(ComputationRegistryError::InvalidComputationEntry {
@@ -235,9 +245,7 @@ impl ComputationRegistry {
             });
         }
         if self.entries.contains_key(&entry.name) {
-            return Err(ComputationRegistryError::DuplicateComputation {
-                name: entry.name,
-            });
+            return Err(ComputationRegistryError::DuplicateComputation { name: entry.name });
         }
 
         let name = entry.name.clone();

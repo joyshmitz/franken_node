@@ -43,7 +43,9 @@ pub enum CertificationError {
         capability: String,
         level: CertificationLevel,
     },
-    #[error("deployment context `{context:?}` requires minimum certification `{required:?}`, got `{actual:?}`")]
+    #[error(
+        "deployment context `{context:?}` requires minimum certification `{required:?}`, got `{actual:?}`"
+    )]
     InsufficientCertification {
         context: DeploymentContext,
         required: CertificationLevel,
@@ -250,9 +252,7 @@ pub fn evaluate_certification(input: &CertificationInput) -> CertificationResult
     } else {
         unsatisfied.push("reproducible_build_evidence".to_owned());
     }
-    let adequate_coverage = input
-        .test_coverage_pct
-        .map_or(false, |pct| pct >= 80.0);
+    let adequate_coverage = input.test_coverage_pct.map_or(false, |pct| pct >= 80.0);
     if input.has_test_coverage_evidence && adequate_coverage {
         satisfied.push("test_coverage_above_80pct".to_owned());
     } else {
@@ -273,9 +273,8 @@ pub fn evaluate_certification(input: &CertificationInput) -> CertificationResult
         && input.has_reproducible_build_evidence
         && input.has_test_coverage_evidence
         && adequate_coverage;
-    let audited_met = verified_met
-        && input.has_audit_attestation
-        && input.audit_attestation.is_some();
+    let audited_met =
+        verified_met && input.has_audit_attestation && input.audit_attestation.is_some();
 
     let level = if audited_met {
         CertificationLevel::Audited
@@ -326,17 +325,17 @@ pub enum CapabilityCategory {
 
 /// Check whether a capability is allowed at a given certification level.
 #[must_use]
-pub fn is_capability_allowed(
-    capability: &CapabilityCategory,
-    level: CertificationLevel,
-) -> bool {
+pub fn is_capability_allowed(capability: &CapabilityCategory, level: CertificationLevel) -> bool {
     match (capability, level) {
         // Uncertified: minimal — read-only file access only.
         (CapabilityCategory::FileRead, CertificationLevel::Uncertified) => true,
         (_, CertificationLevel::Uncertified) => false,
 
         // Basic: file read/write.
-        (CapabilityCategory::FileRead | CapabilityCategory::FileWrite, CertificationLevel::Basic) => true,
+        (
+            CapabilityCategory::FileRead | CapabilityCategory::FileWrite,
+            CertificationLevel::Basic,
+        ) => true,
         (_, CertificationLevel::Basic) => false,
 
         // Standard: file + network + crypto.
@@ -735,7 +734,12 @@ mod tests {
 
     #[test]
     fn test_uncertified_without_publisher() {
-        let mut input = make_input("ext-1", ProvenanceLevel::None, ReputationTier::Untrusted, 10.0);
+        let mut input = make_input(
+            "ext-1",
+            ProvenanceLevel::None,
+            ReputationTier::Untrusted,
+            10.0,
+        );
         input.publisher_id = String::new();
         let result = evaluate_certification(&input);
         assert_eq!(result.level, CertificationLevel::Uncertified);
@@ -743,11 +747,24 @@ mod tests {
 
     #[test]
     fn test_basic_with_publisher_and_manifest() {
-        let input = make_input("ext-1", ProvenanceLevel::None, ReputationTier::Untrusted, 10.0);
+        let input = make_input(
+            "ext-1",
+            ProvenanceLevel::None,
+            ReputationTier::Untrusted,
+            10.0,
+        );
         let result = evaluate_certification(&input);
         assert_eq!(result.level, CertificationLevel::Basic);
-        assert!(result.satisfied_criteria.contains(&"publisher_identity_verified".to_owned()));
-        assert!(result.satisfied_criteria.contains(&"manifest_declared".to_owned()));
+        assert!(
+            result
+                .satisfied_criteria
+                .contains(&"publisher_identity_verified".to_owned())
+        );
+        assert!(
+            result
+                .satisfied_criteria
+                .contains(&"manifest_declared".to_owned())
+        );
     }
 
     #[test]
@@ -855,33 +872,69 @@ mod tests {
     #[test]
     fn test_deployment_gate_development() {
         let mut reg = CertificationRegistry::new();
-        let input = make_input("ext-1", ProvenanceLevel::None, ReputationTier::Untrusted, 5.0);
+        let input = make_input(
+            "ext-1",
+            ProvenanceLevel::None,
+            ReputationTier::Untrusted,
+            5.0,
+        );
         // Even uncertified (actually Basic since publisher is set)
         reg.evaluate_and_register(&input, &ts(1));
-        assert!(reg.check_deployment_gate("ext-1", "1.0.0", DeploymentContext::Development).is_ok());
+        assert!(
+            reg.check_deployment_gate("ext-1", "1.0.0", DeploymentContext::Development)
+                .is_ok()
+        );
     }
 
     #[test]
     fn test_deployment_gate_production_rejects_basic() {
         let mut reg = CertificationRegistry::new();
-        let input = make_input("ext-1", ProvenanceLevel::None, ReputationTier::Untrusted, 5.0);
+        let input = make_input(
+            "ext-1",
+            ProvenanceLevel::None,
+            ReputationTier::Untrusted,
+            5.0,
+        );
         reg.evaluate_and_register(&input, &ts(1));
         let result = reg.check_deployment_gate("ext-1", "1.0.0", DeploymentContext::Production);
-        assert!(matches!(result, Err(CertificationError::InsufficientCertification { .. })));
+        assert!(matches!(
+            result,
+            Err(CertificationError::InsufficientCertification { .. })
+        ));
     }
 
     #[test]
     fn test_promotion_adjacent_only() {
         let mut reg = CertificationRegistry::new();
-        let input = make_input("ext-1", ProvenanceLevel::None, ReputationTier::Untrusted, 5.0);
+        let input = make_input(
+            "ext-1",
+            ProvenanceLevel::None,
+            ReputationTier::Untrusted,
+            5.0,
+        );
         reg.evaluate_and_register(&input, &ts(1));
 
         // Skip from Basic to Verified should fail.
-        let result = reg.promote("ext-1", "1.0.0", CertificationLevel::Verified, "evidence-ref", &ts(2));
-        assert!(matches!(result, Err(CertificationError::InvalidPromotion { .. })));
+        let result = reg.promote(
+            "ext-1",
+            "1.0.0",
+            CertificationLevel::Verified,
+            "evidence-ref",
+            &ts(2),
+        );
+        assert!(matches!(
+            result,
+            Err(CertificationError::InvalidPromotion { .. })
+        ));
 
         // Adjacent promotion Basic -> Standard should succeed.
-        let result = reg.promote("ext-1", "1.0.0", CertificationLevel::Standard, "evidence-ref", &ts(3));
+        let result = reg.promote(
+            "ext-1",
+            "1.0.0",
+            CertificationLevel::Standard,
+            "evidence-ref",
+            &ts(3),
+        );
         assert!(result.is_ok());
     }
 
@@ -918,9 +971,21 @@ mod tests {
     #[test]
     fn test_audit_trail_integrity() {
         let mut reg = CertificationRegistry::new();
-        let input = make_input("ext-1", ProvenanceLevel::PublisherSigned, ReputationTier::Provisional, 30.0);
+        let input = make_input(
+            "ext-1",
+            ProvenanceLevel::PublisherSigned,
+            ReputationTier::Provisional,
+            30.0,
+        );
         reg.evaluate_and_register(&input, &ts(1));
-        reg.promote("ext-1", "1.0.0", CertificationLevel::Verified, "ev-ref", &ts(2)).unwrap();
+        reg.promote(
+            "ext-1",
+            "1.0.0",
+            CertificationLevel::Verified,
+            "ev-ref",
+            &ts(2),
+        )
+        .unwrap();
 
         reg.verify_audit_integrity().unwrap();
         assert!(reg.audit_trail_len() >= 2);
@@ -929,8 +994,18 @@ mod tests {
     #[test]
     fn test_audit_query_by_extension() {
         let mut reg = CertificationRegistry::new();
-        let input1 = make_input("ext-a", ProvenanceLevel::None, ReputationTier::Untrusted, 5.0);
-        let input2 = make_input("ext-b", ProvenanceLevel::None, ReputationTier::Untrusted, 5.0);
+        let input1 = make_input(
+            "ext-a",
+            ProvenanceLevel::None,
+            ReputationTier::Untrusted,
+            5.0,
+        );
+        let input2 = make_input(
+            "ext-b",
+            ProvenanceLevel::None,
+            ReputationTier::Untrusted,
+            5.0,
+        );
         reg.evaluate_and_register(&input1, &ts(1));
         reg.evaluate_and_register(&input2, &ts(2));
 
@@ -957,7 +1032,12 @@ mod tests {
 
     #[test]
     fn test_evaluation_explanation_present() {
-        let input = make_input("ext-1", ProvenanceLevel::PublisherSigned, ReputationTier::Provisional, 25.0);
+        let input = make_input(
+            "ext-1",
+            ProvenanceLevel::PublisherSigned,
+            ReputationTier::Provisional,
+            25.0,
+        );
         let result = evaluate_certification(&input);
         assert!(!result.explanation.is_empty());
         assert!(result.explanation.contains("ext-1"));

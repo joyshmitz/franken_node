@@ -47,7 +47,8 @@ impl ActionRef {
 impl fmt::Display for ActionRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
-            f, "ActionRef(kind={}, id={}, epoch={})",
+            f,
+            "ActionRef(kind={}, id={}, epoch={})",
             self.decision_kind, self.decision_id, self.epoch_id
         )
     }
@@ -131,7 +132,12 @@ impl ReplayDiff {
         Self { fields: Vec::new() }
     }
 
-    pub fn add(&mut self, field_name: impl Into<String>, expected: impl Into<String>, actual: impl Into<String>) {
+    pub fn add(
+        &mut self,
+        field_name: impl Into<String>,
+        expected: impl Into<String>,
+        actual: impl Into<String>,
+    ) {
         self.fields.push(DiffField {
             field_name: field_name.into(),
             expected: expected.into(),
@@ -158,7 +164,8 @@ impl fmt::Display for ReplayDiff {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for field in &self.fields {
             writeln!(
-                f, "  {} expected={} actual={}",
+                f,
+                "  {} expected={} actual={}",
                 field.field_name, field.expected, field.actual
             )?;
         }
@@ -210,7 +217,11 @@ impl fmt::Display for ReplayResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Match => write!(f, "MATCH"),
-            Self::Mismatch { expected, got, diff } => {
+            Self::Mismatch {
+                expected,
+                got,
+                diff,
+            } => {
                 write!(f, "MISMATCH: expected={}, got={}\n{}", expected, got, diff)
             }
             Self::Unresolvable { reason } => write!(f, "UNRESOLVABLE: {reason}"),
@@ -275,17 +286,30 @@ impl EvidenceReplayValidator {
         }
     }
 
-    pub fn total_validations(&self) -> u64 { self.total_validations }
-    pub fn match_count(&self) -> u64 { self.match_count }
-    pub fn mismatch_count(&self) -> u64 { self.mismatch_count }
-    pub fn unresolvable_count(&self) -> u64 { self.unresolvable_count }
-    pub fn results(&self) -> &[(String, ReplayResult)] { &self.results }
+    pub fn total_validations(&self) -> u64 {
+        self.total_validations
+    }
+    pub fn match_count(&self) -> u64 {
+        self.match_count
+    }
+    pub fn mismatch_count(&self) -> u64 {
+        self.mismatch_count
+    }
+    pub fn unresolvable_count(&self) -> u64 {
+        self.unresolvable_count
+    }
+    pub fn results(&self) -> &[(String, ReplayResult)] {
+        &self.results
+    }
 
     /// Validate a single evidence entry against its replay context.
     pub fn validate(&mut self, entry: &EvidenceEntry, context: &ReplayContext) -> ReplayResult {
         eprintln!(
             "{}: entry_id={}, epoch_id={}, decision_kind={}",
-            event_codes::REPLAY_START, entry.decision_id, entry.epoch_id, entry.decision_kind.label()
+            event_codes::REPLAY_START,
+            entry.decision_id,
+            entry.epoch_id,
+            entry.decision_kind.label()
         );
 
         self.total_validations += 1;
@@ -295,20 +319,33 @@ impl EvidenceReplayValidator {
             let result = ReplayResult::Unresolvable {
                 reason: "context is invalid: empty candidates or missing policy snapshot".into(),
             };
-            eprintln!("{}: entry_id={}, reason=invalid context", event_codes::REPLAY_UNRESOLVABLE, entry.decision_id);
+            eprintln!(
+                "{}: entry_id={}, reason=invalid context",
+                event_codes::REPLAY_UNRESOLVABLE,
+                entry.decision_id
+            );
             self.unresolvable_count += 1;
-            self.results.push((entry.decision_id.clone(), result.clone()));
+            self.results
+                .push((entry.decision_id.clone(), result.clone()));
             return result;
         }
 
         // Check epoch consistency
         if entry.epoch_id != context.epoch_id {
             let result = ReplayResult::Unresolvable {
-                reason: format!("epoch mismatch: entry epoch {} != context epoch {}", entry.epoch_id, context.epoch_id),
+                reason: format!(
+                    "epoch mismatch: entry epoch {} != context epoch {}",
+                    entry.epoch_id, context.epoch_id
+                ),
             };
-            eprintln!("{}: entry_id={}, reason=epoch mismatch", event_codes::REPLAY_UNRESOLVABLE, entry.decision_id);
+            eprintln!(
+                "{}: entry_id={}, reason=epoch mismatch",
+                event_codes::REPLAY_UNRESOLVABLE,
+                entry.decision_id
+            );
             self.unresolvable_count += 1;
-            self.results.push((entry.decision_id.clone(), result.clone()));
+            self.results
+                .push((entry.decision_id.clone(), result.clone()));
             return result;
         }
 
@@ -327,32 +364,77 @@ impl EvidenceReplayValidator {
                 if expected_ref.decision_kind == got_ref.decision_kind
                     && expected_ref.decision_id == got_ref.decision_id
                 {
-                    eprintln!("{}: entry_id={}, decision_kind={}", event_codes::REPLAY_MATCH, entry.decision_id, entry.decision_kind.label());
+                    eprintln!(
+                        "{}: entry_id={}, decision_kind={}",
+                        event_codes::REPLAY_MATCH,
+                        entry.decision_id,
+                        entry.decision_kind.label()
+                    );
                     ReplayResult::Match
                 } else {
                     let mut diff = ReplayDiff::new();
                     if expected_ref.decision_kind != got_ref.decision_kind {
-                        diff.add("decision_kind", &expected_ref.decision_kind, &got_ref.decision_kind);
+                        diff.add(
+                            "decision_kind",
+                            &expected_ref.decision_kind,
+                            &got_ref.decision_kind,
+                        );
                     }
                     if expected_ref.decision_id != got_ref.decision_id {
-                        diff.add("decision_id", &expected_ref.decision_id, &got_ref.decision_id);
+                        diff.add(
+                            "decision_id",
+                            &expected_ref.decision_id,
+                            &got_ref.decision_id,
+                        );
                     }
-                    eprintln!("{}: entry_id={}, diff_fields={}", event_codes::REPLAY_MISMATCH, entry.decision_id, diff.field_count());
-                    ReplayResult::Mismatch { expected: expected_ref, got: got_ref, diff }
+                    eprintln!(
+                        "{}: entry_id={}, diff_fields={}",
+                        event_codes::REPLAY_MISMATCH,
+                        entry.decision_id,
+                        diff.field_count()
+                    );
+                    ReplayResult::Mismatch {
+                        expected: expected_ref,
+                        got: got_ref,
+                        diff,
+                    }
                 }
             }
             None => {
                 // No candidate selected — Deny/Rollback may be expected to have no winner
-                if entry.decision_kind == DecisionKind::Deny || entry.decision_kind == DecisionKind::Rollback {
-                    eprintln!("{}: entry_id={}, decision_kind={} (no candidate expected)", event_codes::REPLAY_MATCH, entry.decision_id, entry.decision_kind.label());
+                if entry.decision_kind == DecisionKind::Deny
+                    || entry.decision_kind == DecisionKind::Rollback
+                {
+                    eprintln!(
+                        "{}: entry_id={}, decision_kind={} (no candidate expected)",
+                        event_codes::REPLAY_MATCH,
+                        entry.decision_id,
+                        entry.decision_kind.label()
+                    );
                     ReplayResult::Match
                 } else {
                     let mut diff = ReplayDiff::new();
-                    diff.add("selected_candidate", &entry.decision_id, "none (no candidate selected)");
+                    diff.add(
+                        "selected_candidate",
+                        &entry.decision_id,
+                        "none (no candidate selected)",
+                    );
                     let expected_ref = ActionRef::from_entry(entry);
-                    let got_ref = ActionRef { decision_kind: "none".into(), decision_id: "none".into(), epoch_id: context.epoch_id };
-                    eprintln!("{}: entry_id={}, no candidate selected", event_codes::REPLAY_MISMATCH, entry.decision_id);
-                    ReplayResult::Mismatch { expected: expected_ref, got: got_ref, diff }
+                    let got_ref = ActionRef {
+                        decision_kind: "none".into(),
+                        decision_id: "none".into(),
+                        epoch_id: context.epoch_id,
+                    };
+                    eprintln!(
+                        "{}: entry_id={}, no candidate selected",
+                        event_codes::REPLAY_MISMATCH,
+                        entry.decision_id
+                    );
+                    ReplayResult::Mismatch {
+                        expected: expected_ref,
+                        got: got_ref,
+                        diff,
+                    }
                 }
             }
         };
@@ -362,13 +444,20 @@ impl EvidenceReplayValidator {
             ReplayResult::Mismatch { .. } => self.mismatch_count += 1,
             ReplayResult::Unresolvable { .. } => self.unresolvable_count += 1,
         }
-        self.results.push((entry.decision_id.clone(), result.clone()));
+        self.results
+            .push((entry.decision_id.clone(), result.clone()));
         result
     }
 
     /// Validate a batch of entries.
-    pub fn validate_batch(&mut self, entries: &[(EvidenceEntry, ReplayContext)]) -> Vec<ReplayResult> {
-        entries.iter().map(|(entry, ctx)| self.validate(entry, ctx)).collect()
+    pub fn validate_batch(
+        &mut self,
+        entries: &[(EvidenceEntry, ReplayContext)],
+    ) -> Vec<ReplayResult> {
+        entries
+            .iter()
+            .map(|(entry, ctx)| self.validate(entry, ctx))
+            .collect()
     }
 
     /// Generate a summary report.
@@ -383,7 +472,9 @@ impl EvidenceReplayValidator {
 }
 
 impl Default for EvidenceReplayValidator {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Summary of replay validation results.
@@ -403,7 +494,11 @@ impl ReplaySummary {
 
 impl fmt::Display for ReplaySummary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Replay: total={}, match={}, mismatch={}, unresolvable={}", self.total, self.matches, self.mismatches, self.unresolvable)
+        write!(
+            f,
+            "Replay: total={}, match={}, mismatch={}, unresolvable={}",
+            self.total, self.matches, self.mismatches, self.unresolvable
+        )
     }
 }
 
@@ -434,7 +529,11 @@ pub fn matching_context(entry: &EvidenceEntry) -> ReplayContext {
             score: 1.0,
             metadata: serde_json::json!({}),
         }],
-        vec![Constraint { id: "default".into(), description: "default constraint".into(), satisfied: true }],
+        vec![Constraint {
+            id: "default".into(),
+            description: "default constraint".into(),
+            satisfied: true,
+        }],
         entry.epoch_id,
         "policy-snapshot-001",
     )
@@ -459,7 +558,11 @@ mod tests {
 
     #[test]
     fn action_ref_display() {
-        let aref = ActionRef { decision_kind: "admit".into(), decision_id: "DEC-001".into(), epoch_id: 1 };
+        let aref = ActionRef {
+            decision_kind: "admit".into(),
+            decision_id: "DEC-001".into(),
+            epoch_id: 1,
+        };
         assert!(aref.to_string().contains("DEC-001"));
     }
 
@@ -502,8 +605,16 @@ mod tests {
     #[test]
     fn replay_result_mismatch() {
         let r = ReplayResult::Mismatch {
-            expected: ActionRef { decision_kind: "admit".into(), decision_id: "DEC-001".into(), epoch_id: 1 },
-            got: ActionRef { decision_kind: "deny".into(), decision_id: "DEC-001".into(), epoch_id: 1 },
+            expected: ActionRef {
+                decision_kind: "admit".into(),
+                decision_id: "DEC-001".into(),
+                epoch_id: 1,
+            },
+            got: ActionRef {
+                decision_kind: "deny".into(),
+                decision_id: "DEC-001".into(),
+                epoch_id: 1,
+            },
             diff: ReplayDiff::new(),
         };
         assert!(r.is_mismatch());
@@ -512,7 +623,9 @@ mod tests {
 
     #[test]
     fn replay_result_unresolvable() {
-        let r = ReplayResult::Unresolvable { reason: "missing context".into() };
+        let r = ReplayResult::Unresolvable {
+            reason: "missing context".into(),
+        };
         assert!(r.is_unresolvable());
         assert_eq!(r.event_code(), "EVD-REPLAY-004");
     }
@@ -520,7 +633,9 @@ mod tests {
     #[test]
     fn replay_result_display() {
         assert_eq!(ReplayResult::Match.to_string(), "MATCH");
-        let r = ReplayResult::Unresolvable { reason: "test".into() };
+        let r = ReplayResult::Unresolvable {
+            reason: "test".into(),
+        };
         assert!(r.to_string().contains("UNRESOLVABLE"));
     }
 
@@ -529,8 +644,15 @@ mod tests {
     #[test]
     fn replay_context_valid() {
         let ctx = ReplayContext::new(
-            vec![Candidate { id: "c1".into(), decision_kind: DecisionKind::Admit, score: 1.0, metadata: serde_json::json!({}) }],
-            vec![], 1, "snap-001",
+            vec![Candidate {
+                id: "c1".into(),
+                decision_kind: DecisionKind::Admit,
+                score: 1.0,
+                metadata: serde_json::json!({}),
+            }],
+            vec![],
+            1,
+            "snap-001",
         );
         assert!(ctx.is_valid());
     }
@@ -544,8 +666,15 @@ mod tests {
     #[test]
     fn replay_context_invalid_empty_snapshot() {
         let ctx = ReplayContext::new(
-            vec![Candidate { id: "c1".into(), decision_kind: DecisionKind::Admit, score: 1.0, metadata: serde_json::json!({}) }],
-            vec![], 1, "",
+            vec![Candidate {
+                id: "c1".into(),
+                decision_kind: DecisionKind::Admit,
+                score: 1.0,
+                metadata: serde_json::json!({}),
+            }],
+            vec![],
+            1,
+            "",
         );
         assert!(!ctx.is_valid());
     }
@@ -566,9 +695,19 @@ mod tests {
         let mut v = EvidenceReplayValidator::new();
         let e = test_replay_entry("DEC-002", DecisionKind::Deny, 1);
         let c = ReplayContext::new(
-            vec![Candidate { id: "other".into(), decision_kind: DecisionKind::Admit, score: 0.5, metadata: serde_json::json!({}) }],
-            vec![Constraint { id: "c1".into(), description: "blocked".into(), satisfied: false }],
-            1, "snap-001",
+            vec![Candidate {
+                id: "other".into(),
+                decision_kind: DecisionKind::Admit,
+                score: 0.5,
+                metadata: serde_json::json!({}),
+            }],
+            vec![Constraint {
+                id: "c1".into(),
+                description: "blocked".into(),
+                satisfied: false,
+            }],
+            1,
+            "snap-001",
         );
         assert!(v.validate(&e, &c).is_match());
     }
@@ -594,9 +733,19 @@ mod tests {
         let mut v = EvidenceReplayValidator::new();
         let e = test_replay_entry("DEC-005", DecisionKind::Rollback, 1);
         let c = ReplayContext::new(
-            vec![Candidate { id: "x".into(), decision_kind: DecisionKind::Admit, score: 0.5, metadata: serde_json::json!({}) }],
-            vec![Constraint { id: "c1".into(), description: "blocked".into(), satisfied: false }],
-            1, "snap-001",
+            vec![Candidate {
+                id: "x".into(),
+                decision_kind: DecisionKind::Admit,
+                score: 0.5,
+                metadata: serde_json::json!({}),
+            }],
+            vec![Constraint {
+                id: "c1".into(),
+                description: "blocked".into(),
+                satisfied: false,
+            }],
+            1,
+            "snap-001",
         );
         assert!(v.validate(&e, &c).is_match());
     }
@@ -624,9 +773,19 @@ mod tests {
         let mut v = EvidenceReplayValidator::new();
         let e = test_replay_entry("DEC-001", DecisionKind::Admit, 1);
         let c = ReplayContext::new(
-            vec![Candidate { id: "DEC-001".into(), decision_kind: DecisionKind::Deny, score: 1.0, metadata: serde_json::json!({}) }],
-            vec![Constraint { id: "c1".into(), description: "ok".into(), satisfied: true }],
-            1, "snap-001",
+            vec![Candidate {
+                id: "DEC-001".into(),
+                decision_kind: DecisionKind::Deny,
+                score: 1.0,
+                metadata: serde_json::json!({}),
+            }],
+            vec![Constraint {
+                id: "c1".into(),
+                description: "ok".into(),
+                satisfied: true,
+            }],
+            1,
+            "snap-001",
         );
         let result = v.validate(&e, &c);
         assert!(result.is_mismatch());
@@ -641,11 +800,26 @@ mod tests {
         let e = test_replay_entry("DEC-001", DecisionKind::Admit, 1);
         let c = ReplayContext::new(
             vec![
-                Candidate { id: "DEC-001".into(), decision_kind: DecisionKind::Admit, score: 0.5, metadata: serde_json::json!({}) },
-                Candidate { id: "DEC-999".into(), decision_kind: DecisionKind::Admit, score: 1.0, metadata: serde_json::json!({}) },
+                Candidate {
+                    id: "DEC-001".into(),
+                    decision_kind: DecisionKind::Admit,
+                    score: 0.5,
+                    metadata: serde_json::json!({}),
+                },
+                Candidate {
+                    id: "DEC-999".into(),
+                    decision_kind: DecisionKind::Admit,
+                    score: 1.0,
+                    metadata: serde_json::json!({}),
+                },
             ],
-            vec![Constraint { id: "c1".into(), description: "ok".into(), satisfied: true }],
-            1, "snap-001",
+            vec![Constraint {
+                id: "c1".into(),
+                description: "ok".into(),
+                satisfied: true,
+            }],
+            1,
+            "snap-001",
         );
         let result = v.validate(&e, &c);
         assert!(result.is_mismatch());
@@ -668,8 +842,15 @@ mod tests {
         let mut v = EvidenceReplayValidator::new();
         let e = test_replay_entry("DEC-001", DecisionKind::Admit, 1);
         let c = ReplayContext::new(
-            vec![Candidate { id: "DEC-001".into(), decision_kind: DecisionKind::Admit, score: 1.0, metadata: serde_json::json!({}) }],
-            vec![], 999, "snap-001",
+            vec![Candidate {
+                id: "DEC-001".into(),
+                decision_kind: DecisionKind::Admit,
+                score: 1.0,
+                metadata: serde_json::json!({}),
+            }],
+            vec![],
+            999,
+            "snap-001",
         );
         assert!(v.validate(&e, &c).is_unresolvable());
     }
@@ -706,8 +887,16 @@ mod tests {
     fn validate_batch() {
         let mut v = EvidenceReplayValidator::new();
         let entries: Vec<(EvidenceEntry, ReplayContext)> = vec![
-            { let e = test_replay_entry("DEC-001", DecisionKind::Admit, 1); let c = matching_context(&e); (e, c) },
-            { let e = test_replay_entry("DEC-002", DecisionKind::Quarantine, 1); let c = matching_context(&e); (e, c) },
+            {
+                let e = test_replay_entry("DEC-001", DecisionKind::Admit, 1);
+                let c = matching_context(&e);
+                (e, c)
+            },
+            {
+                let e = test_replay_entry("DEC-002", DecisionKind::Quarantine, 1);
+                let c = matching_context(&e);
+                (e, c)
+            },
         ];
         let results = v.validate_batch(&entries);
         assert_eq!(results.len(), 2);
@@ -740,7 +929,12 @@ mod tests {
 
     #[test]
     fn summary_display() {
-        let s = ReplaySummary { total: 10, matches: 8, mismatches: 1, unresolvable: 1 };
+        let s = ReplaySummary {
+            total: 10,
+            matches: 8,
+            mismatches: 1,
+            unresolvable: 1,
+        };
         assert!(s.to_string().contains("10"));
         assert!(s.to_string().contains("mismatch=1"));
     }
@@ -771,14 +965,23 @@ mod tests {
 
     #[test]
     fn candidate_fields() {
-        let c = Candidate { id: "c1".into(), decision_kind: DecisionKind::Admit, score: 0.95, metadata: serde_json::json!({"key": "value"}) };
+        let c = Candidate {
+            id: "c1".into(),
+            decision_kind: DecisionKind::Admit,
+            score: 0.95,
+            metadata: serde_json::json!({"key": "value"}),
+        };
         assert_eq!(c.id, "c1");
         assert_eq!(c.decision_kind, DecisionKind::Admit);
     }
 
     #[test]
     fn constraint_satisfied() {
-        let c = Constraint { id: "constraint-1".into(), description: "memory budget".into(), satisfied: true };
+        let c = Constraint {
+            id: "constraint-1".into(),
+            description: "memory budget".into(),
+            satisfied: true,
+        };
         assert!(c.satisfied);
     }
 
@@ -786,14 +989,26 @@ mod tests {
 
     #[test]
     fn all_decision_kinds_covered() {
-        let kinds = [DecisionKind::Admit, DecisionKind::Deny, DecisionKind::Quarantine,
-                     DecisionKind::Release, DecisionKind::Rollback, DecisionKind::Throttle, DecisionKind::Escalate];
+        let kinds = [
+            DecisionKind::Admit,
+            DecisionKind::Deny,
+            DecisionKind::Quarantine,
+            DecisionKind::Release,
+            DecisionKind::Rollback,
+            DecisionKind::Throttle,
+            DecisionKind::Escalate,
+        ];
         let mut v = EvidenceReplayValidator::new();
         for (i, kind) in kinds.iter().enumerate() {
             let e = test_replay_entry(&format!("DEC-{i:03}"), *kind, 1);
             let c = matching_context(&e);
             let result = v.validate(&e, &c);
-            assert!(result.is_match(), "kind {:?} did not match: {:?}", kind, result);
+            assert!(
+                result.is_match(),
+                "kind {:?} did not match: {:?}",
+                kind,
+                result
+            );
         }
         assert_eq!(v.match_count(), 7);
     }

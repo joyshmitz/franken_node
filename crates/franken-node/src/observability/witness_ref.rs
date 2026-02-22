@@ -73,7 +73,12 @@ impl WitnessKind {
 
     /// All variants.
     pub fn all() -> &'static [WitnessKind] {
-        &[Self::Telemetry, Self::StateSnapshot, Self::ProofArtifact, Self::ExternalSignal]
+        &[
+            Self::Telemetry,
+            Self::StateSnapshot,
+            Self::ProofArtifact,
+            Self::ExternalSignal,
+        ]
     }
 }
 
@@ -100,11 +105,7 @@ pub struct WitnessRef {
 
 impl WitnessRef {
     /// Create a new witness reference.
-    pub fn new(
-        id: impl Into<String>,
-        kind: WitnessKind,
-        hash: [u8; 32],
-    ) -> Self {
+    pub fn new(id: impl Into<String>, kind: WitnessKind, hash: [u8; 32]) -> Self {
         Self {
             witness_id: WitnessId::new(id),
             witness_kind: kind,
@@ -121,7 +122,10 @@ impl WitnessRef {
 
     /// Format integrity hash as hex string.
     pub fn hash_hex(&self) -> String {
-        self.integrity_hash.iter().map(|b| format!("{b:02x}")).collect()
+        self.integrity_hash
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
     }
 }
 
@@ -233,28 +237,56 @@ impl WitnessValidationError {
 impl fmt::Display for WitnessValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingWitnesses { entry_id, decision_kind } => {
+            Self::MissingWitnesses {
+                entry_id,
+                decision_kind,
+            } => {
                 write!(
-                    f, "{}: entry={}, kind={}",
-                    event_codes::WITNESS_BROKEN_REF, entry_id, decision_kind
+                    f,
+                    "{}: entry={}, kind={}",
+                    event_codes::WITNESS_BROKEN_REF,
+                    entry_id,
+                    decision_kind
                 )
             }
-            Self::IntegrityHashMismatch { entry_id, witness_id, expected_hex, actual_hex } => {
+            Self::IntegrityHashMismatch {
+                entry_id,
+                witness_id,
+                expected_hex,
+                actual_hex,
+            } => {
                 write!(
-                    f, "{}: entry={}, witness={}, expected={}, actual={}",
-                    event_codes::WITNESS_HASH_MISMATCH, entry_id, witness_id, expected_hex, actual_hex
+                    f,
+                    "{}: entry={}, witness={}, expected={}, actual={}",
+                    event_codes::WITNESS_HASH_MISMATCH,
+                    entry_id,
+                    witness_id,
+                    expected_hex,
+                    actual_hex
                 )
             }
-            Self::UnresolvableLocator { entry_id, witness_id } => {
+            Self::UnresolvableLocator {
+                entry_id,
+                witness_id,
+            } => {
                 write!(
-                    f, "{}: entry={}, witness={}",
-                    event_codes::WITNESS_BROKEN_REF, entry_id, witness_id
+                    f,
+                    "{}: entry={}, witness={}",
+                    event_codes::WITNESS_BROKEN_REF,
+                    entry_id,
+                    witness_id
                 )
             }
-            Self::DuplicateWitnessId { entry_id, witness_id } => {
+            Self::DuplicateWitnessId {
+                entry_id,
+                witness_id,
+            } => {
                 write!(
-                    f, "{}: entry={}, duplicate witness={}",
-                    event_codes::WITNESS_BROKEN_REF, entry_id, witness_id
+                    f,
+                    "{}: entry={}, duplicate witness={}",
+                    event_codes::WITNESS_BROKEN_REF,
+                    entry_id,
+                    witness_id
                 )
             }
         }
@@ -378,7 +410,10 @@ impl WitnessValidator {
                 entry_id: entry_id.to_string(),
                 witness_id: witness.witness_id.as_str().to_string(),
                 expected_hex: witness.hash_hex(),
-                actual_hex: actual_content_hash.iter().map(|b| format!("{b:02x}")).collect(),
+                actual_hex: actual_content_hash
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect(),
             });
         }
         Ok(())
@@ -402,7 +437,9 @@ impl WitnessValidator {
             }
             for w in witnesses.refs() {
                 total_witnesses += 1;
-                *witness_kind_counts.entry(w.witness_kind.label().to_string()).or_insert(0u64) += 1;
+                *witness_kind_counts
+                    .entry(w.witness_kind.label().to_string())
+                    .or_insert(0u64) += 1;
             }
         }
 
@@ -636,10 +673,16 @@ mod tests {
             DecisionKind::Throttle,
             DecisionKind::Escalate,
         ];
-        let high = all_kinds.iter().filter(|k| HIGH_IMPACT_KINDS.contains(k)).count();
-        let low = all_kinds.iter().filter(|k| !HIGH_IMPACT_KINDS.contains(k)).count();
+        let high = all_kinds
+            .iter()
+            .filter(|k| HIGH_IMPACT_KINDS.contains(k))
+            .count();
+        let low = all_kinds
+            .iter()
+            .filter(|k| !HIGH_IMPACT_KINDS.contains(k))
+            .count();
         assert_eq!(high, 3); // Quarantine, Release, Escalate
-        assert_eq!(low, 4);  // Admit, Deny, Rollback, Throttle
+        assert_eq!(low, 4); // Admit, Deny, Rollback, Throttle
     }
 
     // ── WitnessValidator: basic validation ──
@@ -664,10 +707,7 @@ mod tests {
 
         let result = validator.validate(&entry, &witnesses);
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().code(),
-            "ERR_MISSING_WITNESSES"
-        );
+        assert_eq!(result.unwrap_err().code(), "ERR_MISSING_WITNESSES");
         assert_eq!(validator.rejected_count(), 1);
     }
 
@@ -702,10 +742,7 @@ mod tests {
 
         let result = validator.validate(&entry, &witnesses);
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().code(),
-            "ERR_DUPLICATE_WITNESS_ID"
-        );
+        assert_eq!(result.unwrap_err().code(), "ERR_DUPLICATE_WITNESS_ID");
     }
 
     // ── Strict mode: locator required ──
@@ -720,10 +757,7 @@ mod tests {
 
         let result = validator.validate(&entry, &witnesses);
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().code(),
-            "ERR_UNRESOLVABLE_LOCATOR"
-        );
+        assert_eq!(result.unwrap_err().code(), "ERR_UNRESOLVABLE_LOCATOR");
     }
 
     #[test]
@@ -733,7 +767,7 @@ mod tests {
         let mut witnesses = WitnessSet::new();
         witnesses.add(
             make_witness("WIT-001", WitnessKind::Telemetry)
-                .with_locator("file:///bundles/replay-001.jsonl")
+                .with_locator("file:///bundles/replay-001.jsonl"),
         );
 
         let result = validator.validate(&entry, &witnesses);
@@ -746,16 +780,12 @@ mod tests {
         let entry = make_entry(DecisionKind::Release);
         let mut witnesses = WitnessSet::new();
         witnesses.add(
-            make_witness("WIT-001", WitnessKind::Telemetry)
-                .with_locator("") // empty locator
+            make_witness("WIT-001", WitnessKind::Telemetry).with_locator(""), // empty locator
         );
 
         let result = validator.validate(&entry, &witnesses);
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().code(),
-            "ERR_UNRESOLVABLE_LOCATOR"
-        );
+        assert_eq!(result.unwrap_err().code(), "ERR_UNRESOLVABLE_LOCATOR");
     }
 
     // ── Integrity verification ──
@@ -778,10 +808,7 @@ mod tests {
 
         let result = validator.verify_integrity("DEC-001", &witness, &actual);
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().code(),
-            "ERR_INTEGRITY_HASH_MISMATCH"
-        );
+        assert_eq!(result.unwrap_err().code(), "ERR_INTEGRITY_HASH_MISMATCH");
     }
 
     // ── Error display ──
@@ -885,7 +912,8 @@ mod tests {
             let result = validator.validate(&entry, &witnesses);
             assert!(
                 result.is_err(),
-                "kind {} should require witnesses", kind.label()
+                "kind {} should require witnesses",
+                kind.label()
             );
         }
     }

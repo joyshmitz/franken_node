@@ -223,9 +223,7 @@ impl PolicyExplainer {
                 .chain(outcome.blocked.iter().map(|b| b.candidate.clone()))
                 .collect();
             let ranked = diagnostics.rank_candidates(&candidates, &[]);
-            let chosen_ranked = ranked
-                .iter()
-                .find(|r| &r.candidate_ref == chosen);
+            let chosen_ranked = ranked.iter().find(|r| &r.candidate_ref == chosen);
 
             let (posterior, ci) = match chosen_ranked {
                 Some(r) => (Some(r.posterior_prob), Some(r.confidence_interval)),
@@ -342,8 +340,11 @@ impl PolicyExplainer {
             .blocked
             .iter()
             .map(|b| {
-                let guardrail_names: Vec<String> =
-                    b.blocked_by.iter().map(|g| g.as_str().to_string()).collect();
+                let guardrail_names: Vec<String> = b
+                    .blocked_by
+                    .iter()
+                    .map(|g| g.as_str().to_string())
+                    .collect();
                 let explanation = format!(
                     "Candidate '{}' (rank {}) was blocked by guardrail(s): {}. Reasons: {}",
                     b.candidate.0,
@@ -486,8 +487,7 @@ mod tests {
 
     #[test]
     fn test_explain_no_candidates() {
-        let explanation =
-            PolicyExplainer::explain(&no_candidates_outcome(), &empty_diagnostics());
+        let explanation = PolicyExplainer::explain(&no_candidates_outcome(), &empty_diagnostics());
         assert!(explanation.action_summary.contains("no candidates"));
     }
 
@@ -506,10 +506,12 @@ mod tests {
         let explanation = PolicyExplainer::explain(&top_accepted_outcome(), &empty_diagnostics());
         assert_eq!(explanation.diagnostic_confidence.observation_count, 0);
         assert!(!explanation.diagnostic_confidence.summary.is_empty());
-        assert!(explanation
-            .diagnostic_confidence
-            .summary
-            .contains("Insufficient data"));
+        assert!(
+            explanation
+                .diagnostic_confidence
+                .summary
+                .contains("Insufficient data")
+        );
     }
 
     #[test]
@@ -542,10 +544,12 @@ mod tests {
         let explanation =
             PolicyExplainer::explain(&all_blocked_outcome(), &diagnostics_with_observations());
         assert!(!explanation.guarantee_confidence.all_guardrails_passed);
-        assert!(explanation
-            .guarantee_confidence
-            .summary
-            .contains("No action"));
+        assert!(
+            explanation
+                .guarantee_confidence
+                .summary
+                .contains("No action")
+        );
     }
 
     // -- Wording validation --
@@ -555,11 +559,7 @@ mod tests {
         let explanation =
             PolicyExplainer::explain(&top_accepted_outcome(), &diagnostics_with_observations());
         let validation = validate_wording(&explanation);
-        assert!(
-            validation.valid,
-            "Violations: {:?}",
-            validation.violations
-        );
+        assert!(validation.valid, "Violations: {:?}", validation.violations);
     }
 
     #[test]
@@ -567,11 +567,7 @@ mod tests {
         let explanation =
             PolicyExplainer::explain(&fallback_outcome(), &diagnostics_with_observations());
         let validation = validate_wording(&explanation);
-        assert!(
-            validation.valid,
-            "Violations: {:?}",
-            validation.violations
-        );
+        assert!(validation.valid, "Violations: {:?}", validation.violations);
     }
 
     #[test]
@@ -579,33 +575,21 @@ mod tests {
         let explanation =
             PolicyExplainer::explain(&all_blocked_outcome(), &diagnostics_with_observations());
         let validation = validate_wording(&explanation);
-        assert!(
-            validation.valid,
-            "Violations: {:?}",
-            validation.violations
-        );
+        assert!(validation.valid, "Violations: {:?}", validation.violations);
     }
 
     #[test]
     fn test_wording_valid_no_candidates() {
         let explanation = PolicyExplainer::explain(&no_candidates_outcome(), &empty_diagnostics());
         let validation = validate_wording(&explanation);
-        assert!(
-            validation.valid,
-            "Violations: {:?}",
-            validation.violations
-        );
+        assert!(validation.valid, "Violations: {:?}", validation.violations);
     }
 
     #[test]
     fn test_wording_valid_empty_diagnostics() {
         let explanation = PolicyExplainer::explain(&top_accepted_outcome(), &empty_diagnostics());
         let validation = validate_wording(&explanation);
-        assert!(
-            validation.valid,
-            "Violations: {:?}",
-            validation.violations
-        );
+        assert!(validation.valid, "Violations: {:?}", validation.violations);
     }
 
     #[test]
@@ -643,7 +627,10 @@ mod tests {
         let explanation =
             PolicyExplainer::explain(&fallback_outcome(), &diagnostics_with_observations());
         assert_eq!(explanation.blocked_alternatives.len(), 1);
-        assert_eq!(explanation.blocked_alternatives[0].candidate, c("aggressive"));
+        assert_eq!(
+            explanation.blocked_alternatives[0].candidate,
+            c("aggressive")
+        );
         assert!(!explanation.blocked_alternatives[0].blocked_by.is_empty());
     }
 
@@ -659,10 +646,12 @@ mod tests {
         let explanation =
             PolicyExplainer::explain(&fallback_outcome(), &diagnostics_with_observations());
         let blocked = &explanation.blocked_alternatives[0];
-        assert!(blocked
-            .blocked_by
-            .iter()
-            .any(|g| g.as_str() == "memory_budget"));
+        assert!(
+            blocked
+                .blocked_by
+                .iter()
+                .any(|g| g.as_str() == "memory_budget")
+        );
     }
 
     // -- Serialization --
@@ -674,10 +663,7 @@ mod tests {
         let json = PolicyExplainer::to_json(&explanation).unwrap();
         let parsed: PolicyExplanation = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.epoch_id, explanation.epoch_id);
-        assert_eq!(
-            parsed.action_summary,
-            explanation.action_summary
-        );
+        assert_eq!(parsed.action_summary, explanation.action_summary);
     }
 
     #[test]
@@ -757,21 +743,30 @@ mod tests {
     fn test_invariants_verified_present() {
         let explanation =
             PolicyExplainer::explain(&top_accepted_outcome(), &diagnostics_with_observations());
-        assert!(!explanation.guarantee_confidence.invariants_verified.is_empty());
-        assert!(explanation
-            .guarantee_confidence
-            .invariants_verified
-            .contains(&"INV-DECIDE-PRECEDENCE".to_string()));
+        assert!(
+            !explanation
+                .guarantee_confidence
+                .invariants_verified
+                .is_empty()
+        );
+        assert!(
+            explanation
+                .guarantee_confidence
+                .invariants_verified
+                .contains(&"INV-DECIDE-PRECEDENCE".to_string())
+        );
     }
 
     #[test]
     fn test_all_blocked_has_no_panic_invariant() {
         let explanation =
             PolicyExplainer::explain(&all_blocked_outcome(), &diagnostics_with_observations());
-        assert!(explanation
-            .guarantee_confidence
-            .invariants_verified
-            .contains(&"INV-DECIDE-NO-PANIC".to_string()));
+        assert!(
+            explanation
+                .guarantee_confidence
+                .invariants_verified
+                .contains(&"INV-DECIDE-NO-PANIC".to_string())
+        );
     }
 
     // -- WordingValidation serialization --

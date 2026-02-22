@@ -412,10 +412,7 @@ impl VerifierEconomyRegistry {
         };
 
         self.verifiers.insert(verifier_id.clone(), verifier.clone());
-        self.emit(
-            VEP_005,
-            &format!("Verifier registered: {}", verifier_id),
-        );
+        self.emit(VEP_005, &format!("Verifier registered: {}", verifier_id));
 
         Ok(verifier)
     }
@@ -448,17 +445,11 @@ impl VerifierEconomyRegistry {
             None => {
                 self.emit(
                     VEP_008,
-                    &format!(
-                        "Rejected: unregistered verifier {}",
-                        submission.verifier_id
-                    ),
+                    &format!("Rejected: unregistered verifier {}", submission.verifier_id),
                 );
                 return Err(VepError {
                     code: ERR_VEP_UNREGISTERED_VERIFIER.to_string(),
-                    message: format!(
-                        "Verifier {} is not registered",
-                        submission.verifier_id
-                    ),
+                    message: format!("Verifier {} is not registered", submission.verifier_id),
                 });
             }
         };
@@ -548,7 +539,10 @@ impl VerifierEconomyRegistry {
 
         self.attestations
             .insert(attestation_id.clone(), attestation.clone());
-        self.emit(VEP_001, &format!("Attestation submitted: {}", attestation_id));
+        self.emit(
+            VEP_001,
+            &format!("Attestation submitted: {}", attestation_id),
+        );
 
         Ok(attestation)
     }
@@ -564,10 +558,7 @@ impl VerifierEconomyRegistry {
         if att.state != AttestationState::Submitted {
             return Err(VepError {
                 code: ERR_VEP_INCOMPLETE_PAYLOAD.to_string(),
-                message: format!(
-                    "Cannot review attestation in state {}",
-                    att.state
-                ),
+                message: format!("Cannot review attestation in state {}", att.state),
             });
         }
 
@@ -597,7 +588,10 @@ impl VerifierEconomyRegistry {
         att.state = AttestationState::Published;
         att.immutable = true;
 
-        self.emit(VEP_002, &format!("Attestation published: {}", attestation_id));
+        self.emit(
+            VEP_002,
+            &format!("Attestation published: {}", attestation_id),
+        );
         Ok(AttestationState::Published)
     }
 
@@ -611,15 +605,15 @@ impl VerifierEconomyRegistry {
         if att.state != AttestationState::UnderReview {
             return Err(VepError {
                 code: ERR_VEP_INCOMPLETE_PAYLOAD.to_string(),
-                message: format!(
-                    "Cannot reject attestation in state {}",
-                    att.state
-                ),
+                message: format!("Cannot reject attestation in state {}", att.state),
             });
         }
 
         att.state = AttestationState::Rejected;
-        self.emit(VEP_008, &format!("Attestation rejected: {}", attestation_id));
+        self.emit(
+            VEP_008,
+            &format!("Attestation rejected: {}", attestation_id),
+        );
         Ok(AttestationState::Rejected)
     }
 
@@ -648,9 +642,7 @@ impl VerifierEconomyRegistry {
     /// In production this would use Ed25519 verification; here we use a
     /// simplified check that the key matches and signature is non-empty.
     pub fn verify_signature(&self, sig: &AttestationSignature, expected_key: &str) -> bool {
-        sig.algorithm == "ed25519"
-            && sig.public_key == expected_key
-            && !sig.value.is_empty()
+        sig.algorithm == "ed25519" && sig.public_key == expected_key && !sig.value.is_empty()
     }
 
     // -- Reputation scoring ---------------------------------------------------
@@ -744,11 +736,7 @@ impl VerifierEconomyRegistry {
     }
 
     /// Resolve a dispute with an outcome.
-    pub fn resolve_dispute(
-        &mut self,
-        dispute_id: &str,
-        outcome: DisputeOutcome,
-    ) -> VepResult<()> {
+    pub fn resolve_dispute(&mut self, dispute_id: &str, outcome: DisputeOutcome) -> VepResult<()> {
         let now = self.now_epoch();
         let outcome_display = format!("{}", outcome);
         let dispute_id_owned = dispute_id.to_string();
@@ -795,10 +783,7 @@ impl VerifierEconomyRegistry {
                 message: format!("Replay capsule {} not found", capsule_id),
             })?;
 
-        self.emit(
-            VEP_007,
-            &format!("Replay capsule accessed: {}", capsule_id),
-        );
+        self.emit(VEP_007, &format!("Replay capsule accessed: {}", capsule_id));
 
         Ok(capsule)
     }
@@ -828,8 +813,7 @@ impl VerifierEconomyRegistry {
                 .attestations
                 .values()
                 .filter(|a| {
-                    a.verifier_id == verifier.verifier_id
-                        && a.state == AttestationState::Published
+                    a.verifier_id == verifier.verifier_id && a.state == AttestationState::Published
                 })
                 .count();
 
@@ -837,8 +821,7 @@ impl VerifierEconomyRegistry {
                 .attestations
                 .values()
                 .filter(|a| {
-                    a.verifier_id == verifier.verifier_id
-                        && a.state == AttestationState::Published
+                    a.verifier_id == verifier.verifier_id && a.state == AttestationState::Published
                 })
                 .map(|a| a.claim.dimension.clone())
                 .collect::<std::collections::HashSet<_>>()
@@ -864,7 +847,10 @@ impl VerifierEconomyRegistry {
         let total_verifiers = entries.len();
 
         let aggregate_score = if total_verifiers > 0 {
-            entries.iter().map(|e| e.reputation_score as f64).sum::<f64>()
+            entries
+                .iter()
+                .map(|e| e.reputation_score as f64)
+                .sum::<f64>()
                 / total_verifiers as f64
         } else {
             0.0
@@ -882,11 +868,7 @@ impl VerifierEconomyRegistry {
 
     /// Check whether a verifier has been selectively reporting.
     /// Returns true if the verifier's dimension coverage is below threshold.
-    pub fn check_selective_reporting(
-        &self,
-        verifier_id: &str,
-        min_dimensions: usize,
-    ) -> bool {
+    pub fn check_selective_reporting(&self, verifier_id: &str, min_dimensions: usize) -> bool {
         let dims: std::collections::HashSet<_> = self
             .attestations
             .values()
@@ -954,9 +936,7 @@ mod tests {
         }
     }
 
-    fn register_and_submit(
-        reg: &mut VerifierEconomyRegistry,
-    ) -> (Verifier, Attestation) {
+    fn register_and_submit(reg: &mut VerifierEconomyRegistry) -> (Verifier, Attestation) {
         let v = reg.register_verifier(make_registration()).unwrap();
         let sub = make_submission(&v.verifier_id, &v.public_key);
         let att = reg.submit_attestation(sub).unwrap();
@@ -1286,13 +1266,8 @@ mod tests {
         let (v, att) = register_and_submit(&mut reg);
         reg.review_attestation(&att.attestation_id).unwrap();
         reg.publish_attestation(&att.attestation_id).unwrap();
-        reg.file_dispute(
-            &att.attestation_id,
-            &v.verifier_id,
-            "Reason",
-            vec![],
-        )
-        .unwrap();
+        reg.file_dispute(&att.attestation_id, &v.verifier_id, "Reason", vec![])
+            .unwrap();
         assert!(reg.events().iter().any(|e| e.code == VEP_003));
     }
 
@@ -1300,12 +1275,7 @@ mod tests {
     fn test_cannot_dispute_unpublished() {
         let mut reg = make_registry();
         let (v, att) = register_and_submit(&mut reg);
-        let result = reg.file_dispute(
-            &att.attestation_id,
-            &v.verifier_id,
-            "Reason",
-            vec![],
-        );
+        let result = reg.file_dispute(&att.attestation_id, &v.verifier_id, "Reason", vec![]);
         assert!(result.is_err());
     }
 
@@ -1601,11 +1571,23 @@ mod tests {
 
     #[test]
     fn test_dimension_display() {
-        assert_eq!(format!("{}", VerificationDimension::Compatibility), "compatibility");
+        assert_eq!(
+            format!("{}", VerificationDimension::Compatibility),
+            "compatibility"
+        );
         assert_eq!(format!("{}", VerificationDimension::Security), "security");
-        assert_eq!(format!("{}", VerificationDimension::Performance), "performance");
-        assert_eq!(format!("{}", VerificationDimension::SupplyChain), "supply_chain");
-        assert_eq!(format!("{}", VerificationDimension::Conformance), "conformance");
+        assert_eq!(
+            format!("{}", VerificationDimension::Performance),
+            "performance"
+        );
+        assert_eq!(
+            format!("{}", VerificationDimension::SupplyChain),
+            "supply_chain"
+        );
+        assert_eq!(
+            format!("{}", VerificationDimension::Conformance),
+            "conformance"
+        );
     }
 
     #[test]
@@ -1743,7 +1725,10 @@ mod tests {
     fn test_error_code_constants() {
         assert_eq!(ERR_VEP_INVALID_SIGNATURE, "ERR-VEP-INVALID-SIGNATURE");
         assert_eq!(ERR_VEP_DUPLICATE_SUBMISSION, "ERR-VEP-DUPLICATE-SUBMISSION");
-        assert_eq!(ERR_VEP_UNREGISTERED_VERIFIER, "ERR-VEP-UNREGISTERED-VERIFIER");
+        assert_eq!(
+            ERR_VEP_UNREGISTERED_VERIFIER,
+            "ERR-VEP-UNREGISTERED-VERIFIER"
+        );
         assert_eq!(ERR_VEP_INCOMPLETE_PAYLOAD, "ERR-VEP-INCOMPLETE-PAYLOAD");
         assert_eq!(ERR_VEP_ANTI_GAMING, "ERR-VEP-ANTI-GAMING");
     }

@@ -84,10 +84,10 @@ impl ProtectionType {
     /// These are additive contributions, capped at 1.0 total.
     pub fn repairability_weight(&self) -> f64 {
         match self {
-            Self::Checksum => 0.1,       // Detects corruption but can't repair
-            Self::Parity => 0.2,         // Single-byte error recovery
+            Self::Checksum => 0.1,        // Detects corruption but can't repair
+            Self::Parity => 0.2,          // Single-byte error recovery
             Self::IntegrityProof => 0.15, // Localization of corruption
-            Self::RedundantCopy => 0.5,  // Full reconstruction capability
+            Self::RedundantCopy => 0.5,   // Full reconstruction capability
         }
     }
 
@@ -398,7 +398,12 @@ impl RetroactiveHardeningPipeline {
             .map(|ptype| {
                 let data = self.generate_artifact_data(object, ptype);
                 ProtectionArtifact {
-                    artifact_id: format!("{}-{}-{}", object.object_id, ptype.label(), level.label()),
+                    artifact_id: format!(
+                        "{}-{}-{}",
+                        object.object_id,
+                        ptype.label(),
+                        level.label()
+                    ),
                     artifact_type: ptype,
                     data,
                     covers_object: object.object_id.clone(),
@@ -736,7 +741,8 @@ mod tests {
         let obj = test_object("obj-001");
         let before_id = obj.object_id.clone();
         let before_hash = obj.content_hash;
-        let _artifacts = pipeline().harden(&obj, HardeningLevel::Baseline, HardeningLevel::Critical);
+        let _artifacts =
+            pipeline().harden(&obj, HardeningLevel::Baseline, HardeningLevel::Critical);
         assert_eq!(obj.object_id, before_id);
         assert_eq!(obj.content_hash, before_hash);
     }
@@ -800,7 +806,11 @@ mod tests {
         // Create duplicate artifacts to test cap
         let mut artifacts = Vec::new();
         for _ in 0..10 {
-            artifacts.extend(pipeline().harden(&obj, HardeningLevel::Baseline, HardeningLevel::Critical));
+            artifacts.extend(pipeline().harden(
+                &obj,
+                HardeningLevel::Baseline,
+                HardeningLevel::Critical,
+            ));
         }
         let score = measure_repairability(&obj, &artifacts);
         assert!(score.score <= 1.0);
@@ -824,7 +834,8 @@ mod tests {
     #[test]
     fn test_harden_corpus_basic() {
         let objects = vec![test_object("obj-001"), test_object("obj-002")];
-        let result = pipeline().harden_corpus(&objects, HardeningLevel::Baseline, HardeningLevel::Standard);
+        let result =
+            pipeline().harden_corpus(&objects, HardeningLevel::Baseline, HardeningLevel::Standard);
         assert_eq!(result.objects_processed, 2);
         // Each object gets 1 checksum artifact
         assert_eq!(result.total_artifacts_created, 2);
@@ -833,7 +844,8 @@ mod tests {
 
     #[test]
     fn test_harden_corpus_empty() {
-        let result = pipeline().harden_corpus(&[], HardeningLevel::Baseline, HardeningLevel::Standard);
+        let result =
+            pipeline().harden_corpus(&[], HardeningLevel::Baseline, HardeningLevel::Standard);
         assert_eq!(result.objects_processed, 0);
         assert_eq!(result.total_artifacts_created, 0);
         assert!(result.artifacts.is_empty());
@@ -842,7 +854,8 @@ mod tests {
     #[test]
     fn test_harden_corpus_repairability_improves() {
         let objects = vec![test_object("obj-001")];
-        let result = pipeline().harden_corpus(&objects, HardeningLevel::Baseline, HardeningLevel::Critical);
+        let result =
+            pipeline().harden_corpus(&objects, HardeningLevel::Baseline, HardeningLevel::Critical);
         let prog = &result.progress[0];
         assert!(prog.repairability_after > prog.repairability_before);
     }
@@ -850,14 +863,16 @@ mod tests {
     #[test]
     fn test_harden_corpus_same_level_no_artifacts() {
         let objects = vec![test_object("obj-001")];
-        let result = pipeline().harden_corpus(&objects, HardeningLevel::Standard, HardeningLevel::Standard);
+        let result =
+            pipeline().harden_corpus(&objects, HardeningLevel::Standard, HardeningLevel::Standard);
         assert_eq!(result.total_artifacts_created, 0);
     }
 
     #[test]
     fn test_harden_corpus_progress_record_fields() {
         let objects = vec![test_object("obj-001")];
-        let result = pipeline().harden_corpus(&objects, HardeningLevel::Baseline, HardeningLevel::Enhanced);
+        let result =
+            pipeline().harden_corpus(&objects, HardeningLevel::Baseline, HardeningLevel::Enhanced);
         let prog = &result.progress[0];
         assert_eq!(prog.object_id, ObjectId::new("obj-001"));
         assert_eq!(prog.artifacts_created, 2); // checksum + parity
@@ -866,7 +881,8 @@ mod tests {
     #[test]
     fn test_harden_corpus_multi_level_gap() {
         let objects = vec![test_object("obj-001")];
-        let result = pipeline().harden_corpus(&objects, HardeningLevel::Baseline, HardeningLevel::Maximum);
+        let result =
+            pipeline().harden_corpus(&objects, HardeningLevel::Baseline, HardeningLevel::Maximum);
         // Baseline -> Maximum needs Checksum + Parity + IntegrityProof = 3
         assert_eq!(result.total_artifacts_created, 3);
     }
@@ -895,7 +911,8 @@ mod tests {
         let objects: Vec<CanonicalObject> = (0..100)
             .map(|i| test_object_with_content(&format!("obj-{i:04}"), vec![(i & 0xFF) as u8; 32]))
             .collect();
-        let result = pipeline().harden_corpus(&objects, HardeningLevel::Baseline, HardeningLevel::Critical);
+        let result =
+            pipeline().harden_corpus(&objects, HardeningLevel::Baseline, HardeningLevel::Critical);
         assert_eq!(result.objects_processed, 100);
         assert_eq!(result.total_artifacts_created, 400); // 4 per object
         for prog in &result.progress {
@@ -920,7 +937,8 @@ mod tests {
     #[test]
     fn test_hardening_result_serialization() {
         let objects = vec![test_object("obj-001")];
-        let result = pipeline().harden_corpus(&objects, HardeningLevel::Baseline, HardeningLevel::Standard);
+        let result =
+            pipeline().harden_corpus(&objects, HardeningLevel::Baseline, HardeningLevel::Standard);
         let json = serde_json::to_string_pretty(&result).unwrap();
         let parsed: HardeningResult = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.objects_processed, 1);

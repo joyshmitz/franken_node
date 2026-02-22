@@ -289,9 +289,7 @@ impl HardeningClampPolicy {
             let reason = if max == 0 {
                 "rate limit: max_escalations_per_window is 0".into()
             } else {
-                format!(
-                    "rate limit: {rate_count}/{max} escalations in window"
-                )
+                format!("rate limit: {rate_count}/{max} escalations in window")
             };
             let result = ClampResult::Denied {
                 reason: reason.clone(),
@@ -321,10 +319,7 @@ impl HardeningClampPolicy {
         // Apply min_level floor (effective must be at least min_level)
         if effective < self.budget.min_level {
             effective = self.budget.min_level;
-            let reason = format!(
-                "raised to min_level {}",
-                self.budget.min_level.label()
-            );
+            let reason = format!("raised to min_level {}", self.budget.min_level.label());
             clamped_reason = Some(match clamped_reason {
                 Some(prev) => format!("{prev}; {reason}"),
                 None => reason,
@@ -485,11 +480,8 @@ mod tests {
     #[test]
     fn escalation_allowed_within_budget() {
         let policy = HardeningClampPolicy::new(default_budget());
-        let (result, event) = policy.check_escalation(
-            HardeningLevel::Standard,
-            HardeningLevel::Baseline,
-            1000,
-        );
+        let (result, event) =
+            policy.check_escalation(HardeningLevel::Standard, HardeningLevel::Baseline, 1000);
         assert_eq!(result, ClampResult::Allowed);
         assert_eq!(result.event_code(), event_codes::CLAMP_ALLOWED);
         assert_eq!(event.effective_level, HardeningLevel::Standard);
@@ -498,11 +490,8 @@ mod tests {
     #[test]
     fn escalation_allowed_skip_levels() {
         let policy = HardeningClampPolicy::new(default_budget());
-        let (result, _) = policy.check_escalation(
-            HardeningLevel::Maximum,
-            HardeningLevel::Baseline,
-            1000,
-        );
+        let (result, _) =
+            policy.check_escalation(HardeningLevel::Maximum, HardeningLevel::Baseline, 1000);
         assert_eq!(result, ClampResult::Allowed);
     }
 
@@ -520,11 +509,8 @@ mod tests {
         policy.record_escalation(2000, HardeningLevel::Enhanced);
 
         // Third escalation should be denied
-        let (result, _) = policy.check_escalation(
-            HardeningLevel::Maximum,
-            HardeningLevel::Enhanced,
-            3000,
-        );
+        let (result, _) =
+            policy.check_escalation(HardeningLevel::Maximum, HardeningLevel::Enhanced, 3000);
         assert!(matches!(result, ClampResult::Denied { .. }));
     }
 
@@ -539,11 +525,8 @@ mod tests {
         // One escalation — should still be allowed
         policy.record_escalation(1000, HardeningLevel::Standard);
 
-        let (result, _) = policy.check_escalation(
-            HardeningLevel::Enhanced,
-            HardeningLevel::Standard,
-            2000,
-        );
+        let (result, _) =
+            policy.check_escalation(HardeningLevel::Enhanced, HardeningLevel::Standard, 2000);
         assert_eq!(result, ClampResult::Allowed);
     }
 
@@ -559,19 +542,13 @@ mod tests {
         policy.record_escalation(2000, HardeningLevel::Enhanced);
 
         // At 3000, within window — should be denied
-        let (result, _) = policy.check_escalation(
-            HardeningLevel::Maximum,
-            HardeningLevel::Enhanced,
-            3000,
-        );
+        let (result, _) =
+            policy.check_escalation(HardeningLevel::Maximum, HardeningLevel::Enhanced, 3000);
         assert!(matches!(result, ClampResult::Denied { .. }));
 
         // At 12001, outside window — old escalations expired
-        let (result, _) = policy.check_escalation(
-            HardeningLevel::Maximum,
-            HardeningLevel::Enhanced,
-            12001,
-        );
+        let (result, _) =
+            policy.check_escalation(HardeningLevel::Maximum, HardeningLevel::Enhanced, 12001);
         assert_eq!(result, ClampResult::Allowed);
     }
 
@@ -582,11 +559,8 @@ mod tests {
             ..default_budget()
         };
         let policy = HardeningClampPolicy::new(budget);
-        let (result, _) = policy.check_escalation(
-            HardeningLevel::Standard,
-            HardeningLevel::Baseline,
-            1000,
-        );
+        let (result, _) =
+            policy.check_escalation(HardeningLevel::Standard, HardeningLevel::Baseline, 1000);
         assert!(matches!(result, ClampResult::Denied { .. }));
     }
 
@@ -599,11 +573,8 @@ mod tests {
             ..default_budget()
         };
         let policy = HardeningClampPolicy::new(budget);
-        let (result, event) = policy.check_escalation(
-            HardeningLevel::Critical,
-            HardeningLevel::Baseline,
-            1000,
-        );
+        let (result, event) =
+            policy.check_escalation(HardeningLevel::Critical, HardeningLevel::Baseline, 1000);
         match &result {
             ClampResult::Clamped {
                 effective_level, ..
@@ -624,11 +595,8 @@ mod tests {
         let policy = HardeningClampPolicy::new(budget);
         // Current is Standard, max is Standard, proposed is Enhanced
         // After clamping, effective = Standard which is not above current
-        let (result, _) = policy.check_escalation(
-            HardeningLevel::Enhanced,
-            HardeningLevel::Standard,
-            1000,
-        );
+        let (result, _) =
+            policy.check_escalation(HardeningLevel::Enhanced, HardeningLevel::Standard, 1000);
         assert!(matches!(result, ClampResult::Denied { .. }));
     }
 
@@ -641,11 +609,8 @@ mod tests {
             ..default_budget()
         };
         let policy = HardeningClampPolicy::new(budget);
-        let (result, _) = policy.check_escalation(
-            HardeningLevel::Maximum,
-            HardeningLevel::Baseline,
-            1000,
-        );
+        let (result, _) =
+            policy.check_escalation(HardeningLevel::Maximum, HardeningLevel::Baseline, 1000);
         match &result {
             ClampResult::Clamped {
                 effective_level, ..
@@ -663,11 +628,8 @@ mod tests {
             ..default_budget()
         };
         let policy = HardeningClampPolicy::new(budget);
-        let (result, _) = policy.check_escalation(
-            HardeningLevel::Standard,
-            HardeningLevel::Baseline,
-            1000,
-        );
+        let (result, _) =
+            policy.check_escalation(HardeningLevel::Standard, HardeningLevel::Baseline, 1000);
         assert!(matches!(result, ClampResult::Denied { .. }));
     }
 
@@ -678,11 +640,8 @@ mod tests {
             ..default_budget()
         };
         let policy = HardeningClampPolicy::new(budget);
-        let (result, _) = policy.check_escalation(
-            HardeningLevel::Standard,
-            HardeningLevel::Baseline,
-            1000,
-        );
+        let (result, _) =
+            policy.check_escalation(HardeningLevel::Standard, HardeningLevel::Baseline, 1000);
         assert_eq!(result, ClampResult::Allowed);
     }
 
@@ -691,22 +650,16 @@ mod tests {
     #[test]
     fn same_level_denied() {
         let policy = HardeningClampPolicy::new(default_budget());
-        let (result, _) = policy.check_escalation(
-            HardeningLevel::Standard,
-            HardeningLevel::Standard,
-            1000,
-        );
+        let (result, _) =
+            policy.check_escalation(HardeningLevel::Standard, HardeningLevel::Standard, 1000);
         assert!(matches!(result, ClampResult::Denied { .. }));
     }
 
     #[test]
     fn lower_level_denied() {
         let policy = HardeningClampPolicy::new(default_budget());
-        let (result, _) = policy.check_escalation(
-            HardeningLevel::Baseline,
-            HardeningLevel::Standard,
-            1000,
-        );
+        let (result, _) =
+            policy.check_escalation(HardeningLevel::Baseline, HardeningLevel::Standard, 1000);
         assert!(matches!(result, ClampResult::Denied { .. }));
     }
 
@@ -727,11 +680,8 @@ mod tests {
             let mut policy = HardeningClampPolicy::new(budget.clone());
             policy.record_escalation(500, HardeningLevel::Standard);
             policy.record_escalation(1000, HardeningLevel::Enhanced);
-            let (r, _) = policy.check_escalation(
-                HardeningLevel::Critical,
-                HardeningLevel::Enhanced,
-                2000,
-            );
+            let (r, _) =
+                policy.check_escalation(HardeningLevel::Critical, HardeningLevel::Enhanced, 2000);
             first_result = r;
         }
 
@@ -739,11 +689,8 @@ mod tests {
             let mut policy = HardeningClampPolicy::new(budget.clone());
             policy.record_escalation(500, HardeningLevel::Standard);
             policy.record_escalation(1000, HardeningLevel::Enhanced);
-            let (r, _) = policy.check_escalation(
-                HardeningLevel::Critical,
-                HardeningLevel::Enhanced,
-                2000,
-            );
+            let (r, _) =
+                policy.check_escalation(HardeningLevel::Critical, HardeningLevel::Enhanced, 2000);
             assert_eq!(r, first_result, "determinism violated on iteration");
         }
     }
@@ -755,11 +702,8 @@ mod tests {
         let mut policy = HardeningClampPolicy::new(default_budget());
         assert_eq!(policy.history().len(), 0);
 
-        let (result, _) = policy.check_and_record(
-            HardeningLevel::Standard,
-            HardeningLevel::Baseline,
-            1000,
-        );
+        let (result, _) =
+            policy.check_and_record(HardeningLevel::Standard, HardeningLevel::Baseline, 1000);
         assert_eq!(result, ClampResult::Allowed);
         assert_eq!(policy.history().len(), 1);
         assert_eq!(policy.history()[0].to_level, HardeningLevel::Standard);
@@ -773,11 +717,8 @@ mod tests {
         };
         let mut policy = HardeningClampPolicy::new(budget);
 
-        let (result, _) = policy.check_and_record(
-            HardeningLevel::Standard,
-            HardeningLevel::Baseline,
-            1000,
-        );
+        let (result, _) =
+            policy.check_and_record(HardeningLevel::Standard, HardeningLevel::Baseline, 1000);
         assert!(matches!(result, ClampResult::Denied { .. }));
         assert_eq!(policy.history().len(), 0);
     }
@@ -790,11 +731,8 @@ mod tests {
         };
         let mut policy = HardeningClampPolicy::new(budget);
 
-        let (result, _) = policy.check_and_record(
-            HardeningLevel::Critical,
-            HardeningLevel::Baseline,
-            1000,
-        );
+        let (result, _) =
+            policy.check_and_record(HardeningLevel::Critical, HardeningLevel::Baseline, 1000);
         match &result {
             ClampResult::Clamped {
                 effective_level, ..
@@ -849,15 +787,19 @@ mod tests {
     #[test]
     fn clamp_result_is_allowed() {
         assert!(ClampResult::Allowed.is_allowed());
-        assert!(ClampResult::Clamped {
-            effective_level: HardeningLevel::Standard,
-            reason: "test".into()
-        }
-        .is_allowed());
-        assert!(!ClampResult::Denied {
-            reason: "test".into()
-        }
-        .is_allowed());
+        assert!(
+            ClampResult::Clamped {
+                effective_level: HardeningLevel::Standard,
+                reason: "test".into()
+            }
+            .is_allowed()
+        );
+        assert!(
+            !ClampResult::Denied {
+                reason: "test".into()
+            }
+            .is_allowed()
+        );
     }
 
     // ---- ClampEvent CSV tests ----
@@ -892,11 +834,8 @@ mod tests {
     #[test]
     fn budget_utilization_zero_when_empty() {
         let policy = HardeningClampPolicy::new(default_budget());
-        let (_, event) = policy.check_escalation(
-            HardeningLevel::Standard,
-            HardeningLevel::Baseline,
-            1000,
-        );
+        let (_, event) =
+            policy.check_escalation(HardeningLevel::Standard, HardeningLevel::Baseline, 1000);
         assert!((event.budget_utilization_pct).abs() < f64::EPSILON);
     }
 
@@ -910,11 +849,8 @@ mod tests {
         policy.record_escalation(500, HardeningLevel::Standard);
         policy.record_escalation(600, HardeningLevel::Enhanced);
 
-        let (_, event) = policy.check_escalation(
-            HardeningLevel::Maximum,
-            HardeningLevel::Enhanced,
-            700,
-        );
+        let (_, event) =
+            policy.check_escalation(HardeningLevel::Maximum, HardeningLevel::Enhanced, 700);
         assert!((event.budget_utilization_pct - 0.5).abs() < f64::EPSILON);
     }
 
@@ -931,11 +867,8 @@ mod tests {
         policy.record_escalation(500, HardeningLevel::Standard);
         policy.record_escalation(600, HardeningLevel::Enhanced);
 
-        let (result, _) = policy.check_escalation(
-            HardeningLevel::Maximum,
-            HardeningLevel::Enhanced,
-            700,
-        );
+        let (result, _) =
+            policy.check_escalation(HardeningLevel::Maximum, HardeningLevel::Enhanced, 700);
         assert_eq!(result, ClampResult::Allowed);
     }
 
@@ -954,11 +887,8 @@ mod tests {
         policy.record_escalation(1000, HardeningLevel::Standard);
 
         // Propose Critical (60% overhead) — should be clamped to Enhanced (15%)
-        let (result, _) = policy.check_escalation(
-            HardeningLevel::Critical,
-            HardeningLevel::Standard,
-            2000,
-        );
+        let (result, _) =
+            policy.check_escalation(HardeningLevel::Critical, HardeningLevel::Standard, 2000);
         match &result {
             ClampResult::Clamped {
                 effective_level, ..
@@ -986,11 +916,8 @@ mod tests {
         }
 
         // Fourth should be denied
-        let (result, _) = policy.check_escalation(
-            HardeningLevel::Enhanced,
-            HardeningLevel::Standard,
-            1500,
-        );
+        let (result, _) =
+            policy.check_escalation(HardeningLevel::Enhanced, HardeningLevel::Standard, 1500);
         assert!(matches!(result, ClampResult::Denied { .. }));
     }
 

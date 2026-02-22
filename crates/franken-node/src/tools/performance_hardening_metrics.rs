@@ -74,7 +74,13 @@ pub enum OperationCategory {
 
 impl OperationCategory {
     pub fn all() -> &'static [OperationCategory] {
-        &[Self::Startup, Self::Request, Self::Migration, Self::Verification, Self::Shutdown]
+        &[
+            Self::Startup,
+            Self::Request,
+            Self::Migration,
+            Self::Verification,
+            Self::Shutdown,
+        ]
     }
 
     pub fn label(&self) -> &'static str {
@@ -216,59 +222,91 @@ impl PerformanceHardeningMetrics {
     ) -> Result<String, String> {
         // Validate percentile ordering
         if !metric.baseline.is_ordered() || !metric.hardened.is_ordered() {
-            self.log(event_codes::PHM_ERR_INVALID_METRIC, trace_id, serde_json::json!({
-                "metric_id": &metric.metric_id,
-                "reason": "percentiles not ordered (p50 <= p95 <= p99)",
-            }));
+            self.log(
+                event_codes::PHM_ERR_INVALID_METRIC,
+                trace_id,
+                serde_json::json!({
+                    "metric_id": &metric.metric_id,
+                    "reason": "percentiles not ordered (p50 <= p95 <= p99)",
+                }),
+            );
             return Err("Percentiles must be ordered: p50 <= p95 <= p99".to_string());
         }
 
         if metric.sample_count == 0 {
-            self.log(event_codes::PHM_ERR_INVALID_METRIC, trace_id, serde_json::json!({
-                "metric_id": &metric.metric_id,
-                "reason": "sample_count must be > 0",
-            }));
+            self.log(
+                event_codes::PHM_ERR_INVALID_METRIC,
+                trace_id,
+                serde_json::json!({
+                    "metric_id": &metric.metric_id,
+                    "reason": "sample_count must be > 0",
+                }),
+            );
             return Err("sample_count must be > 0".to_string());
         }
 
         metric.timestamp = Utc::now().to_rfc3339();
         let metric_id = metric.metric_id.clone();
 
-        self.log(event_codes::PHM_METRIC_SUBMITTED, trace_id, serde_json::json!({
-            "metric_id": &metric_id,
-            "category": metric.category.label(),
-        }));
+        self.log(
+            event_codes::PHM_METRIC_SUBMITTED,
+            trace_id,
+            serde_json::json!({
+                "metric_id": &metric_id,
+                "category": metric.category.label(),
+            }),
+        );
 
-        self.log(event_codes::PHM_PERCENTILES_COMPUTED, trace_id, serde_json::json!({
-            "metric_id": &metric_id,
-            "baseline_p99": metric.baseline.p99_ms,
-            "hardened_p99": metric.hardened.p99_ms,
-        }));
+        self.log(
+            event_codes::PHM_PERCENTILES_COMPUTED,
+            trace_id,
+            serde_json::json!({
+                "metric_id": &metric_id,
+                "baseline_p99": metric.baseline.p99_ms,
+                "hardened_p99": metric.hardened.p99_ms,
+            }),
+        );
 
-        self.log(event_codes::PHM_OVERHEAD_COMPUTED, trace_id, serde_json::json!({
-            "metric_id": &metric_id,
-            "overhead_ratio": metric.overhead_ratio(),
-        }));
+        self.log(
+            event_codes::PHM_OVERHEAD_COMPUTED,
+            trace_id,
+            serde_json::json!({
+                "metric_id": &metric_id,
+                "overhead_ratio": metric.overhead_ratio(),
+            }),
+        );
 
-        self.log(event_codes::PHM_COLD_START_MEASURED, trace_id, serde_json::json!({
-            "metric_id": &metric_id,
-            "cold_start_ms": metric.cold_start_ms,
-            "warm_start_ms": metric.warm_start_ms,
-            "ratio": metric.cold_start_ratio(),
-        }));
+        self.log(
+            event_codes::PHM_COLD_START_MEASURED,
+            trace_id,
+            serde_json::json!({
+                "metric_id": &metric_id,
+                "cold_start_ms": metric.cold_start_ms,
+                "warm_start_ms": metric.warm_start_ms,
+                "ratio": metric.cold_start_ratio(),
+            }),
+        );
 
         if !metric.within_budget() {
-            self.log(event_codes::PHM_ERR_BUDGET_EXCEEDED, trace_id, serde_json::json!({
-                "metric_id": &metric_id,
-                "hardened_p99": metric.hardened.p99_ms,
-                "budget_ms": metric.category.budget_ms(),
-            }));
+            self.log(
+                event_codes::PHM_ERR_BUDGET_EXCEEDED,
+                trace_id,
+                serde_json::json!({
+                    "metric_id": &metric_id,
+                    "hardened_p99": metric.hardened.p99_ms,
+                    "budget_ms": metric.category.budget_ms(),
+                }),
+            );
         }
 
-        self.log(event_codes::PHM_THRESHOLD_CHECKED, trace_id, serde_json::json!({
-            "metric_id": &metric_id,
-            "within_budget": metric.within_budget(),
-        }));
+        self.log(
+            event_codes::PHM_THRESHOLD_CHECKED,
+            trace_id,
+            serde_json::json!({
+                "metric_id": &metric_id,
+                "within_budget": metric.within_budget(),
+            }),
+        );
 
         self.metrics.push(metric);
         Ok(metric_id)
@@ -334,14 +372,22 @@ impl PerformanceHardeningMetrics {
         .to_string();
         let content_hash = hex::encode(Sha256::digest(hash_input.as_bytes()));
 
-        self.log(event_codes::PHM_REPORT_GENERATED, trace_id, serde_json::json!({
-            "total_metrics": self.metrics.len(),
-            "categories": categories.len(),
-        }));
+        self.log(
+            event_codes::PHM_REPORT_GENERATED,
+            trace_id,
+            serde_json::json!({
+                "total_metrics": self.metrics.len(),
+                "categories": categories.len(),
+            }),
+        );
 
-        self.log(event_codes::PHM_VERSION_EMBEDDED, trace_id, serde_json::json!({
-            "metric_version": &self.metric_version,
-        }));
+        self.log(
+            event_codes::PHM_VERSION_EMBEDDED,
+            trace_id,
+            serde_json::json!({
+                "metric_version": &self.metric_version,
+            }),
+        );
 
         PerformanceReport {
             report_id: Uuid::now_v7().to_string(),
@@ -355,8 +401,12 @@ impl PerformanceHardeningMetrics {
         }
     }
 
-    pub fn metrics(&self) -> &[PerformanceMetric] { &self.metrics }
-    pub fn audit_log(&self) -> &[PhmAuditRecord] { &self.audit_log }
+    pub fn metrics(&self) -> &[PerformanceMetric] {
+        &self.metrics
+    }
+    pub fn audit_log(&self) -> &[PhmAuditRecord] {
+        &self.audit_log
+    }
 
     pub fn export_audit_log_jsonl(&self) -> Result<String, serde_json::Error> {
         let mut lines = Vec::with_capacity(self.audit_log.len());
@@ -385,14 +435,24 @@ impl PerformanceHardeningMetrics {
 mod tests {
     use super::*;
 
-    fn trace() -> String { Uuid::now_v7().to_string() }
+    fn trace() -> String {
+        Uuid::now_v7().to_string()
+    }
 
     fn sample_metric(id: &str, cat: OperationCategory) -> PerformanceMetric {
         PerformanceMetric {
             metric_id: id.to_string(),
             category: cat,
-            baseline: Percentiles { p50_ms: 10.0, p95_ms: 50.0, p99_ms: 80.0 },
-            hardened: Percentiles { p50_ms: 12.0, p95_ms: 55.0, p99_ms: 90.0 },
+            baseline: Percentiles {
+                p50_ms: 10.0,
+                p95_ms: 50.0,
+                p99_ms: 80.0,
+            },
+            hardened: Percentiles {
+                p50_ms: 12.0,
+                p95_ms: 55.0,
+                p99_ms: 90.0,
+            },
             cold_start_ms: 200.0,
             warm_start_ms: 50.0,
             sample_count: 1000,
@@ -414,13 +474,21 @@ mod tests {
 
     #[test]
     fn percentiles_ordered() {
-        let p = Percentiles { p50_ms: 10.0, p95_ms: 50.0, p99_ms: 99.0 };
+        let p = Percentiles {
+            p50_ms: 10.0,
+            p95_ms: 50.0,
+            p99_ms: 99.0,
+        };
         assert!(p.is_ordered());
     }
 
     #[test]
     fn percentiles_unordered() {
-        let p = Percentiles { p50_ms: 100.0, p95_ms: 50.0, p99_ms: 99.0 };
+        let p = Percentiles {
+            p50_ms: 100.0,
+            p95_ms: 50.0,
+            p99_ms: 99.0,
+        };
         assert!(!p.is_ordered());
     }
 
@@ -446,14 +514,22 @@ mod tests {
     #[test]
     fn submit_valid_metric() {
         let mut engine = PerformanceHardeningMetrics::default();
-        assert!(engine.submit_metric(sample_metric("m1", OperationCategory::Request), &trace()).is_ok());
+        assert!(
+            engine
+                .submit_metric(sample_metric("m1", OperationCategory::Request), &trace())
+                .is_ok()
+        );
     }
 
     #[test]
     fn submit_unordered_percentiles_fails() {
         let mut engine = PerformanceHardeningMetrics::default();
         let mut m = sample_metric("m1", OperationCategory::Request);
-        m.baseline = Percentiles { p50_ms: 100.0, p95_ms: 50.0, p99_ms: 80.0 };
+        m.baseline = Percentiles {
+            p50_ms: 100.0,
+            p95_ms: 50.0,
+            p99_ms: 80.0,
+        };
         assert!(engine.submit_metric(m, &trace()).is_err());
     }
 
@@ -468,7 +544,9 @@ mod tests {
     #[test]
     fn submit_sets_timestamp() {
         let mut engine = PerformanceHardeningMetrics::default();
-        engine.submit_metric(sample_metric("m1", OperationCategory::Request), &trace()).unwrap();
+        engine
+            .submit_metric(sample_metric("m1", OperationCategory::Request), &trace())
+            .unwrap();
         assert!(!engine.metrics()[0].timestamp.is_empty());
     }
 
@@ -482,8 +560,12 @@ mod tests {
     #[test]
     fn report_groups_by_category() {
         let mut engine = PerformanceHardeningMetrics::default();
-        engine.submit_metric(sample_metric("m1", OperationCategory::Request), &trace()).unwrap();
-        engine.submit_metric(sample_metric("m2", OperationCategory::Startup), &trace()).unwrap();
+        engine
+            .submit_metric(sample_metric("m1", OperationCategory::Request), &trace())
+            .unwrap();
+        engine
+            .submit_metric(sample_metric("m2", OperationCategory::Startup), &trace())
+            .unwrap();
         let report = engine.generate_report(&trace());
         assert_eq!(report.categories.len(), 2);
     }
@@ -492,7 +574,11 @@ mod tests {
     fn report_flags_over_budget() {
         let mut engine = PerformanceHardeningMetrics::default();
         let mut m = sample_metric("m1", OperationCategory::Request);
-        m.hardened = Percentiles { p50_ms: 50.0, p95_ms: 80.0, p99_ms: 150.0 }; // > 100ms budget
+        m.hardened = Percentiles {
+            p50_ms: 50.0,
+            p95_ms: 80.0,
+            p99_ms: 150.0,
+        }; // > 100ms budget
         engine.submit_metric(m, &trace()).unwrap();
         let report = engine.generate_report(&trace());
         assert_eq!(report.flagged_categories.len(), 1);
@@ -524,15 +610,23 @@ mod tests {
     #[test]
     fn audit_log_populated() {
         let mut engine = PerformanceHardeningMetrics::default();
-        engine.submit_metric(sample_metric("m1", OperationCategory::Request), &trace()).unwrap();
+        engine
+            .submit_metric(sample_metric("m1", OperationCategory::Request), &trace())
+            .unwrap();
         assert!(engine.audit_log().len() >= 5);
     }
 
     #[test]
     fn audit_has_event_codes() {
         let mut engine = PerformanceHardeningMetrics::default();
-        engine.submit_metric(sample_metric("m1", OperationCategory::Request), &trace()).unwrap();
-        let codes: Vec<&str> = engine.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        engine
+            .submit_metric(sample_metric("m1", OperationCategory::Request), &trace())
+            .unwrap();
+        let codes: Vec<&str> = engine
+            .audit_log()
+            .iter()
+            .map(|r| r.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::PHM_METRIC_SUBMITTED));
         assert!(codes.contains(&event_codes::PHM_OVERHEAD_COMPUTED));
     }
@@ -540,7 +634,9 @@ mod tests {
     #[test]
     fn export_jsonl() {
         let mut engine = PerformanceHardeningMetrics::default();
-        engine.submit_metric(sample_metric("m1", OperationCategory::Request), &trace()).unwrap();
+        engine
+            .submit_metric(sample_metric("m1", OperationCategory::Request), &trace())
+            .unwrap();
         let jsonl = engine.export_audit_log_jsonl().unwrap();
         let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert!(first["event_code"].is_string());
@@ -549,7 +645,9 @@ mod tests {
     #[test]
     fn overall_overhead_computed() {
         let mut engine = PerformanceHardeningMetrics::default();
-        engine.submit_metric(sample_metric("m1", OperationCategory::Request), &trace()).unwrap();
+        engine
+            .submit_metric(sample_metric("m1", OperationCategory::Request), &trace())
+            .unwrap();
         let report = engine.generate_report(&trace());
         assert!(report.overall_overhead_ratio > 1.0);
     }
@@ -557,7 +655,11 @@ mod tests {
     #[test]
     fn overhead_zero_baseline() {
         let mut m = sample_metric("m1", OperationCategory::Request);
-        m.baseline = Percentiles { p50_ms: 0.0, p95_ms: 0.0, p99_ms: 0.0 };
+        m.baseline = Percentiles {
+            p50_ms: 0.0,
+            p95_ms: 0.0,
+            p99_ms: 0.0,
+        };
         assert!((m.overhead_ratio() - 0.0).abs() < f64::EPSILON);
     }
 

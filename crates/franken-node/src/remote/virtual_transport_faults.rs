@@ -56,7 +56,9 @@ impl fmt::Display for FaultClass {
         match self {
             FaultClass::Drop => write!(f, "Drop"),
             FaultClass::Reorder { depth } => write!(f, "Reorder(depth={depth})"),
-            FaultClass::Corrupt { bit_positions } => write!(f, "Corrupt(bits={})", bit_positions.len()),
+            FaultClass::Corrupt { bit_positions } => {
+                write!(f, "Corrupt(bits={})", bit_positions.len())
+            }
         }
     }
 }
@@ -202,7 +204,9 @@ impl FaultSchedule {
                     fault: FaultClass::Reorder { depth },
                 });
                 fault_count += 1;
-            } else if roll < config.drop_probability + config.reorder_probability + config.corrupt_probability {
+            } else if roll
+                < config.drop_probability + config.reorder_probability + config.corrupt_probability
+            {
                 let mut bits = Vec::new();
                 for i in 0..config.corrupt_bit_count {
                     rng_state ^= rng_state << 13;
@@ -212,13 +216,19 @@ impl FaultSchedule {
                 }
                 faults.push(ScheduledFault {
                     message_index: msg_idx,
-                    fault: FaultClass::Corrupt { bit_positions: bits },
+                    fault: FaultClass::Corrupt {
+                        bit_positions: bits,
+                    },
                 });
                 fault_count += 1;
             }
         }
 
-        FaultSchedule { seed, faults, total_messages }
+        FaultSchedule {
+            seed,
+            faults,
+            total_messages,
+        }
     }
 }
 
@@ -266,8 +276,11 @@ impl VirtualTransportFaultHarness {
 
     pub fn init(seed: u64, trace_id: &str) -> Self {
         let mut h = Self::new(seed);
-        h.log_audit(event_codes::FAULT_HARNESS_INIT, trace_id,
-            serde_json::json!({"seed": seed}));
+        h.log_audit(
+            event_codes::FAULT_HARNESS_INIT,
+            trace_id,
+            serde_json::json!({"seed": seed}),
+        );
         h
     }
 
@@ -279,7 +292,12 @@ impl VirtualTransportFaultHarness {
         });
     }
 
-    fn record_fault(&mut self, fault_class: &str, message_id: u64, details: serde_json::Value) -> u64 {
+    fn record_fault(
+        &mut self,
+        fault_class: &str,
+        message_id: u64,
+        details: serde_json::Value,
+    ) -> u64 {
         let id = self.next_fault_id;
         self.next_fault_id += 1;
         self.fault_log.push(FaultEvent {
@@ -292,20 +310,41 @@ impl VirtualTransportFaultHarness {
     }
 
     /// Apply a drop fault: message is silently discarded.
-    pub fn apply_drop(&mut self, message_id: u64, _payload: &[u8], trace_id: &str) -> Option<Vec<u8>> {
-        self.record_fault("Drop", message_id, serde_json::json!({"action": "discarded"}));
-        self.log_audit(event_codes::FAULT_DROP_APPLIED, trace_id,
-            serde_json::json!({"message_id": message_id}));
+    pub fn apply_drop(
+        &mut self,
+        message_id: u64,
+        _payload: &[u8],
+        trace_id: &str,
+    ) -> Option<Vec<u8>> {
+        self.record_fault(
+            "Drop",
+            message_id,
+            serde_json::json!({"action": "discarded"}),
+        );
+        self.log_audit(
+            event_codes::FAULT_DROP_APPLIED,
+            trace_id,
+            serde_json::json!({"message_id": message_id}),
+        );
         None // Message dropped
     }
 
     /// Apply a reorder fault: message is delayed by `depth` slots.
-    pub fn apply_reorder(&mut self, message_id: u64, payload: &[u8], depth: usize, trace_id: &str) -> Option<Vec<u8>> {
-        self.record_fault("Reorder", message_id,
-            serde_json::json!({"depth": depth}));
-        self.log_audit(event_codes::FAULT_REORDER_APPLIED, trace_id,
-            serde_json::json!({"message_id": message_id, "depth": depth}));
-        self.reorder_buffer.push_back((message_id, payload.to_vec()));
+    pub fn apply_reorder(
+        &mut self,
+        message_id: u64,
+        payload: &[u8],
+        depth: usize,
+        trace_id: &str,
+    ) -> Option<Vec<u8>> {
+        self.record_fault("Reorder", message_id, serde_json::json!({"depth": depth}));
+        self.log_audit(
+            event_codes::FAULT_REORDER_APPLIED,
+            trace_id,
+            serde_json::json!({"message_id": message_id, "depth": depth}),
+        );
+        self.reorder_buffer
+            .push_back((message_id, payload.to_vec()));
         // Return a previously buffered message if buffer exceeds depth
         if self.reorder_buffer.len() > depth {
             self.reorder_buffer.pop_front().map(|(_, p)| p)
@@ -315,7 +354,13 @@ impl VirtualTransportFaultHarness {
     }
 
     /// Apply a corrupt fault: flip specified bits in the payload.
-    pub fn apply_corrupt(&mut self, message_id: u64, payload: &[u8], bit_positions: &[usize], trace_id: &str) -> Vec<u8> {
+    pub fn apply_corrupt(
+        &mut self,
+        message_id: u64,
+        payload: &[u8],
+        bit_positions: &[usize],
+        trace_id: &str,
+    ) -> Vec<u8> {
         let mut corrupted = payload.to_vec();
         for &bit_pos in bit_positions {
             let byte_idx = bit_pos / 8;
@@ -324,52 +369,94 @@ impl VirtualTransportFaultHarness {
                 corrupted[byte_idx] ^= 1 << bit_idx;
             }
         }
-        self.record_fault("Corrupt", message_id,
-            serde_json::json!({"bits_flipped": bit_positions}));
-        self.log_audit(event_codes::FAULT_CORRUPT_APPLIED, trace_id,
-            serde_json::json!({"message_id": message_id, "bits": bit_positions.len()}));
+        self.record_fault(
+            "Corrupt",
+            message_id,
+            serde_json::json!({"bits_flipped": bit_positions}),
+        );
+        self.log_audit(
+            event_codes::FAULT_CORRUPT_APPLIED,
+            trace_id,
+            serde_json::json!({"message_id": message_id, "bits": bit_positions.len()}),
+        );
         corrupted
     }
 
     /// Process a message through a fault schedule.
-    pub fn process_message(&mut self, schedule: &FaultSchedule, msg_idx: usize,
-                           message_id: u64, payload: &[u8], trace_id: &str) -> Option<Vec<u8>> {
+    pub fn process_message(
+        &mut self,
+        schedule: &FaultSchedule,
+        msg_idx: usize,
+        message_id: u64,
+        payload: &[u8],
+        trace_id: &str,
+    ) -> Option<Vec<u8>> {
         let fault = schedule.faults.iter().find(|f| f.message_index == msg_idx);
         match fault {
             Some(sf) => match &sf.fault {
                 FaultClass::Drop => self.apply_drop(message_id, payload, trace_id),
-                FaultClass::Reorder { depth } => self.apply_reorder(message_id, payload, *depth, trace_id),
-                FaultClass::Corrupt { bit_positions } => Some(self.apply_corrupt(message_id, payload, bit_positions, trace_id)),
+                FaultClass::Reorder { depth } => {
+                    self.apply_reorder(message_id, payload, *depth, trace_id)
+                }
+                FaultClass::Corrupt { bit_positions } => {
+                    Some(self.apply_corrupt(message_id, payload, bit_positions, trace_id))
+                }
             },
             None => {
-                self.log_audit(event_codes::FAULT_NONE, trace_id,
-                    serde_json::json!({"message_id": message_id}));
+                self.log_audit(
+                    event_codes::FAULT_NONE,
+                    trace_id,
+                    serde_json::json!({"message_id": message_id}),
+                );
                 Some(payload.to_vec())
             }
         }
     }
 
     /// Run a full campaign with a scenario.
-    pub fn run_campaign(&mut self, scenario_name: &str, config: &FaultConfig,
-                        total_messages: usize, trace_id: &str) -> CampaignResult {
-        self.log_audit(event_codes::FAULT_SCENARIO_START, trace_id,
-            serde_json::json!({"scenario": scenario_name, "messages": total_messages}));
+    pub fn run_campaign(
+        &mut self,
+        scenario_name: &str,
+        config: &FaultConfig,
+        total_messages: usize,
+        trace_id: &str,
+    ) -> CampaignResult {
+        self.log_audit(
+            event_codes::FAULT_SCENARIO_START,
+            trace_id,
+            serde_json::json!({"scenario": scenario_name, "messages": total_messages}),
+        );
 
         let schedule = FaultSchedule::from_seed(self.seed, config, total_messages);
 
-        let drops = schedule.faults.iter().filter(|f| matches!(f.fault, FaultClass::Drop)).count();
-        let reorders = schedule.faults.iter().filter(|f| matches!(f.fault, FaultClass::Reorder { .. })).count();
-        let corruptions = schedule.faults.iter().filter(|f| matches!(f.fault, FaultClass::Corrupt { .. })).count();
+        let drops = schedule
+            .faults
+            .iter()
+            .filter(|f| matches!(f.fault, FaultClass::Drop))
+            .count();
+        let reorders = schedule
+            .faults
+            .iter()
+            .filter(|f| matches!(f.fault, FaultClass::Reorder { .. }))
+            .count();
+        let corruptions = schedule
+            .faults
+            .iter()
+            .filter(|f| matches!(f.fault, FaultClass::Corrupt { .. }))
+            .count();
 
         let hash_input = serde_json::to_string(&schedule.faults).unwrap_or_default();
         let content_hash = format!("{:x}", Sha256::digest(hash_input.as_bytes()));
 
-        self.log_audit(event_codes::FAULT_CAMPAIGN_COMPLETE, trace_id,
+        self.log_audit(
+            event_codes::FAULT_CAMPAIGN_COMPLETE,
+            trace_id,
             serde_json::json!({
                 "scenario": scenario_name,
                 "total_faults": schedule.faults.len(),
                 "total_messages": total_messages,
-            }));
+            }),
+        );
 
         CampaignResult {
             scenario_name: scenario_name.to_string(),
@@ -390,7 +477,8 @@ impl VirtualTransportFaultHarness {
 
     /// Export fault log as JSONL.
     pub fn export_fault_log_jsonl(&self) -> String {
-        self.fault_log.iter()
+        self.fault_log
+            .iter()
             .map(|r| serde_json::to_string(r).unwrap_or_default())
             .collect::<Vec<_>>()
             .join("\n")
@@ -398,7 +486,8 @@ impl VirtualTransportFaultHarness {
 
     /// Export audit log as JSONL.
     pub fn export_audit_log_jsonl(&self) -> String {
-        self.audit_log.iter()
+        self.audit_log
+            .iter()
             .map(|r| serde_json::to_string(r).unwrap_or_default())
             .collect::<Vec<_>>()
             .join("\n")
@@ -434,7 +523,10 @@ mod tests {
         let s1 = FaultSchedule::from_seed(42, &config, 100);
         let s2 = FaultSchedule::from_seed(99, &config, 100);
         // Very unlikely to be identical
-        let same = s1.faults.iter().zip(s2.faults.iter())
+        let same = s1
+            .faults
+            .iter()
+            .zip(s2.faults.iter())
             .all(|(a, b)| a.message_index == b.message_index && a.fault == b.fault);
         assert!(!same || s1.faults.len() != s2.faults.len());
     }
@@ -499,7 +591,11 @@ mod tests {
     #[test]
     fn test_process_message_no_fault() {
         let mut harness = VirtualTransportFaultHarness::new(1);
-        let schedule = FaultSchedule { seed: 1, faults: vec![], total_messages: 1 };
+        let schedule = FaultSchedule {
+            seed: 1,
+            faults: vec![],
+            total_messages: 1,
+        };
         let result = harness.process_message(&schedule, 0, 1, b"data", "t1");
         assert_eq!(result, Some(b"data".to_vec()));
     }
@@ -509,7 +605,10 @@ mod tests {
         let mut harness = VirtualTransportFaultHarness::new(1);
         let schedule = FaultSchedule {
             seed: 1,
-            faults: vec![ScheduledFault { message_index: 0, fault: FaultClass::Drop }],
+            faults: vec![ScheduledFault {
+                message_index: 0,
+                fault: FaultClass::Drop,
+            }],
             total_messages: 1,
         };
         let result = harness.process_message(&schedule, 0, 1, b"data", "t1");
@@ -552,9 +651,12 @@ mod tests {
         assert!(no_faults().validate().is_ok());
         assert!(chaos().validate().is_ok());
         let bad = FaultConfig {
-            drop_probability: -1.0, reorder_probability: 0.0,
-            reorder_max_depth: 0, corrupt_probability: 0.0,
-            corrupt_bit_count: 0, max_faults: 100,
+            drop_probability: -1.0,
+            reorder_probability: 0.0,
+            reorder_max_depth: 0,
+            corrupt_probability: 0.0,
+            corrupt_bit_count: 0,
+            max_faults: 100,
         };
         assert!(bad.validate().is_err());
     }
@@ -562,9 +664,12 @@ mod tests {
     #[test]
     fn test_fault_config_zero_budget() {
         let bad = FaultConfig {
-            drop_probability: 0.5, reorder_probability: 0.0,
-            reorder_max_depth: 0, corrupt_probability: 0.0,
-            corrupt_bit_count: 0, max_faults: 0,
+            drop_probability: 0.5,
+            reorder_probability: 0.0,
+            reorder_max_depth: 0,
+            corrupt_probability: 0.0,
+            corrupt_bit_count: 0,
+            max_faults: 0,
         };
         assert!(bad.validate().is_err());
     }
@@ -575,7 +680,8 @@ mod tests {
         harness.apply_drop(1, b"a", "t1");
         let jsonl = harness.export_fault_log_jsonl();
         assert!(!jsonl.is_empty());
-        let parsed: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert_eq!(parsed["fault_class"], "Drop");
     }
 

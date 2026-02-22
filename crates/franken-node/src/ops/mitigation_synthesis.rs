@@ -158,35 +158,47 @@ pub struct ReplayComparison {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LabError {
-    #[error("{}: trace integrity failed for {incident_id} (expected {expected}, got {actual})",
-            error_codes::ERR_LAB_TRACE_CORRUPT)]
+    #[error(
+        "{}: trace integrity failed for {incident_id} (expected {expected}, got {actual})",
+        error_codes::ERR_LAB_TRACE_CORRUPT
+    )]
     TraceCorrupt {
         incident_id: String,
         expected: String,
         actual: String,
     },
 
-    #[error("{}: baseline replay diverged at seq {sequence_number}",
-            error_codes::ERR_LAB_REPLAY_DIVERGED)]
+    #[error(
+        "{}: baseline replay diverged at seq {sequence_number}",
+        error_codes::ERR_LAB_REPLAY_DIVERGED
+    )]
     ReplayDiverged { sequence_number: u64 },
 
-    #[error("{}: mitigation {mitigation_id} violated safety invariant: {reason}",
-            error_codes::ERR_LAB_MITIGATION_UNSAFE)]
+    #[error(
+        "{}: mitigation {mitigation_id} violated safety invariant: {reason}",
+        error_codes::ERR_LAB_MITIGATION_UNSAFE
+    )]
     MitigationUnsafe {
         mitigation_id: String,
         reason: String,
     },
 
-    #[error("{}: mitigation {mitigation_id} missing signed rollout contract",
-            error_codes::ERR_LAB_ROLLOUT_UNSIGNED)]
+    #[error(
+        "{}: mitigation {mitigation_id} missing signed rollout contract",
+        error_codes::ERR_LAB_ROLLOUT_UNSIGNED
+    )]
     RolloutUnsigned { mitigation_id: String },
 
-    #[error("{}: mitigation {mitigation_id} missing rollback contract",
-            error_codes::ERR_LAB_ROLLBACK_MISSING)]
+    #[error(
+        "{}: mitigation {mitigation_id} missing rollback contract",
+        error_codes::ERR_LAB_ROLLBACK_MISSING
+    )]
     RollbackMissing { mitigation_id: String },
 
-    #[error("{}: mitigation {mitigation_id} has negative loss delta ({delta})",
-            error_codes::ERR_LAB_LOSS_DELTA_NEGATIVE)]
+    #[error(
+        "{}: mitigation {mitigation_id} has negative loss delta ({delta})",
+        error_codes::ERR_LAB_LOSS_DELTA_NEGATIVE
+    )]
     LossDeltaNegative { mitigation_id: String, delta: i64 },
 }
 
@@ -245,10 +257,7 @@ impl IncidentLab {
     ///
     /// Verifies `INV-LAB-REPLAY-FIDELITY` by checking that replayed
     /// decisions match the recorded ones bit-for-bit.
-    pub fn replay_baseline(
-        &self,
-        trace: &IncidentTrace,
-    ) -> Result<Vec<LabDecision>, LabError> {
+    pub fn replay_baseline(&self, trace: &IncidentTrace) -> Result<Vec<LabDecision>, LabError> {
         trace.validate_integrity()?;
         // In a full implementation the decisions would be re-derived from
         // raw events.  Here we verify fidelity by confirming the hash matches.
@@ -452,7 +461,11 @@ fn sign_payload(payload: &str, secret: &str) -> String {
 }
 
 /// Build a trace with a valid integrity hash.
-pub fn build_trace(incident_id: &str, decisions: Vec<LabDecision>, policy_version: &str) -> IncidentTrace {
+pub fn build_trace(
+    incident_id: &str,
+    decisions: Vec<LabDecision>,
+    policy_version: &str,
+) -> IncidentTrace {
     let mut trace = IncidentTrace {
         incident_id: incident_id.to_string(),
         trace_hash: String::new(),
@@ -551,7 +564,10 @@ mod tests {
         diff.insert("quarantine_threshold".to_string(), "70".to_string());
         let candidate = lab.synthesize_mitigation(&trace, "mit-001", diff);
         assert_eq!(candidate.mitigation_id, "mit-001");
-        assert_eq!(candidate.counterfactual_decisions.len(), trace.decisions.len());
+        assert_eq!(
+            candidate.counterfactual_decisions.len(),
+            trace.decisions.len()
+        );
     }
 
     #[test]
@@ -566,7 +582,11 @@ mod tests {
         assert_eq!(comparison.total_decisions, 3);
         // The adjustment is +5 per decision (positive value in diff -> -5 adjustment to loss)
         // so baseline_total_loss(90) - counterfactual_total_loss(75) = 15
-        assert!(comparison.loss_delta > 0, "loss_delta should be positive: {}", comparison.loss_delta);
+        assert!(
+            comparison.loss_delta > 0,
+            "loss_delta should be positive: {}",
+            comparison.loss_delta
+        );
     }
 
     #[test]
@@ -632,7 +652,9 @@ mod tests {
         trace.trace_hash = "corrupt".to_string();
         let mut diff = BTreeMap::new();
         diff.insert("quarantine_threshold".to_string(), "70".to_string());
-        let err = lab.run_full_workflow(&trace, "mit-corrupt", diff).unwrap_err();
+        let err = lab
+            .run_full_workflow(&trace, "mit-corrupt", diff)
+            .unwrap_err();
         assert!(err.to_string().contains(error_codes::ERR_LAB_TRACE_CORRUPT));
     }
 
@@ -654,27 +676,60 @@ mod tests {
     #[test]
     fn test_event_codes_exist() {
         assert_eq!(event_codes::LAB_INCIDENT_LOADED, "LAB_INCIDENT_LOADED");
-        assert_eq!(event_codes::LAB_MITIGATION_SYNTHESIZED, "LAB_MITIGATION_SYNTHESIZED");
+        assert_eq!(
+            event_codes::LAB_MITIGATION_SYNTHESIZED,
+            "LAB_MITIGATION_SYNTHESIZED"
+        );
         assert_eq!(event_codes::LAB_REPLAY_COMPARED, "LAB_REPLAY_COMPARED");
-        assert_eq!(event_codes::LAB_LOSS_DELTA_COMPUTED, "LAB_LOSS_DELTA_COMPUTED");
-        assert_eq!(event_codes::LAB_MITIGATION_PROMOTED, "LAB_MITIGATION_PROMOTED");
+        assert_eq!(
+            event_codes::LAB_LOSS_DELTA_COMPUTED,
+            "LAB_LOSS_DELTA_COMPUTED"
+        );
+        assert_eq!(
+            event_codes::LAB_MITIGATION_PROMOTED,
+            "LAB_MITIGATION_PROMOTED"
+        );
     }
 
     #[test]
     fn test_error_codes_exist() {
         assert_eq!(error_codes::ERR_LAB_TRACE_CORRUPT, "ERR_LAB_TRACE_CORRUPT");
-        assert_eq!(error_codes::ERR_LAB_REPLAY_DIVERGED, "ERR_LAB_REPLAY_DIVERGED");
-        assert_eq!(error_codes::ERR_LAB_MITIGATION_UNSAFE, "ERR_LAB_MITIGATION_UNSAFE");
-        assert_eq!(error_codes::ERR_LAB_ROLLOUT_UNSIGNED, "ERR_LAB_ROLLOUT_UNSIGNED");
-        assert_eq!(error_codes::ERR_LAB_ROLLBACK_MISSING, "ERR_LAB_ROLLBACK_MISSING");
-        assert_eq!(error_codes::ERR_LAB_LOSS_DELTA_NEGATIVE, "ERR_LAB_LOSS_DELTA_NEGATIVE");
+        assert_eq!(
+            error_codes::ERR_LAB_REPLAY_DIVERGED,
+            "ERR_LAB_REPLAY_DIVERGED"
+        );
+        assert_eq!(
+            error_codes::ERR_LAB_MITIGATION_UNSAFE,
+            "ERR_LAB_MITIGATION_UNSAFE"
+        );
+        assert_eq!(
+            error_codes::ERR_LAB_ROLLOUT_UNSIGNED,
+            "ERR_LAB_ROLLOUT_UNSIGNED"
+        );
+        assert_eq!(
+            error_codes::ERR_LAB_ROLLBACK_MISSING,
+            "ERR_LAB_ROLLBACK_MISSING"
+        );
+        assert_eq!(
+            error_codes::ERR_LAB_LOSS_DELTA_NEGATIVE,
+            "ERR_LAB_LOSS_DELTA_NEGATIVE"
+        );
     }
 
     #[test]
     fn test_invariant_tags_exist() {
-        assert_eq!(invariants::INV_LAB_REPLAY_FIDELITY, "INV-LAB-REPLAY-FIDELITY");
+        assert_eq!(
+            invariants::INV_LAB_REPLAY_FIDELITY,
+            "INV-LAB-REPLAY-FIDELITY"
+        );
         assert_eq!(invariants::INV_LAB_SIGNED_ROLLOUT, "INV-LAB-SIGNED-ROLLOUT");
-        assert_eq!(invariants::INV_LAB_ROLLBACK_CONTRACT, "INV-LAB-ROLLBACK-CONTRACT");
-        assert_eq!(invariants::INV_LAB_LOSS_DELTA_POSITIVE, "INV-LAB-LOSS-DELTA-POSITIVE");
+        assert_eq!(
+            invariants::INV_LAB_ROLLBACK_CONTRACT,
+            "INV-LAB-ROLLBACK-CONTRACT"
+        );
+        assert_eq!(
+            invariants::INV_LAB_LOSS_DELTA_POSITIVE,
+            "INV-LAB-LOSS-DELTA-POSITIVE"
+        );
     }
 }

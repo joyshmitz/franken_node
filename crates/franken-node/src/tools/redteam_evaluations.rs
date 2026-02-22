@@ -74,7 +74,13 @@ pub enum FindingSeverity {
 
 impl FindingSeverity {
     pub fn all() -> &'static [FindingSeverity] {
-        &[Self::Critical, Self::High, Self::Medium, Self::Low, Self::Informational]
+        &[
+            Self::Critical,
+            Self::High,
+            Self::Medium,
+            Self::Low,
+            Self::Informational,
+        ]
     }
 
     pub fn label(&self) -> &'static str {
@@ -129,8 +135,13 @@ pub enum EvaluationType {
 
 impl EvaluationType {
     pub fn all() -> &'static [EvaluationType] {
-        &[Self::RedTeam, Self::PenetrationTest, Self::SecurityAudit,
-          Self::IndependentReview, Self::FormalVerification]
+        &[
+            Self::RedTeam,
+            Self::PenetrationTest,
+            Self::SecurityAudit,
+            Self::IndependentReview,
+            Self::FormalVerification,
+        ]
     }
 
     pub fn label(&self) -> &'static str {
@@ -221,9 +232,13 @@ impl RedTeamEvaluations {
         trace_id: &str,
     ) -> Result<String, String> {
         if engagement.scope.is_empty() {
-            self.log(event_codes::RTE_ERR_MISSING_SCOPE, trace_id, serde_json::json!({
-                "engagement_id": &engagement.engagement_id,
-            }));
+            self.log(
+                event_codes::RTE_ERR_MISSING_SCOPE,
+                trace_id,
+                serde_json::json!({
+                    "engagement_id": &engagement.engagement_id,
+                }),
+            );
             return Err("Engagement must have at least one scope item".to_string());
         }
 
@@ -231,34 +246,50 @@ impl RedTeamEvaluations {
             return Err("Rules of engagement must not be empty".to_string());
         }
 
-        self.log(event_codes::RTE_SCOPE_VALIDATED, trace_id, serde_json::json!({
-            "engagement_id": &engagement.engagement_id,
-            "scope_items": engagement.scope.len(),
-        }));
+        self.log(
+            event_codes::RTE_SCOPE_VALIDATED,
+            trace_id,
+            serde_json::json!({
+                "engagement_id": &engagement.engagement_id,
+                "scope_items": engagement.scope.len(),
+            }),
+        );
 
         if !(0.0..=1.0).contains(&engagement.confidence_score) {
             return Err("Confidence score must be between 0.0 and 1.0".to_string());
         }
 
-        self.log(event_codes::RTE_CONFIDENCE_SCORED, trace_id, serde_json::json!({
-            "engagement_id": &engagement.engagement_id,
-            "confidence": engagement.confidence_score,
-        }));
+        self.log(
+            event_codes::RTE_CONFIDENCE_SCORED,
+            trace_id,
+            serde_json::json!({
+                "engagement_id": &engagement.engagement_id,
+                "confidence": engagement.confidence_score,
+            }),
+        );
 
         engagement.schema_version = self.schema_version.clone();
         engagement.created_at = Utc::now().to_rfc3339();
         let eid = engagement.engagement_id.clone();
 
-        self.log(event_codes::RTE_VERSION_EMBEDDED, trace_id, serde_json::json!({
-            "engagement_id": &eid,
-            "schema_version": &engagement.schema_version,
-        }));
+        self.log(
+            event_codes::RTE_VERSION_EMBEDDED,
+            trace_id,
+            serde_json::json!({
+                "engagement_id": &eid,
+                "schema_version": &engagement.schema_version,
+            }),
+        );
 
         self.engagements.insert(eid.clone(), engagement);
 
-        self.log(event_codes::RTE_ENGAGEMENT_CREATED, trace_id, serde_json::json!({
-            "engagement_id": &eid,
-        }));
+        self.log(
+            event_codes::RTE_ENGAGEMENT_CREATED,
+            trace_id,
+            serde_json::json!({
+                "engagement_id": &eid,
+            }),
+        );
 
         Ok(eid)
     }
@@ -276,17 +307,29 @@ impl RedTeamEvaluations {
         let finding_id = finding.finding_id.clone();
         let severity = finding.severity;
 
-        self.log(event_codes::RTE_FINDING_SUBMITTED, trace_id, serde_json::json!({
-            "engagement_id": engagement_id,
-            "finding_id": &finding_id,
-        }));
+        self.log(
+            event_codes::RTE_FINDING_SUBMITTED,
+            trace_id,
+            serde_json::json!({
+                "engagement_id": engagement_id,
+                "finding_id": &finding_id,
+            }),
+        );
 
-        self.log(event_codes::RTE_SEVERITY_ASSIGNED, trace_id, serde_json::json!({
-            "finding_id": &finding_id,
-            "severity": severity.label(),
-        }));
+        self.log(
+            event_codes::RTE_SEVERITY_ASSIGNED,
+            trace_id,
+            serde_json::json!({
+                "finding_id": &finding_id,
+                "severity": severity.label(),
+            }),
+        );
 
-        self.engagements.get_mut(engagement_id).unwrap().findings.push(finding);
+        self.engagements
+            .get_mut(engagement_id)
+            .unwrap()
+            .findings
+            .push(finding);
         Ok(())
     }
 
@@ -297,35 +340,52 @@ impl RedTeamEvaluations {
         new_status: RemediationStatus,
         trace_id: &str,
     ) -> Result<(), String> {
-        let engagement = self.engagements.get(engagement_id)
+        let engagement = self
+            .engagements
+            .get(engagement_id)
             .ok_or_else(|| format!("Engagement {} not found", engagement_id))?;
 
-        let finding = engagement.findings.iter().find(|f| f.finding_id == finding_id)
+        let finding = engagement
+            .findings
+            .iter()
+            .find(|f| f.finding_id == finding_id)
             .ok_or_else(|| format!("Finding {} not found", finding_id))?;
 
         let current = finding.remediation_status;
         if !current.valid_transitions().contains(&new_status) {
-            self.log(event_codes::RTE_ERR_INVALID_TRANSITION, trace_id, serde_json::json!({
-                "finding_id": finding_id,
-                "from": current.label(),
-                "to": new_status.label(),
-            }));
+            self.log(
+                event_codes::RTE_ERR_INVALID_TRANSITION,
+                trace_id,
+                serde_json::json!({
+                    "finding_id": finding_id,
+                    "from": current.label(),
+                    "to": new_status.label(),
+                }),
+            );
             return Err(format!(
                 "Cannot transition from {} to {}",
-                current.label(), new_status.label()
+                current.label(),
+                new_status.label()
             ));
         }
 
         // Apply mutation
         let engagement_mut = self.engagements.get_mut(engagement_id).unwrap();
-        let finding_mut = engagement_mut.findings.iter_mut()
-            .find(|f| f.finding_id == finding_id).unwrap();
+        let finding_mut = engagement_mut
+            .findings
+            .iter_mut()
+            .find(|f| f.finding_id == finding_id)
+            .unwrap();
         finding_mut.remediation_status = new_status;
 
-        self.log(event_codes::RTE_REMEDIATION_UPDATED, trace_id, serde_json::json!({
-            "finding_id": finding_id,
-            "new_status": new_status.label(),
-        }));
+        self.log(
+            event_codes::RTE_REMEDIATION_UPDATED,
+            trace_id,
+            serde_json::json!({
+                "finding_id": finding_id,
+                "new_status": new_status.label(),
+            }),
+        );
 
         Ok(())
     }
@@ -336,9 +396,13 @@ impl RedTeamEvaluations {
         let mut total_findings = 0;
 
         for eng in self.engagements.values() {
-            *by_type.entry(eng.eval_type.label().to_string()).or_insert(0) += 1;
+            *by_type
+                .entry(eng.eval_type.label().to_string())
+                .or_insert(0) += 1;
             for f in &eng.findings {
-                *by_severity.entry(f.severity.label().to_string()).or_insert(0) += 1;
+                *by_severity
+                    .entry(f.severity.label().to_string())
+                    .or_insert(0) += 1;
                 total_findings += 1;
             }
         }
@@ -351,10 +415,14 @@ impl RedTeamEvaluations {
         .to_string();
         let content_hash = hex::encode(Sha256::digest(hash_input.as_bytes()));
 
-        self.log(event_codes::RTE_CATALOG_GENERATED, trace_id, serde_json::json!({
-            "total_engagements": self.engagements.len(),
-            "total_findings": total_findings,
-        }));
+        self.log(
+            event_codes::RTE_CATALOG_GENERATED,
+            trace_id,
+            serde_json::json!({
+                "total_engagements": self.engagements.len(),
+                "total_findings": total_findings,
+            }),
+        );
 
         EvaluationCatalog {
             catalog_id: Uuid::now_v7().to_string(),
@@ -368,8 +436,12 @@ impl RedTeamEvaluations {
         }
     }
 
-    pub fn engagements(&self) -> &BTreeMap<String, Engagement> { &self.engagements }
-    pub fn audit_log(&self) -> &[RteAuditRecord] { &self.audit_log }
+    pub fn engagements(&self) -> &BTreeMap<String, Engagement> {
+        &self.engagements
+    }
+    pub fn audit_log(&self) -> &[RteAuditRecord] {
+        &self.audit_log
+    }
 
     pub fn export_audit_log_jsonl(&self) -> Result<String, serde_json::Error> {
         let mut lines = Vec::with_capacity(self.audit_log.len());
@@ -398,7 +470,9 @@ impl RedTeamEvaluations {
 mod tests {
     use super::*;
 
-    fn trace() -> String { Uuid::now_v7().to_string() }
+    fn trace() -> String {
+        Uuid::now_v7().to_string()
+    }
 
     fn sample_engagement(id: &str) -> Engagement {
         Engagement {
@@ -445,7 +519,11 @@ mod tests {
     #[test]
     fn create_valid_engagement() {
         let mut engine = RedTeamEvaluations::default();
-        assert!(engine.create_engagement(sample_engagement("eng-1"), &trace()).is_ok());
+        assert!(
+            engine
+                .create_engagement(sample_engagement("eng-1"), &trace())
+                .is_ok()
+        );
     }
 
     #[test]
@@ -475,7 +553,9 @@ mod tests {
     #[test]
     fn create_sets_version() {
         let mut engine = RedTeamEvaluations::default();
-        engine.create_engagement(sample_engagement("eng-1"), &trace()).unwrap();
+        engine
+            .create_engagement(sample_engagement("eng-1"), &trace())
+            .unwrap();
         let stored = engine.engagements().get("eng-1").unwrap();
         assert_eq!(stored.schema_version, SCHEMA_VERSION);
     }
@@ -483,30 +563,72 @@ mod tests {
     #[test]
     fn add_finding_success() {
         let mut engine = RedTeamEvaluations::default();
-        engine.create_engagement(sample_engagement("eng-1"), &trace()).unwrap();
-        assert!(engine.add_finding("eng-1", sample_finding("f-1", FindingSeverity::High), &trace()).is_ok());
+        engine
+            .create_engagement(sample_engagement("eng-1"), &trace())
+            .unwrap();
+        assert!(
+            engine
+                .add_finding(
+                    "eng-1",
+                    sample_finding("f-1", FindingSeverity::High),
+                    &trace()
+                )
+                .is_ok()
+        );
     }
 
     #[test]
     fn add_finding_missing_engagement_fails() {
         let mut engine = RedTeamEvaluations::default();
-        assert!(engine.add_finding("nonexistent", sample_finding("f-1", FindingSeverity::Low), &trace()).is_err());
+        assert!(
+            engine
+                .add_finding(
+                    "nonexistent",
+                    sample_finding("f-1", FindingSeverity::Low),
+                    &trace()
+                )
+                .is_err()
+        );
     }
 
     #[test]
     fn remediation_open_to_in_progress() {
         let mut engine = RedTeamEvaluations::default();
-        engine.create_engagement(sample_engagement("eng-1"), &trace()).unwrap();
-        engine.add_finding("eng-1", sample_finding("f-1", FindingSeverity::High), &trace()).unwrap();
-        assert!(engine.update_remediation("eng-1", "f-1", RemediationStatus::InProgress, &trace()).is_ok());
+        engine
+            .create_engagement(sample_engagement("eng-1"), &trace())
+            .unwrap();
+        engine
+            .add_finding(
+                "eng-1",
+                sample_finding("f-1", FindingSeverity::High),
+                &trace(),
+            )
+            .unwrap();
+        assert!(
+            engine
+                .update_remediation("eng-1", "f-1", RemediationStatus::InProgress, &trace())
+                .is_ok()
+        );
     }
 
     #[test]
     fn remediation_invalid_transition_fails() {
         let mut engine = RedTeamEvaluations::default();
-        engine.create_engagement(sample_engagement("eng-1"), &trace()).unwrap();
-        engine.add_finding("eng-1", sample_finding("f-1", FindingSeverity::High), &trace()).unwrap();
-        assert!(engine.update_remediation("eng-1", "f-1", RemediationStatus::Verified, &trace()).is_err());
+        engine
+            .create_engagement(sample_engagement("eng-1"), &trace())
+            .unwrap();
+        engine
+            .add_finding(
+                "eng-1",
+                sample_finding("f-1", FindingSeverity::High),
+                &trace(),
+            )
+            .unwrap();
+        assert!(
+            engine
+                .update_remediation("eng-1", "f-1", RemediationStatus::Verified, &trace())
+                .is_err()
+        );
     }
 
     #[test]
@@ -519,9 +641,23 @@ mod tests {
     #[test]
     fn catalog_counts() {
         let mut engine = RedTeamEvaluations::default();
-        engine.create_engagement(sample_engagement("eng-1"), &trace()).unwrap();
-        engine.add_finding("eng-1", sample_finding("f-1", FindingSeverity::High), &trace()).unwrap();
-        engine.add_finding("eng-1", sample_finding("f-2", FindingSeverity::Low), &trace()).unwrap();
+        engine
+            .create_engagement(sample_engagement("eng-1"), &trace())
+            .unwrap();
+        engine
+            .add_finding(
+                "eng-1",
+                sample_finding("f-1", FindingSeverity::High),
+                &trace(),
+            )
+            .unwrap();
+        engine
+            .add_finding(
+                "eng-1",
+                sample_finding("f-2", FindingSeverity::Low),
+                &trace(),
+            )
+            .unwrap();
         let catalog = engine.generate_catalog(&trace());
         assert_eq!(catalog.total_engagements, 1);
         assert_eq!(catalog.total_findings, 2);
@@ -546,7 +682,9 @@ mod tests {
     #[test]
     fn catalog_groups_by_type() {
         let mut engine = RedTeamEvaluations::default();
-        engine.create_engagement(sample_engagement("eng-1"), &trace()).unwrap();
+        engine
+            .create_engagement(sample_engagement("eng-1"), &trace())
+            .unwrap();
         let catalog = engine.generate_catalog(&trace());
         assert!(catalog.by_type.contains_key("red_team"));
     }
@@ -554,8 +692,16 @@ mod tests {
     #[test]
     fn catalog_groups_by_severity() {
         let mut engine = RedTeamEvaluations::default();
-        engine.create_engagement(sample_engagement("eng-1"), &trace()).unwrap();
-        engine.add_finding("eng-1", sample_finding("f-1", FindingSeverity::Critical), &trace()).unwrap();
+        engine
+            .create_engagement(sample_engagement("eng-1"), &trace())
+            .unwrap();
+        engine
+            .add_finding(
+                "eng-1",
+                sample_finding("f-1", FindingSeverity::Critical),
+                &trace(),
+            )
+            .unwrap();
         let catalog = engine.generate_catalog(&trace());
         assert!(catalog.by_severity.contains_key("critical"));
     }
@@ -563,7 +709,9 @@ mod tests {
     #[test]
     fn create_sets_timestamp() {
         let mut engine = RedTeamEvaluations::default();
-        engine.create_engagement(sample_engagement("eng-1"), &trace()).unwrap();
+        engine
+            .create_engagement(sample_engagement("eng-1"), &trace())
+            .unwrap();
         let stored = engine.engagements().get("eng-1").unwrap();
         assert!(!stored.created_at.is_empty());
     }
@@ -571,11 +719,25 @@ mod tests {
     #[test]
     fn full_remediation_lifecycle() {
         let mut engine = RedTeamEvaluations::default();
-        engine.create_engagement(sample_engagement("eng-1"), &trace()).unwrap();
-        engine.add_finding("eng-1", sample_finding("f-1", FindingSeverity::High), &trace()).unwrap();
-        engine.update_remediation("eng-1", "f-1", RemediationStatus::InProgress, &trace()).unwrap();
-        engine.update_remediation("eng-1", "f-1", RemediationStatus::Resolved, &trace()).unwrap();
-        engine.update_remediation("eng-1", "f-1", RemediationStatus::Verified, &trace()).unwrap();
+        engine
+            .create_engagement(sample_engagement("eng-1"), &trace())
+            .unwrap();
+        engine
+            .add_finding(
+                "eng-1",
+                sample_finding("f-1", FindingSeverity::High),
+                &trace(),
+            )
+            .unwrap();
+        engine
+            .update_remediation("eng-1", "f-1", RemediationStatus::InProgress, &trace())
+            .unwrap();
+        engine
+            .update_remediation("eng-1", "f-1", RemediationStatus::Resolved, &trace())
+            .unwrap();
+        engine
+            .update_remediation("eng-1", "f-1", RemediationStatus::Verified, &trace())
+            .unwrap();
         let eng = engine.engagements().get("eng-1").unwrap();
         let f = &eng.findings[0];
         assert_eq!(f.remediation_status, RemediationStatus::Verified);
@@ -584,14 +746,18 @@ mod tests {
     #[test]
     fn audit_log_populated() {
         let mut engine = RedTeamEvaluations::default();
-        engine.create_engagement(sample_engagement("eng-1"), &trace()).unwrap();
+        engine
+            .create_engagement(sample_engagement("eng-1"), &trace())
+            .unwrap();
         assert!(engine.audit_log().len() >= 4);
     }
 
     #[test]
     fn export_jsonl() {
         let mut engine = RedTeamEvaluations::default();
-        engine.create_engagement(sample_engagement("eng-1"), &trace()).unwrap();
+        engine
+            .create_engagement(sample_engagement("eng-1"), &trace())
+            .unwrap();
         let jsonl = engine.export_audit_log_jsonl().unwrap();
         let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert!(first["event_code"].is_string());

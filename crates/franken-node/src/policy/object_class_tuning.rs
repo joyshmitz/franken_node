@@ -142,7 +142,10 @@ impl ClassTuning {
         if self.encoding_overhead_ratio < 0.0 || self.encoding_overhead_ratio > 1.0 {
             return Err(TuningError::new(
                 ERR_INVALID_OVERHEAD_RATIO,
-                format!("Overhead ratio must be in [0.0, 1.0], got {}", self.encoding_overhead_ratio),
+                format!(
+                    "Overhead ratio must be in [0.0, 1.0], got {}",
+                    self.encoding_overhead_ratio
+                ),
             ));
         }
         Ok(())
@@ -178,7 +181,10 @@ impl TuningError {
     }
 
     pub fn unknown_class(class_id: &str) -> Self {
-        Self::new(ERR_UNKNOWN_CLASS, format!("Unknown object class: {}", class_id))
+        Self::new(
+            ERR_UNKNOWN_CLASS,
+            format!("Unknown object class: {}", class_id),
+        )
     }
 }
 
@@ -288,14 +294,24 @@ impl ObjectClassTuningEngine {
         let before = self.resolve(&class);
         let before_desc = before
             .as_ref()
-            .map(|t| format!("symbol_size={}, overhead={:.3}, priority={}, prefetch={}",
-                t.symbol_size_bytes, t.encoding_overhead_ratio,
-                t.fetch_priority.label(), t.prefetch_policy.label()))
+            .map(|t| {
+                format!(
+                    "symbol_size={}, overhead={:.3}, priority={}, prefetch={}",
+                    t.symbol_size_bytes,
+                    t.encoding_overhead_ratio,
+                    t.fetch_priority.label(),
+                    t.prefetch_policy.label()
+                )
+            })
             .unwrap_or_else(|| "none".to_string());
 
-        let after_desc = format!("symbol_size={}, overhead={:.3}, priority={}, prefetch={}",
-            tuning.symbol_size_bytes, tuning.encoding_overhead_ratio,
-            tuning.fetch_priority.label(), tuning.prefetch_policy.label());
+        let after_desc = format!(
+            "symbol_size={}, overhead={:.3}, priority={}, prefetch={}",
+            tuning.symbol_size_bytes,
+            tuning.encoding_overhead_ratio,
+            tuning.fetch_priority.label(),
+            tuning.prefetch_policy.label()
+        );
 
         self.overrides.insert(class.clone(), tuning);
 
@@ -340,7 +356,7 @@ impl ObjectClassTuningEngine {
     /// Export policy report as CSV rows.
     pub fn to_csv(&self) -> String {
         let mut out = String::from(
-            "class_id,symbol_size_bytes,overhead_ratio,fetch_priority,prefetch_policy\n"
+            "class_id,symbol_size_bytes,overhead_ratio,fetch_priority,prefetch_policy\n",
         );
         for class in ObjectClass::canonical_classes() {
             if let Some(tuning) = self.resolve(&class) {
@@ -428,7 +444,11 @@ mod tests {
             .map(|c| default_tuning(c).unwrap().symbol_size_bytes)
             .collect();
         let unique: std::collections::HashSet<u32> = sizes.iter().copied().collect();
-        assert_eq!(sizes.len(), unique.len(), "All canonical classes should have distinct symbol sizes");
+        assert_eq!(
+            sizes.len(),
+            unique.len(),
+            "All canonical classes should have distinct symbol sizes"
+        );
     }
 
     // -- Validation --
@@ -506,7 +526,9 @@ mod tests {
             fetch_priority: FetchPriority::Critical,
             prefetch_policy: PrefetchPolicy::Eager,
         };
-        engine.apply_override(ObjectClass::CriticalMarker, tuning.clone()).unwrap();
+        engine
+            .apply_override(ObjectClass::CriticalMarker, tuning.clone())
+            .unwrap();
         let resolved = engine.resolve(&ObjectClass::CriticalMarker).unwrap();
         assert_eq!(resolved.symbol_size_bytes, 512);
     }
@@ -520,8 +542,11 @@ mod tests {
             fetch_priority: FetchPriority::Critical,
             prefetch_policy: PrefetchPolicy::Eager,
         };
-        engine.apply_override(ObjectClass::CriticalMarker, tuning).unwrap();
-        let override_events: Vec<_> = engine.events()
+        engine
+            .apply_override(ObjectClass::CriticalMarker, tuning)
+            .unwrap();
+        let override_events: Vec<_> = engine
+            .events()
             .iter()
             .filter(|e| e.code == OC_POLICY_OVERRIDE_APPLIED)
             .collect();
@@ -539,7 +564,9 @@ mod tests {
             fetch_priority: FetchPriority::Normal,
             prefetch_policy: PrefetchPolicy::Lazy,
         };
-        let err = engine.apply_override(ObjectClass::TrustReceipt, tuning).unwrap_err();
+        let err = engine
+            .apply_override(ObjectClass::TrustReceipt, tuning)
+            .unwrap_err();
         assert_eq!(err.code, ERR_ZERO_SYMBOL_SIZE);
     }
 
@@ -553,7 +580,8 @@ mod tests {
             prefetch_policy: PrefetchPolicy::Lazy,
         };
         let _ = engine.apply_override(ObjectClass::TrustReceipt, tuning);
-        let reject_events: Vec<_> = engine.events()
+        let reject_events: Vec<_> = engine
+            .events()
             .iter()
             .filter(|e| e.code == OC_POLICY_OVERRIDE_REJECTED)
             .collect();
@@ -571,7 +599,9 @@ mod tests {
             fetch_priority: FetchPriority::Critical,
             prefetch_policy: PrefetchPolicy::Eager,
         };
-        engine.apply_override(ObjectClass::CriticalMarker, tuning).unwrap();
+        engine
+            .apply_override(ObjectClass::CriticalMarker, tuning)
+            .unwrap();
         assert!(engine.has_override(&ObjectClass::CriticalMarker));
         assert!(engine.remove_override(&ObjectClass::CriticalMarker));
         assert!(!engine.has_override(&ObjectClass::CriticalMarker));
@@ -590,7 +620,9 @@ mod tests {
             fetch_priority: FetchPriority::Critical,
             prefetch_policy: PrefetchPolicy::Eager,
         };
-        engine.apply_override(ObjectClass::CriticalMarker, tuning).unwrap();
+        engine
+            .apply_override(ObjectClass::CriticalMarker, tuning)
+            .unwrap();
         assert_eq!(engine.active_overrides().len(), 1);
     }
 
@@ -619,7 +651,8 @@ mod tests {
             p99_decode_us: 4.0,
         }];
         engine.load_benchmark_baseline(&measurements);
-        let baseline_events: Vec<_> = engine.events()
+        let baseline_events: Vec<_> = engine
+            .events()
             .iter()
             .filter(|e| e.code == OC_BENCHMARK_BASELINE_LOADED)
             .collect();

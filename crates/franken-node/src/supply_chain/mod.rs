@@ -1,9 +1,10 @@
 pub mod artifact_signing;
 pub mod category_shift;
-pub mod extension_registry;
 pub mod certification;
 pub mod ecosystem_telemetry;
+pub mod extension_registry;
 pub mod manifest;
+pub mod migration_kit;
 pub mod provenance;
 pub mod provenance_gate;
 pub mod quarantine;
@@ -11,5 +12,4 @@ pub mod reputation;
 pub mod revocation_integration;
 pub mod revocation_registry;
 pub mod transparency_verifier;
-pub mod migration_kit;
 pub mod trust_card;

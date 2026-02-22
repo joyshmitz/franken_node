@@ -117,7 +117,10 @@ pub struct MigrationHealthReport {
     pub evaluation: GateEvaluation,
 }
 
-fn evaluate_policy(delta: HealthDelta, thresholds: MigrationGateThresholds) -> Vec<RejectionReason> {
+fn evaluate_policy(
+    delta: HealthDelta,
+    thresholds: MigrationGateThresholds,
+) -> Vec<RejectionReason> {
     let mut reasons = Vec::new();
 
     if delta.cascade_risk_delta > thresholds.max_cascade_risk_delta {
@@ -187,8 +190,16 @@ pub fn suggest_replans(
     scored.sort_by(|(passes_a, delta_a, cand_a), (passes_b, delta_b, cand_b)| {
         passes_b
             .cmp(passes_a)
-            .then_with(|| delta_a.cascade_risk_delta.total_cmp(&delta_b.cascade_risk_delta))
-            .then_with(|| delta_a.new_fragility_findings.cmp(&delta_b.new_fragility_findings))
+            .then_with(|| {
+                delta_a
+                    .cascade_risk_delta
+                    .total_cmp(&delta_b.cascade_risk_delta)
+            })
+            .then_with(|| {
+                delta_a
+                    .new_fragility_findings
+                    .cmp(&delta_b.new_fragility_findings)
+            })
             .then_with(|| {
                 delta_a
                     .new_articulation_points
@@ -335,7 +346,10 @@ pub fn evaluate_progression_phase(
     )
 }
 
-pub fn build_migration_health_report(plan_id: &str, evaluation: GateEvaluation) -> MigrationHealthReport {
+pub fn build_migration_health_report(
+    plan_id: &str,
+    evaluation: GateEvaluation,
+) -> MigrationHealthReport {
     MigrationHealthReport {
         plan_id: plan_id.to_string(),
         evaluation,

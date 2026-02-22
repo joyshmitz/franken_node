@@ -301,7 +301,9 @@ impl BenchmarkReport {
     /// Check if all six Section 14 dimensions are covered.
     pub fn has_full_coverage(&self) -> bool {
         let covered = self.covered_dimensions();
-        BenchmarkDimension::all().iter().all(|d| covered.contains(d))
+        BenchmarkDimension::all()
+            .iter()
+            .all(|d| covered.contains(d))
     }
 }
 
@@ -644,7 +646,10 @@ impl BenchmarkSuite {
         self.emit_event(
             BS_SCENARIO_STARTED,
             Some(&scenario.name),
-            &format!("Starting {} ({} iterations)", scenario.name, scenario.iterations),
+            &format!(
+                "Starting {} ({} iterations)",
+                scenario.name, scenario.iterations
+            ),
         );
 
         let m = mean(raw_measurements);
@@ -655,7 +660,10 @@ impl BenchmarkSuite {
         self.emit_event(
             BS_MEASUREMENT_RECORDED,
             Some(&scenario.name),
-            &format!("mean={m:.3} {}, CI=[{:.3}, {:.3}]", scenario.unit, ci.lower, ci.upper),
+            &format!(
+                "mean={m:.3} {}, CI=[{:.3}, {:.3}]",
+                scenario.unit, ci.lower, ci.upper
+            ),
         );
 
         self.emit_event(
@@ -912,10 +920,7 @@ mod tests {
 
         let mut measurements = HashMap::new();
         for s in suite.scenarios().to_vec() {
-            measurements.insert(
-                s.name.clone(),
-                vec![150.0, 152.0, 148.0, 151.0, 149.0],
-            );
+            measurements.insert(s.name.clone(), vec![150.0, 152.0, 148.0, 151.0, 149.0]);
         }
 
         let report = suite.run(&measurements);
@@ -1166,10 +1171,7 @@ mod tests {
         // cold_start: 100ms = ideal = score 100
         measurements.insert("cold_start_latency".to_string(), vec![100.0; 5]);
         // migration: 1000 fixtures/s = ideal = score 100
-        measurements.insert(
-            "migration_scanner_throughput".to_string(),
-            vec![1000.0; 5],
-        );
+        measurements.insert("migration_scanner_throughput".to_string(), vec![1000.0; 5]);
 
         let report = suite.run(&measurements);
         assert_eq!(report.aggregate_score, 100);

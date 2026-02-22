@@ -143,7 +143,10 @@ impl ChecksumManifest {
     pub fn canonical_bytes(&self) -> Vec<u8> {
         let mut buf = String::new();
         for entry in self.entries.values() {
-            buf.push_str(&format!("{}  {}  {}\n", entry.sha256, entry.name, entry.size_bytes));
+            buf.push_str(&format!(
+                "{}  {}  {}\n",
+                entry.sha256, entry.name, entry.size_bytes
+            ));
         }
         buf.into_bytes()
     }
@@ -529,7 +532,13 @@ pub struct AuditLogEntry {
 }
 
 impl AuditLogEntry {
-    pub fn now(event_code: &str, artifact_name: &str, key_id: &str, operation: &str, result: &str) -> Self {
+    pub fn now(
+        event_code: &str,
+        artifact_name: &str,
+        key_id: &str,
+        operation: &str,
+        result: &str,
+    ) -> Self {
         Self {
             event_code: event_code.to_string(),
             artifact_name: artifact_name.to_string(),
@@ -635,10 +644,7 @@ mod tests {
     #[test]
     fn test_manifest_canonical_bytes_deterministic() {
         let sk = demo_signing_key();
-        let artifacts = vec![
-            ("a.bin", b"aaa" as &[u8]),
-            ("b.bin", b"bbb" as &[u8]),
-        ];
+        let artifacts = vec![("a.bin", b"aaa" as &[u8]), ("b.bin", b"bbb" as &[u8])];
         let m1 = build_and_sign_manifest(&artifacts, &sk);
         let m2 = build_and_sign_manifest(&artifacts, &sk);
         assert_eq!(m1.canonical_bytes(), m2.canonical_bytes());
@@ -691,28 +697,31 @@ mod tests {
         let report = verify_release(&manifest, &arts, &sigs, &ring);
         assert!(!report.overall_pass);
         assert!(!report.results[0].passed);
-        assert!(report.results[0]
-            .failure_reason
-            .as_ref()
-            .unwrap()
-            .contains("checksum mismatch"));
+        assert!(
+            report.results[0]
+                .failure_reason
+                .as_ref()
+                .unwrap()
+                .contains("checksum mismatch")
+        );
     }
 
     #[test]
     fn test_verify_release_missing_artifact() {
         let (sk, _vk, ring) = setup_keys();
-        let manifest =
-            build_and_sign_manifest(&[("missing.bin", b"data" as &[u8])], &sk);
+        let manifest = build_and_sign_manifest(&[("missing.bin", b"data" as &[u8])], &sk);
         let arts = BTreeMap::new();
         let sigs = BTreeMap::new();
 
         let report = verify_release(&manifest, &arts, &sigs, &ring);
         assert!(!report.overall_pass);
-        assert!(report.results[0]
-            .failure_reason
-            .as_ref()
-            .unwrap()
-            .contains("artifact missing"));
+        assert!(
+            report.results[0]
+                .failure_reason
+                .as_ref()
+                .unwrap()
+                .contains("artifact missing")
+        );
     }
 
     #[test]
@@ -927,11 +936,13 @@ mod tests {
 
         let report = verify_release(&manifest, &arts, &sigs, &ring);
         assert!(!report.overall_pass);
-        assert!(report.results[0]
-            .failure_reason
-            .as_ref()
-            .unwrap()
-            .contains("signature invalid"));
+        assert!(
+            report.results[0]
+                .failure_reason
+                .as_ref()
+                .unwrap()
+                .contains("signature invalid")
+        );
     }
 
     #[test]

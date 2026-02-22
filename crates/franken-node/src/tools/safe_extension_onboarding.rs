@@ -68,7 +68,13 @@ pub enum OnboardingPhase {
 
 impl OnboardingPhase {
     pub fn all() -> &'static [OnboardingPhase] {
-        &[Self::Install, Self::Configure, Self::Validate, Self::Activate, Self::Monitor]
+        &[
+            Self::Install,
+            Self::Configure,
+            Self::Validate,
+            Self::Activate,
+            Self::Monitor,
+        ]
     }
     pub fn label(&self) -> &'static str {
         match self {
@@ -168,7 +174,9 @@ impl Default for SafeExtensionOnboarding {
 }
 
 impl SafeExtensionOnboarding {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Record an onboarding step.
     pub fn record_step(&mut self, step: OnboardingStep) {
@@ -176,25 +184,41 @@ impl SafeExtensionOnboarding {
         let phase = step.phase.label().to_string();
 
         if step.phase == OnboardingPhase::Install {
-            self.log(event_codes::SEO_SESSION_STARTED, &sid, &format!("phase={}", phase));
+            self.log(
+                event_codes::SEO_SESSION_STARTED,
+                &sid,
+                &format!("phase={}", phase),
+            );
         }
 
-        self.log(event_codes::SEO_STEP_COMPLETED, &step.step_id, &format!(
-            "session={} phase={} duration={}s automated={}",
-            sid, phase, step.duration_seconds, step.automated
-        ));
+        self.log(
+            event_codes::SEO_STEP_COMPLETED,
+            &step.step_id,
+            &format!(
+                "session={} phase={} duration={}s automated={}",
+                sid, phase, step.duration_seconds, step.automated
+            ),
+        );
 
         match step.gate_result {
             GateResult::Passed => self.log(event_codes::SEO_GATE_PASSED, &step.step_id, &phase),
             GateResult::Failed => {
                 self.log(event_codes::SEO_GATE_FAILED, &step.step_id, &phase);
-                self.log(event_codes::SEO_ERR_STEP_BLOCKED, &step.step_id, &format!("blocked at {}", phase));
+                self.log(
+                    event_codes::SEO_ERR_STEP_BLOCKED,
+                    &step.step_id,
+                    &format!("blocked at {}", phase),
+                );
             }
             GateResult::Skipped => {}
         }
 
         if step.phase == OnboardingPhase::Activate && step.gate_result == GateResult::Passed {
-            self.log(event_codes::SEO_EXTENSION_ACTIVATED, &sid, "first safe extension activated");
+            self.log(
+                event_codes::SEO_EXTENSION_ACTIVATED,
+                &sid,
+                "first safe extension activated",
+            );
         }
 
         self.steps.push(step);
@@ -202,10 +226,14 @@ impl SafeExtensionOnboarding {
 
     /// Compute time-to-first-extension for a session (sum of all step durations).
     pub fn session_ttfe(&self, session_id: &str) -> Option<u64> {
-        let session_steps: Vec<&OnboardingStep> = self.steps.iter()
+        let session_steps: Vec<&OnboardingStep> = self
+            .steps
+            .iter()
             .filter(|s| s.session_id == session_id)
             .collect();
-        if session_steps.is_empty() { return None; }
+        if session_steps.is_empty() {
+            return None;
+        }
         Some(session_steps.iter().map(|s| s.duration_seconds).sum())
     }
 
@@ -218,13 +246,23 @@ impl SafeExtensionOnboarding {
         }
 
         let total_sessions = sessions.len();
-        let completed = sessions.values()
-            .filter(|steps| steps.iter().any(|s| s.phase == OnboardingPhase::Activate && s.gate_result == GateResult::Passed))
+        let completed = sessions
+            .values()
+            .filter(|steps| {
+                steps.iter().any(|s| {
+                    s.phase == OnboardingPhase::Activate && s.gate_result == GateResult::Passed
+                })
+            })
             .count();
-        let completion_rate = if total_sessions > 0 { completed as f64 / total_sessions as f64 } else { 0.0 };
+        let completion_rate = if total_sessions > 0 {
+            completed as f64 / total_sessions as f64
+        } else {
+            0.0
+        };
 
         // Mean TTFE
-        let ttfes: Vec<u64> = sessions.keys()
+        let ttfes: Vec<u64> = sessions
+            .keys()
             .filter_map(|sid| self.session_ttfe(sid))
             .collect();
         let mean_ttfe = if !ttfes.is_empty() {
@@ -234,7 +272,8 @@ impl SafeExtensionOnboarding {
         };
 
         // Per-phase stats — collect owned data to avoid borrowing self.steps during self.log()
-        let mut phase_groups: BTreeMap<OnboardingPhase, Vec<(f64, bool, bool, f64)>> = BTreeMap::new();
+        let mut phase_groups: BTreeMap<OnboardingPhase, Vec<(f64, bool, bool, f64)>> =
+            BTreeMap::new();
         for s in &self.steps {
             phase_groups.entry(s.phase).or_default().push((
                 s.duration_seconds as f64,
@@ -260,7 +299,11 @@ impl SafeExtensionOnboarding {
 
                 if friction > MAX_FRICTION_SCORE {
                     bottleneck_phases.push(phase.label().to_string());
-                    self.log(event_codes::SEO_BOTTLENECK_DETECTED, "report", &format!("phase={} friction={:.2}", phase.label(), friction));
+                    self.log(
+                        event_codes::SEO_BOTTLENECK_DETECTED,
+                        "report",
+                        &format!("phase={} friction={:.2}", phase.label(), friction),
+                    );
                 }
 
                 phase_stats.push(PhaseStats {
@@ -290,13 +333,30 @@ impl SafeExtensionOnboarding {
 
         let hash_input = format!(
             "{}:{}:{}:{:.4}:{:.4}:{}",
-            SCHEMA_VERSION, total_sessions, completed, mean_ttfe, overall_friction, bottleneck_phases.len()
+            SCHEMA_VERSION,
+            total_sessions,
+            completed,
+            mean_ttfe,
+            overall_friction,
+            bottleneck_phases.len()
         );
         let content_hash = format!("{:x}", Sha256::digest(hash_input.as_bytes()));
 
-        self.log(event_codes::SEO_REPORT_GENERATED, "report", &format!("sessions={} completed={}", total_sessions, completed));
-        self.log(event_codes::SEO_FRICTION_SCORED, "report", &format!("friction={:.3}", overall_friction));
-        self.log(event_codes::SEO_AUTOMATION_MEASURED, "report", &format!("rate={:.3}", overall_auto));
+        self.log(
+            event_codes::SEO_REPORT_GENERATED,
+            "report",
+            &format!("sessions={} completed={}", total_sessions, completed),
+        );
+        self.log(
+            event_codes::SEO_FRICTION_SCORED,
+            "report",
+            &format!("friction={:.3}", overall_friction),
+        );
+        self.log(
+            event_codes::SEO_AUTOMATION_MEASURED,
+            "report",
+            &format!("rate={:.3}", overall_auto),
+        );
         self.log(event_codes::SEO_VERSION_EMBEDDED, "report", SCHEMA_VERSION);
 
         OnboardingReport {
@@ -366,13 +426,18 @@ mod tests {
     #[test]
     fn phase_labels_unique() {
         let labels: Vec<&str> = OnboardingPhase::all().iter().map(|p| p.label()).collect();
-        let mut d = labels.clone(); d.sort(); d.dedup();
+        let mut d = labels.clone();
+        d.sort();
+        d.dedup();
         assert_eq!(labels.len(), d.len());
     }
 
     #[test]
     fn phase_progression() {
-        assert_eq!(OnboardingPhase::Install.next(), Some(OnboardingPhase::Configure));
+        assert_eq!(
+            OnboardingPhase::Install.next(),
+            Some(OnboardingPhase::Configure)
+        );
         assert_eq!(OnboardingPhase::Monitor.next(), None);
     }
 
@@ -438,7 +503,11 @@ mod tests {
     fn report_populated() {
         let mut e = SafeExtensionOnboarding::new();
         for phase in OnboardingPhase::all() {
-            e.record_step(sample_step(&format!("s-{}", phase.label()), "sess1", *phase));
+            e.record_step(sample_step(
+                &format!("s-{}", phase.label()),
+                "sess1",
+                *phase,
+            ));
         }
         let r = e.generate_report();
         assert_eq!(r.total_sessions, 1);
@@ -449,7 +518,11 @@ mod tests {
     fn report_meets_ttfe_target() {
         let mut e = SafeExtensionOnboarding::new();
         for phase in OnboardingPhase::all() {
-            e.record_step(sample_step(&format!("s-{}", phase.label()), "sess1", *phase));
+            e.record_step(sample_step(
+                &format!("s-{}", phase.label()),
+                "sess1",
+                *phase,
+            ));
         }
         let r = e.generate_report();
         assert!(r.meets_ttfe_target); // 5 * 30s = 150s < 300s target
@@ -483,7 +556,11 @@ mod tests {
     fn automation_rate_all_automated() {
         let mut e = SafeExtensionOnboarding::new();
         for phase in OnboardingPhase::all() {
-            e.record_step(sample_step(&format!("s-{}", phase.label()), "sess1", *phase));
+            e.record_step(sample_step(
+                &format!("s-{}", phase.label()),
+                "sess1",
+                *phase,
+            ));
         }
         let r = e.generate_report();
         assert!((r.overall_automation_rate - 1.0).abs() < f64::EPSILON);
@@ -493,7 +570,10 @@ mod tests {
     fn report_hash_deterministic() {
         let mut e1 = SafeExtensionOnboarding::new();
         let mut e2 = SafeExtensionOnboarding::new();
-        assert_eq!(e1.generate_report().content_hash, e2.generate_report().content_hash);
+        assert_eq!(
+            e1.generate_report().content_hash,
+            e2.generate_report().content_hash
+        );
     }
 
     #[test]

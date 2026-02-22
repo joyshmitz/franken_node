@@ -388,9 +388,7 @@ pub fn make_artifact(
     extension_id: &str,
     contract: CapabilityContract,
 ) -> ExtensionArtifact {
-    let payload_hash = digest_bytes(
-        format!("{}:{}", artifact_id, extension_id).as_bytes(),
-    );
+    let payload_hash = digest_bytes(format!("{}:{}", artifact_id, extension_id).as_bytes());
     ExtensionArtifact {
         artifact_id: artifact_id.to_string(),
         extension_id: extension_id.to_string(),
@@ -577,10 +575,7 @@ mod tests {
         let contract = test_contract();
         let artifact = make_artifact("a1", "ext-alpha", contract);
         let outcome = gate.evaluate(&artifact);
-        assert!(matches!(
-            outcome,
-            AdmissionOutcome::Accepted { .. }
-        ));
+        assert!(matches!(outcome, AdmissionOutcome::Accepted { .. }));
     }
 
     #[test]

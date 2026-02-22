@@ -330,11 +330,7 @@ impl MigrationKitEcosystem {
     }
 
     /// Generate a migration plan (returns the kit with deterministic hash).
-    pub fn generate_plan(
-        &mut self,
-        kit_id: &str,
-        trace_id: &str,
-    ) -> Result<&MigrationKit, String> {
+    pub fn generate_plan(&mut self, kit_id: &str, trace_id: &str) -> Result<&MigrationKit, String> {
         if !self.kits.contains_key(kit_id) {
             return Err("Kit not found".to_string());
         }
@@ -407,7 +403,13 @@ impl MigrationKitEcosystem {
         );
 
         // Check if all steps completed
-        let all_done = self.kits.get(kit_id).unwrap().steps.iter().all(|s| s.status == StepStatus::Completed);
+        let all_done = self
+            .kits
+            .get(kit_id)
+            .unwrap()
+            .steps
+            .iter()
+            .all(|s| s.status == StepStatus::Completed);
         if all_done {
             self.log(
                 event_codes::MKE_MIGRATION_COMPLETED,
@@ -479,8 +481,16 @@ impl MigrationKitEcosystem {
             .ok_or_else(|| "Kit not found".to_string())?;
 
         let total = kit.steps.len();
-        let completed = kit.steps.iter().filter(|s| s.status == StepStatus::Completed).count();
-        let failed = kit.steps.iter().filter(|s| s.status == StepStatus::Failed).count();
+        let completed = kit
+            .steps
+            .iter()
+            .filter(|s| s.status == StepStatus::Completed)
+            .count();
+        let failed = kit
+            .steps
+            .iter()
+            .filter(|s| s.status == StepStatus::Failed)
+            .count();
         let progress = if total > 0 {
             (completed as f64 / total as f64) * 100.0
         } else {
@@ -553,13 +563,7 @@ impl MigrationKitEcosystem {
         Ok(lines.join("\n"))
     }
 
-    fn log(
-        &mut self,
-        event_code: &str,
-        kit_id: &str,
-        trace_id: &str,
-        details: serde_json::Value,
-    ) {
+    fn log(&mut self, event_code: &str, kit_id: &str, trace_id: &str, details: serde_json::Value) {
         self.audit_log.push(MkeAuditRecord {
             record_id: Uuid::now_v7().to_string(),
             event_code: event_code.to_string(),
@@ -666,12 +670,14 @@ mod tests {
     #[test]
     fn load_kit_returns_id() {
         let mut eco = MigrationKitEcosystem::default();
-        let kit_id = eco.load_kit(
-            Archetype::Express,
-            sample_compat(Archetype::Express),
-            sample_steps(),
-            &make_trace(),
-        ).unwrap();
+        let kit_id = eco
+            .load_kit(
+                Archetype::Express,
+                sample_compat(Archetype::Express),
+                sample_steps(),
+                &make_trace(),
+            )
+            .unwrap();
         assert!(!kit_id.is_empty());
         assert!(eco.kits().contains_key(&kit_id));
     }
@@ -681,36 +687,35 @@ mod tests {
         let mut eco = MigrationKitEcosystem::default();
         let mut compat = sample_compat(Archetype::Express);
         compat.api_coverage_pct = 50.0;
-        let result = eco.load_kit(
-            Archetype::Express,
-            compat,
-            sample_steps(),
-            &make_trace(),
-        );
+        let result = eco.load_kit(Archetype::Express, compat, sample_steps(), &make_trace());
         assert!(result.is_err());
     }
 
     #[test]
     fn load_kit_has_version() {
         let mut eco = MigrationKitEcosystem::default();
-        let kit_id = eco.load_kit(
-            Archetype::Fastify,
-            sample_compat(Archetype::Fastify),
-            sample_steps(),
-            &make_trace(),
-        ).unwrap();
+        let kit_id = eco
+            .load_kit(
+                Archetype::Fastify,
+                sample_compat(Archetype::Fastify),
+                sample_steps(),
+                &make_trace(),
+            )
+            .unwrap();
         assert_eq!(eco.kits().get(&kit_id).unwrap().kit_version, KIT_VERSION);
     }
 
     #[test]
     fn load_kit_has_content_hash() {
         let mut eco = MigrationKitEcosystem::default();
-        let kit_id = eco.load_kit(
-            Archetype::Express,
-            sample_compat(Archetype::Express),
-            sample_steps(),
-            &make_trace(),
-        ).unwrap();
+        let kit_id = eco
+            .load_kit(
+                Archetype::Express,
+                sample_compat(Archetype::Express),
+                sample_steps(),
+                &make_trace(),
+            )
+            .unwrap();
         let hash = &eco.kits().get(&kit_id).unwrap().content_hash;
         assert_eq!(hash.len(), 64);
     }
@@ -720,12 +725,14 @@ mod tests {
     #[test]
     fn generate_plan() {
         let mut eco = MigrationKitEcosystem::default();
-        let kit_id = eco.load_kit(
-            Archetype::Express,
-            sample_compat(Archetype::Express),
-            sample_steps(),
-            &make_trace(),
-        ).unwrap();
+        let kit_id = eco
+            .load_kit(
+                Archetype::Express,
+                sample_compat(Archetype::Express),
+                sample_steps(),
+                &make_trace(),
+            )
+            .unwrap();
         let plan = eco.generate_plan(&kit_id, &make_trace());
         assert!(plan.is_ok());
         assert_eq!(plan.unwrap().steps.len(), 3);
@@ -736,12 +743,14 @@ mod tests {
     #[test]
     fn start_and_complete_step() {
         let mut eco = MigrationKitEcosystem::default();
-        let kit_id = eco.load_kit(
-            Archetype::Express,
-            sample_compat(Archetype::Express),
-            sample_steps(),
-            &make_trace(),
-        ).unwrap();
+        let kit_id = eco
+            .load_kit(
+                Archetype::Express,
+                sample_compat(Archetype::Express),
+                sample_steps(),
+                &make_trace(),
+            )
+            .unwrap();
         eco.start_step(&kit_id, "s1", &make_trace()).unwrap();
         eco.complete_step(&kit_id, "s1", &make_trace()).unwrap();
         let step = &eco.kits().get(&kit_id).unwrap().steps[0];
@@ -751,12 +760,14 @@ mod tests {
     #[test]
     fn rollback_step() {
         let mut eco = MigrationKitEcosystem::default();
-        let kit_id = eco.load_kit(
-            Archetype::Express,
-            sample_compat(Archetype::Express),
-            sample_steps(),
-            &make_trace(),
-        ).unwrap();
+        let kit_id = eco
+            .load_kit(
+                Archetype::Express,
+                sample_compat(Archetype::Express),
+                sample_steps(),
+                &make_trace(),
+            )
+            .unwrap();
         eco.start_step(&kit_id, "s1", &make_trace()).unwrap();
         eco.rollback_step(&kit_id, "s1", &make_trace()).unwrap();
         let step = &eco.kits().get(&kit_id).unwrap().steps[0];
@@ -768,12 +779,14 @@ mod tests {
         let mut eco = MigrationKitEcosystem::default();
         let mut steps = sample_steps();
         steps[0].rollback_procedure = String::new();
-        let kit_id = eco.load_kit(
-            Archetype::Express,
-            sample_compat(Archetype::Express),
-            steps,
-            &make_trace(),
-        ).unwrap();
+        let kit_id = eco
+            .load_kit(
+                Archetype::Express,
+                sample_compat(Archetype::Express),
+                steps,
+                &make_trace(),
+            )
+            .unwrap();
         let result = eco.rollback_step(&kit_id, "s1", &make_trace());
         assert!(result.is_err());
     }
@@ -783,12 +796,14 @@ mod tests {
     #[test]
     fn generate_report_not_started() {
         let mut eco = MigrationKitEcosystem::default();
-        let kit_id = eco.load_kit(
-            Archetype::Express,
-            sample_compat(Archetype::Express),
-            sample_steps(),
-            &make_trace(),
-        ).unwrap();
+        let kit_id = eco
+            .load_kit(
+                Archetype::Express,
+                sample_compat(Archetype::Express),
+                sample_steps(),
+                &make_trace(),
+            )
+            .unwrap();
         let report = eco.generate_report(&kit_id, &make_trace()).unwrap();
         assert_eq!(report.overall_status, MigrationStatus::NotStarted);
         assert_eq!(report.completed_steps, 0);
@@ -797,12 +812,14 @@ mod tests {
     #[test]
     fn generate_report_in_progress() {
         let mut eco = MigrationKitEcosystem::default();
-        let kit_id = eco.load_kit(
-            Archetype::Express,
-            sample_compat(Archetype::Express),
-            sample_steps(),
-            &make_trace(),
-        ).unwrap();
+        let kit_id = eco
+            .load_kit(
+                Archetype::Express,
+                sample_compat(Archetype::Express),
+                sample_steps(),
+                &make_trace(),
+            )
+            .unwrap();
         eco.start_step(&kit_id, "s1", &make_trace()).unwrap();
         eco.complete_step(&kit_id, "s1", &make_trace()).unwrap();
         let report = eco.generate_report(&kit_id, &make_trace()).unwrap();
@@ -813,12 +830,14 @@ mod tests {
     #[test]
     fn generate_report_completed() {
         let mut eco = MigrationKitEcosystem::default();
-        let kit_id = eco.load_kit(
-            Archetype::Express,
-            sample_compat(Archetype::Express),
-            sample_steps(),
-            &make_trace(),
-        ).unwrap();
+        let kit_id = eco
+            .load_kit(
+                Archetype::Express,
+                sample_compat(Archetype::Express),
+                sample_steps(),
+                &make_trace(),
+            )
+            .unwrap();
         for sid in ["s1", "s2", "s3"] {
             eco.start_step(&kit_id, sid, &make_trace()).unwrap();
             eco.complete_step(&kit_id, sid, &make_trace()).unwrap();
@@ -831,12 +850,14 @@ mod tests {
     #[test]
     fn report_has_content_hash() {
         let mut eco = MigrationKitEcosystem::default();
-        let kit_id = eco.load_kit(
-            Archetype::Express,
-            sample_compat(Archetype::Express),
-            sample_steps(),
-            &make_trace(),
-        ).unwrap();
+        let kit_id = eco
+            .load_kit(
+                Archetype::Express,
+                sample_compat(Archetype::Express),
+                sample_steps(),
+                &make_trace(),
+            )
+            .unwrap();
         let report = eco.generate_report(&kit_id, &make_trace()).unwrap();
         assert_eq!(report.content_hash.len(), 64);
     }
@@ -892,7 +913,8 @@ mod tests {
             sample_compat(Archetype::Express),
             sample_steps(),
             &make_trace(),
-        ).unwrap();
+        )
+        .unwrap();
         assert!(eco.audit_log().len() >= 2);
     }
 
@@ -904,8 +926,13 @@ mod tests {
             sample_compat(Archetype::Express),
             sample_steps(),
             &make_trace(),
-        ).unwrap();
-        let codes: Vec<&str> = eco.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        )
+        .unwrap();
+        let codes: Vec<&str> = eco
+            .audit_log()
+            .iter()
+            .map(|r| r.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::MKE_KIT_LOADED));
     }
 
@@ -917,10 +944,10 @@ mod tests {
             sample_compat(Archetype::Express),
             sample_steps(),
             &make_trace(),
-        ).unwrap();
+        )
+        .unwrap();
         let jsonl = eco.export_audit_log_jsonl().unwrap();
-        let first: serde_json::Value =
-            serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+        let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert!(first["event_code"].is_string());
     }
 
@@ -943,12 +970,10 @@ mod tests {
         let mut eco = MigrationKitEcosystem::new(config);
         let mut compat = sample_compat(Archetype::Express);
         compat.api_coverage_pct = 10.0;
-        assert!(eco.load_kit(
-            Archetype::Express,
-            compat,
-            sample_steps(),
-            &make_trace(),
-        ).is_ok());
+        assert!(
+            eco.load_kit(Archetype::Express, compat, sample_steps(), &make_trace(),)
+                .is_ok()
+        );
     }
 
     // === Determinism ===
@@ -961,8 +986,17 @@ mod tests {
         let mut e1 = MigrationKitEcosystem::default();
         let mut e2 = MigrationKitEcosystem::default();
 
-        let k1 = e1.load_kit(Archetype::Express, compat.clone(), steps.clone(), "det-trace").unwrap();
-        let k2 = e2.load_kit(Archetype::Express, compat, steps, "det-trace").unwrap();
+        let k1 = e1
+            .load_kit(
+                Archetype::Express,
+                compat.clone(),
+                steps.clone(),
+                "det-trace",
+            )
+            .unwrap();
+        let k2 = e2
+            .load_kit(Archetype::Express, compat, steps, "det-trace")
+            .unwrap();
 
         assert_eq!(
             e1.kits().get(&k1).unwrap().content_hash,
@@ -975,12 +1009,14 @@ mod tests {
     #[test]
     fn reports_accumulated() {
         let mut eco = MigrationKitEcosystem::default();
-        let kit_id = eco.load_kit(
-            Archetype::Express,
-            sample_compat(Archetype::Express),
-            sample_steps(),
-            &make_trace(),
-        ).unwrap();
+        let kit_id = eco
+            .load_kit(
+                Archetype::Express,
+                sample_compat(Archetype::Express),
+                sample_steps(),
+                &make_trace(),
+            )
+            .unwrap();
         eco.generate_report(&kit_id, &make_trace()).unwrap();
         eco.generate_report(&kit_id, &make_trace()).unwrap();
         assert_eq!(eco.reports().len(), 2);

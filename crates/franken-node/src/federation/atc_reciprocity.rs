@@ -306,7 +306,11 @@ impl ReciprocityEngine {
                 reason: "grace period active".to_string(),
                 exception_applied: false,
                 grace_period_active: true,
-                accessible_feeds: tier.accessible_feeds().iter().map(|s| s.to_string()).collect(),
+                accessible_feeds: tier
+                    .accessible_feeds()
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
             };
             self.log_decision(&decision, event_codes::GRACE_PERIOD_GRANTED, timestamp);
             return decision;
@@ -327,7 +331,11 @@ impl ReciprocityEngine {
                 ),
                 exception_applied: true,
                 grace_period_active: false,
-                accessible_feeds: tier.accessible_feeds().iter().map(|s| s.to_string()).collect(),
+                accessible_feeds: tier
+                    .accessible_feeds()
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
             };
             self.log_decision(&decision, event_codes::EXCEPTION_ACTIVATED, timestamp);
             return decision;
@@ -343,7 +351,10 @@ impl ReciprocityEngine {
         };
 
         let reason = if granted {
-            format!("contribution ratio {effective_ratio:.3} qualifies for tier {:?}", tier)
+            format!(
+                "contribution ratio {effective_ratio:.3} qualifies for tier {:?}",
+                tier
+            )
         } else {
             format!("contribution ratio {effective_ratio:.3} below minimum threshold")
         };
@@ -357,7 +368,11 @@ impl ReciprocityEngine {
             reason,
             exception_applied: false,
             grace_period_active: false,
-            accessible_feeds: tier.accessible_feeds().iter().map(|s| s.to_string()).collect(),
+            accessible_feeds: tier
+                .accessible_feeds()
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         };
 
         self.log_decision(&decision, event_code, timestamp);
@@ -546,11 +561,7 @@ mod tests {
 
     #[test]
     fn tier_min_ratios_are_monotone() {
-        let tiers = [
-            AccessTier::Limited,
-            AccessTier::Standard,
-            AccessTier::Full,
-        ];
+        let tiers = [AccessTier::Limited, AccessTier::Standard, AccessTier::Full];
         for pair in tiers.windows(2) {
             assert!(pair[0].min_ratio() < pair[1].min_ratio());
         }

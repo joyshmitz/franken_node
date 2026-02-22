@@ -333,8 +333,7 @@ impl PolicyPredicate {
     /// Verify the predicate signature (placeholder — real impl uses ed25519).
     pub fn verify_signature(&self) -> bool {
         // Signature must be non-empty hex string of at least 64 chars
-        self.signature.len() >= 64
-            && self.signature.chars().all(|c| c.is_ascii_hexdigit())
+        self.signature.len() >= 64 && self.signature.chars().all(|c| c.is_ascii_hexdigit())
     }
 
     /// Check if the predicate applies to the given scope.
@@ -438,8 +437,7 @@ pub struct ModeSelectionReceipt {
 impl ModeSelectionReceipt {
     /// Verify receipt signature (placeholder — real impl uses ed25519).
     pub fn verify_signature(&self) -> bool {
-        self.signature.len() >= 64
-            && self.signature.chars().all(|c| c.is_ascii_hexdigit())
+        self.signature.len() >= 64 && self.signature.chars().all(|c| c.is_ascii_hexdigit())
     }
 }
 
@@ -476,12 +474,12 @@ pub enum CompatGateError {
         detail: String,
     },
     /// Monotonicity violation detected.
-    MonotonicityViolation {
-        shim_id: String,
-        detail: String,
-    },
+    MonotonicityViolation { shim_id: String, detail: String },
     /// Invalid policy predicate.
-    InvalidPredicate { predicate_id: String, reason: String },
+    InvalidPredicate {
+        predicate_id: String,
+        reason: String,
+    },
     /// Package not found.
     PackageNotFound { package_id: String },
 }
@@ -678,9 +676,7 @@ impl CompatGateEvaluator {
             }
             None => {
                 // Unknown package — allow if mode is permissive, deny if strict
-                rationale.push(format!(
-                    "package {package_id} not in shim registry"
-                ));
+                rationale.push(format!("package {package_id} not in shim registry"));
                 match mode {
                     CompatibilityMode::Strict => {
                         rationale.push("strict mode: unknown packages denied".to_string());
@@ -778,10 +774,7 @@ impl CompatGateEvaluator {
     ///
     /// A shim weakens guarantees if it downgrades the divergence action for
     /// an existing entry (e.g., from Error to Warn).
-    pub fn check_monotonicity(
-        &self,
-        new_shim: &ShimRegistryEntry,
-    ) -> Result<(), CompatGateError> {
+    pub fn check_monotonicity(&self, new_shim: &ShimRegistryEntry) -> Result<(), CompatGateError> {
         // Monotonicity: adding a new shim to the registry must not change the
         // gate decision for any *existing* shim. Since gate decisions are a
         // function of (shim.band, scope.mode) and adding a new entry doesn't
@@ -934,16 +927,24 @@ mod tests {
 
     fn sample_registry() -> ShimRegistry {
         let mut reg = ShimRegistry::new();
-        reg.register(make_shim("shim-core-1", CompatibilityBand::Core, ShimRiskCategory::High))
-            .unwrap();
+        reg.register(make_shim(
+            "shim-core-1",
+            CompatibilityBand::Core,
+            ShimRiskCategory::High,
+        ))
+        .unwrap();
         reg.register(make_shim(
             "shim-hv-1",
             CompatibilityBand::HighValue,
             ShimRiskCategory::Medium,
         ))
         .unwrap();
-        reg.register(make_shim("shim-edge-1", CompatibilityBand::Edge, ShimRiskCategory::Low))
-            .unwrap();
+        reg.register(make_shim(
+            "shim-edge-1",
+            CompatibilityBand::Edge,
+            ShimRiskCategory::Low,
+        ))
+        .unwrap();
         reg.register(make_shim(
             "shim-unsafe-1",
             CompatibilityBand::Unsafe,
@@ -955,8 +956,14 @@ mod tests {
 
     fn evaluator_with_scope() -> CompatGateEvaluator {
         let mut eval = CompatGateEvaluator::new(sample_registry());
-        eval.set_mode("project-1", CompatibilityMode::Balanced, "admin", "initial setup", true)
-            .unwrap();
+        eval.set_mode(
+            "project-1",
+            CompatibilityMode::Balanced,
+            "admin",
+            "initial setup",
+            true,
+        )
+        .unwrap();
         eval
     }
 
@@ -995,8 +1002,7 @@ mod tests {
     fn mode_risk_ordering() {
         assert!(CompatibilityMode::Strict.risk_level() < CompatibilityMode::Balanced.risk_level());
         assert!(
-            CompatibilityMode::Balanced.risk_level()
-                < CompatibilityMode::LegacyRisky.risk_level()
+            CompatibilityMode::Balanced.risk_level() < CompatibilityMode::LegacyRisky.risk_level()
         );
     }
 
@@ -1111,8 +1117,12 @@ mod tests {
     fn registry_register_and_lookup() {
         let mut reg = ShimRegistry::new();
         assert!(reg.is_empty());
-        reg.register(make_shim("shim-1", CompatibilityBand::Core, ShimRiskCategory::High))
-            .unwrap();
+        reg.register(make_shim(
+            "shim-1",
+            CompatibilityBand::Core,
+            ShimRiskCategory::High,
+        ))
+        .unwrap();
         assert_eq!(reg.len(), 1);
         assert!(!reg.is_empty());
         let entry = reg.get("shim-1").unwrap();
@@ -1123,10 +1133,18 @@ mod tests {
     #[test]
     fn registry_duplicate_rejected() {
         let mut reg = ShimRegistry::new();
-        reg.register(make_shim("shim-1", CompatibilityBand::Core, ShimRiskCategory::High))
-            .unwrap();
+        reg.register(make_shim(
+            "shim-1",
+            CompatibilityBand::Core,
+            ShimRiskCategory::High,
+        ))
+        .unwrap();
         let err = reg
-            .register(make_shim("shim-1", CompatibilityBand::Edge, ShimRiskCategory::Low))
+            .register(make_shim(
+                "shim-1",
+                CompatibilityBand::Edge,
+                ShimRiskCategory::Low,
+            ))
             .unwrap_err();
         assert!(matches!(err, CompatGateError::DuplicateShim { .. }));
     }
@@ -1247,9 +1265,15 @@ mod tests {
     #[test]
     fn set_mode_initial() {
         let mut eval = CompatGateEvaluator::new(sample_registry());
-        let receipt =
-            eval.set_mode("scope-1", CompatibilityMode::Strict, "admin", "initial", true)
-                .unwrap();
+        let receipt = eval
+            .set_mode(
+                "scope-1",
+                CompatibilityMode::Strict,
+                "admin",
+                "initial",
+                true,
+            )
+            .unwrap();
         assert_eq!(receipt.mode, CompatibilityMode::Strict);
         assert!(receipt.previous_mode.is_none());
         assert!(!receipt.approval_required);
@@ -1296,11 +1320,23 @@ mod tests {
     #[test]
     fn set_mode_de_escalation_auto_approved() {
         let mut eval = CompatGateEvaluator::new(sample_registry());
-        eval.set_mode("scope-1", CompatibilityMode::LegacyRisky, "admin", "init", true)
-            .unwrap();
+        eval.set_mode(
+            "scope-1",
+            CompatibilityMode::LegacyRisky,
+            "admin",
+            "init",
+            true,
+        )
+        .unwrap();
         // De-escalation should not require approval
         let receipt = eval
-            .set_mode("scope-1", CompatibilityMode::Strict, "admin", "tighten", false)
+            .set_mode(
+                "scope-1",
+                CompatibilityMode::Strict,
+                "admin",
+                "tighten",
+                false,
+            )
             .unwrap();
         assert_eq!(receipt.mode, CompatibilityMode::Strict);
         assert!(!receipt.approval_required);
@@ -1361,8 +1397,14 @@ mod tests {
     #[test]
     fn gate_eval_unknown_package_in_strict() {
         let mut eval = CompatGateEvaluator::new(sample_registry());
-        eval.set_mode("scope-strict", CompatibilityMode::Strict, "admin", "init", true)
-            .unwrap();
+        eval.set_mode(
+            "scope-strict",
+            CompatibilityMode::Strict,
+            "admin",
+            "init",
+            true,
+        )
+        .unwrap();
         let result = eval
             .evaluate_gate("unknown-pkg", "scope-strict", "trace-5")
             .unwrap();
@@ -1381,8 +1423,14 @@ mod tests {
     #[test]
     fn gate_eval_unknown_package_in_legacy_risky() {
         let mut eval = CompatGateEvaluator::new(sample_registry());
-        eval.set_mode("scope-risky", CompatibilityMode::LegacyRisky, "admin", "init", true)
-            .unwrap();
+        eval.set_mode(
+            "scope-risky",
+            CompatibilityMode::LegacyRisky,
+            "admin",
+            "init",
+            true,
+        )
+        .unwrap();
         let result = eval
             .evaluate_gate("unknown-pkg", "scope-risky", "trace-7")
             .unwrap();
@@ -1432,8 +1480,10 @@ mod tests {
     #[test]
     fn audit_log_records_evaluations() {
         let mut eval = evaluator_with_scope();
-        eval.evaluate_gate("shim-core-1", "project-1", "t1").unwrap();
-        eval.evaluate_gate("shim-edge-1", "project-1", "t2").unwrap();
+        eval.evaluate_gate("shim-core-1", "project-1", "t1")
+            .unwrap();
+        eval.evaluate_gate("shim-edge-1", "project-1", "t2")
+            .unwrap();
         assert_eq!(eval.evaluation_count(), 2);
         assert_eq!(eval.audit_log_for_scope("project-1").len(), 2);
         assert_eq!(eval.audit_log_for_scope("other").len(), 0);
@@ -1446,8 +1496,14 @@ mod tests {
         let mut eval = CompatGateEvaluator::new(sample_registry());
         eval.set_mode("scope-a", CompatibilityMode::Strict, "admin", "init", true)
             .unwrap();
-        eval.set_mode("scope-b", CompatibilityMode::LegacyRisky, "admin", "init", true)
-            .unwrap();
+        eval.set_mode(
+            "scope-b",
+            CompatibilityMode::LegacyRisky,
+            "admin",
+            "init",
+            true,
+        )
+        .unwrap();
         assert!(eval.check_non_interference("scope-a", "scope-b").is_ok());
     }
 
@@ -1471,7 +1527,11 @@ mod tests {
     fn monotonicity_replacement_same_band_ok() {
         let eval = CompatGateEvaluator::new(sample_registry());
         // Replace shim-core-1 with same band → same actions → OK
-        let replacement = make_shim("shim-core-1", CompatibilityBand::Core, ShimRiskCategory::High);
+        let replacement = make_shim(
+            "shim-core-1",
+            CompatibilityBand::Core,
+            ShimRiskCategory::High,
+        );
         assert!(eval.check_monotonicity(&replacement).is_ok());
     }
 
@@ -1479,7 +1539,11 @@ mod tests {
     fn monotonicity_replacement_stricter_ok() {
         let eval = CompatGateEvaluator::new(sample_registry());
         // Replace edge shim with core band → strictly more restrictive → OK
-        let replacement = make_shim("shim-edge-1", CompatibilityBand::Core, ShimRiskCategory::High);
+        let replacement = make_shim(
+            "shim-edge-1",
+            CompatibilityBand::Core,
+            ShimRiskCategory::High,
+        );
         assert!(eval.check_monotonicity(&replacement).is_ok());
     }
 
@@ -1487,7 +1551,11 @@ mod tests {
     fn monotonicity_replacement_weaker_rejected() {
         let eval = CompatGateEvaluator::new(sample_registry());
         // Replace core shim with edge band → less restrictive → violation
-        let replacement = make_shim("shim-core-1", CompatibilityBand::Edge, ShimRiskCategory::Low);
+        let replacement = make_shim(
+            "shim-core-1",
+            CompatibilityBand::Edge,
+            ShimRiskCategory::Low,
+        );
         let err = eval.check_monotonicity(&replacement).unwrap_err();
         assert!(matches!(err, CompatGateError::MonotonicityViolation { .. }));
     }
@@ -1509,9 +1577,9 @@ mod tests {
     #[test]
     fn receipt_signature_verification() {
         let mut eval = CompatGateEvaluator::new(sample_registry());
-        let receipt =
-            eval.set_mode("s1", CompatibilityMode::Strict, "admin", "init", true)
-                .unwrap();
+        let receipt = eval
+            .set_mode("s1", CompatibilityMode::Strict, "admin", "init", true)
+            .unwrap();
         assert!(receipt.verify_signature());
     }
 
@@ -1520,8 +1588,10 @@ mod tests {
     #[test]
     fn report_generation() {
         let mut eval = evaluator_with_scope();
-        eval.evaluate_gate("shim-core-1", "project-1", "t1").unwrap();
-        eval.evaluate_gate("shim-edge-1", "project-1", "t2").unwrap();
+        eval.evaluate_gate("shim-core-1", "project-1", "t1")
+            .unwrap();
+        eval.evaluate_gate("shim-edge-1", "project-1", "t2")
+            .unwrap();
 
         let report = generate_compat_report(&eval);
         assert_eq!(report.total_shims, 4);
@@ -1668,10 +1738,22 @@ mod tests {
     #[test]
     fn multiple_scopes_independent() {
         let mut eval = CompatGateEvaluator::new(sample_registry());
-        eval.set_mode("strict-scope", CompatibilityMode::Strict, "admin", "init", true)
-            .unwrap();
-        eval.set_mode("risky-scope", CompatibilityMode::LegacyRisky, "admin", "init", true)
-            .unwrap();
+        eval.set_mode(
+            "strict-scope",
+            CompatibilityMode::Strict,
+            "admin",
+            "init",
+            true,
+        )
+        .unwrap();
+        eval.set_mode(
+            "risky-scope",
+            CompatibilityMode::LegacyRisky,
+            "admin",
+            "init",
+            true,
+        )
+        .unwrap();
 
         // Same package, different scopes → different decisions
         let strict_result = eval
@@ -1699,9 +1781,16 @@ mod tests {
 
     #[test]
     fn action_strictness_ordering() {
-        assert!(action_strictness(DivergenceAction::Blocked) > action_strictness(DivergenceAction::Error));
-        assert!(action_strictness(DivergenceAction::Error) > action_strictness(DivergenceAction::Warn));
-        assert!(action_strictness(DivergenceAction::Warn) > action_strictness(DivergenceAction::Log));
+        assert!(
+            action_strictness(DivergenceAction::Blocked)
+                > action_strictness(DivergenceAction::Error)
+        );
+        assert!(
+            action_strictness(DivergenceAction::Error) > action_strictness(DivergenceAction::Warn)
+        );
+        assert!(
+            action_strictness(DivergenceAction::Warn) > action_strictness(DivergenceAction::Log)
+        );
     }
 
     #[test]
@@ -1739,8 +1828,12 @@ mod tests {
         let mut eval1 = evaluator_with_scope();
         let mut eval2 = evaluator_with_scope();
 
-        let r1 = eval1.evaluate_gate("shim-core-1", "project-1", "t1").unwrap();
-        let r2 = eval2.evaluate_gate("shim-core-1", "project-1", "t1").unwrap();
+        let r1 = eval1
+            .evaluate_gate("shim-core-1", "project-1", "t1")
+            .unwrap();
+        let r2 = eval2
+            .evaluate_gate("shim-core-1", "project-1", "t1")
+            .unwrap();
 
         assert_eq!(r1.decision, r2.decision);
         assert_eq!(r1.rationale, r2.rationale);
@@ -1753,14 +1846,18 @@ mod tests {
         eval_strict
             .set_mode("s", CompatibilityMode::Strict, "a", "i", true)
             .unwrap();
-        let r = eval_strict.evaluate_gate("shim-unsafe-1", "s", "t").unwrap();
+        let r = eval_strict
+            .evaluate_gate("shim-unsafe-1", "s", "t")
+            .unwrap();
         assert_eq!(r.decision, GateDecision::Deny);
 
         let mut eval_balanced = CompatGateEvaluator::new(sample_registry());
         eval_balanced
             .set_mode("s", CompatibilityMode::Balanced, "a", "i", true)
             .unwrap();
-        let r = eval_balanced.evaluate_gate("shim-unsafe-1", "s", "t").unwrap();
+        let r = eval_balanced
+            .evaluate_gate("shim-unsafe-1", "s", "t")
+            .unwrap();
         assert_eq!(r.decision, GateDecision::Deny);
 
         let mut eval_risky = CompatGateEvaluator::new(sample_registry());

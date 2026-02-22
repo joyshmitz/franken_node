@@ -12,7 +12,9 @@
 
 use std::fmt;
 
-use crate::observability::evidence_ledger::{DecisionKind, EvidenceEntry, EvidenceLedger, LedgerCapacity};
+use crate::observability::evidence_ledger::{
+    DecisionKind, EvidenceEntry, EvidenceLedger, LedgerCapacity,
+};
 
 /// Stable event codes for structured logging.
 pub mod event_codes {
@@ -113,7 +115,10 @@ impl EvidenceRequirement {
 
     /// Build requirements for all action types.
     pub fn all_requirements() -> Vec<Self> {
-        PolicyAction::all().iter().map(|a| Self::for_action(*a)).collect()
+        PolicyAction::all()
+            .iter()
+            .map(|a| Self::for_action(*a))
+            .collect()
     }
 }
 
@@ -134,18 +139,11 @@ pub enum ConformanceError {
         actual: String,
     },
     /// Evidence action_id doesn't match the action's ID.
-    ActionIdMismatch {
-        expected: ActionId,
-        actual: String,
-    },
+    ActionIdMismatch { expected: ActionId, actual: String },
     /// Evidence entry is malformed (empty required fields).
-    MalformedEvidence {
-        reason: String,
-    },
+    MalformedEvidence { reason: String },
     /// Ledger append failed.
-    LedgerAppendFailed {
-        reason: String,
-    },
+    LedgerAppendFailed { reason: String },
 }
 
 impl ConformanceError {
@@ -166,26 +164,42 @@ impl fmt::Display for ConformanceError {
         match self {
             Self::MissingEvidence { action, action_id } => {
                 write!(
-                    f, "{}: action={}, action_id={}",
-                    event_codes::POLICY_MISSING_EVIDENCE, action, action_id
+                    f,
+                    "{}: action={}, action_id={}",
+                    event_codes::POLICY_MISSING_EVIDENCE,
+                    action,
+                    action_id
                 )
             }
-            Self::DecisionKindMismatch { action, expected, actual } => {
+            Self::DecisionKindMismatch {
+                action,
+                expected,
+                actual,
+            } => {
                 write!(
-                    f, "{}: action={}, expected={}, actual={}",
-                    event_codes::POLICY_LINKAGE_MISMATCH, action, expected, actual
+                    f,
+                    "{}: action={}, expected={}, actual={}",
+                    event_codes::POLICY_LINKAGE_MISMATCH,
+                    action,
+                    expected,
+                    actual
                 )
             }
             Self::ActionIdMismatch { expected, actual } => {
                 write!(
-                    f, "{}: expected_action_id={}, actual={}",
-                    event_codes::POLICY_LINKAGE_MISMATCH, expected, actual
+                    f,
+                    "{}: expected_action_id={}, actual={}",
+                    event_codes::POLICY_LINKAGE_MISMATCH,
+                    expected,
+                    actual
                 )
             }
             Self::MalformedEvidence { reason } => {
                 write!(
-                    f, "{}: malformed evidence: {}",
-                    event_codes::POLICY_MISSING_EVIDENCE, reason
+                    f,
+                    "{}: malformed evidence: {}",
+                    event_codes::POLICY_MISSING_EVIDENCE,
+                    reason
                 )
             }
             Self::LedgerAppendFailed { reason } => {
@@ -298,7 +312,9 @@ impl EvidenceConformanceChecker {
                 };
                 eprintln!(
                     "{}: action={}, action_id={}",
-                    event_codes::POLICY_MISSING_EVIDENCE, action, action_id
+                    event_codes::POLICY_MISSING_EVIDENCE,
+                    action,
+                    action_id
                 );
                 self.rejected_count += 1;
                 self.action_log.push(outcome.clone());
@@ -365,7 +381,9 @@ impl EvidenceConformanceChecker {
             };
             eprintln!(
                 "{}: expected_action_id={}, actual={}",
-                event_codes::POLICY_LINKAGE_MISMATCH, action_id, entry.decision_id
+                event_codes::POLICY_LINKAGE_MISMATCH,
+                action_id,
+                entry.decision_id
             );
             self.rejected_count += 1;
             self.action_log.push(outcome.clone());
@@ -377,7 +395,10 @@ impl EvidenceConformanceChecker {
             Ok(_entry_id) => {
                 eprintln!(
                     "{}: action={}, action_id={}, decision_id={}",
-                    event_codes::POLICY_ACTION_SUCCESS, action, action_id, entry.decision_id
+                    event_codes::POLICY_ACTION_SUCCESS,
+                    action,
+                    action_id,
+                    entry.decision_id
                 );
                 let outcome = PolicyActionOutcome::Executed {
                     action,
@@ -521,10 +542,22 @@ mod tests {
 
     #[test]
     fn policy_action_decision_kind_mapping() {
-        assert_eq!(PolicyAction::Commit.expected_decision_kind(), DecisionKind::Admit);
-        assert_eq!(PolicyAction::Abort.expected_decision_kind(), DecisionKind::Deny);
-        assert_eq!(PolicyAction::Quarantine.expected_decision_kind(), DecisionKind::Quarantine);
-        assert_eq!(PolicyAction::Release.expected_decision_kind(), DecisionKind::Release);
+        assert_eq!(
+            PolicyAction::Commit.expected_decision_kind(),
+            DecisionKind::Admit
+        );
+        assert_eq!(
+            PolicyAction::Abort.expected_decision_kind(),
+            DecisionKind::Deny
+        );
+        assert_eq!(
+            PolicyAction::Quarantine.expected_decision_kind(),
+            DecisionKind::Quarantine
+        );
+        assert_eq!(
+            PolicyAction::Release.expected_decision_kind(),
+            DecisionKind::Release
+        );
     }
 
     #[test]
@@ -636,7 +669,10 @@ mod tests {
         let evidence = make_evidence(PolicyAction::Commit, "ACT-COMMIT-001");
 
         let outcome = checker.verify_and_execute(
-            PolicyAction::Commit, &action_id, Some(&evidence), &mut ledger,
+            PolicyAction::Commit,
+            &action_id,
+            Some(&evidence),
+            &mut ledger,
         );
         assert!(outcome.is_executed());
         assert_eq!(checker.executed_count(), 1);
@@ -651,7 +687,10 @@ mod tests {
         let evidence = make_evidence(PolicyAction::Abort, "ACT-ABORT-001");
 
         let outcome = checker.verify_and_execute(
-            PolicyAction::Abort, &action_id, Some(&evidence), &mut ledger,
+            PolicyAction::Abort,
+            &action_id,
+            Some(&evidence),
+            &mut ledger,
         );
         assert!(outcome.is_executed());
     }
@@ -664,7 +703,10 @@ mod tests {
         let evidence = make_evidence(PolicyAction::Quarantine, "ACT-QUAR-001");
 
         let outcome = checker.verify_and_execute(
-            PolicyAction::Quarantine, &action_id, Some(&evidence), &mut ledger,
+            PolicyAction::Quarantine,
+            &action_id,
+            Some(&evidence),
+            &mut ledger,
         );
         assert!(outcome.is_executed());
     }
@@ -677,7 +719,10 @@ mod tests {
         let evidence = make_evidence(PolicyAction::Release, "ACT-REL-001");
 
         let outcome = checker.verify_and_execute(
-            PolicyAction::Release, &action_id, Some(&evidence), &mut ledger,
+            PolicyAction::Release,
+            &action_id,
+            Some(&evidence),
+            &mut ledger,
         );
         assert!(outcome.is_executed());
     }
@@ -690,9 +735,8 @@ mod tests {
         let mut ledger = make_ledger();
         let action_id = ActionId::new("ACT-001");
 
-        let outcome = checker.verify_and_execute(
-            PolicyAction::Commit, &action_id, None, &mut ledger,
-        );
+        let outcome =
+            checker.verify_and_execute(PolicyAction::Commit, &action_id, None, &mut ledger);
         assert!(outcome.is_rejected());
         assert_eq!(checker.rejected_count(), 1);
         assert_eq!(ledger.len(), 0);
@@ -704,9 +748,8 @@ mod tests {
         let mut ledger = make_ledger();
         let action_id = ActionId::new("ACT-001");
 
-        let outcome = checker.verify_and_execute(
-            PolicyAction::Abort, &action_id, None, &mut ledger,
-        );
+        let outcome =
+            checker.verify_and_execute(PolicyAction::Abort, &action_id, None, &mut ledger);
         assert!(outcome.is_rejected());
     }
 
@@ -716,9 +759,8 @@ mod tests {
         let mut ledger = make_ledger();
         let action_id = ActionId::new("ACT-001");
 
-        let outcome = checker.verify_and_execute(
-            PolicyAction::Quarantine, &action_id, None, &mut ledger,
-        );
+        let outcome =
+            checker.verify_and_execute(PolicyAction::Quarantine, &action_id, None, &mut ledger);
         assert!(outcome.is_rejected());
     }
 
@@ -728,9 +770,8 @@ mod tests {
         let mut ledger = make_ledger();
         let action_id = ActionId::new("ACT-001");
 
-        let outcome = checker.verify_and_execute(
-            PolicyAction::Release, &action_id, None, &mut ledger,
-        );
+        let outcome =
+            checker.verify_and_execute(PolicyAction::Release, &action_id, None, &mut ledger);
         assert!(outcome.is_rejected());
     }
 
@@ -745,7 +786,10 @@ mod tests {
         let evidence = make_evidence(PolicyAction::Abort, "ACT-001");
 
         let outcome = checker.verify_and_execute(
-            PolicyAction::Commit, &action_id, Some(&evidence), &mut ledger,
+            PolicyAction::Commit,
+            &action_id,
+            Some(&evidence),
+            &mut ledger,
         );
         assert!(outcome.is_rejected());
         if let PolicyActionOutcome::Rejected { error, .. } = &outcome {
@@ -763,7 +807,10 @@ mod tests {
         let evidence = make_evidence(PolicyAction::Commit, "ACT-999"); // different ID
 
         let outcome = checker.verify_and_execute(
-            PolicyAction::Commit, &action_id, Some(&evidence), &mut ledger,
+            PolicyAction::Commit,
+            &action_id,
+            Some(&evidence),
+            &mut ledger,
         );
         assert!(outcome.is_rejected());
         if let PolicyActionOutcome::Rejected { error, .. } = &outcome {
@@ -782,7 +829,10 @@ mod tests {
         evidence.decision_id = String::new();
 
         let outcome = checker.verify_and_execute(
-            PolicyAction::Commit, &action_id, Some(&evidence), &mut ledger,
+            PolicyAction::Commit,
+            &action_id,
+            Some(&evidence),
+            &mut ledger,
         );
         assert!(outcome.is_rejected());
         if let PolicyActionOutcome::Rejected { error, .. } = &outcome {
@@ -799,7 +849,10 @@ mod tests {
         evidence.trace_id = String::new();
 
         let outcome = checker.verify_and_execute(
-            PolicyAction::Commit, &action_id, Some(&evidence), &mut ledger,
+            PolicyAction::Commit,
+            &action_id,
+            Some(&evidence),
+            &mut ledger,
         );
         assert!(outcome.is_rejected());
     }
@@ -833,13 +886,14 @@ mod tests {
         // One success
         let evidence = make_evidence(PolicyAction::Commit, "ACT-001");
         checker.verify_and_execute(
-            PolicyAction::Commit, &action_id, Some(&evidence), &mut ledger,
+            PolicyAction::Commit,
+            &action_id,
+            Some(&evidence),
+            &mut ledger,
         );
 
         // One rejection
-        checker.verify_and_execute(
-            PolicyAction::Abort, &action_id, None, &mut ledger,
-        );
+        checker.verify_and_execute(PolicyAction::Abort, &action_id, None, &mut ledger);
 
         assert_eq!(checker.action_log().len(), 2);
         assert_eq!(checker.executed_count(), 1);
@@ -862,10 +916,13 @@ mod tests {
                 1,
                 serde_json::json!({"action": action.label()}),
             );
-            let outcome = checker.verify_and_execute(*action, &action_id, Some(&evidence), &mut ledger);
+            let outcome =
+                checker.verify_and_execute(*action, &action_id, Some(&evidence), &mut ledger);
             assert!(
                 outcome.is_executed(),
-                "action {} should have executed, got {:?}", action, outcome
+                "action {} should have executed, got {:?}",
+                action,
+                outcome
             );
         }
         assert_eq!(checker.executed_count(), 4);
@@ -882,7 +939,9 @@ mod tests {
             let outcome = checker.verify_and_execute(*action, &action_id, None, &mut ledger);
             assert!(
                 outcome.is_rejected(),
-                "action {} should have been rejected, got {:?}", action, outcome
+                "action {} should have been rejected, got {:?}",
+                action,
+                outcome
             );
         }
         assert_eq!(checker.rejected_count(), 4);

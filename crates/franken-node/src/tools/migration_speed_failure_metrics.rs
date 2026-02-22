@@ -68,8 +68,13 @@ pub enum MigrationPhase {
 
 impl MigrationPhase {
     pub fn all() -> &'static [MigrationPhase] {
-        &[Self::Assessment, Self::DependencyResolution, Self::CodeAdaptation,
-          Self::TestValidation, Self::Deployment]
+        &[
+            Self::Assessment,
+            Self::DependencyResolution,
+            Self::CodeAdaptation,
+            Self::TestValidation,
+            Self::Deployment,
+        ]
     }
     pub fn label(&self) -> &'static str {
         match self {
@@ -95,8 +100,13 @@ pub enum FailureType {
 
 impl FailureType {
     pub fn all() -> &'static [FailureType] {
-        &[Self::DependencyConflict, Self::ApiIncompatibility, Self::RuntimeError,
-          Self::TestRegression, Self::ConfigurationError]
+        &[
+            Self::DependencyConflict,
+            Self::ApiIncompatibility,
+            Self::RuntimeError,
+            Self::TestRegression,
+            Self::ConfigurationError,
+        ]
     }
     pub fn label(&self) -> &'static str {
         match self {
@@ -206,11 +216,19 @@ impl MigrationSpeedFailureMetrics {
         trace_id: &str,
     ) -> Result<String, String> {
         if record.phase_durations.is_empty() {
-            self.log(event_codes::MSF_ERR_INVALID_METRIC, trace_id, serde_json::json!({"reason": "no phase durations"}));
+            self.log(
+                event_codes::MSF_ERR_INVALID_METRIC,
+                trace_id,
+                serde_json::json!({"reason": "no phase durations"}),
+            );
             return Err("phase_durations must not be empty".to_string());
         }
         if !record.succeeded && record.failure_type.is_none() {
-            self.log(event_codes::MSF_ERR_INVALID_METRIC, trace_id, serde_json::json!({"reason": "failed without type"}));
+            self.log(
+                event_codes::MSF_ERR_INVALID_METRIC,
+                trace_id,
+                serde_json::json!({"reason": "failed without type"}),
+            );
             return Err("failed migrations must specify failure_type".to_string());
         }
 
@@ -218,18 +236,30 @@ impl MigrationSpeedFailureMetrics {
         record.total_duration_ms = record.total_from_phases();
         let rid = record.record_id.clone();
 
-        self.log(event_codes::MSF_MIGRATION_RECORDED, trace_id, serde_json::json!({"record_id": &rid}));
+        self.log(
+            event_codes::MSF_MIGRATION_RECORDED,
+            trace_id,
+            serde_json::json!({"record_id": &rid}),
+        );
 
         for pd in &record.phase_durations {
-            self.log(event_codes::MSF_PHASE_TIMED, trace_id, serde_json::json!({
-                "phase": pd.phase.label(), "duration_ms": pd.duration_ms,
-            }));
+            self.log(
+                event_codes::MSF_PHASE_TIMED,
+                trace_id,
+                serde_json::json!({
+                    "phase": pd.phase.label(), "duration_ms": pd.duration_ms,
+                }),
+            );
         }
 
         if let Some(ft) = &record.failure_type {
-            self.log(event_codes::MSF_FAILURE_RECORDED, trace_id, serde_json::json!({
-                "failure_type": ft.label(),
-            }));
+            self.log(
+                event_codes::MSF_FAILURE_RECORDED,
+                trace_id,
+                serde_json::json!({
+                    "failure_type": ft.label(),
+                }),
+            );
         }
 
         self.records.push(record);
@@ -240,15 +270,33 @@ impl MigrationSpeedFailureMetrics {
         let total = self.records.len();
         let success = self.records.iter().filter(|r| r.succeeded).count();
         let failure = total - success;
-        let failure_rate = if total > 0 { failure as f64 / total as f64 } else { 0.0 };
+        let failure_rate = if total > 0 {
+            failure as f64 / total as f64
+        } else {
+            0.0
+        };
 
-        self.log(event_codes::MSF_FAILURE_RATE_COMPUTED, trace_id, serde_json::json!({"rate": failure_rate}));
+        self.log(
+            event_codes::MSF_FAILURE_RATE_COMPUTED,
+            trace_id,
+            serde_json::json!({"rate": failure_rate}),
+        );
 
         let avg_total = if total > 0 {
-            self.records.iter().map(|r| r.total_duration_ms).sum::<u64>() as f64 / total as f64
-        } else { 0.0 };
+            self.records
+                .iter()
+                .map(|r| r.total_duration_ms)
+                .sum::<u64>() as f64
+                / total as f64
+        } else {
+            0.0
+        };
 
-        self.log(event_codes::MSF_SPEED_COMPUTED, trace_id, serde_json::json!({"avg_ms": avg_total}));
+        self.log(
+            event_codes::MSF_SPEED_COMPUTED,
+            trace_id,
+            serde_json::json!({"avg_ms": avg_total}),
+        );
 
         // Phase stats
         let mut phase_data: BTreeMap<MigrationPhase, Vec<u64>> = BTreeMap::new();
@@ -267,7 +315,12 @@ impl MigrationSpeedFailureMetrics {
             let p90_idx = ((n as f64) * 0.9).ceil() as usize;
             let p90 = durations[p90_idx.min(n) - 1];
 
-            phase_stats.push(PhaseStats { phase, count: n, avg_duration_ms: avg, p90_duration_ms: p90 });
+            phase_stats.push(PhaseStats {
+                phase,
+                count: n,
+                avg_duration_ms: avg,
+                p90_duration_ms: p90,
+            });
 
             // Flag phases where p90 is more than 3x the average
             if p90 as f64 > avg * 3.0 && n > 1 {
@@ -282,25 +335,51 @@ impl MigrationSpeedFailureMetrics {
                 *fail_data.entry(*ft).or_default() += 1;
             }
         }
-        let failure_stats: Vec<FailureStats> = fail_data.into_iter().map(|(ft, count)| {
-            FailureStats { failure_type: ft, count, rate: if total > 0 { count as f64 / total as f64 } else { 0.0 } }
-        }).collect();
+        let failure_stats: Vec<FailureStats> = fail_data
+            .into_iter()
+            .map(|(ft, count)| FailureStats {
+                failure_type: ft,
+                count,
+                rate: if total > 0 {
+                    count as f64 / total as f64
+                } else {
+                    0.0
+                },
+            })
+            .collect();
 
         let exceeds = failure_rate > MAX_FAILURE_RATE;
         if exceeds {
-            self.log(event_codes::MSF_ERR_THRESHOLD_EXCEEDED, trace_id, serde_json::json!({
-                "rate": failure_rate, "max": MAX_FAILURE_RATE,
-            }));
+            self.log(
+                event_codes::MSF_ERR_THRESHOLD_EXCEEDED,
+                trace_id,
+                serde_json::json!({
+                    "rate": failure_rate, "max": MAX_FAILURE_RATE,
+                }),
+            );
         }
-        self.log(event_codes::MSF_THRESHOLD_CHECKED, trace_id, serde_json::json!({"exceeds": exceeds}));
+        self.log(
+            event_codes::MSF_THRESHOLD_CHECKED,
+            trace_id,
+            serde_json::json!({"exceeds": exceeds}),
+        );
 
         let hash_input = serde_json::json!({
             "total": total, "success": success, "failure": failure, "version": &self.metric_version,
-        }).to_string();
+        })
+        .to_string();
         let content_hash = hex::encode(Sha256::digest(hash_input.as_bytes()));
 
-        self.log(event_codes::MSF_REPORT_GENERATED, trace_id, serde_json::json!({"total": total}));
-        self.log(event_codes::MSF_VERSION_EMBEDDED, trace_id, serde_json::json!({"version": &self.metric_version}));
+        self.log(
+            event_codes::MSF_REPORT_GENERATED,
+            trace_id,
+            serde_json::json!({"total": total}),
+        );
+        self.log(
+            event_codes::MSF_VERSION_EMBEDDED,
+            trace_id,
+            serde_json::json!({"version": &self.metric_version}),
+        );
 
         MigrationSpeedReport {
             report_id: Uuid::now_v7().to_string(),
@@ -319,12 +398,18 @@ impl MigrationSpeedFailureMetrics {
         }
     }
 
-    pub fn records(&self) -> &[MigrationRecord] { &self.records }
-    pub fn audit_log(&self) -> &[MsfAuditRecord] { &self.audit_log }
+    pub fn records(&self) -> &[MigrationRecord] {
+        &self.records
+    }
+    pub fn audit_log(&self) -> &[MsfAuditRecord] {
+        &self.audit_log
+    }
 
     pub fn export_audit_log_jsonl(&self) -> Result<String, serde_json::Error> {
         let mut lines = Vec::with_capacity(self.audit_log.len());
-        for r in &self.audit_log { lines.push(serde_json::to_string(r)?); }
+        for r in &self.audit_log {
+            lines.push(serde_json::to_string(r)?);
+        }
         Ok(lines.join("\n"))
     }
 
@@ -343,12 +428,18 @@ impl MigrationSpeedFailureMetrics {
 mod tests {
     use super::*;
 
-    fn trace() -> String { Uuid::now_v7().to_string() }
+    fn trace() -> String {
+        Uuid::now_v7().to_string()
+    }
 
     fn sample_phases() -> Vec<PhaseDuration> {
-        MigrationPhase::all().iter().map(|p| PhaseDuration {
-            phase: *p, duration_ms: 1000,
-        }).collect()
+        MigrationPhase::all()
+            .iter()
+            .map(|p| PhaseDuration {
+                phase: *p,
+                duration_ms: 1000,
+            })
+            .collect()
     }
 
     fn sample_record(id: &str, succeeded: bool) -> MigrationRecord {
@@ -358,142 +449,212 @@ mod tests {
             phase_durations: sample_phases(),
             total_duration_ms: 0,
             succeeded,
-            failure_type: if succeeded { None } else { Some(FailureType::RuntimeError) },
-            failure_phase: if succeeded { None } else { Some(MigrationPhase::TestValidation) },
+            failure_type: if succeeded {
+                None
+            } else {
+                Some(FailureType::RuntimeError)
+            },
+            failure_phase: if succeeded {
+                None
+            } else {
+                Some(MigrationPhase::TestValidation)
+            },
             window_id: "w1".to_string(),
             timestamp: String::new(),
         }
     }
 
-    #[test] fn five_migration_phases() { assert_eq!(MigrationPhase::all().len(), 5); }
-    #[test] fn five_failure_types() { assert_eq!(FailureType::all().len(), 5); }
-    #[test] fn phase_labels_nonempty() { for p in MigrationPhase::all() { assert!(!p.label().is_empty()); } }
-    #[test] fn failure_labels_nonempty() { for f in FailureType::all() { assert!(!f.label().is_empty()); } }
+    #[test]
+    fn five_migration_phases() {
+        assert_eq!(MigrationPhase::all().len(), 5);
+    }
+    #[test]
+    fn five_failure_types() {
+        assert_eq!(FailureType::all().len(), 5);
+    }
+    #[test]
+    fn phase_labels_nonempty() {
+        for p in MigrationPhase::all() {
+            assert!(!p.label().is_empty());
+        }
+    }
+    #[test]
+    fn failure_labels_nonempty() {
+        for f in FailureType::all() {
+            assert!(!f.label().is_empty());
+        }
+    }
 
-    #[test] fn total_from_phases() {
+    #[test]
+    fn total_from_phases() {
         let r = sample_record("r1", true);
         assert_eq!(r.total_from_phases(), 5000);
     }
 
-    #[test] fn record_success() {
+    #[test]
+    fn record_success() {
         let mut e = MigrationSpeedFailureMetrics::default();
-        assert!(e.record_migration(sample_record("r1", true), &trace()).is_ok());
+        assert!(
+            e.record_migration(sample_record("r1", true), &trace())
+                .is_ok()
+        );
     }
 
-    #[test] fn record_failure() {
+    #[test]
+    fn record_failure() {
         let mut e = MigrationSpeedFailureMetrics::default();
-        assert!(e.record_migration(sample_record("r1", false), &trace()).is_ok());
+        assert!(
+            e.record_migration(sample_record("r1", false), &trace())
+                .is_ok()
+        );
     }
 
-    #[test] fn record_empty_phases_fails() {
+    #[test]
+    fn record_empty_phases_fails() {
         let mut e = MigrationSpeedFailureMetrics::default();
         let mut r = sample_record("r1", true);
         r.phase_durations.clear();
         assert!(e.record_migration(r, &trace()).is_err());
     }
 
-    #[test] fn record_failure_without_type_fails() {
+    #[test]
+    fn record_failure_without_type_fails() {
         let mut e = MigrationSpeedFailureMetrics::default();
         let mut r = sample_record("r1", false);
         r.failure_type = None;
         assert!(e.record_migration(r, &trace()).is_err());
     }
 
-    #[test] fn record_sets_timestamp() {
+    #[test]
+    fn record_sets_timestamp() {
         let mut e = MigrationSpeedFailureMetrics::default();
-        e.record_migration(sample_record("r1", true), &trace()).unwrap();
+        e.record_migration(sample_record("r1", true), &trace())
+            .unwrap();
         assert!(!e.records()[0].timestamp.is_empty());
     }
 
-    #[test] fn record_computes_total_duration() {
+    #[test]
+    fn record_computes_total_duration() {
         let mut e = MigrationSpeedFailureMetrics::default();
-        e.record_migration(sample_record("r1", true), &trace()).unwrap();
+        e.record_migration(sample_record("r1", true), &trace())
+            .unwrap();
         assert_eq!(e.records()[0].total_duration_ms, 5000);
     }
 
-    #[test] fn report_empty() {
+    #[test]
+    fn report_empty() {
         let mut e = MigrationSpeedFailureMetrics::default();
         let r = e.generate_report(&trace());
         assert_eq!(r.total_migrations, 0);
         assert!(!r.exceeds_threshold);
     }
 
-    #[test] fn report_success_rate() {
+    #[test]
+    fn report_success_rate() {
         let mut e = MigrationSpeedFailureMetrics::default();
-        e.record_migration(sample_record("r1", true), &trace()).unwrap();
+        e.record_migration(sample_record("r1", true), &trace())
+            .unwrap();
         let r = e.generate_report(&trace());
         assert_eq!(r.success_count, 1);
         assert!((r.failure_rate - 0.0).abs() < f64::EPSILON);
     }
 
-    #[test] fn report_failure_rate() {
+    #[test]
+    fn report_failure_rate() {
         let mut e = MigrationSpeedFailureMetrics::default();
-        e.record_migration(sample_record("r1", false), &trace()).unwrap();
+        e.record_migration(sample_record("r1", false), &trace())
+            .unwrap();
         let r = e.generate_report(&trace());
         assert!((r.failure_rate - 1.0).abs() < f64::EPSILON);
         assert!(r.exceeds_threshold);
     }
 
-    #[test] fn report_phase_stats() {
+    #[test]
+    fn report_phase_stats() {
         let mut e = MigrationSpeedFailureMetrics::default();
-        e.record_migration(sample_record("r1", true), &trace()).unwrap();
+        e.record_migration(sample_record("r1", true), &trace())
+            .unwrap();
         let r = e.generate_report(&trace());
         assert_eq!(r.phase_stats.len(), 5);
     }
 
-    #[test] fn report_failure_stats() {
+    #[test]
+    fn report_failure_stats() {
         let mut e = MigrationSpeedFailureMetrics::default();
-        e.record_migration(sample_record("r1", false), &trace()).unwrap();
+        e.record_migration(sample_record("r1", false), &trace())
+            .unwrap();
         let r = e.generate_report(&trace());
         assert!(!r.failure_stats.is_empty());
     }
 
-    #[test] fn report_has_hash() {
+    #[test]
+    fn report_has_hash() {
         let mut e = MigrationSpeedFailureMetrics::default();
         assert_eq!(e.generate_report(&trace()).content_hash.len(), 64);
     }
 
-    #[test] fn report_has_version() {
+    #[test]
+    fn report_has_version() {
         let mut e = MigrationSpeedFailureMetrics::default();
         assert_eq!(e.generate_report(&trace()).metric_version, METRIC_VERSION);
     }
 
-    #[test] fn report_deterministic() {
+    #[test]
+    fn report_deterministic() {
         let mut e1 = MigrationSpeedFailureMetrics::default();
         let mut e2 = MigrationSpeedFailureMetrics::default();
-        assert_eq!(e1.generate_report("t").content_hash, e2.generate_report("t").content_hash);
+        assert_eq!(
+            e1.generate_report("t").content_hash,
+            e2.generate_report("t").content_hash
+        );
     }
 
-    #[test] fn audit_populated() {
+    #[test]
+    fn audit_populated() {
         let mut e = MigrationSpeedFailureMetrics::default();
-        e.record_migration(sample_record("r1", true), &trace()).unwrap();
+        e.record_migration(sample_record("r1", true), &trace())
+            .unwrap();
         assert!(e.audit_log().len() >= 5);
     }
 
-    #[test] fn audit_has_codes() {
+    #[test]
+    fn audit_has_codes() {
         let mut e = MigrationSpeedFailureMetrics::default();
-        e.record_migration(sample_record("r1", true), &trace()).unwrap();
-        let codes: Vec<&str> = e.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        e.record_migration(sample_record("r1", true), &trace())
+            .unwrap();
+        let codes: Vec<&str> = e
+            .audit_log()
+            .iter()
+            .map(|r| r.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::MSF_MIGRATION_RECORDED));
     }
 
-    #[test] fn export_jsonl() {
+    #[test]
+    fn export_jsonl() {
         let mut e = MigrationSpeedFailureMetrics::default();
-        e.record_migration(sample_record("r1", true), &trace()).unwrap();
+        e.record_migration(sample_record("r1", true), &trace())
+            .unwrap();
         let jsonl = e.export_audit_log_jsonl().unwrap();
         let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert!(first["event_code"].is_string());
     }
 
-    #[test] fn threshold_gating() {
+    #[test]
+    fn threshold_gating() {
         let mut e = MigrationSpeedFailureMetrics::default();
-        for i in 0..20 { e.record_migration(sample_record(&format!("s{i}"), true), &trace()).unwrap(); }
-        e.record_migration(sample_record("f1", false), &trace()).unwrap();
+        for i in 0..20 {
+            e.record_migration(sample_record(&format!("s{i}"), true), &trace())
+                .unwrap();
+        }
+        e.record_migration(sample_record("f1", false), &trace())
+            .unwrap();
         let r = e.generate_report(&trace());
         assert!(!r.exceeds_threshold); // 1/21 ≈ 4.8% < 5%
     }
 
-    #[test] fn default_version() {
+    #[test]
+    fn default_version() {
         let e = MigrationSpeedFailureMetrics::default();
         assert_eq!(e.metric_version, METRIC_VERSION);
     }

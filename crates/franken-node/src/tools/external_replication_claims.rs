@@ -67,8 +67,13 @@ pub enum ClaimCategory {
 
 impl ClaimCategory {
     pub fn all() -> &'static [ClaimCategory] {
-        &[Self::SecurityGuarantee, Self::PerformanceBenchmark, Self::ComplianceCertification,
-          Self::ReliabilityMetric, Self::PrivacyAssurance]
+        &[
+            Self::SecurityGuarantee,
+            Self::PerformanceBenchmark,
+            Self::ComplianceCertification,
+            Self::ReliabilityMetric,
+            Self::PrivacyAssurance,
+        ]
     }
     pub fn label(&self) -> &'static str {
         match self {
@@ -159,20 +164,37 @@ impl Default for ExternalReplicationClaims {
 }
 
 impl ExternalReplicationClaims {
-    pub fn create_claim(&mut self, mut claim: HighImpactClaim, trace_id: &str) -> Result<String, String> {
+    pub fn create_claim(
+        &mut self,
+        mut claim: HighImpactClaim,
+        trace_id: &str,
+    ) -> Result<String, String> {
         if claim.title.is_empty() {
-            self.log(event_codes::ERC_ERR_INVALID_CLAIM, trace_id, serde_json::json!({"reason": "empty title"}));
+            self.log(
+                event_codes::ERC_ERR_INVALID_CLAIM,
+                trace_id,
+                serde_json::json!({"reason": "empty title"}),
+            );
             return Err("claim title must not be empty".to_string());
         }
         claim.created_at = Utc::now().to_rfc3339();
         claim.published = false;
         let cid = claim.claim_id.clone();
-        self.log(event_codes::ERC_CLAIM_CREATED, trace_id, serde_json::json!({"claim_id": &cid, "category": claim.category.label()}));
+        self.log(
+            event_codes::ERC_CLAIM_CREATED,
+            trace_id,
+            serde_json::json!({"claim_id": &cid, "category": claim.category.label()}),
+        );
         self.claims.insert(cid.clone(), claim);
         Ok(cid)
     }
 
-    pub fn request_replication(&mut self, claim_id: &str, replicator: &str, trace_id: &str) -> Result<String, String> {
+    pub fn request_replication(
+        &mut self,
+        claim_id: &str,
+        replicator: &str,
+        trace_id: &str,
+    ) -> Result<String, String> {
         if !self.claims.contains_key(claim_id) {
             return Err(format!("claim not found: {claim_id}"));
         }
@@ -186,17 +208,33 @@ impl ExternalReplicationClaims {
             started_at: Utc::now().to_rfc3339(),
             completed_at: None,
         };
-        self.log(event_codes::ERC_REPLICATION_REQUESTED, trace_id, serde_json::json!({"claim_id": claim_id, "replicator": replicator}));
+        self.log(
+            event_codes::ERC_REPLICATION_REQUESTED,
+            trace_id,
+            serde_json::json!({"claim_id": claim_id, "replicator": replicator}),
+        );
         self.replications.push(rec);
         Ok(rid)
     }
 
-    pub fn update_replication(&mut self, replication_id: &str, status: ReplicationStatus, findings: &str, trace_id: &str) -> Result<(), String> {
-        let rec = self.replications.iter_mut().find(|r| r.replication_id == replication_id)
+    pub fn update_replication(
+        &mut self,
+        replication_id: &str,
+        status: ReplicationStatus,
+        findings: &str,
+        trace_id: &str,
+    ) -> Result<(), String> {
+        let rec = self
+            .replications
+            .iter_mut()
+            .find(|r| r.replication_id == replication_id)
             .ok_or_else(|| format!("replication not found: {replication_id}"))?;
         rec.status = status;
         rec.findings = findings.to_string();
-        if matches!(status, ReplicationStatus::Completed | ReplicationStatus::Verified) {
+        if matches!(
+            status,
+            ReplicationStatus::Completed | ReplicationStatus::Verified
+        ) {
             rec.completed_at = Some(Utc::now().to_rfc3339());
         }
         let code = match status {
@@ -209,16 +247,36 @@ impl ExternalReplicationClaims {
         Ok(())
     }
 
-    pub fn link_evidence(&mut self, claim_id: &str, evidence_ref: &str, trace_id: &str) -> Result<(), String> {
-        let claim = self.claims.get_mut(claim_id)
+    pub fn link_evidence(
+        &mut self,
+        claim_id: &str,
+        evidence_ref: &str,
+        trace_id: &str,
+    ) -> Result<(), String> {
+        let claim = self
+            .claims
+            .get_mut(claim_id)
             .ok_or_else(|| format!("claim not found: {claim_id}"))?;
         claim.evidence_refs.push(evidence_ref.to_string());
-        self.log(event_codes::ERC_EVIDENCE_LINKED, trace_id, serde_json::json!({"claim_id": claim_id, "evidence": evidence_ref}));
+        self.log(
+            event_codes::ERC_EVIDENCE_LINKED,
+            trace_id,
+            serde_json::json!({"claim_id": claim_id, "evidence": evidence_ref}),
+        );
         Ok(())
     }
 
     pub fn replication_count(&self, claim_id: &str) -> usize {
-        self.replications.iter().filter(|r| r.claim_id == claim_id && matches!(r.status, ReplicationStatus::Completed | ReplicationStatus::Verified)).count()
+        self.replications
+            .iter()
+            .filter(|r| {
+                r.claim_id == claim_id
+                    && matches!(
+                        r.status,
+                        ReplicationStatus::Completed | ReplicationStatus::Verified
+                    )
+            })
+            .count()
     }
 
     pub fn can_publish(&self, claim_id: &str) -> bool {
@@ -228,14 +286,30 @@ impl ExternalReplicationClaims {
     pub fn publish_claim(&mut self, claim_id: &str, trace_id: &str) -> Result<(), String> {
         let count = self.replication_count(claim_id);
         if count < MIN_REPLICATIONS {
-            self.log(event_codes::ERC_ERR_INSUFFICIENT_REPLICATIONS, trace_id, serde_json::json!({"claim_id": claim_id, "count": count}));
-            return Err(format!("insufficient replications: {count} < {MIN_REPLICATIONS}"));
+            self.log(
+                event_codes::ERC_ERR_INSUFFICIENT_REPLICATIONS,
+                trace_id,
+                serde_json::json!({"claim_id": claim_id, "count": count}),
+            );
+            return Err(format!(
+                "insufficient replications: {count} < {MIN_REPLICATIONS}"
+            ));
         }
-        self.log(event_codes::ERC_THRESHOLD_CHECKED, trace_id, serde_json::json!({"claim_id": claim_id, "count": count, "meets": true}));
-        let claim = self.claims.get_mut(claim_id)
+        self.log(
+            event_codes::ERC_THRESHOLD_CHECKED,
+            trace_id,
+            serde_json::json!({"claim_id": claim_id, "count": count, "meets": true}),
+        );
+        let claim = self
+            .claims
+            .get_mut(claim_id)
             .ok_or_else(|| format!("claim not found: {claim_id}"))?;
         claim.published = true;
-        self.log(event_codes::ERC_CLAIM_PUBLISHED, trace_id, serde_json::json!({"claim_id": claim_id}));
+        self.log(
+            event_codes::ERC_CLAIM_PUBLISHED,
+            trace_id,
+            serde_json::json!({"claim_id": claim_id}),
+        );
         Ok(())
     }
 
@@ -249,8 +323,16 @@ impl ExternalReplicationClaims {
         }
         let hash_input = format!("{total}:{published}:{}", &self.schema_version);
         let content_hash = hex::encode(Sha256::digest(hash_input.as_bytes()));
-        self.log(event_codes::ERC_CATALOG_GENERATED, trace_id, serde_json::json!({"total": total}));
-        self.log(event_codes::ERC_VERSION_EMBEDDED, trace_id, serde_json::json!({"version": &self.schema_version}));
+        self.log(
+            event_codes::ERC_CATALOG_GENERATED,
+            trace_id,
+            serde_json::json!({"total": total}),
+        );
+        self.log(
+            event_codes::ERC_VERSION_EMBEDDED,
+            trace_id,
+            serde_json::json!({"version": &self.schema_version}),
+        );
 
         ClaimCatalog {
             catalog_id: Uuid::now_v7().to_string(),
@@ -264,13 +346,21 @@ impl ExternalReplicationClaims {
         }
     }
 
-    pub fn claims(&self) -> &BTreeMap<String, HighImpactClaim> { &self.claims }
-    pub fn replications(&self) -> &[ReplicationRecord] { &self.replications }
-    pub fn audit_log(&self) -> &[ErcAuditRecord] { &self.audit_log }
+    pub fn claims(&self) -> &BTreeMap<String, HighImpactClaim> {
+        &self.claims
+    }
+    pub fn replications(&self) -> &[ReplicationRecord] {
+        &self.replications
+    }
+    pub fn audit_log(&self) -> &[ErcAuditRecord] {
+        &self.audit_log
+    }
 
     pub fn export_audit_log_jsonl(&self) -> Result<String, serde_json::Error> {
         let mut lines = Vec::with_capacity(self.audit_log.len());
-        for r in &self.audit_log { lines.push(serde_json::to_string(r)?); }
+        for r in &self.audit_log {
+            lines.push(serde_json::to_string(r)?);
+        }
         Ok(lines.join("\n"))
     }
 
@@ -289,7 +379,9 @@ impl ExternalReplicationClaims {
 mod tests {
     use super::*;
 
-    fn trace() -> String { Uuid::now_v7().to_string() }
+    fn trace() -> String {
+        Uuid::now_v7().to_string()
+    }
 
     fn sample_claim(id: &str, cat: ClaimCategory) -> HighImpactClaim {
         HighImpactClaim {
@@ -303,143 +395,254 @@ mod tests {
         }
     }
 
-    #[test] fn five_categories() { assert_eq!(ClaimCategory::all().len(), 5); }
-    #[test] fn category_labels_nonempty() { for c in ClaimCategory::all() { assert!(!c.label().is_empty()); } }
+    #[test]
+    fn five_categories() {
+        assert_eq!(ClaimCategory::all().len(), 5);
+    }
+    #[test]
+    fn category_labels_nonempty() {
+        for c in ClaimCategory::all() {
+            assert!(!c.label().is_empty());
+        }
+    }
 
-    #[test] fn create_claim_ok() {
+    #[test]
+    fn create_claim_ok() {
         let mut e = ExternalReplicationClaims::default();
-        assert!(e.create_claim(sample_claim("c1", ClaimCategory::SecurityGuarantee), &trace()).is_ok());
+        assert!(
+            e.create_claim(
+                sample_claim("c1", ClaimCategory::SecurityGuarantee),
+                &trace()
+            )
+            .is_ok()
+        );
         assert_eq!(e.claims().len(), 1);
     }
 
-    #[test] fn create_empty_title_fails() {
+    #[test]
+    fn create_empty_title_fails() {
         let mut e = ExternalReplicationClaims::default();
         let mut c = sample_claim("c1", ClaimCategory::SecurityGuarantee);
         c.title.clear();
         assert!(e.create_claim(c, &trace()).is_err());
     }
 
-    #[test] fn create_sets_timestamp() {
+    #[test]
+    fn create_sets_timestamp() {
         let mut e = ExternalReplicationClaims::default();
-        e.create_claim(sample_claim("c1", ClaimCategory::SecurityGuarantee), &trace()).unwrap();
+        e.create_claim(
+            sample_claim("c1", ClaimCategory::SecurityGuarantee),
+            &trace(),
+        )
+        .unwrap();
         assert!(!e.claims()["c1"].created_at.is_empty());
     }
 
-    #[test] fn request_replication() {
+    #[test]
+    fn request_replication() {
         let mut e = ExternalReplicationClaims::default();
-        e.create_claim(sample_claim("c1", ClaimCategory::SecurityGuarantee), &trace()).unwrap();
-        assert!(e.request_replication("c1", "external-lab", &trace()).is_ok());
+        e.create_claim(
+            sample_claim("c1", ClaimCategory::SecurityGuarantee),
+            &trace(),
+        )
+        .unwrap();
+        assert!(
+            e.request_replication("c1", "external-lab", &trace())
+                .is_ok()
+        );
     }
 
-    #[test] fn request_replication_missing_claim() {
+    #[test]
+    fn request_replication_missing_claim() {
         let mut e = ExternalReplicationClaims::default();
         assert!(e.request_replication("missing", "lab", &trace()).is_err());
     }
 
-    #[test] fn update_replication_lifecycle() {
+    #[test]
+    fn update_replication_lifecycle() {
         let mut e = ExternalReplicationClaims::default();
-        e.create_claim(sample_claim("c1", ClaimCategory::SecurityGuarantee), &trace()).unwrap();
+        e.create_claim(
+            sample_claim("c1", ClaimCategory::SecurityGuarantee),
+            &trace(),
+        )
+        .unwrap();
         let rid = e.request_replication("c1", "lab", &trace()).unwrap();
-        e.update_replication(&rid, ReplicationStatus::InProgress, "", &trace()).unwrap();
-        e.update_replication(&rid, ReplicationStatus::Completed, "confirmed", &trace()).unwrap();
+        e.update_replication(&rid, ReplicationStatus::InProgress, "", &trace())
+            .unwrap();
+        e.update_replication(&rid, ReplicationStatus::Completed, "confirmed", &trace())
+            .unwrap();
         assert_eq!(e.replication_count("c1"), 1);
     }
 
-    #[test] fn publish_requires_replications() {
+    #[test]
+    fn publish_requires_replications() {
         let mut e = ExternalReplicationClaims::default();
-        e.create_claim(sample_claim("c1", ClaimCategory::SecurityGuarantee), &trace()).unwrap();
+        e.create_claim(
+            sample_claim("c1", ClaimCategory::SecurityGuarantee),
+            &trace(),
+        )
+        .unwrap();
         assert!(e.publish_claim("c1", &trace()).is_err());
     }
 
-    #[test] fn publish_with_sufficient_replications() {
+    #[test]
+    fn publish_with_sufficient_replications() {
         let mut e = ExternalReplicationClaims::default();
-        e.create_claim(sample_claim("c1", ClaimCategory::SecurityGuarantee), &trace()).unwrap();
+        e.create_claim(
+            sample_claim("c1", ClaimCategory::SecurityGuarantee),
+            &trace(),
+        )
+        .unwrap();
         for i in 0..MIN_REPLICATIONS {
-            let rid = e.request_replication("c1", &format!("lab-{i}"), &trace()).unwrap();
-            e.update_replication(&rid, ReplicationStatus::Completed, "ok", &trace()).unwrap();
+            let rid = e
+                .request_replication("c1", &format!("lab-{i}"), &trace())
+                .unwrap();
+            e.update_replication(&rid, ReplicationStatus::Completed, "ok", &trace())
+                .unwrap();
         }
         assert!(e.publish_claim("c1", &trace()).is_ok());
         assert!(e.claims()["c1"].published);
     }
 
-    #[test] fn can_publish_check() {
+    #[test]
+    fn can_publish_check() {
         let mut e = ExternalReplicationClaims::default();
-        e.create_claim(sample_claim("c1", ClaimCategory::SecurityGuarantee), &trace()).unwrap();
+        e.create_claim(
+            sample_claim("c1", ClaimCategory::SecurityGuarantee),
+            &trace(),
+        )
+        .unwrap();
         assert!(!e.can_publish("c1"));
     }
 
-    #[test] fn link_evidence() {
+    #[test]
+    fn link_evidence() {
         let mut e = ExternalReplicationClaims::default();
-        e.create_claim(sample_claim("c1", ClaimCategory::SecurityGuarantee), &trace()).unwrap();
+        e.create_claim(
+            sample_claim("c1", ClaimCategory::SecurityGuarantee),
+            &trace(),
+        )
+        .unwrap();
         e.link_evidence("c1", "artifact-123", &trace()).unwrap();
         assert_eq!(e.claims()["c1"].evidence_refs.len(), 1);
     }
 
-    #[test] fn link_evidence_missing_claim() {
+    #[test]
+    fn link_evidence_missing_claim() {
         let mut e = ExternalReplicationClaims::default();
         assert!(e.link_evidence("missing", "ref", &trace()).is_err());
     }
 
-    #[test] fn generate_catalog() {
+    #[test]
+    fn generate_catalog() {
         let mut e = ExternalReplicationClaims::default();
-        e.create_claim(sample_claim("c1", ClaimCategory::SecurityGuarantee), &trace()).unwrap();
+        e.create_claim(
+            sample_claim("c1", ClaimCategory::SecurityGuarantee),
+            &trace(),
+        )
+        .unwrap();
         let cat = e.generate_catalog(&trace());
         assert_eq!(cat.total_claims, 1);
         assert_eq!(cat.published_claims, 0);
         assert_eq!(cat.schema_version, SCHEMA_VERSION);
     }
 
-    #[test] fn catalog_tracks_categories() {
+    #[test]
+    fn catalog_tracks_categories() {
         let mut e = ExternalReplicationClaims::default();
-        e.create_claim(sample_claim("c1", ClaimCategory::SecurityGuarantee), &trace()).unwrap();
-        e.create_claim(sample_claim("c2", ClaimCategory::PerformanceBenchmark), &trace()).unwrap();
+        e.create_claim(
+            sample_claim("c1", ClaimCategory::SecurityGuarantee),
+            &trace(),
+        )
+        .unwrap();
+        e.create_claim(
+            sample_claim("c2", ClaimCategory::PerformanceBenchmark),
+            &trace(),
+        )
+        .unwrap();
         let cat = e.generate_catalog(&trace());
         assert_eq!(cat.claims_by_category.len(), 2);
     }
 
-    #[test] fn catalog_hash_deterministic() {
+    #[test]
+    fn catalog_hash_deterministic() {
         let mut e1 = ExternalReplicationClaims::default();
         let mut e2 = ExternalReplicationClaims::default();
-        assert_eq!(e1.generate_catalog(&trace()).content_hash, e2.generate_catalog(&trace()).content_hash);
+        assert_eq!(
+            e1.generate_catalog(&trace()).content_hash,
+            e2.generate_catalog(&trace()).content_hash
+        );
     }
 
-    #[test] fn four_replication_statuses() {
-        let statuses = [ReplicationStatus::Requested, ReplicationStatus::InProgress, ReplicationStatus::Completed, ReplicationStatus::Verified];
+    #[test]
+    fn four_replication_statuses() {
+        let statuses = [
+            ReplicationStatus::Requested,
+            ReplicationStatus::InProgress,
+            ReplicationStatus::Completed,
+            ReplicationStatus::Verified,
+        ];
         assert_eq!(statuses.len(), 4);
     }
 
-    #[test] fn audit_populated() {
+    #[test]
+    fn audit_populated() {
         let mut e = ExternalReplicationClaims::default();
-        e.create_claim(sample_claim("c1", ClaimCategory::SecurityGuarantee), &trace()).unwrap();
+        e.create_claim(
+            sample_claim("c1", ClaimCategory::SecurityGuarantee),
+            &trace(),
+        )
+        .unwrap();
         assert!(!e.audit_log().is_empty());
     }
 
-    #[test] fn audit_has_codes() {
+    #[test]
+    fn audit_has_codes() {
         let mut e = ExternalReplicationClaims::default();
-        e.create_claim(sample_claim("c1", ClaimCategory::SecurityGuarantee), &trace()).unwrap();
-        let codes: Vec<&str> = e.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        e.create_claim(
+            sample_claim("c1", ClaimCategory::SecurityGuarantee),
+            &trace(),
+        )
+        .unwrap();
+        let codes: Vec<&str> = e
+            .audit_log()
+            .iter()
+            .map(|r| r.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::ERC_CLAIM_CREATED));
     }
 
-    #[test] fn export_jsonl() {
+    #[test]
+    fn export_jsonl() {
         let mut e = ExternalReplicationClaims::default();
-        e.create_claim(sample_claim("c1", ClaimCategory::SecurityGuarantee), &trace()).unwrap();
+        e.create_claim(
+            sample_claim("c1", ClaimCategory::SecurityGuarantee),
+            &trace(),
+        )
+        .unwrap();
         let jsonl = e.export_audit_log_jsonl().unwrap();
         let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert!(first["event_code"].is_string());
     }
 
-    #[test] fn default_version() {
+    #[test]
+    fn default_version() {
         let e = ExternalReplicationClaims::default();
         assert_eq!(e.schema_version, SCHEMA_VERSION);
     }
 
-    #[test] fn replication_count_filters_status() {
+    #[test]
+    fn replication_count_filters_status() {
         let mut e = ExternalReplicationClaims::default();
-        e.create_claim(sample_claim("c1", ClaimCategory::SecurityGuarantee), &trace()).unwrap();
+        e.create_claim(
+            sample_claim("c1", ClaimCategory::SecurityGuarantee),
+            &trace(),
+        )
+        .unwrap();
         let rid = e.request_replication("c1", "lab", &trace()).unwrap();
         assert_eq!(e.replication_count("c1"), 0); // Still Requested
-        e.update_replication(&rid, ReplicationStatus::Completed, "ok", &trace()).unwrap();
+        e.update_replication(&rid, ReplicationStatus::Completed, "ok", &trace())
+            .unwrap();
         assert_eq!(e.replication_count("c1"), 1);
     }
 }

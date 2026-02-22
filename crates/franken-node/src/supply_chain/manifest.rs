@@ -139,13 +139,21 @@ pub struct ManifestAuditEvent {
 
 impl SignedExtensionManifest {
     #[must_use]
-    pub fn to_engine_manifest(&self) -> ExtensionManifest {
-        ExtensionManifest {
-            name: self.package.name.clone(),
-            version: self.package.version.clone(),
-            entrypoint: self.entrypoint.clone(),
-            capabilities: self.capabilities.iter().cloned().collect(),
-        }
+    pub fn to_engine_manifest(&self) -> Result<ExtensionManifest, ManifestSchemaError> {
+        // Build through serde to avoid compile-time coupling to extension-host
+        // manifest field drift while still projecting required core fields.
+        let payload = serde_json::json!({
+            "name": self.package.name.clone(),
+            "version": self.package.version.clone(),
+            "entrypoint": self.entrypoint.clone(),
+            "capabilities": self.capabilities.clone(),
+        });
+
+        serde_json::from_value(payload).map_err(|error| {
+            ManifestSchemaError::EngineManifestProjection {
+                reason: format!("engine manifest projection failed: {error}"),
+            }
+        })
     }
 
     pub fn validate(&self) -> Result<(), ManifestSchemaError> {
@@ -232,7 +240,8 @@ pub fn validate_signed_manifest(
 
     // Required by bd-1gx AC(7): map into franken_engine ExtensionManifest and
     // reuse engine-level validation as part of admission checks.
-    validate_engine_manifest(&manifest.to_engine_manifest())
+    let engine_manifest = manifest.to_engine_manifest()?;
+    validate_engine_manifest(&engine_manifest)
         .map_err(ManifestSchemaError::EngineManifestRejected)?;
 
     Ok(())
@@ -323,6 +332,7 @@ pub enum ManifestSchemaError {
     MissingAttestationChain,
     SignatureMalformed { reason: String },
     InvalidThresholdConfiguration { reason: String },
+    EngineManifestProjection { reason: String },
     EngineManifestRejected(ManifestValidationError),
 }
 
@@ -337,6 +347,7 @@ impl ManifestSchemaError {
             Self::MissingAttestationChain => "EMS_MISSING_ATTESTATION_CHAIN",
             Self::SignatureMalformed { .. } => "EMS_SIGNATURE_MALFORMED",
             Self::InvalidThresholdConfiguration { .. } => "EMS_THRESHOLD_INVALID",
+            Self::EngineManifestProjection { .. } => "EMS_ENGINE_PROJECTION",
             Self::EngineManifestRejected(_) => "EMS_ENGINE_REJECTED",
         }
     }
@@ -378,6 +389,9 @@ impl fmt::Display for ManifestSchemaError {
             }
             Self::InvalidThresholdConfiguration { reason } => {
                 write!(f, "EMS_THRESHOLD_INVALID: {reason}")
+            }
+            Self::EngineManifestProjection { reason } => {
+                write!(f, "EMS_ENGINE_PROJECTION: {reason}")
             }
             Self::EngineManifestRejected(error) => {
                 write!(f, "EMS_ENGINE_REJECTED: {error}")
@@ -452,6 +466,19 @@ mod tests {
     fn valid_manifest_passes() {
         let manifest = valid_manifest();
         assert_eq!(validate_signed_manifest(&manifest), Ok(()));
+    }
+
+    #[test]
+    fn engine_manifest_projection_maps_core_fields() {
+        let manifest = valid_manifest();
+        let engine_manifest = manifest
+            .to_engine_manifest()
+            .expect("engine manifest projection should succeed");
+
+        assert_eq!(engine_manifest.name, "auth-guard");
+        assert_eq!(engine_manifest.version, "1.2.3");
+        assert_eq!(engine_manifest.entrypoint, "dist/main.js");
+        assert_eq!(engine_manifest.capabilities.len(), 2);
     }
 
     #[test]

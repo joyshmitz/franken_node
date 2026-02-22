@@ -68,7 +68,13 @@ pub enum PartnerTier {
 
 impl PartnerTier {
     pub fn all() -> &'static [PartnerTier] {
-        &[Self::Prospect, Self::Pilot, Self::Lighthouse, Self::Strategic, Self::Flagship]
+        &[
+            Self::Prospect,
+            Self::Pilot,
+            Self::Lighthouse,
+            Self::Strategic,
+            Self::Flagship,
+        ]
     }
     pub fn label(&self) -> &'static str {
         match self {
@@ -168,21 +174,37 @@ impl Default for PartnerLighthousePrograms {
 }
 
 impl PartnerLighthousePrograms {
-    pub fn enroll_partner(&mut self, mut partner: Partner, trace_id: &str) -> Result<String, String> {
+    pub fn enroll_partner(
+        &mut self,
+        mut partner: Partner,
+        trace_id: &str,
+    ) -> Result<String, String> {
         if self.partners.contains_key(&partner.partner_id) {
-            self.log(event_codes::PLP_ERR_DUPLICATE_PARTNER, trace_id, serde_json::json!({"id": &partner.partner_id}));
+            self.log(
+                event_codes::PLP_ERR_DUPLICATE_PARTNER,
+                trace_id,
+                serde_json::json!({"id": &partner.partner_id}),
+            );
             return Err(format!("duplicate partner: {}", partner.partner_id));
         }
         partner.enrolled_at = Utc::now().to_rfc3339();
         partner.deployment_count = 0;
         partner.outcome_count = 0;
         let pid = partner.partner_id.clone();
-        self.log(event_codes::PLP_PARTNER_ENROLLED, trace_id, serde_json::json!({"partner_id": &pid, "tier": partner.tier.label()}));
+        self.log(
+            event_codes::PLP_PARTNER_ENROLLED,
+            trace_id,
+            serde_json::json!({"partner_id": &pid, "tier": partner.tier.label()}),
+        );
         self.partners.insert(pid.clone(), partner);
         Ok(pid)
     }
 
-    pub fn create_deployment(&mut self, mut dep: LighthouseDeployment, trace_id: &str) -> Result<String, String> {
+    pub fn create_deployment(
+        &mut self,
+        mut dep: LighthouseDeployment,
+        trace_id: &str,
+    ) -> Result<String, String> {
         if !self.partners.contains_key(&dep.partner_id) {
             return Err(format!("partner not found: {}", dep.partner_id));
         }
@@ -190,14 +212,28 @@ impl PartnerLighthousePrograms {
         dep.completed = false;
         let did = dep.deployment_id.clone();
         let pid = dep.partner_id.clone();
-        self.log(event_codes::PLP_DEPLOYMENT_CREATED, trace_id, serde_json::json!({"deployment_id": &did, "partner_id": &pid}));
+        self.log(
+            event_codes::PLP_DEPLOYMENT_CREATED,
+            trace_id,
+            serde_json::json!({"deployment_id": &did, "partner_id": &pid}),
+        );
         self.deployments.push(dep);
-        if let Some(p) = self.partners.get_mut(&pid) { p.deployment_count += 1; }
+        if let Some(p) = self.partners.get_mut(&pid) {
+            p.deployment_count += 1;
+        }
         Ok(did)
     }
 
-    pub fn record_outcome(&mut self, mut outcome: OutcomeRecord, trace_id: &str) -> Result<String, String> {
-        if !self.deployments.iter().any(|d| d.deployment_id == outcome.deployment_id) {
+    pub fn record_outcome(
+        &mut self,
+        mut outcome: OutcomeRecord,
+        trace_id: &str,
+    ) -> Result<String, String> {
+        if !self
+            .deployments
+            .iter()
+            .any(|d| d.deployment_id == outcome.deployment_id)
+        {
             return Err(format!("deployment not found: {}", outcome.deployment_id));
         }
         outcome.recorded_at = Utc::now().to_rfc3339();
@@ -205,21 +241,35 @@ impl PartnerLighthousePrograms {
         let did = outcome.deployment_id.clone();
 
         // Find partner for this deployment
-        let partner_id = self.deployments.iter()
+        let partner_id = self
+            .deployments
+            .iter()
             .find(|d| d.deployment_id == did)
             .map(|d| d.partner_id.clone());
 
-        self.log(event_codes::PLP_OUTCOME_RECORDED, trace_id, serde_json::json!({"outcome_id": &oid, "metric": &outcome.metric_name}));
+        self.log(
+            event_codes::PLP_OUTCOME_RECORDED,
+            trace_id,
+            serde_json::json!({"outcome_id": &oid, "metric": &outcome.metric_name}),
+        );
         self.outcomes.push(outcome);
 
         if let Some(pid) = partner_id {
-            if let Some(p) = self.partners.get_mut(&pid) { p.outcome_count += 1; }
+            if let Some(p) = self.partners.get_mut(&pid) {
+                p.outcome_count += 1;
+            }
         }
         Ok(oid)
     }
 
-    pub fn promote_partner(&mut self, partner_id: &str, trace_id: &str) -> Result<PartnerTier, String> {
-        let outcome_count = self.partners.get(partner_id)
+    pub fn promote_partner(
+        &mut self,
+        partner_id: &str,
+        trace_id: &str,
+    ) -> Result<PartnerTier, String> {
+        let outcome_count = self
+            .partners
+            .get(partner_id)
             .ok_or_else(|| format!("partner not found: {partner_id}"))?
             .outcome_count;
 
@@ -227,17 +277,24 @@ impl PartnerLighthousePrograms {
             self.log(event_codes::PLP_ERR_INSUFFICIENT_OUTCOMES, trace_id, serde_json::json!({
                 "partner_id": partner_id, "outcomes": outcome_count, "required": MIN_OUTCOMES_FOR_PROMOTION,
             }));
-            return Err(format!("insufficient outcomes: {outcome_count} < {MIN_OUTCOMES_FOR_PROMOTION}"));
+            return Err(format!(
+                "insufficient outcomes: {outcome_count} < {MIN_OUTCOMES_FOR_PROMOTION}"
+            ));
         }
 
         let current_tier = self.partners[partner_id].tier;
-        let next = current_tier.next()
+        let next = current_tier
+            .next()
             .ok_or_else(|| "already at highest tier".to_string())?;
 
         self.partners.get_mut(partner_id).unwrap().tier = next;
-        self.log(event_codes::PLP_TIER_PROMOTED, trace_id, serde_json::json!({
-            "partner_id": partner_id, "from": current_tier.label(), "to": next.label(),
-        }));
+        self.log(
+            event_codes::PLP_TIER_PROMOTED,
+            trace_id,
+            serde_json::json!({
+                "partner_id": partner_id, "from": current_tier.label(), "to": next.label(),
+            }),
+        );
         Ok(next)
     }
 
@@ -252,11 +309,31 @@ impl PartnerLighthousePrograms {
         let hash_input = format!("{total_p}:{total_d}:{total_o}:{}", &self.schema_version);
         let content_hash = hex::encode(Sha256::digest(hash_input.as_bytes()));
 
-        self.log(event_codes::PLP_FUNNEL_COMPUTED, trace_id, serde_json::json!({"partners": total_p}));
-        self.log(event_codes::PLP_ANALYTICS_GENERATED, trace_id, serde_json::json!({"tiers": by_tier.len()}));
-        self.log(event_codes::PLP_VERSION_EMBEDDED, trace_id, serde_json::json!({"version": &self.schema_version}));
-        self.log(event_codes::PLP_CATALOG_GENERATED, trace_id, serde_json::json!({"total": total_p}));
-        self.log(event_codes::PLP_EVIDENCE_EXPORTED, trace_id, serde_json::json!({"outcomes": total_o}));
+        self.log(
+            event_codes::PLP_FUNNEL_COMPUTED,
+            trace_id,
+            serde_json::json!({"partners": total_p}),
+        );
+        self.log(
+            event_codes::PLP_ANALYTICS_GENERATED,
+            trace_id,
+            serde_json::json!({"tiers": by_tier.len()}),
+        );
+        self.log(
+            event_codes::PLP_VERSION_EMBEDDED,
+            trace_id,
+            serde_json::json!({"version": &self.schema_version}),
+        );
+        self.log(
+            event_codes::PLP_CATALOG_GENERATED,
+            trace_id,
+            serde_json::json!({"total": total_p}),
+        );
+        self.log(
+            event_codes::PLP_EVIDENCE_EXPORTED,
+            trace_id,
+            serde_json::json!({"outcomes": total_o}),
+        );
 
         AdoptionFunnel {
             funnel_id: Uuid::now_v7().to_string(),
@@ -270,14 +347,24 @@ impl PartnerLighthousePrograms {
         }
     }
 
-    pub fn partners(&self) -> &BTreeMap<String, Partner> { &self.partners }
-    pub fn deployments(&self) -> &[LighthouseDeployment] { &self.deployments }
-    pub fn outcomes(&self) -> &[OutcomeRecord] { &self.outcomes }
-    pub fn audit_log(&self) -> &[PlpAuditRecord] { &self.audit_log }
+    pub fn partners(&self) -> &BTreeMap<String, Partner> {
+        &self.partners
+    }
+    pub fn deployments(&self) -> &[LighthouseDeployment] {
+        &self.deployments
+    }
+    pub fn outcomes(&self) -> &[OutcomeRecord] {
+        &self.outcomes
+    }
+    pub fn audit_log(&self) -> &[PlpAuditRecord] {
+        &self.audit_log
+    }
 
     pub fn export_audit_log_jsonl(&self) -> Result<String, serde_json::Error> {
         let mut lines = Vec::with_capacity(self.audit_log.len());
-        for r in &self.audit_log { lines.push(serde_json::to_string(r)?); }
+        for r in &self.audit_log {
+            lines.push(serde_json::to_string(r)?);
+        }
         Ok(lines.join("\n"))
     }
 
@@ -296,7 +383,9 @@ impl PartnerLighthousePrograms {
 mod tests {
     use super::*;
 
-    fn trace() -> String { Uuid::now_v7().to_string() }
+    fn trace() -> String {
+        Uuid::now_v7().to_string()
+    }
 
     fn sample_partner(id: &str) -> Partner {
         Partner {
@@ -330,112 +419,167 @@ mod tests {
         }
     }
 
-    #[test] fn five_tiers() { assert_eq!(PartnerTier::all().len(), 5); }
-    #[test] fn tier_labels_nonempty() { for t in PartnerTier::all() { assert!(!t.label().is_empty()); } }
-    #[test] fn tier_progression() { assert_eq!(PartnerTier::Prospect.next(), Some(PartnerTier::Pilot)); }
-    #[test] fn flagship_no_next() { assert_eq!(PartnerTier::Flagship.next(), None); }
+    #[test]
+    fn five_tiers() {
+        assert_eq!(PartnerTier::all().len(), 5);
+    }
+    #[test]
+    fn tier_labels_nonempty() {
+        for t in PartnerTier::all() {
+            assert!(!t.label().is_empty());
+        }
+    }
+    #[test]
+    fn tier_progression() {
+        assert_eq!(PartnerTier::Prospect.next(), Some(PartnerTier::Pilot));
+    }
+    #[test]
+    fn flagship_no_next() {
+        assert_eq!(PartnerTier::Flagship.next(), None);
+    }
 
-    #[test] fn enroll_partner_ok() {
+    #[test]
+    fn enroll_partner_ok() {
         let mut e = PartnerLighthousePrograms::default();
         assert!(e.enroll_partner(sample_partner("p1"), &trace()).is_ok());
         assert_eq!(e.partners().len(), 1);
     }
 
-    #[test] fn enroll_duplicate_fails() {
+    #[test]
+    fn enroll_duplicate_fails() {
         let mut e = PartnerLighthousePrograms::default();
         e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
         assert!(e.enroll_partner(sample_partner("p1"), &trace()).is_err());
     }
 
-    #[test] fn create_deployment_ok() {
+    #[test]
+    fn create_deployment_ok() {
         let mut e = PartnerLighthousePrograms::default();
         e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
-        assert!(e.create_deployment(sample_deployment("d1", "p1"), &trace()).is_ok());
+        assert!(
+            e.create_deployment(sample_deployment("d1", "p1"), &trace())
+                .is_ok()
+        );
     }
 
-    #[test] fn deployment_increments_count() {
+    #[test]
+    fn deployment_increments_count() {
         let mut e = PartnerLighthousePrograms::default();
         e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
-        e.create_deployment(sample_deployment("d1", "p1"), &trace()).unwrap();
+        e.create_deployment(sample_deployment("d1", "p1"), &trace())
+            .unwrap();
         assert_eq!(e.partners()["p1"].deployment_count, 1);
     }
 
-    #[test] fn deployment_missing_partner() {
+    #[test]
+    fn deployment_missing_partner() {
         let mut e = PartnerLighthousePrograms::default();
-        assert!(e.create_deployment(sample_deployment("d1", "missing"), &trace()).is_err());
+        assert!(
+            e.create_deployment(sample_deployment("d1", "missing"), &trace())
+                .is_err()
+        );
     }
 
-    #[test] fn record_outcome_ok() {
+    #[test]
+    fn record_outcome_ok() {
         let mut e = PartnerLighthousePrograms::default();
         e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
-        e.create_deployment(sample_deployment("d1", "p1"), &trace()).unwrap();
-        assert!(e.record_outcome(sample_outcome("o1", "d1"), &trace()).is_ok());
+        e.create_deployment(sample_deployment("d1", "p1"), &trace())
+            .unwrap();
+        assert!(
+            e.record_outcome(sample_outcome("o1", "d1"), &trace())
+                .is_ok()
+        );
     }
 
-    #[test] fn outcome_missing_deployment() {
+    #[test]
+    fn outcome_missing_deployment() {
         let mut e = PartnerLighthousePrograms::default();
-        assert!(e.record_outcome(sample_outcome("o1", "missing"), &trace()).is_err());
+        assert!(
+            e.record_outcome(sample_outcome("o1", "missing"), &trace())
+                .is_err()
+        );
     }
 
-    #[test] fn outcome_increments_count() {
+    #[test]
+    fn outcome_increments_count() {
         let mut e = PartnerLighthousePrograms::default();
         e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
-        e.create_deployment(sample_deployment("d1", "p1"), &trace()).unwrap();
-        e.record_outcome(sample_outcome("o1", "d1"), &trace()).unwrap();
+        e.create_deployment(sample_deployment("d1", "p1"), &trace())
+            .unwrap();
+        e.record_outcome(sample_outcome("o1", "d1"), &trace())
+            .unwrap();
         assert_eq!(e.partners()["p1"].outcome_count, 1);
     }
 
-    #[test] fn promote_insufficient_outcomes() {
+    #[test]
+    fn promote_insufficient_outcomes() {
         let mut e = PartnerLighthousePrograms::default();
         e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
         assert!(e.promote_partner("p1", &trace()).is_err());
     }
 
-    #[test] fn promote_with_outcomes() {
+    #[test]
+    fn promote_with_outcomes() {
         let mut e = PartnerLighthousePrograms::default();
         e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
-        e.create_deployment(sample_deployment("d1", "p1"), &trace()).unwrap();
+        e.create_deployment(sample_deployment("d1", "p1"), &trace())
+            .unwrap();
         for i in 0..MIN_OUTCOMES_FOR_PROMOTION {
-            e.record_outcome(sample_outcome(&format!("o{i}"), "d1"), &trace()).unwrap();
+            e.record_outcome(sample_outcome(&format!("o{i}"), "d1"), &trace())
+                .unwrap();
         }
         let new_tier = e.promote_partner("p1", &trace()).unwrap();
         assert_eq!(new_tier, PartnerTier::Pilot);
     }
 
-    #[test] fn generate_funnel_empty() {
+    #[test]
+    fn generate_funnel_empty() {
         let mut e = PartnerLighthousePrograms::default();
         let f = e.generate_funnel(&trace());
         assert_eq!(f.total_partners, 0);
         assert_eq!(f.schema_version, SCHEMA_VERSION);
     }
 
-    #[test] fn funnel_tracks_tiers() {
+    #[test]
+    fn funnel_tracks_tiers() {
         let mut e = PartnerLighthousePrograms::default();
         e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
         let f = e.generate_funnel(&trace());
         assert!(f.partners_by_tier.contains_key("prospect"));
     }
 
-    #[test] fn funnel_hash_deterministic() {
+    #[test]
+    fn funnel_hash_deterministic() {
         let mut e1 = PartnerLighthousePrograms::default();
         let mut e2 = PartnerLighthousePrograms::default();
-        assert_eq!(e1.generate_funnel(&trace()).content_hash, e2.generate_funnel(&trace()).content_hash);
+        assert_eq!(
+            e1.generate_funnel(&trace()).content_hash,
+            e2.generate_funnel(&trace()).content_hash
+        );
     }
 
-    #[test] fn audit_populated() {
+    #[test]
+    fn audit_populated() {
         let mut e = PartnerLighthousePrograms::default();
         e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
         assert!(!e.audit_log().is_empty());
     }
 
-    #[test] fn audit_has_codes() {
+    #[test]
+    fn audit_has_codes() {
         let mut e = PartnerLighthousePrograms::default();
         e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
-        let codes: Vec<&str> = e.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        let codes: Vec<&str> = e
+            .audit_log()
+            .iter()
+            .map(|r| r.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::PLP_PARTNER_ENROLLED));
     }
 
-    #[test] fn export_jsonl() {
+    #[test]
+    fn export_jsonl() {
         let mut e = PartnerLighthousePrograms::default();
         e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
         let jsonl = e.export_audit_log_jsonl().unwrap();
@@ -443,12 +587,14 @@ mod tests {
         assert!(first["event_code"].is_string());
     }
 
-    #[test] fn default_version() {
+    #[test]
+    fn default_version() {
         let e = PartnerLighthousePrograms::default();
         assert_eq!(e.schema_version, SCHEMA_VERSION);
     }
 
-    #[test] fn enroll_sets_timestamp() {
+    #[test]
+    fn enroll_sets_timestamp() {
         let mut e = PartnerLighthousePrograms::default();
         e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
         assert!(!e.partners()["p1"].enrolled_at.is_empty());

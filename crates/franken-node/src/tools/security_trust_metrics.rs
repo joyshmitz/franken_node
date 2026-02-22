@@ -253,10 +253,7 @@ pub struct CoMetricReport {
 }
 
 impl CoMetricReport {
-    pub fn compute_hash(
-        security: &[MetricMeasurement],
-        trust: &[MetricMeasurement],
-    ) -> String {
+    pub fn compute_hash(security: &[MetricMeasurement], trust: &[MetricMeasurement]) -> String {
         let canonical = serde_json::json!({
             "security": security,
             "trust": trust,
@@ -367,14 +364,14 @@ impl CoMetricEngine {
         }
 
         // Check coverage
-        let sec_covered = security_measurements.len() as f64
-            / SecurityMetricCategory::all().len().max(1) as f64;
+        let sec_covered =
+            security_measurements.len() as f64 / SecurityMetricCategory::all().len().max(1) as f64;
         let trust_covered =
             trust_measurements.len() as f64 / TrustMetricCategory::all().len().max(1) as f64;
 
         let all_gates_pass = gate_results.iter().all(|g| g.passed);
-        let coverage_ok = !self.config.require_all_categories
-            || (sec_covered >= 1.0 && trust_covered >= 1.0);
+        let coverage_ok =
+            !self.config.require_all_categories || (sec_covered >= 1.0 && trust_covered >= 1.0);
 
         let content_hash =
             CoMetricReport::compute_hash(&security_measurements, &trust_measurements);
@@ -478,10 +475,7 @@ mod tests {
                 },
                 sample_count: 100,
                 formula_version: SCORING_FORMULA_VERSION.to_string(),
-                raw_data: BTreeMap::from([
-                    ("mean".to_string(), 0.9),
-                    ("stddev".to_string(), 0.03),
-                ]),
+                raw_data: BTreeMap::from([("mean".to_string(), 0.9), ("stddev".to_string(), 0.03)]),
             })
             .collect()
     }

@@ -118,8 +118,12 @@ pub enum LedgerError {
 impl fmt::Display for LedgerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EntryTooLarge { entry_size, max_bytes } => write!(
-                f, "entry size {entry_size} exceeds max_bytes budget {max_bytes}"
+            Self::EntryTooLarge {
+                entry_size,
+                max_bytes,
+            } => write!(
+                f,
+                "entry size {entry_size} exceeds max_bytes budget {max_bytes}"
             ),
             Self::SpillError { reason } => write!(f, "spill write failed: {reason}"),
         }
@@ -151,7 +155,10 @@ pub struct LedgerCapacity {
 
 impl LedgerCapacity {
     pub fn new(max_entries: usize, max_bytes: usize) -> Self {
-        Self { max_entries, max_bytes }
+        Self {
+            max_entries,
+            max_bytes,
+        }
     }
 }
 
@@ -193,22 +200,34 @@ impl EvidenceLedger {
     }
 
     /// Return the capacity configuration.
-    pub fn capacity(&self) -> &LedgerCapacity { &self.capacity }
+    pub fn capacity(&self) -> &LedgerCapacity {
+        &self.capacity
+    }
 
     /// Return the current number of entries.
-    pub fn len(&self) -> usize { self.entries.len() }
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
 
     /// Return whether the ledger is empty.
-    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 
     /// Return the current byte usage.
-    pub fn current_bytes(&self) -> usize { self.current_bytes }
+    pub fn current_bytes(&self) -> usize {
+        self.current_bytes
+    }
 
     /// Return total entries ever appended.
-    pub fn total_appended(&self) -> u64 { self.total_appended }
+    pub fn total_appended(&self) -> u64 {
+        self.total_appended
+    }
 
     /// Return total entries evicted.
-    pub fn total_evicted(&self) -> u64 { self.total_evicted }
+    pub fn total_evicted(&self) -> u64 {
+        self.total_evicted
+    }
 
     /// Append an entry to the ledger.
     ///
@@ -222,7 +241,9 @@ impl EvidenceLedger {
             eprintln!(
                 "{}: entry size {} exceeds max_bytes {}, epoch={}",
                 event_codes::LEDGER_CAPACITY_WARN,
-                entry_size, self.capacity.max_bytes, entry.epoch_id,
+                entry_size,
+                self.capacity.max_bytes,
+                entry.epoch_id,
             );
             return Err(LedgerError::EntryTooLarge {
                 entry_size,
@@ -234,7 +255,8 @@ impl EvidenceLedger {
         while self.entries.len() >= self.capacity.max_entries && !self.entries.is_empty() {
             self.evict_oldest();
         }
-        while self.current_bytes + entry_size > self.capacity.max_bytes && !self.entries.is_empty() {
+        while self.current_bytes + entry_size > self.capacity.max_bytes && !self.entries.is_empty()
+        {
             self.evict_oldest();
         }
 
@@ -245,7 +267,11 @@ impl EvidenceLedger {
 
         eprintln!(
             "{}: entry={}, decision={}, epoch={}, size={}",
-            event_codes::LEDGER_APPEND, id, entry.decision_id, entry.epoch_id, entry_size,
+            event_codes::LEDGER_APPEND,
+            id,
+            entry.decision_id,
+            entry.epoch_id,
+            entry_size,
         );
 
         self.entries.push_back((id, entry, entry_size));
@@ -260,7 +286,10 @@ impl EvidenceLedger {
             eprintln!(
                 "{}: evicted entry={}, decision={}, epoch={}, freed_bytes={}",
                 event_codes::LEDGER_EVICTION,
-                evicted_id, evicted_entry.decision_id, evicted_entry.epoch_id, evicted_size,
+                evicted_id,
+                evicted_entry.decision_id,
+                evicted_entry.epoch_id,
+                evicted_size,
             );
         }
     }
@@ -279,7 +308,11 @@ impl EvidenceLedger {
     /// Return a consistent, cloneable snapshot for export.
     pub fn snapshot(&self) -> LedgerSnapshot {
         LedgerSnapshot {
-            entries: self.entries.iter().map(|(id, entry, _)| (*id, entry.clone())).collect(),
+            entries: self
+                .entries
+                .iter()
+                .map(|(id, entry, _)| (*id, entry.clone()))
+                .collect(),
             total_appended: self.total_appended,
             total_evicted: self.total_evicted,
             current_bytes: self.current_bytes,
@@ -298,24 +331,34 @@ pub struct SharedEvidenceLedger {
 
 impl SharedEvidenceLedger {
     pub fn new(capacity: LedgerCapacity) -> Self {
-        Self { inner: Arc::new(Mutex::new(EvidenceLedger::new(capacity))) }
+        Self {
+            inner: Arc::new(Mutex::new(EvidenceLedger::new(capacity))),
+        }
     }
 
     pub fn append(&self, entry: EvidenceEntry) -> Result<EntryId, LedgerError> {
         self.inner.lock().unwrap().append(entry)
     }
 
-    pub fn len(&self) -> usize { self.inner.lock().unwrap().len() }
+    pub fn len(&self) -> usize {
+        self.inner.lock().unwrap().len()
+    }
 
-    pub fn is_empty(&self) -> bool { self.inner.lock().unwrap().is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.inner.lock().unwrap().is_empty()
+    }
 
-    pub fn snapshot(&self) -> LedgerSnapshot { self.inner.lock().unwrap().snapshot() }
+    pub fn snapshot(&self) -> LedgerSnapshot {
+        self.inner.lock().unwrap().snapshot()
+    }
 }
 
 // Compile-time Send + Sync assertion
 const _: () = {
     fn assert_send_sync<T: Send + Sync>() {}
-    fn check() { assert_send_sync::<SharedEvidenceLedger>(); }
+    fn check() {
+        assert_send_sync::<SharedEvidenceLedger>();
+    }
 };
 
 // ── LabSpillMode ────────────────────────────────────────────────────
@@ -329,37 +372,65 @@ pub struct LabSpillMode {
 impl LabSpillMode {
     /// Create a lab-mode ledger that spills to the given writer.
     pub fn new(capacity: LedgerCapacity, writer: Box<dyn Write + Send>) -> Self {
-        Self { ledger: EvidenceLedger::new(capacity), spill_writer: writer }
+        Self {
+            ledger: EvidenceLedger::new(capacity),
+            spill_writer: writer,
+        }
     }
 
     /// Create a lab-mode ledger that spills to a file path.
-    pub fn with_file(capacity: LedgerCapacity, path: &std::path::Path) -> Result<Self, LedgerError> {
+    pub fn with_file(
+        capacity: LedgerCapacity,
+        path: &std::path::Path,
+    ) -> Result<Self, LedgerError> {
         let file = std::fs::OpenOptions::new()
-            .create(true).append(true).open(path)
-            .map_err(|e| LedgerError::SpillError { reason: format!("failed to open: {e}") })?;
+            .create(true)
+            .append(true)
+            .open(path)
+            .map_err(|e| LedgerError::SpillError {
+                reason: format!("failed to open: {e}"),
+            })?;
         Ok(Self::new(capacity, Box::new(file)))
     }
 
     /// Append an entry, also writing it to the spill file.
     pub fn append(&mut self, entry: EvidenceEntry) -> Result<EntryId, LedgerError> {
-        let json_line = serde_json::to_string(&entry)
-            .map_err(|e| LedgerError::SpillError { reason: format!("JSON error: {e}") })?;
+        let json_line = serde_json::to_string(&entry).map_err(|e| LedgerError::SpillError {
+            reason: format!("JSON error: {e}"),
+        })?;
 
         let id = self.ledger.append(entry)?;
 
-        writeln!(self.spill_writer, "{json_line}")
-            .map_err(|e| LedgerError::SpillError { reason: format!("write: {e}") })?;
-        self.spill_writer.flush()
-            .map_err(|e| LedgerError::SpillError { reason: format!("flush: {e}") })?;
+        writeln!(self.spill_writer, "{json_line}").map_err(|e| LedgerError::SpillError {
+            reason: format!("write: {e}"),
+        })?;
+        self.spill_writer
+            .flush()
+            .map_err(|e| LedgerError::SpillError {
+                reason: format!("flush: {e}"),
+            })?;
 
-        eprintln!("{}: spill wrote entry={}, bytes={}", event_codes::LEDGER_SPILL, id, json_line.len());
+        eprintln!(
+            "{}: spill wrote entry={}, bytes={}",
+            event_codes::LEDGER_SPILL,
+            id,
+            json_line.len()
+        );
         Ok(id)
     }
 
-    pub fn ledger(&self) -> &EvidenceLedger { &self.ledger }
-    pub fn len(&self) -> usize { self.ledger.len() }
-    pub fn is_empty(&self) -> bool { self.ledger.is_empty() }
-    pub fn snapshot(&self) -> LedgerSnapshot { self.ledger.snapshot() }
+    pub fn ledger(&self) -> &EvidenceLedger {
+        &self.ledger
+    }
+    pub fn len(&self) -> usize {
+        self.ledger.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.ledger.is_empty()
+    }
+    pub fn snapshot(&self) -> LedgerSnapshot {
+        self.ledger.snapshot()
+    }
 }
 
 // ── Test helper ─────────────────────────────────────────────────────
@@ -386,7 +457,9 @@ pub fn test_entry(decision_id: &str, epoch_id: u64) -> EvidenceEntry {
 mod tests {
     use super::*;
 
-    fn make_entry(id: &str, epoch: u64) -> EvidenceEntry { test_entry(id, epoch) }
+    fn make_entry(id: &str, epoch: u64) -> EvidenceEntry {
+        test_entry(id, epoch)
+    }
 
     fn make_entry_with_payload(id: &str, epoch: u64, payload_size: usize) -> EvidenceEntry {
         let padding = "x".repeat(payload_size);
@@ -430,7 +503,9 @@ mod tests {
     fn append_multiple_entries() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
         for i in 1..=5 {
-            let id = ledger.append(make_entry(&format!("DEC-{i:03}"), i)).unwrap();
+            let id = ledger
+                .append(make_entry(&format!("DEC-{i:03}"), i))
+                .unwrap();
             assert_eq!(id, EntryId(i));
         }
         assert_eq!(ledger.len(), 5);
@@ -513,7 +588,9 @@ mod tests {
         let max_bytes = entry_size * 3;
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(1000, max_bytes));
         for i in 1..=10 {
-            ledger.append(make_entry(&format!("DEC-{i:03}"), i as u64)).unwrap();
+            ledger
+                .append(make_entry(&format!("DEC-{i:03}"), i as u64))
+                .unwrap();
         }
         assert!(ledger.current_bytes() <= max_bytes);
         assert!(ledger.len() <= 3);
@@ -525,7 +602,9 @@ mod tests {
     fn iter_recent_returns_last_n() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
         for i in 1..=5 {
-            ledger.append(make_entry(&format!("DEC-{i:03}"), i)).unwrap();
+            ledger
+                .append(make_entry(&format!("DEC-{i:03}"), i))
+                .unwrap();
         }
         let recent: Vec<_> = ledger.iter_recent(2).collect();
         assert_eq!(recent.len(), 2);
@@ -563,7 +642,9 @@ mod tests {
     fn snapshot_is_consistent() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
         for i in 1..=3 {
-            ledger.append(make_entry(&format!("DEC-{i:03}"), i)).unwrap();
+            ledger
+                .append(make_entry(&format!("DEC-{i:03}"), i))
+                .unwrap();
         }
         let snap = ledger.snapshot();
         assert_eq!(snap.entries.len(), 3);
@@ -576,7 +657,9 @@ mod tests {
     fn snapshot_after_eviction() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(2, 100_000));
         for i in 1..=4 {
-            ledger.append(make_entry(&format!("DEC-{i:03}"), i)).unwrap();
+            ledger
+                .append(make_entry(&format!("DEC-{i:03}"), i))
+                .unwrap();
         }
         let snap = ledger.snapshot();
         assert_eq!(snap.entries.len(), 2);
@@ -600,7 +683,9 @@ mod tests {
         fn run() -> LedgerSnapshot {
             let mut ledger = EvidenceLedger::new(LedgerCapacity::new(3, 100_000));
             for i in 1..=5 {
-                ledger.append(make_entry(&format!("DEC-{i:03}"), i)).unwrap();
+                ledger
+                    .append(make_entry(&format!("DEC-{i:03}"), i))
+                    .unwrap();
             }
             ledger.snapshot()
         }
@@ -645,7 +730,10 @@ mod tests {
 
     #[test]
     fn ledger_error_display() {
-        let err = LedgerError::EntryTooLarge { entry_size: 1000, max_bytes: 500 };
+        let err = LedgerError::EntryTooLarge {
+            entry_size: 1000,
+            max_bytes: 500,
+        };
         assert!(err.to_string().contains("1000"));
         assert!(err.to_string().contains("500"));
     }
@@ -666,7 +754,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let spill_path = dir.path().join("evidence_spill.jsonl");
         {
-            let mut spill = LabSpillMode::with_file(LedgerCapacity::new(100, 100_000), &spill_path).unwrap();
+            let mut spill =
+                LabSpillMode::with_file(LedgerCapacity::new(100, 100_000), &spill_path).unwrap();
             spill.append(make_entry("DEC-001", 1)).unwrap();
             spill.append(make_entry("DEC-002", 2)).unwrap();
             spill.append(make_entry("DEC-003", 3)).unwrap();
@@ -726,7 +815,9 @@ mod tests {
     fn steady_state_load_100_entries() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
         for i in 1..=500u64 {
-            ledger.append(make_entry(&format!("DEC-{i:05}"), i)).unwrap();
+            ledger
+                .append(make_entry(&format!("DEC-{i:05}"), i))
+                .unwrap();
         }
         assert_eq!(ledger.len(), 100);
         assert_eq!(ledger.total_appended(), 500);
@@ -769,10 +860,8 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("spill.jsonl");
             {
-                let mut spill = LabSpillMode::with_file(
-                    LedgerCapacity::new(100, 100_000),
-                    &path,
-                ).unwrap();
+                let mut spill =
+                    LabSpillMode::with_file(LedgerCapacity::new(100, 100_000), &path).unwrap();
                 for i in 1..=3 {
                     spill.append(make_entry(&format!("DEC-{i:03}"), i)).unwrap();
                 }
@@ -809,7 +898,9 @@ mod tests {
     fn fifo_order_maintained_across_many_evictions() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(3, 100_000));
         for i in 1..=20u64 {
-            ledger.append(make_entry(&format!("DEC-{i:03}"), i)).unwrap();
+            ledger
+                .append(make_entry(&format!("DEC-{i:03}"), i))
+                .unwrap();
         }
         assert_eq!(ledger.len(), 3);
         let entries: Vec<_> = ledger.iter_all().collect();
@@ -906,7 +997,9 @@ mod tests {
     fn full_lifecycle_append_evict_snapshot_iterate() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(3, 100_000));
         for i in 1..=6u64 {
-            ledger.append(make_entry(&format!("DEC-{i:03}"), i)).unwrap();
+            ledger
+                .append(make_entry(&format!("DEC-{i:03}"), i))
+                .unwrap();
         }
         assert_eq!(ledger.len(), 3);
         assert_eq!(ledger.total_evicted(), 3);
@@ -920,7 +1013,9 @@ mod tests {
     fn single_capacity_ledger() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(1, 100_000));
         for i in 1..=10u64 {
-            ledger.append(make_entry(&format!("DEC-{i:03}"), i)).unwrap();
+            ledger
+                .append(make_entry(&format!("DEC-{i:03}"), i))
+                .unwrap();
         }
         assert_eq!(ledger.len(), 1);
         assert_eq!(ledger.total_evicted(), 9);
@@ -932,7 +1027,9 @@ mod tests {
         let sz = small.estimated_size();
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, sz * 3));
         for i in 1..=10u64 {
-            ledger.append(make_entry(&format!("DEC-{i:03}"), i)).unwrap();
+            ledger
+                .append(make_entry(&format!("DEC-{i:03}"), i))
+                .unwrap();
         }
         assert!(ledger.current_bytes() <= sz * 3);
     }

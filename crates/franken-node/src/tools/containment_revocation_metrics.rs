@@ -292,14 +292,16 @@ impl ContainmentRevocationMetrics {
         let mut total_breaches = 0usize;
 
         for (cat, events) in &cat_events {
-            let mut latencies: Vec<f64> =
-                events.iter().map(|e| e.initiation_to_convergence_ms).collect();
+            let mut latencies: Vec<f64> = events
+                .iter()
+                .map(|e| e.initiation_to_convergence_ms)
+                .collect();
             latencies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
             let percentiles = compute_percentiles(&latencies);
 
-            let avg_conv = events.iter().map(|e| e.convergence_ratio()).sum::<f64>()
-                / events.len() as f64;
+            let avg_conv =
+                events.iter().map(|e| e.convergence_ratio()).sum::<f64>() / events.len() as f64;
 
             let breaches = events.iter().filter(|e| e.exceeds_slo()).count();
             total_breaches += breaches;
@@ -471,13 +473,21 @@ mod tests {
 
     #[test]
     fn percentiles_ordered() {
-        let p = Percentiles { p50_ms: 10.0, p95_ms: 50.0, p99_ms: 99.0 };
+        let p = Percentiles {
+            p50_ms: 10.0,
+            p95_ms: 50.0,
+            p99_ms: 99.0,
+        };
         assert!(p.is_ordered());
     }
 
     #[test]
     fn percentiles_unordered() {
-        let p = Percentiles { p50_ms: 100.0, p95_ms: 50.0, p99_ms: 99.0 };
+        let p = Percentiles {
+            p50_ms: 100.0,
+            p95_ms: 50.0,
+            p99_ms: 99.0,
+        };
         assert!(!p.is_ordered());
     }
 
@@ -486,10 +496,7 @@ mod tests {
     #[test]
     fn record_event_success() {
         let mut engine = ContainmentRevocationMetrics::default();
-        let result = engine.record_event(
-            sample_event("e1", EventCategory::Revocation),
-            &trace(),
-        );
+        let result = engine.record_event(sample_event("e1", EventCategory::Revocation), &trace());
         assert!(result.is_ok());
     }
 
@@ -539,8 +546,12 @@ mod tests {
     #[test]
     fn generate_report_with_events() {
         let mut engine = ContainmentRevocationMetrics::default();
-        engine.record_event(sample_event("e1", EventCategory::Revocation), &trace()).unwrap();
-        engine.record_event(sample_event("e2", EventCategory::Quarantine), &trace()).unwrap();
+        engine
+            .record_event(sample_event("e1", EventCategory::Revocation), &trace())
+            .unwrap();
+        engine
+            .record_event(sample_event("e2", EventCategory::Quarantine), &trace())
+            .unwrap();
         let report = engine.generate_report(&trace());
         assert_eq!(report.total_events, 2);
         assert_eq!(report.categories.len(), 2);
@@ -559,7 +570,9 @@ mod tests {
     #[test]
     fn report_slo_met_when_within() {
         let mut engine = ContainmentRevocationMetrics::default();
-        engine.record_event(sample_event("e1", EventCategory::Revocation), &trace()).unwrap();
+        engine
+            .record_event(sample_event("e1", EventCategory::Revocation), &trace())
+            .unwrap();
         let report = engine.generate_report(&trace());
         assert!(report.categories[0].slo_met);
     }
@@ -592,25 +605,34 @@ mod tests {
     #[test]
     fn audit_log_populated() {
         let mut engine = ContainmentRevocationMetrics::default();
-        engine.record_event(sample_event("e1", EventCategory::Revocation), &trace()).unwrap();
+        engine
+            .record_event(sample_event("e1", EventCategory::Revocation), &trace())
+            .unwrap();
         assert!(engine.audit_log().len() >= 3);
     }
 
     #[test]
     fn audit_has_event_codes() {
         let mut engine = ContainmentRevocationMetrics::default();
-        engine.record_event(sample_event("e1", EventCategory::Revocation), &trace()).unwrap();
-        let codes: Vec<&str> = engine.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        engine
+            .record_event(sample_event("e1", EventCategory::Revocation), &trace())
+            .unwrap();
+        let codes: Vec<&str> = engine
+            .audit_log()
+            .iter()
+            .map(|r| r.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::CRM_EVENT_RECORDED));
     }
 
     #[test]
     fn export_jsonl() {
         let mut engine = ContainmentRevocationMetrics::default();
-        engine.record_event(sample_event("e1", EventCategory::Revocation), &trace()).unwrap();
+        engine
+            .record_event(sample_event("e1", EventCategory::Revocation), &trace())
+            .unwrap();
         let jsonl = engine.export_audit_log_jsonl().unwrap();
-        let first: serde_json::Value =
-            serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+        let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert!(first["event_code"].is_string());
     }
 

@@ -290,7 +290,11 @@ impl PerformanceBudgetGuard {
         let mut path_results = Vec::new();
 
         for m in measurements {
-            self.emit(PRF_001_BENCHMARK_STARTED, &m.hot_path, "Benchmark evaluation started");
+            self.emit(
+                PRF_001_BENCHMARK_STARTED,
+                &m.hot_path,
+                "Benchmark evaluation started",
+            );
 
             // Cold-start measurement event
             self.emit(
@@ -345,7 +349,10 @@ impl PerformanceBudgetGuard {
                 self.emit(
                     PRF_002_WITHIN_BUDGET,
                     &m.hot_path,
-                    &format!("p95={:.1}%, p99={:.1}%, cold={:.1}ms", overhead_p95, overhead_p99, cold_start),
+                    &format!(
+                        "p95={:.1}%, p99={:.1}%, cold={:.1}ms",
+                        overhead_p95, overhead_p99, cold_start
+                    ),
                 );
             } else {
                 self.emit(
@@ -385,16 +392,22 @@ impl PerformanceBudgetGuard {
         let mut out = String::from(
             "hot_path,baseline_p50_us,baseline_p95_us,baseline_p99_us,\
              integrated_p50_us,integrated_p95_us,integrated_p99_us,\
-             overhead_p95_pct,overhead_p99_pct,cold_start_ms,within_budget\n"
+             overhead_p95_pct,overhead_p99_pct,cold_start_ms,within_budget\n",
         );
         for r in &result.path_results {
             let m = &r.measurement;
             out.push_str(&format!(
                 "{},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{:.2},{:.2},{:.2},{}\n",
                 r.hot_path,
-                m.baseline_p50_us, m.baseline_p95_us, m.baseline_p99_us,
-                m.integrated_p50_us, m.integrated_p95_us, m.integrated_p99_us,
-                r.overhead_p95_pct, r.overhead_p99_pct, r.cold_start_ms,
+                m.baseline_p50_us,
+                m.baseline_p95_us,
+                m.baseline_p99_us,
+                m.integrated_p50_us,
+                m.integrated_p95_us,
+                m.integrated_p99_us,
+                r.overhead_p95_pct,
+                r.overhead_p99_pct,
+                r.cold_start_ms,
                 r.within_budget,
             ));
         }
@@ -462,7 +475,12 @@ fn _assert_send_sync() {
 mod tests {
     use super::*;
 
-    fn make_measurement(path: &str, baseline_p95: f64, integrated_p95: f64, cold_start: f64) -> BenchmarkMeasurement {
+    fn make_measurement(
+        path: &str,
+        baseline_p95: f64,
+        integrated_p95: f64,
+        cold_start: f64,
+    ) -> BenchmarkMeasurement {
         BenchmarkMeasurement {
             hot_path: path.to_string(),
             baseline_p50_us: baseline_p95 * 0.7,
@@ -490,10 +508,19 @@ mod tests {
     #[test]
     fn test_hot_path_labels() {
         assert_eq!(HotPath::LifecycleTransition.label(), "lifecycle_transition");
-        assert_eq!(HotPath::HealthGateEvaluation.label(), "health_gate_evaluation");
+        assert_eq!(
+            HotPath::HealthGateEvaluation.label(),
+            "health_gate_evaluation"
+        );
         assert_eq!(HotPath::RolloutStateChange.label(), "rollout_state_change");
-        assert_eq!(HotPath::FencingTokenAcquire.label(), "fencing_token_acquire");
-        assert_eq!(HotPath::FencingTokenRelease.label(), "fencing_token_release");
+        assert_eq!(
+            HotPath::FencingTokenAcquire.label(),
+            "fencing_token_acquire"
+        );
+        assert_eq!(
+            HotPath::FencingTokenRelease.label(),
+            "fencing_token_release"
+        );
     }
 
     #[test]
@@ -552,7 +579,10 @@ mod tests {
     fn test_budget_for_unknown_path() {
         let policy = BudgetPolicy::default();
         let budget = policy.budget_for(&HotPath::Custom("unknown".into()));
-        assert_eq!(budget.max_overhead_p95_pct, policy.default_budget.max_overhead_p95_pct);
+        assert_eq!(
+            budget.max_overhead_p95_pct,
+            policy.default_budget.max_overhead_p95_pct
+        );
     }
 
     // -- BenchmarkMeasurement --
@@ -601,7 +631,9 @@ mod tests {
     fn test_within_budget_emits_prf002() {
         let mut guard = PerformanceBudgetGuard::new(BudgetPolicy::default(), "trace-1");
         guard.evaluate(&default_measurements()).unwrap();
-        let within_events: Vec<_> = guard.events().iter()
+        let within_events: Vec<_> = guard
+            .events()
+            .iter()
             .filter(|e| e.code == PRF_002_WITHIN_BUDGET)
             .collect();
         assert_eq!(within_events.len(), 5);
@@ -629,17 +661,22 @@ mod tests {
         ];
         let result = guard.evaluate(&measurements).unwrap();
         assert!(!result.overall_pass);
-        assert!(result.path_results[0].violations.iter().any(|v| v.contains("cold-start")));
+        assert!(
+            result.path_results[0]
+                .violations
+                .iter()
+                .any(|v| v.contains("cold-start"))
+        );
     }
 
     #[test]
     fn test_over_budget_emits_prf003() {
         let mut guard = PerformanceBudgetGuard::new(BudgetPolicy::default(), "trace-2");
-        let measurements = vec![
-            make_measurement("lifecycle_transition", 100.0, 120.0, 10.0),
-        ];
+        let measurements = vec![make_measurement("lifecycle_transition", 100.0, 120.0, 10.0)];
         guard.evaluate(&measurements).unwrap();
-        let over_events: Vec<_> = guard.events().iter()
+        let over_events: Vec<_> = guard
+            .events()
+            .iter()
             .filter(|e| e.code == PRF_003_OVER_BUDGET)
             .collect();
         assert_eq!(over_events.len(), 1);
@@ -660,9 +697,12 @@ mod tests {
     #[test]
     fn test_infinite_budget_all_pass() {
         let mut guard = PerformanceBudgetGuard::new(BudgetPolicy::infinite(), "trace-inf");
-        let measurements = vec![
-            make_measurement("lifecycle_transition", 100.0, 999.0, 999.0),
-        ];
+        let measurements = vec![make_measurement(
+            "lifecycle_transition",
+            100.0,
+            999.0,
+            999.0,
+        )];
         let result = guard.evaluate(&measurements).unwrap();
         assert!(result.overall_pass);
     }
@@ -682,23 +722,27 @@ mod tests {
     fn test_flamegraph_on_failure() {
         let mut guard = PerformanceBudgetGuard::new(BudgetPolicy::default(), "trace-fg")
             .with_flamegraph_dir("/tmp/flamegraphs");
-        let measurements = vec![
-            make_measurement("lifecycle_transition", 100.0, 120.0, 10.0),
-        ];
+        let measurements = vec![make_measurement("lifecycle_transition", 100.0, 120.0, 10.0)];
         let result = guard.evaluate(&measurements).unwrap();
         assert!(result.path_results[0].flamegraph_path.is_some());
-        assert!(result.path_results[0].flamegraph_path.as_ref().unwrap().contains("flamegraph_lifecycle"));
+        assert!(
+            result.path_results[0]
+                .flamegraph_path
+                .as_ref()
+                .unwrap()
+                .contains("flamegraph_lifecycle")
+        );
     }
 
     #[test]
     fn test_flamegraph_prf004_event() {
         let mut guard = PerformanceBudgetGuard::new(BudgetPolicy::default(), "trace-fg2")
             .with_flamegraph_dir("/tmp/fg");
-        let measurements = vec![
-            make_measurement("lifecycle_transition", 100.0, 120.0, 10.0),
-        ];
+        let measurements = vec![make_measurement("lifecycle_transition", 100.0, 120.0, 10.0)];
         guard.evaluate(&measurements).unwrap();
-        let fg_events: Vec<_> = guard.events().iter()
+        let fg_events: Vec<_> = guard
+            .events()
+            .iter()
             .filter(|e| e.code == PRF_004_FLAMEGRAPH_CAPTURED)
             .collect();
         assert!(!fg_events.is_empty());
@@ -707,9 +751,7 @@ mod tests {
     #[test]
     fn test_no_flamegraph_without_dir() {
         let mut guard = PerformanceBudgetGuard::new(BudgetPolicy::default(), "trace-nofg");
-        let measurements = vec![
-            make_measurement("lifecycle_transition", 100.0, 120.0, 10.0),
-        ];
+        let measurements = vec![make_measurement("lifecycle_transition", 100.0, 120.0, 10.0)];
         let result = guard.evaluate(&measurements).unwrap();
         assert!(result.path_results[0].flamegraph_path.is_none());
     }
@@ -749,7 +791,9 @@ mod tests {
     fn test_cold_start_event_emitted() {
         let mut guard = PerformanceBudgetGuard::new(BudgetPolicy::default(), "trace-cs");
         guard.evaluate(&default_measurements()).unwrap();
-        let cs_events: Vec<_> = guard.events().iter()
+        let cs_events: Vec<_> = guard
+            .events()
+            .iter()
             .filter(|e| e.code == PRF_005_COLD_START)
             .collect();
         assert_eq!(cs_events.len(), 5);
@@ -772,7 +816,7 @@ mod tests {
     fn test_mixed_pass_and_fail() {
         let mut guard = PerformanceBudgetGuard::new(BudgetPolicy::default(), "trace-mix");
         let measurements = vec![
-            make_measurement("lifecycle_transition", 100.0, 110.0, 20.0),  // within
+            make_measurement("lifecycle_transition", 100.0, 110.0, 20.0), // within
             make_measurement("health_gate_evaluation", 50.0, 70.0, 10.0), // 40% > 15%
         ];
         let result = guard.evaluate(&measurements).unwrap();
@@ -907,6 +951,9 @@ mod tests {
 
     #[test]
     fn test_hot_path_display() {
-        assert_eq!(format!("{}", HotPath::LifecycleTransition), "lifecycle_transition");
+        assert_eq!(
+            format!("{}", HotPath::LifecycleTransition),
+            "lifecycle_transition"
+        );
     }
 }

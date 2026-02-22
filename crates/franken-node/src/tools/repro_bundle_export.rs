@@ -106,15 +106,15 @@ pub struct EvidenceRef {
 impl EvidenceRef {
     /// Validate portability: no absolute paths.
     pub fn is_portable(&self) -> bool {
-        !self.relative_path.starts_with('/')
-            && !self.relative_path.contains(":\\")
+        !self.relative_path.starts_with('/') && !self.relative_path.contains(":\\")
     }
 }
 
 impl fmt::Display for EvidenceRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
-            f, "EvidenceRef(id={}, kind={}, epoch={})",
+            f,
+            "EvidenceRef(id={}, kind={}, epoch={})",
             self.evidence_id, self.decision_kind, self.epoch_id
         )
     }
@@ -185,7 +185,9 @@ pub struct ConfigSnapshot {
 
 impl ConfigSnapshot {
     pub fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     pub fn with_entry(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
@@ -194,7 +196,8 @@ impl ConfigSnapshot {
     }
 
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.entries.iter()
+        self.entries
+            .iter()
             .find(|(k, _)| k == key)
             .map(|(_, v)| v.as_str())
     }
@@ -209,9 +212,9 @@ impl ConfigSnapshot {
 
     /// Check portability: no absolute paths in values.
     pub fn is_portable(&self) -> bool {
-        self.entries.iter().all(|(_, v)| {
-            !v.starts_with('/') && !v.contains(":\\")
-        })
+        self.entries
+            .iter()
+            .all(|(_, v)| !v.starts_with('/') && !v.contains(":\\"))
     }
 }
 
@@ -263,18 +266,24 @@ impl ReproBundle {
 
     /// Check that bundle is portable (no absolute paths).
     pub fn is_portable(&self) -> bool {
-        self.evidence_refs.iter().all(|r| r.is_portable())
-            && self.config.is_portable()
+        self.evidence_refs.iter().all(|r| r.is_portable()) && self.config.is_portable()
     }
 
     /// Serialize as JSON for export.
     pub fn to_json(&self) -> String {
-        let events_json: Vec<String> = self.event_trace.iter().map(|e| {
-            format!(
-                r#"{{"seq":{},"event_type":"{}","timestamp_ms":{},"payload":"{}"}}"#,
-                e.seq, e.event_type.label(), e.timestamp_ms, e.payload
-            )
-        }).collect();
+        let events_json: Vec<String> = self
+            .event_trace
+            .iter()
+            .map(|e| {
+                format!(
+                    r#"{{"seq":{},"event_type":"{}","timestamp_ms":{},"payload":"{}"}}"#,
+                    e.seq,
+                    e.event_type.label(),
+                    e.timestamp_ms,
+                    e.payload
+                )
+            })
+            .collect();
 
         let refs_json: Vec<String> = self.evidence_refs.iter().map(|r| {
             format!(
@@ -283,9 +292,12 @@ impl ReproBundle {
             )
         }).collect();
 
-        let config_json: Vec<String> = self.config.entries.iter().map(|(k, v)| {
-            format!(r#""{}":"{}""#, k, v)
-        }).collect();
+        let config_json: Vec<String> = self
+            .config
+            .entries
+            .iter()
+            .map(|(k, v)| format!(r#""{}":"{}""#, k, v))
+            .collect();
 
         format!(
             r#"{{"bundle_id":"{}","schema_version":{},"seed":{},"epoch_id":{},"timestamp_ms":{},"failure_type":"{}","error_message":"{}","trigger":"{}","config":{{{}}},"event_trace":[{}],"evidence_refs":[{}]}}"#,
@@ -386,12 +398,20 @@ pub enum ReplayOutcome {
 impl fmt::Display for ReplayOutcome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Match { failure_type, events_replayed } => {
+            Self::Match {
+                failure_type,
+                events_replayed,
+            } => {
                 write!(f, "Match(type={failure_type}, events={events_replayed})")
             }
-            Self::Divergence { divergence_point, expected, actual } => {
+            Self::Divergence {
+                divergence_point,
+                expected,
+                actual,
+            } => {
                 write!(
-                    f, "Divergence(point={divergence_point}, expected={expected}, actual={actual})"
+                    f,
+                    "Divergence(point={divergence_point}, expected={expected}, actual={actual})"
                 )
             }
         }
@@ -481,7 +501,10 @@ impl fmt::Display for SchemaError {
         match self {
             Self::MissingField(field) => write!(f, "missing required field: {field}"),
             Self::InvalidVersion { expected, actual } => {
-                write!(f, "invalid schema version: expected {expected}, got {actual}")
+                write!(
+                    f,
+                    "invalid schema version: expected {expected}, got {actual}"
+                )
             }
             Self::NonPortablePath(path) => write!(f, "non-portable path: {path}"),
             Self::EmptyEventTrace => write!(f, "empty event trace"),
@@ -507,7 +530,9 @@ pub fn validate_bundle(bundle: &ReproBundle) -> Result<(), Vec<SchemaError>> {
     }
 
     if bundle.failure_context.error_message.is_empty() {
-        errors.push(SchemaError::MissingField("failure_context.error_message".into()));
+        errors.push(SchemaError::MissingField(
+            "failure_context.error_message".into(),
+        ));
     }
 
     if !bundle.is_portable() {
@@ -587,7 +612,8 @@ impl ReproBundleExporter {
         start_ms: u64,
         end_ms: u64,
     ) -> Vec<&'a ReproBundle> {
-        bundles.iter()
+        bundles
+            .iter()
             .filter(|b| b.timestamp_ms >= start_ms && b.timestamp_ms <= end_ms)
             .collect()
     }
@@ -625,14 +651,12 @@ mod tests {
                     payload: "barrier timeout: 2 of 3 responded".into(),
                 },
             ],
-            evidence_refs: vec![
-                EvidenceRef {
-                    evidence_id: "EVD-001".into(),
-                    decision_kind: "epoch_transition".into(),
-                    epoch_id: 42,
-                    relative_path: "evidence/evd-001.json".into(),
-                },
-            ],
+            evidence_refs: vec![EvidenceRef {
+                evidence_id: "EVD-001".into(),
+                decision_kind: "epoch_transition".into(),
+                epoch_id: 42,
+                relative_path: "evidence/evd-001.json".into(),
+            }],
             failure_context: FailureContext {
                 failure_type: FailureType::EpochTransitionTimeout,
                 error_message: "epoch transition timed out after 5000ms".into(),
@@ -650,8 +674,14 @@ mod tests {
     fn trace_event_type_labels() {
         assert_eq!(TraceEventType::EpochTransition.label(), "epoch_transition");
         assert_eq!(TraceEventType::BarrierEvent.label(), "barrier_event");
-        assert_eq!(TraceEventType::PolicyEvaluation.label(), "policy_evaluation");
-        assert_eq!(TraceEventType::MarkerIntegrityCheck.label(), "marker_integrity_check");
+        assert_eq!(
+            TraceEventType::PolicyEvaluation.label(),
+            "policy_evaluation"
+        );
+        assert_eq!(
+            TraceEventType::MarkerIntegrityCheck.label(),
+            "marker_integrity_check"
+        );
         assert_eq!(TraceEventType::ConfigChange.label(), "config_change");
         assert_eq!(TraceEventType::ExternalSignal.label(), "external_signal");
     }
@@ -670,10 +700,16 @@ mod tests {
 
     #[test]
     fn failure_type_labels() {
-        assert_eq!(FailureType::EpochTransitionTimeout.label(), "epoch_transition_timeout");
+        assert_eq!(
+            FailureType::EpochTransitionTimeout.label(),
+            "epoch_transition_timeout"
+        );
         assert_eq!(FailureType::BarrierTimeout.label(), "barrier_timeout");
         assert_eq!(FailureType::PolicyViolation.label(), "policy_violation");
-        assert_eq!(FailureType::MarkerIntegrityBreak.label(), "marker_integrity_break");
+        assert_eq!(
+            FailureType::MarkerIntegrityBreak.label(),
+            "marker_integrity_break"
+        );
     }
 
     #[test]
@@ -709,8 +745,7 @@ mod tests {
 
     #[test]
     fn config_snapshot_not_portable() {
-        let c = ConfigSnapshot::new()
-            .with_entry("path", "/absolute/path");
+        let c = ConfigSnapshot::new().with_entry("path", "/absolute/path");
         assert!(!c.is_portable());
     }
 
@@ -763,7 +798,10 @@ mod tests {
         assert_eq!(bundle.event_count(), 3);
         assert_eq!(bundle.evidence_count(), 1);
         assert_eq!(bundle.epoch_id, 42);
-        assert_eq!(bundle.failure_context.failure_type, FailureType::EpochTransitionTimeout);
+        assert_eq!(
+            bundle.failure_context.failure_type,
+            FailureType::EpochTransitionTimeout
+        );
     }
 
     #[test]
@@ -810,8 +848,14 @@ mod tests {
         assert_eq!(bundle.event_trace[0].seq, 1);
         assert_eq!(bundle.event_trace[1].seq, 2);
         assert_eq!(bundle.event_trace[2].seq, 3);
-        assert_eq!(bundle.event_trace[0].event_type, TraceEventType::EpochTransition);
-        assert_eq!(bundle.event_trace[2].event_type, TraceEventType::BarrierEvent);
+        assert_eq!(
+            bundle.event_trace[0].event_type,
+            TraceEventType::EpochTransition
+        );
+        assert_eq!(
+            bundle.event_trace[2].event_type,
+            TraceEventType::BarrierEvent
+        );
     }
 
     #[test]
@@ -857,7 +901,11 @@ mod tests {
         let outcome = replay_bundle(&bundle);
 
         assert!(matches!(outcome, ReplayOutcome::Match { .. }));
-        if let ReplayOutcome::Match { failure_type, events_replayed } = outcome {
+        if let ReplayOutcome::Match {
+            failure_type,
+            events_replayed,
+        } = outcome
+        {
             assert_eq!(failure_type, FailureType::EpochTransitionTimeout);
             assert_eq!(events_replayed, 3);
         }
@@ -895,7 +943,13 @@ mod tests {
         bundle.event_trace[1].seq = 0; // violates seq > prev
 
         let outcome = replay_bundle(&bundle);
-        assert!(matches!(outcome, ReplayOutcome::Divergence { divergence_point: 1, .. }));
+        assert!(matches!(
+            outcome,
+            ReplayOutcome::Divergence {
+                divergence_point: 1,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -930,7 +984,10 @@ mod tests {
         bundle.bundle_id = String::new();
 
         let errs = validate_bundle(&bundle).unwrap_err();
-        assert!(errs.iter().any(|e| matches!(e, SchemaError::MissingField(f) if f == "bundle_id")));
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, SchemaError::MissingField(f) if f == "bundle_id"))
+        );
     }
 
     #[test]
@@ -940,7 +997,10 @@ mod tests {
         bundle.schema_version = 0;
 
         let errs = validate_bundle(&bundle).unwrap_err();
-        assert!(errs.iter().any(|e| matches!(e, SchemaError::InvalidVersion { .. })));
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, SchemaError::InvalidVersion { .. }))
+        );
     }
 
     #[test]
@@ -950,7 +1010,10 @@ mod tests {
         bundle.failure_context.error_message = String::new();
 
         let errs = validate_bundle(&bundle).unwrap_err();
-        assert!(errs.iter().any(|e| matches!(e, SchemaError::MissingField(f) if f.contains("error_message"))));
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, SchemaError::MissingField(f) if f.contains("error_message")))
+        );
     }
 
     #[test]
@@ -965,7 +1028,10 @@ mod tests {
         });
 
         let errs = validate_bundle(&bundle).unwrap_err();
-        assert!(errs.iter().any(|e| matches!(e, SchemaError::NonPortablePath(_))));
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, SchemaError::NonPortablePath(_)))
+        );
     }
 
     #[test]
@@ -1070,10 +1136,16 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed["bundle_id"].as_str().unwrap(), bundle.bundle_id);
-        assert_eq!(parsed["schema_version"].as_u64().unwrap(), SCHEMA_VERSION as u64);
+        assert_eq!(
+            parsed["schema_version"].as_u64().unwrap(),
+            SCHEMA_VERSION as u64
+        );
         assert_eq!(parsed["seed"].as_u64().unwrap(), 42);
         assert_eq!(parsed["epoch_id"].as_u64().unwrap(), 42);
-        assert_eq!(parsed["failure_type"].as_str().unwrap(), "epoch_transition_timeout");
+        assert_eq!(
+            parsed["failure_type"].as_str().unwrap(),
+            "epoch_transition_timeout"
+        );
     }
 
     // ── Config in bundle ──

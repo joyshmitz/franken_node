@@ -75,7 +75,12 @@ pub enum ExtensionStatus {
 
 impl ExtensionStatus {
     pub fn all() -> &'static [ExtensionStatus] {
-        &[Self::Submitted, Self::Active, Self::Deprecated, Self::Revoked]
+        &[
+            Self::Submitted,
+            Self::Active,
+            Self::Deprecated,
+            Self::Revoked,
+        ]
     }
 
     pub fn label(&self) -> &'static str {
@@ -245,11 +250,7 @@ impl SignedExtensionRegistry {
     }
 
     /// Register a new signed extension.
-    pub fn register(
-        &mut self,
-        request: RegistrationRequest,
-        trace_id: &str,
-    ) -> RegistryResult {
+    pub fn register(&mut self, request: RegistrationRequest, trace_id: &str) -> RegistryResult {
         // Validate signature
         if self.config.require_signature && !self.verify_signature(&request.signature) {
             self.log(
@@ -337,7 +338,10 @@ impl SignedExtensionRegistry {
         version: VersionEntry,
         trace_id: &str,
     ) -> RegistryResult {
-        let is_revoked = self.extensions.get(extension_id).map(|e| e.status == ExtensionStatus::Revoked);
+        let is_revoked = self
+            .extensions
+            .get(extension_id)
+            .map(|e| e.status == ExtensionStatus::Revoked);
 
         match is_revoked {
             None => {
@@ -346,7 +350,7 @@ impl SignedExtensionRegistry {
                     extension_id: Some(extension_id.to_string()),
                     error_code: Some("NOT_FOUND".to_string()),
                     detail: "Extension not found".to_string(),
-                }
+                };
             }
             Some(true) => {
                 self.log(
@@ -385,11 +389,7 @@ impl SignedExtensionRegistry {
     }
 
     /// Deprecate an extension.
-    pub fn deprecate(
-        &mut self,
-        extension_id: &str,
-        trace_id: &str,
-    ) -> RegistryResult {
+    pub fn deprecate(&mut self, extension_id: &str, trace_id: &str) -> RegistryResult {
         let ext = match self.extensions.get_mut(extension_id) {
             Some(e) => e,
             None => {
@@ -398,7 +398,7 @@ impl SignedExtensionRegistry {
                     extension_id: Some(extension_id.to_string()),
                     error_code: Some("NOT_FOUND".to_string()),
                     detail: "Extension not found".to_string(),
-                }
+                };
             }
         };
 
@@ -438,7 +438,10 @@ impl SignedExtensionRegistry {
         revoked_by: &str,
         trace_id: &str,
     ) -> RegistryResult {
-        let is_revoked = self.extensions.get(extension_id).map(|e| e.status == ExtensionStatus::Revoked);
+        let is_revoked = self
+            .extensions
+            .get(extension_id)
+            .map(|e| e.status == ExtensionStatus::Revoked);
 
         match is_revoked {
             None => {
@@ -447,7 +450,7 @@ impl SignedExtensionRegistry {
                     extension_id: Some(extension_id.to_string()),
                     error_code: Some("NOT_FOUND".to_string()),
                     detail: "Extension not found".to_string(),
-                }
+                };
             }
             Some(true) => {
                 self.log(
@@ -515,7 +518,9 @@ impl SignedExtensionRegistry {
 
     /// Get the version lineage for an extension.
     pub fn version_lineage(&self, extension_id: &str) -> Option<&[VersionEntry]> {
-        self.extensions.get(extension_id).map(|e| e.versions.as_slice())
+        self.extensions
+            .get(extension_id)
+            .map(|e| e.versions.as_slice())
     }
 
     /// Get all revocation records.
@@ -713,7 +718,12 @@ mod tests {
         let mut reg = SignedExtensionRegistry::default();
         let r = reg.register(valid_request("ext-a"), &make_trace());
         let ext_id = r.extension_id.unwrap();
-        reg.revoke(&ext_id, RevocationReason::SecurityVulnerability, "admin", &make_trace());
+        reg.revoke(
+            &ext_id,
+            RevocationReason::SecurityVulnerability,
+            "admin",
+            &make_trace(),
+        );
         let result = reg.add_version(&ext_id, valid_version("2.0.0"), &make_trace());
         assert!(!result.success);
     }
@@ -734,7 +744,10 @@ mod tests {
         let ext_id = r.extension_id.unwrap();
         let result = reg.deprecate(&ext_id, &make_trace());
         assert!(result.success);
-        assert_eq!(reg.query(&ext_id).unwrap().status, ExtensionStatus::Deprecated);
+        assert_eq!(
+            reg.query(&ext_id).unwrap().status,
+            ExtensionStatus::Deprecated
+        );
     }
 
     #[test]
@@ -742,7 +755,12 @@ mod tests {
         let mut reg = SignedExtensionRegistry::default();
         let r = reg.register(valid_request("ext-a"), &make_trace());
         let ext_id = r.extension_id.unwrap();
-        reg.revoke(&ext_id, RevocationReason::PolicyViolation, "admin", &make_trace());
+        reg.revoke(
+            &ext_id,
+            RevocationReason::PolicyViolation,
+            "admin",
+            &make_trace(),
+        );
         let result = reg.deprecate(&ext_id, &make_trace());
         assert!(!result.success);
     }
@@ -754,7 +772,12 @@ mod tests {
         let mut reg = SignedExtensionRegistry::default();
         let r = reg.register(valid_request("ext-a"), &make_trace());
         let ext_id = r.extension_id.unwrap();
-        let result = reg.revoke(&ext_id, RevocationReason::SecurityVulnerability, "admin", &make_trace());
+        let result = reg.revoke(
+            &ext_id,
+            RevocationReason::SecurityVulnerability,
+            "admin",
+            &make_trace(),
+        );
         assert!(result.success);
         assert_eq!(reg.query(&ext_id).unwrap().status, ExtensionStatus::Revoked);
     }
@@ -764,8 +787,18 @@ mod tests {
         let mut reg = SignedExtensionRegistry::default();
         let r = reg.register(valid_request("ext-a"), &make_trace());
         let ext_id = r.extension_id.unwrap();
-        reg.revoke(&ext_id, RevocationReason::SecurityVulnerability, "admin", &make_trace());
-        let result = reg.revoke(&ext_id, RevocationReason::PolicyViolation, "admin", &make_trace());
+        reg.revoke(
+            &ext_id,
+            RevocationReason::SecurityVulnerability,
+            "admin",
+            &make_trace(),
+        );
+        let result = reg.revoke(
+            &ext_id,
+            RevocationReason::PolicyViolation,
+            "admin",
+            &make_trace(),
+        );
         assert!(!result.success);
         assert_eq!(
             result.error_code.as_deref(),
@@ -888,7 +921,11 @@ mod tests {
     fn audit_log_has_event_codes() {
         let mut reg = SignedExtensionRegistry::default();
         reg.register(valid_request("ext-a"), &make_trace());
-        let codes: Vec<&str> = reg.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        let codes: Vec<&str> = reg
+            .audit_log()
+            .iter()
+            .map(|r| r.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::SER_SIGNATURE_VERIFIED));
         assert!(codes.contains(&event_codes::SER_EXTENSION_REGISTERED));
     }
@@ -898,8 +935,7 @@ mod tests {
         let mut reg = SignedExtensionRegistry::default();
         reg.register(valid_request("ext-a"), &make_trace());
         let jsonl = reg.export_audit_log_jsonl().unwrap();
-        let first: serde_json::Value =
-            serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+        let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert!(!first["event_code"].as_str().unwrap().is_empty());
     }
 

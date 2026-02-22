@@ -437,10 +437,7 @@ impl GuardrailMonitorSet {
     }
 
     /// Check if the proposed action is allowed and produce rejection if not.
-    pub fn evaluate(
-        &self,
-        state: &SystemState,
-    ) -> Result<(), GuardrailRejection> {
+    pub fn evaluate(&self, state: &SystemState) -> Result<(), GuardrailRejection> {
         for monitor in &self.monitors {
             let verdict = monitor.check(state);
             if let GuardrailVerdict::Block { reason, budget_id } = verdict {
@@ -525,10 +522,7 @@ mod tests {
             "EVD-GUARD-002"
         );
         assert_eq!(
-            GuardrailVerdict::Warn {
-                reason: "x".into(),
-            }
-            .event_code(),
+            GuardrailVerdict::Warn { reason: "x".into() }.event_code(),
             "EVD-GUARD-003"
         );
     }
@@ -547,15 +541,14 @@ mod tests {
     #[test]
     fn verdict_is_blocked() {
         assert!(!GuardrailVerdict::Allow.is_blocked());
-        assert!(!GuardrailVerdict::Warn {
-            reason: "x".into()
-        }
-        .is_blocked());
-        assert!(GuardrailVerdict::Block {
-            reason: "x".into(),
-            budget_id: BudgetId::new("x"),
-        }
-        .is_blocked());
+        assert!(!GuardrailVerdict::Warn { reason: "x".into() }.is_blocked());
+        assert!(
+            GuardrailVerdict::Block {
+                reason: "x".into(),
+                budget_id: BudgetId::new("x"),
+            }
+            .is_blocked()
+        );
     }
 
     // ── SystemState tests ──

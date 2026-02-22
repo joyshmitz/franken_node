@@ -430,7 +430,11 @@ mod tests {
         }
         let ranked = d.rank_candidates(&[c("A"), c("B"), c("C")], &[]);
         let total: f64 = ranked.iter().map(|r| r.posterior_prob).sum();
-        assert!((total - 1.0).abs() < 1e-10, "INV-BAYES-NORMALIZED: sum={}", total);
+        assert!(
+            (total - 1.0).abs() < 1e-10,
+            "INV-BAYES-NORMALIZED: sum={}",
+            total
+        );
     }
 
     #[test]
@@ -449,7 +453,9 @@ mod tests {
     #[test]
     fn test_confidence_interval_bounds() {
         let mut d = BayesianDiagnostics::new();
-        for _ in 0..20 { d.update(&obs("A", true)); }
+        for _ in 0..20 {
+            d.update(&obs("A", true));
+        }
         let ranked = d.rank_candidates(&[c("A")], &[]);
         let (lo, hi) = ranked[0].confidence_interval;
         assert!(lo >= 0.0 && lo <= 1.0);
@@ -463,7 +469,9 @@ mod tests {
         d.update(&obs("A", true));
         let r1 = d.rank_candidates(&[c("A")], &[]);
         let w1 = r1[0].confidence_interval.1 - r1[0].confidence_interval.0;
-        for _ in 0..50 { d.update(&obs("A", true)); }
+        for _ in 0..50 {
+            d.update(&obs("A", true));
+        }
         let r2 = d.rank_candidates(&[c("A")], &[]);
         let w2 = r2[0].confidence_interval.1 - r2[0].confidence_interval.0;
         assert!(w2 < w1, "CI should narrow with more observations");
@@ -472,7 +480,9 @@ mod tests {
     #[test]
     fn test_guardrail_filtered_flag() {
         let mut d = BayesianDiagnostics::new();
-        for _ in 0..10 { d.update(&obs("A", true)); }
+        for _ in 0..10 {
+            d.update(&obs("A", true));
+        }
         let ranked = d.rank_candidates(&[c("A"), c("B")], &[c("A")]);
         let a = ranked.iter().find(|r| r.candidate_ref == c("A")).unwrap();
         assert!(a.guardrail_filtered);
@@ -483,7 +493,9 @@ mod tests {
     #[test]
     fn test_guardrail_does_not_reorder() {
         let mut d = BayesianDiagnostics::new();
-        for _ in 0..10 { d.update(&obs("A", true)); }
+        for _ in 0..10 {
+            d.update(&obs("A", true));
+        }
         let without = d.rank_candidates(&[c("A"), c("B")], &[]);
         let with = d.rank_candidates(&[c("A"), c("B")], &[c("A")]);
         assert_eq!(without[0].candidate_ref, with[0].candidate_ref);
@@ -499,7 +511,11 @@ mod tests {
         let r1 = d1.rank_candidates(&[c("A"), c("B")], &[]);
         let r2 = d2.rank_candidates(&[c("A"), c("B")], &[]);
         for (a, b) in r1.iter().zip(r2.iter()) {
-            assert_eq!(a.posterior_prob.to_bits(), b.posterior_prob.to_bits(), "INV-BAYES-REPRODUCIBLE");
+            assert_eq!(
+                a.posterior_prob.to_bits(),
+                b.posterior_prob.to_bits(),
+                "INV-BAYES-REPRODUCIBLE"
+            );
         }
     }
 
@@ -511,10 +527,17 @@ mod tests {
 
     #[test]
     fn test_replay_matches_incremental() {
-        let observations = vec![obs("A", true), obs("B", false), obs("A", true), obs("C", true)];
+        let observations = vec![
+            obs("A", true),
+            obs("B", false),
+            obs("A", true),
+            obs("C", true),
+        ];
         let replayed = BayesianDiagnostics::replay_from(&observations);
         let mut incremental = BayesianDiagnostics::new();
-        for o in &observations { incremental.update(o); }
+        for o in &observations {
+            incremental.update(o);
+        }
         let r1 = replayed.rank_candidates(&[c("A"), c("B"), c("C")], &[]);
         let r2 = incremental.rank_candidates(&[c("A"), c("B"), c("C")], &[]);
         for (a, b) in r1.iter().zip(r2.iter()) {
@@ -537,7 +560,9 @@ mod tests {
     #[test]
     fn test_contradictory_observations() {
         let mut d = BayesianDiagnostics::new();
-        for _ in 0..20 { d.update(&obs("A", true)); }
+        for _ in 0..20 {
+            d.update(&obs("A", true));
+        }
         let r1 = d.rank_candidates(&[c("A"), c("B")], &[]);
         let a_before = r1[0].posterior_prob;
         for _ in 0..20 {
@@ -551,20 +576,27 @@ mod tests {
 
     #[test]
     fn test_overall_confidence_low() {
-        assert_eq!(BayesianDiagnostics::new().overall_confidence(), DiagnosticConfidence::Low);
+        assert_eq!(
+            BayesianDiagnostics::new().overall_confidence(),
+            DiagnosticConfidence::Low
+        );
     }
 
     #[test]
     fn test_overall_confidence_medium() {
         let mut d = BayesianDiagnostics::new();
-        for _ in 0..10 { d.update(&obs("A", true)); }
+        for _ in 0..10 {
+            d.update(&obs("A", true));
+        }
         assert_eq!(d.overall_confidence(), DiagnosticConfidence::Medium);
     }
 
     #[test]
     fn test_overall_confidence_high() {
         let mut d = BayesianDiagnostics::new();
-        for _ in 0..30 { d.update(&obs("A", true)); }
+        for _ in 0..30 {
+            d.update(&obs("A", true));
+        }
         assert_eq!(d.overall_confidence(), DiagnosticConfidence::High);
     }
 
@@ -590,7 +622,9 @@ mod tests {
     #[test]
     fn test_unobserved_candidate() {
         let mut d = BayesianDiagnostics::new();
-        for _ in 0..10 { d.update(&obs("A", true)); }
+        for _ in 0..10 {
+            d.update(&obs("A", true));
+        }
         let ranked = d.rank_candidates(&[c("A"), c("B")], &[]);
         let b = ranked.iter().find(|r| r.candidate_ref == c("B")).unwrap();
         assert_eq!(b.observation_count, 0);
@@ -640,8 +674,12 @@ mod tests {
     #[test]
     fn test_observation_count_per_candidate() {
         let mut d = BayesianDiagnostics::new();
-        for _ in 0..5 { d.update(&obs("A", true)); }
-        for _ in 0..3 { d.update(&obs("B", false)); }
+        for _ in 0..5 {
+            d.update(&obs("A", true));
+        }
+        for _ in 0..3 {
+            d.update(&obs("B", false));
+        }
         let ranked = d.rank_candidates(&[c("A"), c("B")], &[]);
         let a = ranked.iter().find(|r| r.candidate_ref == c("A")).unwrap();
         let b = ranked.iter().find(|r| r.candidate_ref == c("B")).unwrap();

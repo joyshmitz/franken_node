@@ -339,9 +339,7 @@ impl ProfileTuningHarness {
         candidates
             .iter()
             .map(|candidate| {
-                let base = baseline
-                    .iter()
-                    .find(|b| b.class_id == candidate.class_id);
+                let base = baseline.iter().find(|b| b.class_id == candidate.class_id);
 
                 let (old_symbol, old_overhead, old_priority, old_prefetch) = match base {
                     Some(b) => (
@@ -356,21 +354,17 @@ impl ProfileTuningHarness {
                 // Compute p99 change percentages relative to previous benchmarks
                 let (p99_encode_change, p99_decode_change) = match previous_benchmarks {
                     Some(prev) => {
-                        let prev_bench = prev
-                            .iter()
-                            .find(|p| p.class_id == candidate.class_id);
+                        let prev_bench = prev.iter().find(|p| p.class_id == candidate.class_id);
                         match prev_bench {
                             Some(p) => {
                                 let enc_change = if p.p99_encode_us > 0.0 {
-                                    ((candidate.p99_encode_us - p.p99_encode_us)
-                                        / p.p99_encode_us)
+                                    ((candidate.p99_encode_us - p.p99_encode_us) / p.p99_encode_us)
                                         * 100.0
                                 } else {
                                     0.0
                                 };
                                 let dec_change = if p.p99_decode_us > 0.0 {
-                                    ((candidate.p99_decode_us - p.p99_decode_us)
-                                        / p.p99_decode_us)
+                                    ((candidate.p99_decode_us - p.p99_decode_us) / p.p99_decode_us)
                                         * 100.0
                                 } else {
                                     0.0
@@ -457,10 +451,7 @@ impl ProfileTuningHarness {
         let payload = bundle.signable_payload();
         let valid = hmac_verify(&payload, &self.config.signing_key, &bundle.signature);
         if valid {
-            self.emit(
-                PT_BUNDLE_VERIFIED,
-                "Bundle signature verified".to_string(),
-            );
+            self.emit(PT_BUNDLE_VERIFIED, "Bundle signature verified".to_string());
         }
         valid
     }

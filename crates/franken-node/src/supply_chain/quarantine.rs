@@ -58,7 +58,10 @@ pub enum QuarantineSeverity {
 #[serde(rename_all = "snake_case")]
 pub enum QuarantineScope {
     /// A single extension version.
-    Version { extension_id: String, version: String },
+    Version {
+        extension_id: String,
+        version: String,
+    },
     /// All versions of an extension.
     AllVersions { extension_id: String },
     /// All extensions from a publisher.
@@ -335,9 +338,7 @@ impl QuarantineRegistry {
         if let Some(existing_id) = self.active_quarantines.get(&ext_id) {
             return Err(QuarantineError {
                 code: ERR_QUARANTINE_ALREADY_ACTIVE.to_owned(),
-                message: format!(
-                    "Extension {ext_id} already under quarantine: {existing_id}"
-                ),
+                message: format!("Extension {ext_id} already under quarantine: {existing_id}"),
             });
         }
 
@@ -369,7 +370,8 @@ impl QuarantineRegistry {
         };
 
         self.records.insert(order_id.clone(), record.clone());
-        self.active_quarantines.insert(ext_id.clone(), order_id.clone());
+        self.active_quarantines
+            .insert(ext_id.clone(), order_id.clone());
         self.total_quarantines += 1;
 
         // Audit: QUARANTINE_INITIATED.
@@ -417,13 +419,16 @@ impl QuarantineRegistry {
             )
         };
 
-        self.propagation_status.insert(node_id.to_owned(), timestamp.to_owned());
+        self.propagation_status
+            .insert(node_id.to_owned(), timestamp.to_owned());
 
         // Transition to Propagated if still in Initiated state.
         let record = self.records.get_mut(order_id).unwrap();
         if record.state == QuarantineState::Initiated {
             record.state = QuarantineState::Propagated;
-            record.state_history.push((QuarantineState::Propagated, timestamp.to_owned()));
+            record
+                .state_history
+                .push((QuarantineState::Propagated, timestamp.to_owned()));
         }
 
         self.append_audit(
@@ -460,7 +465,9 @@ impl QuarantineRegistry {
         let record = self.records.get_mut(order_id).unwrap();
         if record.state != QuarantineState::Enforced {
             record.state = QuarantineState::Enforced;
-            record.state_history.push((QuarantineState::Enforced, timestamp.to_owned()));
+            record
+                .state_history
+                .push((QuarantineState::Enforced, timestamp.to_owned()));
 
             self.append_audit(
                 QUARANTINE_ENFORCED,
@@ -477,11 +484,7 @@ impl QuarantineRegistry {
     }
 
     /// Start draining active sessions.
-    pub fn start_drain(
-        &mut self,
-        order_id: &str,
-        timestamp: &str,
-    ) -> Result<(), QuarantineError> {
+    pub fn start_drain(&mut self, order_id: &str, timestamp: &str) -> Result<(), QuarantineError> {
         let (ext_id, severity, trace_id) = {
             let record = self.records.get(order_id).ok_or_else(|| QuarantineError {
                 code: ERR_QUARANTINE_NOT_FOUND.to_owned(),
@@ -496,7 +499,9 @@ impl QuarantineRegistry {
 
         let record = self.records.get_mut(order_id).unwrap();
         record.state = QuarantineState::Draining;
-        record.state_history.push((QuarantineState::Draining, timestamp.to_owned()));
+        record
+            .state_history
+            .push((QuarantineState::Draining, timestamp.to_owned()));
 
         self.append_audit(
             QUARANTINE_DRAIN_STARTED,
@@ -531,7 +536,9 @@ impl QuarantineRegistry {
 
         let record = self.records.get_mut(order_id).unwrap();
         record.state = QuarantineState::Isolated;
-        record.state_history.push((QuarantineState::Isolated, timestamp.to_owned()));
+        record
+            .state_history
+            .push((QuarantineState::Isolated, timestamp.to_owned()));
 
         self.append_audit(
             QUARANTINE_DRAIN_COMPLETED,
@@ -557,10 +564,13 @@ impl QuarantineRegistry {
         recommended_actions: Vec<String>,
         timestamp: &str,
     ) -> Result<QuarantineImpactReport, QuarantineError> {
-        let record = self.records.get_mut(order_id).ok_or_else(|| QuarantineError {
-            code: ERR_QUARANTINE_NOT_FOUND.to_owned(),
-            message: format!("Quarantine order not found: {order_id}"),
-        })?;
+        let record = self
+            .records
+            .get_mut(order_id)
+            .ok_or_else(|| QuarantineError {
+                code: ERR_QUARANTINE_NOT_FOUND.to_owned(),
+                message: format!("Quarantine order not found: {order_id}"),
+            })?;
 
         let report = QuarantineImpactReport {
             order_id: order_id.to_owned(),
@@ -577,19 +587,19 @@ impl QuarantineRegistry {
     }
 
     /// Trigger recall after investigation confirms compromise.
-    pub fn trigger_recall(
-        &mut self,
-        recall: RecallOrder,
-    ) -> Result<(), QuarantineError> {
+    pub fn trigger_recall(&mut self, recall: RecallOrder) -> Result<(), QuarantineError> {
         let quarantine_order_id = recall.quarantine_order_id.clone();
         let (ext_id, severity) = {
-            let record = self.records.get(&quarantine_order_id).ok_or_else(|| QuarantineError {
-                code: ERR_RECALL_WITHOUT_QUARANTINE.to_owned(),
-                message: format!(
-                    "Cannot recall without prior quarantine: {}",
-                    quarantine_order_id
-                ),
-            })?;
+            let record = self
+                .records
+                .get(&quarantine_order_id)
+                .ok_or_else(|| QuarantineError {
+                    code: ERR_RECALL_WITHOUT_QUARANTINE.to_owned(),
+                    message: format!(
+                        "Cannot recall without prior quarantine: {}",
+                        quarantine_order_id
+                    ),
+                })?;
             (
                 self.extension_id_from_scope(&record.order.scope),
                 record.order.severity,
@@ -600,7 +610,9 @@ impl QuarantineRegistry {
 
         let record = self.records.get_mut(&quarantine_order_id).unwrap();
         record.state = QuarantineState::RecallTriggered;
-        record.state_history.push((QuarantineState::RecallTriggered, timestamp.clone()));
+        record
+            .state_history
+            .push((QuarantineState::RecallTriggered, timestamp.clone()));
         record.recall = Some(recall);
 
         self.append_audit(
@@ -672,7 +684,9 @@ impl QuarantineRegistry {
         let record = self.records.get_mut(order_id).unwrap();
 
         record.state = QuarantineState::RecallCompleted;
-        record.state_history.push((QuarantineState::RecallCompleted, timestamp.to_owned()));
+        record
+            .state_history
+            .push((QuarantineState::RecallCompleted, timestamp.to_owned()));
         self.total_recalls += 1;
 
         // Remove from active quarantines.
@@ -721,7 +735,9 @@ impl QuarantineRegistry {
 
         let record = self.records.get_mut(&order_id).unwrap();
         record.state = QuarantineState::Lifted;
-        record.state_history.push((QuarantineState::Lifted, timestamp.clone()));
+        record
+            .state_history
+            .push((QuarantineState::Lifted, timestamp.clone()));
         record.clearance = Some(clearance);
 
         // Remove from active quarantines.
@@ -1002,7 +1018,8 @@ mod tests {
         let mut reg = QuarantineRegistry::new();
         let order = make_order("q-001", QuarantineSeverity::High, QuarantineMode::Soft);
         reg.initiate_quarantine(order).unwrap();
-        reg.record_propagation("q-001", "node-1", "2026-01-15T00:01:00Z").unwrap();
+        reg.record_propagation("q-001", "node-1", "2026-01-15T00:01:00Z")
+            .unwrap();
 
         let record = reg.get_record("q-001").unwrap();
         assert_eq!(record.state, QuarantineState::Propagated);
@@ -1014,14 +1031,24 @@ mod tests {
         let order = make_order("q-001", QuarantineSeverity::High, QuarantineMode::Hard);
         reg.initiate_quarantine(order).unwrap();
 
-        reg.enforce_quarantine("q-001", "2026-01-15T00:02:00Z").unwrap();
-        assert_eq!(reg.get_record("q-001").unwrap().state, QuarantineState::Enforced);
+        reg.enforce_quarantine("q-001", "2026-01-15T00:02:00Z")
+            .unwrap();
+        assert_eq!(
+            reg.get_record("q-001").unwrap().state,
+            QuarantineState::Enforced
+        );
 
         reg.start_drain("q-001", "2026-01-15T00:03:00Z").unwrap();
-        assert_eq!(reg.get_record("q-001").unwrap().state, QuarantineState::Draining);
+        assert_eq!(
+            reg.get_record("q-001").unwrap().state,
+            QuarantineState::Draining
+        );
 
         reg.complete_drain("q-001", "2026-01-15T00:04:00Z").unwrap();
-        assert_eq!(reg.get_record("q-001").unwrap().state, QuarantineState::Isolated);
+        assert_eq!(
+            reg.get_record("q-001").unwrap().state,
+            QuarantineState::Isolated
+        );
     }
 
     #[test]
@@ -1059,7 +1086,10 @@ mod tests {
 
         // Trigger recall.
         reg.trigger_recall(make_recall("q-001")).unwrap();
-        assert_eq!(reg.get_record("q-001").unwrap().state, QuarantineState::RecallTriggered);
+        assert_eq!(
+            reg.get_record("q-001").unwrap().state,
+            QuarantineState::RecallTriggered
+        );
 
         // Record receipt.
         let receipt = RecallReceipt {
@@ -1073,8 +1103,12 @@ mod tests {
         reg.record_recall_receipt("q-001", receipt).unwrap();
 
         // Complete recall.
-        reg.complete_recall("q-001", "2026-01-16T14:00:00Z").unwrap();
-        assert_eq!(reg.get_record("q-001").unwrap().state, QuarantineState::RecallCompleted);
+        reg.complete_recall("q-001", "2026-01-16T14:00:00Z")
+            .unwrap();
+        assert_eq!(
+            reg.get_record("q-001").unwrap().state,
+            QuarantineState::RecallCompleted
+        );
         assert_eq!(reg.total_recalls(), 1);
         assert!(!reg.is_quarantined("ext-test"));
     }
@@ -1093,15 +1127,17 @@ mod tests {
         let order = make_order("q-001", QuarantineSeverity::High, QuarantineMode::Hard);
         reg.initiate_quarantine(order).unwrap();
 
-        let report = reg.generate_impact_report(
-            "q-001",
-            150,
-            vec!["user-configs".to_owned()],
-            vec!["ext-dependent-1".to_owned()],
-            5,
-            vec!["Export user data before hard quarantine takes effect".to_owned()],
-            "2026-01-15T01:00:00Z",
-        ).unwrap();
+        let report = reg
+            .generate_impact_report(
+                "q-001",
+                150,
+                vec!["user-configs".to_owned()],
+                vec!["ext-dependent-1".to_owned()],
+                5,
+                vec!["Export user data before hard quarantine takes effect".to_owned()],
+                "2026-01-15T01:00:00Z",
+            )
+            .unwrap();
 
         assert_eq!(report.installations_affected, 150);
         assert_eq!(report.active_sessions, 5);
@@ -1134,7 +1170,8 @@ mod tests {
         let mut reg = QuarantineRegistry::new();
         let order = make_order("q-001", QuarantineSeverity::High, QuarantineMode::Hard);
         reg.initiate_quarantine(order).unwrap();
-        reg.enforce_quarantine("q-001", "2026-01-15T00:02:00Z").unwrap();
+        reg.enforce_quarantine("q-001", "2026-01-15T00:02:00Z")
+            .unwrap();
         reg.start_drain("q-001", "2026-01-15T00:03:00Z").unwrap();
 
         assert!(reg.verify_audit_integrity().unwrap());
@@ -1171,7 +1208,9 @@ mod tests {
     fn test_publisher_scope_quarantine() {
         let mut reg = QuarantineRegistry::new();
         let mut order = make_order("q-pub", QuarantineSeverity::High, QuarantineMode::Hard);
-        order.scope = QuarantineScope::Publisher { publisher_id: "bad-publisher".to_owned() };
+        order.scope = QuarantineScope::Publisher {
+            publisher_id: "bad-publisher".to_owned(),
+        };
         reg.initiate_quarantine(order).unwrap();
         assert!(reg.is_quarantined("publisher:bad-publisher"));
     }
@@ -1180,7 +1219,9 @@ mod tests {
     fn test_all_versions_scope() {
         let mut reg = QuarantineRegistry::new();
         let mut order = make_order("q-all", QuarantineSeverity::Medium, QuarantineMode::Soft);
-        order.scope = QuarantineScope::AllVersions { extension_id: "ext-evil".to_owned() };
+        order.scope = QuarantineScope::AllVersions {
+            extension_id: "ext-evil".to_owned(),
+        };
         reg.initiate_quarantine(order).unwrap();
         assert!(reg.is_quarantined("ext-evil"));
     }
@@ -1190,7 +1231,8 @@ mod tests {
         let mut reg = QuarantineRegistry::new();
         let order = make_order("q-001", QuarantineSeverity::High, QuarantineMode::Hard);
         reg.initiate_quarantine(order).unwrap();
-        reg.enforce_quarantine("q-001", "2026-01-15T00:02:00Z").unwrap();
+        reg.enforce_quarantine("q-001", "2026-01-15T00:02:00Z")
+            .unwrap();
         reg.start_drain("q-001", "2026-01-15T00:03:00Z").unwrap();
         reg.complete_drain("q-001", "2026-01-15T00:04:00Z").unwrap();
 

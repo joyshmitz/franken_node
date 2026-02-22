@@ -263,45 +263,39 @@ impl GateEngine {
             .unwrap_or(CompatMode::Strict);
 
         // Policy: requested mode must not exceed scope's configured mode risk level.
-        let (decision, explanation, matched) = if req.requested_mode.risk_level()
-            <= scope_mode.risk_level()
-        {
-            (
-                Verdict::Allow,
-                format!(
-                    "Package {} allowed under {} mode (scope {} permits up to {})",
-                    req.package_id,
-                    req.requested_mode.label(),
-                    req.scope,
-                    scope_mode.label()
-                ),
-                vec!["mode_risk_ceiling".to_string()],
-            )
-        } else {
-            (
-                Verdict::Deny,
-                format!(
-                    "Package {} denied: requested {} exceeds scope {} ceiling {}",
-                    req.package_id,
-                    req.requested_mode.label(),
-                    req.scope,
-                    scope_mode.label()
-                ),
-                vec!["mode_risk_ceiling".to_string()],
-            )
-        };
+        let (decision, explanation, matched) =
+            if req.requested_mode.risk_level() <= scope_mode.risk_level() {
+                (
+                    Verdict::Allow,
+                    format!(
+                        "Package {} allowed under {} mode (scope {} permits up to {})",
+                        req.package_id,
+                        req.requested_mode.label(),
+                        req.scope,
+                        scope_mode.label()
+                    ),
+                    vec!["mode_risk_ceiling".to_string()],
+                )
+            } else {
+                (
+                    Verdict::Deny,
+                    format!(
+                        "Package {} denied: requested {} exceeds scope {} ceiling {}",
+                        req.package_id,
+                        req.requested_mode.label(),
+                        req.scope,
+                        scope_mode.label()
+                    ),
+                    vec!["mode_risk_ceiling".to_string()],
+                )
+            };
 
         let event_code = match decision {
             Verdict::Allow => PCG_001,
             Verdict::Deny | Verdict::Audit => PCG_002,
         };
 
-        self.emit_audit(
-            event_code,
-            &req.scope,
-            &explanation,
-            &trace_id,
-        );
+        self.emit_audit(event_code, &req.scope, &explanation, &trace_id);
 
         GateCheckResult {
             decision,
@@ -498,8 +492,16 @@ impl GateEngine {
         // Non-interference: scope B's mode and receipts are unchanged by scope A operations.
         // In this implementation, scopes are keyed by ID so operations on one cannot
         // affect another by construction.
-        let a_events: Vec<_> = self.audit_trail.iter().filter(|e| e.scope_id == scope_a).collect();
-        let b_events: Vec<_> = self.audit_trail.iter().filter(|e| e.scope_id == scope_b).collect();
+        let a_events: Vec<_> = self
+            .audit_trail
+            .iter()
+            .filter(|e| e.scope_id == scope_a)
+            .collect();
+        let b_events: Vec<_> = self
+            .audit_trail
+            .iter()
+            .filter(|e| e.scope_id == scope_b)
+            .collect();
         // No cross-contamination: events for scope A reference only scope A.
         a_events.iter().all(|e| e.scope_id == scope_a)
             && b_events.iter().all(|e| e.scope_id == scope_b)
@@ -590,7 +592,10 @@ mod tests {
             })
             .unwrap();
         assert!(receipt.approved);
-        assert_eq!(engine.query_mode("tenant-1").unwrap().mode, CompatMode::Strict);
+        assert_eq!(
+            engine.query_mode("tenant-1").unwrap().mode,
+            CompatMode::Strict
+        );
     }
 
     #[test]

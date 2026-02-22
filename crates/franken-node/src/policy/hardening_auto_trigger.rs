@@ -265,9 +265,7 @@ impl HardeningAutoTrigger {
                     trigger_id: format!("trig-{:04}", self.trigger_counter),
                     rejection_id: format!(
                         "rej-{}-{}-{}",
-                        rejection.monitor_name,
-                        rejection.budget_id,
-                        rejection.epoch_id
+                        rejection.monitor_name, rejection.budget_id, rejection.epoch_id
                     ),
                     evidence_entry_id: format!(
                         "evd-autotrig-{:04}-{}",
@@ -299,8 +297,8 @@ impl HardeningAutoTrigger {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::guardrail_monitor::BudgetId;
+    use super::*;
 
     fn make_rejection(budget: &str, epoch: u64) -> GuardrailRejection {
         GuardrailRejection {
@@ -331,7 +329,11 @@ mod tests {
 
     #[test]
     fn trigger_result_already_at_max_display() {
-        assert!(TriggerResult::AlreadyAtMax.to_string().contains("ALREADY_AT_MAX"));
+        assert!(
+            TriggerResult::AlreadyAtMax
+                .to_string()
+                .contains("ALREADY_AT_MAX")
+        );
     }
 
     #[test]
@@ -353,15 +355,9 @@ mod tests {
             .event_code(),
             "EVD-AUTOTRIG-001"
         );
+        assert_eq!(TriggerResult::AlreadyAtMax.event_code(), "EVD-AUTOTRIG-003");
         assert_eq!(
-            TriggerResult::AlreadyAtMax.event_code(),
-            "EVD-AUTOTRIG-003"
-        );
-        assert_eq!(
-            TriggerResult::Suppressed {
-                reason: "x".into()
-            }
-            .event_code(),
+            TriggerResult::Suppressed { reason: "x".into() }.event_code(),
             "EVD-AUTOTRIG-002"
         );
     }
@@ -388,10 +384,22 @@ mod tests {
 
     #[test]
     fn next_level_progression() {
-        assert_eq!(next_level(HardeningLevel::Baseline), Some(HardeningLevel::Standard));
-        assert_eq!(next_level(HardeningLevel::Standard), Some(HardeningLevel::Enhanced));
-        assert_eq!(next_level(HardeningLevel::Enhanced), Some(HardeningLevel::Maximum));
-        assert_eq!(next_level(HardeningLevel::Maximum), Some(HardeningLevel::Critical));
+        assert_eq!(
+            next_level(HardeningLevel::Baseline),
+            Some(HardeningLevel::Standard)
+        );
+        assert_eq!(
+            next_level(HardeningLevel::Standard),
+            Some(HardeningLevel::Enhanced)
+        );
+        assert_eq!(
+            next_level(HardeningLevel::Enhanced),
+            Some(HardeningLevel::Maximum)
+        );
+        assert_eq!(
+            next_level(HardeningLevel::Maximum),
+            Some(HardeningLevel::Critical)
+        );
         assert_eq!(next_level(HardeningLevel::Critical), None);
     }
 

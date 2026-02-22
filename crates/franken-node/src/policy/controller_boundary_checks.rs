@@ -14,9 +14,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use super::correctness_envelope::{
-    CorrectnessEnvelope, InvariantId, PolicyProposal,
-};
+use super::correctness_envelope::{CorrectnessEnvelope, InvariantId, PolicyProposal};
 
 // ── Error classification ────────────────────────────────────────────
 
@@ -453,10 +451,7 @@ mod tests {
         let err = c
             .check_proposal(&violating_proposal("evidence.suppress"), &env, 2001)
             .unwrap_err();
-        assert_eq!(
-            err.violated_invariant.as_str(),
-            "INV-002-EVIDENCE-EMISSION"
-        );
+        assert_eq!(err.violated_invariant.as_str(), "INV-002-EVIDENCE-EMISSION");
         assert_eq!(
             err.stable_error_class,
             ErrorClass::CorrectnessSemanticMutation
@@ -481,7 +476,11 @@ mod tests {
         let env = envelope();
         let mut c = checker();
         let err = c
-            .check_proposal(&violating_proposal("integrity.bypass_hash_check"), &env, 2003)
+            .check_proposal(
+                &violating_proposal("integrity.bypass_hash_check"),
+                &env,
+                2003,
+            )
             .unwrap_err();
         assert_eq!(
             err.violated_invariant.as_str(),
@@ -494,7 +493,11 @@ mod tests {
         let env = envelope();
         let mut c = checker();
         let err = c
-            .check_proposal(&violating_proposal("ring_buffer.overflow_policy"), &env, 2004)
+            .check_proposal(
+                &violating_proposal("ring_buffer.overflow_policy"),
+                &env,
+                2004,
+            )
             .unwrap_err();
         assert_eq!(err.violated_invariant.as_str(), "INV-005-RING-BUFFER-FIFO");
     }
@@ -881,24 +884,28 @@ mod tests {
         let mut c = checker();
 
         // Pass
-        assert!(c
-            .check_proposal(&valid_proposal("admission.budget_limit"), &env, 10000)
-            .is_ok());
+        assert!(
+            c.check_proposal(&valid_proposal("admission.budget_limit"), &env, 10000)
+                .is_ok()
+        );
 
         // Reject
-        assert!(c
-            .check_proposal(&violating_proposal("hardening.direction"), &env, 10001)
-            .is_err());
+        assert!(
+            c.check_proposal(&violating_proposal("hardening.direction"), &env, 10001)
+                .is_err()
+        );
 
         // Pass again
-        assert!(c
-            .check_proposal(&valid_proposal("scoring.risk_threshold"), &env, 10002)
-            .is_ok());
+        assert!(
+            c.check_proposal(&valid_proposal("scoring.risk_threshold"), &env, 10002)
+                .is_ok()
+        );
 
         // Reject again
-        assert!(c
-            .check_proposal(&violating_proposal("evidence.suppress"), &env, 10003)
-            .is_err());
+        assert!(
+            c.check_proposal(&violating_proposal("evidence.suppress"), &env, 10003)
+                .is_err()
+        );
 
         assert_eq!(c.checks_passed(), 2);
         assert_eq!(c.checks_rejected(), 2);

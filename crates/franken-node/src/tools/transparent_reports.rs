@@ -84,8 +84,13 @@ pub enum ReportCategory {
 
 impl ReportCategory {
     pub fn all() -> &'static [ReportCategory] {
-        &[Self::SecurityIncident, Self::PerformanceRegression, Self::DataIntegrity,
-          Self::ServiceOutage, Self::ComplianceGap]
+        &[
+            Self::SecurityIncident,
+            Self::PerformanceRegression,
+            Self::DataIntegrity,
+            Self::ServiceOutage,
+            Self::ComplianceGap,
+        ]
     }
 
     pub fn label(&self) -> &'static str {
@@ -235,43 +240,63 @@ impl TransparentReports {
         // Validate required sections
         for sec in REQUIRED_SECTIONS {
             if !report.sections.contains_key(*sec) {
-                self.log(event_codes::TR_ERR_MISSING_SECTION, trace_id, serde_json::json!({
-                    "report_id": &report.report_id,
-                    "missing": sec,
-                }));
+                self.log(
+                    event_codes::TR_ERR_MISSING_SECTION,
+                    trace_id,
+                    serde_json::json!({
+                        "report_id": &report.report_id,
+                        "missing": sec,
+                    }),
+                );
                 return Err(format!("Missing required section: {}", sec));
             }
         }
 
-        self.log(event_codes::TR_SECTION_VALIDATED, trace_id, serde_json::json!({
-            "report_id": &report.report_id,
-            "sections": report.sections.len(),
-        }));
+        self.log(
+            event_codes::TR_SECTION_VALIDATED,
+            trace_id,
+            serde_json::json!({
+                "report_id": &report.report_id,
+                "sections": report.sections.len(),
+            }),
+        );
 
         // Validate timeline
         if report.timeline.is_empty() {
             return Err("Timeline must have at least one entry".to_string());
         }
 
-        self.log(event_codes::TR_TIMELINE_ADDED, trace_id, serde_json::json!({
-            "report_id": &report.report_id,
-            "entries": report.timeline.len(),
-        }));
+        self.log(
+            event_codes::TR_TIMELINE_ADDED,
+            trace_id,
+            serde_json::json!({
+                "report_id": &report.report_id,
+                "entries": report.timeline.len(),
+            }),
+        );
 
         // Root cause
         if !report.root_causes.is_empty() {
-            self.log(event_codes::TR_ROOT_CAUSE_ANALYZED, trace_id, serde_json::json!({
-                "report_id": &report.report_id,
-                "causes": report.root_causes.len(),
-            }));
+            self.log(
+                event_codes::TR_ROOT_CAUSE_ANALYZED,
+                trace_id,
+                serde_json::json!({
+                    "report_id": &report.report_id,
+                    "causes": report.root_causes.len(),
+                }),
+            );
         }
 
         // Lessons
         if !report.lessons_learned.is_empty() {
-            self.log(event_codes::TR_LESSONS_RECORDED, trace_id, serde_json::json!({
-                "report_id": &report.report_id,
-                "lessons": report.lessons_learned.len(),
-            }));
+            self.log(
+                event_codes::TR_LESSONS_RECORDED,
+                trace_id,
+                serde_json::json!({
+                    "report_id": &report.report_id,
+                    "lessons": report.lessons_learned.len(),
+                }),
+            );
         }
 
         // Compute hash
@@ -287,21 +312,33 @@ impl TransparentReports {
 
         let rid = report.report_id.clone();
 
-        self.log(event_codes::TR_INTEGRITY_VERIFIED, trace_id, serde_json::json!({
-            "report_id": &rid,
-            "content_hash": &report.content_hash,
-        }));
+        self.log(
+            event_codes::TR_INTEGRITY_VERIFIED,
+            trace_id,
+            serde_json::json!({
+                "report_id": &rid,
+                "content_hash": &report.content_hash,
+            }),
+        );
 
-        self.log(event_codes::TR_VERSION_EMBEDDED, trace_id, serde_json::json!({
-            "report_id": &rid,
-            "report_version": &report.report_version,
-        }));
+        self.log(
+            event_codes::TR_VERSION_EMBEDDED,
+            trace_id,
+            serde_json::json!({
+                "report_id": &rid,
+                "report_version": &report.report_version,
+            }),
+        );
 
         self.reports.insert(rid.clone(), report);
 
-        self.log(event_codes::TR_REPORT_CREATED, trace_id, serde_json::json!({
-            "report_id": &rid,
-        }));
+        self.log(
+            event_codes::TR_REPORT_CREATED,
+            trace_id,
+            serde_json::json!({
+                "report_id": &rid,
+            }),
+        );
 
         Ok(rid)
     }
@@ -317,12 +354,20 @@ impl TransparentReports {
         }
 
         let action_id = action.action_id.clone();
-        self.log(event_codes::TR_CORRECTIVE_ACTION_ADDED, trace_id, serde_json::json!({
-            "report_id": report_id,
-            "action_id": &action_id,
-        }));
+        self.log(
+            event_codes::TR_CORRECTIVE_ACTION_ADDED,
+            trace_id,
+            serde_json::json!({
+                "report_id": report_id,
+                "action_id": &action_id,
+            }),
+        );
 
-        self.reports.get_mut(report_id).unwrap().corrective_actions.push(action);
+        self.reports
+            .get_mut(report_id)
+            .unwrap()
+            .corrective_actions
+            .push(action);
         Ok(())
     }
 
@@ -333,31 +378,51 @@ impl TransparentReports {
         new_status: ActionStatus,
         trace_id: &str,
     ) -> Result<(), String> {
-        let report = self.reports.get(report_id)
+        let report = self
+            .reports
+            .get(report_id)
             .ok_or_else(|| format!("Report {} not found", report_id))?;
 
-        let action = report.corrective_actions.iter().find(|a| a.action_id == action_id)
+        let action = report
+            .corrective_actions
+            .iter()
+            .find(|a| a.action_id == action_id)
             .ok_or_else(|| format!("Action {} not found", action_id))?;
 
         let current = action.status;
         if !current.valid_transitions().contains(&new_status) {
-            self.log(event_codes::TR_ERR_INVALID_TRANSITION, trace_id, serde_json::json!({
-                "action_id": action_id,
-                "from": current.label(),
-                "to": new_status.label(),
-            }));
-            return Err(format!("Cannot transition from {} to {}", current.label(), new_status.label()));
+            self.log(
+                event_codes::TR_ERR_INVALID_TRANSITION,
+                trace_id,
+                serde_json::json!({
+                    "action_id": action_id,
+                    "from": current.label(),
+                    "to": new_status.label(),
+                }),
+            );
+            return Err(format!(
+                "Cannot transition from {} to {}",
+                current.label(),
+                new_status.label()
+            ));
         }
 
         let report_mut = self.reports.get_mut(report_id).unwrap();
-        let action_mut = report_mut.corrective_actions.iter_mut()
-            .find(|a| a.action_id == action_id).unwrap();
+        let action_mut = report_mut
+            .corrective_actions
+            .iter_mut()
+            .find(|a| a.action_id == action_id)
+            .unwrap();
         action_mut.status = new_status;
 
-        self.log(event_codes::TR_ACTION_STATUS_UPDATED, trace_id, serde_json::json!({
-            "action_id": action_id,
-            "new_status": new_status.label(),
-        }));
+        self.log(
+            event_codes::TR_ACTION_STATUS_UPDATED,
+            trace_id,
+            serde_json::json!({
+                "action_id": action_id,
+                "new_status": new_status.label(),
+            }),
+        );
 
         Ok(())
     }
@@ -368,8 +433,12 @@ impl TransparentReports {
         let mut open_actions = 0;
 
         for report in self.reports.values() {
-            *by_category.entry(report.category.label().to_string()).or_insert(0) += 1;
-            *by_severity.entry(report.severity.label().to_string()).or_insert(0) += 1;
+            *by_category
+                .entry(report.category.label().to_string())
+                .or_insert(0) += 1;
+            *by_severity
+                .entry(report.severity.label().to_string())
+                .or_insert(0) += 1;
             for action in &report.corrective_actions {
                 if action.status != ActionStatus::Verified {
                     open_actions += 1;
@@ -385,10 +454,14 @@ impl TransparentReports {
         .to_string();
         let content_hash = hex::encode(Sha256::digest(hash_input.as_bytes()));
 
-        self.log(event_codes::TR_CATALOG_GENERATED, trace_id, serde_json::json!({
-            "total_reports": self.reports.len(),
-            "open_actions": open_actions,
-        }));
+        self.log(
+            event_codes::TR_CATALOG_GENERATED,
+            trace_id,
+            serde_json::json!({
+                "total_reports": self.reports.len(),
+                "open_actions": open_actions,
+            }),
+        );
 
         ReportCatalog {
             catalog_id: Uuid::now_v7().to_string(),
@@ -402,8 +475,12 @@ impl TransparentReports {
         }
     }
 
-    pub fn reports(&self) -> &BTreeMap<String, TransparentReport> { &self.reports }
-    pub fn audit_log(&self) -> &[TrAuditRecord] { &self.audit_log }
+    pub fn reports(&self) -> &BTreeMap<String, TransparentReport> {
+        &self.reports
+    }
+    pub fn audit_log(&self) -> &[TrAuditRecord] {
+        &self.audit_log
+    }
 
     pub fn export_audit_log_jsonl(&self) -> Result<String, serde_json::Error> {
         let mut lines = Vec::with_capacity(self.audit_log.len());
@@ -432,7 +509,9 @@ impl TransparentReports {
 mod tests {
     use super::*;
 
-    fn trace() -> String { Uuid::now_v7().to_string() }
+    fn trace() -> String {
+        Uuid::now_v7().to_string()
+    }
 
     fn sample_report(id: &str, cat: ReportCategory) -> TransparentReport {
         let mut sections = BTreeMap::new();
@@ -488,7 +567,14 @@ mod tests {
     #[test]
     fn create_valid_report() {
         let mut engine = TransparentReports::default();
-        assert!(engine.create_report(sample_report("r-1", ReportCategory::SecurityIncident), &trace()).is_ok());
+        assert!(
+            engine
+                .create_report(
+                    sample_report("r-1", ReportCategory::SecurityIncident),
+                    &trace()
+                )
+                .is_ok()
+        );
     }
 
     #[test]
@@ -510,7 +596,12 @@ mod tests {
     #[test]
     fn create_sets_hash_and_version() {
         let mut engine = TransparentReports::default();
-        engine.create_report(sample_report("r-1", ReportCategory::SecurityIncident), &trace()).unwrap();
+        engine
+            .create_report(
+                sample_report("r-1", ReportCategory::SecurityIncident),
+                &trace(),
+            )
+            .unwrap();
         let stored = engine.reports().get("r-1").unwrap();
         assert_eq!(stored.content_hash.len(), 64);
         assert_eq!(stored.report_version, REPORT_VERSION);
@@ -519,40 +610,88 @@ mod tests {
     #[test]
     fn add_corrective_action() {
         let mut engine = TransparentReports::default();
-        engine.create_report(sample_report("r-1", ReportCategory::SecurityIncident), &trace()).unwrap();
-        assert!(engine.add_corrective_action("r-1", sample_action("a-1"), &trace()).is_ok());
+        engine
+            .create_report(
+                sample_report("r-1", ReportCategory::SecurityIncident),
+                &trace(),
+            )
+            .unwrap();
+        assert!(
+            engine
+                .add_corrective_action("r-1", sample_action("a-1"), &trace())
+                .is_ok()
+        );
     }
 
     #[test]
     fn add_action_missing_report_fails() {
         let mut engine = TransparentReports::default();
-        assert!(engine.add_corrective_action("nonexistent", sample_action("a-1"), &trace()).is_err());
+        assert!(
+            engine
+                .add_corrective_action("nonexistent", sample_action("a-1"), &trace())
+                .is_err()
+        );
     }
 
     #[test]
     fn action_identified_to_planned() {
         let mut engine = TransparentReports::default();
-        engine.create_report(sample_report("r-1", ReportCategory::SecurityIncident), &trace()).unwrap();
-        engine.add_corrective_action("r-1", sample_action("a-1"), &trace()).unwrap();
-        assert!(engine.update_action_status("r-1", "a-1", ActionStatus::Planned, &trace()).is_ok());
+        engine
+            .create_report(
+                sample_report("r-1", ReportCategory::SecurityIncident),
+                &trace(),
+            )
+            .unwrap();
+        engine
+            .add_corrective_action("r-1", sample_action("a-1"), &trace())
+            .unwrap();
+        assert!(
+            engine
+                .update_action_status("r-1", "a-1", ActionStatus::Planned, &trace())
+                .is_ok()
+        );
     }
 
     #[test]
     fn action_invalid_transition_fails() {
         let mut engine = TransparentReports::default();
-        engine.create_report(sample_report("r-1", ReportCategory::SecurityIncident), &trace()).unwrap();
-        engine.add_corrective_action("r-1", sample_action("a-1"), &trace()).unwrap();
-        assert!(engine.update_action_status("r-1", "a-1", ActionStatus::Verified, &trace()).is_err());
+        engine
+            .create_report(
+                sample_report("r-1", ReportCategory::SecurityIncident),
+                &trace(),
+            )
+            .unwrap();
+        engine
+            .add_corrective_action("r-1", sample_action("a-1"), &trace())
+            .unwrap();
+        assert!(
+            engine
+                .update_action_status("r-1", "a-1", ActionStatus::Verified, &trace())
+                .is_err()
+        );
     }
 
     #[test]
     fn full_action_lifecycle() {
         let mut engine = TransparentReports::default();
-        engine.create_report(sample_report("r-1", ReportCategory::SecurityIncident), &trace()).unwrap();
-        engine.add_corrective_action("r-1", sample_action("a-1"), &trace()).unwrap();
-        engine.update_action_status("r-1", "a-1", ActionStatus::Planned, &trace()).unwrap();
-        engine.update_action_status("r-1", "a-1", ActionStatus::Implemented, &trace()).unwrap();
-        engine.update_action_status("r-1", "a-1", ActionStatus::Verified, &trace()).unwrap();
+        engine
+            .create_report(
+                sample_report("r-1", ReportCategory::SecurityIncident),
+                &trace(),
+            )
+            .unwrap();
+        engine
+            .add_corrective_action("r-1", sample_action("a-1"), &trace())
+            .unwrap();
+        engine
+            .update_action_status("r-1", "a-1", ActionStatus::Planned, &trace())
+            .unwrap();
+        engine
+            .update_action_status("r-1", "a-1", ActionStatus::Implemented, &trace())
+            .unwrap();
+        engine
+            .update_action_status("r-1", "a-1", ActionStatus::Verified, &trace())
+            .unwrap();
         let r = engine.reports().get("r-1").unwrap();
         assert_eq!(r.corrective_actions[0].status, ActionStatus::Verified);
     }
@@ -567,8 +706,18 @@ mod tests {
     #[test]
     fn catalog_counts_reports() {
         let mut engine = TransparentReports::default();
-        engine.create_report(sample_report("r-1", ReportCategory::SecurityIncident), &trace()).unwrap();
-        engine.create_report(sample_report("r-2", ReportCategory::ServiceOutage), &trace()).unwrap();
+        engine
+            .create_report(
+                sample_report("r-1", ReportCategory::SecurityIncident),
+                &trace(),
+            )
+            .unwrap();
+        engine
+            .create_report(
+                sample_report("r-2", ReportCategory::ServiceOutage),
+                &trace(),
+            )
+            .unwrap();
         let catalog = engine.generate_catalog(&trace());
         assert_eq!(catalog.total_reports, 2);
     }
@@ -576,8 +725,15 @@ mod tests {
     #[test]
     fn catalog_tracks_open_actions() {
         let mut engine = TransparentReports::default();
-        engine.create_report(sample_report("r-1", ReportCategory::SecurityIncident), &trace()).unwrap();
-        engine.add_corrective_action("r-1", sample_action("a-1"), &trace()).unwrap();
+        engine
+            .create_report(
+                sample_report("r-1", ReportCategory::SecurityIncident),
+                &trace(),
+            )
+            .unwrap();
+        engine
+            .add_corrective_action("r-1", sample_action("a-1"), &trace())
+            .unwrap();
         let catalog = engine.generate_catalog(&trace());
         assert_eq!(catalog.open_actions, 1);
     }
@@ -601,7 +757,12 @@ mod tests {
     #[test]
     fn catalog_groups_by_category() {
         let mut engine = TransparentReports::default();
-        engine.create_report(sample_report("r-1", ReportCategory::SecurityIncident), &trace()).unwrap();
+        engine
+            .create_report(
+                sample_report("r-1", ReportCategory::SecurityIncident),
+                &trace(),
+            )
+            .unwrap();
         let catalog = engine.generate_catalog(&trace());
         assert!(catalog.by_category.contains_key("security_incident"));
     }
@@ -609,7 +770,12 @@ mod tests {
     #[test]
     fn catalog_groups_by_severity() {
         let mut engine = TransparentReports::default();
-        engine.create_report(sample_report("r-1", ReportCategory::SecurityIncident), &trace()).unwrap();
+        engine
+            .create_report(
+                sample_report("r-1", ReportCategory::SecurityIncident),
+                &trace(),
+            )
+            .unwrap();
         let catalog = engine.generate_catalog(&trace());
         assert!(catalog.by_severity.contains_key("high"));
     }
@@ -623,14 +789,24 @@ mod tests {
     #[test]
     fn audit_log_populated() {
         let mut engine = TransparentReports::default();
-        engine.create_report(sample_report("r-1", ReportCategory::SecurityIncident), &trace()).unwrap();
+        engine
+            .create_report(
+                sample_report("r-1", ReportCategory::SecurityIncident),
+                &trace(),
+            )
+            .unwrap();
         assert!(engine.audit_log().len() >= 5);
     }
 
     #[test]
     fn export_jsonl() {
         let mut engine = TransparentReports::default();
-        engine.create_report(sample_report("r-1", ReportCategory::SecurityIncident), &trace()).unwrap();
+        engine
+            .create_report(
+                sample_report("r-1", ReportCategory::SecurityIncident),
+                &trace(),
+            )
+            .unwrap();
         let jsonl = engine.export_audit_log_jsonl().unwrap();
         let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert!(first["event_code"].is_string());

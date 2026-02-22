@@ -363,7 +363,10 @@ impl ReputationRegistry {
     }
 
     /// Get a publisher's current reputation.
-    pub fn get_reputation(&self, publisher_id: &str) -> Result<&PublisherReputation, ReputationError> {
+    pub fn get_reputation(
+        &self,
+        publisher_id: &str,
+    ) -> Result<&PublisherReputation, ReputationError> {
         self.publishers
             .get(publisher_id)
             .ok_or_else(|| ReputationError::PublisherNotFound(publisher_id.to_owned()))
@@ -426,7 +429,9 @@ impl ReputationRegistry {
             ));
         }
 
-        let weight = signal.weight_override.unwrap_or_else(|| signal.kind.default_weight());
+        let weight = signal
+            .weight_override
+            .unwrap_or_else(|| signal.kind.default_weight());
 
         let old_score = pub_record.score;
         let old_tier = pub_record.tier;
@@ -701,12 +706,7 @@ impl ReputationRegistry {
 
     // ── Internal helpers ─────────────────────────────────────────────────
 
-    fn append_audit_entry(
-        &mut self,
-        publisher_id: &str,
-        timestamp: &str,
-        event: AuditEvent,
-    ) {
+    fn append_audit_entry(&mut self, publisher_id: &str, timestamp: &str, event: AuditEvent) {
         let prev_hash = self
             .audit_trail
             .last()
@@ -750,7 +750,9 @@ fn compute_entry_hash(entry: &AuditEntry) -> String {
 pub fn deterministic_score(signals: &[ReputationSignal], decay_config: &DecayConfig) -> f64 {
     let mut score = 30.0_f64; // Initial provisional score.
     for signal in signals {
-        let weight = signal.weight_override.unwrap_or_else(|| signal.kind.default_weight());
+        let weight = signal
+            .weight_override
+            .unwrap_or_else(|| signal.kind.default_weight());
         score = (score + weight).clamp(0.0, 100.0);
     }
     // Note: decay is not applied in the pure function — it requires time context.
@@ -845,10 +847,22 @@ mod tests {
     fn test_tier_from_score() {
         assert_eq!(ReputationTier::from_score(0.0), ReputationTier::Untrusted);
         assert_eq!(ReputationTier::from_score(19.9), ReputationTier::Untrusted);
-        assert_eq!(ReputationTier::from_score(20.0), ReputationTier::Provisional);
-        assert_eq!(ReputationTier::from_score(49.9), ReputationTier::Provisional);
-        assert_eq!(ReputationTier::from_score(50.0), ReputationTier::Established);
-        assert_eq!(ReputationTier::from_score(79.9), ReputationTier::Established);
+        assert_eq!(
+            ReputationTier::from_score(20.0),
+            ReputationTier::Provisional
+        );
+        assert_eq!(
+            ReputationTier::from_score(49.9),
+            ReputationTier::Provisional
+        );
+        assert_eq!(
+            ReputationTier::from_score(50.0),
+            ReputationTier::Established
+        );
+        assert_eq!(
+            ReputationTier::from_score(79.9),
+            ReputationTier::Established
+        );
         assert_eq!(ReputationTier::from_score(80.0), ReputationTier::Trusted);
         assert_eq!(ReputationTier::from_score(100.0), ReputationTier::Trusted);
     }

@@ -68,7 +68,13 @@ pub enum NodeType {
 
 impl NodeType {
     pub fn all() -> &'static [NodeType] {
-        &[Self::Operator, Self::Extension, Self::Verifier, Self::DataSource, Self::Infrastructure]
+        &[
+            Self::Operator,
+            Self::Extension,
+            Self::Verifier,
+            Self::DataSource,
+            Self::Infrastructure,
+        ]
     }
     pub fn label(&self) -> &'static str {
         match self {
@@ -156,45 +162,83 @@ impl Default for ReputationGraphApis {
 impl ReputationGraphApis {
     pub fn add_node(&mut self, node: ReputationNode, trace_id: &str) -> Result<String, String> {
         if self.nodes.contains_key(&node.node_id) {
-            self.log(event_codes::RGA_ERR_DUPLICATE_NODE, trace_id, serde_json::json!({"node_id": &node.node_id}));
+            self.log(
+                event_codes::RGA_ERR_DUPLICATE_NODE,
+                trace_id,
+                serde_json::json!({"node_id": &node.node_id}),
+            );
             return Err(format!("duplicate node: {}", node.node_id));
         }
         let nid = node.node_id.clone();
-        self.log(event_codes::RGA_NODE_ADDED, trace_id, serde_json::json!({"node_id": &nid, "type": node.node_type.label()}));
+        self.log(
+            event_codes::RGA_NODE_ADDED,
+            trace_id,
+            serde_json::json!({"node_id": &nid, "type": node.node_type.label()}),
+        );
         self.nodes.insert(nid.clone(), node);
         Ok(nid)
     }
 
-    pub fn update_node_score(&mut self, node_id: &str, new_score: f64, trace_id: &str) -> Result<(), String> {
-        let node = self.nodes.get_mut(node_id)
+    pub fn update_node_score(
+        &mut self,
+        node_id: &str,
+        new_score: f64,
+        trace_id: &str,
+    ) -> Result<(), String> {
+        let node = self
+            .nodes
+            .get_mut(node_id)
             .ok_or_else(|| format!("node not found: {node_id}"))?;
         node.base_score = new_score;
-        self.log(event_codes::RGA_NODE_UPDATED, trace_id, serde_json::json!({"node_id": node_id, "score": new_score}));
+        self.log(
+            event_codes::RGA_NODE_UPDATED,
+            trace_id,
+            serde_json::json!({"node_id": node_id, "score": new_score}),
+        );
         Ok(())
     }
 
     pub fn add_edge(&mut self, mut edge: ReputationEdge, trace_id: &str) -> Result<String, String> {
         if !self.nodes.contains_key(&edge.source) {
-            self.log(event_codes::RGA_ERR_MISSING_NODE, trace_id, serde_json::json!({"node_id": &edge.source}));
+            self.log(
+                event_codes::RGA_ERR_MISSING_NODE,
+                trace_id,
+                serde_json::json!({"node_id": &edge.source}),
+            );
             return Err(format!("source node not found: {}", edge.source));
         }
         if !self.nodes.contains_key(&edge.target) {
-            self.log(event_codes::RGA_ERR_MISSING_NODE, trace_id, serde_json::json!({"node_id": &edge.target}));
+            self.log(
+                event_codes::RGA_ERR_MISSING_NODE,
+                trace_id,
+                serde_json::json!({"node_id": &edge.target}),
+            );
             return Err(format!("target node not found: {}", edge.target));
         }
         edge.created_at = Utc::now().to_rfc3339();
         let eid = edge.edge_id.clone();
-        self.log(event_codes::RGA_EDGE_ADDED, trace_id, serde_json::json!({"edge_id": &eid, "weight": edge.weight}));
+        self.log(
+            event_codes::RGA_EDGE_ADDED,
+            trace_id,
+            serde_json::json!({"edge_id": &eid, "weight": edge.weight}),
+        );
         self.edges.push(edge);
         Ok(eid)
     }
 
-    pub fn compute_score(&mut self, node_id: &str, trace_id: &str) -> Result<ReputationScore, String> {
-        let base = self.nodes.get(node_id)
+    pub fn compute_score(
+        &mut self,
+        node_id: &str,
+        trace_id: &str,
+    ) -> Result<ReputationScore, String> {
+        let base = self
+            .nodes
+            .get(node_id)
             .ok_or_else(|| format!("node not found: {node_id}"))?
             .base_score;
 
-        let incoming: Vec<&ReputationEdge> = self.edges.iter().filter(|e| e.target == node_id).collect();
+        let incoming: Vec<&ReputationEdge> =
+            self.edges.iter().filter(|e| e.target == node_id).collect();
         let edge_count = incoming.len();
 
         let weighted_sum: f64 = incoming.iter().map(|e| e.weight).sum();
@@ -205,22 +249,47 @@ impl ReputationGraphApis {
         };
 
         let meets = composite >= MIN_TRUST_SCORE;
-        let hash_input = format!("{node_id}:{composite}:{edge_count}:{}", &self.schema_version);
+        let hash_input = format!(
+            "{node_id}:{composite}:{edge_count}:{}",
+            &self.schema_version
+        );
         let content_hash = hex::encode(Sha256::digest(hash_input.as_bytes()));
 
-        self.log(event_codes::RGA_SCORE_COMPUTED, trace_id, serde_json::json!({"node_id": node_id, "score": composite}));
-        self.log(event_codes::RGA_THRESHOLD_CHECKED, trace_id, serde_json::json!({"meets": meets}));
+        self.log(
+            event_codes::RGA_SCORE_COMPUTED,
+            trace_id,
+            serde_json::json!({"node_id": node_id, "score": composite}),
+        );
+        self.log(
+            event_codes::RGA_THRESHOLD_CHECKED,
+            trace_id,
+            serde_json::json!({"meets": meets}),
+        );
 
-        Ok(ReputationScore { node_id: node_id.to_string(), composite_score: composite, meets_threshold: meets, edge_count, content_hash })
+        Ok(ReputationScore {
+            node_id: node_id.to_string(),
+            composite_score: composite,
+            meets_threshold: meets,
+            edge_count,
+            content_hash,
+        })
     }
 
     pub fn neighbors(&mut self, node_id: &str, trace_id: &str) -> Vec<String> {
         let mut out = BTreeSet::new();
         for e in &self.edges {
-            if e.source == node_id { out.insert(e.target.clone()); }
-            if e.target == node_id { out.insert(e.source.clone()); }
+            if e.source == node_id {
+                out.insert(e.target.clone());
+            }
+            if e.target == node_id {
+                out.insert(e.source.clone());
+            }
         }
-        self.log(event_codes::RGA_QUERY_EXECUTED, trace_id, serde_json::json!({"query": "neighbors", "node": node_id}));
+        self.log(
+            event_codes::RGA_QUERY_EXECUTED,
+            trace_id,
+            serde_json::json!({"query": "neighbors", "node": node_id}),
+        );
         out.into_iter().collect()
     }
 
@@ -228,22 +297,58 @@ impl ReputationGraphApis {
         for edge in &mut self.edges {
             edge.weight *= DECAY_FACTOR;
         }
-        self.log(event_codes::RGA_DECAY_APPLIED, trace_id, serde_json::json!({"factor": DECAY_FACTOR}));
+        self.log(
+            event_codes::RGA_DECAY_APPLIED,
+            trace_id,
+            serde_json::json!({"factor": DECAY_FACTOR}),
+        );
     }
 
-    pub fn subgraph(&mut self, node_ids: &[&str], trace_id: &str) -> (Vec<ReputationNode>, Vec<ReputationEdge>) {
+    pub fn subgraph(
+        &mut self,
+        node_ids: &[&str],
+        trace_id: &str,
+    ) -> (Vec<ReputationNode>, Vec<ReputationEdge>) {
         let set: BTreeSet<&str> = node_ids.iter().copied().collect();
-        let nodes: Vec<ReputationNode> = self.nodes.values().filter(|n| set.contains(n.node_id.as_str())).cloned().collect();
-        let edges: Vec<ReputationEdge> = self.edges.iter().filter(|e| set.contains(e.source.as_str()) && set.contains(e.target.as_str())).cloned().collect();
-        self.log(event_codes::RGA_SUBGRAPH_EXTRACTED, trace_id, serde_json::json!({"nodes": nodes.len(), "edges": edges.len()}));
+        let nodes: Vec<ReputationNode> = self
+            .nodes
+            .values()
+            .filter(|n| set.contains(n.node_id.as_str()))
+            .cloned()
+            .collect();
+        let edges: Vec<ReputationEdge> = self
+            .edges
+            .iter()
+            .filter(|e| set.contains(e.source.as_str()) && set.contains(e.target.as_str()))
+            .cloned()
+            .collect();
+        self.log(
+            event_codes::RGA_SUBGRAPH_EXTRACTED,
+            trace_id,
+            serde_json::json!({"nodes": nodes.len(), "edges": edges.len()}),
+        );
         (nodes, edges)
     }
 
     pub fn export_snapshot(&mut self, trace_id: &str) -> GraphSnapshot {
-        let hash_input = format!("{}:{}:{}:{}", self.nodes.len(), self.edges.len(), self.schema_version, self.audit_log.len());
+        let hash_input = format!(
+            "{}:{}:{}:{}",
+            self.nodes.len(),
+            self.edges.len(),
+            self.schema_version,
+            self.audit_log.len()
+        );
         let content_hash = hex::encode(Sha256::digest(hash_input.as_bytes()));
-        self.log(event_codes::RGA_GRAPH_EXPORTED, trace_id, serde_json::json!({"nodes": self.nodes.len()}));
-        self.log(event_codes::RGA_VERSION_EMBEDDED, trace_id, serde_json::json!({"version": &self.schema_version}));
+        self.log(
+            event_codes::RGA_GRAPH_EXPORTED,
+            trace_id,
+            serde_json::json!({"nodes": self.nodes.len()}),
+        );
+        self.log(
+            event_codes::RGA_VERSION_EMBEDDED,
+            trace_id,
+            serde_json::json!({"version": &self.schema_version}),
+        );
         GraphSnapshot {
             snapshot_id: Uuid::now_v7().to_string(),
             timestamp: Utc::now().to_rfc3339(),
@@ -254,13 +359,21 @@ impl ReputationGraphApis {
         }
     }
 
-    pub fn nodes(&self) -> &BTreeMap<String, ReputationNode> { &self.nodes }
-    pub fn edges(&self) -> &[ReputationEdge] { &self.edges }
-    pub fn audit_log(&self) -> &[RgaAuditRecord] { &self.audit_log }
+    pub fn nodes(&self) -> &BTreeMap<String, ReputationNode> {
+        &self.nodes
+    }
+    pub fn edges(&self) -> &[ReputationEdge] {
+        &self.edges
+    }
+    pub fn audit_log(&self) -> &[RgaAuditRecord] {
+        &self.audit_log
+    }
 
     pub fn export_audit_log_jsonl(&self) -> Result<String, serde_json::Error> {
         let mut lines = Vec::with_capacity(self.audit_log.len());
-        for r in &self.audit_log { lines.push(serde_json::to_string(r)?); }
+        for r in &self.audit_log {
+            lines.push(serde_json::to_string(r)?);
+        }
         Ok(lines.join("\n"))
     }
 
@@ -279,7 +392,9 @@ impl ReputationGraphApis {
 mod tests {
     use super::*;
 
-    fn trace() -> String { Uuid::now_v7().to_string() }
+    fn trace() -> String {
+        Uuid::now_v7().to_string()
+    }
 
     fn sample_node(id: &str, nt: NodeType) -> ReputationNode {
         ReputationNode {
@@ -302,64 +417,105 @@ mod tests {
         }
     }
 
-    #[test] fn five_node_types() { assert_eq!(NodeType::all().len(), 5); }
-    #[test] fn node_labels_nonempty() { for n in NodeType::all() { assert!(!n.label().is_empty()); } }
+    #[test]
+    fn five_node_types() {
+        assert_eq!(NodeType::all().len(), 5);
+    }
+    #[test]
+    fn node_labels_nonempty() {
+        for n in NodeType::all() {
+            assert!(!n.label().is_empty());
+        }
+    }
 
-    #[test] fn add_node_ok() {
+    #[test]
+    fn add_node_ok() {
         let mut g = ReputationGraphApis::default();
-        assert!(g.add_node(sample_node("n1", NodeType::Operator), &trace()).is_ok());
+        assert!(
+            g.add_node(sample_node("n1", NodeType::Operator), &trace())
+                .is_ok()
+        );
         assert_eq!(g.nodes().len(), 1);
     }
 
-    #[test] fn add_duplicate_node_fails() {
+    #[test]
+    fn add_duplicate_node_fails() {
         let mut g = ReputationGraphApis::default();
-        g.add_node(sample_node("n1", NodeType::Operator), &trace()).unwrap();
-        assert!(g.add_node(sample_node("n1", NodeType::Verifier), &trace()).is_err());
+        g.add_node(sample_node("n1", NodeType::Operator), &trace())
+            .unwrap();
+        assert!(
+            g.add_node(sample_node("n1", NodeType::Verifier), &trace())
+                .is_err()
+        );
     }
 
-    #[test] fn add_edge_ok() {
+    #[test]
+    fn add_edge_ok() {
         let mut g = ReputationGraphApis::default();
-        g.add_node(sample_node("n1", NodeType::Operator), &trace()).unwrap();
-        g.add_node(sample_node("n2", NodeType::Extension), &trace()).unwrap();
-        assert!(g.add_edge(sample_edge("e1", "n1", "n2", 0.9), &trace()).is_ok());
+        g.add_node(sample_node("n1", NodeType::Operator), &trace())
+            .unwrap();
+        g.add_node(sample_node("n2", NodeType::Extension), &trace())
+            .unwrap();
+        assert!(
+            g.add_edge(sample_edge("e1", "n1", "n2", 0.9), &trace())
+                .is_ok()
+        );
     }
 
-    #[test] fn add_edge_missing_source() {
+    #[test]
+    fn add_edge_missing_source() {
         let mut g = ReputationGraphApis::default();
-        g.add_node(sample_node("n2", NodeType::Extension), &trace()).unwrap();
-        assert!(g.add_edge(sample_edge("e1", "n1", "n2", 0.5), &trace()).is_err());
+        g.add_node(sample_node("n2", NodeType::Extension), &trace())
+            .unwrap();
+        assert!(
+            g.add_edge(sample_edge("e1", "n1", "n2", 0.5), &trace())
+                .is_err()
+        );
     }
 
-    #[test] fn add_edge_missing_target() {
+    #[test]
+    fn add_edge_missing_target() {
         let mut g = ReputationGraphApis::default();
-        g.add_node(sample_node("n1", NodeType::Operator), &trace()).unwrap();
-        assert!(g.add_edge(sample_edge("e1", "n1", "n2", 0.5), &trace()).is_err());
+        g.add_node(sample_node("n1", NodeType::Operator), &trace())
+            .unwrap();
+        assert!(
+            g.add_edge(sample_edge("e1", "n1", "n2", 0.5), &trace())
+                .is_err()
+        );
     }
 
-    #[test] fn compute_score_no_edges() {
+    #[test]
+    fn compute_score_no_edges() {
         let mut g = ReputationGraphApis::default();
-        g.add_node(sample_node("n1", NodeType::Operator), &trace()).unwrap();
+        g.add_node(sample_node("n1", NodeType::Operator), &trace())
+            .unwrap();
         let s = g.compute_score("n1", &trace()).unwrap();
         assert!((s.composite_score - 0.8).abs() < 0.01);
         assert!(s.meets_threshold);
     }
 
-    #[test] fn compute_score_with_edges() {
+    #[test]
+    fn compute_score_with_edges() {
         let mut g = ReputationGraphApis::default();
-        g.add_node(sample_node("n1", NodeType::Operator), &trace()).unwrap();
-        g.add_node(sample_node("n2", NodeType::Extension), &trace()).unwrap();
-        g.add_edge(sample_edge("e1", "n2", "n1", 1.0), &trace()).unwrap();
+        g.add_node(sample_node("n1", NodeType::Operator), &trace())
+            .unwrap();
+        g.add_node(sample_node("n2", NodeType::Extension), &trace())
+            .unwrap();
+        g.add_edge(sample_edge("e1", "n2", "n1", 1.0), &trace())
+            .unwrap();
         let s = g.compute_score("n1", &trace()).unwrap();
         assert!(s.edge_count == 1);
         assert!(s.composite_score > 0.0);
     }
 
-    #[test] fn compute_score_missing_node() {
+    #[test]
+    fn compute_score_missing_node() {
         let mut g = ReputationGraphApis::default();
         assert!(g.compute_score("missing", &trace()).is_err());
     }
 
-    #[test] fn score_below_threshold() {
+    #[test]
+    fn score_below_threshold() {
         let mut g = ReputationGraphApis::default();
         let mut n = sample_node("n1", NodeType::Operator);
         n.base_score = 0.3;
@@ -368,86 +524,121 @@ mod tests {
         assert!(!s.meets_threshold);
     }
 
-    #[test] fn neighbors_query() {
+    #[test]
+    fn neighbors_query() {
         let mut g = ReputationGraphApis::default();
-        g.add_node(sample_node("n1", NodeType::Operator), &trace()).unwrap();
-        g.add_node(sample_node("n2", NodeType::Extension), &trace()).unwrap();
-        g.add_edge(sample_edge("e1", "n1", "n2", 0.5), &trace()).unwrap();
+        g.add_node(sample_node("n1", NodeType::Operator), &trace())
+            .unwrap();
+        g.add_node(sample_node("n2", NodeType::Extension), &trace())
+            .unwrap();
+        g.add_edge(sample_edge("e1", "n1", "n2", 0.5), &trace())
+            .unwrap();
         let nb = g.neighbors("n1", &trace());
         assert!(nb.contains(&"n2".to_string()));
     }
 
-    #[test] fn apply_decay() {
+    #[test]
+    fn apply_decay() {
         let mut g = ReputationGraphApis::default();
-        g.add_node(sample_node("n1", NodeType::Operator), &trace()).unwrap();
-        g.add_node(sample_node("n2", NodeType::Extension), &trace()).unwrap();
-        g.add_edge(sample_edge("e1", "n1", "n2", 1.0), &trace()).unwrap();
+        g.add_node(sample_node("n1", NodeType::Operator), &trace())
+            .unwrap();
+        g.add_node(sample_node("n2", NodeType::Extension), &trace())
+            .unwrap();
+        g.add_edge(sample_edge("e1", "n1", "n2", 1.0), &trace())
+            .unwrap();
         g.apply_decay(&trace());
         assert!((g.edges()[0].weight - DECAY_FACTOR).abs() < 0.001);
     }
 
-    #[test] fn subgraph_extraction() {
+    #[test]
+    fn subgraph_extraction() {
         let mut g = ReputationGraphApis::default();
-        g.add_node(sample_node("n1", NodeType::Operator), &trace()).unwrap();
-        g.add_node(sample_node("n2", NodeType::Extension), &trace()).unwrap();
-        g.add_node(sample_node("n3", NodeType::Verifier), &trace()).unwrap();
-        g.add_edge(sample_edge("e1", "n1", "n2", 0.5), &trace()).unwrap();
+        g.add_node(sample_node("n1", NodeType::Operator), &trace())
+            .unwrap();
+        g.add_node(sample_node("n2", NodeType::Extension), &trace())
+            .unwrap();
+        g.add_node(sample_node("n3", NodeType::Verifier), &trace())
+            .unwrap();
+        g.add_edge(sample_edge("e1", "n1", "n2", 0.5), &trace())
+            .unwrap();
         let (nodes, edges) = g.subgraph(&["n1", "n2"], &trace());
         assert_eq!(nodes.len(), 2);
         assert_eq!(edges.len(), 1);
     }
 
-    #[test] fn export_snapshot() {
+    #[test]
+    fn export_snapshot() {
         let mut g = ReputationGraphApis::default();
-        g.add_node(sample_node("n1", NodeType::Operator), &trace()).unwrap();
+        g.add_node(sample_node("n1", NodeType::Operator), &trace())
+            .unwrap();
         let snap = g.export_snapshot(&trace());
         assert_eq!(snap.node_count, 1);
         assert_eq!(snap.schema_version, SCHEMA_VERSION);
         assert_eq!(snap.content_hash.len(), 64);
     }
 
-    #[test] fn update_node_score() {
+    #[test]
+    fn update_node_score() {
         let mut g = ReputationGraphApis::default();
-        g.add_node(sample_node("n1", NodeType::Operator), &trace()).unwrap();
+        g.add_node(sample_node("n1", NodeType::Operator), &trace())
+            .unwrap();
         g.update_node_score("n1", 0.5, &trace()).unwrap();
         assert!((g.nodes()["n1"].base_score - 0.5).abs() < f64::EPSILON);
     }
 
-    #[test] fn update_missing_node_fails() {
+    #[test]
+    fn update_missing_node_fails() {
         let mut g = ReputationGraphApis::default();
         assert!(g.update_node_score("missing", 0.5, &trace()).is_err());
     }
 
-    #[test] fn score_hash_deterministic() {
+    #[test]
+    fn score_hash_deterministic() {
         let mut g1 = ReputationGraphApis::default();
         let mut g2 = ReputationGraphApis::default();
-        g1.add_node(sample_node("n1", NodeType::Operator), &trace()).unwrap();
-        g2.add_node(sample_node("n1", NodeType::Operator), &trace()).unwrap();
-        assert_eq!(g1.compute_score("n1", &trace()).unwrap().content_hash, g2.compute_score("n1", &trace()).unwrap().content_hash);
+        g1.add_node(sample_node("n1", NodeType::Operator), &trace())
+            .unwrap();
+        g2.add_node(sample_node("n1", NodeType::Operator), &trace())
+            .unwrap();
+        assert_eq!(
+            g1.compute_score("n1", &trace()).unwrap().content_hash,
+            g2.compute_score("n1", &trace()).unwrap().content_hash
+        );
     }
 
-    #[test] fn audit_populated() {
+    #[test]
+    fn audit_populated() {
         let mut g = ReputationGraphApis::default();
-        g.add_node(sample_node("n1", NodeType::Operator), &trace()).unwrap();
+        g.add_node(sample_node("n1", NodeType::Operator), &trace())
+            .unwrap();
         assert!(!g.audit_log().is_empty());
     }
 
-    #[test] fn audit_has_codes() {
+    #[test]
+    fn audit_has_codes() {
         let mut g = ReputationGraphApis::default();
-        g.add_node(sample_node("n1", NodeType::Operator), &trace()).unwrap();
-        let codes: Vec<&str> = g.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        g.add_node(sample_node("n1", NodeType::Operator), &trace())
+            .unwrap();
+        let codes: Vec<&str> = g
+            .audit_log()
+            .iter()
+            .map(|r| r.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::RGA_NODE_ADDED));
     }
 
-    #[test] fn export_jsonl() {
+    #[test]
+    fn export_jsonl() {
         let mut g = ReputationGraphApis::default();
-        g.add_node(sample_node("n1", NodeType::Operator), &trace()).unwrap();
+        g.add_node(sample_node("n1", NodeType::Operator), &trace())
+            .unwrap();
         let jsonl = g.export_audit_log_jsonl().unwrap();
         let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert!(first["event_code"].is_string());
     }
 
-    #[test] fn default_version() {
+    #[test]
+    fn default_version() {
         let g = ReputationGraphApis::default();
         assert_eq!(g.schema_version, SCHEMA_VERSION);
     }

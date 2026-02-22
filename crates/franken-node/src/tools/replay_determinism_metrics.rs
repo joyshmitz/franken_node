@@ -279,8 +279,8 @@ impl ReplayDeterminismMetrics {
             artifact_matches.insert(key.clone(), matches);
         }
 
-        let divergence_count = artifact_matches.values().filter(|v| !**v).count()
-            + if output_match { 0 } else { 1 };
+        let divergence_count =
+            artifact_matches.values().filter(|v| !**v).count() + if output_match { 0 } else { 1 };
 
         let severity = match divergence_count {
             0 => DivergenceSeverity::None,
@@ -461,9 +461,15 @@ impl ReplayDeterminismMetrics {
         }
     }
 
-    pub fn runs(&self) -> &[ReplayRun] { &self.runs }
-    pub fn comparisons(&self) -> &[ComparisonResult] { &self.comparisons }
-    pub fn audit_log(&self) -> &[RdmAuditRecord] { &self.audit_log }
+    pub fn runs(&self) -> &[ReplayRun] {
+        &self.runs
+    }
+    pub fn comparisons(&self) -> &[ComparisonResult] {
+        &self.comparisons
+    }
+    pub fn audit_log(&self) -> &[RdmAuditRecord] {
+        &self.audit_log
+    }
 
     pub fn export_audit_log_jsonl(&self) -> Result<String, serde_json::Error> {
         let mut lines = Vec::with_capacity(self.audit_log.len());
@@ -492,7 +498,9 @@ impl ReplayDeterminismMetrics {
 mod tests {
     use super::*;
 
-    fn trace() -> String { Uuid::now_v7().to_string() }
+    fn trace() -> String {
+        Uuid::now_v7().to_string()
+    }
 
     fn sample_run(id: &str, hash: &str) -> ReplayRun {
         let mut artifacts = BTreeMap::new();
@@ -596,7 +604,11 @@ mod tests {
     fn track_artifact_incomplete() {
         let mut engine = ReplayDeterminismMetrics::default();
         engine.track_artifact(ArtifactCategory::SpecContract, 5, 3, &trace());
-        let codes: Vec<&str> = engine.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        let codes: Vec<&str> = engine
+            .audit_log()
+            .iter()
+            .map(|r| r.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::RDM_ERR_INCOMPLETE));
     }
 
@@ -706,7 +718,11 @@ mod tests {
     fn audit_has_event_codes() {
         let mut engine = ReplayDeterminismMetrics::default();
         engine.record_run(sample_run("r1", "h"), &trace());
-        let codes: Vec<&str> = engine.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        let codes: Vec<&str> = engine
+            .audit_log()
+            .iter()
+            .map(|r| r.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::RDM_RUN_RECORDED));
     }
 
@@ -715,8 +731,7 @@ mod tests {
         let mut engine = ReplayDeterminismMetrics::default();
         engine.record_run(sample_run("r1", "h"), &trace());
         let jsonl = engine.export_audit_log_jsonl().unwrap();
-        let first: serde_json::Value =
-            serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+        let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert!(first["event_code"].is_string());
     }
 

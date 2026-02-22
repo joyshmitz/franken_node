@@ -99,10 +99,7 @@ impl VefOperation {
     /// Whether this is an integration (end-to-end) operation vs. a micro benchmark.
     #[must_use]
     pub fn is_integration(self) -> bool {
-        matches!(
-            self,
-            Self::ControlPlaneHotPath | Self::ExtensionHostHotPath
-        )
+        matches!(self, Self::ControlPlaneHotPath | Self::ExtensionHostHotPath)
     }
 }
 
@@ -119,7 +116,11 @@ pub enum BudgetMode {
 
 impl BudgetMode {
     pub fn all() -> &'static [BudgetMode] {
-        &[BudgetMode::Normal, BudgetMode::Restricted, BudgetMode::Quarantine]
+        &[
+            BudgetMode::Normal,
+            BudgetMode::Restricted,
+            BudgetMode::Quarantine,
+        ]
     }
 
     #[must_use]
@@ -238,18 +239,9 @@ impl Default for VefPerfBudgetConfig {
 
         for (op, (np95, np99, rp95, rp99, qp95, qp99)) in ops {
             let mut mode_map = BTreeMap::new();
-            mode_map.insert(
-                "normal".to_string(),
-                LatencyBudget::new(np95, np99),
-            );
-            mode_map.insert(
-                "restricted".to_string(),
-                LatencyBudget::new(rp95, rp99),
-            );
-            mode_map.insert(
-                "quarantine".to_string(),
-                LatencyBudget::new(qp95, qp99),
-            );
+            mode_map.insert("normal".to_string(), LatencyBudget::new(np95, np99));
+            mode_map.insert("restricted".to_string(), LatencyBudget::new(rp95, rp99));
+            mode_map.insert("quarantine".to_string(), LatencyBudget::new(qp95, qp99));
             budgets.insert(op.to_string(), mode_map);
         }
 
@@ -301,11 +293,26 @@ impl VefPerfBudgetConfig {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VefPerfBudgetError {
-    MissingBudget { operation: String, mode: String },
+    MissingBudget {
+        operation: String,
+        mode: String,
+    },
     InvalidConfig(String),
-    InsufficientSamples { operation: String, count: u64, required: u64 },
-    UnstableMeasurement { operation: String, cv_pct: f64, max_cv_pct: f64 },
-    BudgetExceeded { operation: String, mode: String, details: String },
+    InsufficientSamples {
+        operation: String,
+        count: u64,
+        required: u64,
+    },
+    UnstableMeasurement {
+        operation: String,
+        cv_pct: f64,
+        max_cv_pct: f64,
+    },
+    BudgetExceeded {
+        operation: String,
+        mode: String,
+        details: String,
+    },
     InfrastructureError(String),
 }
 
@@ -459,11 +466,17 @@ impl VefPerfBudgetGate {
 
         for m in measurements {
             // Emit benchmark-started event
-            self.emit_event(VEF_PERF_001, m.operation.label(), m.mode.label(), correlation_id, {
-                let mut d = BTreeMap::new();
-                d.insert("sample_count".into(), serde_json::json!(m.sample_count));
-                d
-            });
+            self.emit_event(
+                VEF_PERF_001,
+                m.operation.label(),
+                m.mode.label(),
+                correlation_id,
+                {
+                    let mut d = BTreeMap::new();
+                    d.insert("sample_count".into(), serde_json::json!(m.sample_count));
+                    d
+                },
+            );
 
             // Check sample count
             if m.sample_count < self.config.min_samples {
@@ -498,12 +511,21 @@ impl VefPerfBudgetGate {
             let noise_tol = self.config.noise_tolerance_cv_pct;
             let stable = m.is_stable(noise_tol);
             if !stable {
-                self.emit_event(VEF_PERF_005, m.operation.label(), m.mode.label(), correlation_id, {
-                    let mut d = BTreeMap::new();
-                    d.insert("cv_pct".into(), serde_json::json!(m.coefficient_of_variation_pct));
-                    d.insert("max_cv_pct".into(), serde_json::json!(noise_tol));
-                    d
-                });
+                self.emit_event(
+                    VEF_PERF_005,
+                    m.operation.label(),
+                    m.mode.label(),
+                    correlation_id,
+                    {
+                        let mut d = BTreeMap::new();
+                        d.insert(
+                            "cv_pct".into(),
+                            serde_json::json!(m.coefficient_of_variation_pct),
+                        );
+                        d.insert("max_cv_pct".into(), serde_json::json!(noise_tol));
+                        d
+                    },
+                );
             }
 
             // Look up and clone budget to avoid borrow conflict with emit_event
@@ -537,16 +559,10 @@ impl VefPerfBudgetGate {
             } else {
                 let mut detail_parts = Vec::new();
                 if !check_result.p95_within_budget {
-                    detail_parts.push(format!(
-                        "p95 {}us > {}us",
-                        m.p95_us, budget.p95_us
-                    ));
+                    detail_parts.push(format!("p95 {}us > {}us", m.p95_us, budget.p95_us));
                 }
                 if !check_result.p99_within_budget {
-                    detail_parts.push(format!(
-                        "p99 {}us > {}us",
-                        m.p99_us, budget.p99_us
-                    ));
+                    detail_parts.push(format!("p99 {}us > {}us", m.p99_us, budget.p99_us));
                 }
                 (VerdictStatus::Fail, detail_parts.join("; "))
             };
@@ -554,26 +570,38 @@ impl VefPerfBudgetGate {
             // Emit appropriate event
             match status {
                 VerdictStatus::Pass => {
-                    self.emit_event(VEF_PERF_002, m.operation.label(), m.mode.label(), correlation_id, {
-                        let mut d = BTreeMap::new();
-                        d.insert("p95_us".into(), serde_json::json!(m.p95_us));
-                        d.insert("p99_us".into(), serde_json::json!(m.p99_us));
-                        d.insert("p95_budget_us".into(), serde_json::json!(budget.p95_us));
-                        d.insert("p99_budget_us".into(), serde_json::json!(budget.p99_us));
-                        d
-                    });
+                    self.emit_event(
+                        VEF_PERF_002,
+                        m.operation.label(),
+                        m.mode.label(),
+                        correlation_id,
+                        {
+                            let mut d = BTreeMap::new();
+                            d.insert("p95_us".into(), serde_json::json!(m.p95_us));
+                            d.insert("p99_us".into(), serde_json::json!(m.p99_us));
+                            d.insert("p95_budget_us".into(), serde_json::json!(budget.p95_us));
+                            d.insert("p99_budget_us".into(), serde_json::json!(budget.p99_us));
+                            d
+                        },
+                    );
                     passed_checks += 1;
                 }
                 VerdictStatus::Fail => {
-                    self.emit_event(VEF_PERF_003, m.operation.label(), m.mode.label(), correlation_id, {
-                        let mut d = BTreeMap::new();
-                        d.insert("p95_us".into(), serde_json::json!(m.p95_us));
-                        d.insert("p99_us".into(), serde_json::json!(m.p99_us));
-                        d.insert("p95_budget_us".into(), serde_json::json!(budget.p95_us));
-                        d.insert("p99_budget_us".into(), serde_json::json!(budget.p99_us));
-                        d.insert("reason".into(), serde_json::json!(reason));
-                        d
-                    });
+                    self.emit_event(
+                        VEF_PERF_003,
+                        m.operation.label(),
+                        m.mode.label(),
+                        correlation_id,
+                        {
+                            let mut d = BTreeMap::new();
+                            d.insert("p95_us".into(), serde_json::json!(m.p95_us));
+                            d.insert("p99_us".into(), serde_json::json!(m.p99_us));
+                            d.insert("p95_budget_us".into(), serde_json::json!(budget.p95_us));
+                            d.insert("p99_budget_us".into(), serde_json::json!(budget.p99_us));
+                            d.insert("reason".into(), serde_json::json!(reason));
+                            d
+                        },
+                    );
                     failed_checks += 1;
                 }
                 VerdictStatus::Unstable => {
@@ -621,13 +649,19 @@ impl VefPerfBudgetGate {
         correlation_id: &str,
     ) -> BaselineSnapshot {
         for m in measurements {
-            self.emit_event(VEF_PERF_004, m.operation.label(), m.mode.label(), correlation_id, {
-                let mut d = BTreeMap::new();
-                d.insert("p95_us".into(), serde_json::json!(m.p95_us));
-                d.insert("p99_us".into(), serde_json::json!(m.p99_us));
-                d.insert("commit_sha".into(), serde_json::json!(commit_sha));
-                d
-            });
+            self.emit_event(
+                VEF_PERF_004,
+                m.operation.label(),
+                m.mode.label(),
+                correlation_id,
+                {
+                    let mut d = BTreeMap::new();
+                    d.insert("p95_us".into(), serde_json::json!(m.p95_us));
+                    d.insert("p99_us".into(), serde_json::json!(m.p99_us));
+                    d.insert("commit_sha".into(), serde_json::json!(commit_sha));
+                    d
+                },
+            );
         }
 
         BaselineSnapshot {
@@ -665,8 +699,8 @@ impl VefPerfBudgetGate {
                     0.0
                 };
 
-                let regressed =
-                    p95_delta_pct > regression_threshold_pct || p99_delta_pct > regression_threshold_pct;
+                let regressed = p95_delta_pct > regression_threshold_pct
+                    || p99_delta_pct > regression_threshold_pct;
 
                 reports.push(RegressionReport {
                     operation: curr.operation.label().to_string(),
@@ -974,20 +1008,17 @@ mod tests {
         let config = VefPerfBudgetConfig::default();
         let mut gate = VefPerfBudgetGate::new(config);
 
-        let measurements = vec![
-            sample_measurement(VefOperation::ReceiptEmission, BudgetMode::Normal, 30, 60),
-        ];
+        let measurements = vec![sample_measurement(
+            VefOperation::ReceiptEmission,
+            BudgetMode::Normal,
+            30,
+            60,
+        )];
 
         let verdict = gate.evaluate(&measurements, "test-005").unwrap();
         assert!(!verdict.audit_log.is_empty());
-        assert!(verdict
-            .audit_log
-            .iter()
-            .any(|e| e.code == VEF_PERF_001));
-        assert!(verdict
-            .audit_log
-            .iter()
-            .any(|e| e.code == VEF_PERF_002));
+        assert!(verdict.audit_log.iter().any(|e| e.code == VEF_PERF_001));
+        assert!(verdict.audit_log.iter().any(|e| e.code == VEF_PERF_002));
     }
 
     #[test]
@@ -996,15 +1027,15 @@ mod tests {
         let mut gate = VefPerfBudgetGate::new(config);
 
         // Exceed chain_append normal budget (p95=30, p99=60)
-        let measurements = vec![
-            sample_measurement(VefOperation::ChainAppend, BudgetMode::Normal, 50, 80),
-        ];
+        let measurements = vec![sample_measurement(
+            VefOperation::ChainAppend,
+            BudgetMode::Normal,
+            50,
+            80,
+        )];
 
         let verdict = gate.evaluate(&measurements, "test-006").unwrap();
-        assert!(verdict
-            .audit_log
-            .iter()
-            .any(|e| e.code == VEF_PERF_003));
+        assert!(verdict.audit_log.iter().any(|e| e.code == VEF_PERF_003));
     }
 
     #[test]
@@ -1015,7 +1046,12 @@ mod tests {
         // Values that pass quarantine mode but fail normal mode
         let measurements = vec![
             sample_measurement(VefOperation::ReceiptEmission, BudgetMode::Normal, 80, 150),
-            sample_measurement(VefOperation::ReceiptEmission, BudgetMode::Quarantine, 80, 150),
+            sample_measurement(
+                VefOperation::ReceiptEmission,
+                BudgetMode::Quarantine,
+                80,
+                150,
+            ),
         ];
 
         let verdict = gate.evaluate(&measurements, "test-007").unwrap();
@@ -1043,9 +1079,12 @@ mod tests {
         let config = VefPerfBudgetConfig::default();
         let mut gate = VefPerfBudgetGate::new(config);
 
-        let measurements = vec![
-            sample_measurement(VefOperation::ReceiptEmission, BudgetMode::Normal, 30, 60),
-        ];
+        let measurements = vec![sample_measurement(
+            VefOperation::ReceiptEmission,
+            BudgetMode::Normal,
+            30,
+            60,
+        )];
 
         let baseline = gate.record_baseline(&measurements, "abc123", 1000, "test-009");
         assert_eq!(baseline.commit_sha, "abc123");
@@ -1062,15 +1101,21 @@ mod tests {
             schema_version: BUDGET_SCHEMA_VERSION.to_string(),
             commit_sha: "abc123".to_string(),
             recorded_at_epoch_secs: 1000,
-            measurements: vec![
-                sample_measurement(VefOperation::ReceiptEmission, BudgetMode::Normal, 30, 60),
-            ],
+            measurements: vec![sample_measurement(
+                VefOperation::ReceiptEmission,
+                BudgetMode::Normal,
+                30,
+                60,
+            )],
         };
 
         // 50% regression
-        let current = vec![
-            sample_measurement(VefOperation::ReceiptEmission, BudgetMode::Normal, 45, 90),
-        ];
+        let current = vec![sample_measurement(
+            VefOperation::ReceiptEmission,
+            BudgetMode::Normal,
+            45,
+            90,
+        )];
 
         let reports = gate.detect_regressions(&current, &baseline, 10.0);
         assert_eq!(reports.len(), 1);
@@ -1087,14 +1132,20 @@ mod tests {
             schema_version: BUDGET_SCHEMA_VERSION.to_string(),
             commit_sha: "abc123".to_string(),
             recorded_at_epoch_secs: 1000,
-            measurements: vec![
-                sample_measurement(VefOperation::ReceiptEmission, BudgetMode::Normal, 30, 60),
-            ],
+            measurements: vec![sample_measurement(
+                VefOperation::ReceiptEmission,
+                BudgetMode::Normal,
+                30,
+                60,
+            )],
         };
 
-        let current = vec![
-            sample_measurement(VefOperation::ReceiptEmission, BudgetMode::Normal, 32, 63),
-        ];
+        let current = vec![sample_measurement(
+            VefOperation::ReceiptEmission,
+            BudgetMode::Normal,
+            32,
+            63,
+        )];
 
         let reports = gate.detect_regressions(&current, &baseline, 10.0);
         assert_eq!(reports.len(), 1);
@@ -1135,7 +1186,10 @@ mod tests {
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: VefPerfBudgetConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.schema_version, config.schema_version);
-        assert_eq!(deserialized.noise_tolerance_cv_pct, config.noise_tolerance_cv_pct);
+        assert_eq!(
+            deserialized.noise_tolerance_cv_pct,
+            config.noise_tolerance_cv_pct
+        );
         assert_eq!(deserialized.min_samples, config.min_samples);
     }
 
@@ -1145,9 +1199,12 @@ mod tests {
             schema_version: BUDGET_SCHEMA_VERSION.to_string(),
             commit_sha: "abc123".to_string(),
             recorded_at_epoch_secs: 1000,
-            measurements: vec![
-                sample_measurement(VefOperation::ReceiptEmission, BudgetMode::Normal, 30, 60),
-            ],
+            measurements: vec![sample_measurement(
+                VefOperation::ReceiptEmission,
+                BudgetMode::Normal,
+                30,
+                60,
+            )],
         };
         let json = serde_json::to_string(&baseline).unwrap();
         let deserialized: BaselineSnapshot = serde_json::from_str(&json).unwrap();

@@ -42,9 +42,8 @@ use serde::{Deserialize, Serialize};
 // Re-export the core governor and its types from the runtime module.
 pub use crate::runtime::optimization_governor::{
     DecisionRecord, GovernorDecision, GovernorSnapshot, KnobState, OptimizationGovernor,
-    OptimizationProposal, PredictedMetrics, RejectionReason, RuntimeKnob, SafetyEnvelope,
-    ShadowResult, SCHEMA_VERSION,
-    error_codes, event_codes, invariants,
+    OptimizationProposal, PredictedMetrics, RejectionReason, RuntimeKnob, SCHEMA_VERSION,
+    SafetyEnvelope, ShadowResult, error_codes, event_codes, invariants,
 };
 
 /// A gateway audit record that uses the bd-21fo canonical event codes.
@@ -196,10 +195,7 @@ impl GovernorGate {
     ///
     /// INV-GOVERNOR-ENGINE-BOUNDARY: the governor cannot adjust
     /// engine-core internals.  This method always returns an error.
-    pub fn reject_engine_internal_adjustment(
-        &mut self,
-        internal_name: &str,
-    ) -> Result<(), String> {
+    pub fn reject_engine_internal_adjustment(&mut self, internal_name: &str) -> Result<(), String> {
         self.audit_trail.push(GateAuditEntry {
             event_code: error_codes::ERR_GOVERNOR_ENGINE_BOUNDARY_VIOLATION.to_string(),
             proposal_id: String::new(),
@@ -207,7 +203,8 @@ impl GovernorGate {
         });
         Err(format!(
             "{}: cannot adjust engine-core internal '{}'",
-            error_codes::ERR_GOVERNOR_ENGINE_BOUNDARY_VIOLATION, internal_name,
+            error_codes::ERR_GOVERNOR_ENGINE_BOUNDARY_VIOLATION,
+            internal_name,
         ))
     }
 }

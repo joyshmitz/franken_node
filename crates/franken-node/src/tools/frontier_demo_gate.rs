@@ -393,10 +393,7 @@ impl DemoGateRunner {
     }
 
     /// Build an `ExternalVerifierBootstrap` from current results and manifest.
-    pub fn build_bootstrap(
-        &self,
-        manifest: ReproducibilityManifest,
-    ) -> ExternalVerifierBootstrap {
+    pub fn build_bootstrap(&self, manifest: ReproducibilityManifest) -> ExternalVerifierBootstrap {
         ExternalVerifierBootstrap::new(manifest, self.results.clone())
     }
 
@@ -550,7 +547,10 @@ mod tests {
 
     #[test]
     fn test_migration_singularity_variant() {
-        assert_eq!(FrontierProgram::MigrationSingularity.label(), "migration_singularity");
+        assert_eq!(
+            FrontierProgram::MigrationSingularity.label(),
+            "migration_singularity"
+        );
     }
 
     #[test]
@@ -565,12 +565,18 @@ mod tests {
 
     #[test]
     fn test_operator_intelligence_variant() {
-        assert_eq!(FrontierProgram::OperatorIntelligence.label(), "operator_intelligence");
+        assert_eq!(
+            FrontierProgram::OperatorIntelligence.label(),
+            "operator_intelligence"
+        );
     }
 
     #[test]
     fn test_ecosystem_network_effects_variant() {
-        assert_eq!(FrontierProgram::EcosystemNetworkEffects.label(), "ecosystem_network_effects");
+        assert_eq!(
+            FrontierProgram::EcosystemNetworkEffects.label(),
+            "ecosystem_network_effects"
+        );
     }
 
     #[test]
@@ -626,7 +632,12 @@ mod tests {
         let gate = DefaultDemoGate::new(FrontierProgram::TrustFabric);
         let result = gate.execute();
         assert_eq!(result.output_fingerprint.len(), 64);
-        assert!(result.output_fingerprint.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(
+            result
+                .output_fingerprint
+                .chars()
+                .all(|c| c.is_ascii_hexdigit())
+        );
     }
 
     #[test]
@@ -659,8 +670,7 @@ mod tests {
 
     #[test]
     fn test_gate_with_corpus() {
-        let gate = DefaultDemoGate::new(FrontierProgram::TrustFabric)
-            .with_corpus("extra", "value");
+        let gate = DefaultDemoGate::new(FrontierProgram::TrustFabric).with_corpus("extra", "value");
         let corpus = gate.input_corpus();
         assert_eq!(corpus.get("extra").unwrap(), "value");
     }
