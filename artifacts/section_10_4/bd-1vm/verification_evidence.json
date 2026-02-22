@@ -2,7 +2,7 @@
   "bead_id": "bd-1vm",
   "section": "10.4",
   "title": "Fast Quarantine/Recall Workflow for Compromised Artifacts",
-  "timestamp": "2026-02-20T23:02:53.383075+00:00",
+  "timestamp": "2026-02-22T17:44:27.845875+00:00",
   "overall_pass": true,
   "checks": {
     "files": {
@@ -14,12 +14,12 @@
       "rust_impl": {
         "path": "crates/franken-node/src/supply_chain/quarantine.rs",
         "exists": true,
-        "size_bytes": 44639
+        "size_bytes": 45253
       },
       "mod_rs": {
         "path": "crates/franken-node/src/supply_chain/mod.rs",
         "exists": true,
-        "size_bytes": 267
+        "size_bytes": 368
       }
     },
     "spec_invariants": {

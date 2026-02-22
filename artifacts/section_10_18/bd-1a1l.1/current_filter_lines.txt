@@ -1,0 +1,18 @@
+   130	        let hash_selected = service
+   131	            .events()
+   132	            .iter()
+   133	            .filter(|entry| {
+   134	                entry.event_code == event_codes::VEF_PROOF_002_BACKEND_SELECTED
+   135	                    && entry.detail
+   136	                        == format!("backend={}", ProofBackendId::HashAttestationV1.as_str())
+   137	            })
+   138	            .count() as u64;
+   139	        let double_hash_selected = service
+   140	            .events()
+   141	            .iter()
+   142	            .filter(|entry| {
+   143	                entry.event_code == event_codes::VEF_PROOF_002_BACKEND_SELECTED
+   144	                    && entry.detail
+   145	                        == format!("backend={}", ProofBackendId::DoubleHashAttestationV1.as_str())
+   146	            })
+   147	            .count() as u64;

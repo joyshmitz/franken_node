@@ -2,7 +2,7 @@
   "bead_id": "bd-ml1",
   "section": "10.4",
   "title": "Publisher Reputation Model with Explainable Transitions",
-  "timestamp": "2026-02-20T23:02:53.342257+00:00",
+  "timestamp": "2026-02-22T17:44:27.802481+00:00",
   "overall_pass": true,
   "checks": {
     "files": {
@@ -14,12 +14,12 @@
       "rust_impl": {
         "path": "crates/franken-node/src/supply_chain/reputation.rs",
         "exists": true,
-        "size_bytes": 41726
+        "size_bytes": 41898
       },
       "mod_rs": {
         "path": "crates/franken-node/src/supply_chain/mod.rs",
         "exists": true,
-        "size_bytes": 267
+        "size_bytes": 368
       }
     },
     "spec_invariants": {

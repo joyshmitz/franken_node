@@ -1,0 +1,56 @@
+{
+  "bead_id": "bd-1u8m.1",
+  "parent_bead_id": "bd-1u8m",
+  "agent": "BrightBay",
+  "generated_at": "2026-02-22T07:11:13Z",
+  "scope": {
+    "files": [
+      "crates/franken-node/tests/vef_proof_service_support.rs",
+      "tests/conformance/vef_proof_service_support.rs",
+      "tests/perf/vef_proof_service_support_perf.rs"
+    ],
+    "artifacts_root": "artifacts/section_10_18/bd-1u8m_support_brightbay"
+  },
+  "validation": [
+    {
+      "command": "rch exec -- cargo test -p frankenengine-node --test vef_proof_service_support -- --nocapture",
+      "status": "pass",
+      "exit_code": 0,
+      "highlights": [
+        "49 tests passed",
+        "support conformance + perf coverage executed"
+      ]
+    },
+    {
+      "command": "rch exec -- cargo check --all-targets",
+      "status": "fail_baseline",
+      "exit_code": 101,
+      "highlights": [
+        "unrelated pre-existing compile errors in crates/franken-node/src/supply_chain/manifest.rs",
+        "E0560/E0599/E0609 on ExtensionManifest field mismatch"
+      ]
+    },
+    {
+      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
+      "status": "fail_baseline",
+      "exit_code": 101,
+      "highlights": [
+        "pre-existing warnings/lints across unrelated modules elevated to errors",
+        "clippy run not green in workspace baseline"
+      ]
+    },
+    {
+      "command": "rch exec -- cargo fmt --check",
+      "status": "fail_baseline",
+      "exit_code": 1,
+      "highlights": [
+        "repo-wide formatting drift outside support-lane scope",
+        "fmt additionally surfaced parse failures in concurrently edited VEF files"
+      ]
+    }
+  ],
+  "notes": [
+    "CPU-intensive gates were offloaded with rch per AGENTS.md.",
+    "No owner-reserved bd-1u8m implementation/docs/checker files were edited by this support lane."
+  ]
+}

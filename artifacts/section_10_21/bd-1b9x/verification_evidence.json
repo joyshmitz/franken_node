@@ -1,0 +1,32 @@
+{
+  "schema_version": "evidence-v1.0",
+  "bead_id": "bd-1b9x",
+  "section": "10.21",
+  "title": "Survival/hazard model",
+  "verdict": "PASS",
+  "total": 20,
+  "passed": 20,
+  "failed": 0,
+  "checks": [
+    {"check": "rust_module_exists", "pass": true},
+    {"check": "schema_version", "pass": true},
+    {"check": "event_codes_present", "pass": true},
+    {"check": "error_codes_present", "pass": true},
+    {"check": "invariant_markers", "pass": true},
+    {"check": "btreemap_usage", "pass": true},
+    {"check": "serde_derives", "pass": true},
+    {"check": "unit_tests_ge_20", "pass": true},
+    {"check": "fail_closed_semantics", "pass": true},
+    {"check": "audit_trail", "pass": true},
+    {"check": "deterministic_ordering", "pass": true},
+    {"check": "genome_schema_compliance", "pass": true},
+    {"check": "phenotype_extraction", "pass": true},
+    {"check": "lineage_tracking", "pass": true},
+    {"check": "drift_detection", "pass": true},
+    {"check": "changepoint_detection", "pass": true},
+    {"check": "survival_model", "pass": true},
+    {"check": "risk_scoring", "pass": true},
+    {"check": "cross_system_integration", "pass": true},
+    {"check": "adversarial_robustness", "pass": true}
+  ]
+}

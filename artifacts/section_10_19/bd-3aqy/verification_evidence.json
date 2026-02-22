@@ -1,0 +1,32 @@
+{
+  "schema_version": "evidence-v1.0",
+  "bead_id": "bd-3aqy",
+  "section": "10.19",
+  "title": "Canonical federated signal schema",
+  "verdict": "PASS",
+  "total": 20,
+  "passed": 20,
+  "failed": 0,
+  "checks": [
+    {"check": "rust_module_exists", "pass": true},
+    {"check": "schema_version", "pass": true},
+    {"check": "event_codes_present", "pass": true},
+    {"check": "error_codes_present", "pass": true},
+    {"check": "invariant_markers", "pass": true},
+    {"check": "btreemap_usage", "pass": true},
+    {"check": "serde_derives", "pass": true},
+    {"check": "unit_tests_ge_20", "pass": true},
+    {"check": "fail_closed_semantics", "pass": true},
+    {"check": "audit_trail", "pass": true},
+    {"check": "deterministic_ordering", "pass": true},
+    {"check": "privacy_preservation", "pass": true},
+    {"check": "federation_protocol", "pass": true},
+    {"check": "signal_schema_compliance", "pass": true},
+    {"check": "trust_model_validation", "pass": true},
+    {"check": "aggregation_correctness", "pass": true},
+    {"check": "differential_privacy", "pass": true},
+    {"check": "sketch_mergeability", "pass": true},
+    {"check": "poisoning_resistance", "pass": true},
+    {"check": "urgent_routing_latency", "pass": true}
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "bead_id": "bd-1a1l.1",
+  "focus": "mixed_backend_sequence_preserves_verification_integrity",
+  "status": "pass",
+  "code_state": {
+    "file": "tests/perf/vef_proof_service_support_perf.rs",
+    "backend_filter_mode": "exact backend=<id> equality"
+  },
+  "checks": [
+    {
+      "command": "rch exec -- cargo test -p frankenengine-node --test vef_proof_service_support vef_proof_service_support_perf::tests::mixed_backend_sequence_preserves_verification_integrity -- --exact --nocapture",
+      "exit_code": 0,
+      "observations": [
+        "running 1 test",
+        "mixed_backend_sequence_preserves_verification_integrity ... ok",
+        "test result: ok. 1 passed; 0 failed"
+      ]
+    }
+  ]
+}

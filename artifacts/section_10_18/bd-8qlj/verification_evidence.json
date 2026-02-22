@@ -1,0 +1,87 @@
+{
+  "bead_id": "bd-8qlj",
+  "title": "VEF verification state in high-risk control transitions and action authorization",
+  "section": "10.18",
+  "verdict": "PASS",
+  "schema_version": "vef-control-integration-v1",
+  "timestamp": "2026-02-22T12:00:00Z",
+  "evidence": {
+    "implementation": {
+      "file": "crates/franken-node/src/vef/control_integration.rs",
+      "module_wired": true,
+      "schema_version_declared": "vef-control-integration-v1",
+      "structs": [
+        "ControlTransitionGate",
+        "VefEvidenceRef",
+        "TransitionRequest",
+        "DenialReason",
+        "GateEvent",
+        "GatePolicy",
+        "TransitionOverride",
+        "GateMetrics",
+        "TransitionMetrics",
+        "ActorTrustContext"
+      ],
+      "enums": [
+        "TransitionType",
+        "VerificationState",
+        "AuthorizationDecision"
+      ],
+      "public_methods": [
+        "new",
+        "set_now_millis",
+        "evaluate",
+        "evaluate_batch",
+        "events",
+        "drain_events",
+        "metrics",
+        "policy"
+      ],
+      "event_codes": [
+        "CTL-001",
+        "CTL-002",
+        "CTL-003",
+        "CTL-004",
+        "CTL-005",
+        "CTL-006",
+        "CTL-007",
+        "CTL-008"
+      ],
+      "error_codes": [
+        "ERR-CTL-MISSING-EVIDENCE",
+        "ERR-CTL-EXPIRED-EVIDENCE",
+        "ERR-CTL-SCOPE-MISMATCH",
+        "ERR-CTL-INVALID-HASH",
+        "ERR-CTL-INSUFFICIENT-TRUST",
+        "ERR-CTL-INTERNAL"
+      ],
+      "invariants": [
+        "INV-CTL-EVIDENCE-REQUIRED",
+        "INV-CTL-DENY-LOGGED",
+        "INV-CTL-NO-BYPASS"
+      ],
+      "unit_test_count": 31,
+      "deterministic_ordering": true,
+      "serde_roundtrip": true
+    },
+    "contract_compliance": {
+      "no_bypass_all_types_require_evidence": true,
+      "missing_evidence_denied": true,
+      "expired_evidence_denied": true,
+      "scope_mismatch_denied": true,
+      "invalid_hash_denied": true,
+      "pending_verification_for_unverified": true,
+      "valid_evidence_authorized": true,
+      "denial_event_logged": true,
+      "per_transition_overrides": true,
+      "trust_level_enforcement": true,
+      "batch_evaluation": true,
+      "metrics_per_transition_type": true,
+      "serde_roundtrip_request": true,
+      "serde_roundtrip_decision": true,
+      "trace_id_propagation": true
+    },
+    "check_script": "scripts/check_vef_control_integration.py",
+    "test_suite": "tests/test_check_vef_control_integration.py"
+  }
+}

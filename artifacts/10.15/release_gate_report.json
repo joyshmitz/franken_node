@@ -1,7 +1,7 @@
 {
   "bead_id": "bd-h93z",
   "gate_version": "rlg-v1.0",
-  "generated_at_utc": "2026-02-22T03:44:10.386176Z",
+  "generated_at_utc": "2026-02-22T08:41:44.631877Z",
   "public_key_id": "mock-rlg-key-001",
   "signature_algorithm": "sha256",
   "feature_scope": "T1",
@@ -62,7 +62,7 @@
     "RLG-007"
   ],
   "signing": {
-    "canonical_payload_sha256": "b82d06490e604c6922d908e409ad792456cb3203623a5b3470440654c8a3ba4b",
-    "signature": "b9a97365e6f5d87a45c852d1a0f6dd8d7bac7c9068f1e2a5bd172dfa079b4078"
+    "canonical_payload_sha256": "f8b8f1d4d45f28b6c53425c7a1a324878897ca771ad59ac165ec8dade2047c09",
+    "signature": "bf83176ab6180664c3a822c723ac025016d3136725abc4aa41b408938ae06dd6"
   }
 }

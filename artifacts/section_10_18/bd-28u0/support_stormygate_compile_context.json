@@ -1,0 +1,34 @@
+{
+  "bead_id": "bd-28u0.3",
+  "parent_bead": "bd-28u0",
+  "agent": "StormyGate",
+  "date": "2026-02-22",
+  "scope": [
+    "crates/franken-node/src/vef/mod.rs",
+    "crates/franken-node/src/vef/receipt_chain.rs",
+    "crates/franken-node/src/vef/proof_scheduler.rs",
+    "tests/conformance/vef_proof_scheduler_support.rs",
+    "tests/perf/vef_proof_scheduler_support_perf.rs"
+  ],
+  "commands": [
+    {
+      "cmd": "rch exec -- cargo test -p frankenengine-node --test vef_proof_scheduler_support",
+      "exit_code": 0,
+      "result": "pass",
+      "details": "78 passed; 0 failed"
+    },
+    {
+      "cmd": "rch exec -- cargo check -p frankenengine-node --all-targets",
+      "exit_code": 0,
+      "result": "pass"
+    },
+    {
+      "cmd": "rch exec -- cargo fmt --check -p frankenengine-node",
+      "exit_code": 1,
+      "result": "pre_existing_repo_drift",
+      "details": "reported formatting diffs across many unrelated files"
+    }
+  ],
+  "outcome": "standalone fixture harness compiles and executes",
+  "status": "completed"
+}

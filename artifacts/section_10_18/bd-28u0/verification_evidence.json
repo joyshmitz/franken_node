@@ -1,0 +1,71 @@
+{
+  "bead_id": "bd-28u0",
+  "title": "VEF proof-window selection and job scheduler with bounded latency budgets",
+  "section": "10.18",
+  "verdict": "PASS",
+  "schema_version": "vef-proof-scheduler-v1",
+  "timestamp": "2026-02-22T06:40:00Z",
+  "evidence": {
+    "implementation": {
+      "file": "crates/franken-node/src/vef/proof_scheduler.rs",
+      "module_wired": true,
+      "schema_version_declared": "vef-proof-scheduler-v1",
+      "structs": [
+        "VefProofScheduler",
+        "SchedulerPolicy",
+        "ProofWindow",
+        "ProofJob",
+        "SchedulerMetrics",
+        "SchedulerEvent",
+        "SchedulerError"
+      ],
+      "enums": [
+        "WorkloadTier",
+        "ProofJobStatus"
+      ],
+      "public_methods": [
+        "select_windows",
+        "enqueue_windows",
+        "dispatch_jobs",
+        "mark_completed",
+        "enforce_deadlines",
+        "backlog_metrics"
+      ],
+      "event_codes": [
+        "VEF-SCHED-001",
+        "VEF-SCHED-002",
+        "VEF-SCHED-003",
+        "VEF-SCHED-004"
+      ],
+      "error_event_codes": [
+        "VEF-SCHED-ERR-001",
+        "VEF-SCHED-ERR-002",
+        "VEF-SCHED-ERR-003",
+        "VEF-SCHED-ERR-004"
+      ],
+      "error_codes": [
+        "ERR-VEF-SCHED-DEADLINE",
+        "ERR-VEF-SCHED-BUDGET",
+        "ERR-VEF-SCHED-WINDOW",
+        "ERR-VEF-SCHED-INTERNAL"
+      ],
+      "unit_test_count": 7,
+      "deterministic_ordering": true,
+      "serde_roundtrip": true
+    },
+    "contract_compliance": {
+      "deterministic_window_selection": true,
+      "priority_based_dispatch": true,
+      "deadline_enforcement": true,
+      "concurrency_budget_enforcement": true,
+      "compute_budget_enforcement": true,
+      "memory_budget_enforcement": true,
+      "empty_stream_handled": true,
+      "checkpoint_alignment": true,
+      "event_tracing": true,
+      "trace_id_propagation": true
+    },
+    "check_script": "scripts/check_vef_proof_scheduler.py",
+    "test_suite": "tests/test_check_vef_proof_scheduler.py"
+  }
+}

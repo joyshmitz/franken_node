@@ -2,7 +2,7 @@
   "bead_id": "bd-sh3",
   "section": "10.5",
   "title": "Policy Change Approval Workflows with Cryptographic Audit Trail",
-  "timestamp": "2026-02-20T20:25:37.120263+00:00",
+  "timestamp": "2026-02-22T08:17:54.589852+00:00",
   "overall_pass": true,
   "checks": {
     "files": {
@@ -14,12 +14,12 @@
       "rust_impl": {
         "path": "crates/franken-node/src/policy/approval_workflow.rs",
         "exists": true,
-        "size_bytes": 34841
+        "size_bytes": 35860
       },
       "mod_rs": {
         "path": "crates/franken-node/src/policy/mod.rs",
         "exists": true,
-        "size_bytes": 414
+        "size_bytes": 491
       }
     },
     "spec_invariants": {
@@ -155,17 +155,6 @@
       "rollback_reference": true,
       "rollback_command": true
     }
-  },
-  "verification_script": {
-    "path": "scripts/check_policy_change_workflow.py",
-    "checks": 88,
-    "passing": 88,
-    "verdict": "PASS"
-  },
-  "python_unit_tests": {
-    "path": "tests/test_check_policy_change_workflow.py",
-    "tests": 35,
-    "passing": 35
   },
   "summary": {
     "total_checks": 12,

@@ -2,7 +2,7 @@
   "bead_id": "bd-phf",
   "section": "10.4",
   "title": "Ecosystem Telemetry for Trust and Adoption Metrics",
-  "timestamp": "2026-02-20T23:02:53.468457+00:00",
+  "timestamp": "2026-02-22T17:44:27.931285+00:00",
   "overall_pass": true,
   "checks": {
     "files": {
@@ -14,12 +14,12 @@
       "rust_impl": {
         "path": "crates/franken-node/src/supply_chain/ecosystem_telemetry.rs",
         "exists": true,
-        "size_bytes": 30416
+        "size_bytes": 31017
       },
       "mod_rs": {
         "path": "crates/franken-node/src/supply_chain/mod.rs",
         "exists": true,
-        "size_bytes": 267
+        "size_bytes": 368
       }
     },
     "spec_invariants": {

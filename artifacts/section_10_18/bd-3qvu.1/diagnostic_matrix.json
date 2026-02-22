@@ -1,0 +1,93 @@
+{
+  "bead_id": "bd-3qvu.1",
+  "source_bead": "bd-3qvu",
+  "command": "rch exec -- cargo check -p frankenengine-node --test vef_proof_service_support",
+  "exit_code": 101,
+  "captured_at_utc": "2026-02-22T07:17:32Z",
+  "failures": [
+    {
+      "class": "unresolved_import",
+      "code": "E0432",
+      "file": "crates/franken-node/src/vef/proof_generator.rs",
+      "line": 18,
+      "import_path": "super::proof_scheduler::ProofWindow",
+      "observed_in_contexts": ["conformance wrapper", "perf wrapper"],
+      "likely_cause": "support wrapper does not construct sibling module graph expected by proof_generator.rs"
+    },
+    {
+      "class": "unresolved_import",
+      "code": "E0432",
+      "file": "crates/franken-node/src/vef/proof_generator.rs",
+      "line": 19,
+      "import_path": "super::receipt_chain::ReceiptChainEntry",
+      "observed_in_contexts": ["conformance wrapper", "perf wrapper"],
+      "likely_cause": "same compile-context mismatch as proof_scheduler import"
+    },
+    {
+      "class": "unresolved_import",
+      "code": "E0433",
+      "file": "crates/franken-node/src/vef/proof_generator.rs",
+      "line": 669,
+      "import_path": "super::super::connector::vef_execution_receipt",
+      "observed_in_contexts": ["conformance wrapper", "perf wrapper"],
+      "likely_cause": "support wrapper lacks connector namespace at expected nesting level"
+    },
+    {
+      "class": "unresolved_import",
+      "code": "E0432",
+      "file": "crates/franken-node/src/vef/proof_generator.rs",
+      "line": 672,
+      "import_path": "super::super::proof_scheduler::{ProofWindow, WorkloadTier}",
+      "observed_in_contexts": ["conformance wrapper", "perf wrapper"],
+      "likely_cause": "support wrapper nesting mismatch for test-only module imports"
+    },
+    {
+      "class": "unresolved_import",
+      "code": "E0432",
+      "file": "crates/franken-node/src/vef/proof_generator.rs",
+      "line": 673,
+      "import_path": "super::super::receipt_chain::{ReceiptChain, ReceiptChainConfig}",
+      "observed_in_contexts": ["conformance wrapper", "perf wrapper"],
+      "likely_cause": "support wrapper nesting mismatch for test-only module imports"
+    },
+    {
+      "class": "missing_exports",
+      "code": "E0432",
+      "file": "tests/conformance/vef_proof_service_support.rs",
+      "line": 12,
+      "missing_symbols": [
+        "BackendDescriptor",
+        "GeneratedProof",
+        "JobId",
+        "JobStatus",
+        "PROOF_GEN_BACKEND_SELECTED",
+        "PROOF_GEN_JOB_FAILED",
+        "ProofGenError",
+        "ProofGenerationService",
+        "ReceiptWindow"
+      ],
+      "likely_cause": "support test expects legacy/public aliases not currently exported in wrapper-visible proof_generator API"
+    },
+    {
+      "class": "missing_exports",
+      "code": "E0432",
+      "file": "tests/perf/vef_proof_service_support_perf.rs",
+      "line": 12,
+      "missing_symbols": [
+        "BackendDescriptor",
+        "GeneratedProof",
+        "JobId",
+        "JobStatus",
+        "PROOF_GEN_JOB_COMPLETED",
+        "ProofGenerationService",
+        "ReceiptWindow"
+      ],
+      "likely_cause": "same wrapper-visible export gap in perf harness"
+    }
+  ],
+  "candidate_remediations": [
+    "In support wrappers, create explicit sibling modules matching proof_generator's expected super/super:: paths (proof_scheduler, receipt_chain, connector::vef_execution_receipt).",
+    "If API intentionally changed, update support tests to consume current public names; otherwise add compatibility type aliases/constants in test wrapper only (not global shim).",
+    "Keep fixes constrained to support harness and proof_generator compile-context imports for bd-3qvu scope alignment."
+  ]
+}

@@ -1,0 +1,15 @@
+command: rch exec -- cargo test -p frankenengine-node vef_adversarial_suite -- --nocapture
+result: failed
+exit_code: 101
+
+key_errors:
+- E0277: `time_travel::ReplaySession` missing `Debug` for `unwrap_err()` use (`crates/franken-node/src/runtime/time_travel.rs:907`, `:914`).
+- E0505: move out of borrowed `evidence` (`crates/franken-node/src/registry/staking_governance.rs:880`).
+- E0502: mutable + immutable borrow conflict on appeals (`crates/franken-node/src/registry/staking_governance.rs:1055`, `:1056`).
+- E0499: double mutable borrow in isolation mesh (`crates/franken-node/src/runtime/isolation_mesh.rs:629`).
+- E0502: override borrow conflict in intent firewall (`crates/franken-node/src/security/intent_firewall.rs:639`, `:644`).
+- E0499: double mutable borrow in zk attestation (`crates/franken-node/src/security/zk_attestation.rs:792`).
+
+notes:
+- Command was offloaded through RCH as required.
+- Failure appears unrelated to bd-3ptu checker/test additions.

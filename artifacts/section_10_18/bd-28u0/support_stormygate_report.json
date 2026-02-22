@@ -1,0 +1,37 @@
+{
+  "bead_id": "bd-15e3",
+  "supports": "bd-28u0",
+  "agent": "StormyGate",
+  "timestamp_utc": "2026-02-22T06:41:30Z",
+  "summary": {
+    "added_support_files": [
+      "tests/conformance/vef_proof_scheduler_support.rs",
+      "tests/perf/vef_proof_scheduler_support_perf.rs",
+      "crates/franken-node/tests/vef_proof_scheduler_support.rs"
+    ],
+    "scope": "Supplemental conformance/perf fixture coverage for VEF proof scheduler without touching PurpleHarbor-reserved core/doc/check files."
+  },
+  "validation": {
+    "command": "rch exec -- cargo test -p frankenengine-node --test vef_proof_scheduler_support",
+    "result": "failed",
+    "failure_class": "upstream_compile_breakage_unrelated",
+    "blocking_errors": [
+      {
+        "file": "crates/franken-node/src/registry/staking_governance.rs",
+        "code": "E0505",
+        "detail": "cannot move out of borrowed evidence"
+      },
+      {
+        "file": "crates/franken-node/src/security/intent_firewall.rs",
+        "code": "E0502",
+        "detail": "mutable/immutable borrow conflict"
+      },
+      {
+        "file": "crates/franken-node/src/security/zk_attestation.rs",
+        "code": "E0499",
+        "detail": "multiple mutable borrows"
+      }
+    ],
+    "notes": "Scheduler support fixture files were added successfully; full cargo test execution is currently blocked by unrelated in-flight code in shared workspace."
+  }
+}

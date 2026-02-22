@@ -1,0 +1,54 @@
+{
+  "bead_id": "bd-1u8m.2",
+  "parent_bead": "bd-1u8m",
+  "agent": "StormyGate",
+  "date": "2026-02-22",
+  "mode": "verification-only",
+  "commands": [
+    {
+      "cmd": "rch exec -- cargo test -p frankenengine-node --test vef_proof_service_support",
+      "exit_code": 101,
+      "status": "compile_blocked",
+      "primary_errors": [
+        {
+          "code": "E0560",
+          "file": "crates/franken-node/src/supply_chain/manifest.rs",
+          "field": "publisher_signature"
+        },
+        {
+          "code": "E0560",
+          "file": "crates/franken-node/src/supply_chain/manifest.rs",
+          "field": "content_hash"
+        },
+        {
+          "code": "E0560",
+          "file": "crates/franken-node/src/supply_chain/manifest.rs",
+          "field": "trust_chain_ref"
+        },
+        {
+          "code": "E0560",
+          "file": "crates/franken-node/src/supply_chain/manifest.rs",
+          "field": "min_engine_version"
+        }
+      ]
+    },
+    {
+      "cmd": "rch exec -- cargo check -p frankenengine-node --test vef_proof_service_support",
+      "exit_code": 101,
+      "status": "compile_blocked",
+      "highlights": [
+        {
+          "file": "crates/franken-node/src/vef/proof_generator.rs",
+          "issue": "Rust 2024 reserved keyword usage (`gen` identifier)"
+        },
+        {
+          "file": "tests/conformance/vef_proof_service_support.rs",
+          "issue": "Unresolved imports / symbol mismatches in fixture compilation context"
+        }
+      ],
+      "error_count_reported": 70
+    }
+  ],
+  "conclusion": "Independent verification blocked by upstream compile errors in current snapshot.",
+  "edited_owner_reserved_paths": false
+}

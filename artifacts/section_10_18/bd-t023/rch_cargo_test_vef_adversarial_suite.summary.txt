@@ -1,0 +1,14 @@
+command: rch exec -- cargo test -p frankenengine-node vef_adversarial_suite -- --nocapture
+run_utc: 2026-02-22T06:46:21Z
+result: failed (exit 101)
+
+notes:
+- Patched compile blockers in:
+  - crates/franken-node/src/runtime/time_travel.rs (added Debug derive on ReplaySession)
+  - crates/franken-node/src/runtime/isolation_mesh.rs (ended mutable workload borrow before push_event)
+- No compile errors from those two runtime files appeared in this run.
+- Remaining blocking errors were in crates/franken-node/src/registry/staking_governance.rs:
+  - E0502 at lines around 1055 and 1056 (mutable borrow while immutable borrow still in scope)
+
+owner_lane:
+- staking_governance blocker tracked separately in bead bd-1sim (StormyGate).

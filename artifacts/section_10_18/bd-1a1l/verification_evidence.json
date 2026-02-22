@@ -1,0 +1,50 @@
+{
+  "bead_id": "bd-1a1l",
+  "timestamp_utc": "2026-02-22T07:37:20Z",
+  "status": "pass",
+  "changes": [
+    {
+      "path": "crates/franken-node/src/supply_chain/manifest.rs",
+      "summary": [
+        "to_engine_manifest now returns Result<ExtensionManifest, ManifestSchemaError>",
+        "engine manifest projection done via serde_json payload to reduce field-coupling drift",
+        "added ManifestSchemaError::EngineManifestProjection and wired error code/display",
+        "validate_signed_manifest now projects first then validates with validate_engine_manifest"
+      ]
+    },
+    {
+      "path": "tests/perf/vef_proof_service_support_perf.rs",
+      "summary": [
+        "mixed-backend event count filters now compare exact backend detail strings",
+        "eliminates substring collision between hash_attestation_v1 and double_hash_attestation_v1"
+      ]
+    }
+  ],
+  "validations": [
+    {
+      "command": "rch exec -- cargo check --all-targets",
+      "exit_code": 0,
+      "result": "pass",
+      "evidence": {
+        "log": "artifacts/section_10_18/bd-1a1l/rch_cargo_check_all_targets.log",
+        "exit_file": "artifacts/section_10_18/bd-1a1l/rch_cargo_check_all_targets.exit",
+        "remote_completion_line": "Remote command finished: exit=0"
+      }
+    },
+    {
+      "command": "rch exec -- cargo test -p frankenengine-node --test vef_proof_service_support -- --nocapture",
+      "exit_code": 0,
+      "result": "pass",
+      "evidence": {
+        "log": "artifacts/section_10_18/bd-1a1l/rch_cargo_test_vef_proof_service_support.log",
+        "exit_file": "artifacts/section_10_18/bd-1a1l/rch_cargo_test_vef_proof_service_support.exit",
+        "test_summary": "test result: ok. 99 passed; 0 failed"
+      }
+    }
+  ],
+  "acceptance_criteria": {
+    "rch_cargo_check_all_targets_exit_0": true,
+    "rch_targeted_vef_proof_service_support_exit_0": true,
+    "evidence_artifacts_written": true
+  }
+}

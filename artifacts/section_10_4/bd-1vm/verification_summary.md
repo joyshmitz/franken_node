@@ -1,7 +1,7 @@
 # Verification Summary: Fast Quarantine/Recall Workflow for Compromised Artifacts
 
 **Bead:** bd-1vm | **Section:** 10.4
-**Timestamp:** 2026-02-20T23:02:53.383075+00:00
+**Timestamp:** 2026-02-22T17:44:27.845875+00:00
 **Overall:** PASS
 **Checks:** 12/12 passed
 
@@ -11,8 +11,8 @@
 - **event_codes:** PASS
 - **fast_path:** PASS
 - **File spec:** PASS (docs/specs/section_10_4/bd-1vm_contract.md, 3526 bytes)
-- **File rust_impl:** PASS (crates/franken-node/src/supply_chain/quarantine.rs, 44639 bytes)
-- **File mod_rs:** PASS (crates/franken-node/src/supply_chain/mod.rs, 267 bytes)
+- **File rust_impl:** PASS (crates/franken-node/src/supply_chain/quarantine.rs, 45253 bytes)
+- **File mod_rs:** PASS (crates/franken-node/src/supply_chain/mod.rs, 368 bytes)
 - **hash_chain:** PASS
 - **mod_registration:** PASS
 - **quarantine_reasons:** PASS

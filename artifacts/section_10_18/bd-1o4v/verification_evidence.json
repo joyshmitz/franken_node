@@ -1,0 +1,84 @@
+{
+  "bead_id": "bd-1o4v",
+  "title": "Proof-verification gate API for control-plane trust decisions",
+  "section": "10.18",
+  "verdict": "PASS",
+  "schema_version": "vef-proof-verifier-v1",
+  "timestamp": "2026-02-22T12:00:00Z",
+  "evidence": {
+    "implementation": {
+      "file": "crates/franken-node/src/vef/proof_verifier.rs",
+      "module_wired": true,
+      "schema_version_declared": "vef-proof-verifier-v1",
+      "structs": [
+        "ProofVerifier",
+        "VerificationGate",
+        "VerificationGateConfig",
+        "PolicyPredicate",
+        "ComplianceProof",
+        "VerificationRequest",
+        "VerificationReport",
+        "PredicateEvidence",
+        "VerifierEvent",
+        "VerifierError",
+        "DecisionSummary"
+      ],
+      "enums": [
+        "TrustDecision"
+      ],
+      "public_methods": [
+        "validate_proof",
+        "verify",
+        "verify_batch",
+        "register_predicate",
+        "remove_predicate",
+        "decision_summary",
+        "events",
+        "reports",
+        "predicates"
+      ],
+      "event_codes": [
+        "PVF-001",
+        "PVF-002",
+        "PVF-003",
+        "PVF-004",
+        "PVF-005",
+        "PVF-006"
+      ],
+      "error_codes": [
+        "ERR-PVF-PROOF-EXPIRED",
+        "ERR-PVF-POLICY-MISSING",
+        "ERR-PVF-INVALID-FORMAT",
+        "ERR-PVF-INTERNAL"
+      ],
+      "invariants": [
+        "INV-PVF-DETERMINISTIC",
+        "INV-PVF-DENY-LOGGED",
+        "INV-PVF-EVIDENCE-COMPLETE"
+      ],
+      "unit_test_count": 31,
+      "deterministic_ordering": true,
+      "serde_roundtrip": true
+    },
+    "contract_compliance": {
+      "deterministic_decisions": true,
+      "deny_always_logged": true,
+      "evidence_complete_in_reports": true,
+      "trust_decision_allow": true,
+      "trust_decision_deny": true,
+      "trust_decision_degrade": true,
+      "proof_expiry_check": true,
+      "proof_freshness_check": true,
+      "action_class_match": true,
+      "confidence_threshold": true,
+      "witness_validation": true,
+      "policy_version_binding": true,
+      "batch_verification": true,
+      "decision_summary_reporting": true,
+      "event_lifecycle_complete": true,
+      "report_digest_deterministic": true
+    },
+    "check_script": "scripts/check_proof_verifier.py",
+    "test_suite": "tests/test_check_proof_verifier.py"
+  }
+}

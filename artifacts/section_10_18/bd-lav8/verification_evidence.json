@@ -1,0 +1,42 @@
+{
+  "bead_id": "bd-lav8",
+  "timestamp_utc": "2026-02-22T07:47:13Z",
+  "status": "pass",
+  "changes": [
+    {
+      "path": "crates/franken-node/src/supply_chain/manifest.rs",
+      "summary": [
+        "to_engine_manifest now returns Result and projects stable core fields through serde",
+        "engine-level validation now receives projected manifest value with explicit projection error handling",
+        "added ManifestSchemaError::EngineManifestProjection with EMS_ENGINE_PROJECTION code/display",
+        "added unit test engine_manifest_projection_maps_core_fields"
+      ]
+    }
+  ],
+  "triage": {
+    "bv_robot_plan_total_actionable": 0,
+    "bv_robot_priority_recommendations": 0,
+    "decision": "Created hardening bead to address projection robustness gap despite empty ready queue"
+  },
+  "validations": [
+    {
+      "command": "rch exec -- cargo test -p frankenengine-node supply_chain::manifest::tests:: -- --nocapture",
+      "exit_code": 0,
+      "result": "pass",
+      "evidence": {
+        "log": "artifacts/section_10_18/bd-lav8/rch_cargo_test_manifest_module.log",
+        "exit_file": "artifacts/section_10_18/bd-lav8/rch_cargo_test_manifest_module.exit",
+        "assertions": [
+          "supply_chain::manifest::tests::engine_manifest_projection_maps_core_fields ... ok",
+          "test result: ok. 13 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "acceptance_criteria": {
+    "projection_uses_stable_core_fields": true,
+    "typed_projection_failure_code_present": true,
+    "targeted_manifest_tests_pass_via_rch": true,
+    "artifacts_published": true
+  }
+}

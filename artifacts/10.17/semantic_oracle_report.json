@@ -216,12 +216,12 @@
     {
       "check": "Divergence matrix has header + data",
       "passed": true,
-      "detail": "5 lines"
+      "detail": "16 lines"
     },
     {
       "check": "Matrix header has risk_tier column",
       "passed": true,
-      "detail": "divergence_id,boundary_name,franken_engine_digest,reference_digest,reference_run"
+      "detail": "boundary_scope,risk_tier,blocks_release,requires_receipt,default_action,example_"
     }
   ],
   "event_codes": [

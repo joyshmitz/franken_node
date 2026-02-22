@@ -1,0 +1,32 @@
+{
+  "schema_version": "evidence-v1.0",
+  "bead_id": "bd-b541",
+  "section": "10.20",
+  "title": "Canonical dependency/topology graph schema",
+  "verdict": "PASS",
+  "total": 20,
+  "passed": 20,
+  "failed": 0,
+  "checks": [
+    {"check": "rust_module_exists", "pass": true},
+    {"check": "schema_version", "pass": true},
+    {"check": "event_codes_present", "pass": true},
+    {"check": "error_codes_present", "pass": true},
+    {"check": "invariant_markers", "pass": true},
+    {"check": "btreemap_usage", "pass": true},
+    {"check": "serde_derives", "pass": true},
+    {"check": "unit_tests_ge_20", "pass": true},
+    {"check": "fail_closed_semantics", "pass": true},
+    {"check": "audit_trail", "pass": true},
+    {"check": "deterministic_ordering", "pass": true},
+    {"check": "graph_schema_compliance", "pass": true},
+    {"check": "topology_metrics", "pass": true},
+    {"check": "contagion_simulation", "pass": true},
+    {"check": "immunization_planning", "pass": true},
+    {"check": "cascade_economics", "pass": true},
+    {"check": "quarantine_orchestration", "pass": true},
+    {"check": "fragility_detection", "pass": true},
+    {"check": "federation_interop", "pass": true},
+    {"check": "adversarial_validation", "pass": true}
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "bead_id": "bd-3qvu",
+  "agent": "StormyGate",
+  "timestamp_utc": "2026-02-22T07:24:30Z",
+  "scope": [
+    "tests/conformance/vef_proof_service_support.rs",
+    "tests/perf/vef_proof_service_support_perf.rs"
+  ],
+  "rch_commands": [
+    {
+      "cmd": "rch exec -- cargo test -p frankenengine-node --test vef_proof_service_support",
+      "exit_code": 101,
+      "notes": "No remaining unresolved standalone fixture imports in proof-service support files; build now fails on unrelated manifest module errors."
+    },
+    {
+      "cmd": "rch exec -- cargo check -p frankenengine-node --all-targets",
+      "exit_code": 101,
+      "notes": "Fails on external pre-existing compile blockers in supply_chain/manifest.rs."
+    },
+    {
+      "cmd": "rch exec -- cargo clippy -p frankenengine-node --all-targets -- -D warnings",
+      "exit_code": 101,
+      "notes": "Large baseline lint backlog across unrelated modules/tests."
+    },
+    {
+      "cmd": "rch exec -- cargo fmt --check -p frankenengine-node",
+      "exit_code": 1,
+      "notes": "Pre-existing formatting drift across many files."
+    }
+  ],
+  "status": "support_unblock_completed_with_external_blockers",
+  "external_blockers": [
+    "crates/franken-node/src/supply_chain/manifest.rs compile errors",
+    "repository-wide clippy -D warnings backlog",
+    "repository-wide rustfmt drift"
+  ]
+}

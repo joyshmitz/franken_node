@@ -2,10 +2,10 @@
   "bead_id": "bd-3ptu",
   "title": "VEF adversarial suite contract verification",
   "section": "10.18",
-  "verdict": "FAIL",
+  "verdict": "PASS",
   "total": 51,
-  "passed": 49,
-  "failed": 2,
+  "passed": 51,
+  "failed": 0,
   "attack_classes": [
     "receipt tampering",
     "proof replay",
@@ -76,7 +76,7 @@
     },
     {
       "check": "suite_symbol_error_assertion",
-      "pass": false,
+      "pass": true,
       "detail": "expect_err or matches!(..., Err(...))"
     },
     {
@@ -131,8 +131,8 @@
     },
     {
       "check": "suite_minimum_test_count",
-      "pass": false,
-      "detail": "7 tests"
+      "pass": true,
+      "detail": "12 tests"
     },
     {
       "check": "suite_has_determinism_loop_hint",
@@ -257,7 +257,7 @@
     {
       "check": "evidence_verdict_domain",
       "pass": true,
-      "detail": "FAIL"
+      "detail": "PASS"
     },
     {
       "check": "evidence_has_checks",
@@ -275,5 +275,5 @@
       "detail": "verdict marker"
     }
   ],
-  "timestamp": "2026-02-22T06:37:35.212618+00:00"
+  "timestamp": "2026-02-22T06:46:29.359547+00:00"
 }

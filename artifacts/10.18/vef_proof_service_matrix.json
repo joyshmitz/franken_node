@@ -1,0 +1,59 @@
+{
+  "bead_id": "bd-1u8m",
+  "section": "10.18",
+  "schema_version": "vef-proof-service-v1",
+  "generated_at": "2026-02-22T07:06:00Z",
+  "backends": [
+    {
+      "backend_id": "hash_attestation_v1",
+      "backend_version": "hash-attestation-v1",
+      "proof_material_algorithm": "sha256(domain, input_commitment, policy_hash, receipt_hashes)",
+      "deterministic": true,
+      "supports_swap_semantics": true,
+      "failure_classes": [
+        "ERR-VEF-PROOF-TIMEOUT",
+        "ERR-VEF-PROOF-BACKEND-CRASH",
+        "ERR-VEF-PROOF-MALFORMED-OUTPUT",
+        "ERR-VEF-PROOF-VERIFY"
+      ],
+      "verification_path": "VefProofService::verify_proof"
+    },
+    {
+      "backend_id": "double_hash_attestation_v1",
+      "backend_version": "double-hash-attestation-v1",
+      "proof_material_algorithm": "sha256(sha256(domain, input_commitment, policy_hash), receipt_hashes, tier)",
+      "deterministic": true,
+      "supports_swap_semantics": true,
+      "failure_classes": [
+        "ERR-VEF-PROOF-TIMEOUT",
+        "ERR-VEF-PROOF-BACKEND-CRASH",
+        "ERR-VEF-PROOF-MALFORMED-OUTPUT",
+        "ERR-VEF-PROOF-VERIFY"
+      ],
+      "verification_path": "VefProofService::verify_proof"
+    }
+  ],
+  "envelope_contract": {
+    "input_type": "ProofInputEnvelope",
+    "output_type": "ProofOutputEnvelope",
+    "input_commitment": "sha256 canonicalized envelope",
+    "trace_correlation": "trace_id propagated request -> output -> events"
+  },
+  "event_codes": [
+    "VEF-PROOF-001",
+    "VEF-PROOF-002",
+    "VEF-PROOF-003",
+    "VEF-PROOF-ERR-001",
+    "VEF-PROOF-ERR-002",
+    "VEF-PROOF-ERR-003",
+    "VEF-PROOF-ERR-004"
+  ],
+  "error_codes": [
+    "ERR-VEF-PROOF-TIMEOUT",
+    "ERR-VEF-PROOF-BACKEND-CRASH",
+    "ERR-VEF-PROOF-MALFORMED-OUTPUT",
+    "ERR-VEF-PROOF-BACKEND-UNAVAILABLE",
+    "ERR-VEF-PROOF-INPUT",
+    "ERR-VEF-PROOF-VERIFY"
+  ]
+}
