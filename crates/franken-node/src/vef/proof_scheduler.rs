@@ -3,8 +3,8 @@
 //! This module schedules proof generation over bounded receipt windows while
 //! enforcing latency and resource budgets.
 
+use super::connector::vef_execution_receipt::ExecutionActionType;
 use super::receipt_chain::{ReceiptChainEntry, ReceiptCheckpoint};
-use crate::connector::vef_execution_receipt::ExecutionActionType;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -247,10 +247,14 @@ impl VefProofScheduler {
                 .iter()
                 .filter(|checkpoint| {
                     let end = checkpoint.end_index as usize;
-                    let begin = checkpoint.start_index as usize;
-                    end >= start && end <= max_end && begin <= start
+                    end >= start && end <= max_end
                 })
-                .map(|checkpoint| (checkpoint.end_index as usize, checkpoint.checkpoint_id))
+                .map(|checkpoint| {
+                    (
+                        checkpoint.end_index as usize,
+                        Some(checkpoint.checkpoint_id),
+                    )
+                })
                 .max_by_key(|(end, _)| *end);
 
             let (end, aligned_checkpoint_id) = aligned.unwrap_or((max_end, None));
@@ -369,9 +373,10 @@ impl VefProofScheduler {
                 break;
             }
 
-            let entry = self.jobs.get_mut(&job.job_id).ok_or_else(|| {
-                SchedulerError::internal(format!("missing job {}", job.job_id))
-            })?;
+            let entry = self
+                .jobs
+                .get_mut(&job.job_id)
+                .ok_or_else(|| SchedulerError::internal(format!("missing job {}", job.job_id)))?;
             entry.status = ProofJobStatus::Dispatched;
             entry.dispatched_at_millis = Some(now_millis);
             compute_used += entry.estimated_compute_millis;
@@ -405,7 +410,10 @@ impl VefProofScheduler {
     pub fn enforce_deadlines(&mut self, now_millis: u64) -> Vec<String> {
         let mut exceeded = Vec::new();
         for job in self.jobs.values_mut() {
-            if matches!(job.status, ProofJobStatus::Completed | ProofJobStatus::DeadlineExceeded) {
+            if matches!(
+                job.status,
+                ProofJobStatus::Completed | ProofJobStatus::DeadlineExceeded
+            ) {
                 continue;
             }
             if now_millis > job.deadline_millis {
@@ -487,7 +495,9 @@ fn infer_window_tier(entries: &[ReceiptChainEntry]) -> WorkloadTier {
             ExecutionActionType::SecretAccess | ExecutionActionType::PolicyTransition => {
                 WorkloadTier::Critical
             }
-            ExecutionActionType::NetworkAccess | ExecutionActionType::ProcessSpawn => WorkloadTier::High,
+            ExecutionActionType::NetworkAccess | ExecutionActionType::ProcessSpawn => {
+                WorkloadTier::High
+            }
             ExecutionActionType::FilesystemOperation => WorkloadTier::Standard,
             ExecutionActionType::ArtifactPromotion => WorkloadTier::Background,
         };
@@ -500,9 +510,11 @@ fn infer_window_tier(entries: &[ReceiptChainEntry]) -> WorkloadTier {
 
 #[cfg(test)]
 mod tests {
+    use super::super::connector::vef_execution_receipt::{
+        ExecutionReceipt, RECEIPT_SCHEMA_VERSION,
+    };
+    use super::super::receipt_chain::{ReceiptChain, ReceiptChainConfig};
     use super::*;
-    use crate::connector::vef_execution_receipt::{ExecutionReceipt, RECEIPT_SCHEMA_VERSION};
-    use crate::vef::receipt_chain::{ReceiptChain, ReceiptChainConfig};
     use std::collections::BTreeMap;
 
     fn receipt(action: ExecutionActionType, n: u64) -> ExecutionReceipt {
@@ -540,7 +552,11 @@ mod tests {
         .enumerate()
         {
             chain
-                .append(receipt(action, idx as u64), 1_701_000_010_000 + idx as u64, "trace-stream")
+                .append(
+                    receipt(action, idx as u64),
+                    1_701_000_010_000 + idx as u64,
+                    "trace-stream",
+                )
                 .unwrap();
         }
         (chain.entries().to_vec(), chain.checkpoints().to_vec())
@@ -564,8 +580,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(w1.len(), w2.len());
-        let bounds_1 = w1.iter().map(|w| (w.start_index, w.end_index)).collect::<Vec<_>>();
-        let bounds_2 = w2.iter().map(|w| (w.start_index, w.end_index)).collect::<Vec<_>>();
+        let bounds_1 = w1
+            .iter()
+            .map(|w| (w.start_index, w.end_index))
+            .collect::<Vec<_>>();
+        let bounds_2 = w2
+            .iter()
+            .map(|w| (w.start_index, w.end_index))
+            .collect::<Vec<_>>();
         assert_eq!(bounds_1, bounds_2);
     }
 
@@ -590,12 +612,16 @@ mod tests {
         let windows = scheduler
             .select_windows(&entries, &checkpoints, 1_701_100_002_000, "trace-dispatch")
             .unwrap();
-        scheduler.enqueue_windows(&windows, 1_701_100_002_010).unwrap();
+        scheduler
+            .enqueue_windows(&windows, 1_701_100_002_010)
+            .unwrap();
         let dispatched = scheduler.dispatch_jobs(1_701_100_002_020).unwrap();
         assert_eq!(dispatched.len(), 2);
-        assert!(dispatched
-            .iter()
-            .all(|job| job.status == ProofJobStatus::Dispatched));
+        assert!(
+            dispatched
+                .iter()
+                .all(|job| job.status == ProofJobStatus::Dispatched)
+        );
     }
 
     #[test]
@@ -610,7 +636,9 @@ mod tests {
         let windows = scheduler
             .select_windows(&entries, &checkpoints, 1_701_100_003_000, "trace-priority")
             .unwrap();
-        scheduler.enqueue_windows(&windows, 1_701_100_003_010).unwrap();
+        scheduler
+            .enqueue_windows(&windows, 1_701_100_003_010)
+            .unwrap();
         let dispatched = scheduler.dispatch_jobs(1_701_100_003_020).unwrap();
         assert_eq!(dispatched.len(), 1);
         assert_eq!(dispatched[0].tier, WorkloadTier::Critical);
@@ -631,14 +659,18 @@ mod tests {
         let windows = scheduler
             .select_windows(&entries, &checkpoints, 1_701_100_004_000, "trace-deadline")
             .unwrap();
-        scheduler.enqueue_windows(&windows, 1_701_100_004_000).unwrap();
+        scheduler
+            .enqueue_windows(&windows, 1_701_100_004_000)
+            .unwrap();
         scheduler.dispatch_jobs(1_701_100_004_000).unwrap();
         let exceeded = scheduler.enforce_deadlines(1_701_100_005_000);
         assert!(!exceeded.is_empty());
-        assert!(scheduler
-            .jobs()
-            .values()
-            .any(|job| job.status == ProofJobStatus::DeadlineExceeded));
+        assert!(
+            scheduler
+                .jobs()
+                .values()
+                .any(|job| job.status == ProofJobStatus::DeadlineExceeded)
+        );
     }
 
     #[test]
@@ -653,7 +685,9 @@ mod tests {
         let windows = scheduler
             .select_windows(&entries, &checkpoints, 1_701_100_006_000, "trace-metrics")
             .unwrap();
-        scheduler.enqueue_windows(&windows, 1_701_100_006_000).unwrap();
+        scheduler
+            .enqueue_windows(&windows, 1_701_100_006_000)
+            .unwrap();
         let metrics = scheduler.backlog_metrics(1_701_100_007_000, "trace-metrics");
         assert!(metrics.pending_jobs >= 1);
         assert!(metrics.oldest_pending_age_millis >= 1_000);

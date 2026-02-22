@@ -9,7 +9,7 @@
 //! - INV-VEF-CHAIN-CHECKPOINT-REPRODUCIBLE: checkpoints recompute to the same commitment hash.
 //! - INV-VEF-CHAIN-FAIL-CLOSED: tampering is detected and reported with stable error codes.
 
-use crate::connector::vef_execution_receipt::{ExecutionReceipt, receipt_hash_sha256};
+use super::connector::vef_execution_receipt::{ExecutionReceipt, receipt_hash_sha256};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
@@ -194,10 +194,10 @@ impl ReceiptChain {
         let receipt_hash = receipt_hash_sha256(&receipt)
             .map_err(|err| ChainError::internal(format!("receipt hash failed: {err}")))?;
         let index = self.entries.len() as u64;
-        let prev_chain_hash = self
-            .entries
-            .last()
-            .map_or_else(|| GENESIS_PREV_HASH.to_string(), |entry| entry.chain_hash.clone());
+        let prev_chain_hash = self.entries.last().map_or_else(
+            || GENESIS_PREV_HASH.to_string(),
+            |entry| entry.chain_hash.clone(),
+        );
         let chain_hash = compute_chain_hash(index, &prev_chain_hash, &receipt_hash)?;
 
         let entry = ReceiptChainEntry {
@@ -391,7 +391,10 @@ impl ReceiptChain {
     }
 
     fn should_checkpoint(&self, now_millis: u64) -> bool {
-        let entries_since_last = self.entries.len().saturating_sub(self.last_checkpoint_entry);
+        let entries_since_last = self
+            .entries
+            .len()
+            .saturating_sub(self.last_checkpoint_entry);
         if entries_since_last == 0 {
             return false;
         }
@@ -491,7 +494,11 @@ impl ConcurrentReceiptChain {
     }
 }
 
-fn compute_chain_hash(index: u64, prev_chain_hash: &str, receipt_hash: &str) -> Result<String, ChainError> {
+fn compute_chain_hash(
+    index: u64,
+    prev_chain_hash: &str,
+    receipt_hash: &str,
+) -> Result<String, ChainError> {
     #[derive(Serialize)]
     struct LinkMaterial<'a> {
         schema_version: &'a str,
@@ -554,14 +561,19 @@ fn compute_checkpoint_commitment(
 
 #[cfg(test)]
 mod tests {
+    use super::super::connector::vef_execution_receipt::{
+        ExecutionActionType, RECEIPT_SCHEMA_VERSION,
+    };
     use super::*;
-    use crate::connector::vef_execution_receipt::{ExecutionActionType, RECEIPT_SCHEMA_VERSION};
     use std::collections::BTreeMap;
     use std::thread;
 
     fn make_receipt(action_type: ExecutionActionType, sequence_number: u64) -> ExecutionReceipt {
         let mut capability_context = BTreeMap::new();
-        capability_context.insert("capability".to_string(), format!("capability-{sequence_number}"));
+        capability_context.insert(
+            "capability".to_string(),
+            format!("capability-{sequence_number}"),
+        );
         capability_context.insert("domain".to_string(), "runtime".to_string());
         capability_context.insert("scope".to_string(), "extensions".to_string());
 
@@ -626,8 +638,64 @@ mod tests {
                 .unwrap();
         }
 
-        assert_eq!(first.entries(), second.entries());
-        assert_eq!(first.checkpoints(), second.checkpoints());
+        let first_fingerprint = first
+            .entries()
+            .iter()
+            .map(|entry| {
+                (
+                    entry.index,
+                    entry.prev_chain_hash.clone(),
+                    entry.receipt_hash.clone(),
+                    entry.chain_hash.clone(),
+                    entry.receipt.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let second_fingerprint = second
+            .entries()
+            .iter()
+            .map(|entry| {
+                (
+                    entry.index,
+                    entry.prev_chain_hash.clone(),
+                    entry.receipt_hash.clone(),
+                    entry.chain_hash.clone(),
+                    entry.receipt.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(first_fingerprint, second_fingerprint);
+        let first_checkpoint_fingerprint = first
+            .checkpoints()
+            .iter()
+            .map(|checkpoint| {
+                (
+                    checkpoint.checkpoint_id,
+                    checkpoint.start_index,
+                    checkpoint.end_index,
+                    checkpoint.entry_count,
+                    checkpoint.chain_head_hash.clone(),
+                    checkpoint.commitment_hash.clone(),
+                    checkpoint.created_at_millis,
+                )
+            })
+            .collect::<Vec<_>>();
+        let second_checkpoint_fingerprint = second
+            .checkpoints()
+            .iter()
+            .map(|checkpoint| {
+                (
+                    checkpoint.checkpoint_id,
+                    checkpoint.start_index,
+                    checkpoint.end_index,
+                    checkpoint.entry_count,
+                    checkpoint.chain_head_hash.clone(),
+                    checkpoint.commitment_hash.clone(),
+                    checkpoint.created_at_millis,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(first_checkpoint_fingerprint, second_checkpoint_fingerprint);
     }
 
     #[test]
@@ -767,11 +835,11 @@ mod tests {
         }
         let mut forged_checkpoints = chain.checkpoints().to_vec();
         forged_checkpoints[0].commitment_hash =
-            "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                .to_string();
+            "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_string();
 
-        let err = ReceiptChain::verify_entries_and_checkpoints(chain.entries(), &forged_checkpoints)
-            .unwrap_err();
+        let err =
+            ReceiptChain::verify_entries_and_checkpoints(chain.entries(), &forged_checkpoints)
+                .unwrap_err();
         assert_eq!(err.code, error_codes::ERR_VEF_CHAIN_CHECKPOINT);
     }
 
