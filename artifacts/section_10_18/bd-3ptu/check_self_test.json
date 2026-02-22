@@ -1,0 +1,46 @@
+{
+  "bead_id": "bd-3ptu",
+  "mode": "self-test",
+  "verdict": "PASS",
+  "total": 7,
+  "passed": 7,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "attack_class_count",
+      "pass": true,
+      "detail": "4"
+    },
+    {
+      "check": "event_code_count",
+      "pass": true,
+      "detail": "2"
+    },
+    {
+      "check": "error_code_count",
+      "pass": true,
+      "detail": "4"
+    },
+    {
+      "check": "symbol_count",
+      "pass": true,
+      "detail": "4"
+    },
+    {
+      "check": "run_all_is_dict",
+      "pass": true,
+      "detail": "dict"
+    },
+    {
+      "check": "run_all_has_checks",
+      "pass": true,
+      "detail": "checks list"
+    },
+    {
+      "check": "run_all_total_consistent",
+      "pass": true,
+      "detail": "total vs checks"
+    }
+  ],
+  "timestamp": "2026-02-22T06:38:34.251730+00:00"
+}
