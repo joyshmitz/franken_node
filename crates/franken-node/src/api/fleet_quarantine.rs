@@ -17,7 +17,7 @@
 //! - INV-FLEET-SAFE-START   — API starts in read-only mode, requires activation
 //! - INV-FLEET-ROLLBACK     — release deterministically rolls back quarantine state
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -317,7 +317,7 @@ pub struct FleetControlEvent {
     /// Timestamp of the event.
     pub timestamp: String,
     /// Additional metadata.
-    pub metadata: HashMap<String, String>,
+    pub metadata: BTreeMap<String, String>,
 }
 
 impl FleetControlEvent {
@@ -329,7 +329,7 @@ impl FleetControlEvent {
             zone_id: zone_id.to_string(),
             extension_id: Some(extension_id.to_string()),
             timestamp: chrono::Utc::now().to_rfc3339(),
-            metadata: HashMap::new(),
+            metadata: BTreeMap::new(),
         }
     }
 
@@ -341,12 +341,12 @@ impl FleetControlEvent {
             zone_id: zone_id.to_string(),
             extension_id: Some(extension_id.to_string()),
             timestamp: chrono::Utc::now().to_rfc3339(),
-            metadata: HashMap::new(),
+            metadata: BTreeMap::new(),
         }
     }
 
     pub fn convergence_progress(trace_id: &str, zone_id: &str, progress_pct: u8) -> Self {
-        let mut metadata = HashMap::new();
+        let mut metadata = BTreeMap::new();
         metadata.insert("progress_pct".to_string(), progress_pct.to_string());
         Self {
             event_code: FLEET_CONVERGENCE_PROGRESS.to_string(),
@@ -360,7 +360,7 @@ impl FleetControlEvent {
     }
 
     pub fn fleet_released(trace_id: &str, zone_id: &str, incident_id: &str) -> Self {
-        let mut metadata = HashMap::new();
+        let mut metadata = BTreeMap::new();
         metadata.insert("incident_id".to_string(), incident_id.to_string());
         Self {
             event_code: FLEET_RELEASED.to_string(),
@@ -374,7 +374,7 @@ impl FleetControlEvent {
     }
 
     pub fn reconcile_completed(trace_id: &str, zone_count: usize) -> Self {
-        let mut metadata = HashMap::new();
+        let mut metadata = BTreeMap::new();
         metadata.insert("zone_count".to_string(), zone_count.to_string());
         Self {
             event_code: FLEET_RECONCILE_COMPLETED.to_string(),
@@ -398,9 +398,9 @@ pub struct FleetControlManager {
     /// Whether the API is activated (false = safe-start read-only mode).
     activated: bool,
     /// Active quarantine incidents keyed by incident_id.
-    incidents: HashMap<String, IncidentHandle>,
+    incidents: BTreeMap<String, IncidentHandle>,
     /// Per-zone fleet status.
-    zone_status: HashMap<String, FleetStatus>,
+    zone_status: BTreeMap<String, FleetStatus>,
     /// Event log for audit trail.
     events: Vec<FleetControlEvent>,
     /// Counter for generating operation IDs.
@@ -413,8 +413,8 @@ impl FleetControlManager {
     pub fn new() -> Self {
         Self {
             activated: false,
-            incidents: HashMap::new(),
-            zone_status: HashMap::new(),
+            incidents: BTreeMap::new(),
+            zone_status: BTreeMap::new(),
             events: Vec::new(),
             next_op_id: 1,
         }

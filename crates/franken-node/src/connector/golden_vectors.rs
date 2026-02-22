@@ -4,12 +4,12 @@
 //! Schemas and vectors are versioned.  A verification runner validates
 //! implementations against the full vector suite.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 
 // ── Schema categories ───────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SchemaCategory {
     Serialization,
     Signature,
@@ -119,8 +119,8 @@ impl fmt::Display for SchemaError {
 
 #[derive(Debug, Default)]
 pub struct SchemaRegistry {
-    schemas: HashMap<SchemaCategory, SchemaSpec>,
-    vectors: HashMap<SchemaCategory, Vec<GoldenVector>>,
+    schemas: BTreeMap<SchemaCategory, SchemaSpec>,
+    vectors: BTreeMap<SchemaCategory, Vec<GoldenVector>>,
 }
 
 impl SchemaRegistry {

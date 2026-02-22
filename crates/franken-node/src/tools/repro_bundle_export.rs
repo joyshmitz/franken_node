@@ -11,9 +11,10 @@
 //! - INV-REPRO-COMPLETE: bundles are self-contained (no external state needed)
 //! - INV-REPRO-VERSIONED: schema version field is present and validated
 
-use std::collections::hash_map::DefaultHasher;
 use std::fmt;
-use std::hash::{Hash, Hasher};
+
+use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 
 /// Stable event codes for structured logging.
 pub mod event_codes {
@@ -271,48 +272,53 @@ impl ReproBundle {
 
     /// Serialize as JSON for export.
     pub fn to_json(&self) -> String {
-        let events_json: Vec<String> = self
+        let event_trace: Vec<Value> = self
             .event_trace
             .iter()
             .map(|e| {
-                format!(
-                    r#"{{"seq":{},"event_type":"{}","timestamp_ms":{},"payload":"{}"}}"#,
-                    e.seq,
-                    e.event_type.label(),
-                    e.timestamp_ms,
-                    e.payload
-                )
+                json!({
+                    "seq": e.seq,
+                    "event_type": e.event_type.label(),
+                    "timestamp_ms": e.timestamp_ms,
+                    "payload": e.payload,
+                })
             })
             .collect();
 
-        let refs_json: Vec<String> = self.evidence_refs.iter().map(|r| {
-            format!(
-                r#"{{"evidence_id":"{}","decision_kind":"{}","epoch_id":{},"relative_path":"{}"}}"#,
-                r.evidence_id, r.decision_kind, r.epoch_id, r.relative_path
-            )
-        }).collect();
+        let evidence_refs: Vec<Value> = self
+            .evidence_refs
+            .iter()
+            .map(|r| {
+                json!({
+                    "evidence_id": r.evidence_id,
+                    "decision_kind": r.decision_kind,
+                    "epoch_id": r.epoch_id,
+                    "relative_path": r.relative_path,
+                })
+            })
+            .collect();
 
-        let config_json: Vec<String> = self
+        let config: Map<String, Value> = self
             .config
             .entries
             .iter()
-            .map(|(k, v)| format!(r#""{}":"{}""#, k, v))
+            .map(|(k, v)| (k.clone(), Value::String(v.clone())))
             .collect();
 
-        format!(
-            r#"{{"bundle_id":"{}","schema_version":{},"seed":{},"epoch_id":{},"timestamp_ms":{},"failure_type":"{}","error_message":"{}","trigger":"{}","config":{{{}}},"event_trace":[{}],"evidence_refs":[{}]}}"#,
-            self.bundle_id,
-            self.schema_version,
-            self.seed,
-            self.epoch_id,
-            self.timestamp_ms,
-            self.failure_context.failure_type.label(),
-            self.failure_context.error_message,
-            self.failure_context.trigger,
-            config_json.join(","),
-            events_json.join(","),
-            refs_json.join(","),
-        )
+        json!({
+            "bundle_id": self.bundle_id,
+            "schema_version": self.schema_version,
+            "seed": self.seed,
+            "epoch_id": self.epoch_id,
+            "timestamp_ms": self.timestamp_ms,
+            "failure_type": self.failure_context.failure_type.label(),
+            "error_message": self.failure_context.error_message,
+            "trigger": self.failure_context.trigger,
+            "config": config,
+            "event_trace": event_trace,
+            "evidence_refs": evidence_refs,
+        })
+        .to_string()
     }
 }
 
@@ -341,28 +347,15 @@ pub struct ExportContext {
 ///
 /// INV-REPRO-DETERMINISTIC: same context -> same bundle_id.
 pub fn generate_repro_bundle(ctx: &ExportContext) -> ReproBundle {
-    let mut hasher = DefaultHasher::new();
-    ctx.seed.hash(&mut hasher);
-    ctx.epoch_id.hash(&mut hasher);
-    ctx.timestamp_ms.hash(&mut hasher);
-    ctx.failure_context.failure_type.label().hash(&mut hasher);
-    ctx.failure_context.error_message.hash(&mut hasher);
-    for event in &ctx.event_trace {
-        event.seq.hash(&mut hasher);
-        event.event_type.label().hash(&mut hasher);
-        event.timestamp_ms.hash(&mut hasher);
-        event.payload.hash(&mut hasher);
-    }
-    for eref in &ctx.evidence_refs {
-        eref.evidence_id.hash(&mut hasher);
-        eref.epoch_id.hash(&mut hasher);
-    }
-    for (k, v) in &ctx.config.entries {
-        k.hash(&mut hasher);
-        v.hash(&mut hasher);
-    }
-    let hash = hasher.finish();
-    let bundle_id = format!("RB-{hash:016x}");
+    let bundle_id = compute_bundle_id(
+        ctx.seed,
+        ctx.epoch_id,
+        ctx.timestamp_ms,
+        &ctx.failure_context,
+        &ctx.event_trace,
+        &ctx.evidence_refs,
+        &ctx.config.entries,
+    );
 
     ReproBundle {
         bundle_id,
@@ -435,15 +428,7 @@ pub fn replay_bundle(bundle: &ReproBundle) -> ReplayOutcome {
     }
 
     // Deterministic replay: walk the event trace with the captured seed
-    let mut replay_hasher = DefaultHasher::new();
-    bundle.seed.hash(&mut replay_hasher);
-
     for (i, event) in bundle.event_trace.iter().enumerate() {
-        // Replay each event deterministically
-        event.event_type.label().hash(&mut replay_hasher);
-        event.timestamp_ms.hash(&mut replay_hasher);
-        event.payload.hash(&mut replay_hasher);
-
         // Verify event ordering
         if i > 0 && event.seq <= bundle.event_trace[i - 1].seq {
             return ReplayOutcome::Divergence {
@@ -454,31 +439,79 @@ pub fn replay_bundle(bundle: &ReproBundle) -> ReplayOutcome {
         }
     }
 
-    // Verify the replay state matches the failure context
-    let replay_hash = replay_hasher.finish();
-
-    // Compute expected hash from original context
-    let mut expected_hasher = DefaultHasher::new();
-    bundle.seed.hash(&mut expected_hasher);
-    for event in &bundle.event_trace {
-        event.event_type.label().hash(&mut expected_hasher);
-        event.timestamp_ms.hash(&mut expected_hasher);
-        event.payload.hash(&mut expected_hasher);
-    }
-    let expected_hash = expected_hasher.finish();
-
-    if replay_hash == expected_hash {
+    let expected_bundle_id = compute_bundle_id(
+        bundle.seed,
+        bundle.epoch_id,
+        bundle.timestamp_ms,
+        &bundle.failure_context,
+        &bundle.event_trace,
+        &bundle.evidence_refs,
+        &bundle.config.entries,
+    );
+    if bundle.bundle_id != expected_bundle_id {
+        ReplayOutcome::Divergence {
+            divergence_point: bundle.event_trace.len(),
+            expected: expected_bundle_id,
+            actual: bundle.bundle_id.clone(),
+        }
+    } else {
         ReplayOutcome::Match {
             failure_type: bundle.failure_context.failure_type,
             events_replayed: bundle.event_trace.len(),
         }
-    } else {
-        ReplayOutcome::Divergence {
-            divergence_point: bundle.event_trace.len(),
-            expected: format!("{expected_hash:016x}"),
-            actual: format!("{replay_hash:016x}"),
-        }
     }
+}
+
+fn update_u64(hasher: &mut Sha256, value: u64) {
+    hasher.update(value.to_le_bytes());
+}
+
+fn update_len_prefixed_str(hasher: &mut Sha256, value: &str) {
+    update_u64(hasher, value.len() as u64);
+    hasher.update(value.as_bytes());
+}
+
+fn compute_bundle_id(
+    seed: u64,
+    epoch_id: u64,
+    timestamp_ms: u64,
+    failure_context: &FailureContext,
+    event_trace: &[TraceEvent],
+    evidence_refs: &[EvidenceRef],
+    config_entries: &[(String, String)],
+) -> String {
+    let mut hasher = Sha256::new();
+    update_u64(&mut hasher, seed);
+    update_u64(&mut hasher, epoch_id);
+    update_u64(&mut hasher, timestamp_ms);
+    update_len_prefixed_str(&mut hasher, failure_context.failure_type.label());
+    update_len_prefixed_str(&mut hasher, &failure_context.error_message);
+    update_len_prefixed_str(&mut hasher, &failure_context.trigger);
+    update_u64(&mut hasher, failure_context.timestamp_ms);
+
+    for event in event_trace {
+        update_u64(&mut hasher, event.seq);
+        update_len_prefixed_str(&mut hasher, event.event_type.label());
+        update_u64(&mut hasher, event.timestamp_ms);
+        update_len_prefixed_str(&mut hasher, &event.payload);
+    }
+    for evidence in evidence_refs {
+        update_len_prefixed_str(&mut hasher, &evidence.evidence_id);
+        update_len_prefixed_str(&mut hasher, &evidence.decision_kind);
+        update_u64(&mut hasher, evidence.epoch_id);
+        update_len_prefixed_str(&mut hasher, &evidence.relative_path);
+    }
+    for (key, value) in config_entries {
+        update_len_prefixed_str(&mut hasher, key);
+        update_len_prefixed_str(&mut hasher, value);
+    }
+
+    let digest = hasher.finalize();
+    let suffix = digest[..8]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("RB-{suffix}")
 }
 
 // ── Schema validation ───────────────────────────────────────────────
@@ -841,6 +874,17 @@ mod tests {
     }
 
     #[test]
+    fn evidence_path_change_changes_bundle_id() {
+        let ctx1 = make_context();
+        let mut ctx2 = make_context();
+        ctx2.evidence_refs[0].relative_path = "evidence/evd-001-renamed.json".into();
+
+        let b1 = generate_repro_bundle(&ctx1);
+        let b2 = generate_repro_bundle(&ctx2);
+        assert_ne!(b1.bundle_id, b2.bundle_id);
+    }
+
+    #[test]
     fn event_trace_ordering_preserved() {
         let ctx = make_context();
         let bundle = generate_repro_bundle(&ctx);
@@ -892,6 +936,30 @@ mod tests {
         let _: serde_json::Value = serde_json::from_str(&json).unwrap();
     }
 
+    #[test]
+    fn bundle_to_json_escapes_special_characters() {
+        let mut ctx = make_context();
+        ctx.event_trace[0].payload = "quoted \"payload\" with newline\nand slash \\".into();
+        ctx.failure_context.error_message = "bad \"state\" at C:\\tmp\\node".into();
+        ctx.failure_context.trigger = "trigger \"quoted\"".into();
+        ctx.config = ConfigSnapshot::new().with_entry("key\"x", "val\\ue\nline2");
+
+        let bundle = generate_repro_bundle(&ctx);
+        let json = bundle.to_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(
+            parsed["event_trace"][0]["payload"].as_str(),
+            Some("quoted \"payload\" with newline\nand slash \\")
+        );
+        assert_eq!(
+            parsed["error_message"].as_str(),
+            Some("bad \"state\" at C:\\tmp\\node")
+        );
+        assert_eq!(parsed["trigger"].as_str(), Some("trigger \"quoted\""));
+        assert_eq!(parsed["config"]["key\"x"].as_str(), Some("val\\ue\nline2"));
+    }
+
     // ── Replay ──
 
     #[test]
@@ -930,6 +998,16 @@ mod tests {
         let ctx = make_context();
         let mut bundle = generate_repro_bundle(&ctx);
         bundle.schema_version = 99;
+
+        let outcome = replay_bundle(&bundle);
+        assert!(matches!(outcome, ReplayOutcome::Divergence { .. }));
+    }
+
+    #[test]
+    fn replay_detects_bundle_id_tampering() {
+        let ctx = make_context();
+        let mut bundle = generate_repro_bundle(&ctx);
+        bundle.bundle_id = "RB-deadbeefdeadbeef".into();
 
         let outcome = replay_bundle(&bundle);
         assert!(matches!(outcome, ReplayOutcome::Divergence { .. }));
@@ -984,10 +1062,9 @@ mod tests {
         bundle.bundle_id = String::new();
 
         let errs = validate_bundle(&bundle).unwrap_err();
-        assert!(
-            errs.iter()
-                .any(|e| matches!(e, SchemaError::MissingField(f) if f == "bundle_id"))
-        );
+        assert!(errs
+            .iter()
+            .any(|e| matches!(e, SchemaError::MissingField(f) if f == "bundle_id")));
     }
 
     #[test]
@@ -997,10 +1074,9 @@ mod tests {
         bundle.schema_version = 0;
 
         let errs = validate_bundle(&bundle).unwrap_err();
-        assert!(
-            errs.iter()
-                .any(|e| matches!(e, SchemaError::InvalidVersion { .. }))
-        );
+        assert!(errs
+            .iter()
+            .any(|e| matches!(e, SchemaError::InvalidVersion { .. })));
     }
 
     #[test]
@@ -1010,10 +1086,9 @@ mod tests {
         bundle.failure_context.error_message = String::new();
 
         let errs = validate_bundle(&bundle).unwrap_err();
-        assert!(
-            errs.iter()
-                .any(|e| matches!(e, SchemaError::MissingField(f) if f.contains("error_message")))
-        );
+        assert!(errs
+            .iter()
+            .any(|e| matches!(e, SchemaError::MissingField(f) if f.contains("error_message"))));
     }
 
     #[test]
@@ -1028,10 +1103,9 @@ mod tests {
         });
 
         let errs = validate_bundle(&bundle).unwrap_err();
-        assert!(
-            errs.iter()
-                .any(|e| matches!(e, SchemaError::NonPortablePath(_)))
-        );
+        assert!(errs
+            .iter()
+            .any(|e| matches!(e, SchemaError::NonPortablePath(_))));
     }
 
     #[test]

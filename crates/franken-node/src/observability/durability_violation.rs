@@ -14,6 +14,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
+use serde_json::json;
+
 /// Stable event codes for structured logging.
 pub mod event_codes {
     pub const VIOLATION_BUNDLE_GENERATED: &str = "EVD-VIOLATION-001";
@@ -223,45 +225,48 @@ impl ViolationBundle {
 
     /// Serialize as JSON for export.
     pub fn to_json(&self) -> String {
-        let events_json: Vec<String> = self
+        let causal_events: Vec<serde_json::Value> = self
             .causal_event_sequence
             .iter()
             .map(|e| {
-                format!(
-                    r#"{{"type":"{}","timestamp_ms":{},"description":"{}","evidence_ref":{}}}"#,
-                    e.event_type.label(),
-                    e.timestamp_ms,
-                    e.description,
-                    match &e.evidence_ref {
-                        Some(r) => format!("\"{}\"", r),
-                        None => "null".to_string(),
-                    }
-                )
+                json!({
+                    "type": e.event_type.label(),
+                    "timestamp_ms": e.timestamp_ms,
+                    "description": &e.description,
+                    "evidence_ref": &e.evidence_ref,
+                })
             })
             .collect();
 
-        let artifacts_json: Vec<String> = self
+        let failed_artifacts: Vec<serde_json::Value> = self
             .failed_artifacts
             .iter()
             .map(|a| {
-                format!(
-                    r#"{{"path":"{}","expected_hash":"{}","actual_hash":"{}","reason":"{}"}}"#,
-                    a.artifact_path, a.expected_hash, a.actual_hash, a.failure_reason
-                )
+                json!({
+                    "path": &a.artifact_path,
+                    "expected_hash": &a.expected_hash,
+                    "actual_hash": &a.actual_hash,
+                    "reason": &a.failure_reason,
+                })
             })
             .collect();
 
-        format!(
-            r#"{{"bundle_id":"{}","event_count":{},"artifact_count":{},"hardening_level":"{}","epoch_id":{},"timestamp_ms":{},"causal_events":[{}],"failed_artifacts":[{}]}}"#,
-            self.bundle_id,
-            self.event_count(),
-            self.artifact_count(),
-            self.hardening_level,
-            self.epoch_id,
-            self.timestamp_ms,
-            events_json.join(","),
-            artifacts_json.join(","),
-        )
+        json!({
+            "bundle_id": self.bundle_id.as_str(),
+            "event_count": self.event_count(),
+            "artifact_count": self.artifact_count(),
+            "hardening_level": self.hardening_level,
+            "epoch_id": self.epoch_id,
+            "timestamp_ms": self.timestamp_ms,
+            "causal_events": causal_events,
+            "failed_artifacts": failed_artifacts,
+            "proof_context": {
+                "failed_proofs": &self.proof_context.failed_proofs,
+                "missing_proofs": &self.proof_context.missing_proofs,
+                "passed_proofs": &self.proof_context.passed_proofs,
+            }
+        })
+        .to_string()
     }
 }
 
@@ -432,10 +437,13 @@ pub fn generate_bundle(context: &ViolationContext) -> ViolationBundle {
         event.event_type.label().hash(&mut hasher);
         event.timestamp_ms.hash(&mut hasher);
         event.description.hash(&mut hasher);
+        event.evidence_ref.hash(&mut hasher);
     }
     for artifact in &context.artifacts {
         artifact.artifact_path.hash(&mut hasher);
         artifact.expected_hash.hash(&mut hasher);
+        artifact.actual_hash.hash(&mut hasher);
+        artifact.failure_reason.hash(&mut hasher);
     }
     let hash = hasher.finish();
     let bundle_id = BundleId::new(format!("VB-{hash:016x}"));
@@ -640,6 +648,28 @@ mod tests {
     }
 
     #[test]
+    fn artifact_actual_hash_change_changes_bundle_id() {
+        let ctx1 = make_context();
+        let mut ctx2 = make_context();
+        ctx2.artifacts[0].actual_hash = "feedface".into();
+
+        let b1 = generate_bundle(&ctx1);
+        let b2 = generate_bundle(&ctx2);
+        assert_ne!(b1.bundle_id, b2.bundle_id);
+    }
+
+    #[test]
+    fn event_evidence_ref_change_changes_bundle_id() {
+        let ctx1 = make_context();
+        let mut ctx2 = make_context();
+        ctx2.events[0].evidence_ref = Some("EVD-ALT".into());
+
+        let b1 = generate_bundle(&ctx1);
+        let b2 = generate_bundle(&ctx2);
+        assert_ne!(b1.bundle_id, b2.bundle_id);
+    }
+
+    #[test]
     fn causal_events_ordering_preserved() {
         let ctx = make_context();
         let bundle = generate_bundle(&ctx);
@@ -687,6 +717,36 @@ mod tests {
         assert!(json.contains("objects/abc123"));
         // Verify it's valid JSON
         let _: serde_json::Value = serde_json::from_str(&json).unwrap();
+    }
+
+    #[test]
+    fn bundle_to_json_escapes_and_includes_proof_context() {
+        let mut ctx = make_context();
+        ctx.events[0].description = "quote \"danger\" newline\nok".into();
+        ctx.events[0].evidence_ref = Some("EVD-\"A\"".into());
+        ctx.artifacts[0].failure_reason = "bad path C:\\tmp\\bundle".into();
+        ctx.proofs.missing_proofs.push("proof-\"zzz\"".into());
+
+        let bundle = generate_bundle(&ctx);
+        let json = bundle.to_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(
+            parsed["causal_events"][0]["description"].as_str(),
+            Some("quote \"danger\" newline\nok")
+        );
+        assert_eq!(
+            parsed["causal_events"][0]["evidence_ref"].as_str(),
+            Some("EVD-\"A\"")
+        );
+        assert_eq!(
+            parsed["failed_artifacts"][0]["reason"].as_str(),
+            Some("bad path C:\\tmp\\bundle")
+        );
+        assert_eq!(
+            parsed["proof_context"]["missing_proofs"][1].as_str(),
+            Some("proof-\"zzz\"")
+        );
     }
 
     // ── DurabilityViolationDetector tests ──
