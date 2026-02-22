@@ -70,3 +70,5 @@ pub mod vef_claim_integration;
 pub mod vef_perf_budget;
 pub mod universal_verifier_sdk;
 pub mod verifier_sdk;
+pub mod vef_policy_constraints;
+pub mod vef_execution_receipt;

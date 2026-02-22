@@ -1,0 +1,104 @@
+{
+  "bead_id": "bd-16fq",
+  "fixture_id": "vef-policy-constraint-compiler-v1-golden",
+  "description": "Deterministic replay fixture for VEF policy-constraint compiler.",
+  "trace_id": "fixture-trace-001",
+  "input_policy": {
+    "schema_version": "vef-policy-lang-v1",
+    "policy_id": "fixture-policy-v1",
+    "require_full_action_coverage": true,
+    "rules": [
+      {
+        "rule_id": "network-egress-require",
+        "action_class": "network_access",
+        "effect": "require",
+        "required_capabilities": [
+          "net.egress"
+        ],
+        "constraints": {
+          "cidr_allowlist": "10.0.0.0/8",
+          "max_endpoints": "3"
+        }
+      },
+      {
+        "rule_id": "filesystem-prefix",
+        "action_class": "filesystem_operation",
+        "effect": "require",
+        "required_capabilities": [
+          "fs.read"
+        ],
+        "constraints": {
+          "allowed_prefix": "/srv/extensions"
+        }
+      },
+      {
+        "rule_id": "process-deny",
+        "action_class": "process_spawn",
+        "effect": "deny",
+        "required_capabilities": [],
+        "constraints": {
+          "reason": "no-subprocesses"
+        }
+      },
+      {
+        "rule_id": "secret-require",
+        "action_class": "secret_access",
+        "effect": "require",
+        "required_capabilities": [
+          "secret.fetch"
+        ],
+        "constraints": {
+          "max_ttl_seconds": "300"
+        }
+      },
+      {
+        "rule_id": "policy-transition-approval",
+        "action_class": "policy_transition",
+        "effect": "require",
+        "required_capabilities": [
+          "policy.approval"
+        ],
+        "constraints": {
+          "required_signatures": "2"
+        }
+      },
+      {
+        "rule_id": "artifact-promotion-verifier",
+        "action_class": "artifact_promotion",
+        "effect": "require",
+        "required_capabilities": [
+          "artifact.promote"
+        ],
+        "constraints": {
+          "min_verifier_quorum": "3"
+        }
+      }
+    ]
+  },
+  "expected_output": {
+    "schema_version": "vef-policy-constraints-v1",
+    "language_version": "vef-policy-lang-v1",
+    "compiler_version": "vef-constraint-compiler-v1",
+    "expected_rule_projection_count": 6,
+    "expected_min_predicates": 12,
+    "expected_coverage": {
+      "network_access": 1,
+      "filesystem_operation": 1,
+      "process_spawn": 1,
+      "secret_access": 1,
+      "policy_transition": 1,
+      "artifact_promotion": 1
+    },
+    "required_event_codes": [
+      "VEF-COMPILE-001",
+      "VEF-COMPILE-002"
+    ],
+    "required_invariants": [
+      "INV-VEF-COMP-DETERMINISTIC",
+      "INV-VEF-COMP-COVERAGE",
+      "INV-VEF-COMP-TRACEABLE",
+      "INV-VEF-COMP-VERSIONED",
+      "INV-VEF-COMP-ROUNDTRIP"
+    ]
+  }
+}

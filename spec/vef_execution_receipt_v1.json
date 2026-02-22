@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://franken-node.local/spec/vef_execution_receipt_v1.json",
+  "title": "VEF ExecutionReceipt",
+  "description": "Canonical deterministic receipt schema for VEF runtime actions.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "action_type",
+    "capability_context",
+    "actor_identity",
+    "artifact_identity",
+    "policy_snapshot_hash",
+    "timestamp_millis",
+    "sequence_number",
+    "witness_references",
+    "trace_id"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "vef-execution-receipt-v1"
+    },
+    "action_type": {
+      "$ref": "#/$defs/ExecutionActionType"
+    },
+    "capability_context": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "actor_identity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "artifact_identity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policy_snapshot_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "timestamp_millis": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sequence_number": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "witness_references": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "ExecutionActionType": {
+      "type": "string",
+      "enum": [
+        "network_access",
+        "filesystem_operation",
+        "process_spawn",
+        "secret_access",
+        "policy_transition",
+        "artifact_promotion"
+      ]
+    }
+  }
+}

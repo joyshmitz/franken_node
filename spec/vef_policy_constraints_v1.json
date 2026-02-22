@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://franken-node.local/spec/vef_policy_constraints_v1.json",
+  "title": "VEF Policy Constraint Compiler Envelope",
+  "description": "Schema for deterministic VEF policy-constraint compiler input/output contracts.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "language_version",
+    "compiler_version",
+    "trace_id",
+    "policy_id",
+    "policy_snapshot_hash",
+    "predicates",
+    "coverage",
+    "rule_projections",
+    "events"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "vef-policy-constraints-v1"
+    },
+    "language_version": {
+      "type": "string",
+      "const": "vef-policy-lang-v1"
+    },
+    "compiler_version": {
+      "type": "string",
+      "const": "vef-constraint-compiler-v1"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policy_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policy_snapshot_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "predicates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CompiledPredicate"
+      },
+      "minItems": 1
+    },
+    "coverage": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/ActionClassName"
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "rule_projections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RuleSemanticProjection"
+      },
+      "minItems": 1
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CompilerEvent"
+      },
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "ActionClass": {
+      "type": "string",
+      "enum": [
+        "network_access",
+        "filesystem_operation",
+        "process_spawn",
+        "secret_access",
+        "policy_transition",
+        "artifact_promotion"
+      ]
+    },
+    "ActionClassName": {
+      "type": "string",
+      "enum": [
+        "network_access",
+        "filesystem_operation",
+        "process_spawn",
+        "secret_access",
+        "policy_transition",
+        "artifact_promotion"
+      ]
+    },
+    "RuleEffect": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "deny",
+        "require"
+      ]
+    },
+    "PredicateKind": {
+      "type": "string",
+      "enum": [
+        "decision",
+        "capability",
+        "constraint"
+      ]
+    },
+    "CompiledPredicate": {
+      "type": "object",
+      "required": [
+        "predicate_id",
+        "source_rule_id",
+        "action_class",
+        "kind",
+        "expression",
+        "params",
+        "trace_link"
+      ],
+      "properties": {
+        "predicate_id": {
+          "type": "string",
+          "pattern": "^pred-[0-9a-f]{16}$"
+        },
+        "source_rule_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action_class": {
+          "$ref": "#/$defs/ActionClass"
+        },
+        "kind": {
+          "$ref": "#/$defs/PredicateKind"
+        },
+        "expression": {
+          "type": "string",
+          "minLength": 1
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "trace_link": {
+          "type": "string",
+          "pattern": "^policy:[^/]+/rule:[^/]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RuleSemanticProjection": {
+      "type": "object",
+      "required": [
+        "rule_id",
+        "action_class",
+        "effect",
+        "required_capabilities",
+        "constraints"
+      ],
+      "properties": {
+        "rule_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action_class": {
+          "$ref": "#/$defs/ActionClass"
+        },
+        "effect": {
+          "$ref": "#/$defs/RuleEffect"
+        },
+        "required_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "constraints": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "CompilerEvent": {
+      "type": "object",
+      "required": [
+        "code",
+        "trace_id",
+        "message",
+        "rule_id"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^VEF-COMPILE-(001|002|ERR-001|ERR-002|ERR-003|ERR-004|ERR-005)$"
+        },
+        "trace_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string"
+        },
+        "rule_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "PolicyRule": {
+      "type": "object",
+      "required": [
+        "rule_id",
+        "action_class",
+        "effect",
+        "required_capabilities",
+        "constraints"
+      ],
+      "properties": {
+        "rule_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action_class": {
+          "$ref": "#/$defs/ActionClass"
+        },
+        "effect": {
+          "$ref": "#/$defs/RuleEffect"
+        },
+        "required_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "constraints": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "RuntimePolicy": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "policy_id",
+        "require_full_action_coverage",
+        "rules"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "vef-policy-lang-v1"
+        },
+        "policy_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "require_full_action_coverage": {
+          "type": "boolean"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PolicyRule"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
