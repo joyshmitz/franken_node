@@ -51,3 +51,38 @@ No engine-core internals are mutable by the governor.
 - `INV-GOV-KNOBS-ONLY`
 - `INV-GOV-AUTO-REVERT`
 - `INV-GOV-DETERMINISTIC-ORDER`
+
+## bd-21fo Canonical Event Codes
+
+- `GOVERNOR_CANDIDATE_PROPOSED`
+- `GOVERNOR_SHADOW_EVAL_START`
+- `GOVERNOR_SAFETY_CHECK_PASS`
+- `GOVERNOR_POLICY_APPLIED`
+- `GOVERNOR_POLICY_REVERTED`
+
+## bd-21fo Canonical Error Codes
+
+- `ERR_GOVERNOR_UNSAFE_CANDIDATE`
+- `ERR_GOVERNOR_SHADOW_EVAL_FAILED`
+- `ERR_GOVERNOR_BENEFIT_BELOW_THRESHOLD`
+- `ERR_GOVERNOR_ENGINE_BOUNDARY_VIOLATION`
+- `ERR_GOVERNOR_REVERT_FAILED`
+- `ERR_GOVERNOR_KNOB_READONLY`
+
+## bd-21fo Canonical Invariants
+
+- `INV-GOVERNOR-SHADOW-REQUIRED`
+- `INV-GOVERNOR-SAFETY-ENVELOPE`
+- `INV-GOVERNOR-AUTO-REVERT`
+- `INV-GOVERNOR-ENGINE-BOUNDARY`
+
+## Required Artifacts
+
+- `crates/franken-node/src/runtime/optimization_governor.rs`
+- `crates/franken-node/src/perf/optimization_governor.rs`
+- `tests/perf/governor_safety_envelope.rs`
+- `artifacts/10.17/governor_decision_log.jsonl`
+- `scripts/check_optimization_governor.py`
+- `tests/test_check_optimization_governor.py`
+- `artifacts/section_10_17/bd-21fo/verification_evidence.json`
+- `artifacts/section_10_17/bd-21fo/verification_summary.md`

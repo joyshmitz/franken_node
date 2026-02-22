@@ -72,6 +72,55 @@ Enumeration of adjustable runtime parameters:
 | `DrainTimeoutMs` | Drain timeout in milliseconds |
 | `RetryBudget` | Maximum retry attempts |
 
+### PredictedOutcome
+
+| Field | Type | Description |
+|---|---|---|
+| `latency_ms` | `u64` | Predicted p99 latency in milliseconds |
+| `throughput_rps` | `u64` | Predicted throughput in requests per second |
+| `error_rate_pct` | `f64` | Predicted error rate as percentage |
+| `memory_mb` | `u64` | Predicted memory usage in megabytes |
+
+### DecisionLogEntry
+
+| Field | Type | Description |
+|---|---|---|
+| `sequence` | `u64` | Monotonically increasing sequence number |
+| `proposal_id` | `String` | The proposal this decision applies to |
+| `knob` | `RuntimeKnob` | The knob targeted by the proposal |
+| `decision` | `GovernorDecision` | The decision outcome |
+| `event_code` | `String` | Event code emitted (GOV_001..GOV_007) |
+| `error_code` | `Option<String>` | Error code if rejected |
+| `envelope_violations` | `Vec<String>` | List of envelope violations |
+| `trace_id` | `String` | Correlation ID |
+
+### ShadowEvalResult
+
+| Field | Type | Description |
+|---|---|---|
+| `proposal_id` | `String` | The proposal evaluated |
+| `within_envelope` | `bool` | Whether predicted outcome is within envelope |
+| `violations` | `Vec<String>` | List of violations (empty if within) |
+| `is_beneficial` | `bool` | Whether the proposal improves metrics |
+| `event_code` | `String` | Always GOV_002 |
+
+### GovernorSnapshot
+
+| Field | Type | Description |
+|---|---|---|
+| `schema_version` | `String` | Schema version (gov-v1.0) |
+| `envelope` | `SafetyEnvelope` | Current safety envelope |
+| `knob_values` | `BTreeMap<String, u64>` | Current knob values |
+| `decision_count` | `u64` | Total decisions made |
+| `applied_count` | `u64` | Proposals that were applied |
+| `rejected_count` | `u64` | Proposals that were rejected |
+| `reverted_count` | `u64` | Proposals that were auto-reverted |
+
+### OptimizationGovernor
+
+The main governor struct that holds the safety envelope, knob state,
+decision log, and applied proposal history. See implementation for methods.
+
 ## Event Codes
 
 | Code | Description |
@@ -119,10 +168,38 @@ Enumeration of adjustable runtime parameters:
 6. Check script with `--json` and `--self-test` flags.
 7. Python unit test suite (>= 12 tests).
 
+## bd-21fo Canonical Event Codes
+
+- `GOVERNOR_CANDIDATE_PROPOSED`
+- `GOVERNOR_SHADOW_EVAL_START`
+- `GOVERNOR_SAFETY_CHECK_PASS`
+- `GOVERNOR_POLICY_APPLIED`
+- `GOVERNOR_POLICY_REVERTED`
+
+## bd-21fo Canonical Error Codes
+
+- `ERR_GOVERNOR_UNSAFE_CANDIDATE`
+- `ERR_GOVERNOR_SHADOW_EVAL_FAILED`
+- `ERR_GOVERNOR_BENEFIT_BELOW_THRESHOLD`
+- `ERR_GOVERNOR_ENGINE_BOUNDARY_VIOLATION`
+- `ERR_GOVERNOR_REVERT_FAILED`
+- `ERR_GOVERNOR_KNOB_READONLY`
+
+## bd-21fo Canonical Invariants
+
+- `INV-GOVERNOR-SHADOW-REQUIRED`
+- `INV-GOVERNOR-SAFETY-ENVELOPE`
+- `INV-GOVERNOR-AUTO-REVERT`
+- `INV-GOVERNOR-ENGINE-BOUNDARY`
+
 ## Deliverables
 
 - `docs/specs/section_10_17/bd-21fo_contract.md` (this file)
+- `docs/specs/optimization_governor.md`
 - `crates/franken-node/src/runtime/optimization_governor.rs`
+- `crates/franken-node/src/perf/optimization_governor.rs`
+- `tests/perf/governor_safety_envelope.rs`
+- `artifacts/10.17/governor_decision_log.jsonl`
 - `scripts/check_optimization_governor.py`
 - `tests/test_check_optimization_governor.py`
 - `artifacts/section_10_17/bd-21fo/verification_evidence.json`

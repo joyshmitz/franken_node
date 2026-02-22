@@ -38,48 +38,84 @@ The time-travel runtime provides:
 
 ## Invariants
 
-- **INV-TTR-DETERMINISTIC**: Given identical seed and input, replay produces
-  byte-for-byte equivalent control decisions. No non-determinism leaks into
-  the replay path.
-- **INV-TTR-FRAME-COMPLETE**: Every captured frame contains the full state
-  required to reconstruct the control decision at that point. No implicit or
-  ambient state is omitted.
-- **INV-TTR-CLOCK-MONOTONIC**: The deterministic clock advances monotonically
-  within a session. No time reversal occurs during capture or replay.
-- **INV-TTR-DIVERGENCE-DETECTED**: When replayed execution diverges from the
-  captured trace, the runtime halts and produces a structured divergence
-  explanation before any further frames are emitted.
-- **INV-TTR-SNAPSHOT-SCHEMA**: Workflow snapshots carry a schema version.
-  Format changes are backward-detectable and forward-compatible within the
-  same major version.
-- **INV-TTR-STEP-NAVIGATION**: During replay, the session supports stepping
-  forward and backward by individual frames without corrupting state.
+### Implementation-Level Invariants
+
+- **INV-TTR-DETERMINISM**: Replay of captured traces produces bit-identical
+  outcomes under identical environment assumptions.
+- **INV-TTR-DIVERGENCE-DETECT**: Any divergence between original and replayed
+  outputs is detected and reported with structured diagnostics.
+- **INV-TTR-TRACE-COMPLETE**: Every captured trace includes all inputs, outputs,
+  side-effects, and environment state necessary for faithful replay.
+- **INV-TTR-STEP-ORDER**: Trace steps are strictly ordered by sequence number;
+  replays respect that order.
+- **INV-TTR-ENV-SEALED**: The environment snapshot is immutable once captured;
+  replays use the sealed snapshot.
+- **INV-TTR-AUDIT-COMPLETE**: Every capture, replay, and divergence event is
+  logged with a stable event code and trace correlation ID.
+
+### Contract-Level Invariants
+
+- **INV-REPLAY-DETERMINISTIC**: Replayed executions produce byte-for-byte identical
+  control decisions when given the same seed and input sequence.
+- **INV-REPLAY-SEED-EQUIVALENCE**: Two executions sharing the same seed and input
+  sequence converge to the same final state digest.
+- **INV-REPLAY-STEP-NAVIGATION**: The replay engine supports forward and backward
+  stepwise navigation through recorded execution states.
+- **INV-REPLAY-DIVERGENCE-EXPLAIN**: When a replay diverges from its capture, the
+  engine produces a structured explanation identifying the first divergent step.
 
 ## Event Codes
 
+### TTR-Series (Implementation)
+
 | Code | Description |
 |------|-------------|
-| TTR_001 | Capture session started |
-| TTR_002 | Frame captured |
-| TTR_003 | Replay session started |
-| TTR_004 | Replay step advanced |
-| TTR_005 | Replay step reversed |
-| TTR_006 | Divergence detected |
-| TTR_007 | Snapshot serialized |
-| TTR_008 | Snapshot deserialized |
-| TTR_009 | Capture session completed |
-| TTR_010 | Replay session completed |
+| TTR-001 | Workflow trace capture started |
+| TTR-002 | Trace step recorded |
+| TTR-003 | Workflow trace capture completed |
+| TTR-004 | Replay started |
+| TTR-005 | Replay step compared (identical) |
+| TTR-006 | Replay step diverged |
+| TTR-007 | Replay completed -- verdict emitted |
+| TTR-008 | Environment snapshot sealed |
+| TTR-009 | Trace integrity check passed |
+| TTR-010 | Trace integrity check failed |
+
+### Contract-Level Event Codes
+
+| Code | Description |
+|------|-------------|
+| REPLAY_CAPTURE_START | Capture session opened |
+| REPLAY_CAPTURE_COMPLETE | Capture sealed with final digest |
+| REPLAY_PLAYBACK_START | Replay session initiated |
+| REPLAY_PLAYBACK_MATCH | Replay matches capture byte-for-byte |
+| REPLAY_DIVERGENCE_DETECTED | Replay diverges from capture |
 
 ## Error Codes
 
+### TTR-Series (Implementation)
+
 | Code | Description |
 |------|-------------|
-| ERR_TTR_EMPTY_TRACE | Replay attempted on a trace with zero frames |
-| ERR_TTR_DIVERGENCE | Replayed decision does not match captured decision |
-| ERR_TTR_CLOCK_REGRESSION | Deterministic clock moved backwards |
-| ERR_TTR_STEP_OUT_OF_BOUNDS | Step navigation moved past trace boundaries |
-| ERR_TTR_SNAPSHOT_CORRUPT | Snapshot deserialization failed integrity check |
-| ERR_TTR_SEED_MISMATCH | Replay seed does not match capture seed |
+| ERR_TTR_EMPTY_TRACE | Trace has no steps |
+| ERR_TTR_SEQ_GAP | Sequence gap detected in trace steps |
+| ERR_TTR_DIGEST_MISMATCH | Trace digest does not match recomputed value |
+| ERR_TTR_ENV_MISSING | Environment snapshot is missing required fields |
+| ERR_TTR_REPLAY_FAILED | Replay execution failed |
+| ERR_TTR_DUPLICATE_TRACE | Trace with this ID already exists in engine |
+| ERR_TTR_STEP_ORDER_VIOLATION | Steps violate ordering invariant |
+| ERR_TTR_TRACE_NOT_FOUND | Trace not found in engine |
+
+### Contract-Level Error Codes
+
+| Code | Description |
+|------|-------------|
+| ERR_REPLAY_SEED_MISMATCH | Replay seed differs from capture seed |
+| ERR_REPLAY_STATE_CORRUPTION | Internal state integrity check failed |
+| ERR_REPLAY_STEP_OVERFLOW | Step index exceeds capture length |
+| ERR_REPLAY_INPUT_MISSING | Required input for step not available |
+| ERR_REPLAY_CLOCK_DRIFT | Deterministic clock deviates beyond tolerance |
+| ERR_REPLAY_SNAPSHOT_INVALID | Snapshot restoration failed validation |
 
 ## Acceptance Criteria
 

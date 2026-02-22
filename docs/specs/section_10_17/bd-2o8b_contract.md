@@ -29,9 +29,12 @@ The planner enables:
 | Artifact | Path |
 |----------|------|
 | Spec contract | `docs/specs/section_10_17/bd-2o8b_contract.md` |
+| Architecture spec | `docs/architecture/hardware_execution_planner.md` |
 | Rust module | `crates/franken-node/src/runtime/hardware_planner.rs` |
+| Perf test | `tests/perf/hardware_planner_policy_conformance.rs` |
 | Check script | `scripts/check_hardware_planner.py` |
 | Test suite | `tests/test_check_hardware_planner.py` |
+| Report artifact | `artifacts/10.17/hardware_placement_trace.json` |
 | Evidence | `artifacts/section_10_17/bd-2o8b/verification_evidence.json` |
 | Summary | `artifacts/section_10_17/bd-2o8b/verification_summary.md` |
 
@@ -98,6 +101,36 @@ The planner enables:
 6. Every decision produces structured audit entries with stable event codes.
 7. Minimum 20 inline unit tests covering all error paths and invariants.
 8. Check script produces machine-readable JSON evidence.
+
+## Semantic Event Codes (Policy-Evidenced Placement Lifecycle)
+
+| Code | Meaning |
+|------|---------|
+| PLANNER_PLACEMENT_START | Placement evaluation begins |
+| PLANNER_CONSTRAINT_EVALUATED | Constraint evaluated against a candidate |
+| PLANNER_PLACEMENT_DECIDED | Placement decision made |
+| PLANNER_FALLBACK_ACTIVATED | Fallback path activated after contention |
+| PLANNER_DISPATCH_APPROVED | Dispatch approved through gated interface |
+
+## Semantic Error Codes
+
+| Code | Meaning |
+|------|---------|
+| ERR_PLANNER_CONSTRAINT_VIOLATED | Constraint violation (capability or risk) |
+| ERR_PLANNER_RESOURCE_CONTENTION | Resource contention prevents placement |
+| ERR_PLANNER_NO_FALLBACK | No fallback path after contention |
+| ERR_PLANNER_DISPATCH_DENIED | Dispatch denied (ungated interface) |
+| ERR_PLANNER_REPRODUCIBILITY_FAILED | Reproducibility check failed |
+| ERR_PLANNER_INTERFACE_UNAPPROVED | Unapproved dispatch interface |
+
+## Semantic Invariants
+
+| ID | Description |
+|----|-------------|
+| INV-PLANNER-REPRODUCIBLE | Identical inputs yield identical placement decisions |
+| INV-PLANNER-CONSTRAINT-SATISFIED | Workload placed only when constraints are met |
+| INV-PLANNER-FALLBACK-PATH | Contention triggers fallback with recorded reasoning |
+| INV-PLANNER-APPROVED-DISPATCH | Dispatch only through approved runtime/engine interfaces |
 
 ## Testing Requirements
 
