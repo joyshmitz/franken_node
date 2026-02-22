@@ -3,9 +3,21 @@
   "title": "VEF adversarial suite contract verification",
   "section": "10.18",
   "verdict": "FAIL",
-  "total": 44,
-  "passed": 33,
-  "failed": 11,
+  "total": 51,
+  "passed": 49,
+  "failed": 2,
+  "attack_classes": [
+    "receipt tampering",
+    "proof replay",
+    "stale-policy",
+    "commitment mismatch"
+  ],
+  "detection_counts": {
+    "tamper": 1,
+    "replay": 1,
+    "stale_policy": 1,
+    "commitment_mismatch": 1
+  },
   "checks": [
     {
       "check": "suite_exists",
@@ -24,12 +36,12 @@
     },
     {
       "check": "evidence_exists",
-      "pass": false,
+      "pass": true,
       "detail": "artifacts/section_10_18/bd-3ptu/verification_evidence.json"
     },
     {
       "check": "summary_exists",
-      "pass": false,
+      "pass": true,
       "detail": "artifacts/section_10_18/bd-3ptu/verification_summary.md"
     },
     {
@@ -63,9 +75,9 @@
       "detail": "commitment"
     },
     {
-      "check": "suite_symbol_expect_err",
+      "check": "suite_symbol_error_assertion",
       "pass": false,
-      "detail": "expect_err"
+      "detail": "expect_err or matches!(..., Err(...))"
     },
     {
       "check": "suite_attack_class_receipt tampering",
@@ -159,12 +171,12 @@
     },
     {
       "check": "doc_attack_class_receipt tampering",
-      "pass": false,
+      "pass": true,
       "detail": "receipt tampering"
     },
     {
       "check": "doc_attack_class_proof replay",
-      "pass": false,
+      "pass": true,
       "detail": "proof replay"
     },
     {
@@ -174,7 +186,7 @@
     },
     {
       "check": "doc_attack_class_commitment mismatch",
-      "pass": false,
+      "pass": true,
       "detail": "commitment mismatch"
     },
     {
@@ -209,24 +221,59 @@
     },
     {
       "check": "report_parseable_json",
-      "pass": false,
-      "detail": "invalid or missing JSON"
+      "pass": true,
+      "detail": "valid JSON"
+    },
+    {
+      "check": "report_bead_id",
+      "pass": true,
+      "detail": "bd-3ptu"
+    },
+    {
+      "check": "report_section",
+      "pass": true,
+      "detail": "10.18"
+    },
+    {
+      "check": "report_attack_classes_coverage",
+      "pass": true,
+      "detail": "['receipt tampering', 'proof replay', 'stale-policy', 'commitment mismatch']"
+    },
+    {
+      "check": "report_detection_counts_block",
+      "pass": true,
+      "detail": "detection_counts"
     },
     {
       "check": "evidence_parseable_json",
-      "pass": false,
-      "detail": "invalid or missing JSON"
+      "pass": true,
+      "detail": "valid JSON"
+    },
+    {
+      "check": "evidence_bead_id",
+      "pass": true,
+      "detail": "bd-3ptu"
+    },
+    {
+      "check": "evidence_verdict_domain",
+      "pass": true,
+      "detail": "FAIL"
+    },
+    {
+      "check": "evidence_has_checks",
+      "pass": true,
+      "detail": "checks list"
     },
     {
       "check": "summary_mentions_bd",
-      "pass": false,
+      "pass": true,
       "detail": "bd-3ptu"
     },
     {
       "check": "summary_mentions_verdict",
-      "pass": false,
+      "pass": true,
       "detail": "verdict marker"
     }
   ],
-  "timestamp": "2026-02-22T06:35:36.996873+00:00"
+  "timestamp": "2026-02-22T06:37:35.212618+00:00"
 }

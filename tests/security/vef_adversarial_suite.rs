@@ -8,7 +8,7 @@
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const EVENT_ATTACK_DETECTED: &str = "VEF-ADVERSARIAL-001";
 const EVENT_ATTACK_CLASSIFIED: &str = "VEF-ADVERSARIAL-002";
@@ -709,4 +709,148 @@ fn no_false_positives_for_legitimate_inputs() {
         let mut registry = ReplayRegistry::default();
         assert!(verify_proof(&chain, &proof, &request, &mut registry).is_ok());
     }
+}
+
+#[test]
+fn invalid_window_bounds_returns_tamper_with_expect_err() {
+    let chain = sample_chain("chain-A");
+    let err = compute_window_fingerprint(&chain, 4, 1)
+        .expect_err("invalid bounds must fail closed");
+    assert_error_signature(&err, ERR_TAMPER, AttackClass::ReceiptTampering);
+}
+
+#[test]
+fn out_of_bounds_window_returns_tamper_error() {
+    let chain = sample_chain("chain-A");
+    let err = compute_commitment(&chain, 21, 2, 9)
+        .expect_err("out-of-bounds window must fail closed");
+    assert_error_signature(&err, ERR_TAMPER, AttackClass::ReceiptTampering);
+}
+
+#[test]
+fn proof_reuse_with_identical_binding_is_allowed() {
+    let chain = sample_chain("chain-A");
+    let request = base_request("chain-A", "trace-reuse-same-binding");
+    let proof = mint_proof(
+        &chain,
+        "proof-reuse-same-binding",
+        17,
+        request.expected_window_start,
+        request.expected_window_end,
+        &request.active_policy_hash,
+    );
+    let mut registry = ReplayRegistry::default();
+    assert!(verify_proof(&chain, &proof, &request, &mut registry).is_ok());
+    assert!(verify_proof(&chain, &proof, &request, &mut registry).is_ok());
+}
+
+#[test]
+fn failure_events_preserve_trace_id_and_classification() {
+    let request = base_request("chain-A", "trace-event-shape");
+    let mut chain = sample_chain("chain-A");
+    chain.receipts[1].payload = "tampered-event-shape".to_string();
+    let proof = mint_proof(
+        &sample_chain("chain-A"),
+        "proof-event-shape",
+        18,
+        request.expected_window_start,
+        request.expected_window_end,
+        &request.active_policy_hash,
+    );
+    let mut registry = ReplayRegistry::default();
+    let err = verify_proof(&chain, &proof, &request, &mut registry)
+        .expect_err("tamper variant must fail");
+    assert_error_signature(&err, ERR_TAMPER, AttackClass::ReceiptTampering);
+    assert!(
+        err.events
+            .iter()
+            .all(|event| event.trace_id == request.trace_id)
+    );
+    assert!(
+        err.events
+            .iter()
+            .any(|event| event.detail.contains("receipt_tampering"))
+    );
+}
+
+#[test]
+fn remediation_hints_are_distinct_per_attack_class() {
+    let chain = sample_chain("chain-A");
+    let request = base_request("chain-A", "trace-remediation-unique");
+
+    let mut tampered = chain.clone();
+    tampered.receipts[1].payload = "tampered-hint".to_string();
+    let tamper_err = verify_proof(
+        &tampered,
+        &mint_proof(
+            &chain,
+            "proof-remediation-tamper",
+            19,
+            request.expected_window_start,
+            request.expected_window_end,
+            &request.active_policy_hash,
+        ),
+        &request,
+        &mut ReplayRegistry::default(),
+    )
+    .expect_err("tamper error required");
+
+    let replay_proof = mint_proof(
+        &chain,
+        "proof-remediation-replay",
+        19,
+        request.expected_window_start,
+        request.expected_window_end,
+        &request.active_policy_hash,
+    );
+    let mut replay_registry = ReplayRegistry::default();
+    verify_proof(&chain, &replay_proof, &request, &mut replay_registry)
+        .expect("baseline binding registration must pass");
+    let mut replay_request = request.clone();
+    replay_request.expected_window_start = 0;
+    replay_request.expected_window_end = 2;
+    let replay_err = verify_proof(&chain, &replay_proof, &replay_request, &mut replay_registry)
+        .expect_err("replay mismatch required");
+
+    let stale_err = verify_proof(
+        &chain,
+        &mint_proof(
+            &chain,
+            "proof-remediation-stale",
+            19,
+            request.expected_window_start,
+            request.expected_window_end,
+            "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        ),
+        &request,
+        &mut ReplayRegistry::default(),
+    )
+    .expect_err("stale policy error required");
+
+    let mut commitment_proof = mint_proof(
+        &chain,
+        "proof-remediation-commitment",
+        19,
+        request.expected_window_start,
+        request.expected_window_end,
+        &request.active_policy_hash,
+    );
+    commitment_proof.commitment_hash =
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000".to_string();
+    let commitment_err = verify_proof(
+        &chain,
+        &commitment_proof,
+        &request,
+        &mut ReplayRegistry::default(),
+    )
+    .expect_err("commitment mismatch required");
+
+    let hints = [
+        tamper_err.remediation_hint,
+        replay_err.remediation_hint,
+        stale_err.remediation_hint,
+        commitment_err.remediation_hint,
+    ];
+    let unique: BTreeSet<&str> = hints.iter().map(String::as_str).collect();
+    assert_eq!(unique.len(), hints.len());
 }

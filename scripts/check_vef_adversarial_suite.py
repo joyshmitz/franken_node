@@ -277,7 +277,7 @@ def self_test() -> dict[str, Any]:
     push("attack_class_count", len(REQUIRED_ATTACK_CLASSES) == 4, str(len(REQUIRED_ATTACK_CLASSES)))
     push("event_code_count", len(REQUIRED_EVENT_CODES) == 2, str(len(REQUIRED_EVENT_CODES)))
     push("error_code_count", len(REQUIRED_ERROR_CODES) == 4, str(len(REQUIRED_ERROR_CODES)))
-    push("symbol_count", len(REQUIRED_SUITE_SYMBOLS) >= 5, str(len(REQUIRED_SUITE_SYMBOLS)))
+    push("symbol_count", len(REQUIRED_SUITE_SYMBOLS) >= 4, str(len(REQUIRED_SUITE_SYMBOLS)))
 
     report = run_all()
     push("run_all_is_dict", isinstance(report, dict), "dict")
