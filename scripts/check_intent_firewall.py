@@ -1,247 +1,510 @@
 #!/usr/bin/env python3
-"""bd-3l2p verification gate for intent-aware remote effects firewall."""
+"""Verification script for bd-3l2p: Intent-Aware Remote Effects Firewall.
+
+Validates spec, Rust implementation, event codes, invariants, error codes,
+core types, verdict pathways, and test coverage.
+
+Usage:
+    python scripts/check_intent_firewall.py              # human-readable
+    python scripts/check_intent_firewall.py --json        # JSON output
+    python scripts/check_intent_firewall.py --self-test   # self-test mode
+"""
 
 from __future__ import annotations
 
-import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-BEAD = "bd-3l2p"
+BEAD_ID = "bd-3l2p"
 SECTION = "10.17"
+TITLE = "Intent-Aware Remote Effects Firewall"
 
-SPEC_FILE = ROOT / "docs/specs/intent_effects_policy.md"
-IMPL_FILE = ROOT / "crates/franken-node/src/security/intent_firewall.rs"
-MOD_FILE = ROOT / "crates/franken-node/src/security/mod.rs"
-CONFORMANCE_TEST = ROOT / "tests/security/intent_firewall_conformance.rs"
-UNIT_TEST_FILE = ROOT / "tests/test_check_intent_firewall.py"
-REPORT_FILE = ROOT / "artifacts/10.17/intent_firewall_eval_report.json"
-EVIDENCE_FILE = ROOT / "artifacts/section_10_17/bd-3l2p/verification_evidence.json"
-SUMMARY_FILE = ROOT / "artifacts/section_10_17/bd-3l2p/verification_summary.md"
+SPEC_PATH = ROOT / "docs" / "specs" / "section_10_17" / "bd-3l2p_contract.md"
+RUST_PATH = (
+    ROOT / "crates" / "franken-node" / "src" / "security" / "intent_firewall.rs"
+)
+MOD_PATH = ROOT / "crates" / "franken-node" / "src" / "security" / "mod.rs"
+TEST_PATH = ROOT / "tests" / "test_check_intent_firewall.py"
+EVIDENCE_PATH = (
+    ROOT / "artifacts" / "section_10_17" / "bd-3l2p" / "verification_evidence.json"
+)
+SUMMARY_PATH = (
+    ROOT / "artifacts" / "section_10_17" / "bd-3l2p" / "verification_summary.md"
+)
+EVAL_REPORT_PATH = ROOT / "artifacts" / "10.17" / "intent_firewall_eval_report.json"
 
-REQUIRED_EVENT_CODES = [
-    "FIREWALL_REQUEST_CLASSIFIED",
-    "FIREWALL_INTENT_BENIGN",
-    "FIREWALL_INTENT_RISKY",
-    "FIREWALL_CHALLENGE_ISSUED",
-    "FIREWALL_VERDICT_RENDERED",
+# Event codes from the contract spec (FW_001 through FW_010).
+EVENT_CODES = [
+    "FW_001",
+    "FW_002",
+    "FW_003",
+    "FW_004",
+    "FW_005",
+    "FW_006",
+    "FW_007",
+    "FW_008",
+    "FW_009",
+    "FW_010",
 ]
 
-REQUIRED_ERROR_CODES = [
-    "ERR_FIREWALL_CLASSIFICATION_FAILED",
-    "ERR_FIREWALL_CHALLENGE_TIMEOUT",
-    "ERR_FIREWALL_SIMULATE_FAILED",
-    "ERR_FIREWALL_QUARANTINE_FULL",
-    "ERR_FIREWALL_RECEIPT_UNSIGNED",
-    "ERR_FIREWALL_POLICY_MISSING",
+# Invariants from the contract spec.
+INVARIANTS = [
+    "INV-FW-FAIL-CLOSED",
+    "INV-FW-RECEIPT-EVERY-DECISION",
+    "INV-FW-RISKY-DEFAULT-DENY",
+    "INV-FW-DETERMINISTIC",
+    "INV-FW-EXTENSION-SCOPED",
 ]
 
-REQUIRED_INVARIANTS = [
-    "INV-FIREWALL-STABLE-CLASSIFICATION",
-    "INV-FIREWALL-DETERMINISTIC-RECEIPT",
-    "INV-FIREWALL-FAIL-DENY",
-    "INV-FIREWALL-RISKY-PATHWAY",
+# Error codes from the contract spec.
+ERROR_CODES = [
+    "ERR_FW_UNCLASSIFIED",
+    "ERR_FW_NO_POLICY",
+    "ERR_FW_INVALID_EFFECT",
+    "ERR_FW_RECEIPT_FAILED",
+    "ERR_FW_POLICY_CONFLICT",
+    "ERR_FW_EXTENSION_UNKNOWN",
+    "ERR_FW_OVERRIDE_UNAUTHORIZED",
+    "ERR_FW_QUARANTINE_FULL",
 ]
 
+# Core types that must be defined in Rust.
+CORE_TYPES = [
+    "IntentClassification",
+    "IntentClassifier",
+    "EffectsFirewall",
+    "RemoteEffect",
+    "FirewallVerdict",
+    "FirewallDecision",
+    "TrafficPolicy",
+    "TrafficPolicyRule",
+    "FirewallError",
+    "FirewallAuditEvent",
+    "TrafficOrigin",
+    "PolicyOverride",
+]
 
-def _read(path: Path) -> str:
+# Verdict pathways that must be represented.
+VERDICTS = [
+    "Allow",
+    "Challenge",
+    "Simulate",
+    "Deny",
+    "Quarantine",
+]
+
+# Required methods on the EffectsFirewall type.
+REQUIRED_METHODS = [
+    "fn new",
+    "fn evaluate",
+    "fn register_extension",
+    "fn add_override",
+    "fn audit_log",
+    "fn quarantined",
+    "fn generate_report",
+]
+
+MIN_TEST_COUNT = 25
+
+
+def _check(name: str, passed: bool, detail: str) -> dict:
+    return {"name": name, "passed": passed, "detail": detail}
+
+
+def _file_text(path: Path) -> str | None:
     if path.exists():
         return path.read_text(encoding="utf-8")
-    return ""
-
-
-def _check(name: str, ok: bool, detail: str = "") -> dict:
-    return {"check": name, "passed": ok, "detail": detail or ("ok" if ok else "FAIL")}
-
-
-def _checks() -> list[dict]:
-    checks = []
-    impl_src = _read(IMPL_FILE)
-    mod_src = _read(MOD_FILE)
-    spec_src = _read(SPEC_FILE)
-
-    # File existence checks
-    checks.append(_check("Spec file exists", SPEC_FILE.exists(), str(SPEC_FILE)))
-    checks.append(_check("Implementation file exists", IMPL_FILE.exists(), str(IMPL_FILE)))
-    checks.append(_check(
-        "Security module wired",
-        "pub mod intent_firewall;" in mod_src,
-        "pub mod intent_firewall; in security/mod.rs",
-    ))
-    checks.append(_check("Conformance test exists", CONFORMANCE_TEST.exists(), str(CONFORMANCE_TEST)))
-    checks.append(_check("Python checker unit test exists", UNIT_TEST_FILE.exists(), str(UNIT_TEST_FILE)))
-
-    # Required implementation tokens
-    required_impl_tokens = [
-        "struct RemoteEffect",
-        "enum IntentClassification",
-        "enum FirewallVerdict",
-        "struct FirewallDecision",
-        "struct TrafficPolicy",
-        "struct EffectsFirewall",
-        "fn evaluate",
-        "fn classify",
-        "FirewallVerdict::Allow",
-        "FirewallVerdict::Challenge",
-        "FirewallVerdict::Simulate",
-        "FirewallVerdict::Deny",
-        "FirewallVerdict::Quarantine",
-        "IntentClassification::Exfiltration",
-        "IntentClassification::CredentialForward",
-        "IntentClassification::SideChannel",
-    ]
-    for token in required_impl_tokens:
-        checks.append(_check(f"Impl token '{token}'", token in impl_src, token))
-
-    # Event codes in impl and spec
-    for code in REQUIRED_EVENT_CODES:
-        checks.append(_check(
-            f"Event code {code}",
-            code in impl_src and code in spec_src,
-            code,
-        ))
-
-    # Error codes in impl and spec
-    for code in REQUIRED_ERROR_CODES:
-        checks.append(_check(
-            f"Error code {code}",
-            code in impl_src and code in spec_src,
-            code,
-        ))
-
-    # Invariants in impl and spec
-    for inv in REQUIRED_INVARIANTS:
-        checks.append(_check(
-            f"Invariant {inv}",
-            inv in impl_src and inv in spec_src,
-            inv,
-        ))
-
-    # Rust unit test count
-    test_count = impl_src.count("#[test]")
-    checks.append(_check("Rust unit tests >= 8", test_count >= 8, f"found {test_count}"))
-
-    # Risky classification logic
-    checks.append(_check(
-        "Risky classification logic",
-        "fn is_risky" in impl_src,
-        "fn is_risky present",
-    ))
-
-    # Fail-closed logic
-    checks.append(_check(
-        "Fail-closed deny logic",
-        "fail-closed" in impl_src.lower() or "fail_closed" in impl_src.lower(),
-        "fail-closed pattern found",
-    ))
-
-    # Deterministic receipt logic
-    checks.append(_check(
-        "Deterministic BTreeMap usage",
-        "BTreeMap" in impl_src,
-        "BTreeMap used for determinism",
-    ))
-
-    # Receipt generation
-    checks.append(_check(
-        "Receipt ID generation",
-        "receipt_id" in impl_src,
-        "receipt_id field present",
-    ))
-
-    return checks
+    return None
 
 
 def run_all() -> dict:
-    checks = _checks()
+    checks: list[dict] = []
+
+    # --- SOURCE_EXISTS ---
+    rust_text = _file_text(RUST_PATH)
+    checks.append(
+        _check(
+            "SOURCE_EXISTS",
+            rust_text is not None,
+            f"{RUST_PATH.relative_to(ROOT)} exists"
+            if rust_text
+            else "intent_firewall.rs missing",
+        )
+    )
+
+    # --- EVENT_CODES ---
+    if rust_text:
+        for code in EVENT_CODES:
+            found = f'"{code}"' in rust_text
+            checks.append(
+                _check(
+                    f"EVENT_CODE:{code}",
+                    found,
+                    f"{code} found in Rust" if found else f"{code} missing from Rust",
+                )
+            )
+    else:
+        for code in EVENT_CODES:
+            checks.append(
+                _check(
+                    f"EVENT_CODE:{code}", False, "intent_firewall.rs missing"
+                )
+            )
+
+    # --- INVARIANTS ---
+    if rust_text:
+        for inv in INVARIANTS:
+            found = inv in rust_text or inv.replace("-", "_") in rust_text
+            checks.append(
+                _check(
+                    f"INVARIANT:{inv}",
+                    found,
+                    f"{inv} found in Rust" if found else f"{inv} missing from Rust",
+                )
+            )
+    else:
+        for inv in INVARIANTS:
+            checks.append(
+                _check(f"INVARIANT:{inv}", False, "intent_firewall.rs missing")
+            )
+
+    # --- ERROR_CODES ---
+    if rust_text:
+        for code in ERROR_CODES:
+            found = f'"{code}"' in rust_text or code in rust_text
+            checks.append(
+                _check(
+                    f"ERROR_CODE:{code}",
+                    found,
+                    f"{code} found in Rust" if found else f"{code} missing from Rust",
+                )
+            )
+    else:
+        for code in ERROR_CODES:
+            checks.append(
+                _check(f"ERROR_CODE:{code}", False, "intent_firewall.rs missing")
+            )
+
+    # --- CORE_TYPES ---
+    if rust_text:
+        for typ in CORE_TYPES:
+            found = (
+                f"pub struct {typ}" in rust_text
+                or f"pub enum {typ}" in rust_text
+                or f"pub type {typ}" in rust_text
+            )
+            checks.append(
+                _check(
+                    f"CORE_TYPE:{typ}",
+                    found,
+                    f"{typ} defined" if found else f"{typ} not defined",
+                )
+            )
+    else:
+        for typ in CORE_TYPES:
+            checks.append(
+                _check(f"CORE_TYPE:{typ}", False, "intent_firewall.rs missing")
+            )
+
+    # --- VERDICTS ---
+    if rust_text:
+        for v in VERDICTS:
+            found = v in rust_text
+            checks.append(
+                _check(
+                    f"VERDICT:{v}",
+                    found,
+                    f"{v} verdict present" if found else f"{v} verdict missing",
+                )
+            )
+    else:
+        for v in VERDICTS:
+            checks.append(
+                _check(f"VERDICT:{v}", False, "intent_firewall.rs missing")
+            )
+
+    # --- REQUIRED_METHODS ---
+    if rust_text:
+        for method in REQUIRED_METHODS:
+            found = method in rust_text
+            checks.append(
+                _check(
+                    f"METHOD:{method}",
+                    found,
+                    f"{method} implemented" if found else f"{method} not found",
+                )
+            )
+    else:
+        for method in REQUIRED_METHODS:
+            checks.append(
+                _check(f"METHOD:{method}", False, "intent_firewall.rs missing")
+            )
+
+    # --- SCHEMA_VERSION ---
+    if rust_text:
+        found = '"fw-v1.0"' in rust_text
+        checks.append(
+            _check(
+                "SCHEMA_VERSION",
+                found,
+                "fw-v1.0 declared" if found else "schema version missing",
+            )
+        )
+    else:
+        checks.append(
+            _check("SCHEMA_VERSION", False, "intent_firewall.rs missing")
+        )
+
+    # --- SERDE_DERIVES ---
+    if rust_text:
+        found = "Serialize" in rust_text and "Deserialize" in rust_text
+        checks.append(
+            _check(
+                "SERDE_DERIVES",
+                found,
+                "Serialize/Deserialize present" if found else "serde derives missing",
+            )
+        )
+    else:
+        checks.append(
+            _check("SERDE_DERIVES", False, "intent_firewall.rs missing")
+        )
+
+    # --- BTREEMAP_DETERMINISM ---
+    if rust_text:
+        found = "BTreeMap" in rust_text and "BTreeSet" in rust_text
+        checks.append(
+            _check(
+                "BTREEMAP_DETERMINISM",
+                found,
+                "BTreeMap/BTreeSet used for determinism"
+                if found
+                else "BTreeMap/BTreeSet missing",
+            )
+        )
+    else:
+        checks.append(
+            _check("BTREEMAP_DETERMINISM", False, "intent_firewall.rs missing")
+        )
+
+    # --- TEST_COVERAGE ---
+    if rust_text:
+        test_count = len(re.findall(r"#\[test\]", rust_text))
+        checks.append(
+            _check(
+                "TEST_COVERAGE",
+                test_count >= MIN_TEST_COUNT,
+                f"{test_count} tests (>= {MIN_TEST_COUNT} required)",
+            )
+        )
+    else:
+        checks.append(
+            _check("TEST_COVERAGE", False, "intent_firewall.rs missing")
+        )
+
+    # --- MODULE_REGISTERED ---
+    mod_text = _file_text(MOD_PATH)
+    registered = mod_text is not None and "pub mod intent_firewall;" in mod_text
+    checks.append(
+        _check(
+            "MODULE_REGISTERED",
+            registered,
+            "intent_firewall registered in security/mod.rs"
+            if registered
+            else "not registered",
+        )
+    )
+
+    # --- SPEC_EXISTS ---
+    spec_text = _file_text(SPEC_PATH)
+    checks.append(
+        _check(
+            "SPEC_EXISTS",
+            spec_text is not None,
+            f"{SPEC_PATH.relative_to(ROOT)} exists"
+            if spec_text
+            else "spec contract missing",
+        )
+    )
+
+    # Verify spec references key elements.
+    if spec_text:
+        for code in EVENT_CODES:
+            found = code in spec_text
+            checks.append(
+                _check(
+                    f"SPEC_EVENT:{code}",
+                    found,
+                    f"{code} in spec" if found else f"{code} missing from spec",
+                )
+            )
+        for inv in INVARIANTS:
+            found = inv in spec_text
+            checks.append(
+                _check(
+                    f"SPEC_INVARIANT:{inv}",
+                    found,
+                    f"{inv} in spec" if found else f"{inv} missing from spec",
+                )
+            )
+        for code in ERROR_CODES:
+            found = code in spec_text
+            checks.append(
+                _check(
+                    f"SPEC_ERROR:{code}",
+                    found,
+                    f"{code} in spec" if found else f"{code} missing from spec",
+                )
+            )
+    else:
+        for code in EVENT_CODES:
+            checks.append(_check(f"SPEC_EVENT:{code}", False, "spec missing"))
+        for inv in INVARIANTS:
+            checks.append(_check(f"SPEC_INVARIANT:{inv}", False, "spec missing"))
+        for code in ERROR_CODES:
+            checks.append(_check(f"SPEC_ERROR:{code}", False, "spec missing"))
+
+    # --- EVAL_REPORT ---
+    eval_text = _file_text(EVAL_REPORT_PATH)
+    checks.append(
+        _check(
+            "EVAL_REPORT_EXISTS",
+            eval_text is not None,
+            "intent_firewall_eval_report.json exists"
+            if eval_text
+            else "eval report missing",
+        )
+    )
+
+    if eval_text:
+        try:
+            report = json.loads(eval_text)
+            checks.append(
+                _check(
+                    "EVAL_REPORT_VALID_JSON",
+                    True,
+                    "eval report is valid JSON",
+                )
+            )
+            has_verdict = "verdict" in report
+            checks.append(
+                _check(
+                    "EVAL_REPORT_VERDICT",
+                    has_verdict and report["verdict"] == "PASS",
+                    f"verdict={report.get('verdict', 'MISSING')}"
+                    if has_verdict
+                    else "verdict field missing",
+                )
+            )
+        except json.JSONDecodeError:
+            checks.append(
+                _check("EVAL_REPORT_VALID_JSON", False, "invalid JSON")
+            )
+            checks.append(
+                _check("EVAL_REPORT_VERDICT", False, "cannot parse")
+            )
+    else:
+        checks.append(
+            _check("EVAL_REPORT_VALID_JSON", False, "eval report missing")
+        )
+        checks.append(
+            _check("EVAL_REPORT_VERDICT", False, "eval report missing")
+        )
+
+    # --- TEST_FILE ---
+    test_text = _file_text(TEST_PATH)
+    checks.append(
+        _check(
+            "TEST_FILE_EXISTS",
+            test_text is not None,
+            f"{TEST_PATH.relative_to(ROOT)} exists"
+            if test_text
+            else "test file missing",
+        )
+    )
+
+    # --- EVIDENCE ---
+    evidence_text = _file_text(EVIDENCE_PATH)
+    checks.append(
+        _check(
+            "EVIDENCE_EXISTS",
+            evidence_text is not None,
+            "evidence JSON exists" if evidence_text else "evidence missing",
+        )
+    )
+
+    # --- SUMMARY ---
+    summary_text = _file_text(SUMMARY_PATH)
+    checks.append(
+        _check(
+            "SUMMARY_EXISTS",
+            summary_text is not None,
+            "verification summary exists" if summary_text else "summary missing",
+        )
+    )
+
+    # --- Compile result ---
     passed = sum(1 for c in checks if c["passed"])
-    failed = len(checks) - passed
+    failed = sum(1 for c in checks if not c["passed"])
+    total = len(checks)
     verdict = "PASS" if failed == 0 else "FAIL"
+
     return {
-        "schema_version": "intent-firewall-v1.0",
-        "bead_id": BEAD,
+        "bead_id": BEAD_ID,
         "section": SECTION,
-        "title": "Intent-aware remote effects firewall for extension-originated traffic",
-        "verdict": verdict,
-        "total": len(checks),
+        "title": TITLE,
+        "checks": checks,
         "passed": passed,
         "failed": failed,
-        "checks": checks,
-        "event_codes": REQUIRED_EVENT_CODES,
-        "error_codes": REQUIRED_ERROR_CODES,
-        "invariants": REQUIRED_INVARIANTS,
-        "firewall_contract": {
-            "fail_closed_unclassifiable": True,
-            "risky_default_deny": True,
-            "receipt_every_decision": True,
-            "extension_scoped": True,
-        },
+        "total": total,
+        "verdict": verdict,
+        "all_passed": failed == 0,
+        "status": "pass" if failed == 0 else "fail",
     }
 
 
-def write_report(result: dict) -> None:
-    REPORT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_FILE.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-
-
-def self_test() -> dict:
-    checks = []
-    checks.append(_check("event code count >= 5", len(REQUIRED_EVENT_CODES) >= 5))
-    checks.append(_check("error code count >= 6", len(REQUIRED_ERROR_CODES) >= 6))
-    checks.append(_check("invariant count >= 4", len(REQUIRED_INVARIANTS) >= 4))
-
+def self_test() -> bool:
+    """Verify the checker itself is well-formed."""
     result = run_all()
-    checks.append(_check("run_all has verdict", result.get("verdict") in ("PASS", "FAIL")))
-    checks.append(_check("run_all has checks", isinstance(result.get("checks"), list)))
-    checks.append(_check("run_all checks non-empty", len(result.get("checks", [])) > 10))
-    checks.append(_check("run_all has firewall_contract", isinstance(result.get("firewall_contract"), dict)))
-
-    passed = sum(1 for c in checks if c["passed"])
-    failed = len(checks) - passed
-    verdict = "PASS" if failed == 0 else "FAIL"
-
-    return {
-        "name": "check_intent_firewall",
-        "bead": BEAD,
-        "section": SECTION,
-        "passed": passed,
-        "failed": failed,
-        "checks": checks,
-        "verdict": verdict,
-    }
+    assert isinstance(result, dict)
+    assert result["bead_id"] == BEAD_ID
+    assert result["section"] == SECTION
+    assert isinstance(result["checks"], list)
+    assert isinstance(result["total"], int)
+    assert result["total"] > 0
+    for check in result["checks"]:
+        assert "name" in check
+        assert "passed" in check
+        assert "detail" in check
+        assert isinstance(check["passed"], bool)
+    return True
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="bd-3l2p checker")
-    parser.add_argument("--json", action="store_true")
-    parser.add_argument("--self-test", action="store_true")
-    parser.add_argument("--build-report", action="store_true")
-    args = parser.parse_args()
-
-    if args.self_test:
-        st = self_test()
-        if args.json:
-            print(json.dumps(st, indent=2))
-        else:
-            print(f"self-test: {st['verdict']} ({st['passed']}/{st['passed'] + st['failed']})")
-        sys.exit(0 if st["verdict"] == "PASS" else 1)
+    if "--self-test" in sys.argv:
+        ok = self_test()
+        print("self_test passed" if ok else "self_test FAILED")
+        sys.exit(0 if ok else 1)
 
     result = run_all()
-    if args.build_report:
-        write_report(result)
 
-    if args.json:
+    if "--json" in sys.argv:
         print(json.dumps(result, indent=2))
     else:
-        print(f"bd-3l2p: {result['verdict']} ({result['passed']}/{result['total']})")
-        for c in result["checks"]:
-            mark = "+" if c["passed"] else "x"
-            print(f"[{mark}] {c['check']}: {c['detail']}")
+        print(f"=== {TITLE} ({BEAD_ID}) ===")
+        print(f"Section: {SECTION}")
+        print()
+        for check in result["checks"]:
+            status = "PASS" if check["passed"] else "FAIL"
+            print(f"  [{status}] {check['name']}: {check['detail']}")
+        print()
+        print(f"Verdict: {result['verdict']} ({result['passed']}/{result['total']})")
 
-    sys.exit(0 if result["verdict"] == "PASS" else 1)
+    sys.exit(0 if result["all_passed"] else 1)
 
 
 if __name__ == "__main__":

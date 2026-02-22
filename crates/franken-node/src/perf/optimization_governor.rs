@@ -113,7 +113,10 @@ impl GovernorGate {
         self.audit_trail.push(GateAuditEntry {
             event_code: event_codes::GOVERNOR_CANDIDATE_PROPOSED.to_string(),
             proposal_id: pid.clone(),
-            detail: format!("knob={} old={} new={}", proposal.knob, proposal.old_value, proposal.new_value),
+            detail: format!(
+                "knob={} old={} new={}",
+                proposal.knob, proposal.old_value, proposal.new_value
+            ),
         });
 
         // GOVERNOR_SHADOW_EVAL_START
@@ -148,9 +151,7 @@ impl GovernorGate {
                     RejectionReason::NonBeneficial => {
                         error_codes::ERR_GOVERNOR_BENEFIT_BELOW_THRESHOLD
                     }
-                    RejectionReason::KnobLocked => {
-                        error_codes::ERR_GOVERNOR_KNOB_READONLY
-                    }
+                    RejectionReason::KnobLocked => error_codes::ERR_GOVERNOR_KNOB_READONLY,
                     RejectionReason::InvalidProposal(_) => {
                         error_codes::ERR_GOVERNOR_SHADOW_EVAL_FAILED
                     }
@@ -206,8 +207,7 @@ impl GovernorGate {
         });
         Err(format!(
             "{}: cannot adjust engine-core internal '{}'",
-            error_codes::ERR_GOVERNOR_ENGINE_BOUNDARY_VIOLATION,
-            internal_name,
+            error_codes::ERR_GOVERNOR_ENGINE_BOUNDARY_VIOLATION, internal_name,
         ))
     }
 }
@@ -219,7 +219,6 @@ impl GovernorGate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
 
     fn safe_metrics() -> PredictedMetrics {
         PredictedMetrics {
@@ -259,73 +258,108 @@ mod tests {
         }
     }
 
-    // --- GovernorGate tests ---
-
     #[test]
-    fn test_gate_submit_approved_emits_candidate_proposed() {
+    fn test_gate_approved_emits_candidate_proposed() {
         let mut gate = GovernorGate::with_defaults();
         gate.submit(good_proposal("p1"));
-        let codes: Vec<&str> = gate.audit_trail().iter().map(|e| e.event_code.as_str()).collect();
+        let codes: Vec<&str> = gate
+            .audit_trail()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::GOVERNOR_CANDIDATE_PROPOSED));
     }
 
     #[test]
-    fn test_gate_submit_approved_emits_shadow_eval_start() {
+    fn test_gate_approved_emits_shadow_eval_start() {
         let mut gate = GovernorGate::with_defaults();
         gate.submit(good_proposal("p1"));
-        let codes: Vec<&str> = gate.audit_trail().iter().map(|e| e.event_code.as_str()).collect();
+        let codes: Vec<&str> = gate
+            .audit_trail()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::GOVERNOR_SHADOW_EVAL_START));
     }
 
     #[test]
-    fn test_gate_submit_approved_emits_safety_check_pass() {
+    fn test_gate_approved_emits_safety_check_pass() {
         let mut gate = GovernorGate::with_defaults();
         gate.submit(good_proposal("p1"));
-        let codes: Vec<&str> = gate.audit_trail().iter().map(|e| e.event_code.as_str()).collect();
+        let codes: Vec<&str> = gate
+            .audit_trail()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::GOVERNOR_SAFETY_CHECK_PASS));
     }
 
     #[test]
-    fn test_gate_submit_approved_emits_policy_applied() {
+    fn test_gate_approved_emits_policy_applied() {
         let mut gate = GovernorGate::with_defaults();
         gate.submit(good_proposal("p1"));
-        let codes: Vec<&str> = gate.audit_trail().iter().map(|e| e.event_code.as_str()).collect();
+        let codes: Vec<&str> = gate
+            .audit_trail()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::GOVERNOR_POLICY_APPLIED));
     }
 
     #[test]
-    fn test_gate_unsafe_proposal_rejects_with_error_code() {
+    fn test_gate_unsafe_proposal_rejects() {
         let mut gate = GovernorGate::with_defaults();
         let decision = gate.submit(unsafe_proposal("p2"));
-        assert!(matches!(decision, GovernorDecision::Rejected(RejectionReason::EnvelopeViolation(_))));
-        let codes: Vec<&str> = gate.audit_trail().iter().map(|e| e.event_code.as_str()).collect();
+        assert!(matches!(
+            decision,
+            GovernorDecision::Rejected(RejectionReason::EnvelopeViolation(_))
+        ));
+        let codes: Vec<&str> = gate
+            .audit_trail()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
         assert!(codes.contains(&error_codes::ERR_GOVERNOR_UNSAFE_CANDIDATE));
     }
 
     #[test]
-    fn test_gate_non_beneficial_rejects_with_error_code() {
+    fn test_gate_non_beneficial_rejects() {
         let mut gate = GovernorGate::with_defaults();
         let mut p = good_proposal("p3");
-        p.new_value = p.old_value; // no change
+        p.new_value = p.old_value;
         let decision = gate.submit(p);
-        assert!(matches!(decision, GovernorDecision::Rejected(RejectionReason::NonBeneficial)));
-        let codes: Vec<&str> = gate.audit_trail().iter().map(|e| e.event_code.as_str()).collect();
+        assert!(matches!(
+            decision,
+            GovernorDecision::Rejected(RejectionReason::NonBeneficial)
+        ));
+        let codes: Vec<&str> = gate
+            .audit_trail()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
         assert!(codes.contains(&error_codes::ERR_GOVERNOR_BENEFIT_BELOW_THRESHOLD));
     }
 
     #[test]
-    fn test_gate_locked_knob_rejects_with_readonly_code() {
+    fn test_gate_locked_knob_rejects() {
         let mut gov = OptimizationGovernor::with_defaults();
         gov.lock_knob(RuntimeKnob::ConcurrencyLimit);
         let mut gate = GovernorGate::new(gov);
         let decision = gate.submit(good_proposal("p4"));
-        assert!(matches!(decision, GovernorDecision::Rejected(RejectionReason::KnobLocked)));
-        let codes: Vec<&str> = gate.audit_trail().iter().map(|e| e.event_code.as_str()).collect();
+        assert!(matches!(
+            decision,
+            GovernorDecision::Rejected(RejectionReason::KnobLocked)
+        ));
+        let codes: Vec<&str> = gate
+            .audit_trail()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
         assert!(codes.contains(&error_codes::ERR_GOVERNOR_KNOB_READONLY));
     }
 
     #[test]
-    fn test_gate_live_check_auto_reverts_emits_policy_reverted() {
+    fn test_gate_live_check_auto_reverts() {
         let mut gate = GovernorGate::with_defaults();
         gate.submit(good_proposal("p1"));
         let bad_live = PredictedMetrics {
@@ -336,27 +370,32 @@ mod tests {
         };
         let reverted = gate.live_check(&bad_live);
         assert_eq!(reverted, vec!["p1"]);
-        let codes: Vec<&str> = gate.audit_trail().iter().map(|e| e.event_code.as_str()).collect();
+        let codes: Vec<&str> = gate
+            .audit_trail()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
         assert!(codes.contains(&event_codes::GOVERNOR_POLICY_REVERTED));
     }
 
     #[test]
-    fn test_gate_engine_boundary_violation_rejected() {
+    fn test_gate_engine_boundary_violation() {
         let mut gate = GovernorGate::with_defaults();
         let result = gate.reject_engine_internal_adjustment("engine_core::gc_threshold");
         assert!(result.is_err());
         let err_msg = result.unwrap_err();
         assert!(err_msg.contains(error_codes::ERR_GOVERNOR_ENGINE_BOUNDARY_VIOLATION));
-        let codes: Vec<&str> = gate.audit_trail().iter().map(|e| e.event_code.as_str()).collect();
-        assert!(codes.contains(&error_codes::ERR_GOVERNOR_ENGINE_BOUNDARY_VIOLATION));
     }
 
     #[test]
     fn test_gate_audit_trail_records_all_events() {
         let mut gate = GovernorGate::with_defaults();
         gate.submit(good_proposal("p1"));
-        // Should have at least CANDIDATE_PROPOSED, SHADOW_EVAL_START, SAFETY_CHECK_PASS, POLICY_APPLIED
-        assert!(gate.audit_trail().len() >= 4, "expected >= 4 audit entries, got {}", gate.audit_trail().len());
+        assert!(
+            gate.audit_trail().len() >= 4,
+            "expected >= 4 audit entries, got {}",
+            gate.audit_trail().len()
+        );
     }
 
     #[test]
@@ -367,30 +406,74 @@ mod tests {
 
     #[test]
     fn test_invariant_constants_exist() {
-        // Verify the bd-21fo invariant constants are accessible
-        assert_eq!(invariants::INV_GOVERNOR_SHADOW_REQUIRED, "INV-GOVERNOR-SHADOW-REQUIRED");
-        assert_eq!(invariants::INV_GOVERNOR_SAFETY_ENVELOPE, "INV-GOVERNOR-SAFETY-ENVELOPE");
-        assert_eq!(invariants::INV_GOVERNOR_AUTO_REVERT, "INV-GOVERNOR-AUTO-REVERT");
-        assert_eq!(invariants::INV_GOVERNOR_ENGINE_BOUNDARY, "INV-GOVERNOR-ENGINE-BOUNDARY");
+        assert_eq!(
+            invariants::INV_GOVERNOR_SHADOW_REQUIRED,
+            "INV-GOVERNOR-SHADOW-REQUIRED"
+        );
+        assert_eq!(
+            invariants::INV_GOVERNOR_SAFETY_ENVELOPE,
+            "INV-GOVERNOR-SAFETY-ENVELOPE"
+        );
+        assert_eq!(
+            invariants::INV_GOVERNOR_AUTO_REVERT,
+            "INV-GOVERNOR-AUTO-REVERT"
+        );
+        assert_eq!(
+            invariants::INV_GOVERNOR_ENGINE_BOUNDARY,
+            "INV-GOVERNOR-ENGINE-BOUNDARY"
+        );
     }
 
     #[test]
     fn test_event_code_constants_exist() {
-        assert_eq!(event_codes::GOVERNOR_CANDIDATE_PROPOSED, "GOVERNOR_CANDIDATE_PROPOSED");
-        assert_eq!(event_codes::GOVERNOR_SHADOW_EVAL_START, "GOVERNOR_SHADOW_EVAL_START");
-        assert_eq!(event_codes::GOVERNOR_SAFETY_CHECK_PASS, "GOVERNOR_SAFETY_CHECK_PASS");
-        assert_eq!(event_codes::GOVERNOR_POLICY_APPLIED, "GOVERNOR_POLICY_APPLIED");
-        assert_eq!(event_codes::GOVERNOR_POLICY_REVERTED, "GOVERNOR_POLICY_REVERTED");
+        assert_eq!(
+            event_codes::GOVERNOR_CANDIDATE_PROPOSED,
+            "GOVERNOR_CANDIDATE_PROPOSED"
+        );
+        assert_eq!(
+            event_codes::GOVERNOR_SHADOW_EVAL_START,
+            "GOVERNOR_SHADOW_EVAL_START"
+        );
+        assert_eq!(
+            event_codes::GOVERNOR_SAFETY_CHECK_PASS,
+            "GOVERNOR_SAFETY_CHECK_PASS"
+        );
+        assert_eq!(
+            event_codes::GOVERNOR_POLICY_APPLIED,
+            "GOVERNOR_POLICY_APPLIED"
+        );
+        assert_eq!(
+            event_codes::GOVERNOR_POLICY_REVERTED,
+            "GOVERNOR_POLICY_REVERTED"
+        );
     }
 
     #[test]
     fn test_error_code_constants_exist() {
-        assert_eq!(error_codes::ERR_GOVERNOR_UNSAFE_CANDIDATE, "ERR_GOVERNOR_UNSAFE_CANDIDATE");
-        assert_eq!(error_codes::ERR_GOVERNOR_SHADOW_EVAL_FAILED, "ERR_GOVERNOR_SHADOW_EVAL_FAILED");
-        assert_eq!(error_codes::ERR_GOVERNOR_BENEFIT_BELOW_THRESHOLD, "ERR_GOVERNOR_BENEFIT_BELOW_THRESHOLD");
-        assert_eq!(error_codes::ERR_GOVERNOR_ENGINE_BOUNDARY_VIOLATION, "ERR_GOVERNOR_ENGINE_BOUNDARY_VIOLATION");
-        assert_eq!(error_codes::ERR_GOVERNOR_REVERT_FAILED, "ERR_GOVERNOR_REVERT_FAILED");
-        assert_eq!(error_codes::ERR_GOVERNOR_KNOB_READONLY, "ERR_GOVERNOR_KNOB_READONLY");
+        assert_eq!(
+            error_codes::ERR_GOVERNOR_UNSAFE_CANDIDATE,
+            "ERR_GOVERNOR_UNSAFE_CANDIDATE"
+        );
+        assert_eq!(
+            error_codes::ERR_GOVERNOR_SHADOW_EVAL_FAILED,
+            "ERR_GOVERNOR_SHADOW_EVAL_FAILED"
+        );
+        assert_eq!(
+            error_codes::ERR_GOVERNOR_BENEFIT_BELOW_THRESHOLD,
+            "ERR_GOVERNOR_BENEFIT_BELOW_THRESHOLD"
+        );
+        assert_eq!(
+            error_codes::ERR_GOVERNOR_ENGINE_BOUNDARY_VIOLATION,
+            "ERR_GOVERNOR_ENGINE_BOUNDARY_VIOLATION"
+        );
+        assert_eq!(
+            error_codes::ERR_GOVERNOR_REVERT_FAILED,
+            "ERR_GOVERNOR_REVERT_FAILED"
+        );
+        assert_eq!(
+            error_codes::ERR_GOVERNOR_KNOB_READONLY,
+            "ERR_GOVERNOR_KNOB_READONLY"
+        );
     }
 
     #[test]
@@ -399,7 +482,10 @@ mod tests {
         gate.submit(good_proposal("p1"));
         let json = serde_json::to_string(&gate).expect("serialize");
         let gate2: GovernorGate = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(gate.inner().decision_log().len(), gate2.inner().decision_log().len());
+        assert_eq!(
+            gate.inner().decision_log().len(),
+            gate2.inner().decision_log().len()
+        );
         assert_eq!(gate.audit_trail().len(), gate2.audit_trail().len());
     }
 }

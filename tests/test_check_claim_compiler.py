@@ -29,8 +29,15 @@ class TestResultShape(unittest.TestCase):
     def test_required_fields(self):
         result = mod.run_all()
         for key in [
-            "schema_version", "bead_id", "section", "verdict",
-            "checks", "event_codes", "error_codes", "invariants",
+            "schema_version",
+            "bead_id",
+            "section",
+            "verdict",
+            "checks",
+            "event_codes",
+            "error_codes",
+            "invariants",
+            "claim_compiler_contract",
         ]:
             self.assertIn(key, result)
 
@@ -64,6 +71,18 @@ class TestChecks(unittest.TestCase):
         failures = [c for c in result["checks"] if not c["passed"]]
         return "\n".join(f"FAIL: {c['check']} :: {c['detail']}" for c in failures[:10])
 
+    def test_event_codes_list(self):
+        result = mod.run_all()
+        self.assertGreaterEqual(len(result["event_codes"]), 10)
+
+    def test_error_codes_list(self):
+        result = mod.run_all()
+        self.assertGreaterEqual(len(result["error_codes"]), 8)
+
+    def test_invariants_list(self):
+        result = mod.run_all()
+        self.assertGreaterEqual(len(result["invariants"]), 7)
+
 
 class TestEventCodes(unittest.TestCase):
     def test_event_code_count(self):
@@ -92,15 +111,27 @@ class TestInvariants(unittest.TestCase):
             self.assertTrue(inv.startswith("INV-CLMC-"), f"bad prefix: {inv}")
 
 
-class TestPipelineContract(unittest.TestCase):
-    def test_pipeline_contract_present(self):
+class TestClaimCompilerContract(unittest.TestCase):
+    def test_contract_keys(self):
         result = mod.run_all()
-        contract = result.get("pipeline_contract", {})
-        self.assertTrue(contract.get("fail_closed_on_unverifiable_claims"))
-        self.assertTrue(contract.get("scoreboard_updates_publish_signed_evidence_links"))
-        self.assertTrue(contract.get("deterministic_btreemap_ordering"))
-        self.assertTrue(contract.get("schema_versioned_outputs"))
-        self.assertTrue(contract.get("atomic_scoreboard_updates"))
+        contract = result["claim_compiler_contract"]
+        for key in [
+            "fail_closed_on_unverifiable_claims",
+            "scoreboard_updates_publish_signed_evidence_links",
+            "deterministic_btreemap_ordering",
+            "schema_versioned_outputs",
+            "atomic_scoreboard_updates",
+            "sha256_digest_binding",
+        ]:
+            self.assertIn(key, contract)
+            self.assertTrue(contract[key], f"{key} should be True")
+
+
+class TestRunAllChecks(unittest.TestCase):
+    def test_run_all_checks_returns_list(self):
+        checks = mod.run_all_checks()
+        self.assertIsInstance(checks, list)
+        self.assertGreaterEqual(len(checks), 40)
 
 
 class TestSelfTest(unittest.TestCase):
@@ -133,6 +164,17 @@ class TestCli(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_build_report_creates_file(self):
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "--build-report", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        report_path = ROOT / "artifacts/10.17/public_trust_scoreboard_snapshot.json"
+        self.assertTrue(report_path.exists())
 
     def test_human_readable_output(self):
         proc = subprocess.run(

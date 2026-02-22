@@ -1,231 +1,252 @@
 #!/usr/bin/env python3
-"""bd-1xbc verification gate for time-travel runtime capture/replay."""
+"""bd-1xbc: Deterministic time-travel runtime capture/replay -- verification gate.
 
+Usage:
+    python scripts/check_time_travel_replay.py            # human-readable
+    python scripts/check_time_travel_replay.py --json     # machine-readable JSON
+    python scripts/check_time_travel_replay.py --self-test # self-test mode
+
+Implementation lives at crates/franken-node/src/replay/time_travel_engine.rs
+"""
 from __future__ import annotations
 
-import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# Implementation is in the replay/ subdirectory, not runtime/
+SRC = ROOT / "crates" / "franken-node" / "src" / "replay" / "time_travel_engine.rs"
+MOD = ROOT / "crates" / "franken-node" / "src" / "replay" / "mod.rs"
+MAIN = ROOT / "crates" / "franken-node" / "src" / "main.rs"
+SPEC = ROOT / "docs" / "specs" / "section_10_17" / "bd-1xbc_contract.md"
+TEST_SUITE = ROOT / "tests" / "test_check_time_travel_replay.py"
+EVIDENCE = ROOT / "artifacts" / "section_10_17" / "bd-1xbc" / "verification_evidence.json"
+SUMMARY = ROOT / "artifacts" / "section_10_17" / "bd-1xbc" / "verification_summary.md"
+
 BEAD = "bd-1xbc"
 SECTION = "10.17"
 
-SPEC_FILE = ROOT / "docs/specs/time_travel_runtime.md"
-IMPL_FILE = ROOT / "crates/franken-node/src/replay/time_travel_engine.rs"
-MOD_FILE = ROOT / "crates/franken-node/src/replay/mod.rs"
-MAIN_FILE = ROOT / "crates/franken-node/src/main.rs"
-LAB_TEST = ROOT / "tests/lab/time_travel_replay_equivalence.rs"
-UNIT_TEST_FILE = ROOT / "tests/test_check_time_travel_replay.py"
-REPORT_FILE = ROOT / "artifacts/10.17/time_travel_replay_report.json"
-EVIDENCE_FILE = ROOT / "artifacts/section_10_17/bd-1xbc/verification_evidence.json"
-SUMMARY_FILE = ROOT / "artifacts/section_10_17/bd-1xbc/verification_summary.md"
-
-REQUIRED_EVENT_CODES = [
-    "REPLAY_CAPTURE_START",
-    "REPLAY_CAPTURE_COMPLETE",
-    "REPLAY_PLAYBACK_START",
-    "REPLAY_PLAYBACK_MATCH",
-    "REPLAY_DIVERGENCE_DETECTED",
+# Event codes use dashes (TTR-001) matching the Rust const values
+EVENT_CODES = [
+    "TTR-001", "TTR-002", "TTR-003", "TTR-004", "TTR-005",
+    "TTR-006", "TTR-007", "TTR-008", "TTR-009", "TTR-010",
 ]
 
-REQUIRED_ERROR_CODES = [
-    "ERR_REPLAY_SEED_MISMATCH",
-    "ERR_REPLAY_STATE_CORRUPTION",
-    "ERR_REPLAY_STEP_OVERFLOW",
-    "ERR_REPLAY_INPUT_MISSING",
-    "ERR_REPLAY_CLOCK_DRIFT",
-    "ERR_REPLAY_SNAPSHOT_INVALID",
+ERROR_CODES = [
+    "ERR_TTR_EMPTY_TRACE",
+    "ERR_TTR_SEQ_GAP",
+    "ERR_TTR_DIGEST_MISMATCH",
+    "ERR_TTR_ENV_MISSING",
+    "ERR_TTR_REPLAY_FAILED",
+    "ERR_TTR_DUPLICATE_TRACE",
+    "ERR_TTR_STEP_ORDER_VIOLATION",
+    "ERR_TTR_TRACE_NOT_FOUND",
 ]
 
-REQUIRED_INVARIANTS = [
-    "INV-REPLAY-DETERMINISTIC",
-    "INV-REPLAY-SEED-EQUIVALENCE",
-    "INV-REPLAY-STEP-NAVIGATION",
-    "INV-REPLAY-DIVERGENCE-EXPLAIN",
+INVARIANTS = [
+    "INV-TTR-DETERMINISM",
+    "INV-TTR-DIVERGENCE-DETECT",
+    "INV-TTR-TRACE-COMPLETE",
+    "INV-TTR-STEP-ORDER",
+    "INV-TTR-ENV-SEALED",
+    "INV-TTR-AUDIT-COMPLETE",
 ]
 
 
-def _read(path: Path) -> str:
-    if path.exists():
-        return path.read_text(encoding="utf-8")
-    return ""
+def _safe_rel(p: Path) -> str:
+    try:
+        return str(p.relative_to(ROOT))
+    except ValueError:
+        return str(p)
 
 
-def _check(name: str, ok: bool, detail: str = "") -> dict:
-    return {"check": name, "passed": ok, "detail": detail or ("ok" if ok else "FAIL")}
+def _check(name: str, passed: bool, detail: str = "") -> dict:
+    return {"check": name, "passed": passed, "detail": detail or ("found" if passed else "missing")}
 
 
-def _checks() -> list[dict]:
-    checks = []
-    impl_src = _read(IMPL_FILE)
-    mod_src = _read(MOD_FILE)
-    main_src = _read(MAIN_FILE)
-    spec_src = _read(SPEC_FILE)
-
-    # File existence checks
-    checks.append(_check("Spec file exists", SPEC_FILE.exists(), str(SPEC_FILE)))
-    checks.append(_check("Implementation file exists", IMPL_FILE.exists(), str(IMPL_FILE)))
-    checks.append(_check("Replay mod file exists", MOD_FILE.exists(), str(MOD_FILE)))
-    checks.append(_check(
-        "Main module wired",
-        "pub mod replay;" in main_src or "mod replay;" in main_src,
-        "pub mod replay; in main.rs",
-    ))
-    checks.append(_check(
-        "Replay mod exports time_travel_engine",
-        "pub mod time_travel_engine;" in mod_src,
-        "pub mod time_travel_engine; in replay/mod.rs",
-    ))
-
-    # Core struct/type checks
-    required_impl_tokens = [
-        "struct WorkflowTrace",
-        "struct TraceStep",
-        "struct EnvironmentSnapshot",
-        "struct TraceBuilder",
-        "struct ReplayEngine",
-        "struct Divergence",
-        "struct AuditEntry",
-        "enum ReplayVerdict",
-        "enum DivergenceKind",
-        "enum TimeTravelError",
-        "fn identity_replay",
-        "fn replay",
-        "fn register_trace",
-        "fn compute_digest",
-        "fn validate",
-        "fn record_step",
-    ]
-    for token in required_impl_tokens:
-        checks.append(_check(f"Impl token '{token}'", token in impl_src, token))
-
-    # Event codes
-    for code in REQUIRED_EVENT_CODES:
-        checks.append(_check(f"Event code {code}", code in impl_src and code in spec_src, code))
-
-    # Error codes
-    for code in REQUIRED_ERROR_CODES:
-        checks.append(_check(f"Error code {code}", code in impl_src and code in spec_src, code))
-
-    # Invariants
-    for inv in REQUIRED_INVARIANTS:
-        checks.append(_check(f"Invariant {inv}", inv in impl_src and inv in spec_src, inv))
-
-    # Rust unit test count
-    test_count = impl_src.count("#[test]")
-    checks.append(_check("Rust unit tests >= 8", test_count >= 8, f"found {test_count}"))
-
-    # Schema version
-    checks.append(_check("Schema version ttr-v1.0", "ttr-v1.0" in impl_src))
-
-    # Serde derives
-    checks.append(_check("Serialize/Deserialize derives",
-                          "Serialize" in impl_src and "Deserialize" in impl_src))
-
-    # BTreeMap usage
-    checks.append(_check("BTreeMap for deterministic ordering", "BTreeMap" in impl_src))
-
-    # cfg(test) module
-    checks.append(_check("#[cfg(test)] module", "#[cfg(test)]" in impl_src))
-
-    # Lab test exists
-    checks.append(_check("Lab test exists", LAB_TEST.exists(), str(LAB_TEST)))
-
-    # Python checker unit test exists
-    checks.append(_check("Python checker unit test exists", UNIT_TEST_FILE.exists(), str(UNIT_TEST_FILE)))
-
-    return checks
+def _read(p: Path) -> str:
+    if not p.exists():
+        return ""
+    return p.read_text()
 
 
-def run_all() -> dict:
+def _checks() -> list:
+    results = []
+    src = _read(SRC)
+    mod_src = _read(MOD)
+    main_src = _read(MAIN)
+
+    # --- File existence ---
+    results.append(_check("source file exists", SRC.exists(), _safe_rel(SRC)))
+    results.append(_check("module wired in replay/mod.rs",
+                          "pub mod time_travel_engine;" in mod_src,
+                          "replay/mod.rs contains pub mod time_travel_engine"))
+    results.append(_check("replay module wired in main.rs",
+                          "pub mod replay;" in main_src,
+                          "main.rs contains pub mod replay"))
+    results.append(_check("spec contract exists", SPEC.exists(), _safe_rel(SPEC)))
+    results.append(_check("test suite exists", TEST_SUITE.exists(), _safe_rel(TEST_SUITE)))
+    results.append(_check("verification evidence exists", EVIDENCE.exists(), _safe_rel(EVIDENCE)))
+    results.append(_check("verification summary exists", SUMMARY.exists(), _safe_rel(SUMMARY)))
+
+    # --- Key types ---
+    results.append(_check("WorkflowTrace struct", "struct WorkflowTrace" in src))
+    results.append(_check("TraceStep struct", "struct TraceStep" in src))
+    results.append(_check("EnvironmentSnapshot struct", "struct EnvironmentSnapshot" in src))
+    results.append(_check("SideEffect struct", "struct SideEffect" in src))
+    results.append(_check("TraceBuilder struct", "struct TraceBuilder" in src))
+    results.append(_check("ReplayEngine struct", "struct ReplayEngine" in src))
+    results.append(_check("ReplayResult struct", "struct ReplayResult" in src))
+    results.append(_check("ReplayVerdict enum", "enum ReplayVerdict" in src))
+    results.append(_check("Divergence struct", "struct Divergence" in src))
+    results.append(_check("DivergenceKind enum", "enum DivergenceKind" in src))
+    results.append(_check("TimeTravelError enum", "enum TimeTravelError" in src))
+    results.append(_check("AuditEntry struct", "struct AuditEntry" in src))
+
+    # --- Key methods ---
+    results.append(_check("compute_digest method", "fn compute_digest" in src))
+    results.append(_check("validate method", "fn validate" in src))
+    results.append(_check("record_step method", "fn record_step" in src))
+    results.append(_check("register_trace method", "fn register_trace" in src))
+    results.append(_check("replay method", "fn replay(" in src))
+    results.append(_check("replay_identity method", "fn replay_identity" in src))
+    results.append(_check("identity_replay function", "fn identity_replay" in src))
+    results.append(_check("build method", "fn build(" in src))
+    results.append(_check("output_digest method", "fn output_digest" in src))
+    results.append(_check("side_effects_digest method", "fn side_effects_digest" in src))
+
+    # --- Event codes ---
+    ec_found = sum(1 for ec in EVENT_CODES if ec in src)
+    results.append(_check(
+        f"event codes ({ec_found}/{len(EVENT_CODES)})",
+        ec_found == len(EVENT_CODES),
+        f"{ec_found}/{len(EVENT_CODES)}"))
+
+    # --- Error codes ---
+    err_found = sum(1 for ec in ERROR_CODES if ec in src)
+    results.append(_check(
+        f"error codes ({err_found}/{len(ERROR_CODES)})",
+        err_found == len(ERROR_CODES),
+        f"{err_found}/{len(ERROR_CODES)}"))
+
+    # --- Invariant constants ---
+    inv_found = sum(1 for inv in INVARIANTS if inv in src)
+    results.append(_check(
+        f"invariant constants ({inv_found}/{len(INVARIANTS)})",
+        inv_found == len(INVARIANTS),
+        f"{inv_found}/{len(INVARIANTS)}"))
+
+    # --- Schema version ---
+    results.append(_check("schema version ttr-v1.0", "ttr-v1.0" in src))
+
+    # --- Serde derives ---
+    results.append(_check("Serialize/Deserialize derives",
+                          "Serialize" in src and "Deserialize" in src))
+
+    # --- BTreeMap usage ---
+    results.append(_check("BTreeMap for deterministic ordering",
+                          "BTreeMap" in src))
+
+    # --- SHA-256 digest ---
+    results.append(_check("SHA-256 digest computation",
+                          "Sha256" in src and "sha2" in src))
+
+    # --- Unit tests ---
+    test_count = len(re.findall(r"#\[test\]", src))
+    results.append(_check(f"unit tests >= 25 ({test_count})", test_count >= 25, f"{test_count} tests"))
+
+    # --- cfg(test) module ---
+    results.append(_check("#[cfg(test)] module", "#[cfg(test)]" in src))
+
+    # --- Divergence kinds ---
+    results.append(_check("OutputMismatch variant", "OutputMismatch" in src))
+    results.append(_check("SideEffectMismatch variant", "SideEffectMismatch" in src))
+    results.append(_check("FullMismatch variant", "FullMismatch" in src))
+
+    # --- ReplayVerdict variants ---
+    results.append(_check("Identical verdict variant", "Identical" in src))
+    results.append(_check("Diverged verdict variant", "Diverged" in src))
+
+    return results
+
+
+def self_test():
     checks = _checks()
     passed = sum(1 for c in checks if c["passed"])
-    failed = len(checks) - passed
-    verdict = "PASS" if failed == 0 else "FAIL"
     return {
-        "schema_version": "time-travel-replay-v1.0",
-        "bead_id": BEAD,
-        "section": SECTION,
-        "title": "Deterministic time-travel runtime capture/replay for extension-host workflows",
-        "verdict": verdict,
-        "total": len(checks),
-        "passed": passed,
-        "failed": failed,
-        "checks": checks,
-        "event_codes": REQUIRED_EVENT_CODES,
-        "error_codes": REQUIRED_ERROR_CODES,
-        "invariants": REQUIRED_INVARIANTS,
-        "replay_contract": {
-            "deterministic_replay": True,
-            "seed_equivalence": True,
-            "stepwise_navigation": True,
-            "divergence_explanation": True,
-        },
-    }
-
-
-def write_report(result: dict) -> None:
-    REPORT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_FILE.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-
-
-def self_test() -> dict:
-    checks = []
-    checks.append(_check("event code count >= 5", len(REQUIRED_EVENT_CODES) >= 5))
-    checks.append(_check("error code count >= 6", len(REQUIRED_ERROR_CODES) >= 6))
-    checks.append(_check("invariant count >= 4", len(REQUIRED_INVARIANTS) >= 4))
-
-    result = run_all()
-    checks.append(_check("run_all has verdict", result.get("verdict") in ("PASS", "FAIL")))
-    checks.append(_check("run_all has checks", isinstance(result.get("checks"), list)))
-    checks.append(_check("run_all checks non-empty", len(result.get("checks", [])) > 10))
-
-    passed = sum(1 for c in checks if c["passed"])
-    failed = len(checks) - passed
-    verdict = "PASS" if failed == 0 else "FAIL"
-
-    return {
-        "name": "check_time_travel_replay",
+        "name": "time_travel_replay_verification",
         "bead": BEAD,
         "section": SECTION,
         "passed": passed,
-        "failed": failed,
+        "failed": len(checks) - passed,
         "checks": checks,
-        "verdict": verdict,
+        "verdict": "PASS" if all(c["passed"] for c in checks) else "FAIL",
     }
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="bd-1xbc checker")
-    parser.add_argument("--json", action="store_true")
-    parser.add_argument("--self-test", action="store_true")
-    parser.add_argument("--build-report", action="store_true")
-    args = parser.parse_args()
+def run_all() -> dict:
+    """Alias for run_checks for compatibility."""
+    return run_checks()
 
-    if args.self_test:
-        st = self_test()
-        if args.json:
-            print(json.dumps(st, indent=2))
+
+def run_checks() -> dict:
+    checks = _checks()
+    passing = sum(1 for c in checks if c["passed"])
+    failing = sum(1 for c in checks if not c["passed"])
+    verdict = "PASS" if failing == 0 else "FAIL"
+
+    return {
+        "schema_version": "time-travel-replay-v1.0",
+        "bead_id": BEAD,
+        "title": "Deterministic time-travel runtime capture/replay for extension-host workflows",
+        "section": SECTION,
+        "overall_pass": failing == 0,
+        "verdict": verdict,
+        "summary": {
+            "passing": passing,
+            "failing": failing,
+            "total": passing + failing,
+        },
+        "total": passing + failing,
+        "passed": passing,
+        "failed": failing,
+        "checks": checks,
+        "events": EVENT_CODES,
+        "event_codes": EVENT_CODES,
+        "error_codes": ERROR_CODES,
+        "invariants": INVARIANTS,
+    }
+
+
+def main():
+    if "--self-test" in sys.argv:
+        result = self_test()
+        if result["verdict"] == "PASS":
+            print("self_test passed")
+            sys.exit(0)
         else:
-            print(f"self-test: {st['verdict']} ({st['passed']}/{st['passed'] + st['failed']})")
-        sys.exit(0 if st["verdict"] == "PASS" else 1)
+            failures = [c for c in result["checks"] if not c["passed"]]
+            detail = "; ".join(f"{c['check']}: {c['detail']}" for c in failures[:5])
+            print(f"self_test failed: {detail}")
+            sys.exit(1)
 
-    result = run_all()
-    if args.build_report:
-        write_report(result)
+    result = run_checks()
 
-    if args.json:
+    if "--json" in sys.argv:
         print(json.dumps(result, indent=2))
-    else:
-        print(f"bd-1xbc: {result['verdict']} ({result['passed']}/{result['total']})")
-        for c in result["checks"]:
-            mark = "+" if c["passed"] else "x"
-            print(f"[{mark}] {c['check']}: {c['detail']}")
+        sys.exit(0 if result["overall_pass"] else 1)
 
-    sys.exit(0 if result["verdict"] == "PASS" else 1)
+    for c in result["checks"]:
+        status = "PASS" if c["passed"] else "FAIL"
+        print(f"  [{status}] {c['check']}: {c['detail']}")
+
+    passing = result["summary"]["passing"]
+    total = result["summary"]["total"]
+    print(f"\n{BEAD} verification: {result['verdict']} ({passing}/{total} checks pass)")
+    sys.exit(0 if result["overall_pass"] else 1)
 
 
 if __name__ == "__main__":

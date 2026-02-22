@@ -176,18 +176,24 @@ def run_all() -> dict:
         "event_codes": REQUIRED_EVENT_CODES,
         "error_codes": REQUIRED_ERROR_CODES,
         "invariants": REQUIRED_INVARIANTS,
-        "pipeline_contract": {
+        "claim_compiler_contract": {
             "fail_closed_on_unverifiable_claims": True,
             "scoreboard_updates_publish_signed_evidence_links": True,
             "deterministic_btreemap_ordering": True,
             "schema_versioned_outputs": True,
             "atomic_scoreboard_updates": True,
+            "sha256_digest_binding": True,
         },
     }
 
 
+def run_all_checks() -> list[dict]:
+    """Return the raw check list (alias used by test suite)."""
+    return _checks()
+
+
 def write_report(result: dict, report_path: Path | None = None) -> None:
-    path = report_path or (ROOT / "artifacts/10.17/claim_compiler_report.json")
+    path = report_path or (ROOT / "artifacts/10.17/public_trust_scoreboard_snapshot.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
 

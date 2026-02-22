@@ -1,4 +1,4 @@
-"""Unit tests for scripts/check_nversion_oracle.py."""
+"""Unit tests for scripts/check_staking_governance.py."""
 
 import importlib.util
 import json
@@ -8,9 +8,9 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SCRIPT = ROOT / "scripts/check_nversion_oracle.py"
+SCRIPT = ROOT / "scripts/check_staking_governance.py"
 
-spec = importlib.util.spec_from_file_location("check_nversion_oracle", SCRIPT)
+spec = importlib.util.spec_from_file_location("check_staking_governance", SCRIPT)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
@@ -42,14 +42,14 @@ class TestResultShape(unittest.TestCase):
 
     def test_bead_and_section(self):
         result = mod.run_all()
-        self.assertEqual(result["bead_id"], "bd-al8i")
+        self.assertEqual(result["bead_id"], "bd-26mk")
         self.assertEqual(result["section"], "10.17")
 
 
 class TestChecks(unittest.TestCase):
     def test_minimum_check_count(self):
         result = mod.run_all()
-        self.assertGreaterEqual(result["total"], 40)
+        self.assertGreaterEqual(result["total"], 20)
 
     def test_all_checks_have_keys(self):
         result = mod.run_all()
@@ -57,20 +57,6 @@ class TestChecks(unittest.TestCase):
             self.assertIn("check", c)
             self.assertIn("passed", c)
             self.assertIn("detail", c)
-
-
-class TestEventCodes(unittest.TestCase):
-    def test_event_code_count(self):
-        result = mod.run_all()
-        self.assertGreaterEqual(len(result["event_codes"]), 12)
-
-    def test_error_code_count(self):
-        result = mod.run_all()
-        self.assertGreaterEqual(len(result["error_codes"]), 10)
-
-    def test_invariant_count(self):
-        result = mod.run_all()
-        self.assertGreaterEqual(len(result["invariants"]), 6)
 
 
 class TestSelfTest(unittest.TestCase):
@@ -89,7 +75,7 @@ class TestCli(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         parsed = json.loads(proc.stdout)
-        self.assertEqual(parsed["bead_id"], "bd-al8i")
+        self.assertEqual(parsed["bead_id"], "bd-26mk")
 
     def test_self_test_exit_zero(self):
         proc = subprocess.run(
@@ -100,16 +86,26 @@ class TestCli(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
+    def test_build_report_creates_artifact(self):
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "--build-report", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        report_path = ROOT / "artifacts/10.17/staking_ledger_snapshot.json"
+        self.assertTrue(report_path.exists(), f"report not found: {report_path}")
 
-class TestReleaseGateSemantics(unittest.TestCase):
-    def test_release_gate_present(self):
+
+class TestStakingContract(unittest.TestCase):
+    def test_staking_contract_flags(self):
         result = mod.run_all()
-        rgs = result.get("release_gate_semantics", {})
-        self.assertTrue(rgs.get("critical_blocks"))
-        self.assertTrue(rgs.get("high_blocks"))
-        self.assertTrue(rgs.get("medium_warns"))
-        self.assertTrue(rgs.get("low_requires_receipt"))
-        self.assertTrue(rgs.get("info_no_action"))
+        contract = result.get("staking_contract", {})
+        self.assertTrue(contract.get("requires_minimum_stake"))
+        self.assertTrue(contract.get("deterministic_slashing"))
+        self.assertTrue(contract.get("audit_trail_on_every_slash"))
+        self.assertTrue(contract.get("bounded_appeal_window"))
 
 
 if __name__ == "__main__":

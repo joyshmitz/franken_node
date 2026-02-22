@@ -42,6 +42,21 @@ class TestHelpers(unittest.TestCase):
         self.assertIn("passed", row)
         self.assertIn("detail", row)
 
+    def test_extract_graph_method_calls(self):
+        src = "self.graph.add_node(x); self.graph.add_edge(x); graph.state_snapshot();"
+        self.assertEqual(mod._extract_graph_method_calls(src), ["add_edge", "add_node", "state_snapshot"])
+
+    def test_extract_graph_new_call_args(self):
+        src = "let g = AdversaryGraph::new(thresholds);"
+        self.assertEqual(mod._extract_graph_new_call_args(src), "thresholds")
+
+    def test_extract_graph_new_signature(self):
+        src = (
+            "impl AdversaryGraphNode { pub fn new(id: EntityId) -> Self { Self { id } } } "
+            "impl AdversaryGraph { pub fn new(thresholds: PolicyThreshold) -> Self { Self::default() } }"
+        )
+        self.assertEqual(mod._extract_graph_new_signature(src), "thresholds: PolicyThreshold")
+
 
 class TestRunAll(unittest.TestCase):
     def test_result_shape(self):
@@ -85,6 +100,8 @@ class TestRunAll(unittest.TestCase):
             "required_file_count",
             "required_files_missing",
             "fallback_signal_hits",
+            "graph_export_missing_count",
+            "graph_method_missing_count",
         ]:
             self.assertIn(key, metrics)
 

@@ -1,50 +1,41 @@
 #!/usr/bin/env python3
-"""Verification gate for bd-21fo optimization governor."""
+"""Verification script for bd-21fo: Self-Evolving Optimization Governor.
+
+Validates spec, Rust implementation, event codes, invariants, core types,
+error codes, methods, and test coverage.
+
+Usage:
+    python scripts/check_optimization_governor.py           # human-readable
+    python scripts/check_optimization_governor.py --json     # JSON output
+    python scripts/check_optimization_governor.py --self-test  # self-test mode
+"""
 
 from __future__ import annotations
 
-import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-BEAD = "bd-21fo"
+BEAD_ID = "bd-21fo"
 SECTION = "10.17"
-TITLE = "Self-evolving optimization governor with safety-envelope enforcement"
+TITLE = "Self-Evolving Optimization Governor with Safety-Envelope Enforcement"
 
-CONTRACT_FILE = ROOT / "docs/specs/section_10_17/bd-21fo_contract.md"
-SPEC_FILE = ROOT / "docs/specs/optimization_governor.md"
-IMPL_FILE = ROOT / "crates/franken-node/src/runtime/optimization_governor.rs"
-RUNTIME_MOD_FILE = ROOT / "crates/franken-node/src/runtime/mod.rs"
-PERF_TEST_FILE = ROOT / "tests/perf/governor_safety_envelope.rs"
-PY_TEST_FILE = ROOT / "tests/test_check_optimization_governor.py"
-DECISION_LOG_FILE = ROOT / "artifacts/10.17/governor_decision_log.jsonl"
-EVIDENCE_FILE = ROOT / "artifacts/section_10_17/bd-21fo/verification_evidence.json"
-SUMMARY_FILE = ROOT / "artifacts/section_10_17/bd-21fo/verification_summary.md"
-REPORT_FILE = ROOT / "artifacts/section_10_17/bd-21fo/check_report.json"
+SPEC_PATH = ROOT / "docs" / "specs" / "section_10_17" / "bd-21fo_contract.md"
+RUST_PATH = ROOT / "crates" / "franken-node" / "src" / "runtime" / "optimization_governor.rs"
+MOD_PATH = ROOT / "crates" / "franken-node" / "src" / "runtime" / "mod.rs"
+TEST_PATH = ROOT / "tests" / "test_check_optimization_governor.py"
+EVIDENCE_PATH = ROOT / "artifacts" / "section_10_17" / "bd-21fo" / "verification_evidence.json"
+SUMMARY_PATH = ROOT / "artifacts" / "section_10_17" / "bd-21fo" / "verification_summary.md"
+DECISION_LOG_PATH = ROOT / "artifacts" / "10.17" / "governor_decision_log.jsonl"
 
-REQUIRED_EVENT_CODES = [
-    "GOV_001",
-    "GOV_002",
-    "GOV_003",
-    "GOV_004",
-    "GOV_005",
-    "GOV_006",
-    "GOV_007",
+EVENT_CODES = [
+    "GOV_001", "GOV_002", "GOV_003", "GOV_004", "GOV_005", "GOV_006", "GOV_007",
 ]
 
-REQUIRED_ERROR_CODES = [
-    "ERR_GOV_ENVELOPE_VIOLATION",
-    "ERR_GOV_NON_BENEFICIAL",
-    "ERR_GOV_KNOB_LOCKED",
-    "ERR_GOV_REVERT_FAILED",
-    "ERR_GOV_SHADOW_TIMEOUT",
-    "ERR_GOV_INVALID_PROPOSAL",
-]
-
-REQUIRED_INVARIANTS = [
+INVARIANTS = [
     "INV-GOV-ENVELOPE-NEVER-BREACHED",
     "INV-GOV-SHADOW-BEFORE-APPLY",
     "INV-GOV-EVIDENCE-ON-REJECT",
@@ -53,269 +44,373 @@ REQUIRED_INVARIANTS = [
     "INV-GOV-DETERMINISTIC-ORDER",
 ]
 
+ERROR_CODES = [
+    "ERR_GOV_ENVELOPE_VIOLATION",
+    "ERR_GOV_NON_BENEFICIAL",
+    "ERR_GOV_KNOB_LOCKED",
+    "ERR_GOV_REVERT_FAILED",
+    "ERR_GOV_SHADOW_TIMEOUT",
+    "ERR_GOV_INVALID_PROPOSAL",
+]
 
-def _read(path: Path) -> str:
+CORE_TYPES = [
+    "SafetyEnvelope",
+    "OptimizationProposal",
+    "GovernorDecision",
+    "DecisionLogEntry",
+    "GovernorSnapshot",
+    "ShadowEvalResult",
+    "PredictedOutcome",
+    "RuntimeKnob",
+    "OptimizationGovernor",
+]
+
+REQUIRED_METHODS = [
+    "shadow_evaluate",
+    "submit_proposal",
+    "auto_revert_check",
+    "submit_shadow_only",
+    "snapshot",
+    "export_decision_log_jsonl",
+    "export_verification_evidence",
+    "update_envelope",
+    "lock_knob",
+    "unlock_knob",
+    "knob_value",
+    "decision_log",
+    "decision_count",
+]
+
+RUNTIME_KNOB_VARIANTS = [
+    "ConcurrencyLimit",
+    "BatchSize",
+    "CacheCapacity",
+    "DrainTimeoutMs",
+    "RetryBudget",
+]
+
+MIN_TEST_COUNT = 25
+
+
+def _check(name: str, passed: bool, detail: str) -> dict:
+    return {"name": name, "passed": passed, "detail": detail}
+
+
+def _file_text(path: Path) -> str | None:
     if path.exists():
         return path.read_text(encoding="utf-8")
-    return ""
+    return None
 
 
-def _check(name: str, passed: bool, detail: str = "") -> dict[str, object]:
-    return {
-        "check": name,
-        "passed": bool(passed),
-        "detail": detail or ("ok" if passed else "FAIL"),
-    }
+def run_all() -> dict:
+    checks: list[dict] = []
 
+    # --- SOURCE_EXISTS ---
+    rust_text = _file_text(RUST_PATH)
+    checks.append(_check(
+        "SOURCE_EXISTS",
+        rust_text is not None,
+        f"{RUST_PATH.relative_to(ROOT)} exists" if rust_text else "optimization_governor.rs missing",
+    ))
 
-def _load_json(path: Path) -> object | None:
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return None
+    # --- EVENT_CODES ---
+    if rust_text:
+        for code in EVENT_CODES:
+            found = f'"{code}"' in rust_text
+            checks.append(_check(
+                f"EVENT_CODE:{code}",
+                found,
+                f"{code} found in Rust" if found else f"{code} missing from Rust",
+            ))
+    else:
+        for code in EVENT_CODES:
+            checks.append(_check(f"EVENT_CODE:{code}", False, "optimization_governor.rs missing"))
 
+    # --- INVARIANTS ---
+    if rust_text:
+        for inv in INVARIANTS:
+            found = inv in rust_text or inv.replace("-", "_") in rust_text
+            checks.append(_check(
+                f"INVARIANT:{inv}",
+                found,
+                f"{inv} found in Rust" if found else f"{inv} missing from Rust",
+            ))
+    else:
+        for inv in INVARIANTS:
+            checks.append(_check(f"INVARIANT:{inv}", False, "optimization_governor.rs missing"))
 
-def _load_jsonl(path: Path) -> list[dict[str, object]]:
-    if not path.exists():
-        return []
-    rows: list[dict[str, object]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
+    # --- ERROR_CODES ---
+    if rust_text:
+        for code in ERROR_CODES:
+            found = f'"{code}"' in rust_text or code in rust_text
+            checks.append(_check(
+                f"ERROR_CODE:{code}",
+                found,
+                f"{code} found in Rust" if found else f"{code} missing from Rust",
+            ))
+    else:
+        for code in ERROR_CODES:
+            checks.append(_check(f"ERROR_CODE:{code}", False, "optimization_governor.rs missing"))
+
+    # --- CORE_TYPES ---
+    if rust_text:
+        for typ in CORE_TYPES:
+            found = (f"pub struct {typ}" in rust_text
+                     or f"pub enum {typ}" in rust_text
+                     or f"pub type {typ}" in rust_text)
+            checks.append(_check(
+                f"CORE_TYPE:{typ}",
+                found,
+                f"{typ} defined" if found else f"{typ} not defined",
+            ))
+    else:
+        for typ in CORE_TYPES:
+            checks.append(_check(f"CORE_TYPE:{typ}", False, "optimization_governor.rs missing"))
+
+    # --- RUNTIME_KNOB_VARIANTS ---
+    if rust_text:
+        for variant in RUNTIME_KNOB_VARIANTS:
+            found = variant in rust_text
+            checks.append(_check(
+                f"KNOB_VARIANT:{variant}",
+                found,
+                f"{variant} variant present" if found else f"{variant} variant missing",
+            ))
+    else:
+        for variant in RUNTIME_KNOB_VARIANTS:
+            checks.append(_check(f"KNOB_VARIANT:{variant}", False, "optimization_governor.rs missing"))
+
+    # --- REQUIRED_METHODS ---
+    if rust_text:
+        for method in REQUIRED_METHODS:
+            found = f"fn {method}" in rust_text
+            checks.append(_check(
+                f"METHOD:{method}",
+                found,
+                f"{method} implemented" if found else f"{method} not found",
+            ))
+    else:
+        for method in REQUIRED_METHODS:
+            checks.append(_check(f"METHOD:{method}", False, "optimization_governor.rs missing"))
+
+    # --- SCHEMA_VERSION ---
+    if rust_text:
+        found = '"gov-v1.0"' in rust_text
+        checks.append(_check(
+            "SCHEMA_VERSION",
+            found,
+            "gov-v1.0 declared" if found else "schema version missing",
+        ))
+    else:
+        checks.append(_check("SCHEMA_VERSION", False, "optimization_governor.rs missing"))
+
+    # --- SERDE_DERIVES ---
+    if rust_text:
+        found = "Serialize" in rust_text and "Deserialize" in rust_text
+        checks.append(_check(
+            "SERDE_DERIVES",
+            found,
+            "Serialize/Deserialize present" if found else "serde derives missing",
+        ))
+    else:
+        checks.append(_check("SERDE_DERIVES", False, "optimization_governor.rs missing"))
+
+    # --- TEST_COVERAGE ---
+    if rust_text:
+        test_count = len(re.findall(r"#\[test\]", rust_text))
+        checks.append(_check(
+            "TEST_COVERAGE",
+            test_count >= MIN_TEST_COUNT,
+            f"{test_count} tests (>= {MIN_TEST_COUNT} required)",
+        ))
+    else:
+        checks.append(_check("TEST_COVERAGE", False, "optimization_governor.rs missing"))
+
+    # --- MODULE_REGISTERED ---
+    mod_text = _file_text(MOD_PATH)
+    registered = mod_text is not None and "pub mod optimization_governor;" in mod_text
+    checks.append(_check(
+        "MODULE_REGISTERED",
+        registered,
+        "optimization_governor registered in runtime/mod.rs" if registered else "not registered",
+    ))
+
+    # --- SPEC_EXISTS ---
+    spec_text = _file_text(SPEC_PATH)
+    checks.append(_check(
+        "SPEC_EXISTS",
+        spec_text is not None,
+        f"{SPEC_PATH.relative_to(ROOT)} exists" if spec_text else "spec contract missing",
+    ))
+
+    # Verify spec references key elements
+    if spec_text:
+        for code in EVENT_CODES:
+            found = code in spec_text
+            checks.append(_check(
+                f"SPEC_EVENT:{code}",
+                found,
+                f"{code} in spec" if found else f"{code} missing from spec",
+            ))
+        for inv in INVARIANTS:
+            found = inv in spec_text
+            checks.append(_check(
+                f"SPEC_INVARIANT:{inv}",
+                found,
+                f"{inv} in spec" if found else f"{inv} missing from spec",
+            ))
+        for code in ERROR_CODES:
+            found = code in spec_text
+            checks.append(_check(
+                f"SPEC_ERROR:{code}",
+                found,
+                f"{code} in spec" if found else f"{code} missing from spec",
+            ))
+        for typ in CORE_TYPES:
+            found = typ in spec_text
+            checks.append(_check(
+                f"SPEC_TYPE:{typ}",
+                found,
+                f"{typ} in spec" if found else f"{typ} missing from spec",
+            ))
+    else:
+        for code in EVENT_CODES:
+            checks.append(_check(f"SPEC_EVENT:{code}", False, "spec missing"))
+        for inv in INVARIANTS:
+            checks.append(_check(f"SPEC_INVARIANT:{inv}", False, "spec missing"))
+        for code in ERROR_CODES:
+            checks.append(_check(f"SPEC_ERROR:{code}", False, "spec missing"))
+        for typ in CORE_TYPES:
+            checks.append(_check(f"SPEC_TYPE:{typ}", False, "spec missing"))
+
+    # --- TEST_FILE ---
+    test_text = _file_text(TEST_PATH)
+    checks.append(_check(
+        "TEST_FILE_EXISTS",
+        test_text is not None,
+        f"{TEST_PATH.relative_to(ROOT)} exists" if test_text else "test file missing",
+    ))
+
+    # --- EVIDENCE ---
+    evidence_text = _file_text(EVIDENCE_PATH)
+    checks.append(_check(
+        "EVIDENCE_EXISTS",
+        evidence_text is not None,
+        "evidence JSON exists" if evidence_text else "evidence missing",
+    ))
+
+    if evidence_text:
         try:
-            parsed = json.loads(line)
+            ev = json.loads(evidence_text)
+            checks.append(_check(
+                "EVIDENCE_VALID_JSON",
+                True,
+                "evidence is valid JSON",
+            ))
+            has_bead = ev.get("bead_id") == BEAD_ID
+            checks.append(_check(
+                "EVIDENCE_BEAD_ID",
+                has_bead,
+                f"bead_id={ev.get('bead_id')}" if has_bead else "bead_id mismatch",
+            ))
         except json.JSONDecodeError:
-            return []
-        if not isinstance(parsed, dict):
-            return []
-        rows.append(parsed)
-    return rows
+            checks.append(_check("EVIDENCE_VALID_JSON", False, "invalid JSON"))
+            checks.append(_check("EVIDENCE_BEAD_ID", False, "cannot parse"))
+    else:
+        checks.append(_check("EVIDENCE_VALID_JSON", False, "evidence missing"))
+        checks.append(_check("EVIDENCE_BEAD_ID", False, "evidence missing"))
 
+    # --- SUMMARY ---
+    summary_text = _file_text(SUMMARY_PATH)
+    checks.append(_check(
+        "SUMMARY_EXISTS",
+        summary_text is not None,
+        "verification summary exists" if summary_text else "summary missing",
+    ))
 
-def _required_file_checks() -> list[dict[str, object]]:
-    required = [
-        CONTRACT_FILE,
-        SPEC_FILE,
-        IMPL_FILE,
-        RUNTIME_MOD_FILE,
-        PERF_TEST_FILE,
-        PY_TEST_FILE,
-        DECISION_LOG_FILE,
-        EVIDENCE_FILE,
-        SUMMARY_FILE,
-    ]
-    checks = []
-    for file_path in required:
-        checks.append(
-            _check(
-                f"required file exists: {file_path.relative_to(ROOT)}",
-                file_path.exists(),
-                str(file_path.relative_to(ROOT)),
-            )
-        )
-    return checks
+    # --- DECISION_LOG ---
+    decision_log_text = _file_text(DECISION_LOG_PATH)
+    checks.append(_check(
+        "DECISION_LOG_EXISTS",
+        decision_log_text is not None,
+        "governor_decision_log.jsonl exists" if decision_log_text else "decision log missing",
+    ))
 
+    if decision_log_text:
+        lines = [l for l in decision_log_text.strip().split("\n") if l.strip()]
+        valid_lines = 0
+        for line in lines:
+            try:
+                json.loads(line)
+                valid_lines += 1
+            except json.JSONDecodeError:
+                pass
+        checks.append(_check(
+            "DECISION_LOG_VALID_JSONL",
+            valid_lines == len(lines) and valid_lines > 0,
+            f"{valid_lines}/{len(lines)} valid JSONL lines",
+        ))
+    else:
+        checks.append(_check("DECISION_LOG_VALID_JSONL", False, "decision log missing"))
 
-def run_all() -> dict[str, object]:
-    checks: list[dict[str, object]] = []
-    checks.extend(_required_file_checks())
-
-    impl_src = _read(IMPL_FILE)
-    contract_src = _read(CONTRACT_FILE)
-    spec_src = _read(SPEC_FILE)
-    runtime_mod_src = _read(RUNTIME_MOD_FILE)
-
-    checks.append(
-        _check(
-            "runtime module wired",
-            "pub mod optimization_governor;" in runtime_mod_src,
-            "pub mod optimization_governor; in runtime/mod.rs",
-        )
-    )
-
-    impl_tokens = [
-        "struct SafetyEnvelope",
-        "struct OptimizationProposal",
-        "enum GovernorDecision",
-        "enum RuntimeKnob",
-        "fn submit_proposal",
-        "fn complete_shadow_evaluation",
-        "fn enforce_live_safety",
-        "fn decision_log_as_jsonl",
-    ]
-    for token in impl_tokens:
-        checks.append(_check(f"impl token '{token}'", token in impl_src, token))
-
-    for code in REQUIRED_EVENT_CODES:
-        checks.append(
-            _check(
-                f"event code {code}",
-                code in impl_src and code in contract_src and code in spec_src,
-                code,
-            )
-        )
-
-    for code in REQUIRED_ERROR_CODES:
-        checks.append(
-            _check(
-                f"error code {code}",
-                code in impl_src and code in contract_src and code in spec_src,
-                code,
-            )
-        )
-
-    for inv in REQUIRED_INVARIANTS:
-        checks.append(
-            _check(
-                f"invariant {inv}",
-                inv in impl_src and inv in contract_src and inv in spec_src,
-                inv,
-            )
-        )
-
-    rust_test_count = impl_src.count("#[test]")
-    checks.append(_check("rust unit tests >= 20", rust_test_count >= 20, f"found {rust_test_count}"))
-
-    py_test_src = _read(PY_TEST_FILE)
-    py_test_methods = py_test_src.count("def test_")
-    checks.append(
-        _check(
-            "python unit tests >= 12",
-            py_test_methods >= 12,
-            f"found {py_test_methods}",
-        )
-    )
-
-    decision_rows = _load_jsonl(DECISION_LOG_FILE)
-    checks.append(
-        _check(
-            "decision log jsonl parseable",
-            len(decision_rows) > 0,
-            f"rows={len(decision_rows)}",
-        )
-    )
-
-    if decision_rows:
-        required_keys = {"sequence", "event_code", "decision", "evidence_hash"}
-        key_ok = all(required_keys.issubset(set(row.keys())) for row in decision_rows)
-        checks.append(_check("decision rows have required keys", key_ok, str(sorted(required_keys))))
-
-        sequences = [int(row.get("sequence", -1)) for row in decision_rows]
-        monotonic = all(a < b for a, b in zip(sequences, sequences[1:]))
-        checks.append(_check("decision sequence strictly increasing", monotonic, f"seq={sequences}"))
-
-        events_seen = {str(row.get("event_code", "")) for row in decision_rows}
-        checks.append(
-            _check(
-                "decision log has GOV_001..GOV_007 coverage",
-                all(code in events_seen for code in REQUIRED_EVENT_CODES),
-                f"seen={sorted(events_seen)}",
-            )
-        )
-
-    evidence_payload = _load_json(EVIDENCE_FILE)
-    checks.append(
-        _check(
-            "verification evidence parseable",
-            isinstance(evidence_payload, dict),
-            "json object" if isinstance(evidence_payload, dict) else "invalid/missing",
-        )
-    )
-
-    summary_src = _read(SUMMARY_FILE)
-    checks.append(_check("verification summary non-empty", len(summary_src.strip()) > 0, str(SUMMARY_FILE.relative_to(ROOT))))
-
-    passed = sum(1 for check in checks if check["passed"])
-    failed = len(checks) - passed
+    # --- Compile result ---
+    passed = sum(1 for c in checks if c["passed"])
+    failed = sum(1 for c in checks if not c["passed"])
+    total = len(checks)
     verdict = "PASS" if failed == 0 else "FAIL"
 
     return {
-        "schema_version": "optimization-governor-check-v1",
-        "bead_id": BEAD,
+        "bead_id": BEAD_ID,
         "section": SECTION,
         "title": TITLE,
-        "verdict": verdict,
-        "status": verdict.lower(),
-        "total": len(checks),
+        "checks": checks,
         "passed": passed,
         "failed": failed,
-        "checks": checks,
-        "event_codes": REQUIRED_EVENT_CODES,
-        "error_codes": REQUIRED_ERROR_CODES,
-        "invariants": REQUIRED_INVARIANTS,
-        "paths": {
-            "contract": str(CONTRACT_FILE.relative_to(ROOT)),
-            "spec": str(SPEC_FILE.relative_to(ROOT)),
-            "implementation": str(IMPL_FILE.relative_to(ROOT)),
-            "perf_test": str(PERF_TEST_FILE.relative_to(ROOT)),
-            "python_test": str(PY_TEST_FILE.relative_to(ROOT)),
-            "decision_log": str(DECISION_LOG_FILE.relative_to(ROOT)),
-        },
+        "total": total,
+        "verdict": verdict,
+        "all_passed": failed == 0,
+        "status": "pass" if failed == 0 else "fail",
     }
 
 
-def self_test() -> dict[str, object]:
-    checks: list[dict[str, object]] = []
-    checks.append(_check("event code count == 7", len(REQUIRED_EVENT_CODES) == 7))
-    checks.append(_check("error code count == 6", len(REQUIRED_ERROR_CODES) == 6))
-    checks.append(_check("invariant count == 6", len(REQUIRED_INVARIANTS) == 6))
-
+def self_test() -> bool:
+    """Verify the checker itself is well-formed."""
     result = run_all()
-    checks.append(_check("run_all has verdict", result.get("verdict") in ("PASS", "FAIL")))
-    checks.append(_check("run_all has checks", isinstance(result.get("checks"), list)))
-    checks.append(_check("run_all has at least 30 checks", int(result.get("total", 0)) >= 30, f"total={result.get('total')}"))
-
-    passed = sum(1 for check in checks if check["passed"])
-    failed = len(checks) - passed
-    verdict = "PASS" if failed == 0 else "FAIL"
-
-    return {
-        "name": "check_optimization_governor",
-        "bead": BEAD,
-        "section": SECTION,
-        "verdict": verdict,
-        "passed": passed,
-        "failed": failed,
-        "checks": checks,
-    }
-
-
-def write_report(result: dict[str, object]) -> None:
-    REPORT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_FILE.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    assert isinstance(result, dict)
+    assert result["bead_id"] == BEAD_ID
+    assert result["section"] == SECTION
+    assert isinstance(result["checks"], list)
+    assert isinstance(result["total"], int)
+    assert result["total"] > 0
+    for check in result["checks"]:
+        assert "name" in check
+        assert "passed" in check
+        assert "detail" in check
+        assert isinstance(check["passed"], bool)
+    return True
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="bd-21fo checker")
-    parser.add_argument("--json", action="store_true")
-    parser.add_argument("--self-test", action="store_true")
-    parser.add_argument("--build-report", action="store_true")
-    args = parser.parse_args()
-
-    if args.self_test:
-        result = self_test()
-        if args.json:
-            print(json.dumps(result, indent=2))
-        else:
-            print(f"self-test: {result['verdict']} ({result['passed']}/{result['passed'] + result['failed']})")
-        sys.exit(0 if result["verdict"] == "PASS" else 1)
+    if "--self-test" in sys.argv:
+        ok = self_test()
+        print("self_test passed" if ok else "self_test FAILED")
+        sys.exit(0 if ok else 1)
 
     result = run_all()
-    if args.build_report:
-        write_report(result)
 
-    if args.json:
+    if "--json" in sys.argv:
         print(json.dumps(result, indent=2))
     else:
-        print(f"{BEAD}: {result['verdict']} ({result['passed']}/{result['total']})")
+        print(f"=== {TITLE} ({BEAD_ID}) ===")
+        print(f"Section: {SECTION}")
+        print()
         for check in result["checks"]:
-            mark = "+" if check["passed"] else "x"
-            print(f"[{mark}] {check['check']}: {check['detail']}")
+            status = "PASS" if check["passed"] else "FAIL"
+            print(f"  [{status}] {check['name']}: {check['detail']}")
+        print()
+        print(f"Verdict: {result['verdict']} ({result['passed']}/{result['total']})")
 
-    sys.exit(0 if result["verdict"] == "PASS" else 1)
+    sys.exit(0 if result["all_passed"] else 1)
 
 
 if __name__ == "__main__":

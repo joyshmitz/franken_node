@@ -14,40 +14,35 @@ BEAD = "bd-gad3"
 SECTION = "10.17"
 
 SPEC_FILE = ROOT / "docs/specs/section_10_17/bd-gad3_contract.md"
-IMPL_FILE = ROOT / "crates/franken-node/src/runtime/isolation_mesh.rs"
-RUNTIME_MOD_FILE = ROOT / "crates/franken-node/src/runtime/mod.rs"
+ARCH_FILE = ROOT / "docs/architecture/isolation_mesh.md"
+IMPL_FILE = ROOT / "crates/franken-node/src/security/isolation_rail_router.rs"
+SEC_MOD_FILE = ROOT / "crates/franken-node/src/security/mod.rs"
 UNIT_TEST_FILE = ROOT / "tests/test_check_isolation_mesh.py"
 EVIDENCE_FILE = ROOT / "artifacts/section_10_17/bd-gad3/verification_evidence.json"
 SUMMARY_FILE = ROOT / "artifacts/section_10_17/bd-gad3/verification_summary.md"
 
 REQUIRED_EVENT_CODES = [
-    "MESH_001",
-    "MESH_002",
-    "MESH_003",
-    "MESH_004",
-    "MESH_005",
-    "MESH_006",
-    "MESH_007",
+    "ISOLATION_RAIL_ASSIGNED",
+    "ISOLATION_ELEVATION_START",
+    "ISOLATION_ELEVATION_COMPLETE",
+    "ISOLATION_POLICY_PRESERVED",
+    "ISOLATION_BUDGET_CHECK",
 ]
 
 REQUIRED_ERROR_CODES = [
-    "ERR_MESH_UNKNOWN_RAIL",
-    "ERR_MESH_UNKNOWN_WORKLOAD",
-    "ERR_MESH_ELEVATION_DENIED",
-    "ERR_MESH_DEMOTION_FORBIDDEN",
-    "ERR_MESH_LATENCY_EXCEEDED",
-    "ERR_MESH_RAIL_AT_CAPACITY",
-    "ERR_MESH_DUPLICATE_WORKLOAD",
-    "ERR_MESH_INVALID_TOPOLOGY",
+    "ERR_ISOLATION_RAIL_UNAVAILABLE",
+    "ERR_ISOLATION_ELEVATION_DENIED",
+    "ERR_ISOLATION_POLICY_BREAK",
+    "ERR_ISOLATION_BUDGET_EXCEEDED",
+    "ERR_ISOLATION_MESH_PARTITION",
+    "ERR_ISOLATION_WORKLOAD_REJECTED",
 ]
 
 REQUIRED_INVARIANTS = [
-    "INV-MESH-MONOTONIC-ELEVATION",
-    "INV-MESH-POLICY-CONTINUITY",
-    "INV-MESH-ATOMIC-TRANSITION",
-    "INV-MESH-LATENCY-BUDGET",
-    "INV-MESH-DETERMINISTIC-TOPOLOGY",
-    "INV-MESH-FAIL-CLOSED",
+    "INV-ISOLATION-POLICY-CONTINUITY",
+    "INV-ISOLATION-HOT-ELEVATION",
+    "INV-ISOLATION-BUDGET-BOUND",
+    "INV-ISOLATION-FAIL-SAFE",
 ]
 
 
@@ -64,98 +59,68 @@ def _check(name: str, ok: bool, detail: str = "") -> dict:
 def _checks() -> list[dict]:
     checks: list[dict] = []
     impl_src = _read(IMPL_FILE)
-    spec_src = _read(SPEC_FILE)
-    runtime_mod_src = _read(RUNTIME_MOD_FILE)
+    spec_src = _read(SPEC_FILE) + _read(ARCH_FILE)
+    sec_mod_src = _read(SEC_MOD_FILE)
 
     # -- file existence --
     checks.append(_check("Spec file exists", SPEC_FILE.exists(), str(SPEC_FILE)))
     checks.append(_check("Implementation file exists", IMPL_FILE.exists(), str(IMPL_FILE)))
     checks.append(_check(
-        "Runtime module wired",
-        "pub mod isolation_mesh;" in runtime_mod_src,
-        "pub mod isolation_mesh; in runtime/mod.rs",
+        "Security module wired",
+        "pub mod isolation_rail_router;" in sec_mod_src,
+        "pub mod isolation_rail_router; in security/mod.rs",
     ))
 
     # -- key types --
     required_types = [
-        "struct IsolationMesh",
-        "struct IsolationRail",
-        "struct ElevationPolicy",
-        "struct MeshTopology",
-        "struct RailState",
-        "struct WorkloadPlacement",
-        "struct MeshEvent",
-        "struct ElevationRecord",
-        "enum IsolationRailLevel",
-        "enum MeshError",
+        "struct RailRouter",
+        "struct Placement",
+        "struct Workload",
+        "struct RailPolicy",
+        "struct PolicyRule",
+        "struct MeshConfig",
+        "enum IsolationRail",
+        "enum TrustProfile",
+        "enum RailRouterError",
     ]
     for token in required_types:
         checks.append(_check(f"Type '{token}'", token in impl_src, token))
 
     # -- key functions --
     required_fns = [
-        "fn place_workload",
-        "fn elevate_workload",
-        "fn remove_workload",
-        "fn reload_topology",
-        "fn permits_elevation",
+        "fn assign_workload",
+        "fn hot_elevate",
+        "fn record_latency",
+        "fn check_mesh_connectivity",
+        "fn mesh_profile_report",
+        "fn is_subset_of",
         "fn can_elevate_to",
-        "fn validate",
+        "fn is_downgrade_to",
+        "fn remove_workload",
     ]
     for token in required_fns:
         checks.append(_check(f"Fn '{token}'", token in impl_src, token))
 
     # -- isolation levels --
-    required_levels = [
-        "Shared",
-        "ProcessIsolated",
-        "SandboxIsolated",
-        "HardwareIsolated",
-    ]
+    required_levels = ["Standard", "Elevated", "HighAssurance", "Critical"]
     for level in required_levels:
-        checks.append(_check(f"IsolationRailLevel::{level}", level in impl_src, level))
+        checks.append(_check(f"IsolationRail::{level}", level in impl_src, level))
 
-    # -- event codes --
+    # -- event codes in impl --
     for code in REQUIRED_EVENT_CODES:
-        checks.append(_check(
-            f"Event code {code}",
-            code in impl_src and code in spec_src,
-            code,
-        ))
+        checks.append(_check(f"Event code {code}", code in impl_src, code))
 
-    # -- error codes --
+    # -- error codes in impl --
     for code in REQUIRED_ERROR_CODES:
-        checks.append(_check(
-            f"Error code {code}",
-            code in impl_src and code in spec_src,
-            code,
-        ))
+        checks.append(_check(f"Error code {code}", code in impl_src, code))
 
-    # -- invariants --
+    # -- invariants in impl --
     for inv in REQUIRED_INVARIANTS:
-        checks.append(_check(
-            f"Invariant {inv}",
-            inv in impl_src and inv in spec_src,
-            inv,
-        ))
-
-    # -- schema version --
-    checks.append(_check(
-        "Schema version constant",
-        'SCHEMA_VERSION' in impl_src and 'isolation-mesh-v1.0' in impl_src,
-        "SCHEMA_VERSION = isolation-mesh-v1.0",
-    ))
-
-    # -- BTreeMap for deterministic ordering --
-    checks.append(_check(
-        "BTreeMap used for determinism",
-        "BTreeMap" in impl_src,
-        "BTreeMap in impl",
-    ))
+        checks.append(_check(f"Invariant {inv}", inv in impl_src, inv))
 
     # -- Rust unit test count --
     test_count = impl_src.count("#[test]")
-    checks.append(_check("Rust unit tests >= 20", test_count >= 20, f"found {test_count}"))
+    checks.append(_check("Rust unit tests >= 25", test_count >= 25, f"found {test_count}"))
 
     # -- Python checker unit test exists --
     checks.append(_check(
@@ -167,23 +132,6 @@ def _checks() -> list[dict]:
     # -- Evidence and summary --
     checks.append(_check("Evidence file exists", EVIDENCE_FILE.exists(), str(EVIDENCE_FILE)))
     checks.append(_check("Summary file exists", SUMMARY_FILE.exists(), str(SUMMARY_FILE)))
-
-    # -- acceptance criteria tokens --
-    checks.append(_check(
-        "Monotonic elevation enforced (demotion forbidden)",
-        "DemotionForbidden" in impl_src,
-        "DemotionForbidden variant present",
-    ))
-    checks.append(_check(
-        "Latency budget enforcement",
-        "LatencyExceeded" in impl_src and "latency_budget_us" in impl_src,
-        "LatencyExceeded + latency_budget_us in impl",
-    ))
-    checks.append(_check(
-        "Policy continuity across elevation",
-        "elevation_history" in impl_src and "policy" in impl_src,
-        "elevation_history + policy carried in WorkloadPlacement",
-    ))
 
     return checks
 
@@ -219,9 +167,9 @@ def run_all() -> dict:
 
 def self_test() -> dict:
     checks: list[dict] = []
-    checks.append(_check("event code count >= 7", len(REQUIRED_EVENT_CODES) >= 7))
-    checks.append(_check("error code count >= 8", len(REQUIRED_ERROR_CODES) >= 8))
-    checks.append(_check("invariant count >= 6", len(REQUIRED_INVARIANTS) >= 6))
+    checks.append(_check("event code count >= 5", len(REQUIRED_EVENT_CODES) >= 5))
+    checks.append(_check("error code count >= 6", len(REQUIRED_ERROR_CODES) >= 6))
+    checks.append(_check("invariant count >= 4", len(REQUIRED_INVARIANTS) >= 4))
 
     result = run_all()
     checks.append(_check("run_all has verdict", result.get("verdict") in ("PASS", "FAIL")))

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -30,6 +31,18 @@ REQUIRED_DEPENDENCY = "bd-1nl1"
 REQUIRED_DEPENDENTS = ["bd-1xbc", "bd-3t08"]
 
 REQUIRED_ACTION_TOKENS = ["throttle", "isolate", "revoke", "quarantine"]
+REQUIRED_GRAPH_EXPORTS = [
+    "AdversaryLogEntry",
+    "EvidenceEvent",
+    "EntityId",
+    "EntityType",
+    "PolicyThreshold",
+    "QuarantineAction",
+    "SignedEvidenceEntry",
+    "ADV_005_ACTION_TRIGGERED",
+    "ADV_006_NODE_REMOVED",
+    "ADV_008_SIGNED_EVIDENCE",
+]
 
 
 def _check(name: str, passed: bool, detail: str = "") -> dict[str, Any]:
@@ -58,6 +71,34 @@ def _evidence_pass(data: dict[str, Any]) -> bool:
     if verdict == "PASS":
         return True
     return status in {"pass", "passed", "ok", "completed", "completed_with_baseline_workspace_failures"}
+
+
+def _extract_graph_method_calls(controller_src: str) -> list[str]:
+    calls = set(re.findall(r"\b(?:self\.graph|graph)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(", controller_src))
+    calls.discard("clone")
+    return sorted(calls)
+
+
+def _has_pub_fn(source: str, fn_name: str) -> bool:
+    return re.search(rf"\bpub\s+fn\s+{re.escape(fn_name)}\s*\(", source) is not None
+
+
+def _extract_graph_new_call_args(controller_src: str) -> str | None:
+    match = re.search(r"\bAdversaryGraph::new\s*\((.*?)\)", controller_src, re.DOTALL)
+    if match is None:
+        return None
+    return " ".join(match.group(1).split())
+
+
+def _extract_graph_new_signature(adversary_src: str) -> str | None:
+    match = re.search(
+        r"impl\s+AdversaryGraph\s*{[\s\S]*?\bpub\s+fn\s+new\s*\(([^)]*)\)",
+        adversary_src,
+        re.DOTALL,
+    )
+    if match is None:
+        return None
+    return " ".join(match.group(1).split())
 
 
 def _run_br_show(issue_id: str) -> dict[str, Any] | None:
@@ -184,6 +225,47 @@ def run_all() -> dict[str, Any]:
         )
     )
 
+    missing_graph_exports = [name for name in REQUIRED_GRAPH_EXPORTS if re.search(rf"\b{re.escape(name)}\b", adversary_src) is None]
+    checks.append(
+        _check(
+            "adversary_graph_exports_for_controller",
+            len(missing_graph_exports) == 0,
+            f"missing={missing_graph_exports}",
+        )
+    )
+
+    graph_methods_called = _extract_graph_method_calls(quarantine_src)
+    missing_graph_methods = [name for name in graph_methods_called if not _has_pub_fn(adversary_src, name)]
+    checks.append(
+        _check(
+            "graph_method_contract_compat",
+            len(missing_graph_methods) == 0,
+            f"called={graph_methods_called} missing={missing_graph_methods}",
+        )
+    )
+
+    graph_new_call_args = _extract_graph_new_call_args(quarantine_src)
+    graph_new_signature = _extract_graph_new_signature(adversary_src)
+    if graph_new_call_args is None or graph_new_signature is None:
+        checks.append(
+            _check(
+                "graph_new_constructor_compat",
+                False,
+                f"call={graph_new_call_args} signature={graph_new_signature}",
+            )
+        )
+    else:
+        call_has_args = graph_new_call_args != ""
+        signature_has_args = graph_new_signature != ""
+        constructor_compat = (call_has_args and signature_has_args) or (not call_has_args)
+        checks.append(
+            _check(
+                "graph_new_constructor_compat",
+                constructor_compat,
+                f"call_args='{graph_new_call_args}' signature='{graph_new_signature}'",
+            )
+        )
+
     action_token_hits = [token for token in REQUIRED_ACTION_TOKENS if token in quarantine_src]
     checks.append(
         _check(
@@ -263,6 +345,8 @@ def run_all() -> dict[str, Any]:
             "required_file_count": len(required_files),
             "required_files_missing": len(missing_required),
             "fallback_signal_hits": len(fallback_hits),
+            "graph_export_missing_count": len(missing_graph_exports),
+            "graph_method_missing_count": len(missing_graph_methods),
         },
     }
 

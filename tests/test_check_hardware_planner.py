@@ -75,6 +75,34 @@ class TestRunChecks(unittest.TestCase):
         self.assertEqual(len(result["events"]), 12)
 
 
+class TestRunAll(unittest.TestCase):
+    """Verify run_all() output structure."""
+
+    def test_run_all_verdict_pass(self):
+        result = mod.run_all()
+        self.assertEqual(result["verdict"], "PASS",
+                         f"Failed: {[c for c in result['checks'] if not c['passed']]}")
+
+    def test_run_all_has_planner_event_codes(self):
+        result = mod.run_all()
+        self.assertEqual(len(result["event_codes"]), 5)
+        self.assertIn("PLANNER_PLACEMENT_START", result["event_codes"])
+
+    def test_run_all_has_planner_error_codes(self):
+        result = mod.run_all()
+        self.assertEqual(len(result["error_codes"]), 6)
+        self.assertIn("ERR_PLANNER_CONSTRAINT_VIOLATED", result["error_codes"])
+
+    def test_run_all_has_planner_invariants(self):
+        result = mod.run_all()
+        self.assertEqual(len(result["invariants"]), 4)
+        self.assertIn("INV-PLANNER-REPRODUCIBLE", result["invariants"])
+
+    def test_run_all_has_schema_version(self):
+        result = mod.run_all()
+        self.assertEqual(result["schema_version"], "hwp-v1.0")
+
+
 class TestJsonOutput(unittest.TestCase):
     """Verify --json CLI flag produces valid JSON with correct fields."""
 
@@ -110,7 +138,7 @@ class TestMinimumCheckCount(unittest.TestCase):
 
 
 class TestEventCodesPresent(unittest.TestCase):
-    """All 12 event codes should be defined in the module constants."""
+    """All 12 internal event codes should be defined in the module constants."""
 
     def test_event_codes_count(self):
         self.assertEqual(len(mod.EVENT_CODES), 12)
@@ -120,18 +148,51 @@ class TestEventCodesPresent(unittest.TestCase):
             self.assertTrue(ec.startswith("HWP-"), f"Unexpected prefix: {ec}")
 
 
+class TestPlannerEventCodesPresent(unittest.TestCase):
+    """All 5 semantic planner event codes should be defined."""
+
+    def test_planner_event_codes_count(self):
+        self.assertEqual(len(mod.PLANNER_EVENT_CODES), 5)
+
+    def test_planner_event_codes_prefix(self):
+        for ec in mod.PLANNER_EVENT_CODES:
+            self.assertTrue(ec.startswith("PLANNER_"), f"Unexpected prefix: {ec}")
+
+
 class TestErrorCodesPresent(unittest.TestCase):
-    """All 10 error codes should be defined."""
+    """All 10 internal error codes should be defined."""
 
     def test_error_codes_count(self):
         self.assertEqual(len(mod.ERROR_CODES), 10)
 
 
+class TestPlannerErrorCodesPresent(unittest.TestCase):
+    """All 6 semantic planner error codes should be defined."""
+
+    def test_planner_error_codes_count(self):
+        self.assertEqual(len(mod.PLANNER_ERROR_CODES), 6)
+
+    def test_planner_error_codes_prefix(self):
+        for ec in mod.PLANNER_ERROR_CODES:
+            self.assertTrue(ec.startswith("ERR_PLANNER_"), f"Unexpected prefix: {ec}")
+
+
 class TestInvariantsPresent(unittest.TestCase):
-    """All 8 invariants should be defined."""
+    """All 8 internal invariants should be defined."""
 
     def test_invariants_count(self):
         self.assertEqual(len(mod.INVARIANTS), 8)
+
+
+class TestPlannerInvariantsPresent(unittest.TestCase):
+    """All 4 semantic planner invariants should be defined."""
+
+    def test_planner_invariants_count(self):
+        self.assertEqual(len(mod.PLANNER_INVARIANTS), 4)
+
+    def test_planner_invariants_prefix(self):
+        for inv in mod.PLANNER_INVARIANTS:
+            self.assertTrue(inv.startswith("INV-PLANNER-"), f"Unexpected prefix: {inv}")
 
 
 class TestMissingSource(unittest.TestCase):
@@ -186,6 +247,17 @@ class TestCliInterface(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("self_test passed", result.stdout)
+
+    def test_self_test_json_cli(self):
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "check_hardware_planner.py"),
+             "--self-test", "--json"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["verdict"], "PASS")
+        self.assertEqual(data["bead"], "bd-2o8b")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Unit tests for scripts/check_nversion_oracle.py."""
+"""Unit tests for scripts/check_semantic_oracle.py."""
 
 import importlib.util
 import json
@@ -8,9 +8,9 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SCRIPT = ROOT / "scripts/check_nversion_oracle.py"
+SCRIPT = ROOT / "scripts/check_semantic_oracle.py"
 
-spec = importlib.util.spec_from_file_location("check_nversion_oracle", SCRIPT)
+spec = importlib.util.spec_from_file_location("check_semantic_oracle", SCRIPT)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
@@ -49,7 +49,7 @@ class TestResultShape(unittest.TestCase):
 class TestChecks(unittest.TestCase):
     def test_minimum_check_count(self):
         result = mod.run_all()
-        self.assertGreaterEqual(result["total"], 40)
+        self.assertGreaterEqual(result["total"], 20)
 
     def test_all_checks_have_keys(self):
         result = mod.run_all()
@@ -59,18 +59,15 @@ class TestChecks(unittest.TestCase):
             self.assertIn("detail", c)
 
 
-class TestEventCodes(unittest.TestCase):
-    def test_event_code_count(self):
+class TestDivergenceContract(unittest.TestCase):
+    def test_contract_present(self):
         result = mod.run_all()
-        self.assertGreaterEqual(len(result["event_codes"]), 12)
-
-    def test_error_code_count(self):
-        result = mod.run_all()
-        self.assertGreaterEqual(len(result["error_codes"]), 10)
-
-    def test_invariant_count(self):
-        result = mod.run_all()
-        self.assertGreaterEqual(len(result["invariants"]), 6)
+        self.assertIn("divergence_contract", result)
+        contract = result["divergence_contract"]
+        self.assertTrue(contract["high_risk_blocks_release"])
+        self.assertTrue(contract["low_risk_requires_receipt"])
+        self.assertTrue(contract["receipts_link_l1_oracle"])
+        self.assertTrue(contract["classification_is_deterministic"])
 
 
 class TestSelfTest(unittest.TestCase):
@@ -100,16 +97,16 @@ class TestCli(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
-
-class TestReleaseGateSemantics(unittest.TestCase):
-    def test_release_gate_present(self):
-        result = mod.run_all()
-        rgs = result.get("release_gate_semantics", {})
-        self.assertTrue(rgs.get("critical_blocks"))
-        self.assertTrue(rgs.get("high_blocks"))
-        self.assertTrue(rgs.get("medium_warns"))
-        self.assertTrue(rgs.get("low_requires_receipt"))
-        self.assertTrue(rgs.get("info_no_action"))
+    def test_build_report_creates_file(self):
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "--build-report", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        report_path = ROOT / "artifacts/10.17/semantic_oracle_report.json"
+        self.assertTrue(report_path.exists(), f"report not found at {report_path}")
 
 
 if __name__ == "__main__":
