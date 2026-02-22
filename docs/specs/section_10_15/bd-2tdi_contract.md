@@ -1,4 +1,4 @@
-# bd-2tdi: Migrate Lifecycle/Rollout Orchestration to Region-Owned Execution Trees
+# bd-2tdi: Region-Owned Execution Trees
 
 ---
 schema_version: region-v1.0
@@ -16,20 +16,18 @@ have drained or been force-terminated within a configurable budget.
 ## Region Hierarchy
 
 ```
-root
-  +-- lifecycle
-  |     +-- health-gate
-  |     +-- rollout
-  |     +-- fencing
+ConnectorLifecycle (root, 5000ms budget)
+├── HealthGate (2000ms budget)
+├── Rollout (2000ms budget)
+└── Fencing (2000ms budget)
 ```
 
-| Region | Parent | Purpose |
-|--------|--------|---------|
-| root | (none) | Top-level orchestrator region |
-| lifecycle | root | Groups all lifecycle-related subtasks |
-| health-gate | lifecycle | Health-check probes and readiness gates |
-| rollout | lifecycle | Rolling update state transitions |
-| fencing | lifecycle | Distributed fencing token acquisition |
+| Region | Kind | Parent | Purpose |
+|--------|------|--------|---------|
+| root | ConnectorLifecycle | (none) | Top-level orchestrator region |
+| health | HealthGate | root | Health-check probes and readiness gates |
+| rollout | Rollout | root | Rolling update state transitions |
+| fencing | Fencing | root | Distributed fencing token acquisition |
 
 ## Ownership Rules
 
@@ -37,10 +35,10 @@ root
 2. **No re-parenting**: Once a region is created under a parent, it cannot be moved.
 3. **Task scoping**: Tasks registered to a region are owned by that region; they
    cannot outlive the region.
-4. **Hierarchical close**: Closing a region first closes all child regions
-   recursively, then drains its own registered tasks.
-5. **Force-terminate budget**: If a region does not reach quiescence within the
-   configured drain budget (milliseconds), remaining tasks are force-terminated.
+4. **Close is idempotent barrier**: `close()` drains tasks within budget,
+   force-terminates stragglers, and rejects further task registration.
+5. **Double close rejected**: Calling `close()` on a closed region returns
+   `RegionError::AlreadyClosed`.
 
 ## Quiescence Guarantees
 
@@ -54,73 +52,72 @@ root
 
 | ID | Statement |
 |----|-----------|
-| INV-REGION-QUIESCENCE | A region's close() blocks until all children and own tasks reach quiescence or budget expires |
-| INV-REGION-NO-OUTLIVE | No task registered to a region may outlive that region's Closed state |
-| INV-REGION-DETERMINISTIC-CLOSE | The close sequence is deterministic: children first (in insertion order), then own tasks |
+| INV-RGN-QUIESCENCE | A region's close() blocks until all tasks reach quiescence or budget expires |
+| INV-RGN-NO-OUTLIVE | No task registered to a region may outlive that region's Closed state |
+| INV-RGN-HIERARCHY | Parent-child relationships are immutable after creation |
+| INV-RGN-DETERMINISTIC | Quiescence traces are reproducible given the same input |
 
 ## Event Codes
 
 | Code | Description |
 |------|-------------|
-| REG-001 | Region opened |
-| REG-002 | Task registered to region |
-| REG-003 | Region drain started |
-| REG-004 | Region drain completed (quiescence reached) |
-| REG-005 | Region force-terminate triggered (budget exceeded) |
-| REG-006 | Region closed |
-| REG-007 | Child region attached |
-| REG-008 | Task deregistered from region |
+| RGN-001 | Region opened |
+| RGN-002 | Region close initiated |
+| RGN-003 | Quiescence achieved |
+| RGN-004 | Child task force-terminated |
+| RGN-005 | Quiescence timeout |
+
+## Types
+
+| Type | Role |
+|------|------|
+| `RegionId` | Unique region identifier (u64 newtype) |
+| `RegionKind` | Enum: ConnectorLifecycle, HealthGate, Rollout, Fencing |
+| `Region` | Core struct with tasks, children, quiescence budget |
+| `TaskState` | Enum: Running, Draining, Completed, ForceTerminated |
+| `RegionTask` | Task registered to a region (task_id, state, timestamp) |
+| `CloseResult` | Result of close(): quiescence_achieved, tasks_drained, tasks_force_terminated |
+| `RegionEvent` | Structured event emitted during region lifecycle |
+| `RegionError` | Error enum: AlreadyClosed, TaskNotFound |
 
 ## Gate Behavior
 
-The verification gate (`scripts/check_region_tree_topology.py`) validates:
+The verification gate (`scripts/check_region_ownership.py`) validates:
 
-1. Rust module exists at `crates/franken-node/src/runtime/region_tree.rs`
-2. Module is wired in `runtime/mod.rs`
-3. Spec contract exists
-4. All three invariant constants are present in source
-5. All eight event code constants are present in source
-6. Quiescence trace artifact exists
-7. Unit tests are present (`#[cfg(test)]`)
-8. Core types exist: `RegionId`, `RegionState`, `RegionTree`, `RegionHandle`
-9. Core operations exist: `open_region`, `register_task`, `close`, `force_terminate`
+1. Rust module exists at `crates/franken-node/src/connector/region_ownership.rs`
+2. Spec doc exists at `docs/specs/region_tree_topology.md`
+3. Integration test exists at `tests/integration/region_owned_lifecycle.rs`
+4. Quiescence trace exists at `artifacts/10.15/region_quiescence_trace.jsonl`
+5. All 7 required types present in module source
+6. All 5 event code constants present in module source
+7. All 4 region kinds present as enum variants
+8. Spec doc contains required sections (Region Hierarchy, Ownership Rules, Quiescence Guarantees, Event Codes)
+9. Quiescence trace is valid JSONL with open and close events
 
-Exit code 0 on PASS, 1 on FAIL. Supports `--json` for structured output and
-`--self-test` for self-validation.
-
-## Error Codes
-
-| Code | Description |
-|------|-------------|
-| ERR_REGION_NOT_FOUND | Referenced region ID does not exist in the tree |
-| ERR_REGION_ALREADY_CLOSED | Attempted operation on a Closed region |
-| ERR_REGION_PARENT_NOT_FOUND | Parent region ID does not exist |
-| ERR_REGION_BUDGET_EXCEEDED | Drain budget exceeded; force-terminate invoked |
+28 checks total. Exit code 0 on PASS, 1 on FAIL. Supports `--json` for
+structured output and `--self-test` for self-validation.
 
 ## Acceptance Criteria
 
-1. `RegionTree` struct tracks parent/child relationships with `RegionId`
-2. `RegionHandle` provides scoped task registration
-3. `close()` drains children recursively, then own tasks, within budget
-4. Force-terminate after budget exceeded
-5. All event codes REG-001 through REG-008 emitted as constants
-6. All invariants documented as constants
-7. Quiescence trace artifact at `artifacts/10.15/region_quiescence_trace.jsonl`
+1. `Region` struct tracks parent/child relationships with `RegionId`
+2. `register_task()` / `complete_task()` manage task lifecycle
+3. `close()` drains all tasks within budget, force-terminates stragglers
+4. Closed region rejects new task registration with `RegionError::AlreadyClosed`
+5. All event codes RGN-001 through RGN-005 emitted as constants
+6. `build_lifecycle_hierarchy()` factory creates canonical 4-region tree
+7. `generate_quiescence_trace()` produces deterministic JSONL output
 8. Gate script and test suite pass
-
-## Dependencies
-
-- **Upstream**: bd-qlc6 (lane scheduler, 10.14)
-- **Downstream**: section 10.15 gate
 
 ## Artifacts
 
 | Artifact | Path |
 |----------|------|
-| Rust module | `crates/franken-node/src/runtime/region_tree.rs` |
+| Rust module | `crates/franken-node/src/connector/region_ownership.rs` |
+| Spec doc | `docs/specs/region_tree_topology.md` |
 | Spec contract | `docs/specs/section_10_15/bd-2tdi_contract.md` |
-| Gate script | `scripts/check_region_tree_topology.py` |
-| Test suite | `tests/test_check_region_tree_topology.py` |
+| Integration test | `tests/integration/region_owned_lifecycle.rs` |
+| Gate script | `scripts/check_region_ownership.py` |
+| Test suite | `tests/test_check_region_ownership.py` |
 | Quiescence trace | `artifacts/10.15/region_quiescence_trace.jsonl` |
 | Verification evidence | `artifacts/section_10_15/bd-2tdi/verification_evidence.json` |
 | Verification summary | `artifacts/section_10_15/bd-2tdi/verification_summary.md` |

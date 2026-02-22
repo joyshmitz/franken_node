@@ -106,11 +106,13 @@ automatically rolled back, satisfying INV-OBL-DROP-SAFE.
 | `ObligationTracker` | struct | Central registry of active obligations with reserve/commit/rollback/leak-check operations |
 | `ObligationId` | struct | Unique identifier for each obligation |
 | `ObligationFlow` | enum | Tracked flow variant: Publish, Revoke, Quarantine, Migration, Fencing |
-| `ObligationState` | enum | Lifecycle state: Reserved, Committed, RolledBack |
+| `ObligationState` | enum | Lifecycle state: Reserved, Committed, RolledBack, Leaked |
 | `Obligation` | struct | A single tracked obligation with ID, flow, state, payload, timestamps |
 | `ObligationAuditRecord` | struct | Audit log entry for obligation lifecycle events |
 | `LeakScanResult` | struct | Result of a single leak oracle scan |
 | `LeakOracleReport` | struct | Aggregated leak oracle report for the artifact |
+| `FlowObligationCounts` | struct | Per-flow obligation counts (reserved, committed, rolled_back, leaked) |
+| `ObligationGuard` | struct | RAII guard implementing Drop for automatic rollback on scope exit |
 
 ## Gate Behavior
 
