@@ -28,7 +28,7 @@ use crate::security::adversary_graph::{
     EvidenceEvent, PolicyThreshold, QuarantineAction, SignedEvidenceEntry,
 };
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 // ---------------------------------------------------------------------------
 // Invariant tags
@@ -191,7 +191,7 @@ impl QuarantineController {
         &mut self,
         events: &[EvidenceEvent],
         trace_id: &str,
-    ) -> Result<(HashMap<EntityId, f64>, Vec<ActionRecord>), String> {
+    ) -> Result<(BTreeMap<EntityId, f64>, Vec<ActionRecord>), String> {
         let mut batch_actions = Vec::new();
         for event in events {
             let (action, posterior) = self.submit_evidence(event.clone())?;
@@ -206,8 +206,8 @@ impl QuarantineController {
                 });
             }
         }
-        let snapshot: HashMap<EntityId, f64> = {
-            let mut map = HashMap::new();
+        let snapshot: BTreeMap<EntityId, f64> = {
+            let mut map = BTreeMap::new();
             // Iterate through evidence to find all entity IDs
             for event in events {
                 if let Some(node) = self.graph.get_node(&event.entity_id) {

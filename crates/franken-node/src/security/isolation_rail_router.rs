@@ -39,7 +39,7 @@
 //!   the workload remains on its current rail (no state is lost).
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 
 // ---------------------------------------------------------------------------
@@ -351,7 +351,7 @@ pub struct MeshConfig {
     /// Which rails are available in this deployment.
     pub available_rails: Vec<IsolationRail>,
     /// Per-rail policy definitions.
-    pub rail_policies: HashMap<IsolationRail, RailPolicy>,
+    pub rail_policies: BTreeMap<IsolationRail, RailPolicy>,
     /// Whether mesh partition checks are enabled.
     pub partition_check_enabled: bool,
 }
@@ -359,7 +359,7 @@ pub struct MeshConfig {
 impl MeshConfig {
     /// Create a default mesh with all four rails and standard policies.
     pub fn default_mesh() -> Self {
-        let mut rail_policies = HashMap::new();
+        let mut rail_policies = BTreeMap::new();
         for rail in IsolationRail::ALL {
             let mut rules = vec![
                 PolicyRule {
@@ -413,7 +413,7 @@ impl MeshConfig {
 /// policy continuity verification.
 pub struct RailRouter {
     config: MeshConfig,
-    placements: HashMap<String, Placement>,
+    placements: BTreeMap<String, Placement>,
     events: Vec<RailEvent>,
 }
 
@@ -422,7 +422,7 @@ impl RailRouter {
     pub fn new(config: MeshConfig) -> Self {
         Self {
             config,
-            placements: HashMap::new(),
+            placements: BTreeMap::new(),
             events: Vec::new(),
         }
     }
@@ -438,7 +438,7 @@ impl RailRouter {
         &self.config
     }
 
-    pub fn placements(&self) -> &HashMap<String, Placement> {
+    pub fn placements(&self) -> &BTreeMap<String, Placement> {
         &self.placements
     }
 
@@ -837,7 +837,7 @@ mod tests {
     fn reject_workload_on_unavailable_rail() {
         let config = MeshConfig {
             available_rails: vec![IsolationRail::Standard],
-            rail_policies: HashMap::new(),
+            rail_policies: BTreeMap::new(),
             partition_check_enabled: false,
         };
         let mut router = RailRouter::new(config);
@@ -1031,7 +1031,7 @@ mod tests {
     fn mesh_partition_detected() {
         let config = MeshConfig {
             available_rails: vec![IsolationRail::Standard],
-            rail_policies: HashMap::new(),
+            rail_policies: BTreeMap::new(),
             partition_check_enabled: true,
         };
         let router = RailRouter::new(config);

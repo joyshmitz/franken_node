@@ -31,7 +31,7 @@
 //! - **INV-ADV-MONOTONE-EVIDENCE**: Evidence count is monotonically
 //!   non-decreasing.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 // ---------------------------------------------------------------------------
 // Event codes
@@ -267,7 +267,7 @@ pub struct AdversaryLogEntry {
 /// The Bayesian adversary graph.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AdversaryGraph {
-    nodes: HashMap<EntityId, AdversaryNode>,
+    nodes: BTreeMap<EntityId, AdversaryNode>,
     edges: Vec<TrustEdge>,
     thresholds: PolicyThreshold,
     log: Vec<AdversaryLogEntry>,
@@ -277,7 +277,7 @@ impl AdversaryGraph {
     /// Create a new empty adversary graph with the given thresholds.
     pub fn new(thresholds: PolicyThreshold) -> Self {
         Self {
-            nodes: HashMap::new(),
+            nodes: BTreeMap::new(),
             edges: Vec::new(),
             thresholds,
             log: Vec::new(),
@@ -438,11 +438,11 @@ impl AdversaryGraph {
         &mut self,
         events: &[EvidenceEvent],
         trace_id: &str,
-    ) -> Result<HashMap<EntityId, f64>, String> {
+    ) -> Result<BTreeMap<EntityId, f64>, String> {
         for event in events {
             self.ingest_evidence(event)?;
         }
-        let snapshot: HashMap<EntityId, f64> = self
+        let snapshot: BTreeMap<EntityId, f64> = self
             .nodes
             .iter()
             .map(|(id, node)| (id.clone(), node.risk_posterior))
