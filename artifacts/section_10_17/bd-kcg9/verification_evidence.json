@@ -1,0 +1,60 @@
+{
+  "bead_id": "bd-kcg9",
+  "section": "10.17",
+  "title": "Zero-Knowledge Attestation for Selective Compliance Verification",
+  "status": "pass",
+  "verdict": "PASS",
+  "deliverables": [
+    "docs/specs/section_10_17/bd-kcg9_contract.md",
+    "crates/franken-node/src/security/zk_attestation.rs",
+    "scripts/check_zk_attestation.py",
+    "tests/test_check_zk_attestation.py",
+    "artifacts/section_10_17/bd-kcg9/verification_evidence.json",
+    "artifacts/section_10_17/bd-kcg9/verification_summary.md"
+  ],
+  "checker": {
+    "command": "python3 scripts/check_zk_attestation.py --json",
+    "exit_code": 0,
+    "report_path": "artifacts/section_10_17/bd-kcg9/check_report.json",
+    "passed_checks": 89,
+    "failed_checks": 0
+  },
+  "self_test": {
+    "command": "python3 scripts/check_zk_attestation.py --self-test",
+    "exit_code": 0,
+    "log_path": "artifacts/section_10_17/bd-kcg9/check_self_test.txt"
+  },
+  "unit_tests": {
+    "command": "python3 -m pytest tests/test_check_zk_attestation.py -v",
+    "exit_code": 0,
+    "log_path": "artifacts/section_10_17/bd-kcg9/unit_tests.txt"
+  },
+  "rust_tests": {
+    "inline_test_count": 39,
+    "module": "crates/franken-node/src/security/zk_attestation.rs"
+  },
+  "design_properties": {
+    "selective_disclosure": true,
+    "soundness_enforced": true,
+    "policy_binding": true,
+    "audit_trail": true,
+    "schema_versioned": true,
+    "btreemap_deterministic_ordering": true
+  },
+  "invariants": [
+    "INV-ZKA-SELECTIVE",
+    "INV-ZKA-SOUNDNESS",
+    "INV-ZKA-COMPLETENESS",
+    "INV-ZKA-POLICY-BOUND",
+    "INV-ZKA-AUDIT-TRAIL",
+    "INV-ZKA-SCHEMA-VERSIONED"
+  ],
+  "event_codes": 12,
+  "error_codes": 10,
+  "notes": [
+    "Verifiers validate compliance predicates via ZK attestations without accessing private metadata.",
+    "Invalid/forged proofs are rejected deterministically with stable error codes.",
+    "Every verification attempt is audited with trace ID, timestamp, and policy reference.",
+    "BTreeMap used for PolicyRegistry, AttestationLedger, and ZkBatchResult for deterministic ordering."
+  ]
+}

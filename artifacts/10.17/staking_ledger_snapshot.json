@@ -1,0 +1,21 @@
+{
+  "schema_version": "staking-ledger-v1.0",
+  "bead_id": "bd-26mk",
+  "section": "10.17",
+  "title": "Staking ledger snapshot",
+  "ledger_state": {
+    "total_staked": 1000000,
+    "active_publishers": 5,
+    "slashed_publishers": 1,
+    "pending_appeals": 0
+  },
+  "governance_contract": {
+    "high_risk_requires_stake": true,
+    "slash_is_deterministic": true,
+    "audit_trail_complete": true,
+    "appeal_window_enforced": true
+  },
+  "event_codes": 5,
+  "error_codes": 6,
+  "invariants": 4
+}

@@ -1,0 +1,53 @@
+{
+  "bead_id": "bd-2kd9",
+  "section": "10.17",
+  "title": "Claim compiler and public trust scoreboard pipeline",
+  "status": "pass",
+  "verdict": "PASS",
+  "deliverables": [
+    "docs/specs/section_10_17/bd-2kd9_contract.md",
+    "crates/franken-node/src/connector/claim_compiler.rs",
+    "scripts/check_claim_compiler.py",
+    "tests/test_check_claim_compiler.py",
+    "artifacts/section_10_17/bd-2kd9/verification_evidence.json",
+    "artifacts/section_10_17/bd-2kd9/verification_summary.md"
+  ],
+  "checker": {
+    "command": "python3 scripts/check_claim_compiler.py --build-report --json",
+    "exit_code": 0,
+    "report_path": "artifacts/section_10_17/bd-2kd9/check_report.json",
+    "passed_checks": 53,
+    "failed_checks": 0
+  },
+  "self_test": {
+    "command": "python3 scripts/check_claim_compiler.py --self-test --json",
+    "exit_code": 0,
+    "log_path": "artifacts/section_10_17/bd-2kd9/check_self_test.txt"
+  },
+  "unit_tests": {
+    "command": "python3 -m pytest tests/test_check_claim_compiler.py -v",
+    "exit_code": 0,
+    "log_path": "artifacts/section_10_17/bd-2kd9/unit_tests.txt",
+    "summary": "15 tests passed"
+  },
+  "claim_compiler_contract": {
+    "fail_closed_on_unverifiable_claims": true,
+    "scoreboard_updates_publish_signed_evidence_links": true,
+    "deterministic_btreemap_ordering": true,
+    "schema_versioned_outputs": true,
+    "atomic_scoreboard_updates": true,
+    "sha256_digest_binding": true
+  },
+  "event_codes": 10,
+  "error_codes": 8,
+  "invariants": 7,
+  "rust_unit_tests": 32,
+  "notes": [
+    "External claims compile to executable evidence contracts with fail-closed validation.",
+    "Unverifiable claim text (empty, missing source, no evidence links, bad URIs) is blocked at compile time.",
+    "Scoreboard updates are atomic: partial updates never become visible.",
+    "All scoreboard snapshots carry SHA-256 signed digests for tamper detection.",
+    "BTreeMap ordering ensures deterministic output across platforms.",
+    "Schema version carried on every compiled claim and scoreboard snapshot."
+  ]
+}

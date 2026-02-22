@@ -1,0 +1,51 @@
+{
+  "bead_id": "bd-gad3",
+  "section": "10.17",
+  "title": "Adaptive multi-rail isolation mesh with hot-elevation policy",
+  "status": "pass",
+  "verdict": "PASS",
+  "deliverables": [
+    "docs/specs/section_10_17/bd-gad3_contract.md",
+    "crates/franken-node/src/runtime/isolation_mesh.rs",
+    "scripts/check_isolation_mesh.py",
+    "tests/test_check_isolation_mesh.py",
+    "artifacts/section_10_17/bd-gad3/verification_evidence.json",
+    "artifacts/section_10_17/bd-gad3/verification_summary.md"
+  ],
+  "checker": {
+    "command": "python3 scripts/check_isolation_mesh.py --json",
+    "report_path": "artifacts/section_10_17/bd-gad3/check_report.json"
+  },
+  "self_test": {
+    "command": "python3 scripts/check_isolation_mesh.py --self-test --json",
+    "log_path": "artifacts/section_10_17/bd-gad3/check_self_test.txt"
+  },
+  "unit_tests": {
+    "command": "python3 -m pytest tests/test_check_isolation_mesh.py -v",
+    "log_path": "artifacts/section_10_17/bd-gad3/unit_tests.txt"
+  },
+  "mesh_contract": {
+    "monotonic_elevation_only": true,
+    "demotion_forbidden": true,
+    "policy_continuity_preserved": true,
+    "latency_budget_enforced": true,
+    "deterministic_topology": true,
+    "fail_closed_on_unknown": true
+  },
+  "event_codes": 7,
+  "error_codes": 8,
+  "invariants": 6,
+  "rust_unit_tests": 24,
+  "isolation_levels": [
+    "Shared",
+    "ProcessIsolated",
+    "SandboxIsolated",
+    "HardwareIsolated"
+  ],
+  "notes": [
+    "Multi-rail isolation mesh with four isolation tiers (Shared < ProcessIsolated < SandboxIsolated < HardwareIsolated).",
+    "Hot-elevation supports runtime promotion with monotonic-only constraint and latency budget enforcement.",
+    "Demotion is explicitly forbidden (fail-closed). Policy continuity is preserved across elevation transitions.",
+    "BTreeMap ensures deterministic iteration order for topology and workload state."
+  ]
+}

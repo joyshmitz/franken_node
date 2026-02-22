@@ -1,0 +1,9 @@
+scenario,true_positives,false_negatives,false_positives,recall_pct,precision_pct,recall_ok,precision_ok,threshold_recall,threshold_precision
+pii_external_export,48,2,3,96.00,94.12,true,true,95,90
+secret_cross_boundary,50,0,1,100.00,98.04,true,true,95,90
+internal_to_public_deny_all,30,1,2,96.77,93.75,true,true,95,90
+covert_timing_channel,28,2,4,93.33,87.50,false,false,95,90
+covert_steganographic,35,1,3,97.22,92.11,true,true,95,90
+multi_hop_propagation,45,2,2,95.74,95.74,true,true,95,90
+mixed_taint_merge,40,1,5,97.56,88.89,true,false,95,90
+aggregate_all_scenarios,276,9,20,96.84,93.24,true,true,95,90

@@ -1,0 +1,17 @@
+{
+  "schema_version": "isolation-mesh-v1.0",
+  "bead_id": "bd-gad3",
+  "section": "10.17",
+  "title": "Isolation mesh profile report",
+  "mesh_profile": {
+    "total_rails": 4,
+    "rails": ["standard", "elevated", "high_assurance", "critical"],
+    "hot_elevation_supported": true,
+    "policy_continuity_enforced": true,
+    "budget_bound_enforced": true,
+    "fail_safe_on_error": true
+  },
+  "event_codes": 5,
+  "error_codes": 6,
+  "invariants": 4
+}

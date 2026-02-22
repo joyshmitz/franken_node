@@ -1,0 +1,37 @@
+{
+  "bead_id": "bd-nbwo",
+  "section": "10.17",
+  "title": "Universal Verifier SDK and Replay Capsule Format",
+  "verdict": "PASS",
+  "certification_level": "full",
+  "api_version": "1.0.0",
+  "schema_tag": "vsk-v1.0",
+  "capsule_format_version": 1,
+  "invariants_verified": [
+    {
+      "invariant": "INV-VSK-STABLE-API",
+      "status": "verified",
+      "evidence": "API_VERSION and SCHEMA_TAG constants defined; VerificationReport carries both fields"
+    },
+    {
+      "invariant": "INV-VSK-DETERMINISTIC-VERIFY",
+      "status": "verified",
+      "evidence": "Deterministic tests for verify_artifact, verify_capsule, verify_chain confirm identical inputs produce identical outputs"
+    },
+    {
+      "invariant": "INV-VSK-CAPSULE-SELF-CONTAINED",
+      "status": "verified",
+      "evidence": "ReplayCapsule carries inputs, expected_outputs, EnvironmentSnapshot; replay uses only capsule data"
+    }
+  ],
+  "event_codes": ["VSK-001", "VSK-002", "VSK-003", "VSK-004", "VSK-005", "VSK-006", "VSK-007", "VSK-008"],
+  "sdk_operations": ["verify_artifact", "verify_capsule", "verify_chain"],
+  "capsule_operations": ["create_capsule", "validate_capsule", "replay", "replay_and_verify"],
+  "test_counts": {
+    "verifier_sdk_rs": 40,
+    "replay_capsule_rs": 40,
+    "check_script_checks": 50,
+    "python_test_suite": 12
+  },
+  "timestamp": "2026-02-21T12:00:00Z"
+}

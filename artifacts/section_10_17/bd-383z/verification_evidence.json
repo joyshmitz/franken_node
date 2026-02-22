@@ -1,0 +1,55 @@
+{
+  "bead_id": "bd-383z",
+  "section": "10.17",
+  "title": "Counterfactual incident lab and mitigation synthesis workflow",
+  "status": "pass",
+  "verdict": "PASS",
+  "deliverables": [
+    "docs/specs/section_10_17/bd-383z_contract.md",
+    "crates/franken-node/src/runtime/incident_lab.rs",
+    "scripts/check_incident_lab.py",
+    "tests/test_check_incident_lab.py",
+    "artifacts/10.17/counterfactual_eval_report.json",
+    "artifacts/section_10_17/bd-383z/verification_evidence.json",
+    "artifacts/section_10_17/bd-383z/verification_summary.md"
+  ],
+  "checker": {
+    "command": "python3 scripts/check_incident_lab.py --build-report --json",
+    "exit_code": 0,
+    "report_path": "artifacts/10.17/counterfactual_eval_report.json",
+    "passed_checks": 45,
+    "failed_checks": 0
+  },
+  "self_test": {
+    "command": "python3 scripts/check_incident_lab.py --self-test --json",
+    "exit_code": 0,
+    "log_path": "artifacts/section_10_17/bd-383z/check_self_test.txt"
+  },
+  "unit_tests": {
+    "command": "python3 -m unittest tests/test_check_incident_lab.py",
+    "exit_code": 0,
+    "log_path": "artifacts/section_10_17/bd-383z/unit_tests.txt",
+    "summary": "Ran 17 tests ... OK"
+  },
+  "incident_lab_report": {
+    "path": "artifacts/10.17/counterfactual_eval_report.json",
+    "schema_version": "incident-lab-v1.0",
+    "lab_contract": {
+      "requires_trace_integrity": true,
+      "requires_signed_rollout": true,
+      "rollback_clause_mandatory": true,
+      "deterministic_replay": true,
+      "delta_required_for_promotion": true
+    },
+    "event_codes": 6,
+    "error_codes": 6,
+    "invariants": 5
+  },
+  "notes": [
+    "Incident traces are hash-verified (INV-ILAB-TRACE-INTEGRITY) before any replay.",
+    "Replay is deterministic (INV-ILAB-DETERMINISTIC): same input always yields same digest.",
+    "Promoted mitigations require signed rollout contracts (INV-ILAB-SIGNED-ROLLOUT) with rollback clauses (INV-ILAB-ROLLBACK-ATTACHED).",
+    "No promotion without computed expected-loss delta (INV-ILAB-DELTA-REQUIRED).",
+    "Workspace-level fmt/clippy baseline debt remains outside this bead scope."
+  ]
+}

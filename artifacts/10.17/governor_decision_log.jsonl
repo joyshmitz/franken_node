@@ -1,0 +1,7 @@
+{"sequence":1,"event_code":"GOV_001","decision":"shadow_only","proposal_id":"prop-sample-1","trace_id":"trace-sample-1","evidence_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+{"sequence":2,"event_code":"GOV_002","decision":"shadow_only","proposal_id":"prop-sample-1","trace_id":"trace-sample-1","evidence_hash":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+{"sequence":3,"event_code":"GOV_003","decision":"approved","proposal_id":"prop-sample-1","trace_id":"trace-sample-1","evidence_hash":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
+{"sequence":4,"event_code":"GOV_004","decision":"rejected","proposal_id":"prop-sample-2","trace_id":"trace-sample-2","error_code":"ERR_GOV_NON_BENEFICIAL","evidence_hash":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}
+{"sequence":5,"event_code":"GOV_005","decision":"reverted","proposal_id":"prop-sample-1","trace_id":"trace-sample-1","error_code":"ERR_GOV_ENVELOPE_VIOLATION","evidence_hash":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}
+{"sequence":6,"event_code":"GOV_006","decision":"shadow_only","proposal_id":"envelope-update","trace_id":"trace-envelope","evidence_hash":"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}
+{"sequence":7,"event_code":"GOV_007","decision":"shadow_only","proposal_id":"snapshot","trace_id":"trace-snapshot","evidence_hash":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}

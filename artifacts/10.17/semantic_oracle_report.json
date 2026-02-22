@@ -1,0 +1,254 @@
+{
+  "schema_version": "n-version-oracle-v1.0",
+  "bead_id": "bd-al8i",
+  "section": "10.17",
+  "title": "L2 engine-boundary N-version semantic oracle",
+  "verdict": "PASS",
+  "total": 43,
+  "passed": 43,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "Spec file exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/testing/semantic_oracle_policy.md"
+    },
+    {
+      "check": "Implementation file exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/connector/n_version_oracle.rs"
+    },
+    {
+      "check": "Connector mod file exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/connector/mod.rs"
+    },
+    {
+      "check": "Connector module wired",
+      "passed": true,
+      "detail": "pub mod n_version_oracle; in connector/mod.rs"
+    },
+    {
+      "check": "Oracle test file exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/tests/oracle/n_version_semantic_oracle.rs"
+    },
+    {
+      "check": "Oracle mod file exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/tests/oracle/mod.rs"
+    },
+    {
+      "check": "Divergence matrix exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/10.17/semantic_oracle_divergence_matrix.csv"
+    },
+    {
+      "check": "Impl token 'struct BoundaryDivergence'",
+      "passed": true,
+      "detail": "struct BoundaryDivergence"
+    },
+    {
+      "check": "Impl token 'struct PolicyReceipt'",
+      "passed": true,
+      "detail": "struct PolicyReceipt"
+    },
+    {
+      "check": "Impl token 'enum RiskTier'",
+      "passed": true,
+      "detail": "enum RiskTier"
+    },
+    {
+      "check": "Impl token 'enum ReleaseVerdict'",
+      "passed": true,
+      "detail": "enum ReleaseVerdict"
+    },
+    {
+      "check": "Impl token 'enum ReleaseBlockReason'",
+      "passed": true,
+      "detail": "enum ReleaseBlockReason"
+    },
+    {
+      "check": "Impl token 'fn classify_divergence'",
+      "passed": true,
+      "detail": "fn classify_divergence"
+    },
+    {
+      "check": "Impl token 'fn run_harness'",
+      "passed": true,
+      "detail": "fn run_harness"
+    },
+    {
+      "check": "Impl token 'struct HarnessConfig'",
+      "passed": true,
+      "detail": "struct HarnessConfig"
+    },
+    {
+      "check": "Impl token 'struct BoundarySample'",
+      "passed": true,
+      "detail": "struct BoundarySample"
+    },
+    {
+      "check": "Impl token 'struct OracleResult'",
+      "passed": true,
+      "detail": "struct OracleResult"
+    },
+    {
+      "check": "Impl token 'struct OracleStats'",
+      "passed": true,
+      "detail": "struct OracleStats"
+    },
+    {
+      "check": "Impl token 'struct ReferenceRuntime'",
+      "passed": true,
+      "detail": "struct ReferenceRuntime"
+    },
+    {
+      "check": "Impl token 'RiskTier::High'",
+      "passed": true,
+      "detail": "RiskTier::High"
+    },
+    {
+      "check": "Impl token 'RiskTier::Medium'",
+      "passed": true,
+      "detail": "RiskTier::Medium"
+    },
+    {
+      "check": "Impl token 'RiskTier::Low'",
+      "passed": true,
+      "detail": "RiskTier::Low"
+    },
+    {
+      "check": "Impl token 'ReleaseVerdict::Passed'",
+      "passed": true,
+      "detail": "ReleaseVerdict::Passed"
+    },
+    {
+      "check": "Impl token 'ReleaseVerdict::Blocked'",
+      "passed": true,
+      "detail": "ReleaseVerdict::Blocked"
+    },
+    {
+      "check": "Event code ORACLE_HARNESS_START",
+      "passed": true,
+      "detail": "ORACLE_HARNESS_START"
+    },
+    {
+      "check": "Event code ORACLE_DIVERGENCE_CLASSIFIED",
+      "passed": true,
+      "detail": "ORACLE_DIVERGENCE_CLASSIFIED"
+    },
+    {
+      "check": "Event code ORACLE_RISK_TIER_ASSIGNED",
+      "passed": true,
+      "detail": "ORACLE_RISK_TIER_ASSIGNED"
+    },
+    {
+      "check": "Event code ORACLE_RELEASE_BLOCKED",
+      "passed": true,
+      "detail": "ORACLE_RELEASE_BLOCKED"
+    },
+    {
+      "check": "Event code ORACLE_POLICY_RECEIPT_ISSUED",
+      "passed": true,
+      "detail": "ORACLE_POLICY_RECEIPT_ISSUED"
+    },
+    {
+      "check": "Error code ERR_ORACLE_HIGH_RISK_DELTA",
+      "passed": true,
+      "detail": "ERR_ORACLE_HIGH_RISK_DELTA"
+    },
+    {
+      "check": "Error code ERR_ORACLE_MISSING_RECEIPT",
+      "passed": true,
+      "detail": "ERR_ORACLE_MISSING_RECEIPT"
+    },
+    {
+      "check": "Error code ERR_ORACLE_HARNESS_TIMEOUT",
+      "passed": true,
+      "detail": "ERR_ORACLE_HARNESS_TIMEOUT"
+    },
+    {
+      "check": "Error code ERR_ORACLE_REFERENCE_UNAVAILABLE",
+      "passed": true,
+      "detail": "ERR_ORACLE_REFERENCE_UNAVAILABLE"
+    },
+    {
+      "check": "Error code ERR_ORACLE_CLASSIFICATION_AMBIGUOUS",
+      "passed": true,
+      "detail": "ERR_ORACLE_CLASSIFICATION_AMBIGUOUS"
+    },
+    {
+      "check": "Error code ERR_ORACLE_L1_LINK_BROKEN",
+      "passed": true,
+      "detail": "ERR_ORACLE_L1_LINK_BROKEN"
+    },
+    {
+      "check": "Invariant INV-ORACLE-HIGH-RISK-BLOCKS",
+      "passed": true,
+      "detail": "INV-ORACLE-HIGH-RISK-BLOCKS"
+    },
+    {
+      "check": "Invariant INV-ORACLE-LOW-RISK-RECEIPTED",
+      "passed": true,
+      "detail": "INV-ORACLE-LOW-RISK-RECEIPTED"
+    },
+    {
+      "check": "Invariant INV-ORACLE-DETERMINISTIC-CLASSIFICATION",
+      "passed": true,
+      "detail": "INV-ORACLE-DETERMINISTIC-CLASSIFICATION"
+    },
+    {
+      "check": "Invariant INV-ORACLE-L1-LINKAGE",
+      "passed": true,
+      "detail": "INV-ORACLE-L1-LINKAGE"
+    },
+    {
+      "check": "Rust unit tests >= 8",
+      "passed": true,
+      "detail": "found 11"
+    },
+    {
+      "check": "Python checker unit test exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/tests/test_check_semantic_oracle.py"
+    },
+    {
+      "check": "Divergence matrix has header + data",
+      "passed": true,
+      "detail": "5 lines"
+    },
+    {
+      "check": "Matrix header has risk_tier column",
+      "passed": true,
+      "detail": "divergence_id,boundary_name,franken_engine_digest,reference_digest,reference_run"
+    }
+  ],
+  "event_codes": [
+    "ORACLE_HARNESS_START",
+    "ORACLE_DIVERGENCE_CLASSIFIED",
+    "ORACLE_RISK_TIER_ASSIGNED",
+    "ORACLE_RELEASE_BLOCKED",
+    "ORACLE_POLICY_RECEIPT_ISSUED"
+  ],
+  "error_codes": [
+    "ERR_ORACLE_HIGH_RISK_DELTA",
+    "ERR_ORACLE_MISSING_RECEIPT",
+    "ERR_ORACLE_HARNESS_TIMEOUT",
+    "ERR_ORACLE_REFERENCE_UNAVAILABLE",
+    "ERR_ORACLE_CLASSIFICATION_AMBIGUOUS",
+    "ERR_ORACLE_L1_LINK_BROKEN"
+  ],
+  "invariants": [
+    "INV-ORACLE-HIGH-RISK-BLOCKS",
+    "INV-ORACLE-LOW-RISK-RECEIPTED",
+    "INV-ORACLE-DETERMINISTIC-CLASSIFICATION",
+    "INV-ORACLE-L1-LINKAGE"
+  ],
+  "divergence_contract": {
+    "high_risk_blocks_release": true,
+    "low_risk_requires_receipt": true,
+    "receipts_link_l1_oracle": true,
+    "classification_is_deterministic": true
+  }
+}

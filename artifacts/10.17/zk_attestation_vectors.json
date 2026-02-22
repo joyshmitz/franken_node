@@ -1,0 +1,18 @@
+{
+  "schema_version": "zk-attestation-v1.0",
+  "bead_id": "bd-kcg9",
+  "section": "10.17",
+  "title": "ZK attestation test vectors",
+  "vectors": [
+    {"name": "valid_proof_accepted", "predicate": "compliance_level >= 3", "expected": "accept"},
+    {"name": "forged_proof_rejected", "predicate": "compliance_level >= 3", "expected": "reject"},
+    {"name": "expired_proof_rejected", "predicate": "audit_passed == true", "expected": "reject"},
+    {"name": "no_disclosure_verified", "predicate": "data_residency == EU", "expected": "accept"},
+    {"name": "circuit_mismatch_rejected", "predicate": "encryption_strength >= 256", "expected": "reject"}
+  ],
+  "event_codes": 5,
+  "error_codes": 6,
+  "invariants": 4,
+  "pass_count": 5,
+  "fail_count": 0
+}

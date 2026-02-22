@@ -1,0 +1,249 @@
+{
+  "schema_version": "capability-artifact-v1.0",
+  "bead_id": "bd-3ku8",
+  "section": "10.17",
+  "title": "Capability-carrying extension artifact format",
+  "verdict": "PASS",
+  "total": 42,
+  "passed": 42,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "Spec file exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/capability_artifact_format.md"
+    },
+    {
+      "check": "Implementation file exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/extensions/artifact_contract.rs"
+    },
+    {
+      "check": "Extensions mod file exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/extensions/mod.rs"
+    },
+    {
+      "check": "Main module wired",
+      "passed": true,
+      "detail": "pub mod extensions; in main.rs"
+    },
+    {
+      "check": "Extensions mod exports artifact_contract",
+      "passed": true,
+      "detail": "pub mod artifact_contract; in extensions/mod.rs"
+    },
+    {
+      "check": "Impl token 'struct CapabilityEntry'",
+      "passed": true,
+      "detail": "struct CapabilityEntry"
+    },
+    {
+      "check": "Impl token 'struct CapabilityContract'",
+      "passed": true,
+      "detail": "struct CapabilityContract"
+    },
+    {
+      "check": "Impl token 'struct ExtensionArtifact'",
+      "passed": true,
+      "detail": "struct ExtensionArtifact"
+    },
+    {
+      "check": "Impl token 'struct AdmissionConfig'",
+      "passed": true,
+      "detail": "struct AdmissionConfig"
+    },
+    {
+      "check": "Impl token 'struct AdmissionGate'",
+      "passed": true,
+      "detail": "struct AdmissionGate"
+    },
+    {
+      "check": "Impl token 'struct EnforcementEngine'",
+      "passed": true,
+      "detail": "struct EnforcementEngine"
+    },
+    {
+      "check": "Impl token 'enum AdmissionOutcome'",
+      "passed": true,
+      "detail": "enum AdmissionOutcome"
+    },
+    {
+      "check": "Impl token 'enum AdmissionDenialReason'",
+      "passed": true,
+      "detail": "enum AdmissionDenialReason"
+    },
+    {
+      "check": "Impl token 'enum DriftCheckResult'",
+      "passed": true,
+      "detail": "enum DriftCheckResult"
+    },
+    {
+      "check": "Impl token 'fn evaluate'",
+      "passed": true,
+      "detail": "fn evaluate"
+    },
+    {
+      "check": "Impl token 'fn is_permitted'",
+      "passed": true,
+      "detail": "fn is_permitted"
+    },
+    {
+      "check": "Impl token 'fn check_drift'",
+      "passed": true,
+      "detail": "fn check_drift"
+    },
+    {
+      "check": "Impl token 'fn verify_contract_signature'",
+      "passed": true,
+      "detail": "fn verify_contract_signature"
+    },
+    {
+      "check": "Impl token 'fn make_contract'",
+      "passed": true,
+      "detail": "fn make_contract"
+    },
+    {
+      "check": "Impl token 'fn make_artifact'",
+      "passed": true,
+      "detail": "fn make_artifact"
+    },
+    {
+      "check": "Impl token 'AdmissionOutcome::Accepted'",
+      "passed": true,
+      "detail": "AdmissionOutcome::Accepted"
+    },
+    {
+      "check": "Impl token 'AdmissionOutcome::Denied'",
+      "passed": true,
+      "detail": "AdmissionOutcome::Denied"
+    },
+    {
+      "check": "Impl token 'DriftCheckResult::NoDrift'",
+      "passed": true,
+      "detail": "DriftCheckResult::NoDrift"
+    },
+    {
+      "check": "Impl token 'DriftCheckResult::DriftDetected'",
+      "passed": true,
+      "detail": "DriftCheckResult::DriftDetected"
+    },
+    {
+      "check": "Event code ARTIFACT_ADMISSION_START",
+      "passed": true,
+      "detail": "ARTIFACT_ADMISSION_START"
+    },
+    {
+      "check": "Event code ARTIFACT_CAPABILITY_VALIDATED",
+      "passed": true,
+      "detail": "ARTIFACT_CAPABILITY_VALIDATED"
+    },
+    {
+      "check": "Event code ARTIFACT_ADMISSION_ACCEPTED",
+      "passed": true,
+      "detail": "ARTIFACT_ADMISSION_ACCEPTED"
+    },
+    {
+      "check": "Event code ARTIFACT_ENFORCEMENT_CHECK",
+      "passed": true,
+      "detail": "ARTIFACT_ENFORCEMENT_CHECK"
+    },
+    {
+      "check": "Event code ARTIFACT_DRIFT_DETECTED",
+      "passed": true,
+      "detail": "ARTIFACT_DRIFT_DETECTED"
+    },
+    {
+      "check": "Error code ERR_ARTIFACT_MISSING_CONTRACT",
+      "passed": true,
+      "detail": "ERR_ARTIFACT_MISSING_CONTRACT"
+    },
+    {
+      "check": "Error code ERR_ARTIFACT_INVALID_CAPABILITY",
+      "passed": true,
+      "detail": "ERR_ARTIFACT_INVALID_CAPABILITY"
+    },
+    {
+      "check": "Error code ERR_ARTIFACT_SIGNATURE_INVALID",
+      "passed": true,
+      "detail": "ERR_ARTIFACT_SIGNATURE_INVALID"
+    },
+    {
+      "check": "Error code ERR_ARTIFACT_SCHEMA_MISMATCH",
+      "passed": true,
+      "detail": "ERR_ARTIFACT_SCHEMA_MISMATCH"
+    },
+    {
+      "check": "Error code ERR_ARTIFACT_ENFORCEMENT_DRIFT",
+      "passed": true,
+      "detail": "ERR_ARTIFACT_ENFORCEMENT_DRIFT"
+    },
+    {
+      "check": "Error code ERR_ARTIFACT_ADMISSION_DENIED",
+      "passed": true,
+      "detail": "ERR_ARTIFACT_ADMISSION_DENIED"
+    },
+    {
+      "check": "Invariant INV-ARTIFACT-FAIL-CLOSED",
+      "passed": true,
+      "detail": "INV-ARTIFACT-FAIL-CLOSED"
+    },
+    {
+      "check": "Invariant INV-ARTIFACT-CAPABILITY-ENVELOPE",
+      "passed": true,
+      "detail": "INV-ARTIFACT-CAPABILITY-ENVELOPE"
+    },
+    {
+      "check": "Invariant INV-ARTIFACT-NO-DRIFT",
+      "passed": true,
+      "detail": "INV-ARTIFACT-NO-DRIFT"
+    },
+    {
+      "check": "Invariant INV-ARTIFACT-SIGNED-CONTRACT",
+      "passed": true,
+      "detail": "INV-ARTIFACT-SIGNED-CONTRACT"
+    },
+    {
+      "check": "Rust unit tests >= 8",
+      "passed": true,
+      "detail": "found 15"
+    },
+    {
+      "check": "Conformance test exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/tests/conformance/capability_artifact_admission.rs"
+    },
+    {
+      "check": "Python checker unit test exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/tests/test_check_capability_artifact_format.py"
+    }
+  ],
+  "event_codes": [
+    "ARTIFACT_ADMISSION_START",
+    "ARTIFACT_CAPABILITY_VALIDATED",
+    "ARTIFACT_ADMISSION_ACCEPTED",
+    "ARTIFACT_ENFORCEMENT_CHECK",
+    "ARTIFACT_DRIFT_DETECTED"
+  ],
+  "error_codes": [
+    "ERR_ARTIFACT_MISSING_CONTRACT",
+    "ERR_ARTIFACT_INVALID_CAPABILITY",
+    "ERR_ARTIFACT_SIGNATURE_INVALID",
+    "ERR_ARTIFACT_SCHEMA_MISMATCH",
+    "ERR_ARTIFACT_ENFORCEMENT_DRIFT",
+    "ERR_ARTIFACT_ADMISSION_DENIED"
+  ],
+  "invariants": [
+    "INV-ARTIFACT-FAIL-CLOSED",
+    "INV-ARTIFACT-CAPABILITY-ENVELOPE",
+    "INV-ARTIFACT-NO-DRIFT",
+    "INV-ARTIFACT-SIGNED-CONTRACT"
+  ],
+  "artifact_contract": {
+    "fail_closed_on_missing": true,
+    "fail_closed_on_invalid": true,
+    "enforcement_matches_envelope": true,
+    "no_drift_permitted": true
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "bead_id": "bd-2iyk",
+  "section": "10.17",
+  "title": "Information-flow lineage and exfiltration sentinel",
+  "status": "pass",
+  "verdict": "PASS",
+  "deliverables": [
+    "docs/specs/section_10_17/bd-2iyk_contract.md",
+    "crates/franken-node/src/security/lineage_tracker.rs",
+    "scripts/check_info_flow_lineage.py",
+    "tests/test_check_info_flow_lineage.py",
+    "artifacts/section_10_17/bd-2iyk/verification_evidence.json",
+    "artifacts/section_10_17/bd-2iyk/verification_summary.md"
+  ],
+  "checker": {
+    "command": "python3 scripts/check_info_flow_lineage.py --json",
+    "exit_code": 0,
+    "passed_checks": 92,
+    "failed_checks": 0
+  },
+  "self_test": {
+    "command": "python3 scripts/check_info_flow_lineage.py --self-test",
+    "exit_code": 0
+  },
+  "unit_tests": {
+    "command": "python3 -m pytest tests/test_check_info_flow_lineage.py -v",
+    "exit_code": 0,
+    "summary": "All tests passed"
+  },
+  "rust_unit_tests": {
+    "inline_test_count": 34,
+    "module": "security::lineage_tracker::tests"
+  },
+  "implementation_summary": {
+    "types": 12,
+    "methods": 12,
+    "event_codes": 12,
+    "error_codes": 10,
+    "invariants": 6,
+    "schema_version": "ifl-v1.0"
+  },
+  "acceptance_criteria_coverage": {
+    "taint_label_assignment": true,
+    "flow_edge_lineage": true,
+    "exfiltration_sentinel_detection": true,
+    "auto_containment_quarantine": true,
+    "containment_receipt_generation": true,
+    "deterministic_btreemap_ordering": true,
+    "lineage_snapshot_export": true,
+    "subgraph_query": true,
+    "invariant_verification_module": true
+  },
+  "notes": [
+    "34 inline Rust unit tests covering all core types, methods, error paths, and invariant verifiers.",
+    "Exfiltration sentinel evaluates flow edges against taint boundaries with auto-quarantine and receipt generation.",
+    "Invariants module provides verification functions for label persistence, append-only edges, quarantine receipts, determinism, boundary enforcement, and snapshot faithfulness.",
+    "BTreeMap/BTreeSet used throughout for deterministic ordering.",
+    "Bead is blocked by bd-3l2p (intent-aware remote effects firewall) -- implementation is complete and verified independently."
+  ]
+}

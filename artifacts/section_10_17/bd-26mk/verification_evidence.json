@@ -1,0 +1,61 @@
+{
+  "bead_id": "bd-26mk",
+  "section": "10.17",
+  "title": "Security Staking and Slashing Framework for Publisher Trust Governance",
+  "status": "pass",
+  "verdict": "PASS",
+  "deliverables": [
+    "docs/specs/section_10_17/bd-26mk_contract.md",
+    "crates/franken-node/src/security/staking_governance.rs",
+    "scripts/check_staking_slashing.py",
+    "tests/test_check_staking_slashing.py",
+    "artifacts/section_10_17/bd-26mk/verification_evidence.json",
+    "artifacts/section_10_17/bd-26mk/verification_summary.md"
+  ],
+  "checker": {
+    "command": "python3 scripts/check_staking_slashing.py --json",
+    "report_path": "artifacts/section_10_17/bd-26mk/check_report.json"
+  },
+  "self_test": {
+    "command": "python3 scripts/check_staking_slashing.py --self-test"
+  },
+  "unit_tests": {
+    "command": "python3 -m pytest tests/test_check_staking_slashing.py -v"
+  },
+  "implementation": {
+    "module": "crates/franken-node/src/security/staking_governance.rs",
+    "schema_version": "staking-v1.0",
+    "core_types": [
+      "StakeId",
+      "StakeRecord",
+      "StakeState",
+      "StakePolicy",
+      "SlashEvent",
+      "AppealRecord",
+      "AppealOutcome",
+      "RiskTier",
+      "TrustGovernanceState",
+      "SlashEvidence",
+      "StakingAuditEntry",
+      "CapabilityStakeGate"
+    ],
+    "event_codes": 7,
+    "error_codes": 7,
+    "invariants": 6,
+    "methods": 13,
+    "inline_tests": 28
+  },
+  "risk_tier_policy": {
+    "critical": {"minimum_stake": 1000, "slash_fraction_pct": 100, "cooldown_hrs": 72, "appeal_window_hrs": 48},
+    "high": {"minimum_stake": 500, "slash_fraction_pct": 50, "cooldown_hrs": 48, "appeal_window_hrs": 36},
+    "medium": {"minimum_stake": 100, "slash_fraction_pct": 25, "cooldown_hrs": 24, "appeal_window_hrs": 24},
+    "low": {"minimum_stake": 10, "slash_fraction_pct": 10, "cooldown_hrs": 12, "appeal_window_hrs": 12}
+  },
+  "notes": [
+    "Staking governance enforces stake policy gates for high-risk capabilities.",
+    "Validated malicious behaviour triggers deterministic slashing with appeal/audit trail.",
+    "BTreeMap used throughout for deterministic ordering and replay safety.",
+    "All state transitions produce StakingAuditEntry records (INV-STAKE-AUDIT-COMPLETE).",
+    "Double-slash prevention via evidence hash tracking (INV-STAKE-NO-DOUBLE-SLASH)."
+  ]
+}

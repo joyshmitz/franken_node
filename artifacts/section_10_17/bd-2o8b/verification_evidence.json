@@ -1,0 +1,63 @@
+{
+  "bead_id": "bd-2o8b",
+  "section": "10.17",
+  "title": "Heterogeneous hardware planner with policy-evidenced placements",
+  "generated_at": "2026-02-22T05:30:00Z",
+  "status": "completed",
+  "verdict": "PASS",
+  "gate_script": "scripts/check_hardware_planner.py",
+  "test_suite": "tests/test_check_hardware_planner.py",
+  "checks": [
+    {
+      "name": "implementation_surface_present",
+      "command": "test -f crates/franken-node/src/runtime/hardware_planner.rs && test -f docs/specs/section_10_17/bd-2o8b_contract.md",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "gate_script_json",
+      "command": "python3 scripts/check_hardware_planner.py --json",
+      "exit_code": 0,
+      "status": "PASS",
+      "output_path": "artifacts/section_10_17/bd-2o8b/check_report.json"
+    },
+    {
+      "name": "gate_script_self_test",
+      "command": "python3 scripts/check_hardware_planner.py --self-test",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "pytest_gate_tests",
+      "command": "python3 -m pytest tests/test_check_hardware_planner.py -v",
+      "exit_code": 0,
+      "status": "PASS"
+    }
+  ],
+  "contract_surface": {
+    "implementation": "crates/franken-node/src/runtime/hardware_planner.rs",
+    "module_wire": "crates/franken-node/src/runtime/mod.rs",
+    "spec": "docs/specs/section_10_17/bd-2o8b_contract.md",
+    "gate_script": "scripts/check_hardware_planner.py",
+    "gate_tests": "tests/test_check_hardware_planner.py"
+  },
+  "capabilities_verified": [
+    "HardwarePlanner struct with register_profile, register_policy, request_placement, dispatch",
+    "HardwareProfile struct with capability/risk/capacity attributes",
+    "PlacementPolicy struct with preference rules and risk tolerance",
+    "PlacementDecision struct with PolicyEvidence chain",
+    "PolicyEvidence struct with reasoning chain, rejections, fallback info",
+    "PlacementOutcome enum (6 variants: placed, fallback, and 4 rejection types)",
+    "WorkloadRequest struct with required capabilities and risk tolerance",
+    "DispatchToken struct for gated dispatch through approved interfaces",
+    "12 event codes HWP-001 through HWP-012",
+    "10 error codes for all failure modes",
+    "8 invariant constants (INV-HWP-*)",
+    "Schema version hwp-v1.0",
+    "BTreeMap/BTreeSet for deterministic ordering throughout",
+    "Fallback path with risk relaxation on contention",
+    "Dispatch gating through approved runtime/engine interfaces",
+    "Serde derives on all types",
+    "30+ unit tests covering all error paths and invariants"
+  ]
+}

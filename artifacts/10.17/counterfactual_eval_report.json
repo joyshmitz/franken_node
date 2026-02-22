@@ -1,0 +1,260 @@
+{
+  "schema_version": "incident-lab-v1.0",
+  "bead_id": "bd-383z",
+  "section": "10.17",
+  "title": "Counterfactual incident lab and mitigation synthesis",
+  "verdict": "PASS",
+  "total": 45,
+  "passed": 45,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "Spec file exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_17/bd-383z_contract.md"
+    },
+    {
+      "check": "Implementation file exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/crates/franken-node/src/runtime/incident_lab.rs"
+    },
+    {
+      "check": "Runtime module wired",
+      "passed": true,
+      "detail": "pub mod incident_lab; in runtime/mod.rs"
+    },
+    {
+      "check": "Impl token 'struct IncidentTrace'",
+      "passed": true,
+      "detail": "struct IncidentTrace"
+    },
+    {
+      "check": "Impl token 'struct CounterfactualScenario'",
+      "passed": true,
+      "detail": "struct CounterfactualScenario"
+    },
+    {
+      "check": "Impl token 'struct MitigationPlan'",
+      "passed": true,
+      "detail": "struct MitigationPlan"
+    },
+    {
+      "check": "Impl token 'struct IncidentReplay'",
+      "passed": true,
+      "detail": "struct IncidentReplay"
+    },
+    {
+      "check": "Impl token 'struct SynthesisResult'",
+      "passed": true,
+      "detail": "struct SynthesisResult"
+    },
+    {
+      "check": "Impl token 'struct RolloutContract'",
+      "passed": true,
+      "detail": "struct RolloutContract"
+    },
+    {
+      "check": "Impl token 'struct RollbackClause'",
+      "passed": true,
+      "detail": "struct RollbackClause"
+    },
+    {
+      "check": "Impl token 'struct IncidentLab'",
+      "passed": true,
+      "detail": "struct IncidentLab"
+    },
+    {
+      "check": "Impl token 'struct LabConfig'",
+      "passed": true,
+      "detail": "struct LabConfig"
+    },
+    {
+      "check": "Impl token 'struct LabError'",
+      "passed": true,
+      "detail": "struct LabError"
+    },
+    {
+      "check": "Impl token 'fn replay_trace'",
+      "passed": true,
+      "detail": "fn replay_trace"
+    },
+    {
+      "check": "Impl token 'fn compute_delta'",
+      "passed": true,
+      "detail": "fn compute_delta"
+    },
+    {
+      "check": "Impl token 'fn generate_rollout_contract'",
+      "passed": true,
+      "detail": "fn generate_rollout_contract"
+    },
+    {
+      "check": "Impl token 'fn evaluate_scenario'",
+      "passed": true,
+      "detail": "fn evaluate_scenario"
+    },
+    {
+      "check": "Impl token 'fn validate_trace'",
+      "passed": true,
+      "detail": "fn validate_trace"
+    },
+    {
+      "check": "Impl token 'fn validate_mitigation'",
+      "passed": true,
+      "detail": "fn validate_mitigation"
+    },
+    {
+      "check": "Impl token 'fn verify_deterministic_replay'",
+      "passed": true,
+      "detail": "fn verify_deterministic_replay"
+    },
+    {
+      "check": "Impl token 'fn compute_trace_hash'",
+      "passed": true,
+      "detail": "fn compute_trace_hash"
+    },
+    {
+      "check": "Impl token 'BTreeMap'",
+      "passed": true,
+      "detail": "BTreeMap"
+    },
+    {
+      "check": "Impl token 'SCHEMA_VERSION'",
+      "passed": true,
+      "detail": "SCHEMA_VERSION"
+    },
+    {
+      "check": "Event code ILAB_001",
+      "passed": true,
+      "detail": "ILAB_001"
+    },
+    {
+      "check": "Event code ILAB_002",
+      "passed": true,
+      "detail": "ILAB_002"
+    },
+    {
+      "check": "Event code ILAB_003",
+      "passed": true,
+      "detail": "ILAB_003"
+    },
+    {
+      "check": "Event code ILAB_004",
+      "passed": true,
+      "detail": "ILAB_004"
+    },
+    {
+      "check": "Event code ILAB_005",
+      "passed": true,
+      "detail": "ILAB_005"
+    },
+    {
+      "check": "Event code ILAB_006",
+      "passed": true,
+      "detail": "ILAB_006"
+    },
+    {
+      "check": "Error code ERR_ILAB_TRACE_EMPTY",
+      "passed": true,
+      "detail": "ERR_ILAB_TRACE_EMPTY"
+    },
+    {
+      "check": "Error code ERR_ILAB_TRACE_CORRUPT",
+      "passed": true,
+      "detail": "ERR_ILAB_TRACE_CORRUPT"
+    },
+    {
+      "check": "Error code ERR_ILAB_REPLAY_DIVERGENCE",
+      "passed": true,
+      "detail": "ERR_ILAB_REPLAY_DIVERGENCE"
+    },
+    {
+      "check": "Error code ERR_ILAB_MITIGATION_INVALID",
+      "passed": true,
+      "detail": "ERR_ILAB_MITIGATION_INVALID"
+    },
+    {
+      "check": "Error code ERR_ILAB_DELTA_NEGATIVE",
+      "passed": true,
+      "detail": "ERR_ILAB_DELTA_NEGATIVE"
+    },
+    {
+      "check": "Error code ERR_ILAB_CONTRACT_UNSIGNED",
+      "passed": true,
+      "detail": "ERR_ILAB_CONTRACT_UNSIGNED"
+    },
+    {
+      "check": "Invariant INV-ILAB-DETERMINISTIC",
+      "passed": true,
+      "detail": "INV-ILAB-DETERMINISTIC"
+    },
+    {
+      "check": "Invariant INV-ILAB-DELTA-REQUIRED",
+      "passed": true,
+      "detail": "INV-ILAB-DELTA-REQUIRED"
+    },
+    {
+      "check": "Invariant INV-ILAB-SIGNED-ROLLOUT",
+      "passed": true,
+      "detail": "INV-ILAB-SIGNED-ROLLOUT"
+    },
+    {
+      "check": "Invariant INV-ILAB-ROLLBACK-ATTACHED",
+      "passed": true,
+      "detail": "INV-ILAB-ROLLBACK-ATTACHED"
+    },
+    {
+      "check": "Invariant INV-ILAB-TRACE-INTEGRITY",
+      "passed": true,
+      "detail": "INV-ILAB-TRACE-INTEGRITY"
+    },
+    {
+      "check": "Rust unit tests >= 20",
+      "passed": true,
+      "detail": "found 28"
+    },
+    {
+      "check": "Python checker unit test exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/tests/test_check_incident_lab.py"
+    },
+    {
+      "check": "Verification evidence exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_17/bd-383z/verification_evidence.json"
+    },
+    {
+      "check": "Verification summary exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/artifacts/section_10_17/bd-383z/verification_summary.md"
+    },
+    {
+      "check": "Evidence verdict is PASS",
+      "passed": true,
+      "detail": "PASS"
+    }
+  ],
+  "event_codes": [
+    "ILAB_001",
+    "ILAB_002",
+    "ILAB_003",
+    "ILAB_004",
+    "ILAB_005",
+    "ILAB_006"
+  ],
+  "error_codes": [
+    "ERR_ILAB_TRACE_EMPTY",
+    "ERR_ILAB_TRACE_CORRUPT",
+    "ERR_ILAB_REPLAY_DIVERGENCE",
+    "ERR_ILAB_MITIGATION_INVALID",
+    "ERR_ILAB_DELTA_NEGATIVE",
+    "ERR_ILAB_CONTRACT_UNSIGNED"
+  ],
+  "invariants": [
+    "INV-ILAB-DETERMINISTIC",
+    "INV-ILAB-DELTA-REQUIRED",
+    "INV-ILAB-SIGNED-ROLLOUT",
+    "INV-ILAB-ROLLBACK-ATTACHED",
+    "INV-ILAB-TRACE-INTEGRITY"
+  ]
+}

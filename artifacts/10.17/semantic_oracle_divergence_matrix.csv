@@ -1,0 +1,5 @@
+divergence_id,boundary_name,franken_engine_digest,reference_digest,reference_runtime_id,reference_version,risk_tier,classification_reason,receipt_id,l1_link,status
+div-0001,boundary::state_transition,a1b2c3d4,e5f6a7b8,ref-substrate-v1,1.0.0,high,digest mismatch: all references agree,,, blocked
+div-0002,boundary::event_encoding,9c8d7e6f,1a2b3c4d,ref-substrate-v1,1.0.0,high,digest mismatch: all references agree,,, blocked
+div-0003,boundary::ordering_hint,f0e1d2c3,a4b5c6d7,ref-substrate-v1,1.0.0,medium,single reference disagrees,rcpt-001,https://l1-oracle.example/result/42,receipted
+div-0004,boundary::metadata_format,0011aabb,ccdd0011,ref-alternative-v2,2.1.0,medium,references disagree among themselves,rcpt-002,https://l1-oracle.example/result/43,receipted

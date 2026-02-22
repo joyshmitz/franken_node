@@ -1,0 +1,53 @@
+{
+  "bead_id": "bd-1xbc",
+  "section": "10.17",
+  "title": "Deterministic time-travel runtime capture/replay for extension-host workflows",
+  "verdict": "PASS",
+  "schema_version": "evidence-v1.0",
+  "timestamp": "2026-02-21T00:00:00Z",
+  "agent": "CrimsonCrane",
+  "deliverables": {
+    "spec_contract": "docs/specs/section_10_17/bd-1xbc_contract.md",
+    "rust_module": "crates/franken-node/src/runtime/time_travel.rs",
+    "module_wiring": "crates/franken-node/src/runtime/mod.rs",
+    "check_script": "scripts/check_time_travel_replay.py",
+    "test_suite": "tests/test_check_time_travel_replay.py",
+    "verification_evidence": "artifacts/section_10_17/bd-1xbc/verification_evidence.json",
+    "verification_summary": "artifacts/section_10_17/bd-1xbc/verification_summary.md"
+  },
+  "invariants": [
+    "INV-TTR-DETERMINISTIC",
+    "INV-TTR-FRAME-COMPLETE",
+    "INV-TTR-CLOCK-MONOTONIC",
+    "INV-TTR-DIVERGENCE-DETECTED",
+    "INV-TTR-SNAPSHOT-SCHEMA",
+    "INV-TTR-STEP-NAVIGATION"
+  ],
+  "event_codes": [
+    "TTR_001", "TTR_002", "TTR_003", "TTR_004", "TTR_005",
+    "TTR_006", "TTR_007", "TTR_008", "TTR_009", "TTR_010"
+  ],
+  "error_codes": [
+    "ERR_TTR_EMPTY_TRACE",
+    "ERR_TTR_DIVERGENCE",
+    "ERR_TTR_CLOCK_REGRESSION",
+    "ERR_TTR_STEP_OUT_OF_BOUNDS",
+    "ERR_TTR_SNAPSHOT_CORRUPT",
+    "ERR_TTR_SEED_MISMATCH"
+  ],
+  "acceptance_criteria": {
+    "byte_for_byte_replay": "PASS - identical seed+input produces identical decision digests across capture runs; replay session verifies all frames",
+    "stepwise_navigation": "PASS - ReplaySession supports step_forward, step_backward, and jump_to with boundary enforcement",
+    "divergence_explanation": "PASS - verify_decision produces DivergenceExplanation with frame_index, clock_tick, expected/actual digest, and human-readable explanation",
+    "unit_tests_ge_20": "PASS - 30 inline #[test] functions covering all invariants, error codes, and edge cases",
+    "event_codes_complete": "PASS - TTR_001..TTR_010 all present as constants",
+    "error_codes_complete": "PASS - all 6 ERR_TTR_* codes present as constants",
+    "btreemap_deterministic": "PASS - BTreeMap used for all map types",
+    "schema_version": "PASS - ttr-v1.0 constant defined"
+  },
+  "checks_summary": {
+    "total": 30,
+    "passing": 30,
+    "failing": 0
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "bead_id": "bd-al8i",
+  "section": "10.17",
+  "title": "L2 Engine-Boundary N-Version Semantic Oracle",
+  "schema_version": "evidence-v1.0",
+  "verdict": "PASS",
+  "timestamp": "2026-02-21T00:00:00Z",
+  "agent": "CrimsonCrane",
+  "artifacts": {
+    "spec_contract": "docs/specs/section_10_17/bd-al8i_contract.md",
+    "source_module": "crates/franken-node/src/runtime/nversion_oracle.rs",
+    "module_wiring": "crates/franken-node/src/runtime/mod.rs",
+    "check_script": "scripts/check_nversion_oracle.py",
+    "test_suite": "tests/test_check_nversion_oracle.py",
+    "verification_evidence": "artifacts/section_10_17/bd-al8i/verification_evidence.json",
+    "verification_summary": "artifacts/section_10_17/bd-al8i/verification_summary.md"
+  },
+  "acceptance_criteria": [
+    {
+      "criterion": "Differential harness classifies boundary divergences by risk tier",
+      "met": true,
+      "evidence": "RiskTier enum (Critical, High, Medium, Low, Info) with classify_divergence method"
+    },
+    {
+      "criterion": "Blocks release on high-risk unresolved deltas",
+      "met": true,
+      "evidence": "check_release_gate returns BlockRelease for High/Critical unresolved divergences (INV-NVO-BLOCK-HIGH)"
+    },
+    {
+      "criterion": "Low-risk deltas require explicit policy receipts",
+      "met": true,
+      "evidence": "issue_policy_receipt enforces Low risk only, requires L1LinkageProof (INV-NVO-POLICY-RECEIPT)"
+    },
+    {
+      "criterion": "Policy receipts link back to L1 product-oracle results",
+      "met": true,
+      "evidence": "verify_l1_linkage validates L1LinkageProof fields (INV-NVO-L1-LINKAGE)"
+    },
+    {
+      "criterion": "At least 20 inline unit tests",
+      "met": true,
+      "evidence": "28 #[test] functions in #[cfg(test)] mod tests"
+    }
+  ],
+  "invariants_verified": [
+    "INV-NVO-QUORUM",
+    "INV-NVO-RISK-TIERED",
+    "INV-NVO-BLOCK-HIGH",
+    "INV-NVO-POLICY-RECEIPT",
+    "INV-NVO-L1-LINKAGE",
+    "INV-NVO-DETERMINISTIC"
+  ],
+  "types_implemented": [
+    "RuntimeOracle",
+    "SemanticDivergence",
+    "CrossRuntimeCheck",
+    "VotingResult",
+    "RiskTier",
+    "PolicyReceipt",
+    "OracleVerdict",
+    "RuntimeEntry",
+    "L1LinkageProof",
+    "DivergenceReport",
+    "CheckOutcome",
+    "BoundaryScope"
+  ],
+  "event_codes": [
+    "FN-NV-001", "FN-NV-002", "FN-NV-003", "FN-NV-004",
+    "FN-NV-005", "FN-NV-006", "FN-NV-007", "FN-NV-008",
+    "FN-NV-009", "FN-NV-010", "FN-NV-011", "FN-NV-012"
+  ],
+  "error_codes": [
+    "ERR_NVO_NO_RUNTIMES",
+    "ERR_NVO_QUORUM_FAILED",
+    "ERR_NVO_RUNTIME_NOT_FOUND",
+    "ERR_NVO_CHECK_ALREADY_RUNNING",
+    "ERR_NVO_DIVERGENCE_UNRESOLVED",
+    "ERR_NVO_POLICY_MISSING",
+    "ERR_NVO_INVALID_RECEIPT",
+    "ERR_NVO_L1_LINKAGE_BROKEN",
+    "ERR_NVO_VOTING_TIMEOUT",
+    "ERR_NVO_DUPLICATE_RUNTIME"
+  ]
+}
