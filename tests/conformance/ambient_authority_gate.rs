@@ -5,6 +5,7 @@
 //! - signed + non-expired allowlist exceptions
 //! - generated findings + verification artifacts for section 10.15
 
+#[allow(clippy::module_inception)]
 #[path = "../../tools/lints/ambient_authority_gate.rs"]
 mod ambient_authority_gate;
 

@@ -1,3 +1,5 @@
+#![allow(clippy::duplicate_mod)]
+
 #[path = "../src/connector/vef_execution_receipt.rs"]
 pub mod vef_execution_receipt;
 

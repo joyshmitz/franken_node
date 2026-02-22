@@ -15,7 +15,7 @@
 mod deterministic_seed;
 
 use deterministic_seed::{
-    ContentHash, DeterministicSeed, DeterministicSeedDeriver, DomainTag, ScheduleConfig,
+    ContentHash, DeterministicSeedDeriver, DomainTag, ScheduleConfig,
     derive_seed,
 };
 use std::collections::BTreeMap;
@@ -102,10 +102,10 @@ fn compare_artifacts(name: &str, a: &[u8], b: &[u8]) -> Option<Divergence> {
 /// Heuristic root-cause guesser for common divergence patterns.
 fn guess_root_cause(_name: &str, offset: usize, a: &[u8], b: &[u8]) -> String {
     // Check if the divergence looks like a timestamp (8 bytes at aligned offset)
-    if offset % 8 == 0 && offset + 8 <= a.len() && offset + 8 <= b.len() {
+    if offset.is_multiple_of(8) && offset + 8 <= a.len() && offset + 8 <= b.len() {
         let va = u64::from_le_bytes(a[offset..offset + 8].try_into().unwrap());
         let vb = u64::from_le_bytes(b[offset..offset + 8].try_into().unwrap());
-        let diff = if va > vb { va - vb } else { vb - va };
+        let diff = va.abs_diff(vb);
         // If values are close (within 10 seconds in milliseconds), likely timestamp
         if diff < 10_000 && diff > 0 {
             return "timestamp field differs (values within 10s)".to_string();
@@ -134,14 +134,14 @@ fn guess_root_cause(_name: &str, offset: usize, a: &[u8], b: &[u8]) -> String {
 
 /// A simulated replica that derives seeds from fixtures.
 struct Replica {
-    id: usize,
+    _id: usize,
     deriver: DeterministicSeedDeriver,
 }
 
 impl Replica {
     fn new(id: usize) -> Self {
         Self {
-            id,
+            _id: id,
             deriver: DeterministicSeedDeriver::new(),
         }
     }
@@ -179,8 +179,8 @@ fn parse_domain(s: &str) -> DomainTag {
 // ---------------------------------------------------------------------------
 
 struct FixtureResult {
-    fixture_name: String,
-    replica_count: usize,
+    _fixture_name: String,
+    _replica_count: usize,
     artifact_count: usize,
     all_identical: bool,
     first_divergence: Option<Divergence>,
@@ -254,8 +254,8 @@ fn run_fixture(
     }
 
     FixtureResult {
-        fixture_name: fixture_name.to_string(),
-        replica_count,
+        _fixture_name: fixture_name.to_string(),
+        _replica_count: replica_count,
         artifact_count,
         all_identical,
         first_divergence,

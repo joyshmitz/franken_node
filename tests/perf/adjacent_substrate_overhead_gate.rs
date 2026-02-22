@@ -299,6 +299,7 @@ impl fmt::Display for OverheadGateSummary {
 // ---------------------------------------------------------------------------
 
 pub struct SubstrateOverheadGate {
+    #[allow(dead_code)]
     operations: Vec<Operation>,
     records: Vec<MeasurementRecord>,
     events: Vec<PerfEvent>,
@@ -422,6 +423,7 @@ impl SubstrateOverheadGate {
         }
     }
 
+    #[allow(dead_code)]
     pub fn operations(&self) -> &[Operation] {
         &self.operations
     }
@@ -772,7 +774,7 @@ mod tests {
     fn test_gate_evaluate_batch() {
         let mut gate = SubstrateOverheadGate::with_defaults("test-run".into());
         let ops = default_operations();
-        let records: Vec<_> = ops.iter().map(|op| within_budget_record(op)).collect();
+        let records: Vec<_> = ops.iter().map(within_budget_record).collect();
         let decisions = gate.evaluate_batch(records);
         assert_eq!(decisions.len(), 8);
         assert!(decisions.iter().all(|d| d.is_pass()));
