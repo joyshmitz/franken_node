@@ -3,14 +3,14 @@
 //! Persists invoke/response/receipt/approval/revocation/audit artifacts.
 //! Every persisted artifact is replayable from its stored state via replay hooks.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::control_plane::control_epoch::{
     ControlEpoch, EpochArtifactEvent, EpochRejection, ValidityWindowPolicy, check_artifact_epoch,
 };
 
 /// Required artifact types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ArtifactType {
     Invoke,
     Response,
@@ -160,10 +160,10 @@ impl std::fmt::Display for PersistenceError {
 /// Artifact persistence store with replay hooks.
 #[derive(Debug)]
 pub struct ArtifactStore {
-    artifacts: HashMap<String, PersistedArtifact>,
+    artifacts: BTreeMap<String, PersistedArtifact>,
     /// Ordered list per type for replay
-    sequences: HashMap<ArtifactType, Vec<String>>,
-    next_sequence: HashMap<ArtifactType, u64>,
+    sequences: BTreeMap<ArtifactType, Vec<String>>,
+    next_sequence: BTreeMap<ArtifactType, u64>,
     validity_policy: ValidityWindowPolicy,
 }
 
@@ -179,13 +179,13 @@ impl ArtifactStore {
     }
 
     pub fn with_policy(validity_policy: ValidityWindowPolicy) -> Self {
-        let mut next_sequence = HashMap::new();
+        let mut next_sequence = BTreeMap::new();
         for t in ArtifactType::all() {
             next_sequence.insert(*t, 0);
         }
         Self {
-            artifacts: HashMap::new(),
-            sequences: HashMap::new(),
+            artifacts: BTreeMap::new(),
+            sequences: BTreeMap::new(),
             next_sequence,
             validity_policy,
         }

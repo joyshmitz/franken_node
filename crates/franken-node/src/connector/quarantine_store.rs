@@ -3,7 +3,7 @@
 //! Unknown objects enter quarantine class by default. Quota and TTL eviction
 //! enforce hard caps. Quarantined objects are excluded from primary gossip state.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Quarantine configuration.
 #[derive(Debug, Clone)]
@@ -128,7 +128,7 @@ pub fn validate_config(config: &QuarantineConfig) -> Result<(), QuarantineError>
 #[derive(Debug)]
 pub struct QuarantineStore {
     config: QuarantineConfig,
-    entries: HashMap<String, QuarantineEntry>,
+    entries: BTreeMap<String, QuarantineEntry>,
     total_bytes: u64,
     evictions_total: u64,
 }
@@ -138,7 +138,7 @@ impl QuarantineStore {
         validate_config(&config)?;
         Ok(Self {
             config,
-            entries: HashMap::new(),
+            entries: BTreeMap::new(),
             total_bytes: 0,
             evictions_total: 0,
         })

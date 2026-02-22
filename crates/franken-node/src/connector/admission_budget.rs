@@ -3,7 +3,7 @@
 //! Enforces multi-dimensional budgets per peer. Limit breaches are rejected and logged.
 //! Budgets are configurable at runtime without code changes.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Budget limits for a single peer.
 #[derive(Debug, Clone)]
@@ -228,7 +228,7 @@ pub fn validate_budget(budget: &AdmissionBudget) -> Result<(), AdmissionError> {
 #[derive(Debug)]
 pub struct AdmissionBudgetTracker {
     budget: AdmissionBudget,
-    peers: HashMap<String, PeerUsage>,
+    peers: BTreeMap<String, PeerUsage>,
 }
 
 impl AdmissionBudgetTracker {
@@ -236,7 +236,7 @@ impl AdmissionBudgetTracker {
         validate_budget(&budget)?;
         Ok(Self {
             budget,
-            peers: HashMap::new(),
+            peers: BTreeMap::new(),
         })
     }
 
@@ -467,7 +467,7 @@ pub fn check_admission_stateless(
     validate_budget(budget)?;
     let mut tracker = AdmissionBudgetTracker {
         budget: budget.clone(),
-        peers: HashMap::new(),
+        peers: BTreeMap::new(),
     };
     tracker.peers.insert(request.peer_id.clone(), usage.clone());
     Ok(tracker.check_admission(request, trace_id, timestamp))

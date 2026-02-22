@@ -3,7 +3,7 @@
 // Exposes compatibility mode transitions, divergence receipts, and policy gates
 // as programmatic APIs. Every decision produces structured evidence -- no opaque gates.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // ---------------------------------------------------------------------------
@@ -80,7 +80,7 @@ pub struct GateCheckRequest {
     pub package_id: String,
     pub requested_mode: CompatMode,
     pub scope: String,
-    pub policy_context: HashMap<String, String>,
+    pub policy_context: BTreeMap<String, String>,
 }
 
 /// Structured result of a gate check.
@@ -179,7 +179,7 @@ pub struct ScopeMode {
 /// Every operation produces structured evidence -- no opaque gates.
 pub struct GateEngine {
     pub shims: Vec<ShimEntry>,
-    pub scope_modes: HashMap<String, ScopeMode>,
+    pub scope_modes: BTreeMap<String, ScopeMode>,
     pub divergence_receipts: Vec<DivergenceReceipt>,
     pub audit_trail: Vec<GateAuditEvent>,
     pub transition_receipts: Vec<ModeTransitionReceipt>,
@@ -192,7 +192,7 @@ impl GateEngine {
     pub fn new(signing_key: Vec<u8>) -> Self {
         Self {
             shims: Vec::new(),
-            scope_modes: HashMap::new(),
+            scope_modes: BTreeMap::new(),
             divergence_receipts: Vec::new(),
             audit_trail: Vec::new(),
             transition_receipts: Vec::new(),
@@ -547,7 +547,7 @@ mod tests {
             package_id: "npm:test-pkg".into(),
             requested_mode: CompatMode::Strict,
             scope: "tenant-1".into(),
-            policy_context: HashMap::new(),
+            policy_context: BTreeMap::new(),
         });
         assert_eq!(result.decision, Verdict::Allow);
         assert_eq!(result.event_code, PCG_001);
@@ -560,7 +560,7 @@ mod tests {
             package_id: "npm:test-pkg".into(),
             requested_mode: CompatMode::LegacyRisky,
             scope: "tenant-1".into(),
-            policy_context: HashMap::new(),
+            policy_context: BTreeMap::new(),
         });
         assert_eq!(result.decision, Verdict::Deny);
         assert_eq!(result.event_code, PCG_002);
@@ -573,7 +573,7 @@ mod tests {
             package_id: "npm:x".into(),
             requested_mode: CompatMode::Balanced,
             scope: "tenant-1".into(),
-            policy_context: HashMap::new(),
+            policy_context: BTreeMap::new(),
         });
         assert!(!engine.audit_trail().is_empty());
         assert!(!engine.audit_trail()[0].trace_id.is_empty());
@@ -749,7 +749,7 @@ mod tests {
             package_id: "npm:pkg".into(),
             requested_mode: CompatMode::Balanced,
             scope: "tenant-1".into(),
-            policy_context: HashMap::new(),
+            policy_context: BTreeMap::new(),
         });
         assert!(engine.check_non_interference("tenant-1", "tenant-2"));
     }
@@ -768,7 +768,7 @@ mod tests {
             package_id: "npm:x".into(),
             requested_mode: CompatMode::Balanced,
             scope: "unknown-scope".into(),
-            policy_context: HashMap::new(),
+            policy_context: BTreeMap::new(),
         });
         assert_eq!(result.decision, Verdict::Deny);
     }
@@ -781,13 +781,13 @@ mod tests {
             package_id: "npm:x".into(),
             requested_mode: CompatMode::Strict,
             scope: "tenant-1".into(),
-            policy_context: HashMap::new(),
+            policy_context: BTreeMap::new(),
         });
         engine.gate_check(&GateCheckRequest {
             package_id: "npm:y".into(),
             requested_mode: CompatMode::Strict,
             scope: "tenant-2".into(),
-            policy_context: HashMap::new(),
+            policy_context: BTreeMap::new(),
         });
         let t1_events = engine.audit_by_scope("tenant-1");
         assert!(t1_events.iter().all(|e| e.scope_id == "tenant-1"));
@@ -828,7 +828,7 @@ mod tests {
             package_id: "npm:test".into(),
             requested_mode: CompatMode::Strict,
             scope: "tenant-1".into(),
-            policy_context: HashMap::new(),
+            policy_context: BTreeMap::new(),
         });
         assert!(!result.rationale.explanation.is_empty());
         assert!(!result.rationale.matched_predicates.is_empty());

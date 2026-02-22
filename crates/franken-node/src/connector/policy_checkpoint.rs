@@ -22,7 +22,7 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -534,7 +534,7 @@ impl PolicyCheckpointChain {
     /// Returns at most one checkpoint per distinct channel.
     #[must_use]
     pub fn policy_frontier(&self) -> Vec<(ReleaseChannel, &PolicyCheckpoint)> {
-        let mut frontier: HashMap<String, (ReleaseChannel, &PolicyCheckpoint)> = HashMap::new();
+        let mut frontier: BTreeMap<String, (ReleaseChannel, &PolicyCheckpoint)> = BTreeMap::new();
         for cp in &self.checkpoints {
             let key = cp.channel.label();
             frontier.insert(key, (cp.channel.clone(), cp));
@@ -583,7 +583,7 @@ impl PolicyCheckpointChain {
     /// Distinct channels that have at least one checkpoint.
     #[must_use]
     pub fn channels(&self) -> Vec<ReleaseChannel> {
-        let mut seen: HashMap<String, ReleaseChannel> = HashMap::new();
+        let mut seen: BTreeMap<String, ReleaseChannel> = BTreeMap::new();
         for cp in &self.checkpoints {
             seen.entry(cp.channel.label())
                 .or_insert_with(|| cp.channel.clone());

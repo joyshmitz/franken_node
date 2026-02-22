@@ -4,7 +4,7 @@
 //! - monotonic revocation head registry (`bd-y7lu`)
 //! - safety-tier freshness gate (`bd-1m8r`)
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -203,7 +203,7 @@ pub struct RevocationIntegrationEngine {
     policy: RevocationIntegrationPolicy,
     freshness_policy: FreshnessPolicy,
     registry: RevocationRegistry,
-    last_seen_heads: HashMap<String, u64>,
+    last_seen_heads: BTreeMap<String, u64>,
     pub evidence_ledger: Vec<RevocationLedgerEntry>,
     pub events: Vec<RevocationEventRecord>,
 }
@@ -224,7 +224,7 @@ impl RevocationIntegrationEngine {
             policy,
             freshness_policy,
             registry: RevocationRegistry::new(),
-            last_seen_heads: HashMap::new(),
+            last_seen_heads: BTreeMap::new(),
             evidence_ledger: Vec::new(),
             events: Vec::new(),
         }

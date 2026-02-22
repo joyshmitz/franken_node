@@ -13,7 +13,7 @@
 //! - **INV-PBG-REPORT-ALWAYS**: A structured CSV report is emitted on every gate run, pass or fail.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 
 // ---------------------------------------------------------------------------
@@ -104,14 +104,14 @@ impl Default for PathBudget {
 /// Performance budget policy: maps hot paths to their budget thresholds.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BudgetPolicy {
-    pub budgets: HashMap<String, PathBudget>,
+    pub budgets: BTreeMap<String, PathBudget>,
     /// Default budget for paths not explicitly listed.
     pub default_budget: PathBudget,
 }
 
 impl Default for BudgetPolicy {
     fn default() -> Self {
-        let mut budgets = HashMap::new();
+        let mut budgets = BTreeMap::new();
         for path in HotPath::canonical() {
             budgets.insert(path.label().to_string(), PathBudget::default());
         }
@@ -137,7 +137,7 @@ impl BudgetPolicy {
             max_overhead_p99_pct: 0.0,
             max_cold_start_ms: 0.0,
         };
-        let mut budgets = HashMap::new();
+        let mut budgets = BTreeMap::new();
         for path in HotPath::canonical() {
             budgets.insert(path.label().to_string(), zero_budget.clone());
         }
@@ -154,7 +154,7 @@ impl BudgetPolicy {
             max_overhead_p99_pct: f64::MAX,
             max_cold_start_ms: f64::MAX,
         };
-        let mut budgets = HashMap::new();
+        let mut budgets = BTreeMap::new();
         for path in HotPath::canonical() {
             budgets.insert(path.label().to_string(), inf_budget.clone());
         }

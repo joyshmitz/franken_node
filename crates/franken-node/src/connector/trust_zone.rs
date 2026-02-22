@@ -4,7 +4,7 @@
 // namespace, key bindings, token scope, and delegation depth limit.  Cross-zone
 // operations require explicit, auditable dual-owner bridge authorization.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 
 // ---------------------------------------------------------------------------
@@ -244,9 +244,9 @@ impl std::error::Error for SegmentationError {}
 /// Core engine managing zone lifecycle and cross-zone authorization.
 #[derive(Debug, Default)]
 pub struct ZoneSegmentationEngine {
-    zones: HashMap<String, ZonePolicy>,
-    tenants: HashMap<String, TenantBinding>,
-    resource_zone_map: HashMap<String, String>,
+    zones: BTreeMap<String, ZonePolicy>,
+    tenants: BTreeMap<String, TenantBinding>,
+    resource_zone_map: BTreeMap<String, String>,
     events: Vec<ZoneEvent>,
 }
 

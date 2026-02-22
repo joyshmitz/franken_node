@@ -283,10 +283,19 @@ impl RevocationFreshnessGate {
             return Err(FreshnessError::Unauthenticated);
         }
 
+        let tier = self.classify_action(action_id);
+        if proof.tier != tier {
+            return Err(FreshnessError::ProofTampered {
+                detail: format!(
+                    "proof tier {} does not match action tier {}",
+                    proof.tier, tier
+                ),
+            });
+        }
+
         // Verify proof integrity
         self.verify_proof(proof)?;
 
-        let tier = proof.tier;
         let max_staleness = tier.max_staleness_epochs();
         let staleness = current_epoch.saturating_sub(proof.epoch);
 
@@ -582,6 +591,18 @@ mod tests {
         assert!(d.allowed);
         assert!(d.degraded);
         assert_eq!(d.event_code, event_codes::RFG_003);
+    }
+
+    #[test]
+    fn action_tier_mismatch_rejected_and_nonce_not_consumed() {
+        let mut g = gate();
+        // key_rotate is classified as Critical, but proof claims Advisory.
+        let p = proof(SafetyTier::Advisory, 100, "n-tier-mismatch");
+        let err = g
+            .check(&p, 100, true, false, "key_rotate", "tr-1")
+            .unwrap_err();
+        assert_eq!(err.code(), "ERR_RFG_TAMPERED");
+        assert!(!g.is_nonce_consumed("n-tier-mismatch"));
     }
 
     // --- Replay detection ---

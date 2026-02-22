@@ -12,7 +12,7 @@
 //! - **INV-TUNE-DETERMINISTIC**: Same class + config always yields same policy.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 
 // ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ pub const ERR_UNKNOWN_CLASS: &str = "ERR_UNKNOWN_CLASS";
 // ---------------------------------------------------------------------------
 
 /// Canonical object class identifiers from bd-2573 registry.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ObjectClass {
     CriticalMarker,
     TrustReceipt,
@@ -243,14 +243,14 @@ pub fn default_tuning(class: &ObjectClass) -> Option<ClassTuning> {
 
 /// Policy engine that resolves per-class tuning with override support.
 pub struct ObjectClassTuningEngine {
-    overrides: HashMap<ObjectClass, ClassTuning>,
+    overrides: BTreeMap<ObjectClass, ClassTuning>,
     events: Vec<TuningEvent>,
 }
 
 impl ObjectClassTuningEngine {
     pub fn new() -> Self {
         Self {
-            overrides: HashMap::new(),
+            overrides: BTreeMap::new(),
             events: Vec::new(),
         }
     }
@@ -334,7 +334,7 @@ impl ObjectClassTuningEngine {
     }
 
     /// Return all active overrides.
-    pub fn active_overrides(&self) -> &HashMap<ObjectClass, ClassTuning> {
+    pub fn active_overrides(&self) -> &BTreeMap<ObjectClass, ClassTuning> {
         &self.overrides
     }
 

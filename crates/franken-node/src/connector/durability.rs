@@ -11,7 +11,7 @@
 //! identical (mode, outcome) inputs always produce identical claim strings.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 
 // ---------------------------------------------------------------------------
@@ -492,8 +492,8 @@ impl DurabilityController {
     }
 
     /// Generate the claim matrix for all valid (mode, outcome) pairs.
-    pub fn claim_matrix() -> HashMap<String, DurabilityClaim> {
-        let mut matrix = HashMap::new();
+    pub fn claim_matrix() -> BTreeMap<String, DurabilityClaim> {
+        let mut matrix = BTreeMap::new();
 
         // Local mode
         let local = DurabilityMode::Local;
