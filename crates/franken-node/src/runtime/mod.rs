@@ -6,6 +6,7 @@ pub mod checkpoint_guard;
 pub mod crash_loop_detector;
 pub mod epoch_guard;
 pub mod epoch_transition;
+pub mod hardware_planner;
 pub mod lane_scheduler;
 pub mod nversion_oracle;
 pub mod obligation_channel;

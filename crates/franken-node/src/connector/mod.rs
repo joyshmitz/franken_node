@@ -40,6 +40,7 @@ pub mod lifecycle;
 pub mod manifest_negotiation;
 pub mod migration_artifact;
 pub mod migration_pipeline;
+pub mod n_version_oracle;
 pub mod obligation_tracker;
 pub mod offline_coverage;
 pub mod operator_intelligence;

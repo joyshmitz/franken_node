@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod api;
+pub mod claims;
 mod cli;
 mod config;
 pub mod conformance;
@@ -10,6 +11,7 @@ pub mod encoding;
 pub mod federation;
 pub mod migration;
 pub mod observability;
+pub mod ops;
 pub mod policy;
 pub mod repair;
 #[path = "control_plane/root_pointer.rs"]
