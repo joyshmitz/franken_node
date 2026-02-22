@@ -395,6 +395,7 @@ impl SafeExtensionOnboarding {
     }
 }
 
+#[allow(dead_code)]
 fn sample_step(step_id: &str, session_id: &str, phase: OnboardingPhase) -> OnboardingStep {
     OnboardingStep {
         step_id: step_id.to_string(),

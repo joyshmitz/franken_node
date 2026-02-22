@@ -296,7 +296,7 @@ impl MigrationValidationCohorts {
         let meets = determinism_rate >= MIN_DETERMINISM_RATE;
 
         let mut flagged = Vec::new();
-        for (cid, _) in &self.cohorts {
+        for cid in self.cohorts.keys() {
             let cohort_runs: Vec<&&ValidationRun> = completed_runs
                 .iter()
                 .filter(|r| &r.cohort_id == cid)

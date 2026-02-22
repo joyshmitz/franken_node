@@ -41,6 +41,8 @@ pub mod event_codes {
     pub const PLP_CATALOG_GENERATED: &str = "PLP-010";
     pub const PLP_ERR_DUPLICATE_PARTNER: &str = "PLP-ERR-001";
     pub const PLP_ERR_INSUFFICIENT_OUTCOMES: &str = "PLP-ERR-002";
+    pub const PLP_ERR_DUPLICATE_DEPLOYMENT: &str = "PLP-ERR-003";
+    pub const PLP_ERR_DUPLICATE_OUTCOME: &str = "PLP-ERR-004";
 }
 
 pub mod invariants {
@@ -205,6 +207,18 @@ impl PartnerLighthousePrograms {
         mut dep: LighthouseDeployment,
         trace_id: &str,
     ) -> Result<String, String> {
+        if self
+            .deployments
+            .iter()
+            .any(|d| d.deployment_id == dep.deployment_id)
+        {
+            self.log(
+                event_codes::PLP_ERR_DUPLICATE_DEPLOYMENT,
+                trace_id,
+                serde_json::json!({"deployment_id": &dep.deployment_id}),
+            );
+            return Err(format!("duplicate deployment: {}", dep.deployment_id));
+        }
         if !self.partners.contains_key(&dep.partner_id) {
             return Err(format!("partner not found: {}", dep.partner_id));
         }
@@ -229,6 +243,18 @@ impl PartnerLighthousePrograms {
         mut outcome: OutcomeRecord,
         trace_id: &str,
     ) -> Result<String, String> {
+        if self
+            .outcomes
+            .iter()
+            .any(|o| o.outcome_id == outcome.outcome_id)
+        {
+            self.log(
+                event_codes::PLP_ERR_DUPLICATE_OUTCOME,
+                trace_id,
+                serde_json::json!({"outcome_id": &outcome.outcome_id}),
+            );
+            return Err(format!("duplicate outcome: {}", outcome.outcome_id));
+        }
         if !self
             .deployments
             .iter()
@@ -254,10 +280,10 @@ impl PartnerLighthousePrograms {
         );
         self.outcomes.push(outcome);
 
-        if let Some(pid) = partner_id {
-            if let Some(p) = self.partners.get_mut(&pid) {
-                p.outcome_count += 1;
-            }
+        if let Some(pid) = partner_id
+            && let Some(p) = self.partners.get_mut(&pid)
+        {
+            p.outcome_count += 1;
         }
         Ok(oid)
     }
@@ -287,7 +313,11 @@ impl PartnerLighthousePrograms {
             .next()
             .ok_or_else(|| "already at highest tier".to_string())?;
 
-        self.partners.get_mut(partner_id).unwrap().tier = next;
+        let partner = self
+            .partners
+            .get_mut(partner_id)
+            .ok_or_else(|| format!("partner not found: {partner_id}"))?;
+        partner.tier = next;
         self.log(
             event_codes::PLP_TIER_PROMOTED,
             trace_id,
@@ -481,6 +511,24 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_deployment_rejected_without_count_drift() {
+        let mut e = PartnerLighthousePrograms::default();
+        e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
+        e.create_deployment(sample_deployment("d1", "p1"), &trace())
+            .unwrap();
+
+        let err = e
+            .create_deployment(sample_deployment("d1", "p1"), &trace())
+            .unwrap_err();
+        assert!(err.contains("duplicate deployment"));
+        assert_eq!(e.partners()["p1"].deployment_count, 1);
+        assert_eq!(e.deployments().len(), 1);
+
+        let codes: Vec<&str> = e.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        assert!(codes.contains(&event_codes::PLP_ERR_DUPLICATE_DEPLOYMENT));
+    }
+
+    #[test]
     fn record_outcome_ok() {
         let mut e = PartnerLighthousePrograms::default();
         e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
@@ -510,6 +558,26 @@ mod tests {
         e.record_outcome(sample_outcome("o1", "d1"), &trace())
             .unwrap();
         assert_eq!(e.partners()["p1"].outcome_count, 1);
+    }
+
+    #[test]
+    fn duplicate_outcome_rejected_without_count_drift() {
+        let mut e = PartnerLighthousePrograms::default();
+        e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
+        e.create_deployment(sample_deployment("d1", "p1"), &trace())
+            .unwrap();
+        e.record_outcome(sample_outcome("o1", "d1"), &trace())
+            .unwrap();
+
+        let err = e
+            .record_outcome(sample_outcome("o1", "d1"), &trace())
+            .unwrap_err();
+        assert!(err.contains("duplicate outcome"));
+        assert_eq!(e.partners()["p1"].outcome_count, 1);
+        assert_eq!(e.outcomes().len(), 1);
+
+        let codes: Vec<&str> = e.audit_log().iter().map(|r| r.event_code.as_str()).collect();
+        assert!(codes.contains(&event_codes::PLP_ERR_DUPLICATE_OUTCOME));
     }
 
     #[test]

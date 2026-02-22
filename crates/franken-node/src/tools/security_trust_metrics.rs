@@ -307,7 +307,7 @@ impl Default for CoMetricConfig {
 
         Self {
             security_thresholds: sec_thresholds,
-            trust_thresholds: trust_thresholds,
+            trust_thresholds,
             require_all_categories: true,
             formula_version: SCORING_FORMULA_VERSION.to_string(),
         }
@@ -663,7 +663,7 @@ mod tests {
     #[test]
     fn default_thresholds_are_reasonable() {
         let config = CoMetricConfig::default();
-        for (_, t) in &config.security_thresholds {
+        for t in config.security_thresholds.values() {
             assert!(t.pass_threshold >= 0.0 && t.pass_threshold <= 1.0);
             assert!(t.warn_threshold >= t.pass_threshold);
         }
@@ -725,10 +725,10 @@ mod tests {
     #[test]
     fn threshold_descriptions_populated() {
         let config = CoMetricConfig::default();
-        for (_, t) in &config.security_thresholds {
+        for t in config.security_thresholds.values() {
             assert!(!t.description.is_empty());
         }
-        for (_, t) in &config.trust_thresholds {
+        for t in config.trust_thresholds.values() {
             assert!(!t.description.is_empty());
         }
     }

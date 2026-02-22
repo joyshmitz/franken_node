@@ -189,7 +189,7 @@ impl HardwareProfile {
     pub fn fingerprint(&self) -> String {
         let mut hasher = sha2::Sha256::new();
         sha2::Digest::update(&mut hasher, self.cpu.as_bytes());
-        sha2::Digest::update(&mut hasher, &self.memory_mb.to_le_bytes());
+        sha2::Digest::update(&mut hasher, self.memory_mb.to_le_bytes());
         sha2::Digest::update(&mut hasher, self.os.as_bytes());
         format!("{:x}", sha2::Digest::finalize(hasher))
     }

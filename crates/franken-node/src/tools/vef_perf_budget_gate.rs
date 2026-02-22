@@ -847,8 +847,10 @@ mod tests {
 
     #[test]
     fn invalid_noise_tolerance_rejected() {
-        let mut config = VefPerfBudgetConfig::default();
-        config.noise_tolerance_cv_pct = 0.0;
+        let config = VefPerfBudgetConfig {
+            noise_tolerance_cv_pct: 0.0,
+            ..Default::default()
+        };
         assert!(matches!(
             config.validate(),
             Err(VefPerfBudgetError::InvalidConfig(_))
@@ -857,8 +859,10 @@ mod tests {
 
     #[test]
     fn invalid_min_samples_rejected() {
-        let mut config = VefPerfBudgetConfig::default();
-        config.min_samples = 0;
+        let config = VefPerfBudgetConfig {
+            min_samples: 0,
+            ..Default::default()
+        };
         assert!(matches!(
             config.validate(),
             Err(VefPerfBudgetError::InvalidConfig(_))

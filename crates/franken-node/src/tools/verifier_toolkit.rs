@@ -535,10 +535,10 @@ impl VerifierToolkit {
 
     fn check_metrics_thresholds(&self, claim: &VerifiableClaim) -> bool {
         for (metric_key, value) in &claim.metric_values {
-            if let Some(threshold) = claim.thresholds.get(metric_key) {
-                if value < threshold {
-                    return false;
-                }
+            if let Some(threshold) = claim.thresholds.get(metric_key)
+                && value < threshold
+            {
+                return false;
             }
         }
         true

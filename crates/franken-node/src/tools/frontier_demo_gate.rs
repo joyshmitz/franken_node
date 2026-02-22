@@ -161,21 +161,11 @@ pub struct DemoGateResult {
 }
 
 /// Resource metrics collected during gate execution.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ResourceMetrics {
     pub peak_memory_bytes: u64,
     pub cpu_time_ms: u64,
     pub io_operations: u64,
-}
-
-impl Default for ResourceMetrics {
-    fn default() -> Self {
-        Self {
-            peak_memory_bytes: 0,
-            cpu_time_ms: 0,
-            io_operations: 0,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
