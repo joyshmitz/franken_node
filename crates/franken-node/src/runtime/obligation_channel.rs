@@ -830,12 +830,9 @@ impl TwoPhaseFlow {
             if let Some(o) = self.ledger.get(id)
                 && !o.status.is_terminal()
             {
-                let _ = self.ledger.update_status(
-                    id,
-                    ObligationStatus::Cancelled,
-                    now_ms,
-                    trace_id,
-                );
+                let _ =
+                    self.ledger
+                        .update_status(id, ObligationStatus::Cancelled, now_ms, trace_id);
             }
         }
 
@@ -854,8 +851,7 @@ impl TwoPhaseFlow {
     /// Generate a closure proof for this flow. INV-OCH-CLOSURE-SIGNED
     #[must_use]
     pub fn closure_proof(&self, now_ms: u64) -> ClosureProof {
-        self
-            .ledger
+        self.ledger
             .generate_closure_proof(&self.flow_id, &self.obligation_ids, now_ms)
     }
 

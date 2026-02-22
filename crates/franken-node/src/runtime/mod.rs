@@ -1,6 +1,8 @@
 pub mod anti_entropy;
 pub mod authority_audit;
 pub mod bounded_mask;
+pub mod bulkhead;
+pub mod cancellable_task;
 pub mod checkpoint;
 pub mod checkpoint_guard;
 pub mod crash_loop_detector;
@@ -9,6 +11,7 @@ pub mod epoch_transition;
 pub mod hardware_planner;
 pub mod incident_lab;
 pub mod isolation_mesh;
+pub mod lane_router;
 pub mod lane_scheduler;
 pub mod nversion_oracle;
 pub mod obligation_channel;

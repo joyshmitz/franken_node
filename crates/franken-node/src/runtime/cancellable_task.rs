@@ -255,11 +255,22 @@ pub trait CancellableTask {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CancellableTaskError {
     /// Phase transition not allowed from current state.
-    InvalidPhase { task_id: String, from: TaskPhase, to: TaskPhase },
+    InvalidPhase {
+        task_id: String,
+        from: TaskPhase,
+        to: TaskPhase,
+    },
     /// Drain exceeded configured timeout.
-    DrainTimeout { task_id: String, elapsed_ms: u64, timeout_ms: u64 },
+    DrainTimeout {
+        task_id: String,
+        elapsed_ms: u64,
+        timeout_ms: u64,
+    },
     /// Obligation closure incomplete during finalization.
-    ClosureIncomplete { task_id: String, missing_obligations: Vec<String> },
+    ClosureIncomplete {
+        task_id: String,
+        missing_obligations: Vec<String>,
+    },
     /// Task not found in the runtime.
     TaskNotFound { task_id: String },
     /// Task already in terminal state.
@@ -285,13 +296,40 @@ impl fmt::Display for CancellableTaskError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidPhase { task_id, from, to } => {
-                write!(f, "{}: task {} cannot transition from {} to {}", self.code(), task_id, from, to)
+                write!(
+                    f,
+                    "{}: task {} cannot transition from {} to {}",
+                    self.code(),
+                    task_id,
+                    from,
+                    to
+                )
             }
-            Self::DrainTimeout { task_id, elapsed_ms, timeout_ms } => {
-                write!(f, "{}: task {} drain timeout after {}ms (limit {}ms)", self.code(), task_id, elapsed_ms, timeout_ms)
+            Self::DrainTimeout {
+                task_id,
+                elapsed_ms,
+                timeout_ms,
+            } => {
+                write!(
+                    f,
+                    "{}: task {} drain timeout after {}ms (limit {}ms)",
+                    self.code(),
+                    task_id,
+                    elapsed_ms,
+                    timeout_ms
+                )
             }
-            Self::ClosureIncomplete { task_id, missing_obligations } => {
-                write!(f, "{}: task {} missing obligations: {}", self.code(), task_id, missing_obligations.join(", "))
+            Self::ClosureIncomplete {
+                task_id,
+                missing_obligations,
+            } => {
+                write!(
+                    f,
+                    "{}: task {} missing obligations: {}",
+                    self.code(),
+                    task_id,
+                    missing_obligations.join(", ")
+                )
             }
             Self::TaskNotFound { task_id } => {
                 write!(f, "{}: task {} not found", self.code(), task_id)
@@ -409,7 +447,12 @@ impl CancellationRuntime {
         timestamp_ms: u64,
         trace_id: &str,
     ) -> Result<&TaskEntry, CancellableTaskError> {
-        self.register_task_with_config(task_id, self.default_drain_config.clone(), timestamp_ms, trace_id)
+        self.register_task_with_config(
+            task_id,
+            self.default_drain_config.clone(),
+            timestamp_ms,
+            trace_id,
+        )
     }
 
     /// Register a new cancellable task with custom drain configuration.
@@ -476,7 +519,11 @@ impl CancellationRuntime {
             });
         }
         let parent = self.tasks.get_mut(parent_id).unwrap();
-        if parent.child_task_ids.iter().any(|existing| existing == child_id) {
+        if parent
+            .child_task_ids
+            .iter()
+            .any(|existing| existing == child_id)
+        {
             // Idempotent child-link registration avoids duplicate propagation events.
             return Ok(());
         }
@@ -494,34 +541,37 @@ impl CancellationRuntime {
         timestamp_ms: u64,
         trace_id: &str,
     ) -> Result<&TaskEntry, CancellableTaskError> {
-        let entry = self.tasks.get(task_id).ok_or_else(|| {
-            CancellableTaskError::TaskNotFound { task_id: task_id.to_string() }
-        })?;
+        let (phase, child_ids) = {
+            let entry =
+                self.tasks
+                    .get(task_id)
+                    .ok_or_else(|| CancellableTaskError::TaskNotFound {
+                        task_id: task_id.to_string(),
+                    })?;
+            (entry.phase, entry.child_task_ids.clone())
+        };
 
         // Idempotent: absorb duplicate cancel on CancelRequested
-        if entry.phase == TaskPhase::CancelRequested {
-            return Ok(entry);
+        if phase == TaskPhase::CancelRequested {
+            return Ok(self.tasks.get(task_id).unwrap());
         }
 
-        if entry.phase == TaskPhase::Finalized {
+        if phase == TaskPhase::Finalized {
             return Err(CancellableTaskError::AlreadyFinalized {
                 task_id: task_id.to_string(),
             });
         }
 
-        if !entry.phase.can_transition_to(&TaskPhase::CancelRequested) {
+        if !phase.can_transition_to(&TaskPhase::CancelRequested) {
             return Err(CancellableTaskError::InvalidPhase {
                 task_id: task_id.to_string(),
-                from: entry.phase,
+                from: phase,
                 to: TaskPhase::CancelRequested,
             });
         }
 
-        // Collect child IDs before mutating
-        let child_ids: Vec<String> = entry.child_task_ids.clone();
-
         let entry = self.tasks.get_mut(task_id).unwrap();
-        let from = entry.phase;
+        let from = phase;
         entry.phase = TaskPhase::CancelRequested;
         entry.cancel_requested_ms = Some(timestamp_ms);
 
@@ -538,22 +588,22 @@ impl CancellationRuntime {
 
         // INV-CXT-NESTED-PROPAGATION: propagate to children
         for child_id in &child_ids {
-            if let Some(child) = self.tasks.get_mut(child_id) {
-                if child.phase == TaskPhase::Running {
-                    child.phase = TaskPhase::CancelRequested;
-                    child.cancel_requested_ms = Some(timestamp_ms);
+            if let Some(child) = self.tasks.get_mut(child_id)
+                && child.phase == TaskPhase::Running
+            {
+                child.phase = TaskPhase::CancelRequested;
+                child.cancel_requested_ms = Some(timestamp_ms);
 
-                    self.audit_log.push(CancellableTaskAuditEvent {
-                        event_code: event_codes::FN_CX_009.to_string(),
-                        task_id: child_id.clone(),
-                        from_phase: TaskPhase::Running,
-                        to_phase: TaskPhase::CancelRequested,
-                        timestamp_ms,
-                        trace_id: trace_id.to_string(),
-                        detail: format!("cancel propagated from parent {}", task_id),
-                        schema_version: SCHEMA_VERSION.to_string(),
-                    });
-                }
+                self.audit_log.push(CancellableTaskAuditEvent {
+                    event_code: event_codes::FN_CX_009.to_string(),
+                    task_id: child_id.clone(),
+                    from_phase: TaskPhase::Running,
+                    to_phase: TaskPhase::CancelRequested,
+                    timestamp_ms,
+                    trace_id: trace_id.to_string(),
+                    detail: format!("cancel propagated from parent {}", task_id),
+                    schema_version: SCHEMA_VERSION.to_string(),
+                });
             }
         }
 
@@ -569,9 +619,12 @@ impl CancellationRuntime {
         timestamp_ms: u64,
         trace_id: &str,
     ) -> Result<&TaskEntry, CancellableTaskError> {
-        let entry = self.tasks.get(task_id).ok_or_else(|| {
-            CancellableTaskError::TaskNotFound { task_id: task_id.to_string() }
-        })?;
+        let entry = self
+            .tasks
+            .get(task_id)
+            .ok_or_else(|| CancellableTaskError::TaskNotFound {
+                task_id: task_id.to_string(),
+            })?;
 
         if !entry.phase.can_transition_to(&TaskPhase::Draining) {
             return Err(CancellableTaskError::InvalidPhase {
@@ -610,9 +663,12 @@ impl CancellationRuntime {
         timestamp_ms: u64,
         trace_id: &str,
     ) -> Result<&TaskEntry, CancellableTaskError> {
-        let entry = self.tasks.get(task_id).ok_or_else(|| {
-            CancellableTaskError::TaskNotFound { task_id: task_id.to_string() }
-        })?;
+        let entry = self
+            .tasks
+            .get(task_id)
+            .ok_or_else(|| CancellableTaskError::TaskNotFound {
+                task_id: task_id.to_string(),
+            })?;
 
         if !entry.phase.can_transition_to(&TaskPhase::DrainComplete) {
             return Err(CancellableTaskError::InvalidPhase {
@@ -652,7 +708,10 @@ impl CancellationRuntime {
             to_phase: TaskPhase::DrainComplete,
             timestamp_ms,
             trace_id: trace_id.to_string(),
-            detail: format!("drain completed in {}ms (timeout={}ms, timed_out={})", elapsed, timeout, timed_out),
+            detail: format!(
+                "drain completed in {}ms (timeout={}ms, timed_out={})",
+                elapsed, timeout, timed_out
+            ),
             schema_version: SCHEMA_VERSION.to_string(),
         });
 
@@ -678,9 +737,12 @@ impl CancellationRuntime {
         timestamp_ms: u64,
         trace_id: &str,
     ) -> Result<FinalizeRecord, CancellableTaskError> {
-        let entry = self.tasks.get(task_id).ok_or_else(|| {
-            CancellableTaskError::TaskNotFound { task_id: task_id.to_string() }
-        })?;
+        let entry = self
+            .tasks
+            .get(task_id)
+            .ok_or_else(|| CancellableTaskError::TaskNotFound {
+                task_id: task_id.to_string(),
+            })?;
 
         if entry.phase == TaskPhase::Finalized {
             return Err(CancellableTaskError::AlreadyFinalized {
@@ -816,12 +878,18 @@ impl CancellationRuntime {
 
     /// Number of active (non-finalized) tasks.
     pub fn active_count(&self) -> usize {
-        self.tasks.values().filter(|e| e.phase != TaskPhase::Finalized).count()
+        self.tasks
+            .values()
+            .filter(|e| e.phase != TaskPhase::Finalized)
+            .count()
     }
 
     /// Number of finalized tasks.
     pub fn finalized_count(&self) -> usize {
-        self.tasks.values().filter(|e| e.phase == TaskPhase::Finalized).count()
+        self.tasks
+            .values()
+            .filter(|e| e.phase == TaskPhase::Finalized)
+            .count()
     }
 
     /// Export audit log as JSONL.
@@ -917,7 +985,9 @@ mod tests {
         assert_eq!(entry.phase, TaskPhase::Running);
 
         // Cancel
-        let entry = rt.cancel_task("task-1", "user-request", 1100, "t1").unwrap();
+        let entry = rt
+            .cancel_task("task-1", "user-request", 1100, "t1")
+            .unwrap();
         assert_eq!(entry.phase, TaskPhase::CancelRequested);
 
         // Drain start
@@ -925,12 +995,16 @@ mod tests {
         assert_eq!(entry.phase, TaskPhase::Draining);
 
         // Drain complete
-        let entry = rt.complete_drain("task-1", DrainResult::Completed, 1300, "t1").unwrap();
+        let entry = rt
+            .complete_drain("task-1", DrainResult::Completed, 1300, "t1")
+            .unwrap();
         assert_eq!(entry.phase, TaskPhase::DrainComplete);
 
         // Finalize
         let proof = ObligationClosureProof::empty();
-        let record = rt.finalize_task("task-1", "user-request", proof, 1400, "t1").unwrap();
+        let record = rt
+            .finalize_task("task-1", "user-request", proof, 1400, "t1")
+            .unwrap();
         assert_eq!(record.task_id, "task-1");
         assert_eq!(record.cancel_reason, "user-request");
         assert_eq!(record.schema_version, SCHEMA_VERSION);
@@ -958,8 +1032,16 @@ mod tests {
         rt.register_task("task-1", 1000, "t1").unwrap();
         rt.cancel_task("task-1", "test", 1100, "t1").unwrap();
         rt.start_drain("task-1", 1200, "t1").unwrap();
-        rt.complete_drain("task-1", DrainResult::Completed, 1300, "t1").unwrap();
-        rt.finalize_task("task-1", "test", ObligationClosureProof::empty(), 1400, "t1").unwrap();
+        rt.complete_drain("task-1", DrainResult::Completed, 1300, "t1")
+            .unwrap();
+        rt.finalize_task(
+            "task-1",
+            "test",
+            ObligationClosureProof::empty(),
+            1400,
+            "t1",
+        )
+        .unwrap();
 
         let err = rt.cancel_task("task-1", "again", 1500, "t1").unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CXT_ALREADY_FINALIZED);
@@ -991,7 +1073,15 @@ mod tests {
         let mut rt = make_runtime();
         rt.register_task("task-1", 1000, "t1").unwrap();
         rt.cancel_task("task-1", "test", 1100, "t1").unwrap();
-        let err = rt.finalize_task("task-1", "test", ObligationClosureProof::empty(), 1200, "t1").unwrap_err();
+        let err = rt
+            .finalize_task(
+                "task-1",
+                "test",
+                ObligationClosureProof::empty(),
+                1200,
+                "t1",
+            )
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CXT_INVALID_PHASE);
     }
 
@@ -1000,7 +1090,9 @@ mod tests {
     #[test]
     fn cancel_unknown_task_rejected() {
         let mut rt = make_runtime();
-        let err = rt.cancel_task("nonexistent", "test", 1000, "t1").unwrap_err();
+        let err = rt
+            .cancel_task("nonexistent", "test", 1000, "t1")
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CXT_TASK_NOT_FOUND);
     }
 
@@ -1015,12 +1107,16 @@ mod tests {
         rt.start_drain("task-1", 1200, "t1").unwrap();
 
         // Complete drain well past timeout
-        let entry = rt.complete_drain("task-1", DrainResult::Completed, 3000, "t1").unwrap();
+        let entry = rt
+            .complete_drain("task-1", DrainResult::Completed, 3000, "t1")
+            .unwrap();
         assert_eq!(entry.phase, TaskPhase::DrainComplete);
         assert_eq!(entry.drain_result, Some(DrainResult::TimedOut));
 
         // FN-CX-005 should be emitted
-        let timeout_events: Vec<_> = rt.audit_log().iter()
+        let timeout_events: Vec<_> = rt
+            .audit_log()
+            .iter()
             .filter(|e| e.event_code == event_codes::FN_CX_005)
             .collect();
         assert_eq!(timeout_events.len(), 1);
@@ -1034,7 +1130,9 @@ mod tests {
         rt.cancel_task("task-1", "test", 1100, "t1").unwrap();
         rt.start_drain("task-1", 1200, "t1").unwrap();
 
-        let err = rt.complete_drain("task-1", DrainResult::Completed, 3000, "t1").unwrap_err();
+        let err = rt
+            .complete_drain("task-1", DrainResult::Completed, 3000, "t1")
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CXT_DRAIN_TIMEOUT);
     }
 
@@ -1051,11 +1149,19 @@ mod tests {
 
         rt.cancel_task("parent", "shutdown", 1100, "t1").unwrap();
 
-        assert_eq!(rt.current_phase("child-1"), Some(TaskPhase::CancelRequested));
-        assert_eq!(rt.current_phase("child-2"), Some(TaskPhase::CancelRequested));
+        assert_eq!(
+            rt.current_phase("child-1"),
+            Some(TaskPhase::CancelRequested)
+        );
+        assert_eq!(
+            rt.current_phase("child-2"),
+            Some(TaskPhase::CancelRequested)
+        );
 
         // FN-CX-009 emitted for each child
-        let propagation_events: Vec<_> = rt.audit_log().iter()
+        let propagation_events: Vec<_> = rt
+            .audit_log()
+            .iter()
             .filter(|e| e.event_code == event_codes::FN_CX_009)
             .collect();
         assert_eq!(propagation_events.len(), 2);
@@ -1104,23 +1210,26 @@ mod tests {
         rt.register_task("task-1", 1000, "t1").unwrap();
         rt.cancel_task("task-1", "test", 1100, "t1").unwrap();
         rt.start_drain("task-1", 1200, "t1").unwrap();
-        rt.complete_drain("task-1", DrainResult::Completed, 1300, "t1").unwrap();
+        rt.complete_drain("task-1", DrainResult::Completed, 1300, "t1")
+            .unwrap();
 
         let proof = ObligationClosureProof {
-            obligations: vec![
-                ObligationTerminal {
-                    obligation_id: "ob-1".to_string(),
-                    terminal_state: "pending".to_string(),
-                },
-            ],
+            obligations: vec![ObligationTerminal {
+                obligation_id: "ob-1".to_string(),
+                terminal_state: "pending".to_string(),
+            }],
             all_closed: false,
         };
 
-        let err = rt.finalize_task("task-1", "test", proof, 1400, "t1").unwrap_err();
+        let err = rt
+            .finalize_task("task-1", "test", proof, 1400, "t1")
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CXT_CLOSURE_INCOMPLETE);
 
         // FN-CX-010 emitted
-        let closure_events: Vec<_> = rt.audit_log().iter()
+        let closure_events: Vec<_> = rt
+            .audit_log()
+            .iter()
             .filter(|e| e.event_code == event_codes::FN_CX_010)
             .collect();
         assert_eq!(closure_events.len(), 1);
@@ -1142,10 +1251,22 @@ mod tests {
         rt.register_task("task-1", 1000, "t1").unwrap();
         rt.cancel_task("task-1", "test", 1100, "t1").unwrap();
         rt.start_drain("task-1", 1200, "t1").unwrap();
-        rt.complete_drain("task-1", DrainResult::Completed, 1300, "t1").unwrap();
-        rt.finalize_task("task-1", "test", ObligationClosureProof::empty(), 1400, "t1").unwrap();
+        rt.complete_drain("task-1", DrainResult::Completed, 1300, "t1")
+            .unwrap();
+        rt.finalize_task(
+            "task-1",
+            "test",
+            ObligationClosureProof::empty(),
+            1400,
+            "t1",
+        )
+        .unwrap();
 
-        let codes: Vec<&str> = rt.audit_log().iter().map(|e| e.event_code.as_str()).collect();
+        let codes: Vec<&str> = rt
+            .audit_log()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
         // FN-CX-001, FN-CX-002, FN-CX-003, FN-CX-004, FN-CX-006, FN-CX-007, FN-CX-008
         assert!(codes.contains(&event_codes::FN_CX_001));
         assert!(codes.contains(&event_codes::FN_CX_002));
@@ -1164,7 +1285,8 @@ mod tests {
         rt.register_task("task-1", 1000, "t1").unwrap();
         let jsonl = rt.export_audit_log_jsonl();
         assert!(!jsonl.is_empty());
-        let parsed: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
         assert_eq!(parsed["event_code"], event_codes::FN_CX_001);
         assert_eq!(parsed["schema_version"], SCHEMA_VERSION);
     }
@@ -1188,9 +1310,15 @@ mod tests {
                 task_id: "t1".into(),
                 missing_obligations: vec!["ob-1".into()],
             },
-            CancellableTaskError::TaskNotFound { task_id: "t1".into() },
-            CancellableTaskError::AlreadyFinalized { task_id: "t1".into() },
-            CancellableTaskError::DuplicateTask { task_id: "t1".into() },
+            CancellableTaskError::TaskNotFound {
+                task_id: "t1".into(),
+            },
+            CancellableTaskError::AlreadyFinalized {
+                task_id: "t1".into(),
+            },
+            CancellableTaskError::DuplicateTask {
+                task_id: "t1".into(),
+            },
         ];
         for e in &errors {
             let s = e.to_string();
@@ -1211,7 +1339,11 @@ mod tests {
 
     #[test]
     fn drain_result_serde_roundtrip() {
-        for dr in &[DrainResult::Completed, DrainResult::TimedOut, DrainResult::Error("oops".into())] {
+        for dr in &[
+            DrainResult::Completed,
+            DrainResult::TimedOut,
+            DrainResult::Error("oops".into()),
+        ] {
             let json = serde_json::to_string(dr).unwrap();
             let parsed: DrainResult = serde_json::from_str(&json).unwrap();
             assert_eq!(*dr, parsed);
@@ -1277,12 +1409,10 @@ mod tests {
 
     #[test]
     fn obligation_proof_with_entries_is_closed() {
-        let proof = ObligationClosureProof::new(vec![
-            ObligationTerminal {
-                obligation_id: "ob-1".to_string(),
-                terminal_state: "completed".to_string(),
-            },
-        ]);
+        let proof = ObligationClosureProof::new(vec![ObligationTerminal {
+            obligation_id: "ob-1".to_string(),
+            terminal_state: "completed".to_string(),
+        }]);
         assert!(proof.all_closed);
     }
 
@@ -1301,10 +1431,26 @@ mod tests {
         rt.register_task("task-1", 1000, "t1").unwrap();
         rt.cancel_task("task-1", "test", 1100, "t1").unwrap();
         rt.start_drain("task-1", 1200, "t1").unwrap();
-        rt.complete_drain("task-1", DrainResult::Completed, 1300, "t1").unwrap();
-        rt.finalize_task("task-1", "test", ObligationClosureProof::empty(), 1400, "t1").unwrap();
+        rt.complete_drain("task-1", DrainResult::Completed, 1300, "t1")
+            .unwrap();
+        rt.finalize_task(
+            "task-1",
+            "test",
+            ObligationClosureProof::empty(),
+            1400,
+            "t1",
+        )
+        .unwrap();
 
-        let err = rt.finalize_task("task-1", "test", ObligationClosureProof::empty(), 1500, "t1").unwrap_err();
+        let err = rt
+            .finalize_task(
+                "task-1",
+                "test",
+                ObligationClosureProof::empty(),
+                1500,
+                "t1",
+            )
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CXT_ALREADY_FINALIZED);
     }
 }

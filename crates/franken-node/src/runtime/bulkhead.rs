@@ -4,7 +4,7 @@
 //! retry hints so callers can fail fast instead of hanging under saturation.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::fmt;
 
 pub mod event_codes {
@@ -17,6 +17,7 @@ pub mod event_codes {
 pub mod error_codes {
     pub const BULKHEAD_OVERLOAD: &str = "BULKHEAD_OVERLOAD";
     pub const BULKHEAD_UNKNOWN_PERMIT: &str = "BULKHEAD_UNKNOWN_PERMIT";
+    pub const BULKHEAD_PERMIT_OPERATION_MISMATCH: &str = "BULKHEAD_PERMIT_OPERATION_MISMATCH";
     pub const BULKHEAD_INVALID_CONFIG: &str = "BULKHEAD_INVALID_CONFIG";
 }
 
@@ -47,6 +48,11 @@ pub enum BulkheadError {
     UnknownPermit {
         permit_id: String,
     },
+    PermitOperationMismatch {
+        permit_id: String,
+        expected_operation_id: String,
+        provided_operation_id: String,
+    },
     InvalidConfig {
         detail: String,
     },
@@ -58,6 +64,7 @@ impl BulkheadError {
         match self {
             Self::BulkheadOverload { .. } => error_codes::BULKHEAD_OVERLOAD,
             Self::UnknownPermit { .. } => error_codes::BULKHEAD_UNKNOWN_PERMIT,
+            Self::PermitOperationMismatch { .. } => error_codes::BULKHEAD_PERMIT_OPERATION_MISMATCH,
             Self::InvalidConfig { .. } => error_codes::BULKHEAD_INVALID_CONFIG,
         }
     }
@@ -81,6 +88,18 @@ impl fmt::Display for BulkheadError {
             Self::UnknownPermit { permit_id } => {
                 write!(f, "{}: permit_id={permit_id}", self.code())
             }
+            Self::PermitOperationMismatch {
+                permit_id,
+                expected_operation_id,
+                provided_operation_id,
+            } => write!(
+                f,
+                "{}: permit_id={} expected_operation_id={} provided_operation_id={}",
+                self.code(),
+                permit_id,
+                expected_operation_id,
+                provided_operation_id
+            ),
             Self::InvalidConfig { detail } => write!(f, "{}: {detail}", self.code()),
         }
     }
@@ -94,7 +113,7 @@ pub struct GlobalBulkhead {
     retry_after_ms: u64,
     in_flight: usize,
     next_permit_seq: u64,
-    active_permits: BTreeSet<String>,
+    active_permits: BTreeMap<String, String>,
     rejection_count: u64,
     events: Vec<BulkheadEvent>,
 }
@@ -117,7 +136,7 @@ impl GlobalBulkhead {
             retry_after_ms,
             in_flight: 0,
             next_permit_seq: 1,
-            active_permits: BTreeSet::new(),
+            active_permits: BTreeMap::new(),
             rejection_count: 0,
             events: Vec::new(),
         })
@@ -175,7 +194,8 @@ impl GlobalBulkhead {
 
         let permit_id = format!("permit-{:08}", self.next_permit_seq);
         self.next_permit_seq = self.next_permit_seq.saturating_add(1);
-        self.active_permits.insert(permit_id.clone());
+        self.active_permits
+            .insert(permit_id.clone(), operation_id.to_string());
         self.in_flight = self.in_flight.saturating_add(1);
 
         self.events.push(BulkheadEvent {
@@ -200,11 +220,19 @@ impl GlobalBulkhead {
         operation_id: &str,
         now_ms: u64,
     ) -> Result<(), BulkheadError> {
-        if !self.active_permits.remove(permit_id) {
+        let Some(expected_operation_id) = self.active_permits.get(permit_id).cloned() else {
             return Err(BulkheadError::UnknownPermit {
                 permit_id: permit_id.to_string(),
             });
+        };
+        if expected_operation_id != operation_id {
+            return Err(BulkheadError::PermitOperationMismatch {
+                permit_id: permit_id.to_string(),
+                expected_operation_id,
+                provided_operation_id: operation_id.to_string(),
+            });
         }
+        self.active_permits.remove(permit_id);
 
         self.in_flight = self.in_flight.saturating_sub(1);
         self.events.push(BulkheadEvent {
@@ -286,8 +314,26 @@ mod tests {
     #[test]
     fn release_unknown_permit_fails_closed() {
         let mut b = GlobalBulkhead::new(1, 10).expect("bulkhead");
-        let err = b.release("permit-00000099", "op-x", 22).expect_err("unknown permit");
+        let err = b
+            .release("permit-00000099", "op-x", 22)
+            .expect_err("unknown permit");
         assert_eq!(err.code(), error_codes::BULKHEAD_UNKNOWN_PERMIT);
+    }
+
+    #[test]
+    fn release_with_mismatched_operation_is_rejected_without_releasing_permit() {
+        let mut b = GlobalBulkhead::new(1, 10).expect("bulkhead");
+        let permit = b.try_acquire("op-expected", 10).expect("acquire");
+
+        let err = b
+            .release(&permit.permit_id, "op-wrong", 11)
+            .expect_err("mismatch should fail closed");
+        assert_eq!(err.code(), error_codes::BULKHEAD_PERMIT_OPERATION_MISMATCH);
+        assert_eq!(b.in_flight(), 1, "permit must remain active after mismatch");
+
+        b.release(&permit.permit_id, "op-expected", 12)
+            .expect("release with expected operation");
+        assert_eq!(b.in_flight(), 0);
     }
 
     #[test]

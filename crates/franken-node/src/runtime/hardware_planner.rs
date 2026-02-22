@@ -588,7 +588,10 @@ impl HardwarePlanner {
         });
 
         self.profiles.insert(pid.clone(), profile);
-        Ok(self.profiles.get(&pid).expect("profile present after insert"))
+        Ok(self
+            .profiles
+            .get(&pid)
+            .expect("profile present after insert"))
     }
 
     /// Register a placement policy.
@@ -617,7 +620,10 @@ impl HardwarePlanner {
         });
 
         self.policies.insert(pid.clone(), policy);
-        Ok(self.policies.get(&pid).expect("policy present after insert"))
+        Ok(self
+            .policies
+            .get(&pid)
+            .expect("policy present after insert"))
     }
 
     /// Request placement for a workload.
@@ -659,24 +665,52 @@ impl HardwarePlanner {
         let profile_ids: Vec<String> = self.profiles.keys().cloned().collect();
         evidence.candidates_considered = profile_ids.clone();
 
-        // Phase 1: capability filter
+        // Phase 1: capability + metadata filter
+        let required_metadata_keys = policy
+            .as_ref()
+            .map(|p| p.required_metadata_keys.clone())
+            .unwrap_or_default();
+
         let mut capable: Vec<String> = Vec::new();
         for pid in &profile_ids {
             let prof = &self.profiles[pid];
-            if prof.satisfies_capabilities(&request.required_capabilities) {
+            let missing_capabilities: Vec<String> = request
+                .required_capabilities
+                .difference(&prof.capabilities)
+                .cloned()
+                .collect();
+            let missing_metadata_keys: Vec<String> = required_metadata_keys
+                .iter()
+                .filter(|key| !prof.metadata.contains_key(*key))
+                .cloned()
+                .collect();
+
+            if missing_capabilities.is_empty() && missing_metadata_keys.is_empty() {
                 capable.push(pid.clone());
             } else {
+                let mut rejection_reasons = Vec::new();
+                if !missing_capabilities.is_empty() {
+                    rejection_reasons.push("capability_mismatch".to_string());
+                    evidence.reasoning_chain.push(format!(
+                        "rejected {}: missing capabilities {:?}",
+                        pid, missing_capabilities
+                    ));
+                }
+
+                if !missing_metadata_keys.is_empty() {
+                    rejection_reasons.push(format!(
+                        "missing_required_metadata_keys: {:?}",
+                        missing_metadata_keys
+                    ));
+                    evidence.reasoning_chain.push(format!(
+                        "rejected {}: missing required metadata keys {:?}",
+                        pid, missing_metadata_keys
+                    ));
+                }
+
                 evidence
                     .rejections
-                    .insert(pid.clone(), "capability_mismatch".to_string());
-                evidence.reasoning_chain.push(format!(
-                    "rejected {}: missing capabilities {:?}",
-                    pid,
-                    request
-                        .required_capabilities
-                        .difference(&prof.capabilities)
-                        .collect::<Vec<_>>()
-                ));
+                    .insert(pid.clone(), rejection_reasons.join("; "));
             }
         }
 
@@ -1316,6 +1350,56 @@ mod tests {
         let req = workload("wl-1", &["fpga"], 50, "default");
         let err = planner.request_placement(&req, 2000).unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_HWP_NO_CAPABLE_TARGET);
+    }
+
+    #[test]
+    fn policy_required_metadata_keys_are_enforced() {
+        let mut planner = make_planner();
+        planner
+            .register_profile(gpu_profile("hw-missing", 10, 8), 1000, "t1")
+            .unwrap();
+
+        let mut eligible = gpu_profile("hw-eligible", 10, 1);
+        eligible
+            .metadata
+            .insert("attestation".to_string(), "tee-v1".to_string());
+        planner.register_profile(eligible, 1001, "t1").unwrap();
+
+        let mut pol = default_policy();
+        pol.prefer_lowest_risk = false;
+        pol.prefer_most_capacity = true;
+        pol.required_metadata_keys.insert("attestation".to_string());
+        planner.register_policy(pol, 1002, "t1").unwrap();
+
+        let req = workload("wl-1", &["gpu", "compute"], 50, "default");
+        let decision = planner.request_placement(&req, 2000).unwrap();
+
+        assert_eq!(decision.target_profile_id, Some("hw-eligible".to_string()));
+        assert_eq!(planner.get_profile("hw-missing").unwrap().used_slots, 0);
+        assert_eq!(planner.get_profile("hw-eligible").unwrap().used_slots, 1);
+        let rejection = decision.evidence.rejections.get("hw-missing").unwrap();
+        assert!(rejection.contains("missing_required_metadata_keys"));
+    }
+
+    #[test]
+    fn placement_rejected_when_policy_metadata_constraints_not_met() {
+        let mut planner = make_planner();
+        planner
+            .register_profile(gpu_profile("hw-1", 10, 4), 1000, "t1")
+            .unwrap();
+        let mut pol = default_policy();
+        pol.required_metadata_keys.insert("attestation".to_string());
+        planner.register_policy(pol, 1001, "t1").unwrap();
+
+        let req = workload("wl-1", &["gpu", "compute"], 50, "default");
+        let err = planner.request_placement(&req, 2000).unwrap_err();
+        assert_eq!(err.code(), error_codes::ERR_HWP_NO_CAPABLE_TARGET);
+
+        let decisions = planner.decisions();
+        let last = &decisions[decisions.len() - 1];
+        assert_eq!(last.outcome, PlacementOutcome::RejectedNoCapable);
+        let rejection = last.evidence.rejections.get("hw-1").unwrap();
+        assert!(rejection.contains("missing_required_metadata_keys"));
     }
 
     // ---- Risk exceeded ----

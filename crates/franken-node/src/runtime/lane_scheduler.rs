@@ -496,12 +496,11 @@ impl LaneScheduler {
                 })?;
 
         let config = &self.policy.lane_configs[lane.as_str()];
-        let counters =
-            self.counters
-                .get_mut(lane.as_str())
-                .ok_or_else(|| LaneSchedulerError::UnknownLane {
-                    lane: lane.to_string(),
-                })?;
+        let counters = self.counters.get_mut(lane.as_str()).ok_or_else(|| {
+            LaneSchedulerError::UnknownLane {
+                lane: lane.to_string(),
+            }
+        })?;
 
         // INV-LANE-CAP-ENFORCE
         if counters.active_count >= config.concurrency_cap {
@@ -513,6 +512,10 @@ impl LaneScheduler {
             });
         }
 
+        // A newly admitted task consumes one pending queue slot, if any.
+        if counters.queued_count > 0 {
+            counters.queued_count -= 1;
+        }
         self.task_counter += 1;
         let task_id = format!("task-{:08}", self.task_counter);
 
@@ -557,18 +560,15 @@ impl LaneScheduler {
                     task_id: task_id.to_string(),
                 })?;
 
-        let counters =
-            self.counters
-                .get_mut(assignment.lane.as_str())
-                .ok_or_else(|| LaneSchedulerError::UnknownLane {
-                    lane: assignment.lane.to_string(),
-                })?;
+        let counters = self
+            .counters
+            .get_mut(assignment.lane.as_str())
+            .ok_or_else(|| LaneSchedulerError::UnknownLane {
+                lane: assignment.lane.to_string(),
+            })?;
         counters.active_count = counters.active_count.saturating_sub(1);
         counters.completed_total += 1;
         counters.last_completion_ms = Some(timestamp_ms);
-        if counters.queued_count > 0 {
-            counters.queued_count -= 1;
-        }
 
         self.audit_log.push(LaneAuditRecord {
             event_code: event_codes::LANE_TASK_COMPLETED.to_string(),
@@ -879,6 +879,51 @@ mod tests {
             .assign_task(&task_classes::log_rotation(), 1001, "t2")
             .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_LANE_CAP_EXCEEDED);
+    }
+
+    #[test]
+    fn completion_does_not_drain_queue_depth_without_admission() {
+        let mut p = LaneMappingPolicy::new();
+        p.add_lane(LaneConfig::new(SchedulerLane::Background, 10, 1));
+        p.add_rule(&task_classes::log_rotation(), SchedulerLane::Background);
+        let mut s = LaneScheduler::new(p).unwrap();
+
+        let active = s
+            .assign_task(&task_classes::log_rotation(), 1000, "t1")
+            .unwrap();
+        let _ = s.assign_task(&task_classes::log_rotation(), 1001, "t2");
+
+        let before = s.lane_counter(SchedulerLane::Background).unwrap();
+        assert_eq!(before.queued_count, 1);
+
+        s.complete_task(&active.task_id, 1002, "t3").unwrap();
+        let after = s.lane_counter(SchedulerLane::Background).unwrap();
+        assert_eq!(after.queued_count, 1);
+    }
+
+    #[test]
+    fn successful_assignment_drains_one_pending_queue_slot() {
+        let mut p = LaneMappingPolicy::new();
+        p.add_lane(LaneConfig::new(SchedulerLane::Background, 10, 1));
+        p.add_rule(&task_classes::log_rotation(), SchedulerLane::Background);
+        let mut s = LaneScheduler::new(p).unwrap();
+
+        let active = s
+            .assign_task(&task_classes::log_rotation(), 1000, "t1")
+            .unwrap();
+        let _ = s.assign_task(&task_classes::log_rotation(), 1001, "t2");
+        let _ = s.assign_task(&task_classes::log_rotation(), 1002, "t3");
+        let before = s.lane_counter(SchedulerLane::Background).unwrap();
+        assert_eq!(before.queued_count, 2);
+
+        s.complete_task(&active.task_id, 1003, "t4").unwrap();
+        let admitted = s
+            .assign_task(&task_classes::log_rotation(), 1004, "t5")
+            .unwrap();
+        assert_eq!(admitted.lane, SchedulerLane::Background);
+
+        let after = s.lane_counter(SchedulerLane::Background).unwrap();
+        assert_eq!(after.queued_count, 1);
     }
 
     // ---- Task completion ----
