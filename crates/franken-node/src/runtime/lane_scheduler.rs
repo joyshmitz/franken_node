@@ -592,15 +592,18 @@ impl LaneScheduler {
     pub fn check_starvation(&mut self, current_ms: u64, trace_id: &str) -> Vec<LaneSchedulerError> {
         let mut starved = Vec::new();
 
-        // Collect starvation info first with immutable borrows
+        // Collect starvation info first with immutable borrows.
+        // A lane that has never completed a task (last_completion_ms == None) is
+        // not considered starved — it may simply be newly created.
         let mut starvation_info: Vec<(SchedulerLane, usize, u64)> = Vec::new();
         for config in self.policy.lane_configs.values() {
             let counters = &self.counters[config.lane.as_str()];
             if counters.queued_count > 0 {
-                let last = counters.last_completion_ms.unwrap_or(0);
-                let elapsed = current_ms.saturating_sub(last);
-                if elapsed >= config.starvation_window_ms {
-                    starvation_info.push((config.lane, counters.queued_count, elapsed));
+                if let Some(last) = counters.last_completion_ms {
+                    let elapsed = current_ms.saturating_sub(last);
+                    if elapsed >= config.starvation_window_ms {
+                        starvation_info.push((config.lane, counters.queued_count, elapsed));
+                    }
                 }
             }
         }
@@ -949,7 +952,9 @@ mod tests {
     // ---- Starvation detection ----
 
     #[test]
-    fn starvation_detected_when_queued_and_no_completions() {
+    fn no_starvation_when_queued_but_never_completed() {
+        // A lane that has never completed any task should NOT trigger starvation,
+        // even if items are queued — the lane may simply be newly created.
         let mut p = LaneMappingPolicy::new();
         let mut cfg = LaneConfig::new(SchedulerLane::Background, 10, 1);
         cfg.starvation_window_ms = 100;
@@ -963,8 +968,36 @@ mod tests {
         // Try to assign another (will be rejected/queued)
         let _ = s.assign_task(&task_classes::log_rotation(), 1001, "t2");
 
-        // Check starvation after window
+        // No starvation because last_completion_ms is None (never completed)
         let starved = s.check_starvation(1200, "t3");
+        assert!(starved.is_empty());
+
+        let counters = s.lane_counter(SchedulerLane::Background).unwrap();
+        assert_eq!(counters.starvation_events, 0);
+    }
+
+    #[test]
+    fn starvation_detected_after_completion_and_window_elapsed() {
+        let mut p = LaneMappingPolicy::new();
+        let mut cfg = LaneConfig::new(SchedulerLane::Background, 10, 1);
+        cfg.starvation_window_ms = 100;
+        p.add_lane(cfg);
+        p.add_rule(&task_classes::log_rotation(), SchedulerLane::Background);
+        let mut s = LaneScheduler::new(p).unwrap();
+
+        // Assign, complete, then queue new work
+        let a = s
+            .assign_task(&task_classes::log_rotation(), 1000, "t1")
+            .unwrap();
+        s.complete_task(&a.task_id, 1050, "t1").unwrap();
+
+        // Now fill and queue
+        s.assign_task(&task_classes::log_rotation(), 1060, "t2")
+            .unwrap();
+        let _ = s.assign_task(&task_classes::log_rotation(), 1061, "t3");
+
+        // Starvation detected: last_completion_ms = 1050, window = 100
+        let starved = s.check_starvation(1200, "t4");
         assert!(!starved.is_empty());
 
         let counters = s.lane_counter(SchedulerLane::Background).unwrap();

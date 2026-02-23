@@ -349,14 +349,14 @@ fn is_cx_first_argument(arg: &str) -> bool {
     let Some((_, ty)) = arg.split_once(':') else {
         return false;
     };
-    let condensed: String = ty.chars().filter(|c| !c.is_whitespace()).collect();
-    matches_cx_reference(&condensed)
+    matches_cx_reference(ty.trim())
 }
 
 fn matches_cx_reference(ty: &str) -> bool {
-    let Some(mut rest) = ty.strip_prefix('&') else {
+    let Some(rest) = ty.strip_prefix('&') else {
         return false;
     };
+    let mut rest = rest.trim_start();
 
     if let Some(without_tick) = rest.strip_prefix('\'') {
         let mut split_idx = None;
@@ -374,7 +374,11 @@ fn matches_cx_reference(ty: &str) -> bool {
     }
 
     if let Some(without_mut) = rest.strip_prefix("mut") {
-        rest = without_mut;
+        if without_mut.is_empty()
+            || without_mut.starts_with(char::is_whitespace)
+        {
+            rest = without_mut.trim_start();
+        }
     }
 
     rest == "Cx"

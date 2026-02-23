@@ -736,7 +736,7 @@ impl FleetControlManager {
         timestamp: &str,
     ) -> DecisionReceipt {
         let payload = format!("{op_id}:{principal}:{zone_id}:{timestamp}");
-        let payload_hash = format!("{:x}", md5_like_hash(payload.as_bytes()));
+        let payload_hash = receipt_payload_hash(payload.as_bytes());
         DecisionReceipt {
             receipt_id: format!("rcpt-{op_id}"),
             issuer: principal.to_string(),
@@ -753,15 +753,15 @@ impl Default for FleetControlManager {
     }
 }
 
-/// Simple deterministic hash for receipt payload (not cryptographic — just
-/// for tamper detection in test/demo context).
-fn md5_like_hash(data: &[u8]) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for &b in data {
-        h ^= u64::from(b);
-        h = h.wrapping_mul(0x0100_0000_01b3);
-    }
-    h
+/// Deterministic SHA-256 hash for receipt payload (hex-encoded).
+/// Replaces weak FNV-1a XOR-multiply loop with proper SHA-256.
+fn receipt_payload_hash(data: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(b"fleet_receipt_v1:");
+    hasher.update(data);
+    hex::encode(hasher.finalize())
 }
 
 // ── Request / Response types for API handlers ─────────────────────────────
