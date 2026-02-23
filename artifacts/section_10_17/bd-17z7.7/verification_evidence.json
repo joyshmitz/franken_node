@@ -1,0 +1,38 @@
+{
+  "bead_id": "bd-17z7.7",
+  "parent_bead_id": "bd-17z7",
+  "status": "completed",
+  "summary": "Enforced PlacementPolicy.required_metadata_keys in hardware planner placement filtering and added regression tests for enforce/fail-closed paths.",
+  "files_changed": [
+    "crates/franken-node/src/runtime/hardware_planner.rs",
+    "artifacts/section_10_17/bd-17z7.7/verification_summary.md",
+    "artifacts/section_10_17/bd-17z7.7/verification_evidence.json"
+  ],
+  "validations": [
+    {
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/rch_bd17z7_7_check cargo check -p frankenengine-node --all-targets",
+      "result": "pass",
+      "exit_code": 0
+    },
+    {
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/rch_bd17z7_7_clippy cargo clippy -p frankenengine-node --all-targets -- -D warnings",
+      "result": "pass",
+      "exit_code": 0
+    },
+    {
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/rch_bd17z7_7_hwplanner_tests cargo test -p frankenengine-node --bin frankenengine-node runtime::hardware_planner::tests -- --nocapture",
+      "result": "pass",
+      "exit_code": 0,
+      "details": "37 passed; 0 failed"
+    },
+    {
+      "command": "rustfmt +nightly --edition 2024 --check crates/franken-node/src/runtime/hardware_planner.rs",
+      "result": "pass",
+      "exit_code": 0
+    }
+  ],
+  "notes": [
+    "rch reported no artifact retrieval after remote commands, but remote command exits were successful."
+  ],
+  "timestamp_utc": "2026-02-22T23:43:30Z"
+}

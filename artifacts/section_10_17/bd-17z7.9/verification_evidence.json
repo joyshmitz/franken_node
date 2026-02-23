@@ -1,0 +1,44 @@
+{
+  "bead_id": "bd-17z7.9",
+  "parent_bead_id": "bd-17z7",
+  "status": "completed",
+  "summary": "Hardened hardware planner dispatch to require prior successful placement for the workload/target pair and added regression coverage.",
+  "files_changed": [
+    "crates/franken-node/src/runtime/hardware_planner.rs",
+    "artifacts/section_10_17/bd-17z7.9/verification_summary.md",
+    "artifacts/section_10_17/bd-17z7.9/verification_evidence.json"
+  ],
+  "validations": [
+    {
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/rch_bd17z7_9_check cargo check -p frankenengine-node --all-targets",
+      "result": "transient_failure",
+      "exit_code": 101,
+      "details": "Failed on unrelated concurrent compile issue in cancellation_protocol; rerun passed."
+    },
+    {
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/rch_bd17z7_9_check2 cargo check -p frankenengine-node --all-targets",
+      "result": "pass",
+      "exit_code": 0
+    },
+    {
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/rch_bd17z7_9_clippy cargo clippy -p frankenengine-node --all-targets -- -D warnings",
+      "result": "pass",
+      "exit_code": 0
+    },
+    {
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/rch_bd17z7_9_hwplanner_tests cargo test -p frankenengine-node --bin frankenengine-node runtime::hardware_planner::tests -- --nocapture",
+      "result": "pass",
+      "exit_code": 0,
+      "details": "38 passed; 0 failed"
+    },
+    {
+      "command": "rustfmt +nightly --edition 2024 --check crates/franken-node/src/runtime/hardware_planner.rs",
+      "result": "pass",
+      "exit_code": 0
+    }
+  ],
+  "notes": [
+    "rch artifact retrieval reported 0 files despite successful command completion."
+  ],
+  "timestamp_utc": "2026-02-22T23:59:50Z"
+}
