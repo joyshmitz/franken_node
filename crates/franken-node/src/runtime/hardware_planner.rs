@@ -646,7 +646,7 @@ impl HardwarePlanner {
     }
 
     /// Request placement for a workload.
-    /// Emits HWP-003 and one of HWP-004..HWP-010.
+    /// Emits HWP-003 and one of HWP-004..HWP-007.
     /// INV-HWP-CAPABILITY-MATCH, INV-HWP-RISK-BOUND, INV-HWP-EVIDENCE-COMPLETE,
     /// INV-HWP-FALLBACK-PATH, INV-HWP-DETERMINISTIC
     pub fn request_placement(
@@ -816,12 +816,7 @@ impl HardwarePlanner {
             .collect();
 
         if with_capacity.is_empty() {
-            // INV-HWP-FALLBACK-PATH: attempt fallback on risk-ok targets
-            // that have capacity after considering a relaxed view
-            evidence.fallback_attempted = true;
-            evidence.fallback_reason = Some("primary targets at capacity".to_string());
-
-            // HWP-007 + HWP-008
+            // HWP-007
             self.audit_log.push(PlannerAuditEvent {
                 event_code: event_codes::HWP_007.to_string(),
                 workload_id: request.workload_id.clone(),
@@ -831,50 +826,21 @@ impl HardwarePlanner {
                 detail: "all capable+risk-ok targets at capacity".to_string(),
                 schema_version: SCHEMA_VERSION.to_string(),
             });
-            self.audit_log.push(PlannerAuditEvent {
-                event_code: event_codes::HWP_008.to_string(),
-                workload_id: request.workload_id.clone(),
-                profile_id: None,
-                timestamp_ms,
-                trace_id: request.trace_id.clone(),
-                detail: "fallback path attempted".to_string(),
-                schema_version: SCHEMA_VERSION.to_string(),
-            });
-
             evidence
                 .reasoning_chain
-                .push("primary targets at capacity, attempting fallback".to_string());
-
-            // Fallback: look at ALL risk-ok profiles, relax nothing -- just
-            // re-check after marking contention evidence. In a real system the
-            // fallback might use a secondary pool; here we model it as a
-            // re-scan that always fails (since we already filtered).
-            // HWP-010
-            self.audit_log.push(PlannerAuditEvent {
-                event_code: event_codes::HWP_010.to_string(),
-                workload_id: request.workload_id.clone(),
-                profile_id: None,
-                timestamp_ms,
-                trace_id: request.trace_id.clone(),
-                detail: "fallback path exhausted".to_string(),
-                schema_version: SCHEMA_VERSION.to_string(),
-            });
+                .push("all capable+risk-ok targets are at capacity".to_string());
             self.emit_evidence_event(&request.workload_id, timestamp_ms, &request.trace_id);
-
-            evidence
-                .reasoning_chain
-                .push("fallback exhausted: no alternative targets with capacity".to_string());
 
             let decision = PlacementDecision {
                 workload_id: request.workload_id.clone(),
-                outcome: PlacementOutcome::RejectedFallbackExhausted,
+                outcome: PlacementOutcome::RejectedCapacityExhausted,
                 target_profile_id: None,
                 evidence,
                 timestamp_ms,
                 schema_version: SCHEMA_VERSION.to_string(),
             };
             self.decisions.push(decision.clone());
-            return Err(HardwarePlannerError::FallbackExhausted {
+            return Err(HardwarePlannerError::CapacityExhausted {
                 workload_id: request.workload_id.clone(),
             });
         }
@@ -1453,10 +1419,10 @@ mod tests {
         assert_eq!(err.code(), error_codes::ERR_HWP_RISK_EXCEEDED);
     }
 
-    // ---- Capacity exhausted with fallback ----
+    // ---- Capacity exhausted ----
 
     #[test]
-    fn placement_rejected_capacity_exhausted_fallback() {
+    fn placement_rejected_capacity_exhausted() {
         let mut planner = make_planner();
         let mut prof = gpu_profile("hw-1", 10, 1);
         prof.used_slots = 1; // at capacity
@@ -1467,7 +1433,10 @@ mod tests {
 
         let req = workload("wl-1", &["gpu", "compute"], 50, "default");
         let err = planner.request_placement(&req, 2000).unwrap_err();
-        assert_eq!(err.code(), error_codes::ERR_HWP_FALLBACK_EXHAUSTED);
+        assert_eq!(err.code(), error_codes::ERR_HWP_CAPACITY_EXHAUSTED);
+        let decisions = planner.decisions();
+        let last = &decisions[decisions.len() - 1];
+        assert_eq!(last.outcome, PlacementOutcome::RejectedCapacityExhausted);
     }
 
     // ---- Empty capabilities rejected ----
@@ -1833,10 +1802,10 @@ mod tests {
         assert_eq!(planner.get_profile("hw-1").unwrap().used_slots, 2);
         assert!(!planner.get_profile("hw-1").unwrap().has_capacity());
 
-        // Third placement should trigger fallback exhaustion
+        // Third placement should report capacity exhaustion
         let req3 = workload("wl-3", &["gpu", "compute"], 50, "default");
         let err = planner.request_placement(&req3, 2002).unwrap_err();
-        assert_eq!(err.code(), error_codes::ERR_HWP_FALLBACK_EXHAUSTED);
+        assert_eq!(err.code(), error_codes::ERR_HWP_CAPACITY_EXHAUSTED);
     }
 
     // ---- Invariant constants ----
