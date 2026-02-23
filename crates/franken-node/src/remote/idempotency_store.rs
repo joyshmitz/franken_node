@@ -465,12 +465,17 @@ impl IdempotencyDedupeStore {
     pub fn content_hash(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(SCHEMA_VERSION.as_bytes());
+        hasher.update(b"|");
         for (k, entry) in &self.entries {
             hasher.update(k.as_bytes());
+            hasher.update(b"|");
             hasher.update(entry.payload_hash.as_bytes());
+            hasher.update(b"|");
             hasher.update(format!("{}", entry.status).as_bytes());
+            hasher.update(b"|");
             if let Some(ref outcome) = entry.outcome {
                 hasher.update(outcome.result_hash.as_bytes());
+                hasher.update(b"|");
             }
         }
         format!("{:x}", hasher.finalize())

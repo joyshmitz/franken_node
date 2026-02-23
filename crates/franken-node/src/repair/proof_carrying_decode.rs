@@ -291,8 +291,10 @@ impl ProofCarryingDecoder {
             let mut hasher = Sha256::new();
             for h in &input_fragment_hashes {
                 hasher.update(h.as_bytes());
+                hasher.update(b"|");
             }
             hasher.update(algorithm_id.as_str().as_bytes());
+            hasher.update(b"|");
             hasher.update(output_hash.as_bytes());
             hex::encode(hasher.finalize())
         };
@@ -410,8 +412,10 @@ impl ProofVerificationApi {
             let mut hasher = Sha256::new();
             for h in &proof.input_fragment_hashes {
                 hasher.update(h.as_bytes());
+                hasher.update(b"|");
             }
             hasher.update(proof.algorithm_id.as_str().as_bytes());
+            hasher.update(b"|");
             hasher.update(proof.output_hash.as_bytes());
             hex::encode(hasher.finalize())
         };

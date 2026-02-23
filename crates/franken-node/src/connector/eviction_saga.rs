@@ -544,8 +544,11 @@ impl EvictionSaga {
     pub fn content_hash(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(self.saga_id.as_bytes());
+        hasher.update(b"|");
         hasher.update(self.artifact_id.as_bytes());
+        hasher.update(b"|");
         hasher.update(self.current_phase.as_str().as_bytes());
+        hasher.update(b"|");
         hasher.update(self.transitions.len().to_le_bytes());
         format!("{:x}", hasher.finalize())
     }
