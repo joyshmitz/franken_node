@@ -417,9 +417,9 @@ mod tests {
 mod integration_tests {
     use super::*;
     use crate::api::middleware::{
-        authenticate, authorize, check_rate_limit, default_rate_limit, enforce_policy,
-        execute_middleware_chain, AuthIdentity, AuthMethod, AuthzDecision, EndpointGroup,
-        EndpointLifecycle, PolicyHook, RateLimitConfig, RateLimiter, RouteMetadata, TraceContext,
+        AuthIdentity, AuthMethod, AuthzDecision, EndpointGroup, EndpointLifecycle, PolicyHook,
+        RateLimitConfig, RateLimiter, RouteMetadata, TraceContext, authenticate, authorize,
+        check_rate_limit, default_rate_limit, enforce_policy, execute_middleware_chain,
     };
     use crate::security::intent_firewall::{
         EffectsFirewall, FirewallVerdict, IntentClassification, IntentClassifier, RemoteEffect,
@@ -528,7 +528,10 @@ mod integration_tests {
 
         assert!(result.is_err());
         assert_eq!(log.status, 401);
-        assert!(!firewall_called, "firewall must not be reached without auth");
+        assert!(
+            !firewall_called,
+            "firewall must not be reached without auth"
+        );
     }
 
     #[test]
@@ -607,7 +610,10 @@ mod integration_tests {
 
         assert!(result.is_err());
         assert_eq!(log.status, 403);
-        assert!(!firewall_called, "firewall must not be reached without proper role");
+        assert!(
+            !firewall_called,
+            "firewall must not be reached without proper role"
+        );
     }
 
     #[test]
@@ -633,10 +639,7 @@ mod integration_tests {
             .evaluate(&effect, "trace-authz-1", "2026-01-01T00:00:00Z")
             .expect("firewall");
         assert_eq!(fw_decision.verdict, FirewallVerdict::Deny);
-        assert_eq!(
-            fw_decision.intent,
-            Some(IntentClassification::Exfiltration)
-        );
+        assert_eq!(fw_decision.intent, Some(IntentClassification::Exfiltration));
     }
 
     // ── Rate limiting → Firewall pipeline ─────────────────────────────
@@ -652,31 +655,24 @@ mod integration_tests {
         let mut limiter = RateLimiter::new(config);
 
         // Exhaust the burst
-        let (first, _) = execute_middleware_chain(
-            &route,
-            None,
-            None,
-            &mut limiter,
-            |_id, _ctx| Ok("first"),
-        );
+        let (first, _) =
+            execute_middleware_chain(&route, None, None, &mut limiter, |_id, _ctx| Ok("first"));
         assert!(first.is_ok());
 
         // Second request hits rate limit
         let mut firewall_called = false;
-        let (second, log) = execute_middleware_chain(
-            &route,
-            None,
-            None,
-            &mut limiter,
-            |_id, _ctx| {
+        let (second, log) =
+            execute_middleware_chain(&route, None, None, &mut limiter, |_id, _ctx| {
                 firewall_called = true;
                 Ok("should not reach")
-            },
-        );
+            });
 
         assert!(second.is_err());
         assert_eq!(log.status, 429);
-        assert!(!firewall_called, "firewall must not be reached when rate-limited");
+        assert!(
+            !firewall_called,
+            "firewall must not be reached when rate-limited"
+        );
     }
 
     #[test]
@@ -757,26 +753,18 @@ mod integration_tests {
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let mut fw = make_firewall();
 
-        let (result, log) = execute_middleware_chain(
-            &route,
-            None,
-            None,
-            &mut limiter,
-            |_identity, _ctx| {
+        let (result, log) =
+            execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
                 let mut effect = make_effect("e-exfil", "ext-001");
                 effect.has_sensitive_payload = true;
                 let decision = fw
                     .evaluate(&effect, "trace-exfil", "2026-01-01T00:00:00Z")
                     .expect("firewall");
                 assert_eq!(decision.verdict, FirewallVerdict::Deny);
-                assert_eq!(
-                    decision.intent,
-                    Some(IntentClassification::Exfiltration)
-                );
+                assert_eq!(decision.intent, Some(IntentClassification::Exfiltration));
                 assert!(!decision.receipt_id.is_empty());
                 Ok(decision)
-            },
-        );
+            });
 
         assert!(result.is_ok());
         assert_eq!(log.status, 200); // handler returned Ok
@@ -788,12 +776,8 @@ mod integration_tests {
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let mut fw = make_firewall();
 
-        let (result, _log) = execute_middleware_chain(
-            &route,
-            None,
-            None,
-            &mut limiter,
-            |_identity, _ctx| {
+        let (result, _log) =
+            execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
                 let mut effect = make_effect("e-cred-fwd", "ext-001");
                 effect.carries_credentials = true;
                 let decision = fw
@@ -805,8 +789,7 @@ mod integration_tests {
                     Some(IntentClassification::CredentialForward)
                 );
                 Ok(decision.verdict)
-            },
-        );
+            });
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), FirewallVerdict::Deny);
@@ -818,25 +801,17 @@ mod integration_tests {
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let mut fw = make_firewall();
 
-        let (result, _log) = execute_middleware_chain(
-            &route,
-            None,
-            None,
-            &mut limiter,
-            |_identity, _ctx| {
+        let (result, _log) =
+            execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
                 let mut effect = make_effect("e-health", "ext-001");
                 effect.path = "/health/live".into();
                 let decision = fw
                     .evaluate(&effect, "trace-hc", "2026-01-01T00:00:00Z")
                     .expect("firewall");
                 assert_eq!(decision.verdict, FirewallVerdict::Allow);
-                assert_eq!(
-                    decision.intent,
-                    Some(IntentClassification::HealthCheck)
-                );
+                assert_eq!(decision.intent, Some(IntentClassification::HealthCheck));
                 Ok(decision.verdict)
-            },
-        );
+            });
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), FirewallVerdict::Allow);
@@ -851,19 +826,14 @@ mod integration_tests {
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let mut fw = make_firewall();
 
-        let (_result, log) = execute_middleware_chain(
-            &route,
-            None,
-            None,
-            &mut limiter,
-            |_identity, _ctx| {
+        let (_result, log) =
+            execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
                 let effect = make_effect("e-metric", "ext-001");
                 let _decision = fw
                     .evaluate(&effect, "trace-metric", "2026-01-01T00:00:00Z")
                     .expect("firewall");
                 Ok("processed")
-            },
-        );
+            });
 
         service.record(&log);
         assert_eq!(service.request_count(), 1);
@@ -891,7 +861,14 @@ mod integration_tests {
         service.record(&log);
         assert_eq!(service.request_count(), 1);
         assert_eq!(log.event_code, "FASTAPI_AUTH_FAIL");
-        assert_eq!(*service.metrics().error_counts.get("FASTAPI_AUTH_FAIL").unwrap(), 1);
+        assert_eq!(
+            *service
+                .metrics()
+                .error_counts
+                .get("FASTAPI_AUTH_FAIL")
+                .unwrap(),
+            1
+        );
     }
 
     // ── Firewall unknown extension through pipeline ───────────────────
@@ -903,12 +880,8 @@ mod integration_tests {
         let mut fw = EffectsFirewall::with_default_policy();
         // Do NOT register the extension
 
-        let (result, log) = execute_middleware_chain(
-            &route,
-            None,
-            None,
-            &mut limiter,
-            |_identity, _ctx| {
+        let (result, log) =
+            execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
                 let effect = make_effect("e-unreg", "ext-unknown");
                 let fw_result = fw.evaluate(&effect, "trace-unreg", "2026-01-01T00:00:00Z");
                 assert!(fw_result.is_err());
@@ -916,8 +889,7 @@ mod integration_tests {
                     detail: format!("firewall error: {}", fw_result.unwrap_err()),
                     trace_id: "trace-unreg".to_string(),
                 })
-            },
-        );
+            });
 
         assert!(result.is_err());
         assert_eq!(log.status, 500);
@@ -934,19 +906,14 @@ mod integration_tests {
 
         for i in 0..5 {
             let effect_id = format!("e-multi-{}", i);
-            let (_result, log) = execute_middleware_chain(
-                &route,
-                None,
-                None,
-                &mut limiter,
-                |_identity, _ctx| {
+            let (_result, log) =
+                execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
                     let effect = make_effect(&effect_id, "ext-001");
                     let decision = fw
                         .evaluate(&effect, "trace-m", "2026-01-01T00:00:00Z")
                         .expect("firewall");
                     Ok(decision.verdict)
-                },
-            );
+                });
             service.record(&log);
         }
 
@@ -955,10 +922,7 @@ mod integration_tests {
             service.metrics().latencies.contains_key("operator"),
             "operator latency metrics recorded"
         );
-        assert_eq!(
-            service.metrics().latencies["operator"].samples.len(),
-            5
-        );
+        assert_eq!(service.metrics().latencies["operator"].samples.len(), 5);
     }
 
     // ── Intent classifier used within pipeline ────────────────────────
@@ -969,12 +933,8 @@ mod integration_tests {
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let mut fw = make_firewall();
 
-        let (result, _log) = execute_middleware_chain(
-            &route,
-            None,
-            None,
-            &mut limiter,
-            |_identity, _ctx| {
+        let (result, _log) =
+            execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
                 let effect = make_effect("e-classify", "ext-001");
                 let classifier_result = IntentClassifier::classify(&effect);
                 let decision = fw
@@ -982,14 +942,10 @@ mod integration_tests {
                     .expect("firewall");
                 assert_eq!(decision.intent, classifier_result);
                 Ok(decision.intent)
-            },
-        );
+            });
 
         assert!(result.is_ok());
-        assert_eq!(
-            result.unwrap(),
-            Some(IntentClassification::DataFetch)
-        );
+        assert_eq!(result.unwrap(), Some(IntentClassification::DataFetch));
     }
 
     // ── Node-internal traffic bypass through pipeline ──────────────────
@@ -1000,12 +956,8 @@ mod integration_tests {
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let mut fw = make_firewall();
 
-        let (result, _log) = execute_middleware_chain(
-            &route,
-            None,
-            None,
-            &mut limiter,
-            |_identity, _ctx| {
+        let (result, _log) =
+            execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
                 let effect = RemoteEffect {
                     effect_id: "e-internal".into(),
                     origin: TrafficOrigin::NodeInternal {
@@ -1025,8 +977,7 @@ mod integration_tests {
                 assert_eq!(decision.verdict, FirewallVerdict::Allow);
                 assert!(decision.rationale.contains("node-internal"));
                 Ok(decision.verdict)
-            },
-        );
+            });
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), FirewallVerdict::Allow);

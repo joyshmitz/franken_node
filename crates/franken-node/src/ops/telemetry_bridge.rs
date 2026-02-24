@@ -1,10 +1,10 @@
-use anyhow::{Result, Context};
+use crate::storage::frankensqlite_adapter::{FrankensqliteAdapter, PersistenceClass};
+use anyhow::{Context, Result};
+use std::io::{BufRead, BufReader};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
-use std::thread;
-use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
-use crate::storage::frankensqlite_adapter::{FrankensqliteAdapter, PersistenceClass};
+use std::thread;
 
 pub struct TelemetryBridge {
     socket_path: String,
@@ -31,7 +31,7 @@ impl TelemetryBridge {
         }
 
         let listener = UnixListener::bind(&socket_path)?;
-        
+
         thread::spawn(move || {
             for stream in listener.incoming() {
                 match stream {

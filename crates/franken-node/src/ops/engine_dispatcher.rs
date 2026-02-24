@@ -1,10 +1,10 @@
-use std::process::Command;
-use std::path::Path;
-use std::sync::{Arc, Mutex};
-use anyhow::{Result, Context};
 use crate::config::Config;
 use crate::ops::telemetry_bridge::TelemetryBridge;
 use crate::storage::frankensqlite_adapter::FrankensqliteAdapter;
+use anyhow::{Context, Result};
+use std::path::Path;
+use std::process::Command;
+use std::sync::{Arc, Mutex};
 
 pub struct EngineDispatcher {
     engine_bin_path: String,
@@ -33,7 +33,10 @@ impl EngineDispatcher {
         let bin_path = if Path::new(&self.engine_bin_path).exists() {
             self.engine_bin_path.as_str()
         } else {
-            eprintln!("Warning: Engine binary not found at {}, attempting to invoke `franken-engine` from PATH.", self.engine_bin_path);
+            eprintln!(
+                "Warning: Engine binary not found at {}, attempting to invoke `franken-engine` from PATH.",
+                self.engine_bin_path
+            );
             "franken-engine"
         };
 
@@ -43,18 +46,22 @@ impl EngineDispatcher {
         // Spawn background listener to record telemetry events for deterministic replay
         let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
         let telemetry = TelemetryBridge::new(&socket_path, Arc::clone(&adapter));
-        telemetry.start_listener().context("Failed to start telemetry bridge")?;
+        telemetry
+            .start_listener()
+            .context("Failed to start telemetry bridge")?;
 
         let mut cmd = Command::new(bin_path);
         cmd.arg("run")
-           .arg(app_path)
-           .arg("--policy")
-           .arg(policy_mode)
-           // Pass the serialized policy config to the engine
-           .env("FRANKEN_ENGINE_POLICY_PAYLOAD", &serialized_config)
-           .env("FRANKEN_ENGINE_TELEMETRY_SOCKET", &socket_path);
+            .arg(app_path)
+            .arg("--policy")
+            .arg(policy_mode)
+            // Pass the serialized policy config to the engine
+            .env("FRANKEN_ENGINE_POLICY_PAYLOAD", &serialized_config)
+            .env("FRANKEN_ENGINE_TELEMETRY_SOCKET", &socket_path);
 
-        let status = cmd.status().context("Failed to spawn franken_engine process")?;
+        let status = cmd
+            .status()
+            .context("Failed to spawn franken_engine process")?;
 
         // Cleanup
         if Path::new(&socket_path).exists() {

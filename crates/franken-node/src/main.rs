@@ -1412,7 +1412,10 @@ async fn main() -> Result<()> {
             .context("failed resolving configuration for run")?;
 
             let dispatcher = ops::engine_dispatcher::EngineDispatcher::default();
-            eprintln!("Dispatching to franken_engine for {}", args.app_path.display());
+            eprintln!(
+                "Dispatching to franken_engine for {}",
+                args.app_path.display()
+            );
             dispatcher.dispatch_run(&args.app_path, &resolved.config, &args.policy)?;
         }
 
@@ -1467,9 +1470,16 @@ async fn main() -> Result<()> {
                 std::process::exit(code);
             }
             VerifyCommand::Lockstep(args) => {
-                let runtimes: Vec<String> = args.runtimes.split(',').map(|s| s.trim().to_string()).collect();
+                let runtimes: Vec<String> = args
+                    .runtimes
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect();
                 let harness = runtime::lockstep_harness::LockstepHarness::new(runtimes);
-                eprintln!("Running lockstep verification on {}", args.project_path.display());
+                eprintln!(
+                    "Running lockstep verification on {}",
+                    args.project_path.display()
+                );
                 if let Err(e) = harness.verify_lockstep(&args.project_path) {
                     eprintln!("Lockstep harness failed: {}", e);
                     std::process::exit(1);

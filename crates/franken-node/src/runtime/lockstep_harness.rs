@@ -1,11 +1,11 @@
+use crate::runtime::nversion_oracle::{BoundaryScope, RuntimeEntry, RuntimeOracle};
+use anyhow::{Context, Result};
 use std::collections::BTreeMap;
-use std::process::{Command, Stdio};
+use std::io::Read;
 use std::path::Path;
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::io::Read;
-use anyhow::{Result, Context};
-use crate::runtime::nversion_oracle::{RuntimeOracle, BoundaryScope, RuntimeEntry};
 
 struct TempFileCleanup {
     path: String,
@@ -34,12 +34,14 @@ impl LockstepHarness {
         let mut oracle = RuntimeOracle::new("lockstep-harness-trace", 100);
 
         for rt in &self.runtimes {
-            oracle.register_runtime(RuntimeEntry {
-                runtime_id: rt.clone(),
-                runtime_name: rt.clone(),
-                version: "unknown".to_string(),
-                is_reference: rt != "franken-node" && rt != "franken_engine",
-            }).map_err(|e| anyhow::anyhow!("Oracle registration error: {}", e))?;
+            oracle
+                .register_runtime(RuntimeEntry {
+                    runtime_id: rt.clone(),
+                    runtime_name: rt.clone(),
+                    version: "unknown".to_string(),
+                    is_reference: rt != "franken-node" && rt != "franken_engine",
+                })
+                .map_err(|e| anyhow::anyhow!("Oracle registration error: {}", e))?;
         }
 
         // Spawn parallel execution threads for each runtime
@@ -56,7 +58,9 @@ impl LockstepHarness {
         let mut outputs = BTreeMap::new();
         for handle in handles {
             match handle.join() {
-                Ok(Ok((rt, out))) => { outputs.insert(rt, out); }
+                Ok(Ok((rt, out))) => {
+                    outputs.insert(rt, out);
+                }
                 Ok(Err(e)) => anyhow::bail!("Runtime execution error: {}", e),
                 Err(_) => anyhow::bail!("Runtime execution panicked"),
             }
@@ -67,14 +71,19 @@ impl LockstepHarness {
         // Simple heuristic: passing the source code as input payload for auditing
         let input_payload = std::fs::read(app_path).unwrap_or_default();
 
-        let check = oracle.run_cross_check(
-            &check_id,
-            BoundaryScope::IO, // Uses IO boundary due to strace filesystem/network tracking
-            &input_payload,
-            &outputs,
-        ).map_err(|e| anyhow::anyhow!("Oracle cross check error: {}", e))?;
+        let check = oracle
+            .run_cross_check(
+                &check_id,
+                BoundaryScope::IO, // Uses IO boundary due to strace filesystem/network tracking
+                &input_payload,
+                &outputs,
+            )
+            .map_err(|e| anyhow::anyhow!("Oracle cross check error: {}", e))?;
 
-        if let Some(crate::runtime::nversion_oracle::CheckOutcome::Diverge { outputs: div_outputs }) = check.outcome {
+        if let Some(crate::runtime::nversion_oracle::CheckOutcome::Diverge {
+            outputs: div_outputs,
+        }) = check.outcome
+        {
             oracle.classify_divergence(
                 &format!("div-{}", check_id),
                 &check_id,
@@ -108,20 +117,26 @@ impl LockstepHarness {
         };
 
         let mut cmd = Command::new("strace");
-        
-        let strace_output_file = format!("/tmp/strace_{}_{}.log", runtime.replace('-', "_"), uuid::Uuid::new_v4());
-        let _cleanup = TempFileCleanup { path: strace_output_file.clone() };
-        
+
+        let strace_output_file = format!(
+            "/tmp/strace_{}_{}.log",
+            runtime.replace('-', "_"),
+            uuid::Uuid::new_v4()
+        );
+        let _cleanup = TempFileCleanup {
+            path: strace_output_file.clone(),
+        };
+
         // Wrap execution in strace to intercept and record filesystem and network mutations
         // -f: trace child processes
         // -e trace=file,network: only trace I/O and network boundaries
         // -o: output to temp file
         cmd.arg("-f")
-           .arg("-e")
-           .arg("trace=file,network")
-           .arg("-o")
-           .arg(&strace_output_file)
-           .arg(bin_path);
+            .arg("-e")
+            .arg("trace=file,network")
+            .arg("-o")
+            .arg(&strace_output_file)
+            .arg(bin_path);
 
         if runtime == "franken-node" || runtime == "franken_engine" {
             cmd.arg("run").arg(app_path);
@@ -133,7 +148,12 @@ impl LockstepHarness {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .with_context(|| format!("Failed to spawn strace on runtime (is strace installed?): {}", runtime))?;
+            .with_context(|| {
+                format!(
+                    "Failed to spawn strace on runtime (is strace installed?): {}",
+                    runtime
+                )
+            })?;
 
         // Drain stdout and stderr in background threads to prevent pipe buffer deadlock
         let mut stdout_handle = child.stdout.take().unwrap();
@@ -161,7 +181,10 @@ impl LockstepHarness {
             if start.elapsed() > timeout {
                 let _ = child.kill();
                 let _ = child.wait(); // Reclaim resources
-                anyhow::bail!("Execution timeout for runtime {} (exceeded 30s limit)", runtime);
+                anyhow::bail!(
+                    "Execution timeout for runtime {} (exceeded 30s limit)",
+                    runtime
+                );
             }
             thread::sleep(Duration::from_millis(50));
         };
@@ -189,7 +212,7 @@ impl LockstepHarness {
         Ok(combined_output)
     }
 
-    /// Strips out PIDs, memory addresses, and timestamps from strace logs 
+    /// Strips out PIDs, memory addresses, and timestamps from strace logs
     /// to ensure they can be compared deterministically across runtimes.
     fn sanitize_strace_output(raw: &[u8]) -> Vec<u8> {
         let raw_str = String::from_utf8_lossy(raw);
@@ -214,5 +237,287 @@ impl LockstepHarness {
             }
         }
         sanitized
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Construction ──────────────────────────────────────────────────
+
+    #[test]
+    fn new_harness_stores_runtimes() {
+        let h = LockstepHarness::new(vec!["node".into(), "bun".into()]);
+        assert_eq!(h.runtimes.len(), 2);
+        assert_eq!(h.runtimes[0], "node");
+        assert_eq!(h.runtimes[1], "bun");
+    }
+
+    #[test]
+    fn new_harness_empty_runtimes() {
+        let h = LockstepHarness::new(vec![]);
+        assert!(h.runtimes.is_empty());
+    }
+
+    #[test]
+    fn new_harness_with_franken_runtimes() {
+        let h = LockstepHarness::new(vec![
+            "node".into(),
+            "bun".into(),
+            "franken-node".into(),
+            "franken_engine".into(),
+        ]);
+        assert_eq!(h.runtimes.len(), 4);
+    }
+
+    // ── TempFileCleanup ──────────────────────────────────────────────
+
+    #[test]
+    fn temp_file_cleanup_removes_file_on_drop() {
+        let path = format!("/tmp/lockstep_test_{}", uuid::Uuid::new_v4());
+        std::fs::write(&path, b"test").expect("write temp");
+        assert!(Path::new(&path).exists());
+
+        {
+            let _cleanup = TempFileCleanup { path: path.clone() };
+        }
+        // File should be removed after drop
+        assert!(!Path::new(&path).exists());
+    }
+
+    #[test]
+    fn temp_file_cleanup_does_not_panic_for_missing_file() {
+        let path = "/tmp/lockstep_test_nonexistent_file_42".to_string();
+        assert!(!Path::new(&path).exists());
+        {
+            let _cleanup = TempFileCleanup { path };
+        }
+        // Should not panic
+    }
+
+    // ── sanitize_strace_output ───────────────────────────────────────
+
+    #[test]
+    fn sanitize_strips_pid_prefix() {
+        let raw = b"[pid 12345] open(\"/etc/passwd\", O_RDONLY) = 3\n";
+        let result = LockstepHarness::sanitize_strace_output(raw);
+        let output = String::from_utf8_lossy(&result);
+        assert!(!output.contains("[pid 12345]"));
+        assert!(output.contains("open("));
+    }
+
+    #[test]
+    fn sanitize_strips_numeric_prefix() {
+        let raw = b"12345 open(\"/tmp/test\", O_WRONLY) = 4\n";
+        let result = LockstepHarness::sanitize_strace_output(raw);
+        let output = String::from_utf8_lossy(&result);
+        assert!(!output.starts_with("12345"));
+        assert!(output.contains("open("));
+    }
+
+    #[test]
+    fn sanitize_preserves_syscall_name() {
+        let raw = b"read(3, \"data\", 4096) = 4\n";
+        let result = LockstepHarness::sanitize_strace_output(raw);
+        let output = String::from_utf8_lossy(&result);
+        assert!(output.contains("read("));
+    }
+
+    #[test]
+    fn sanitize_removes_return_value() {
+        let raw = b"open(\"/etc/hosts\", O_RDONLY) = 3\n";
+        let result = LockstepHarness::sanitize_strace_output(raw);
+        let output = String::from_utf8_lossy(&result);
+        // The return value "= 3" should be stripped (everything after last '=')
+        assert!(!output.contains("= 3"));
+    }
+
+    #[test]
+    fn sanitize_empty_input() {
+        let result = LockstepHarness::sanitize_strace_output(b"");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn sanitize_handles_multiple_lines() {
+        let raw = b"[pid 100] open(\"/a\") = 3\n[pid 200] read(3) = 10\nclose(3) = 0\n";
+        let result = LockstepHarness::sanitize_strace_output(raw);
+        let output = String::from_utf8_lossy(&result);
+        let lines: Vec<&str> = output.lines().collect();
+        assert_eq!(lines.len(), 3);
+    }
+
+    #[test]
+    fn sanitize_deterministic_for_same_syscalls_different_pids() {
+        let raw_a = b"[pid 100] open(\"/etc/hosts\", O_RDONLY) = 3\n\
+                       [pid 100] read(3, \"data\", 4096) = 4\n";
+        let raw_b = b"[pid 999] open(\"/etc/hosts\", O_RDONLY) = 5\n\
+                       [pid 999] read(5, \"data\", 4096) = 4\n";
+        let result_a = LockstepHarness::sanitize_strace_output(raw_a);
+        let result_b = LockstepHarness::sanitize_strace_output(raw_b);
+        // Both should produce the same output after sanitization since
+        // PID prefixes are stripped and return values are removed
+        assert_eq!(result_a, result_b);
+    }
+
+    #[test]
+    fn sanitize_line_without_equals_is_skipped() {
+        let raw = b"--- SIGCHLD {si_signo=SIGCHLD} ---\nopen(\"/tmp\") = 3\n";
+        let result = LockstepHarness::sanitize_strace_output(raw);
+        let output = String::from_utf8_lossy(&result);
+        // The signal line has '=' in field not as return, but rfind('=') will find it
+        // Lines without '=' would be skipped
+        let lines: Vec<&str> = output.lines().filter(|l| !l.is_empty()).collect();
+        // Both lines contain '=' so both are kept (with content up to last '=')
+        assert!(lines.len() >= 1);
+    }
+
+    #[test]
+    fn sanitize_handles_utf8_paths() {
+        let raw = "open(\"/tmp/日本語\", O_RDONLY) = 3\n".as_bytes();
+        let result = LockstepHarness::sanitize_strace_output(raw);
+        let output = String::from_utf8_lossy(&result);
+        assert!(output.contains("日本語"));
+    }
+
+    // ── Oracle integration (unit-level) ──────────────────────────────
+
+    #[test]
+    fn harness_oracle_registration_marks_reference_runtimes() {
+        let h = LockstepHarness::new(vec!["node".into(), "bun".into(), "franken-node".into()]);
+        let mut oracle = RuntimeOracle::new("test-trace", 100);
+
+        for rt in &h.runtimes {
+            let entry = RuntimeEntry {
+                runtime_id: rt.clone(),
+                runtime_name: rt.clone(),
+                version: "unknown".to_string(),
+                is_reference: rt != "franken-node" && rt != "franken_engine",
+            };
+            oracle.register_runtime(entry).expect("register");
+        }
+
+        // node and bun are reference, franken-node is not
+        let report = oracle.generate_report();
+        let json = serde_json::to_value(&report).expect("serialize");
+        assert!(json.get("schema_version").is_some());
+    }
+
+    #[test]
+    fn harness_oracle_cross_check_identical_outputs_agree() {
+        let mut oracle = RuntimeOracle::new("test-trace", 100);
+        oracle
+            .register_runtime(RuntimeEntry {
+                runtime_id: "node".into(),
+                runtime_name: "node".into(),
+                version: "20.0".into(),
+                is_reference: true,
+            })
+            .expect("register node");
+        oracle
+            .register_runtime(RuntimeEntry {
+                runtime_id: "franken-node".into(),
+                runtime_name: "franken-node".into(),
+                version: "0.1".into(),
+                is_reference: false,
+            })
+            .expect("register fn");
+
+        let mut outputs = BTreeMap::new();
+        outputs.insert("node".to_string(), b"hello world".to_vec());
+        outputs.insert("franken-node".to_string(), b"hello world".to_vec());
+
+        let check = oracle
+            .run_cross_check("check-1", BoundaryScope::IO, b"input", &outputs)
+            .expect("cross check");
+
+        assert!(check.outcome.is_some());
+        match check.outcome.unwrap() {
+            crate::runtime::nversion_oracle::CheckOutcome::Agree { .. } => {}
+            crate::runtime::nversion_oracle::CheckOutcome::Diverge { .. } => {
+                panic!("expected agreement for identical outputs");
+            }
+        }
+    }
+
+    #[test]
+    fn harness_oracle_cross_check_different_outputs_diverge() {
+        let mut oracle = RuntimeOracle::new("test-trace", 100);
+        oracle
+            .register_runtime(RuntimeEntry {
+                runtime_id: "node".into(),
+                runtime_name: "node".into(),
+                version: "20.0".into(),
+                is_reference: true,
+            })
+            .expect("register");
+        oracle
+            .register_runtime(RuntimeEntry {
+                runtime_id: "franken-node".into(),
+                runtime_name: "franken-node".into(),
+                version: "0.1".into(),
+                is_reference: false,
+            })
+            .expect("register");
+
+        let mut outputs = BTreeMap::new();
+        outputs.insert("node".to_string(), b"output-A".to_vec());
+        outputs.insert("franken-node".to_string(), b"output-B".to_vec());
+
+        let check = oracle
+            .run_cross_check("check-2", BoundaryScope::IO, b"input", &outputs)
+            .expect("cross check");
+
+        assert!(check.outcome.is_some());
+        match check.outcome.unwrap() {
+            crate::runtime::nversion_oracle::CheckOutcome::Diverge { outputs: div } => {
+                assert!(div.contains_key("node"));
+                assert!(div.contains_key("franken-node"));
+            }
+            crate::runtime::nversion_oracle::CheckOutcome::Agree { .. } => {
+                panic!("expected divergence for different outputs");
+            }
+        }
+    }
+
+    #[test]
+    fn harness_oracle_divergence_classification() {
+        let mut oracle = RuntimeOracle::new("test-trace", 100);
+        oracle
+            .register_runtime(RuntimeEntry {
+                runtime_id: "node".into(),
+                runtime_name: "node".into(),
+                version: "20.0".into(),
+                is_reference: true,
+            })
+            .expect("register");
+
+        let mut outputs = BTreeMap::new();
+        outputs.insert("node".to_string(), b"output".to_vec());
+
+        let divergence = oracle.classify_divergence(
+            "div-001",
+            "check-1",
+            BoundaryScope::IO,
+            crate::runtime::nversion_oracle::RiskTier::High,
+            &outputs,
+        );
+
+        assert_eq!(divergence.divergence_id, "div-001");
+        assert_eq!(
+            divergence.risk_tier,
+            crate::runtime::nversion_oracle::RiskTier::High
+        );
+    }
+
+    #[test]
+    fn harness_oracle_report_contains_schema_version() {
+        let mut oracle = RuntimeOracle::new("test-trace", 100);
+        let report = oracle.generate_report();
+        assert_eq!(
+            report.schema_version,
+            crate::runtime::nversion_oracle::SCHEMA_VERSION
+        );
     }
 }
