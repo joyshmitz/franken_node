@@ -563,7 +563,7 @@ impl DporExplorer {
             if op.depends_on.iter().all(|d| {
                 ops.iter()
                     .position(|o| &o.id == d)
-                    .map_or(false, |idx| used[idx])
+                    .is_some_and(|idx| used[idx])
             }) {
                 used[i] = true;
                 current.push(op.clone());

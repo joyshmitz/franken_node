@@ -303,7 +303,10 @@ impl TokenChain {
 
     /// Append a delegated token to the chain, enforcing attenuation invariants.
     pub fn append(&mut self, token: AudienceBoundToken) -> Result<(), TokenError> {
-        let parent = self.tokens.last().expect("tokens non-empty: chain always has root");
+        let parent = self
+            .tokens
+            .last()
+            .expect("tokens non-empty: chain always has root");
 
         // Check parent_token_hash links to parent.
         let parent_hash = parent.hash();
@@ -389,7 +392,9 @@ impl TokenChain {
 
     /// The leaf (most recently delegated) token.
     pub fn leaf(&self) -> &AudienceBoundToken {
-        self.tokens.last().expect("tokens non-empty: chain always has root")
+        self.tokens
+            .last()
+            .expect("tokens non-empty: chain always has root")
     }
 
     /// All tokens in chain order.

@@ -737,7 +737,11 @@ mod tests {
         // Verify it has the default 10.14 workflows registered too
         let total = gate.framework().total_test_cases();
         // 24 (default) + 21 (control) = 45
-        assert_eq!(total, 45, "Expected 45 total cases (24 default + 21 control), got {}", total);
+        assert_eq!(
+            total, 45,
+            "Expected 45 total cases (24 default + 21 control), got {}",
+            total
+        );
     }
 
     // ---- Schema version ----

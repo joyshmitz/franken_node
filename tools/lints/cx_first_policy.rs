@@ -373,12 +373,10 @@ fn matches_cx_reference(ty: &str) -> bool {
         };
     }
 
-    if let Some(without_mut) = rest.strip_prefix("mut") {
-        if without_mut.is_empty()
-            || without_mut.starts_with(char::is_whitespace)
-        {
-            rest = without_mut.trim_start();
-        }
+    if let Some(without_mut) = rest.strip_prefix("mut")
+        && (without_mut.is_empty() || without_mut.starts_with(char::is_whitespace))
+    {
+        rest = without_mut.trim_start();
     }
 
     rest == "Cx"

@@ -13,6 +13,19 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+    if a_bytes.len() != b_bytes.len() {
+        return false;
+    }
+    let mut result = 0;
+    for (x, y) in a_bytes.iter().zip(b_bytes.iter()) {
+        result |= x ^ y;
+    }
+    result == 0
+}
+
 /// Network-bound operations that require an explicit `RemoteCap`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -494,7 +507,7 @@ impl CapabilityGate {
             cap.single_use,
         );
         let expected_signature = keyed_digest(&self.verification_secret, &payload);
-        if cap.signature != expected_signature {
+        if !constant_time_eq(&cap.signature, &expected_signature) {
             let err = RemoteCapError::InvalidSignature;
             self.audit_log.push(build_audit_event(
                 "REMOTECAP_DENIED",

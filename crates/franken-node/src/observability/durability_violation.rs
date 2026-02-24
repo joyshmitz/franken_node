@@ -383,12 +383,20 @@ impl DurabilityViolationDetector {
 
         match &self.halt_policy {
             HaltPolicy::HaltAll => Err(DurabilityHaltedError {
-                bundle_id: self.active_halts.last().expect("active_halts checked non-empty above").clone(),
+                bundle_id: self
+                    .active_halts
+                    .last()
+                    .expect("active_halts checked non-empty above")
+                    .clone(),
                 scope: scope.to_string(),
             }),
             HaltPolicy::HaltScope(halt_scope) if halt_scope == scope => {
                 Err(DurabilityHaltedError {
-                    bundle_id: self.active_halts.last().expect("active_halts checked non-empty above").clone(),
+                    bundle_id: self
+                        .active_halts
+                        .last()
+                        .expect("active_halts checked non-empty above")
+                        .clone(),
                     scope: scope.to_string(),
                 })
             }

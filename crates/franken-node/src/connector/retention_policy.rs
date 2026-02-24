@@ -218,7 +218,10 @@ impl RetentionStore {
             });
         }
 
-        let msg = self.messages.remove(message_id).expect("message existence verified above");
+        let msg = self
+            .messages
+            .remove(message_id)
+            .expect("message existence verified above");
         self.total_bytes = self.total_bytes.saturating_sub(msg.size_bytes);
 
         self.decisions.push(RetentionDecision {

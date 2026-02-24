@@ -18,9 +18,23 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
+
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+    if a_bytes.len() != b_bytes.len() {
+        return false;
+    }
+    let mut result = 0;
+    for (x, y) in a_bytes.iter().zip(b_bytes.iter()) {
+        result |= x ^ y;
+    }
+    result == 0
+}
 
 /// Canonical root pointer filename.
 pub const ROOT_POINTER_FILE: &str = "root_pointer.json";
@@ -383,7 +397,7 @@ pub fn bootstrap_root(
     }
 
     let expected_mac = sign_payload(&root_hash, &auth_config.trust_anchor);
-    if auth.mac != expected_mac {
+    if !constant_time_eq(&auth.mac, &expected_mac) {
         return Err(BootstrapError::RootAuthFailed {
             reason: "detached root MAC verification failed".to_string(),
         });
@@ -433,7 +447,7 @@ pub fn verify_publish_event(
 ) -> Result<bool, RootPointerError> {
     let canonical = canonical_event_payload(event)?;
     let expected = sign_payload(&canonical, signing_key);
-    Ok(expected == event.signature)
+    Ok(constant_time_eq(&expected, &event.signature))
 }
 
 fn publish_root_internal(
@@ -634,12 +648,10 @@ fn hash_hex(payload: &[u8]) -> String {
 }
 
 fn sign_payload(payload: &str, signing_key: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(b"root_pointer_sign_v1:");
-    hasher.update(signing_key);
-    hasher.update(b":");
-    hasher.update(payload.as_bytes());
-    hex::encode(hasher.finalize())
+    let mut mac = Hmac::<Sha256>::new_from_slice(signing_key).expect("HMAC accepts any key length");
+    mac.update(b"root_pointer_sign_v1:");
+    mac.update(payload.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

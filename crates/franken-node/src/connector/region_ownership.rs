@@ -426,13 +426,13 @@ pub fn generate_quiescence_trace(
 
     // Open events
     for region in regions {
-        trace.push(serde_json::to_value(region.open_event()).unwrap_or_default());
+        trace.push(serde_json::to_value(region.open_event()).expect("RegionEvent is serializable"));
     }
 
     // Close events
     for result in close_results {
         for event in &result.events {
-            trace.push(serde_json::to_value(event).unwrap_or_default());
+            trace.push(serde_json::to_value(event).expect("RegionEvent is serializable"));
         }
     }
 

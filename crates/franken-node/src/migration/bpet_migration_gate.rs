@@ -311,11 +311,17 @@ pub fn evaluate_rollout_health(
     rollout: &StagedRolloutPlan,
     health: &RolloutHealthSnapshot,
 ) -> RollbackDecision {
-    let step = rollout
-        .steps
-        .iter()
-        .find(|step| step.phase == health.phase)
-        .expect("rollout phase should exist in staged plan");
+    let step = match rollout.steps.iter().find(|step| step.phase == health.phase) {
+        Some(s) => s,
+        None => {
+            let reason = format!("rollback triggered: unknown phase {:?}", health.phase);
+            return RollbackDecision {
+                should_rollback: true,
+                reason: reason.clone(),
+                event: gate_event(event_codes::ROLLBACK_TRIGGERED, "error", trace_id, reason),
+            };
+        }
+    };
 
     let instability_violation = health.observed.instability_score > step.max_instability_score;
     let regime_violation =

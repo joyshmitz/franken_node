@@ -530,20 +530,21 @@ impl ControlTransitionGate {
                 continue;
             }
 
+            // Check hash is non-empty as basic integrity regardless of state.
+            if ev.evidence_hash.is_empty() {
+                self.emit_event(
+                    event_codes::CTL_007_DENIED_INVALID_HASH,
+                    &request.request_id,
+                    tt,
+                    &request.trace_id,
+                    format!("Evidence {} has empty hash", ev.evidence_id),
+                );
+                continue;
+            }
+
             // Check verification state.
             match ev.state {
                 VerificationState::Verified => {
-                    // Check hash is non-empty as basic validity.
-                    if ev.evidence_hash.is_empty() {
-                        self.emit_event(
-                            event_codes::CTL_007_DENIED_INVALID_HASH,
-                            &request.request_id,
-                            tt,
-                            &request.trace_id,
-                            format!("Evidence {} has empty hash", ev.evidence_id),
-                        );
-                        continue;
-                    }
                     valid_evidence_ids.push(ev.evidence_id.clone());
                 }
                 VerificationState::Unverified => {

@@ -433,7 +433,10 @@ impl QuarantineRegistry {
             .insert(node_id.to_owned(), timestamp.to_owned());
 
         // Transition to Propagated if still in Initiated state.
-        let record = self.records.get_mut(order_id).expect("order existence verified above");
+        let record = self
+            .records
+            .get_mut(order_id)
+            .expect("order existence verified above");
         if record.state == QuarantineState::Initiated {
             record.state = QuarantineState::Propagated;
             record
@@ -472,7 +475,10 @@ impl QuarantineRegistry {
             )
         };
 
-        let record = self.records.get_mut(order_id).expect("order existence verified above");
+        let record = self
+            .records
+            .get_mut(order_id)
+            .expect("order existence verified above");
         if record.state != QuarantineState::Enforced {
             record.state = QuarantineState::Enforced;
             record
@@ -507,7 +513,10 @@ impl QuarantineRegistry {
             )
         };
 
-        let record = self.records.get_mut(order_id).expect("order existence verified above");
+        let record = self
+            .records
+            .get_mut(order_id)
+            .expect("order existence verified above");
         record.state = QuarantineState::Draining;
         record
             .state_history
@@ -544,7 +553,10 @@ impl QuarantineRegistry {
             )
         };
 
-        let record = self.records.get_mut(order_id).expect("order existence verified above");
+        let record = self
+            .records
+            .get_mut(order_id)
+            .expect("order existence verified above");
         record.state = QuarantineState::Isolated;
         record
             .state_history
@@ -619,7 +631,10 @@ impl QuarantineRegistry {
         let trace_id = recall.trace_id.clone();
         let timestamp = recall.issued_at.clone();
 
-        let record = self.records.get_mut(&quarantine_order_id).expect("order existence verified above");
+        let record = self
+            .records
+            .get_mut(&quarantine_order_id)
+            .expect("order existence verified above");
         record.state = QuarantineState::RecallTriggered;
         record
             .state_history
@@ -659,7 +674,10 @@ impl QuarantineRegistry {
         let node_id = receipt.node_id.clone();
         let timestamp = receipt.removed_at.clone();
 
-        let record = self.records.get_mut(order_id).expect("order existence verified above");
+        let record = self
+            .records
+            .get_mut(order_id)
+            .expect("order existence verified above");
         record.recall_receipts.push(receipt);
 
         self.append_audit(
@@ -692,7 +710,10 @@ impl QuarantineRegistry {
                 record.order.trace_id.clone(),
             )
         };
-        let record = self.records.get_mut(order_id).expect("order existence verified above");
+        let record = self
+            .records
+            .get_mut(order_id)
+            .expect("order existence verified above");
 
         record.state = QuarantineState::RecallCompleted;
         record
@@ -744,7 +765,10 @@ impl QuarantineRegistry {
         let trace_id = clearance.trace_id.clone();
         let timestamp = clearance.cleared_at.clone();
 
-        let record = self.records.get_mut(&order_id).expect("order existence verified above");
+        let record = self
+            .records
+            .get_mut(&order_id)
+            .expect("order existence verified above");
         record.state = QuarantineState::Lifted;
         record
             .state_history

@@ -498,7 +498,10 @@ impl CancellationRuntime {
         });
 
         self.tasks.insert(task_id.to_string(), entry);
-        Ok(self.tasks.get(task_id).expect("task existence verified: just inserted"))
+        Ok(self
+            .tasks
+            .get(task_id)
+            .expect("task existence verified: just inserted"))
     }
 
     /// Register a child task under a parent.
@@ -518,7 +521,10 @@ impl CancellationRuntime {
                 task_id: child_id.to_string(),
             });
         }
-        let parent = self.tasks.get_mut(parent_id).expect("task existence verified above");
+        let parent = self
+            .tasks
+            .get_mut(parent_id)
+            .expect("task existence verified above");
         if parent
             .child_task_ids
             .iter()
@@ -553,7 +559,10 @@ impl CancellationRuntime {
 
         // Idempotent: absorb duplicate cancel on CancelRequested
         if phase == TaskPhase::CancelRequested {
-            return Ok(self.tasks.get(task_id).expect("task existence verified above"));
+            return Ok(self
+                .tasks
+                .get(task_id)
+                .expect("task existence verified above"));
         }
 
         if phase == TaskPhase::Finalized {
@@ -570,7 +579,10 @@ impl CancellationRuntime {
             });
         }
 
-        let entry = self.tasks.get_mut(task_id).expect("task existence verified above");
+        let entry = self
+            .tasks
+            .get_mut(task_id)
+            .expect("task existence verified above");
         let from = phase;
         entry.phase = TaskPhase::CancelRequested;
         entry.cancel_requested_ms = Some(timestamp_ms);
@@ -607,7 +619,10 @@ impl CancellationRuntime {
             }
         }
 
-        Ok(self.tasks.get(task_id).expect("task existence verified above"))
+        Ok(self
+            .tasks
+            .get(task_id)
+            .expect("task existence verified above"))
     }
 
     /// Start the drain phase on a cancelled task.
@@ -635,7 +650,10 @@ impl CancellationRuntime {
         }
 
         let from = entry.phase;
-        let entry = self.tasks.get_mut(task_id).expect("task existence verified above");
+        let entry = self
+            .tasks
+            .get_mut(task_id)
+            .expect("task existence verified above");
         entry.phase = TaskPhase::Draining;
         entry.drain_started_ms = Some(timestamp_ms);
 
@@ -650,7 +668,10 @@ impl CancellationRuntime {
             schema_version: SCHEMA_VERSION.to_string(),
         });
 
-        Ok(self.tasks.get(task_id).expect("task existence verified above"))
+        Ok(self
+            .tasks
+            .get(task_id)
+            .expect("task existence verified above"))
     }
 
     /// Complete the drain phase.
@@ -696,7 +717,10 @@ impl CancellationRuntime {
             event_codes::FN_CX_004
         };
 
-        let entry = self.tasks.get_mut(task_id).expect("task existence verified above");
+        let entry = self
+            .tasks
+            .get_mut(task_id)
+            .expect("task existence verified above");
         entry.phase = TaskPhase::DrainComplete;
         entry.drain_completed_ms = Some(timestamp_ms);
         entry.drain_result = Some(effective_result);
@@ -723,7 +747,10 @@ impl CancellationRuntime {
             });
         }
 
-        Ok(self.tasks.get(task_id).expect("task existence verified above"))
+        Ok(self
+            .tasks
+            .get(task_id)
+            .expect("task existence verified above"))
     }
 
     /// Finalize a task after drain, producing a FinalizeRecord.
@@ -765,7 +792,10 @@ impl CancellationRuntime {
         let drain_result = entry.drain_result.clone().unwrap_or(DrainResult::Completed);
 
         // Transition to Finalizing
-        let entry = self.tasks.get_mut(task_id).expect("task existence verified above");
+        let entry = self
+            .tasks
+            .get_mut(task_id)
+            .expect("task existence verified above");
         entry.phase = TaskPhase::Finalizing;
         entry.finalize_started_ms = Some(timestamp_ms);
 
@@ -801,7 +831,10 @@ impl CancellationRuntime {
             });
 
             // Still finalize (with error record) so the lane can be released
-            let entry = self.tasks.get_mut(task_id).expect("task existence verified above");
+            let entry = self
+                .tasks
+                .get_mut(task_id)
+                .expect("task existence verified above");
             entry.phase = TaskPhase::Finalized;
             entry.finalize_completed_ms = Some(timestamp_ms);
 
@@ -825,7 +858,10 @@ impl CancellationRuntime {
             schema_version: SCHEMA_VERSION.to_string(),
         };
 
-        let entry = self.tasks.get_mut(task_id).expect("task existence verified above");
+        let entry = self
+            .tasks
+            .get_mut(task_id)
+            .expect("task existence verified above");
         entry.phase = TaskPhase::Finalized;
         entry.finalize_completed_ms = Some(timestamp_ms);
         entry.finalize_record = Some(record.clone());

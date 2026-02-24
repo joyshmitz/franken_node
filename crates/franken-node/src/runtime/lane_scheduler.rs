@@ -598,12 +598,12 @@ impl LaneScheduler {
         let mut starvation_info: Vec<(SchedulerLane, usize, u64)> = Vec::new();
         for config in self.policy.lane_configs.values() {
             let counters = &self.counters[config.lane.as_str()];
-            if counters.queued_count > 0 {
-                if let Some(last) = counters.last_completion_ms {
-                    let elapsed = current_ms.saturating_sub(last);
-                    if elapsed >= config.starvation_window_ms {
-                        starvation_info.push((config.lane, counters.queued_count, elapsed));
-                    }
+            if counters.queued_count > 0
+                && let Some(last) = counters.last_completion_ms
+            {
+                let elapsed = current_ms.saturating_sub(last);
+                if elapsed >= config.starvation_window_ms {
+                    starvation_info.push((config.lane, counters.queued_count, elapsed));
                 }
             }
         }

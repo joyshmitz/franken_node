@@ -505,7 +505,10 @@ impl BundleStore {
             detail: "rollback bundle generated successfully".to_string(),
         });
 
-        self.bundles.get(target_version).expect("bundle just inserted above").clone()
+        self.bundles
+            .get(target_version)
+            .expect("bundle just inserted above")
+            .clone()
     }
 
     /// Apply a rollback bundle, or dry-run to preview actions.

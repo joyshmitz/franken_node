@@ -1518,8 +1518,10 @@ mod tests {
         };
         reg.submit_attestation(sub2).unwrap();
 
-        assert!(reg.check_selective_reporting(&v.verifier_id, 2));
-        assert!(!reg.check_selective_reporting(&v.verifier_id, 3));
+        // With 2 dimensions submitted: 2 >= 2, no selective reporting
+        assert!(!reg.check_selective_reporting(&v.verifier_id, 2));
+        // With 2 dimensions submitted: 2 < 3, selective reporting detected
+        assert!(reg.check_selective_reporting(&v.verifier_id, 3));
     }
 
     #[test]

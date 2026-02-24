@@ -843,7 +843,11 @@ impl StakingLedger {
         let post_balance = pre_balance.saturating_sub(slash_amount);
 
         // Update stake record
-        let stake_record = self.state.stakes.get_mut(&stake_id.0).expect("stake existence verified above");
+        let stake_record = self
+            .state
+            .stakes
+            .get_mut(&stake_id.0)
+            .expect("stake existence verified above");
         stake_record.state = StakeState::Slashed;
         stake_record.slashed_at = Some(timestamp);
         stake_record.amount = post_balance;
@@ -966,7 +970,11 @@ impl StakingLedger {
         }
 
         // Transition to UnderAppeal
-        self.state.stakes.get_mut(&stake_id.0).expect("stake existence verified above").state = StakeState::UnderAppeal;
+        self.state
+            .stakes
+            .get_mut(&stake_id.0)
+            .expect("stake existence verified above")
+            .state = StakeState::UnderAppeal;
 
         let appeal = AppealRecord {
             appeal_id: self.state.next_appeal_id,
@@ -1067,10 +1075,18 @@ impl StakingLedger {
 
         if upheld {
             // Appeal denied: remain slashed
-            self.state.stakes.get_mut(&stake_id.0).expect("stake existence verified above").state = StakeState::Slashed;
+            self.state
+                .stakes
+                .get_mut(&stake_id.0)
+                .expect("stake existence verified above")
+                .state = StakeState::Slashed;
         } else {
             // Appeal granted: restore to active and return slashed amount
-            let stake_record = self.state.stakes.get_mut(&stake_id.0).expect("stake existence verified above");
+            let stake_record = self
+                .state
+                .stakes
+                .get_mut(&stake_id.0)
+                .expect("stake existence verified above");
             stake_record.state = StakeState::Active;
 
             // Find the slash event and restore

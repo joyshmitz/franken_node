@@ -881,14 +881,32 @@ impl AttestationLedger {
             }
             *report.get_mut("total").expect("key initialized above") += 1;
             match att.status {
-                AttestationStatus::Active => *report.get_mut("active").expect("key initialized above") += 1,
-                AttestationStatus::Expired => *report.get_mut("expired").expect("key initialized above") += 1,
-                AttestationStatus::Revoked => *report.get_mut("revoked").expect("key initialized above") += 1,
+                AttestationStatus::Active => {
+                    *report.get_mut("active").expect("key initialized above") += 1
+                }
+                AttestationStatus::Expired => {
+                    *report.get_mut("expired").expect("key initialized above") += 1
+                }
+                AttestationStatus::Revoked => {
+                    *report.get_mut("revoked").expect("key initialized above") += 1
+                }
             }
             match att.outcome {
-                PredicateOutcome::Pass => *report.get_mut("outcome_pass").expect("key initialized above") += 1,
-                PredicateOutcome::Fail => *report.get_mut("outcome_fail").expect("key initialized above") += 1,
-                PredicateOutcome::Error => *report.get_mut("outcome_error").expect("key initialized above") += 1,
+                PredicateOutcome::Pass => {
+                    *report
+                        .get_mut("outcome_pass")
+                        .expect("key initialized above") += 1
+                }
+                PredicateOutcome::Fail => {
+                    *report
+                        .get_mut("outcome_fail")
+                        .expect("key initialized above") += 1
+                }
+                PredicateOutcome::Error => {
+                    *report
+                        .get_mut("outcome_error")
+                        .expect("key initialized above") += 1
+                }
             }
         }
         report

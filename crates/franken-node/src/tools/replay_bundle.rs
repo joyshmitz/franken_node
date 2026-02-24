@@ -218,8 +218,6 @@ pub fn generate_replay_bundle(
     prepared.sort_by(|left, right| {
         left.timestamp_micros
             .cmp(&right.timestamp_micros)
-            .then_with(|| left.event_type.as_str().cmp(right.event_type.as_str()))
-            .then_with(|| left.payload_hash.cmp(&right.payload_hash))
             .then_with(|| left.original_index.cmp(&right.original_index))
     });
 

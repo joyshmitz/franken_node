@@ -432,19 +432,8 @@ impl TrustCardRegistry {
             "query by extension id",
         );
 
-        let latest = self.latest_card(extension_id).cloned();
-        let Some(latest_card) = latest else {
-            return Ok(None);
-        };
-
-        let cache_decision = self
-            .cache_by_extension
-            .get(extension_id)
-            .filter(|cached| cached.card.trust_card_version == latest_card.trust_card_version)
-            .map(|cached| now_secs.saturating_sub(cached.cached_at_secs) <= self.cache_ttl_secs);
-
-        let card = match cache_decision {
-            Some(true) => {
+        if let Some(cached) = self.cache_by_extension.get(extension_id) {
+            if now_secs.saturating_sub(cached.cached_at_secs) <= self.cache_ttl_secs {
                 self.emit(
                     TRUST_CARD_CACHE_HIT,
                     Some(extension_id.to_string()),
@@ -452,48 +441,51 @@ impl TrustCardRegistry {
                     now_secs,
                     "served from cache",
                 );
-                self.cache_by_extension
-                    .get(extension_id)
-                    .map(|cached| cached.card.clone())
-                    .unwrap_or(latest_card.clone())
-            }
-            Some(false) => {
+                let card = cached.card.clone();
+                verify_card_signature(&card, &self.registry_key)?;
                 self.emit(
-                    TRUST_CARD_STALE_REFRESH,
+                    TRUST_CARD_SERVED,
                     Some(extension_id.to_string()),
                     trace_id,
                     now_secs,
-                    "cache stale; refreshed from source",
+                    "served verified trust card",
                 );
-                self.cache_by_extension.insert(
-                    extension_id.to_string(),
-                    CachedCard {
-                        card: latest_card.clone(),
-                        cached_at_secs: now_secs,
-                    },
-                );
-                latest_card.clone()
+                return Ok(Some(card));
             }
-            None => {
-                self.emit(
-                    TRUST_CARD_CACHE_MISS,
-                    Some(extension_id.to_string()),
-                    trace_id,
-                    now_secs,
-                    "cache miss",
-                );
-                self.cache_by_extension.insert(
-                    extension_id.to_string(),
-                    CachedCard {
-                        card: latest_card.clone(),
-                        cached_at_secs: now_secs,
-                    },
-                );
-                latest_card.clone()
-            }
+        }
+
+        let latest = self.latest_card(extension_id).cloned();
+        let Some(latest_card) = latest else {
+            return Ok(None);
         };
 
-        verify_card_signature(&card, &self.registry_key)?;
+        if self.cache_by_extension.contains_key(extension_id) {
+            self.emit(
+                TRUST_CARD_STALE_REFRESH,
+                Some(extension_id.to_string()),
+                trace_id,
+                now_secs,
+                "cache stale; refreshed from source",
+            );
+        } else {
+            self.emit(
+                TRUST_CARD_CACHE_MISS,
+                Some(extension_id.to_string()),
+                trace_id,
+                now_secs,
+                "cache miss",
+            );
+        }
+
+        self.cache_by_extension.insert(
+            extension_id.to_string(),
+            CachedCard {
+                card: latest_card.clone(),
+                cached_at_secs: now_secs,
+            },
+        );
+
+        verify_card_signature(&latest_card, &self.registry_key)?;
         self.emit(
             TRUST_CARD_SERVED,
             Some(extension_id.to_string()),
@@ -501,7 +493,7 @@ impl TrustCardRegistry {
             now_secs,
             "served verified trust card",
         );
-        Ok(Some(card))
+        Ok(Some(latest_card))
     }
 
     pub fn list(
@@ -854,7 +846,7 @@ pub fn render_comparison_human(comparison: &TrustCardComparison) -> String {
 
 pub fn verify_card_signature(card: &TrustCard, registry_key: &[u8]) -> Result<(), TrustCardError> {
     let expected_hash = compute_card_hash(card)?;
-    if card.card_hash != expected_hash {
+    if !constant_time_eq(&card.card_hash, &expected_hash) {
         return Err(TrustCardError::CardHashMismatch(
             card.extension.extension_id.clone(),
         ));
@@ -864,12 +856,25 @@ pub fn verify_card_signature(card: &TrustCard, registry_key: &[u8]) -> Result<()
         HmacSha256::new_from_slice(registry_key).map_err(|_| TrustCardError::InvalidRegistryKey)?;
     mac.update(card.card_hash.as_bytes());
     let expected_signature = hex::encode(mac.finalize().into_bytes());
-    if card.registry_signature != expected_signature {
+    if !constant_time_eq(&card.registry_signature, &expected_signature) {
         return Err(TrustCardError::SignatureInvalid(
             card.extension.extension_id.clone(),
         ));
     }
     Ok(())
+}
+
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+    if a_bytes.len() != b_bytes.len() {
+        return false;
+    }
+    let mut result = 0;
+    for (x, y) in a_bytes.iter().zip(b_bytes.iter()) {
+        result |= x ^ y;
+    }
+    result == 0
 }
 
 pub fn compute_card_hash(card: &TrustCard) -> Result<String, TrustCardError> {

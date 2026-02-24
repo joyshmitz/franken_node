@@ -493,7 +493,11 @@ impl RecommendationEngine {
         }
 
         // Sort by expected loss (highest first) for ranking.
-        recommendations.sort_by(|a, b| b.expected_loss.partial_cmp(&a.expected_loss).unwrap_or(std::cmp::Ordering::Equal));
+        recommendations.sort_by(|a, b| {
+            b.expected_loss
+                .partial_cmp(&a.expected_loss)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Re-assign priority after sort.
         for (i, rec) in recommendations.iter_mut().enumerate() {

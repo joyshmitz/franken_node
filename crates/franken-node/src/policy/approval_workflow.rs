@@ -333,7 +333,10 @@ impl PolicyChangeEngine {
             ));
         }
         if !record.approvals.is_empty()
-            && record.approvals.iter().all(|a| a.signer == record.proposal.proposed_by)
+            && record
+                .approvals
+                .iter()
+                .all(|a| a.signer == record.proposal.proposed_by)
             && signer == record.proposal.proposed_by
         {
             return Err(PolicyChangeError::new(

@@ -6,9 +6,10 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+use base64::Engine as _;
 use frankenengine_extension_host::{
     Capability, ExtensionManifest, ManifestValidationError,
-    validate_manifest as validate_engine_manifest,
+    validate_manifest as validate_engine_manifest, with_computed_content_hash,
 };
 use serde::{Deserialize, Serialize};
 
@@ -141,16 +142,35 @@ impl SignedExtensionManifest {
     pub fn to_engine_manifest(&self) -> Result<ExtensionManifest, ManifestSchemaError> {
         // Build through serde to avoid compile-time coupling to extension-host
         // manifest field drift while still projecting required core fields.
+        // Projects publisher_signature, trust_chain_ref, and min_engine_version
+        // for engine-level supply-chain checks.
+        let sig_bytes = base64::engine::general_purpose::STANDARD
+            .decode(&self.signature.signature)
+            .map_err(|e| ManifestSchemaError::EngineManifestProjection {
+                reason: format!("signature base64 decode failed: {e}"),
+            })?;
+
         let payload = serde_json::json!({
             "name": self.package.name.clone(),
             "version": self.package.version.clone(),
             "entrypoint": self.entrypoint.clone(),
             "capabilities": self.capabilities.clone(),
+            "publisher_signature": sig_bytes,
+            "trust_chain_ref": self.trust.trust_card_reference.clone(),
+            "min_engine_version": self.minimum_runtime_version.clone(),
         });
 
-        serde_json::from_value(payload).map_err(|error| {
+        let manifest: ExtensionManifest = serde_json::from_value(payload).map_err(|error| {
             ManifestSchemaError::EngineManifestProjection {
                 reason: format!("engine manifest projection failed: {error}"),
+            }
+        })?;
+
+        // Compute content_hash from canonical bytes so engine-level
+        // supply-chain integrity checks pass.
+        with_computed_content_hash(manifest).map_err(|error| {
+            ManifestSchemaError::EngineManifestProjection {
+                reason: format!("content hash computation failed: {error}"),
             }
         })
     }
@@ -478,6 +498,12 @@ mod tests {
         assert_eq!(engine_manifest.version, "1.2.3");
         assert_eq!(engine_manifest.entrypoint, "dist/main.js");
         assert_eq!(engine_manifest.capabilities.len(), 2);
+        assert!(engine_manifest.publisher_signature.is_some());
+        assert_eq!(
+            engine_manifest.trust_chain_ref.as_deref(),
+            Some("trust-card://auth-guard@1.2.3")
+        );
+        assert_eq!(engine_manifest.min_engine_version, "0.1.0");
     }
 
     #[test]

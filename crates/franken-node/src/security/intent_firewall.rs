@@ -243,7 +243,7 @@ pub struct TrafficPolicyRule {
     pub verdict: FirewallVerdict,
     /// Optional host pattern filter (empty = all hosts).
     pub host_pattern: Option<String>,
-    /// Priority (lower = higher priority).
+    /// Priority (higher number = higher priority, overrides lower).
     pub priority: u32,
     /// Human-readable rationale.
     pub rationale: String,
@@ -322,9 +322,11 @@ impl TrafficPolicy {
     }
 
     /// Look up the highest-priority rule for a given intent category.
+    /// Higher priority number overrides lower (specific overrides beat defaults).
     pub fn match_rule(&self, intent: IntentClassification) -> Option<&TrafficPolicyRule> {
-        // BTreeMap iterates in ascending key order; lower key = higher priority.
-        self.rules.values().find(|r| r.intent == intent)
+        // BTreeMap iterates in ascending key order; reverse to find highest-numbered
+        // (most-specific) matching rule first.
+        self.rules.values().rev().find(|r| r.intent == intent)
     }
 }
 

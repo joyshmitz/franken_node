@@ -261,11 +261,11 @@ impl Config {
 
         let mut config = Self::for_profile(selected_profile);
 
+        config.apply_overrides(&document.base, MergeStage::File, &mut decisions);
+
         if let Some(profile_block) = document.profile_block(selected_profile) {
             config.apply_overrides(profile_block, MergeStage::Profile, &mut decisions);
         }
-
-        config.apply_overrides(&document.base, MergeStage::File, &mut decisions);
         config.apply_env_overrides(env_lookup, &mut decisions)?;
         config.validate()?;
 
@@ -399,15 +399,15 @@ impl Config {
             }
         }
 
-        if let Some(section) = &overrides.fleet
-            && let Some(value) = section.convergence_timeout_seconds
-        {
-            self.fleet.convergence_timeout_seconds = value;
-            decisions.push(MergeDecision::new(
-                stage.clone(),
-                "fleet.convergence_timeout_seconds",
-                value,
-            ));
+        if let Some(section) = &overrides.fleet {
+            if let Some(value) = section.convergence_timeout_seconds {
+                self.fleet.convergence_timeout_seconds = value;
+                decisions.push(MergeDecision::new(
+                    stage.clone(),
+                    "fleet.convergence_timeout_seconds",
+                    value,
+                ));
+            }
         }
 
         if let Some(section) = &overrides.observability {

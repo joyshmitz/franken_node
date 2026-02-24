@@ -354,7 +354,10 @@ impl EvictionSagaManager {
             serde_json::json!({"saga_id": saga_id, "phase": phase_str, "action": format!("{action}")}));
 
         // Re-borrow mutably for state updates
-        let saga = self.sagas.get_mut(saga_id).expect("saga existence verified above");
+        let saga = self
+            .sagas
+            .get_mut(saga_id)
+            .expect("saga existence verified above");
         saga.record_transition(SagaPhase::Compensating, &format!("compensation: {action}"));
 
         // Apply compensation
@@ -407,18 +410,27 @@ impl EvictionSagaManager {
         // Actually apply the compensation (cancel_saga equivalent for crash recovery)
         match &action {
             CompensationAction::AbortUpload => {
-                let saga = self.sagas.get_mut(saga_id).expect("saga existence verified above");
+                let saga = self
+                    .sagas
+                    .get_mut(saga_id)
+                    .expect("saga existence verified above");
                 saga.l3_present = false;
                 saga.record_transition(SagaPhase::Compensated, "crash_recovery: abort_upload");
             }
             CompensationAction::CleanupL3 => {
-                let saga = self.sagas.get_mut(saga_id).expect("saga existence verified above");
+                let saga = self
+                    .sagas
+                    .get_mut(saga_id)
+                    .expect("saga existence verified above");
                 saga.l3_present = false;
                 saga.l3_verified = false;
                 saga.record_transition(SagaPhase::Compensated, "crash_recovery: cleanup_l3");
             }
             CompensationAction::CompleteRetirement => {
-                let saga = self.sagas.get_mut(saga_id).expect("saga existence verified above");
+                let saga = self
+                    .sagas
+                    .get_mut(saga_id)
+                    .expect("saga existence verified above");
                 saga.l2_present = false;
                 saga.record_transition(SagaPhase::Complete, "crash_recovery: complete_retirement");
             }

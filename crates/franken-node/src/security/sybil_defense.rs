@@ -214,13 +214,13 @@ impl std::fmt::Display for SybilDefenseError {
 /// what fraction of extreme values are removed before computing the mean.
 pub struct TrustAggregator {
     /// Fraction of values to trim from each tail (0.0..0.5).
-    /// Default: 0.1 (10% from each side = 20% total trim).
+    /// Default: 0.2 (20% from each side = 40% total trim).
     pub trim_ratio: f64,
 }
 
 impl Default for TrustAggregator {
     fn default() -> Self {
-        Self { trim_ratio: 0.1 }
+        Self { trim_ratio: 0.2 }
     }
 }
 
@@ -483,18 +483,24 @@ impl SybilDetector {
 
         for (source_id, source_signals) in &by_source {
             if source_signals.len() > self.burst_threshold {
-                // Check time window
-                let min_ts = source_signals
-                    .iter()
-                    .map(|s| s.timestamp_ms)
-                    .min()
-                    .unwrap_or(0);
-                let max_ts = source_signals
-                    .iter()
-                    .map(|s| s.timestamp_ms)
-                    .max()
-                    .unwrap_or(0);
-                if max_ts - min_ts <= self.burst_window_ms {
+                let mut timestamps: Vec<u64> =
+                    source_signals.iter().map(|s| s.timestamp_ms).collect();
+                timestamps.sort_unstable();
+
+                let mut burst_detected = false;
+                let required_signals_in_window = self.burst_threshold + 1;
+                if timestamps.len() >= required_signals_in_window {
+                    for i in 0..=timestamps.len() - required_signals_in_window {
+                        if timestamps[i + required_signals_in_window - 1] - timestamps[i]
+                            <= self.burst_window_ms
+                        {
+                            burst_detected = true;
+                            break;
+                        }
+                    }
+                }
+
+                if burst_detected {
                     sybil_ids.insert(source_id.to_string());
                 }
             }

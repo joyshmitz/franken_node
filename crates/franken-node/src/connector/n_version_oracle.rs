@@ -283,6 +283,22 @@ pub fn run_harness(
                 let _ = event_codes::ORACLE_DIVERGENCE_CLASSIFIED;
                 let _ = event_codes::ORACLE_RISK_TIER_ASSIGNED;
 
+                let reason = match risk_tier {
+                    RiskTier::High => format!(
+                        "High: divergence at {} against {} ({} reference runtime(s) configured)",
+                        sample.boundary_name,
+                        rt.runtime_id,
+                        config.reference_runtimes.len()
+                    ),
+                    RiskTier::Medium => format!(
+                        "Medium: single-reference divergence at {} against {}",
+                        sample.boundary_name, rt.runtime_id
+                    ),
+                    RiskTier::Low => format!(
+                        "Low: divergence below threshold at {} against {}",
+                        sample.boundary_name, rt.runtime_id
+                    ),
+                };
                 divergences.push(BoundaryDivergence {
                     divergence_id: format!("div-{div_counter:04}"),
                     boundary_name: sample.boundary_name.clone(),
@@ -290,10 +306,7 @@ pub fn run_harness(
                     reference_output_digest: ref_digest,
                     reference_runtime: rt.clone(),
                     risk_tier,
-                    classification_reason: format!(
-                        "digest mismatch at {} against {}",
-                        sample.boundary_name, rt.runtime_id
-                    ),
+                    classification_reason: reason,
                     l1_oracle_link: None,
                 });
             }
