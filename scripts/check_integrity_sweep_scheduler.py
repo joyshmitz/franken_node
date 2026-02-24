@@ -162,7 +162,11 @@ def self_test():
 
 
 def main():
+    logger = configure_test_logging("check_integrity_sweep_scheduler")
     import argparse
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
     parser = argparse.ArgumentParser()
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--self-test", action="store_true")
@@ -177,7 +181,7 @@ def main():
     passing = sum(1 for c in checks if c["pass"])
     failing = total - passing
 
-    test_count = len(re.findall(r"#\[test\]", open(IMPL).read())) if os.path.isfile(IMPL) else 0
+    test_count = len(re.findall(r"#\[test\]", __import__("pathlib").Path(IMPL).read_text(encoding="utf-8"))) if os.path.isfile(IMPL) else 0
 
     if args.json:
         result = {

@@ -19,6 +19,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BEAD_ID = "bd-5si"
 SECTION = "10.12"
@@ -354,6 +356,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_trust_fabric")
     if "--self-test" in sys.argv:
         ok = self_test()
         print("self_test passed" if ok else "self_test FAILED")

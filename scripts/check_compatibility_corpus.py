@@ -18,6 +18,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 CORPUS = ROOT / "fixtures" / "conformance" / "corpus_manifest.json"
 SCHEMA = ROOT / "fixtures" / "conformance" / "fixture_metadata_schema.json"
@@ -190,6 +192,7 @@ def self_test():
 
 
 def main():
+    logger = configure_test_logging("check_compatibility_corpus")
     as_json = "--json" in sys.argv
 
     if "--self-test" in sys.argv:

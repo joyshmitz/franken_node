@@ -6,6 +6,9 @@ import os
 import re
 import subprocess
 import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = []
@@ -24,13 +27,14 @@ def check(check_id, description, passed, details=None):
 
 
 def main():
+    logger = configure_test_logging("check_quarantine_promotion")
     print("bd-3cm3: Schema-Gated Quarantine Promotion — Verification\n")
     all_pass = True
 
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/quarantine_promotion.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_rule = "struct PromotionRule" in content
         has_request = "struct PromotionRequest" in content
         has_receipt = "struct ProvenanceReceipt" in content
@@ -42,7 +46,7 @@ def main():
     all_pass &= check("QPR-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         errors = ["QPR_SCHEMA_FAILED", "QPR_NOT_AUTHENTICATED", "QPR_NOT_REACHABLE",
                   "QPR_NOT_PINNED", "QPR_INVALID_RULE"]
         found = [e for e in errors if e in content]
@@ -55,7 +59,7 @@ def main():
     report_valid = False
     if os.path.isfile(report_path):
         try:
-            data = json.load(open(report_path))
+            data = json.loads(__import__("pathlib").Path(report_path).read_text(encoding="utf-8"))
             report_valid = "receipts" in data and len(data["receipts"]) >= 1
         except json.JSONDecodeError:
             pass
@@ -64,7 +68,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/quarantine_promotion_gate.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = open(integ_path).read()
+        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
         has_schema = "inv_qpr_schema_gated" in content
         has_auth = "inv_qpr_authenticated" in content
         has_receipt = "inv_qpr_receipt" in content
@@ -92,7 +96,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-3cm3_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = open(spec_path).read()
+        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
         has_invariants = "INV-QPR" in content
         has_types = "PromotionRule" in content and "ProvenanceReceipt" in content
     else:

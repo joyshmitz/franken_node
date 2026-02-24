@@ -9,7 +9,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC_PATH = ROOT / "docs/integration/control_evidence_replay_adoption.md"
 RUST_IMPL_PATH = ROOT / "crates/franken-node/src/control_plane/evidence_replay_gate.rs"
@@ -254,6 +257,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_evidence_replay_gate")
     parser = argparse.ArgumentParser(description="Verify bd-tyr2 evidence replay gate")
     parser.add_argument("--json", action="store_true", help="Output JSON evidence")
     parser.add_argument("--self-test", action="store_true", help="Run self-test")

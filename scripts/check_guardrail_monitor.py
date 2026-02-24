@@ -29,6 +29,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 IMPL_PATH = ROOT / "crates" / "franken-node" / "src" / "policy" / "guardrail_monitor.rs"
 SPEC_PATH = ROOT / "docs" / "specs" / "section_10_14" / "bd-3a3q_contract.md"
 TELEMETRY_PATH = ROOT / "artifacts" / "10.14" / "guardrail_monitor_telemetry.csv"
@@ -191,6 +193,7 @@ def self_test() -> tuple[bool, list]:
 
 
 def main():
+    logger = configure_test_logging("check_guardrail_monitor")
     parser = argparse.ArgumentParser(description="Verify guardrail monitors (bd-3a3q)")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()

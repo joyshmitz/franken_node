@@ -20,6 +20,9 @@ Usage:
 import json
 import os
 import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -237,6 +240,7 @@ def self_test():
 
 
 def main():
+    logger = configure_test_logging("check_build_program")
     if "--self-test" in sys.argv:
         self_test()
         return

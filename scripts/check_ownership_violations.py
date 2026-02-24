@@ -22,6 +22,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 REGISTRY_PATH = ROOT / "docs" / "capability_ownership_registry.json"
 
 # Track-to-directory mapping: which directories belong to which section.
@@ -182,6 +184,7 @@ def check_file_ownership(filepath: Path, registry: dict) -> list[dict]:
 
 
 def main():
+    logger = configure_test_logging("check_ownership_violations")
     json_output = "--json" in sys.argv
     waiver_path = None
     for i, arg in enumerate(sys.argv):

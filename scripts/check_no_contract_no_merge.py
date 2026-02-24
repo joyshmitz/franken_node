@@ -12,7 +12,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 TEMPLATE_PATH = ROOT / "docs" / "templates" / "change_summary_template.md"
 EXAMPLE_PATH = ROOT / "docs" / "change_summaries" / "example_change_summary.json"
@@ -1111,6 +1114,7 @@ def self_test() -> tuple[bool, dict[str, Any]]:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_no_contract_no_merge")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--changed-files",

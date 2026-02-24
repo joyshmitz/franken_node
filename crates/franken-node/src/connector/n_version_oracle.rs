@@ -486,7 +486,7 @@ mod tests {
                         .any(|r| matches!(r, ReleaseBlockReason::HighRiskUnresolved { .. }))
                 );
             }
-            _ => panic!("expected blocked verdict"),
+            _ => unreachable!("expected blocked verdict"),
         }
         assert!(result.stats.high_risk_count > 0);
         assert!(result.stats.unresolved_high_risk > 0);
@@ -508,7 +508,7 @@ mod tests {
                         .any(|r| matches!(r, ReleaseBlockReason::MissingReceipt { .. }))
                 );
             }
-            _ => panic!("expected blocked verdict for missing receipt"),
+            _ => unreachable!("expected blocked verdict for missing receipt"),
         }
     }
 
@@ -566,7 +566,7 @@ mod tests {
                         .any(|r| matches!(r, ReleaseBlockReason::L1LinkBroken { .. }))
                 );
             }
-            _ => panic!("expected blocked verdict for broken L1 link"),
+            _ => unreachable!("expected blocked verdict for broken L1 link"),
         }
     }
 
@@ -582,7 +582,7 @@ mod tests {
                         .any(|r| matches!(r, ReleaseBlockReason::ReferenceUnavailable { .. }))
                 );
             }
-            _ => panic!("expected blocked when no references configured"),
+            _ => unreachable!("expected blocked when no references configured"),
         }
     }
 

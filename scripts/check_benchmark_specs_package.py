@@ -11,7 +11,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BEAD_ID = "bd-3h1g"
 SECTION = "14"
@@ -569,6 +572,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_benchmark_specs_package")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON output.")
     parser.add_argument("--self-test", action="store_true", help="Run deterministic internal self-test.")

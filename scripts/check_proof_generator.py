@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "vef" / "proof_generator.rs"
 MOD_RS = ROOT / "crates" / "franken-node" / "src" / "vef" / "mod.rs"
@@ -49,7 +51,7 @@ REQUIRED_INVARIANTS = [
 
 REQUIRED_IMPL_SYMBOLS = [
     "pub trait ProofBackend",
-    "pub struct MockProofBackend",
+    "pub struct TestProofBackend",
     "pub struct ComplianceProof",
     "pub struct ProofGenerator",
     "pub struct ProofRequest",
@@ -234,9 +236,9 @@ def check_backend_agnostic() -> None:
         "ProofBackend trait defined",
     )
     _check(
-        "contract_mock_backend",
-        "pub struct MockProofBackend" in src,
-        "MockProofBackend implementation",
+        "contract_test_backend",
+        "pub struct TestProofBackend" in src,
+        "TestProofBackend implementation",
     )
     _check(
         "contract_backend_name_method",
@@ -413,6 +415,7 @@ def self_test() -> dict[str, Any]:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_proof_generator")
     parser = argparse.ArgumentParser(description="Verify bd-1u8m artifacts")
     parser.add_argument("--json", action="store_true", help="emit JSON result")
     parser.add_argument("--self-test", action="store_true", help="run checker self-test")

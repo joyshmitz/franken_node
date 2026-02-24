@@ -6,6 +6,9 @@ import os
 import re
 import subprocess
 import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = []
@@ -24,13 +27,14 @@ def check(check_id, description, passed, details=None):
 
 
 def main():
+    logger = configure_test_logging("check_degraded_mode_audit")
     print("bd-w0jq: Degraded-Mode Audit Events — Verification\n")
     all_pass = True
 
     impl_path = os.path.join(ROOT, "crates/franken-node/src/security/degraded_mode_audit.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_event = "struct DegradedModeEvent" in content
         has_log = "struct DegradedModeAuditLog" in content
         has_error = "enum AuditError" in content
@@ -43,7 +47,7 @@ def main():
                        impl_exists and all_types)
 
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         errors = ["DM_MISSING_FIELD", "DM_EVENT_NOT_FOUND", "DM_SCHEMA_VIOLATION"]
         found = [e for e in errors if e in content]
         all_pass &= check("DM-ERRORS", "All 3 error codes present",
@@ -55,7 +59,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.load(open(fixture_path))
+            data = json.loads(__import__("pathlib").Path(fixture_path).read_text(encoding="utf-8"))
             fixture_valid = "cases" in data and len(data["cases"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -64,7 +68,7 @@ def main():
     events_path = os.path.join(ROOT, "artifacts/section_10_13/bd-w0jq/degraded_mode_events.jsonl")
     events_valid = False
     if os.path.isfile(events_path):
-        lines = open(events_path).read().strip().split("\n")
+        lines = __import__("pathlib").Path(events_path).read_text(encoding="utf-8").strip().split("\n")
         try:
             entries = [json.loads(line) for line in lines]
             events_valid = len(entries) >= 2 and all(
@@ -77,7 +81,7 @@ def main():
     conf_path = os.path.join(ROOT, "tests/conformance/degraded_mode_audit_events.rs")
     conf_exists = os.path.isfile(conf_path)
     if conf_exists:
-        content = open(conf_path).read()
+        content = __import__("pathlib").Path(conf_path).read_text(encoding="utf-8")
         has_required = "inv_dm_event_required" in content
         has_schema = "inv_dm_schema" in content
         has_corr = "inv_dm_correlation" in content
@@ -106,7 +110,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-w0jq_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = open(spec_path).read()
+        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
         has_invariants = "INV-DM" in content
         has_types = "DegradedModeEvent" in content and "DegradedModeAuditLog" in content
     else:

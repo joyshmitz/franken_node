@@ -457,7 +457,7 @@ mod tests {
             PersistError::ReplayMismatch { field, .. } => {
                 assert_eq!(field, "lifecycle_state");
             }
-            _ => panic!("expected ReplayMismatch"),
+            _ => unreachable!("expected ReplayMismatch"),
         }
     }
 
@@ -471,7 +471,7 @@ mod tests {
             PersistError::ReplayMismatch { field, .. } => {
                 assert_eq!(field, "rollout_phase");
             }
-            _ => panic!("expected ReplayMismatch"),
+            _ => unreachable!("expected ReplayMismatch"),
         }
     }
 

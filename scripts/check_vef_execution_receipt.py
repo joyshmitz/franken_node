@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "connector" / "vef_execution_receipt.rs"
 MOD_RS = ROOT / "crates" / "franken-node" / "src" / "connector" / "mod.rs"
@@ -369,6 +371,7 @@ def self_test() -> dict[str, Any]:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_vef_execution_receipt")
     parser = argparse.ArgumentParser(description="Verify bd-p73r artifacts")
     parser.add_argument("--json", action="store_true", help="emit JSON result")
     parser.add_argument("--self-test", action="store_true", help="run checker self-test")

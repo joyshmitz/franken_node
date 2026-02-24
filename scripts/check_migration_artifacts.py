@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 # -- File paths ----------------------------------------------------------------
 
@@ -381,6 +383,7 @@ def run_all() -> dict:
 
 
 def main():
+    logger = configure_test_logging("check_migration_artifacts")
     if "--self-test" in sys.argv:
         result = self_test()
         for c in result["checks"]:

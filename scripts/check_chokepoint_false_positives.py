@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BEAD_ID = "bd-paui"
 SECTION = "12"
@@ -351,6 +353,7 @@ def self_test() -> tuple[bool, list[dict]]:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_chokepoint_false_positives")
     as_json = "--json" in sys.argv
     run_self_test = "--self-test" in sys.argv
 

@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC = ROOT / "docs" / "specs" / "section_10_10" / "bd-1r2_contract.md"
 IMPL = ROOT / "crates" / "franken-node" / "src" / "control_plane" / "audience_token.rs"
@@ -480,6 +482,7 @@ def self_test():
 
 
 def main():
+    logger = configure_test_logging("check_audience_tokens")
     if "--self-test" in sys.argv:
         self_test()
         return

@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 COMPAT_SRC_DIRS = [
     ROOT / "src" / "compat",
     ROOT / "crates" / "compat",
@@ -157,6 +159,7 @@ def check_implementation_compliance() -> dict:
 
 
 def main():
+    logger = configure_test_logging("check_compat_ci_gate")
     json_output = "--json" in sys.argv
     timestamp = datetime.now(timezone.utc).isoformat()
 

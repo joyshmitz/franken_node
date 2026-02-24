@@ -318,6 +318,9 @@ def self_test() -> bool:
     """
     import importlib
     import types
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
     # We need to temporarily override the module-level path constants to point
     # at our synthetic fixtures.  We do this by monkey-patching the globals,
@@ -569,6 +572,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_deterministic_lab")
     parser = argparse.ArgumentParser(
         description="bd-2ko: Deterministic lab runtime verification gate (Section 10.11)"
     )

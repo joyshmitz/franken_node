@@ -20,6 +20,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 BEAD_ID = "bd-2f43"
 
 RESULTS: list[dict] = []
@@ -284,6 +286,7 @@ def self_test() -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    logger = configure_test_logging("check_migration_pathways")
     if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
         self_test()
         return

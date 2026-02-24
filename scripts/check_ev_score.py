@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC = ROOT / "docs" / "specs" / "section_11" / "bd-1jmq_contract.md"
 POLICY = ROOT / "docs" / "policy" / "ev_score_and_tier.md"
@@ -383,6 +385,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_ev_score")
     parser = argparse.ArgumentParser(
         description="Verify bd-1jmq: EV score and tier contract field"
     )

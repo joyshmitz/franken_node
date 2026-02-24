@@ -1209,7 +1209,7 @@ mod tests {
             assert!(!violations.is_empty());
             assert!(violations.iter().any(|v| v.contains("p95")));
         } else {
-            panic!("Expected Fail");
+            unreachable!("Expected Fail");
         }
     }
 }

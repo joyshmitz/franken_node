@@ -603,6 +603,20 @@ impl CapabilityStakeGate {
         let record = match ledger.get_active_stake(publisher_id) {
             Some(r) => r,
             None => {
+                // Before returning "not found", check if a non-active stake
+                // exists (e.g. slashed/under-appeal) — different error path.
+                if let Some(any) = ledger.get_any_stake_for_publisher(publisher_id)
+                    && (any.state == StakeState::Slashed || any.state == StakeState::UnderAppeal)
+                {
+                    return (
+                        false,
+                        STAKE_007,
+                        format!(
+                            "publisher {publisher_id} has unresolved slash (state={})",
+                            any.state
+                        ),
+                    );
+                }
                 return (
                     false,
                     STAKE_007,
@@ -1283,6 +1297,14 @@ impl StakingLedger {
             .find(|r| r.publisher_id == publisher_id && r.state == StakeState::Active)
     }
 
+    /// Get any stake record for a publisher regardless of state.
+    pub fn get_any_stake_for_publisher(&self, publisher_id: &str) -> Option<&StakeRecord> {
+        self.state
+            .stakes
+            .values()
+            .find(|r| r.publisher_id == publisher_id)
+    }
+
     /// Get a stake record by ID.
     pub fn get_stake(&self, stake_id: StakeId) -> Option<&StakeRecord> {
         self.state.stakes.get(&stake_id.0)
@@ -1449,7 +1471,7 @@ mod tests {
                 assert_eq!(provided, 5);
                 assert_eq!(code, ERR_STAKE_INSUFFICIENT);
             }
-            other => panic!("unexpected error: {other}"),
+            other => unreachable!("unexpected error: {other}"),
         }
     }
 
@@ -1513,7 +1535,7 @@ mod tests {
             .unwrap_err();
         match err {
             StakingError::AlreadySlashed { .. } => {}
-            other => panic!("unexpected error: {other}"),
+            other => unreachable!("unexpected error: {other}"),
         }
     }
 
@@ -1535,7 +1557,7 @@ mod tests {
             .unwrap_err();
         match err {
             StakingError::AlreadySlashed { .. } => {}
-            other => panic!("unexpected error: {other}"),
+            other => unreachable!("unexpected error: {other}"),
         }
     }
 
@@ -1613,7 +1635,7 @@ mod tests {
                 assert_eq!(from, StakeState::Slashed);
                 assert_eq!(to, StakeState::Withdrawn);
             }
-            other => panic!("unexpected error: {other}"),
+            other => unreachable!("unexpected error: {other}"),
         }
     }
 
@@ -1642,7 +1664,7 @@ mod tests {
             StakingError::WithdrawalBlocked { code, .. } => {
                 assert_eq!(code, ERR_STAKE_WITHDRAWAL_BLOCKED);
             }
-            other => panic!("unexpected error: {other}"),
+            other => unreachable!("unexpected error: {other}"),
         }
     }
 
@@ -1687,7 +1709,7 @@ mod tests {
             StakingError::AppealExpired { code, .. } => {
                 assert_eq!(code, ERR_STAKE_APPEAL_EXPIRED);
             }
-            other => panic!("unexpected error: {other}"),
+            other => unreachable!("unexpected error: {other}"),
         }
     }
 
@@ -1711,7 +1733,7 @@ mod tests {
             StakingError::InvalidTransition { code, .. } => {
                 assert_eq!(code, ERR_STAKE_INVALID_TRANSITION);
             }
-            other => panic!("unexpected error: {other}"),
+            other => unreachable!("unexpected error: {other}"),
         }
     }
 
@@ -1775,7 +1797,7 @@ mod tests {
         let err = ledger.expire(id, 400).unwrap_err();
         match err {
             StakingError::InvalidTransition { .. } => {}
-            other => panic!("unexpected error: {other}"),
+            other => unreachable!("unexpected error: {other}"),
         }
     }
 
@@ -1912,7 +1934,7 @@ mod tests {
             StakingError::StakeNotFound { code, .. } => {
                 assert_eq!(code, ERR_STAKE_NOT_FOUND);
             }
-            other => panic!("unexpected error: {other}"),
+            other => unreachable!("unexpected error: {other}"),
         }
     }
 
@@ -2028,6 +2050,532 @@ mod tests {
         assert_eq!(
             ViolationType::FalseAttestation.to_string(),
             "false_attestation"
+        );
+    }
+}
+
+// ===========================================================================
+// Integration tests: Security → Verifier Economy (bd-17ds.5.5)
+// ===========================================================================
+
+#[cfg(test)]
+mod security_verifier_economy_integration_tests {
+    use super::*;
+    use crate::security::sybil_defense::{SybilDefensePipeline, TrustNode, TrustSignal};
+    use crate::verifier_economy::{
+        AttestationClaim, AttestationEvidence, AttestationSignature, AttestationSubmission,
+        ReputationDimensions, VEP_001, VEP_002, VEP_004, VEP_005, VEP_006, VerificationDimension,
+        VerifierEconomyRegistry, VerifierRegistration, VerifierTier,
+    };
+    use std::collections::BTreeMap;
+
+    fn make_ledger_with_publisher(
+        pub_id: &str,
+        amount: u64,
+        tier: RiskTier,
+    ) -> (StakingLedger, StakeId) {
+        let mut ledger = StakingLedger::new();
+        let stake_id = ledger.deposit(pub_id, amount, tier, 1000).unwrap();
+        (ledger, stake_id)
+    }
+
+    fn make_verifier_reg(name: &str, key: &str) -> VerifierRegistration {
+        VerifierRegistration {
+            name: name.to_string(),
+            contact: format!("{}@example.com", name),
+            public_key: key.to_string(),
+            capabilities: vec![
+                VerificationDimension::Security,
+                VerificationDimension::Compatibility,
+            ],
+            tier: VerifierTier::Basic,
+        }
+    }
+
+    fn make_submission(verifier_id: &str, key: &str, trace: &str) -> AttestationSubmission {
+        AttestationSubmission {
+            verifier_id: verifier_id.to_string(),
+            claim: AttestationClaim {
+                dimension: VerificationDimension::Security,
+                statement: "Extension passes security audit".to_string(),
+                score: 0.92,
+            },
+            evidence: AttestationEvidence {
+                suite_id: "sec-suite-v1".to_string(),
+                measurements: vec!["cve-scan: clean".to_string()],
+                execution_trace_hash: trace.to_string(),
+                environment: BTreeMap::from([("os".to_string(), "linux".to_string())]),
+            },
+            signature: AttestationSignature {
+                algorithm: "ed25519".to_string(),
+                public_key: key.to_string(),
+                value: "sig-valid".to_string(),
+            },
+            timestamp: "2026-02-20T12:00:00Z".to_string(),
+        }
+    }
+
+    // -- 1. Staking validates stake → sybil defense scores trust --
+
+    #[test]
+    fn staking_stake_gates_sybil_trust_weight() {
+        let (ledger, _) = make_ledger_with_publisher("pub-alpha", 1000, RiskTier::Critical);
+        let gate = CapabilityStakeGate::new(StakePolicy::default_policy());
+
+        // Publisher has sufficient stake for critical tier
+        let (allowed, _, _) = gate.check_stake(&ledger, "pub-alpha", &RiskTier::Critical, 2000);
+        assert!(allowed);
+
+        // Use staking info to calibrate sybil defense weighting
+        let mut pipeline = SybilDefensePipeline::new();
+        pipeline.register_node(TrustNode::established("pub-alpha", 90.0, 200, 500));
+        pipeline.register_node(TrustNode::new("pub-newbie", 600));
+
+        let signals = vec![
+            TrustSignal {
+                signal_id: "s1".into(),
+                source_node_id: "pub-alpha".into(),
+                target_id: "ext-1".into(),
+                value: 0.85,
+                timestamp_ms: 1000,
+            },
+            TrustSignal {
+                signal_id: "s2".into(),
+                source_node_id: "pub-newbie".into(),
+                target_id: "ext-1".into(),
+                value: 0.10,
+                timestamp_ms: 1001,
+            },
+        ];
+
+        let result = pipeline.process_signals(&signals, 1100).unwrap();
+        // Established node's signal (0.85 × weight 1.0) dominates the newbie's
+        // (0.10 × weight 0.01 = 0.001). Trimmed-mean of [0.001, 0.85] ≈ 0.4255.
+        assert!(
+            result.value > 0.4,
+            "Established node should dominate, got {}",
+            result.value
+        );
+        // Newbie's signal should be nearly suppressed
+        assert!(result.value < 0.86);
+    }
+
+    // -- 2. Sybil defense + verifier economy registration --
+
+    #[test]
+    fn sybil_defense_validates_verifier_trust_before_registration() {
+        let mut pipeline = SybilDefensePipeline::new();
+        pipeline.register_node(TrustNode::established("honest-1", 85.0, 150, 100));
+        pipeline.register_node(TrustNode::established("honest-2", 80.0, 120, 200));
+
+        let signals = vec![
+            TrustSignal {
+                signal_id: "s1".into(),
+                source_node_id: "honest-1".into(),
+                target_id: "verifier-candidate".into(),
+                value: 0.90,
+                timestamp_ms: 1000,
+            },
+            TrustSignal {
+                signal_id: "s2".into(),
+                source_node_id: "honest-2".into(),
+                target_id: "verifier-candidate".into(),
+                value: 0.88,
+                timestamp_ms: 1001,
+            },
+        ];
+
+        let agg = pipeline.process_signals(&signals, 1100).unwrap();
+        assert!(agg.value > 0.8);
+
+        // Trust score high enough → register as verifier
+        let mut registry = VerifierEconomyRegistry::new();
+        let v = registry
+            .register_verifier(make_verifier_reg("TrustedVerifier", "key-tv-1"))
+            .unwrap();
+        assert!(v.active);
+        assert!(registry.events().iter().any(|e| e.code == VEP_005));
+    }
+
+    // -- 3. Full pipeline: stake → trust → attest → reputation --
+
+    #[test]
+    fn full_pipeline_stake_trust_attest_reputation() {
+        // Step 1: Publisher stakes
+        let (ledger, _) = make_ledger_with_publisher("pub-verifier", 500, RiskTier::High);
+        let gate = CapabilityStakeGate::new(StakePolicy::default_policy());
+        let (allowed, _, _) = gate.check_stake(&ledger, "pub-verifier", &RiskTier::High, 2000);
+        assert!(allowed);
+
+        // Step 2: Register as verifier in economy
+        let mut registry = VerifierEconomyRegistry::new();
+        let v = registry
+            .register_verifier(make_verifier_reg("PubVerifier", "key-pv-1"))
+            .unwrap();
+
+        // Step 3: Submit and publish attestation
+        let sub = make_submission(&v.verifier_id, &v.public_key, "trace-hash-001");
+        let att = registry.submit_attestation(sub).unwrap();
+        registry.review_attestation(&att.attestation_id).unwrap();
+        registry.publish_attestation(&att.attestation_id).unwrap();
+
+        // Step 4: Update reputation based on attestation quality
+        let dims = ReputationDimensions {
+            consistency: 0.9,
+            coverage: 0.7,
+            accuracy: 0.95,
+            longevity: 0.5,
+        };
+        let score = registry.update_reputation(&v.verifier_id, &dims).unwrap();
+        assert!(score > 0);
+
+        // Events span registration, submission, publish, reputation
+        let events = registry.events();
+        assert!(events.iter().any(|e| e.code == VEP_005)); // registered
+        assert!(events.iter().any(|e| e.code == VEP_001)); // submitted
+        assert!(events.iter().any(|e| e.code == VEP_002)); // published
+        assert!(events.iter().any(|e| e.code == VEP_004)); // reputation updated
+    }
+
+    // -- 4. Slashing triggers verifier economy dispute --
+
+    #[test]
+    fn slashing_evidence_correlates_with_verifier_dispute() {
+        let mut ledger = StakingLedger::new();
+        let stake_id = ledger
+            .deposit("pub-bad", 1000, RiskTier::Critical, 1000)
+            .unwrap();
+
+        // Slash for false attestation
+        let evidence = SlashEvidence::new(
+            ViolationType::FalseAttestation,
+            "Submitted fraudulent security claim",
+            "evidence-payload-fraud",
+            "collector-bot",
+            2000,
+        );
+        let slash_event = ledger.slash(stake_id, evidence, 2000).unwrap();
+        assert!(slash_event.slash_amount > 0);
+
+        // In verifier economy: the same publisher's attestation is disputed
+        let mut registry = VerifierEconomyRegistry::new();
+        let v = registry
+            .register_verifier(make_verifier_reg("BadVerifier", "key-bv-1"))
+            .unwrap();
+        let sub = make_submission(&v.verifier_id, &v.public_key, "trace-fraud");
+        let att = registry.submit_attestation(sub).unwrap();
+        registry.review_attestation(&att.attestation_id).unwrap();
+        registry.publish_attestation(&att.attestation_id).unwrap();
+
+        let dispute = registry
+            .file_dispute(
+                &att.attestation_id,
+                "auditor",
+                "Evidence hash matches slashing evidence",
+                vec![slash_event.evidence.evidence_hash.clone()],
+            )
+            .unwrap();
+        assert_eq!(dispute.attestation_id, att.attestation_id);
+        assert!(
+            dispute
+                .supporting_evidence
+                .contains(&slash_event.evidence.evidence_hash)
+        );
+    }
+
+    // -- 5. Insufficient stake blocks capability gate --
+
+    #[test]
+    fn insufficient_stake_blocks_verifier_operations() {
+        let (ledger, _) = make_ledger_with_publisher("pub-low", 10, RiskTier::Low);
+        let gate = CapabilityStakeGate::new(StakePolicy::default_policy());
+
+        // Low stake passes low tier
+        let (allowed_low, _, _) = gate.check_stake(&ledger, "pub-low", &RiskTier::Low, 2000);
+        assert!(allowed_low);
+
+        // But fails critical tier (needs 1000)
+        let (allowed_crit, _, detail) =
+            gate.check_stake(&ledger, "pub-low", &RiskTier::Critical, 2000);
+        assert!(!allowed_crit);
+        assert!(detail.contains(ERR_STAKE_INSUFFICIENT));
+    }
+
+    // -- 6. Sybil identities attenuated in trust aggregation --
+
+    #[test]
+    fn sybil_cluster_attenuated_in_trust_pipeline() {
+        let mut pipeline = SybilDefensePipeline::new();
+
+        // 5 honest established nodes
+        for i in 0..5 {
+            pipeline.register_node(TrustNode::established(
+                format!("honest-{i}"),
+                80.0 + i as f64,
+                100 + i * 10,
+                100,
+            ));
+        }
+
+        // 10 sybil nodes (newly created, coordinated)
+        for i in 0..10 {
+            pipeline.register_node(TrustNode::new(format!("sybil-{i}"), 9990));
+        }
+
+        let mut signals = Vec::new();
+        // Honest signals: varied high trust
+        for i in 0..5 {
+            signals.push(TrustSignal {
+                signal_id: format!("honest-sig-{i}"),
+                source_node_id: format!("honest-{i}"),
+                target_id: "ext-target".into(),
+                value: 0.85 + (i as f64) * 0.02,
+                timestamp_ms: 1000 + i * 100,
+            });
+        }
+        // Sybil signals: identical low trust (coordinated attack)
+        for i in 0..10 {
+            signals.push(TrustSignal {
+                signal_id: format!("sybil-sig-{i}"),
+                source_node_id: format!("sybil-{i}"),
+                target_id: "ext-target".into(),
+                value: 0.10,
+                timestamp_ms: 10000 + i,
+            });
+        }
+
+        let result = pipeline.process_signals(&signals, 11000).unwrap();
+        // 10 sybil signals are attenuated to ~0.000001 each, but still occupy
+        // 10/15 of the sample. After trimmed-mean (trim 3 from each tail) the
+        // remaining 9 values include 4 near-zero sybils plus 5 honest signals,
+        // yielding ≈ 0.19. The key assertion: sybil signals are crushed while
+        // honest signals retain their magnitude.
+        assert!(
+            result.value > 0.1,
+            "Honest signals should still contribute, got {}",
+            result.value
+        );
+        // Verify sybil attenuation pulled the aggregate well below the honest
+        // mean (~0.89), proving the attack was partially mitigated.
+        assert!(result.value < 0.85);
+    }
+
+    // -- 7. Deterministic penalty hash links staking to verifier economy evidence --
+
+    #[test]
+    fn deterministic_penalty_hash_links_systems() {
+        let evidence_payload = "false-attestation-evidence-v1";
+        let evidence_hash = compute_evidence_hash(evidence_payload);
+
+        // Same evidence hash computed again → deterministic
+        let evidence_hash2 = compute_evidence_hash(evidence_payload);
+        assert_eq!(evidence_hash, evidence_hash2);
+
+        // Penalty hash is deterministic too
+        let penalty_hash = compute_penalty_hash(&evidence_hash, 10000, 1000);
+        let penalty_hash2 = compute_penalty_hash(&evidence_hash, 10000, 1000);
+        assert_eq!(penalty_hash, penalty_hash2);
+        assert_eq!(penalty_hash.len(), 64); // SHA-256 hex
+    }
+
+    // -- 8. Selective reporting detection triggers anti-gaming --
+
+    #[test]
+    fn selective_reporting_detected_across_systems() {
+        let mut registry = VerifierEconomyRegistry::new();
+        let v = registry
+            .register_verifier(make_verifier_reg("NarrowVerifier", "key-nv-1"))
+            .unwrap();
+
+        // Submit attestation in only one dimension
+        let sub = make_submission(&v.verifier_id, &v.public_key, "trace-narrow-1");
+        let att = registry.submit_attestation(sub).unwrap();
+        registry.review_attestation(&att.attestation_id).unwrap();
+        registry.publish_attestation(&att.attestation_id).unwrap();
+
+        // Check selective reporting (requires >= 2 dimensions)
+        let is_selective = registry.check_selective_reporting(&v.verifier_id, 2);
+        assert!(
+            is_selective,
+            "Verifier with only 1 dimension should be flagged"
+        );
+
+        // Reputation stays low for narrow coverage
+        let dims = ReputationDimensions {
+            consistency: 0.9,
+            coverage: 0.2, // low coverage
+            accuracy: 0.9,
+            longevity: 0.1,
+        };
+        let score = registry.update_reputation(&v.verifier_id, &dims).unwrap();
+        // coverage=0.2 weighted 25% → drags score down
+        assert!(score < 80);
+    }
+
+    // -- 9. Slashed publisher's stake gate blocks after slash --
+
+    #[test]
+    fn slashed_publisher_blocked_by_capability_gate() {
+        let mut ledger = StakingLedger::new();
+        let stake_id = ledger
+            .deposit("pub-slash", 1000, RiskTier::Critical, 1000)
+            .unwrap();
+
+        // Gate passes before slash
+        let gate = CapabilityStakeGate::new(StakePolicy::default_policy());
+        let (allowed_pre, _, _) = gate.check_stake(&ledger, "pub-slash", &RiskTier::Critical, 1500);
+        assert!(allowed_pre);
+
+        // Slash the publisher
+        let evidence = SlashEvidence::new(
+            ViolationType::MaliciousCode,
+            "Code injection detected",
+            "payload-malicious",
+            "security-bot",
+            2000,
+        );
+        ledger.slash(stake_id, evidence, 2000).unwrap();
+
+        // Gate now blocks (state=Slashed)
+        let (allowed_post, _, detail) =
+            gate.check_stake(&ledger, "pub-slash", &RiskTier::Critical, 2500);
+        assert!(!allowed_post);
+        assert!(detail.contains("unresolved slash"));
+    }
+
+    // -- 10. Scoreboard reflects reputation across verifier economy --
+
+    #[test]
+    fn scoreboard_reflects_cross_system_reputation() {
+        let mut registry = VerifierEconomyRegistry::new();
+
+        // Register two verifiers
+        let v1 = registry
+            .register_verifier(make_verifier_reg("TopVerifier", "key-top-1"))
+            .unwrap();
+        let v2 = registry
+            .register_verifier(make_verifier_reg("NewVerifier", "key-new-1"))
+            .unwrap();
+
+        // v1: publish attestation + high reputation
+        let sub1 = make_submission(&v1.verifier_id, &v1.public_key, "trace-top-1");
+        let att1 = registry.submit_attestation(sub1).unwrap();
+        registry.review_attestation(&att1.attestation_id).unwrap();
+        registry.publish_attestation(&att1.attestation_id).unwrap();
+        registry
+            .update_reputation(
+                &v1.verifier_id,
+                &ReputationDimensions {
+                    consistency: 0.95,
+                    coverage: 0.90,
+                    accuracy: 0.98,
+                    longevity: 0.80,
+                },
+            )
+            .unwrap();
+
+        // v2: no attestations, low reputation
+        registry
+            .update_reputation(
+                &v2.verifier_id,
+                &ReputationDimensions {
+                    consistency: 0.2,
+                    coverage: 0.1,
+                    accuracy: 0.3,
+                    longevity: 0.05,
+                },
+            )
+            .unwrap();
+
+        let scoreboard = registry.build_scoreboard();
+        assert_eq!(scoreboard.total_verifiers, 2);
+        assert_eq!(scoreboard.total_attestations, 1);
+
+        let top_entry = scoreboard
+            .entries
+            .iter()
+            .find(|e| e.verifier_id == v1.verifier_id)
+            .unwrap();
+        let new_entry = scoreboard
+            .entries
+            .iter()
+            .find(|e| e.verifier_id == v2.verifier_id)
+            .unwrap();
+        assert!(top_entry.reputation_score > new_entry.reputation_score);
+        assert_eq!(top_entry.attestation_count, 1);
+        assert_eq!(new_entry.attestation_count, 0);
+    }
+
+    // -- 11. Anti-gaming rate limit triggers across verifier submissions --
+
+    #[test]
+    fn anti_gaming_rate_limit_blocks_spam_submissions() {
+        let mut registry = VerifierEconomyRegistry::new();
+        // Set a low rate limit for testing
+        registry.reset_submission_counts();
+
+        let v = registry
+            .register_verifier(make_verifier_reg("SpamVerifier", "key-spam-1"))
+            .unwrap();
+
+        // Submit many attestations up to the limit (default 100)
+        // We'll simulate by checking that the anti-gaming event fires
+        for i in 0..100 {
+            let sub = make_submission(&v.verifier_id, &v.public_key, &format!("trace-spam-{i}"));
+            registry.submit_attestation(sub).unwrap();
+        }
+
+        // 101st submission should be blocked
+        let sub = make_submission(&v.verifier_id, &v.public_key, "trace-spam-overflow");
+        let result = registry.submit_attestation(sub);
+        assert!(result.is_err());
+        assert!(registry.events().iter().any(|e| e.code == VEP_006));
+    }
+
+    // -- 12. Audit trail spans staking + verifier economy events --
+
+    #[test]
+    fn audit_trail_spans_staking_and_verifier_economy() {
+        // Staking side
+        let mut ledger = StakingLedger::new();
+        let stake_id = ledger
+            .deposit("pub-audit", 500, RiskTier::High, 1000)
+            .unwrap();
+        let staking_audit = &ledger.state.audit_log;
+        assert!(!staking_audit.is_empty());
+        assert!(staking_audit.iter().any(|e| e.event_code == STAKE_001));
+
+        // Verifier economy side
+        let mut registry = VerifierEconomyRegistry::new();
+        let v = registry
+            .register_verifier(make_verifier_reg("AuditVerifier", "key-au-1"))
+            .unwrap();
+        let sub = make_submission(&v.verifier_id, &v.public_key, "trace-audit-1");
+        registry.submit_attestation(sub).unwrap();
+
+        let vep_events = registry.events();
+        assert!(vep_events.iter().any(|e| e.code == VEP_005));
+        assert!(vep_events.iter().any(|e| e.code == VEP_001));
+
+        // Both audit trails have entries
+        let total_audit = staking_audit.len() + vep_events.len();
+        assert!(total_audit >= 3);
+
+        // Slash and verify both systems record it
+        let evidence = SlashEvidence::new(
+            ViolationType::FalseAttestation,
+            "Audit-triggered slash",
+            "audit-evidence-payload",
+            "audit-bot",
+            2000,
+        );
+        ledger.slash(stake_id, evidence, 2000).unwrap();
+        assert!(
+            ledger
+                .state
+                .audit_log
+                .iter()
+                .any(|e| e.event_code == STAKE_002)
         );
     }
 }

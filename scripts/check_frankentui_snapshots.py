@@ -12,7 +12,10 @@ from pathlib import Path
 from typing import Any
 
 
+import sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 DEFAULT_INVENTORY = ROOT / "artifacts" / "10.16" / "frankentui_surface_inventory.csv"
 DEFAULT_TEST_SOURCE = ROOT / "tests" / "tui" / "frankentui_snapshots.rs"
 DEFAULT_SNAPSHOT_DIR = ROOT / "fixtures" / "tui" / "snapshots"
@@ -320,6 +323,7 @@ def self_test() -> None:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_frankentui_snapshots")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--inventory", type=Path, default=DEFAULT_INVENTORY)
     parser.add_argument("--test-source", type=Path, default=DEFAULT_TEST_SOURCE)

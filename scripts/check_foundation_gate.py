@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BOOTSTRAP_ARTIFACTS = ROOT / "artifacts" / "section_bootstrap"
 
@@ -293,6 +295,7 @@ def self_test() -> None:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_foundation_gate")
     if "--self-test" in sys.argv:
         self_test()
         return 0

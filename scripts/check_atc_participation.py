@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 CHECKS: list[dict[str, Any]] = []
 
@@ -295,6 +297,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_atc_participation")
     parser = argparse.ArgumentParser(description="bd-2yvw: ATC participation weighting verification")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--self-test", action="store_true")

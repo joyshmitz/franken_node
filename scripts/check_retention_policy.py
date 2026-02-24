@@ -6,6 +6,9 @@ import os
 import re
 import subprocess
 import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = []
@@ -24,13 +27,14 @@ def check(check_id, description, passed, details=None):
 
 
 def main():
+    logger = configure_test_logging("check_retention_policy")
     print("bd-1p2b: Control-Plane Retention Policy — Verification\n")
     all_pass = True
 
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/retention_policy.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_class = "enum RetentionClass" in content
         has_policy = "struct RetentionPolicy" in content
         has_registry = "struct RetentionRegistry" in content
@@ -42,7 +46,7 @@ def main():
     all_pass &= check("CPR-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         errors = ["CPR_UNCLASSIFIED", "CPR_DROP_REQUIRED", "CPR_INVALID_POLICY",
                   "CPR_STORAGE_FULL", "CPR_NOT_FOUND"]
         found = [e for e in errors if e in content]
@@ -55,7 +59,7 @@ def main():
     matrix_valid = False
     if os.path.isfile(matrix_path):
         try:
-            data = json.load(open(matrix_path))
+            data = json.loads(__import__("pathlib").Path(matrix_path).read_text(encoding="utf-8"))
             matrix_valid = "matrix" in data and len(data["matrix"]) >= 5
         except json.JSONDecodeError:
             pass
@@ -64,7 +68,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/retention_class_enforcement.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = open(integ_path).read()
+        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
         has_classified = "inv_cpr_classified" in content
         has_required = "inv_cpr_required_durable" in content
         has_ephemeral = "inv_cpr_ephemeral_policy" in content
@@ -92,7 +96,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-1p2b_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = open(spec_path).read()
+        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
         has_invariants = "INV-CPR" in content
         has_types = "RetentionClass" in content and "RetentionPolicy" in content
     else:

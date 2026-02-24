@@ -977,6 +977,11 @@ mod tests {
         // Only step 'a' (index 0) succeeded; 'b' was skipped, 'c' failed
         assert_eq!(trace.compensated_steps.len(), 1);
         assert_eq!(trace.compensated_steps[0].step_index, 0);
+        // Verify skipped step (index 1) is NOT in the compensation trace
+        assert!(
+            !trace.compensated_steps.iter().any(|s| s.step_index == 1),
+            "skipped step must not appear in compensation trace"
+        );
     }
 
     // 19. test_default_executor

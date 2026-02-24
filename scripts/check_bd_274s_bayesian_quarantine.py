@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BEAD = "bd-274s"
 SECTION = "10.17"
@@ -387,6 +389,7 @@ def self_test() -> dict[str, Any]:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_bd_274s_bayesian_quarantine")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--self-test", action="store_true")

@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 DOC = ROOT / "docs" / "testing" / "control_virtual_transport_faults.md"
 REPORT = ROOT / "artifacts" / "10.15" / "control_fault_harness_summary.json"
@@ -471,6 +473,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_control_transport_faults")
     parser = argparse.ArgumentParser(
         description="Verify bd-3u6o: canonical virtual transport fault harness"
     )

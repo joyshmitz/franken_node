@@ -20,6 +20,8 @@ BEAD = "bd-2tdi"
 SECTION = "10.15"
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 REGION_MODULE = ROOT / "crates" / "franken-node" / "src" / "connector" / "region_ownership.rs"
 SPEC_DOC = ROOT / "docs" / "specs" / "region_tree_topology.md"
@@ -225,6 +227,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_region_ownership")
     parser = argparse.ArgumentParser(
         description="bd-2tdi: Region-owned execution tree verification gate",
     )

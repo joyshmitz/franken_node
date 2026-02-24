@@ -814,7 +814,7 @@ mod tests {
                 assert_eq!(existing_role, KeyRole::Signing);
                 assert_eq!(attempted_role, KeyRole::Encryption);
             }
-            _ => panic!("expected RoleSeparationViolation"),
+            _ => unreachable!("expected RoleSeparationViolation"),
         }
     }
 
@@ -1198,7 +1198,7 @@ mod tests {
                 assert_eq!(expected_role, KeyRole::Encryption);
                 assert_eq!(actual_role, KeyRole::Signing);
             }
-            _ => panic!("expected KeyRoleMismatch"),
+            _ => unreachable!("expected KeyRoleMismatch"),
         }
     }
 

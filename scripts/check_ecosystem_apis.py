@@ -9,7 +9,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 CONTRACT_PATH = ROOT / "docs/specs/section_10_12/bd-2aj_contract.md"
 API_SCHEMA_PATH = ROOT / "docs/specs/section_10_12/bd-2aj_api_schema.md"
@@ -393,6 +396,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_ecosystem_apis")
     parser = argparse.ArgumentParser(description="Verify bd-2aj ecosystem APIs")
     parser.add_argument("--json", action="store_true", help="Output JSON evidence")
     parser.add_argument("--self-test", action="store_true", help="Run self-test")

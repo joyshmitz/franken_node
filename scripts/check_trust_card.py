@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 TRUST_CARD_IMPL = ROOT / "crates" / "franken-node" / "src" / "supply_chain" / "trust_card.rs"
 SUPPLY_CHAIN_MOD = ROOT / "crates" / "franken-node" / "src" / "supply_chain" / "mod.rs"
@@ -334,6 +336,7 @@ def self_test() -> tuple[bool, list[dict[str, Any]]]:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_trust_card")
     parser = argparse.ArgumentParser(description="Verify bd-2yh trust-card implementation")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON report")
     parser.add_argument("--self-test", action="store_true", help="Run self-test mode")

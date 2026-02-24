@@ -3,34 +3,8 @@
 // Validates that control artifacts and remote contracts use canonical
 // fail-closed epoch-window checks from `control_plane::control_epoch`.
 
-#[path = "../../crates/franken-node/src/control_plane/control_epoch.rs"]
-pub mod control_epoch;
-
-#[path = "../../crates/franken-node/src/connector/lifecycle.rs"]
-pub mod lifecycle;
-
-#[path = "../../crates/franken-node/src/connector/health_gate.rs"]
-pub mod health_gate;
-
-#[path = "../../crates/franken-node/src/connector/cancellation_protocol.rs"]
-pub mod cancellation_protocol;
-
-#[path = "../../crates/franken-node/src/connector/rollout_state.rs"]
-pub mod rollout_state;
-
-#[path = "../../crates/franken-node/src/connector/fencing.rs"]
-pub mod fencing;
-
-pub mod control_plane {
-    pub use crate::control_epoch;
-}
-
-pub mod connector {
-    pub use crate::fencing;
-    pub use crate::health_gate;
-    pub use crate::lifecycle;
-    pub use crate::rollout_state;
-}
+pub use frankenengine_node::control_plane;
+pub use frankenengine_node::connector;
 
 use connector::fencing::{FenceState, FencedWrite, FencingError, epoch_event_codes as fencing_epv};
 use connector::health_gate::{
@@ -134,7 +108,7 @@ fn future_epoch_fencing_token_is_rejected_fail_closed() {
                 Some(fencing_epv::FUTURE_EPOCH_REJECTED)
             );
         }
-        _ => panic!("expected epoch rejection"),
+        _ => unreachable!("expected epoch rejection"),
     }
 }
 
@@ -162,7 +136,7 @@ fn expired_rollout_epoch_is_rejected() {
             assert_eq!(rejection.artifact_epoch, ControlEpoch::new(8));
             assert_eq!(rejection.current_epoch, ControlEpoch::new(12));
         }
-        _ => panic!("expected stale epoch rejection"),
+        _ => unreachable!("expected stale epoch rejection"),
     }
 }
 

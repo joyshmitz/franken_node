@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BEAD_ID = "bd-2l4i"
 SECTION = "14"
@@ -315,14 +317,15 @@ def self_test():
 
 
 def main():
+    logger = configure_test_logging("check_section_14_gate")
     as_json = "--json" in sys.argv
-    no_exec = "--no-exec" in sys.argv
+    no_execution = "--no-exec" in sys.argv
 
     if "--self-test" in sys.argv:
         self_test()
         return
 
-    report = build_report(execute=not no_exec)
+    report = build_report(execute=not no_execution)
 
     if as_json:
         print(json.dumps(report, indent=2))

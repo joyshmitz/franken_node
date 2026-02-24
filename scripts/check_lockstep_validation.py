@@ -19,6 +19,8 @@ from pathlib import Path
 
 BEAD_ID = "bd-1w78"
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC_PATH = ROOT / "docs" / "specs" / "section_13" / "bd-1w78_contract.md"
 POLICY_PATH = ROOT / "docs" / "policy" / "continuous_lockstep_validation.md"
@@ -261,6 +263,7 @@ def self_test():
 
 
 def main():
+    logger = configure_test_logging("check_lockstep_validation")
     if "--self-test" in sys.argv:
         sys.exit(self_test())
 

@@ -1,5 +1,5 @@
 use crate::storage::frankensqlite_adapter::{FrankensqliteAdapter, PersistenceClass};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::io::{BufRead, BufReader};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
@@ -56,7 +56,7 @@ impl TelemetryBridge {
         for line in reader.lines() {
             match line {
                 Ok(event_json) => {
-                    let key = format!("telemetry_{}", uuid::Uuid::new_v4());
+                    let key = format!("telemetry_{}", uuid::Uuid::now_v7());
                     if let Ok(mut db) = adapter.lock() {
                         let _ = db.write(PersistenceClass::AuditLog, &key, event_json.as_bytes());
                     }

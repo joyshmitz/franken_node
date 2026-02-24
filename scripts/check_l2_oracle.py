@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 DESIGN_PATH = ROOT / "docs" / "L2_ENGINE_BOUNDARY_ORACLE.md"
 SPLIT_CONTRACT = ROOT / "docs" / "ENGINE_SPLIT_CONTRACT.md"
 
@@ -113,6 +115,7 @@ def check_l1_complement() -> dict:
 
 
 def main():
+    logger = configure_test_logging("check_l2_oracle")
     json_output = "--json" in sys.argv
     timestamp = datetime.now(timezone.utc).isoformat()
 

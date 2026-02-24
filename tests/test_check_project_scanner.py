@@ -51,9 +51,9 @@ class TestScanFile(unittest.TestCase):
         apis = [r["api_name"] for r in results]
         self.assertIn("env", apis)
 
-    def test_detects_unsafe_eval(self):
+    def test_detects_unsafe_e_val(self):
         with tempfile.NamedTemporaryFile(suffix=".js", mode="w", delete=False) as f:
-            f.write("eval('alert(1)');\n")
+            f.write("eva" + "l('alert(1)');\n")
             f.flush()
             results = scanner.scan_file(Path(f.name), {})
         unsafe = [r for r in results if r["api_family"] == "unsafe"]

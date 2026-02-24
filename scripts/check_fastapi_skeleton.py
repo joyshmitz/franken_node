@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 IMPL = ROOT / "tests" / "integration" / "fastapi_control_plane_endpoints.rs"
 REPORT = ROOT / "artifacts" / "10.16" / "fastapi_endpoint_report.json"

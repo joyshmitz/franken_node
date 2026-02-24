@@ -204,7 +204,7 @@ def test_build_report_no_exec_passes():
 # Integration: E2E execution
 # ---------------------------------------------------------------------------
 
-def test_build_report_with_exec():
+def test_build_report_with_execution():
     """Full report with E2E execution."""
     if not mcv.E2E_SCRIPT.exists() or not mcv.RESULTS_FILE.exists():
         pytest.skip("artifacts or E2E script not present")

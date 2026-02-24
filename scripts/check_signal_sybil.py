@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 SPEC = ROOT / "docs" / "specs" / "section_12" / "bd-13yn_contract.md"
 POLICY = ROOT / "docs" / "policy" / "risk_signal_poisoning_sybil.md"
 
@@ -466,6 +468,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_signal_sybil")
     parser = argparse.ArgumentParser(
         description="Verify bd-13yn: signal poisoning and Sybil"
     )

@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "connector" / "control_evidence_replay.rs"
 CONFORMANCE_TEST = ROOT / "tests" / "conformance" / "control_evidence_replay.rs"

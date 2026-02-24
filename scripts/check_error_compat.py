@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 DEFAULT_REGISTRY = ROOT / "artifacts" / "section_10_13" / "bd-novi" / "error_code_registry.json"
 
 CATEGORY_BY_SEVERITY = {
@@ -168,6 +170,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_error_compat")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--old-registry", type=Path, default=DEFAULT_REGISTRY)
     parser.add_argument("--new-registry", type=Path, default=DEFAULT_REGISTRY)

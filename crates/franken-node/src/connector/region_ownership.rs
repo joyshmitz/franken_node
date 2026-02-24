@@ -22,6 +22,7 @@
 //! - `RGN-005`: Quiescence timeout
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -40,6 +41,96 @@ static REGION_SEQ: AtomicU64 = AtomicU64::new(1);
 fn next_region_id() -> RegionId {
     RegionId(REGION_SEQ.fetch_add(1, Ordering::Relaxed))
 }
+
+// ---------------------------------------------------------------------------
+// asupersync execution context (Cx)
+// ---------------------------------------------------------------------------
+
+static CX_SEQ: AtomicU64 = AtomicU64::new(1);
+
+/// asupersync execution context for control-plane operations.
+///
+/// Every region-owned operation carries a `ControlPlaneCx` that:
+/// - Links the operation to the asupersync epoch
+/// - Provides a monotonic sequence number for causal ordering
+/// - Carries the parent Cx reference for hierarchy reconstruction
+/// - Includes a deterministic `cx_id` derived from epoch + seq
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ControlPlaneCx {
+    /// asupersync epoch this context belongs to.
+    pub epoch: u64,
+    /// Monotonic sequence within the epoch.
+    pub seq: u64,
+    /// Parent context ID, if this is a child context.
+    pub parent_cx_id: Option<String>,
+    /// Deterministic identifier for this context (SHA-256 of epoch:seq).
+    pub cx_id: String,
+    /// Connector this context is associated with.
+    pub connector_id: String,
+    /// Trace ID for distributed tracing correlation.
+    pub trace_id: String,
+}
+
+impl ControlPlaneCx {
+    /// Create a new root Cx for a control-plane lifecycle.
+    pub fn new_root(connector_id: &str, trace_id: &str, epoch: u64) -> Self {
+        let seq = CX_SEQ.fetch_add(1, Ordering::Relaxed);
+        let cx_id = compute_cx_id(epoch, seq);
+        Self {
+            epoch,
+            seq,
+            parent_cx_id: None,
+            cx_id,
+            connector_id: connector_id.to_string(),
+            trace_id: trace_id.to_string(),
+        }
+    }
+
+    /// Derive a child Cx inheriting the epoch and parent linkage.
+    pub fn child(&self) -> Self {
+        let seq = CX_SEQ.fetch_add(1, Ordering::Relaxed);
+        let cx_id = compute_cx_id(self.epoch, seq);
+        Self {
+            epoch: self.epoch,
+            seq,
+            parent_cx_id: Some(self.cx_id.clone()),
+            cx_id,
+            connector_id: self.connector_id.clone(),
+            trace_id: self.trace_id.clone(),
+        }
+    }
+
+    /// Returns true if this context has a parent (i.e., is not a root).
+    pub fn is_child(&self) -> bool {
+        self.parent_cx_id.is_some()
+    }
+}
+
+impl fmt::Display for ControlPlaneCx {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "cx(epoch={}, seq={}, id={})",
+            self.epoch,
+            self.seq,
+            &self.cx_id[..12.min(self.cx_id.len())]
+        )
+    }
+}
+
+/// Compute a deterministic Cx identifier from epoch and sequence.
+fn compute_cx_id(epoch: u64, seq: u64) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"region_ownership_cx_v1:");
+    hasher.update(epoch.to_le_bytes());
+    hasher.update(b":");
+    hasher.update(seq.to_le_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+// ---------------------------------------------------------------------------
+// Region identity
+// ---------------------------------------------------------------------------
 
 /// Unique identifier for a region within the execution tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -109,6 +200,8 @@ pub struct RegionEvent {
     pub region_kind: RegionKind,
     pub child_task_count: usize,
     pub trace_id: String,
+    /// asupersync Cx identifier for causal ordering.
+    pub cx_id: String,
     pub detail: String,
 }
 
@@ -175,6 +268,8 @@ pub struct Region {
     pub parent_id: Option<RegionId>,
     pub connector_id: String,
     pub trace_id: String,
+    /// asupersync execution context for this region.
+    pub cx: ControlPlaneCx,
     pub tasks: Vec<RegionTask>,
     pub child_region_ids: Vec<RegionId>,
     pub closed: bool,
@@ -183,13 +278,18 @@ pub struct Region {
 
 impl Region {
     /// Create a new root region for a connector lifecycle.
-    pub fn new_root(connector_id: &str, trace_id: &str, quiescence_budget_ms: u64) -> Self {
+    ///
+    /// Accepts a `ControlPlaneCx` that links this region to the asupersync epoch.
+    pub fn new_root(cx: ControlPlaneCx, quiescence_budget_ms: u64) -> Self {
+        let connector_id = cx.connector_id.clone();
+        let trace_id = cx.trace_id.clone();
         Self {
             id: next_region_id(),
             kind: RegionKind::ConnectorLifecycle,
             parent_id: None,
-            connector_id: connector_id.to_string(),
-            trace_id: trace_id.to_string(),
+            connector_id,
+            trace_id,
+            cx,
             tasks: Vec::new(),
             child_region_ids: Vec::new(),
             closed: false,
@@ -198,13 +298,17 @@ impl Region {
     }
 
     /// Create a child region nested under this region.
+    ///
+    /// Derives a child `ControlPlaneCx` from the parent, maintaining causal linkage.
     pub fn open_child(&mut self, kind: RegionKind, quiescence_budget_ms: u64) -> Region {
+        let child_cx = self.cx.child();
         let child = Region {
             id: next_region_id(),
             kind,
             parent_id: Some(self.id),
             connector_id: self.connector_id.clone(),
             trace_id: self.trace_id.clone(),
+            cx: child_cx,
             tasks: Vec::new(),
             child_region_ids: Vec::new(),
             closed: false,
@@ -250,9 +354,10 @@ impl Region {
             region_kind: self.kind,
             child_task_count: self.tasks.len(),
             trace_id: self.trace_id.clone(),
+            cx_id: self.cx.cx_id.clone(),
             detail: format!(
-                "region {} ({}) opened for connector {}",
-                self.id, self.kind, self.connector_id
+                "region {} ({}) opened for connector {} [cx={}]",
+                self.id, self.kind, self.connector_id, self.cx
             ),
         }
     }
@@ -277,6 +382,8 @@ impl Region {
             .filter(|t| t.state == TaskState::Running)
             .count();
 
+        let cx_id = self.cx.cx_id.clone();
+
         // Emit close-initiated event
         events.push(RegionEvent {
             event_code: event_codes::REGION_CLOSE_INITIATED.to_string(),
@@ -285,6 +392,7 @@ impl Region {
             region_kind: self.kind,
             child_task_count: total_task_count,
             trace_id: self.trace_id.clone(),
+            cx_id: cx_id.clone(),
             detail: format!(
                 "region {} close initiated, {} tasks to drain",
                 self.id, running_count
@@ -333,6 +441,7 @@ impl Region {
                 region_kind: self.kind,
                 child_task_count: total_task_count,
                 trace_id: self.trace_id.clone(),
+                cx_id: cx_id.clone(),
                 detail: format!(
                     "task {} force-terminated after budget exceeded",
                     terminated_id
@@ -352,6 +461,7 @@ impl Region {
                 region_kind: self.kind,
                 child_task_count: total_task_count,
                 trace_id: self.trace_id.clone(),
+                cx_id: cx_id.clone(),
                 detail: format!(
                     "quiescence achieved for region {} in {}ms",
                     self.id,
@@ -366,6 +476,7 @@ impl Region {
                 region_kind: self.kind,
                 child_task_count: total_task_count,
                 trace_id: self.trace_id.clone(),
+                cx_id: cx_id.clone(),
                 detail: format!(
                     "quiescence timeout for region {}: {} tasks force-terminated",
                     self.id, tasks_force_terminated
@@ -403,14 +514,16 @@ impl Region {
 
 /// Build a complete region hierarchy for a connector lifecycle.
 ///
+/// Accepts a `ControlPlaneCx` that roots the entire hierarchy in the asupersync
+/// epoch. Each child region derives its own Cx with causal linkage to the root.
+///
 /// Returns (root, health_gate, rollout, fencing) regions with proper parent linkage.
 pub fn build_lifecycle_hierarchy(
-    connector_id: &str,
-    trace_id: &str,
+    cx: ControlPlaneCx,
     root_budget_ms: u64,
     child_budget_ms: u64,
 ) -> (Region, Region, Region, Region) {
-    let mut root = Region::new_root(connector_id, trace_id, root_budget_ms);
+    let mut root = Region::new_root(cx, root_budget_ms);
     let health_gate = root.open_child(RegionKind::HealthGate, child_budget_ms);
     let rollout = root.open_child(RegionKind::Rollout, child_budget_ms);
     let fencing = root.open_child(RegionKind::Fencing, child_budget_ms);
@@ -443,26 +556,38 @@ pub fn generate_quiescence_trace(
 mod tests {
     use super::*;
 
+    fn test_cx() -> ControlPlaneCx {
+        ControlPlaneCx::new_root("test-conn", "trace-001", 42)
+    }
+
     #[test]
     fn root_region_creation() {
-        let root = Region::new_root("test-conn", "trace-001", 5000);
+        let root = Region::new_root(test_cx(), 5000);
         assert_eq!(root.kind, RegionKind::ConnectorLifecycle);
         assert!(root.parent_id.is_none());
         assert!(!root.closed);
         assert_eq!(root.connector_id, "test-conn");
+        assert_eq!(root.cx.epoch, 42);
+        assert!(!root.cx.cx_id.is_empty());
     }
 
     #[test]
     fn child_region_linkage() {
-        let mut root = Region::new_root("test-conn", "trace-001", 5000);
+        let mut root = Region::new_root(test_cx(), 5000);
         let child = root.open_child(RegionKind::HealthGate, 2000);
         assert_eq!(child.parent_id, Some(root.id));
         assert!(root.child_region_ids.contains(&child.id));
+        // Child Cx links to parent
+        assert_eq!(
+            child.cx.parent_cx_id.as_deref(),
+            Some(root.cx.cx_id.as_str())
+        );
+        assert_eq!(child.cx.epoch, root.cx.epoch);
     }
 
     #[test]
     fn task_registration_and_completion() {
-        let mut region = Region::new_root("test-conn", "trace-001", 5000);
+        let mut region = Region::new_root(test_cx(), 5000);
         region.register_task("task-1").unwrap();
         region.register_task("task-2").unwrap();
         assert_eq!(region.active_task_count(), 2);
@@ -476,7 +601,7 @@ mod tests {
 
     #[test]
     fn close_drains_all_tasks() {
-        let mut region = Region::new_root("test-conn", "trace-001", 5000);
+        let mut region = Region::new_root(test_cx(), 5000);
         region.register_task("task-1").unwrap();
         region.register_task("task-2").unwrap();
 
@@ -489,22 +614,35 @@ mod tests {
 
     #[test]
     fn close_emits_correct_events() {
-        let mut region = Region::new_root("test-conn", "trace-001", 5000);
+        let mut region = Region::new_root(test_cx(), 5000);
         region.register_task("task-1").unwrap();
 
         let result = region.close().unwrap();
-        let event_codes: Vec<&str> = result
+        let codes: Vec<&str> = result
             .events
             .iter()
             .map(|e| e.event_code.as_str())
             .collect();
-        assert!(event_codes.contains(&"RGN-002")); // close initiated
-        assert!(event_codes.contains(&"RGN-003")); // quiescence achieved
+        assert!(codes.contains(&"RGN-002")); // close initiated
+        assert!(codes.contains(&"RGN-003")); // quiescence achieved
+    }
+
+    #[test]
+    fn close_events_carry_cx_id() {
+        let cx = test_cx();
+        let expected_cx_id = cx.cx_id.clone();
+        let mut region = Region::new_root(cx, 5000);
+        region.register_task("task-1").unwrap();
+
+        let result = region.close().unwrap();
+        for event in &result.events {
+            assert_eq!(event.cx_id, expected_cx_id);
+        }
     }
 
     #[test]
     fn already_closed_region_rejects_operations() {
-        let mut region = Region::new_root("test-conn", "trace-001", 5000);
+        let mut region = Region::new_root(test_cx(), 5000);
         region.close().unwrap();
 
         let err = region.close().unwrap_err();
@@ -516,24 +654,35 @@ mod tests {
 
     #[test]
     fn task_not_found_error() {
-        let mut region = Region::new_root("test-conn", "trace-001", 5000);
+        let mut region = Region::new_root(test_cx(), 5000);
         let err = region.complete_task("nonexistent").unwrap_err();
         assert!(matches!(err, RegionError::TaskNotFound { .. }));
     }
 
     #[test]
     fn hierarchy_builder() {
-        let (root, health, rollout, fencing) =
-            build_lifecycle_hierarchy("test-conn", "trace-001", 5000, 2000);
+        let cx = ControlPlaneCx::new_root("test-conn", "trace-001", 100);
+        let root_cx_id = cx.cx_id.clone();
+        let (root, health, rollout, fencing) = build_lifecycle_hierarchy(cx, 5000, 2000);
         assert_eq!(root.child_region_ids.len(), 3);
         assert_eq!(health.parent_id, Some(root.id));
         assert_eq!(rollout.parent_id, Some(root.id));
         assert_eq!(fencing.parent_id, Some(root.id));
+        // All child Cx link to root
+        assert_eq!(health.cx.parent_cx_id.as_deref(), Some(root_cx_id.as_str()));
+        assert_eq!(
+            rollout.cx.parent_cx_id.as_deref(),
+            Some(root_cx_id.as_str())
+        );
+        assert_eq!(
+            fencing.cx.parent_cx_id.as_deref(),
+            Some(root_cx_id.as_str())
+        );
     }
 
     #[test]
     fn quiescence_trace_generation() {
-        let mut root = Region::new_root("test-conn", "trace-001", 5000);
+        let mut root = Region::new_root(test_cx(), 5000);
         root.register_task("task-1").unwrap();
         let result = root.close().unwrap();
 
@@ -543,7 +692,7 @@ mod tests {
 
     #[test]
     fn completed_tasks_counted_as_drained() {
-        let mut region = Region::new_root("test-conn", "trace-001", 5000);
+        let mut region = Region::new_root(test_cx(), 5000);
         region.register_task("task-1").unwrap();
         region.complete_task("task-1").unwrap();
 
@@ -563,10 +712,76 @@ mod tests {
 
     #[test]
     fn serde_roundtrip() {
-        let region = Region::new_root("test-conn", "trace-001", 5000);
+        let region = Region::new_root(test_cx(), 5000);
         let json = serde_json::to_string(&region).unwrap();
         let parsed: Region = serde_json::from_str(&json).unwrap();
         assert_eq!(region.kind, parsed.kind);
         assert_eq!(region.connector_id, parsed.connector_id);
+        assert_eq!(region.cx, parsed.cx);
+    }
+
+    // -- ControlPlaneCx tests --
+
+    #[test]
+    fn cx_root_has_no_parent() {
+        let cx = ControlPlaneCx::new_root("conn-1", "trace-1", 10);
+        assert!(cx.parent_cx_id.is_none());
+        assert!(!cx.is_child());
+        assert_eq!(cx.epoch, 10);
+        assert_eq!(cx.connector_id, "conn-1");
+        assert_eq!(cx.trace_id, "trace-1");
+    }
+
+    #[test]
+    fn cx_child_links_to_parent() {
+        let root = ControlPlaneCx::new_root("conn-1", "trace-1", 10);
+        let child = root.child();
+        assert!(child.is_child());
+        assert_eq!(child.parent_cx_id.as_deref(), Some(root.cx_id.as_str()));
+        assert_eq!(child.epoch, root.epoch);
+        assert_ne!(child.cx_id, root.cx_id);
+    }
+
+    #[test]
+    fn cx_id_deterministic_for_same_epoch_seq() {
+        let id1 = compute_cx_id(42, 99);
+        let id2 = compute_cx_id(42, 99);
+        assert_eq!(id1, id2);
+        assert_eq!(id1.len(), 64); // SHA-256
+    }
+
+    #[test]
+    fn cx_id_differs_for_different_inputs() {
+        let id1 = compute_cx_id(1, 1);
+        let id2 = compute_cx_id(1, 2);
+        let id3 = compute_cx_id(2, 1);
+        assert_ne!(id1, id2);
+        assert_ne!(id1, id3);
+    }
+
+    #[test]
+    fn cx_display_format() {
+        let cx = ControlPlaneCx::new_root("conn-1", "trace-1", 7);
+        let s = cx.to_string();
+        assert!(s.contains("epoch=7"));
+        assert!(s.contains("cx("));
+    }
+
+    #[test]
+    fn cx_serde_roundtrip() {
+        let cx = ControlPlaneCx::new_root("conn-1", "trace-1", 42);
+        let json = serde_json::to_string(&cx).unwrap();
+        let parsed: ControlPlaneCx = serde_json::from_str(&json).unwrap();
+        assert_eq!(cx, parsed);
+    }
+
+    #[test]
+    fn open_event_carries_cx_id() {
+        let cx = test_cx();
+        let expected = cx.cx_id.clone();
+        let region = Region::new_root(cx, 5000);
+        let event = region.open_event();
+        assert_eq!(event.cx_id, expected);
+        assert!(event.detail.contains("cx="));
     }
 }

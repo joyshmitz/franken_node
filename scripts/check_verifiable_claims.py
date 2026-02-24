@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC_PATH = ROOT / "docs" / "specs" / "section_13" / "bd-2a4l_contract.md"
 POLICY_PATH = ROOT / "docs" / "policy" / "externally_verifiable_claims.md"
@@ -215,6 +217,7 @@ def self_test():
 
 
 def main():
+    logger = configure_test_logging("check_verifiable_claims")
     if "--self-test" in sys.argv:
         self_test()
         return

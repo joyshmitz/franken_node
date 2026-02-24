@@ -6,6 +6,9 @@ import os
 import re
 import subprocess
 import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = []
@@ -24,6 +27,7 @@ def check(check_id, description, passed, details=None):
 
 
 def main():
+    logger = configure_test_logging("check_isolation_backend")
     print("bd-1vvs: Strict-Plus Isolation Backend — Verification\n")
     all_pass = True
 
@@ -31,7 +35,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/security/isolation_backend.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_backend = "enum IsolationBackend" in content
         has_caps = "struct PlatformCapabilities" in content
         has_select = "fn select_backend" in content
@@ -44,7 +48,7 @@ def main():
 
     # ISOL-BACKENDS: All 4 backends
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         backends = ["MicroVm", "Hardened", "OsSandbox", "Container"]
         found = [b for b in backends if b in content]
         all_pass &= check("ISOL-BACKENDS", "All 4 isolation backends defined",
@@ -54,7 +58,7 @@ def main():
 
     # ISOL-ERRORS: All 4 error codes
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         errors = ["ISOLATION_BACKEND_UNAVAILABLE", "ISOLATION_PROBE_FAILED",
                   "ISOLATION_INIT_FAILED", "ISOLATION_POLICY_MISMATCH"]
         found = [e for e in errors if e in content]
@@ -68,7 +72,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.load(open(fixture_path))
+            data = json.loads(__import__("pathlib").Path(fixture_path).read_text(encoding="utf-8"))
             fixture_valid = "cases" in data and len(data["cases"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -78,7 +82,7 @@ def main():
     matrix_path = os.path.join(ROOT, "artifacts/section_10_13/bd-1vvs/strict_plus_runtime_matrix.csv")
     matrix_valid = False
     if os.path.isfile(matrix_path):
-        content = open(matrix_path).read()
+        content = __import__("pathlib").Path(matrix_path).read_text(encoding="utf-8")
         matrix_valid = "microvm" in content and "hardened" in content and "os_sandbox" in content
     all_pass &= check("ISOL-MATRIX", "Runtime matrix CSV with all backends", matrix_valid)
 
@@ -86,7 +90,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/strict_plus_isolation.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = open(integ_path).read()
+        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
         has_e2e = "end_to_end" in content
         has_fallback = "fallback" in content
         has_policy = "policy" in content.lower()
@@ -115,7 +119,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-1vvs_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = open(spec_path).read()
+        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
         has_invariants = "INV-STRICT-PLUS" in content
         has_backends = "microvm" in content and "hardened" in content
     else:

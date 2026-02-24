@@ -18,6 +18,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 # ---- Paths ----
 SRC = ROOT / "crates" / "franken-node" / "src" / "control_plane" / "control_lane_mapping.rs"
@@ -302,6 +304,7 @@ def self_test() -> tuple:
 
 
 def main():
+    logger = configure_test_logging("check_control_lane_mapping")
     if "--self-test" in sys.argv:
         ok, msg = self_test()
         print(msg)

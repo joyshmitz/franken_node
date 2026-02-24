@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 REGISTRY_PATH = ROOT / "docs" / "CLAIMS_REGISTRY.md"
 ARTIFACTS_DIR = ROOT / "artifacts"
 
@@ -200,6 +202,7 @@ def check_policy_doc_exists() -> dict:
 
 
 def main():
+    logger = configure_test_logging("check_claim_language")
     json_output = "--json" in sys.argv
     timestamp = datetime.now(timezone.utc).isoformat()
 

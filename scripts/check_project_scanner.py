@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 sys.path.insert(0, str(ROOT / "scripts"))
 import project_scanner as scanner
 
@@ -74,6 +76,7 @@ def check_risk_classifier() -> dict:
 
 
 def main():
+    logger = configure_test_logging("check_project_scanner")
     json_output = "--json" in sys.argv
     timestamp = datetime.now(timezone.utc).isoformat()
 

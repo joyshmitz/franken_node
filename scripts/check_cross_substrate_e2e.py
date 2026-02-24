@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 # -- File paths ----------------------------------------------------------------
 
@@ -255,10 +257,10 @@ def _checks() -> list:
             sub in src,
         ))
 
-    # 23. MockClock for deterministic time
+    # 23. TestClock for deterministic time
     checks.append(_check(
-        "MockClock defined",
-        "MockClock" in src,
+        "TestClock defined",
+        "TestClock" in src,
     ))
 
     # 24. FencingToken type
@@ -384,6 +386,7 @@ def run_all() -> dict:
 
 
 def main():
+    logger = configure_test_logging("check_cross_substrate_e2e")
     if "--self-test" in sys.argv:
         result = self_test()
         for c in result["checks"]:

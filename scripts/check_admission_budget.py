@@ -6,6 +6,9 @@ import os
 import re
 import subprocess
 import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = []
@@ -24,13 +27,14 @@ def check(check_id, description, passed, details=None):
 
 
 def main():
+    logger = configure_test_logging("check_admission_budget")
     print("bd-2k74: Per-Peer Admission Budgets — Verification\n")
     all_pass = True
 
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/admission_budget.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_budget = "struct AdmissionBudget" in content
         has_usage = "struct PeerUsage" in content
         has_request = "struct AdmissionRequest" in content
@@ -44,7 +48,7 @@ def main():
     all_pass &= check("PAB-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         errors = ["PAB_BYTES_EXCEEDED", "PAB_SYMBOLS_EXCEEDED", "PAB_AUTH_EXCEEDED",
                   "PAB_INFLIGHT_EXCEEDED", "PAB_CPU_EXCEEDED", "PAB_INVALID_BUDGET"]
         found = [e for e in errors if e in content]
@@ -57,7 +61,7 @@ def main():
     report_valid = False
     if os.path.isfile(report_path):
         try:
-            data = json.load(open(report_path))
+            data = json.loads(__import__("pathlib").Path(report_path).read_text(encoding="utf-8"))
             report_valid = "scenarios" in data and len(data["scenarios"]) >= 3
         except json.JSONDecodeError:
             pass
@@ -66,7 +70,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/admission_budget_enforcement.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = open(integ_path).read()
+        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
         has_enforced = "inv_pab_enforced" in content
         has_bounded = "inv_pab_bounded" in content
         has_audit = "inv_pab_auditable" in content
@@ -94,7 +98,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-2k74_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = open(spec_path).read()
+        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
         has_invariants = "INV-PAB" in content
         has_types = "AdmissionBudget" in content and "PeerUsage" in content
     else:

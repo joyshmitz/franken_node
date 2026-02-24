@@ -494,6 +494,139 @@ mod tests {
     }
 
     #[test]
+    fn default_thresholds_are_reasonable() {
+        let t = StabilityThresholds::default();
+        assert!(t.max_instability_delta_for_direct_admit > 0.0);
+        assert!(
+            t.max_instability_score_for_staged_rollout > t.max_instability_delta_for_direct_admit
+        );
+        assert!(t.max_drift_score_for_direct_admit > 0.0);
+        assert!(t.max_regime_shift_probability_for_direct_admit > 0.0);
+        assert!(
+            t.max_regime_shift_probability_for_staged_rollout
+                > t.max_regime_shift_probability_for_direct_admit
+        );
+    }
+
+    #[test]
+    fn trajectory_delta_between_computes_correctly() {
+        let base = TrajectorySnapshot {
+            instability_score: 0.10,
+            drift_score: 0.20,
+            regime_shift_probability: 0.05,
+        };
+        let proj = TrajectorySnapshot {
+            instability_score: 0.30,
+            drift_score: 0.25,
+            regime_shift_probability: 0.15,
+        };
+        let delta = TrajectoryDelta::between(base, proj);
+        assert!((delta.instability_delta - 0.20).abs() < 1e-9);
+        assert!((delta.drift_delta - 0.05).abs() < 1e-9);
+        assert!((delta.regime_shift_delta - 0.10).abs() < 1e-9);
+    }
+
+    #[test]
+    fn zero_delta_trajectory_allows() {
+        let snap = baseline();
+        let decision = evaluate_admission(
+            "trace-zero",
+            snap,
+            snap,
+            StabilityThresholds::default(),
+            "v1.0.0",
+        );
+        assert_eq!(decision.verdict, GateVerdict::Allow);
+    }
+
+    #[test]
+    fn event_codes_are_distinct() {
+        let codes = [
+            event_codes::BASELINE_CAPTURED,
+            event_codes::ADMISSION_ALLOWED,
+            event_codes::EVIDENCE_REQUIRED,
+            event_codes::STAGED_ROLLOUT_REQUIRED,
+            event_codes::ROLLBACK_TRIGGERED,
+            event_codes::PHASE_ADVANCED,
+            event_codes::FALLBACK_PLAN_GENERATED,
+        ];
+        let set: std::collections::BTreeSet<_> = codes.iter().collect();
+        assert_eq!(set.len(), codes.len());
+    }
+
+    #[test]
+    fn severe_instability_triggers_staged_rollout() {
+        let projected = TrajectorySnapshot {
+            instability_score: 0.80,
+            drift_score: 0.70,
+            regime_shift_probability: 0.60,
+        };
+        let decision = evaluate_admission(
+            "trace-severe",
+            baseline(),
+            projected,
+            StabilityThresholds::default(),
+            "v2.0.0",
+        );
+        assert_eq!(decision.verdict, GateVerdict::StagedRolloutRequired);
+        assert!(decision.staged_rollout.is_some());
+        let plan = decision.staged_rollout.unwrap();
+        assert!(!plan.steps.is_empty());
+    }
+
+    #[test]
+    fn migration_report_has_migration_id() {
+        let decision = evaluate_admission(
+            "trace-report",
+            baseline(),
+            baseline(),
+            StabilityThresholds::default(),
+            "v1.0.0",
+        );
+        let report = BpetMigrationReport {
+            migration_id: "mig-report-001".to_string(),
+            admission: decision,
+        };
+        assert!(!report.migration_id.is_empty());
+        assert_eq!(report.admission.verdict, GateVerdict::Allow);
+    }
+
+    #[test]
+    fn rollback_decision_carries_event() {
+        let projected = TrajectorySnapshot {
+            instability_score: 0.80,
+            drift_score: 0.70,
+            regime_shift_probability: 0.60,
+        };
+        let decision = evaluate_admission(
+            "trace-rb",
+            baseline(),
+            projected,
+            StabilityThresholds::default(),
+            "v2.0.0",
+        );
+        let rollout = decision.staged_rollout.expect("should have staged rollout");
+        let health = RolloutHealthSnapshot {
+            phase: RolloutPhase::General,
+            observed: TrajectorySnapshot {
+                instability_score: 0.95,
+                drift_score: 0.80,
+                regime_shift_probability: 0.70,
+            },
+        };
+        let rollback = evaluate_rollout_health("trace-rb-eval", &rollout, &health);
+        assert!(!rollback.event.code.is_empty());
+    }
+
+    #[test]
+    fn gate_verdict_serde_roundtrip() {
+        let v = GateVerdict::RequireAdditionalEvidence;
+        let json = serde_json::to_string(&v).unwrap();
+        let parsed: GateVerdict = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, v);
+    }
+
+    #[test]
     fn evidence_requirements_are_deterministic() {
         let projected = TrajectorySnapshot {
             instability_score: 0.33,

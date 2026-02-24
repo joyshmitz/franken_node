@@ -246,7 +246,7 @@ impl TraceTree {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplaySeed {
     pub seed: u64,
-    pub mock_clock_ms: u64,
+    pub test_clock_ms: u64,
 }
 
 /// The result of a replay run, containing a deterministic hash of the output.
@@ -462,13 +462,13 @@ impl ScenarioRunner {
 // Mock Clock
 // ---------------------------------------------------------------------------
 
-/// A mock clock for deterministic timestamps in E2E tests.
+/// A test clock for deterministic timestamps in E2E tests.
 #[derive(Debug, Clone)]
-pub struct MockClock {
+pub struct TestClock {
     current_ms: Arc<Mutex<u64>>,
 }
 
-impl MockClock {
+impl TestClock {
     pub fn new(start_ms: u64) -> Self {
         Self {
             current_ms: Arc::new(Mutex::new(start_ms)),
@@ -491,12 +491,12 @@ impl MockClock {
 
 /// A mock in-memory persistence layer simulating frankensqlite.
 #[derive(Debug, Clone)]
-pub struct MockPersistence {
+pub struct TestPersistence {
     store: BTreeMap<String, String>,
     fencing_token: Option<FencingToken>,
 }
 
-impl MockPersistence {
+impl TestPersistence {
     pub fn new() -> Self {
         Self {
             store: BTreeMap::new(),
@@ -522,7 +522,7 @@ impl MockPersistence {
                 });
             }
         }
-        self.fencing_token = Some(token.clone());
+        self.auth_fencing_tkn = Some(auth_tkn.clone());
         self.store.insert(key.to_string(), value.to_string());
         Ok(())
     }
@@ -542,16 +542,16 @@ impl MockPersistence {
 // ---------------------------------------------------------------------------
 
 /// Simulates the fastapi_rust service layer.
-pub struct MockService {
-    persistence: MockPersistence,
+pub struct TestService {
+    persistence: TestPersistence,
     audit_log: AuditLog,
-    clock: MockClock,
+    clock: TestClock,
 }
 
-impl MockService {
-    pub fn new(clock: MockClock) -> Self {
+impl TestService {
+    pub fn new(clock: TestClock) -> Self {
         Self {
-            persistence: MockPersistence::new(),
+            persistence: TestPersistence::new(),
             audit_log: AuditLog::new(),
             clock,
         }
@@ -633,7 +633,7 @@ impl MockService {
             },
         });
         self.clock.advance(1);
-        Ok(token.clone())
+        Ok(auth_tkn.clone())
     }
 
     /// Get the audit log.
@@ -642,7 +642,7 @@ impl MockService {
     }
 
     /// Get persistence reference.
-    pub fn persistence(&self) -> &MockPersistence {
+    pub fn persistence(&self) -> &TestPersistence {
         &self.persistence
     }
 }
@@ -652,12 +652,12 @@ impl MockService {
 // ---------------------------------------------------------------------------
 
 /// Simulates the frankentui presentation layer.
-pub struct MockTui {
+pub struct TestTui {
     rendered_panels: Vec<BTreeMap<String, String>>,
     errors: Vec<StructuredError>,
 }
 
-impl MockTui {
+impl TestTui {
     pub fn new() -> Self {
         Self {
             rendered_panels: Vec::new(),
@@ -741,7 +741,7 @@ fn make_span_id(substrate: Substrate, seq: u64) -> String {
 
 fn build_cross_substrate_trace(
     trace_id: &str,
-    clock: &MockClock,
+    clock: &TestClock,
     substrates: &[Substrate],
     operation: &str,
 ) -> TraceTree {
@@ -777,7 +777,7 @@ fn deterministic_hash(seed: u64, data: &str) -> String {
 // ---------------------------------------------------------------------------
 
 /// Operator status flow: TUI -> service -> persistence -> TUI.
-pub fn scenario_operator_status(clock: &MockClock, seed: u64) -> ScenarioResult {
+pub fn scenario_operator_status(clock: &TestClock, seed: u64) -> ScenarioResult {
     let mut events = vec![E2E_SCENARIO_START.to_string()];
     let trace_id = make_trace_id(seed);
     let substrates = [
@@ -788,9 +788,9 @@ pub fn scenario_operator_status(clock: &MockClock, seed: u64) -> ScenarioResult 
     ];
     let trace = build_cross_substrate_trace(&trace_id, clock, &substrates, "operator_status");
 
-    let mut service = MockService::new(clock.clone());
-    let token = FencingToken::new(1, 1, "op-1");
-    let mut tui = MockTui::new();
+    let mut service = TestService::new(clock.clone());
+    let auth_tkn = FencingToken::new(1, 1, "op-1");
+    let mut tui = TestTui::new();
 
     // TUI initiates -> service processes -> persistence stores -> TUI renders
     match service.update_operator_status("op-1", "active", &token, &trace_id) {
@@ -847,7 +847,7 @@ pub fn scenario_operator_status(clock: &MockClock, seed: u64) -> ScenarioResult 
 // ---------------------------------------------------------------------------
 
 /// Lease management flow: TUI -> service -> fencing -> persistence -> TUI.
-pub fn scenario_lease_management(clock: &MockClock, seed: u64) -> ScenarioResult {
+pub fn scenario_lease_management(clock: &TestClock, seed: u64) -> ScenarioResult {
     let mut events = vec![E2E_SCENARIO_START.to_string()];
     let trace_id = make_trace_id(seed);
     let substrates = [
@@ -858,9 +858,9 @@ pub fn scenario_lease_management(clock: &MockClock, seed: u64) -> ScenarioResult
     ];
     let trace = build_cross_substrate_trace(&trace_id, clock, &substrates, "lease_management");
 
-    let mut service = MockService::new(clock.clone());
-    let token = FencingToken::new(1, 1, "op-lease");
-    let mut tui = MockTui::new();
+    let mut service = TestService::new(clock.clone());
+    let auth_tkn = FencingToken::new(1, 1, "op-lease");
+    let mut tui = TestTui::new();
 
     match service.acquire_lease("op-lease", &token, &trace_id) {
         Ok(acquired_token) => {
@@ -908,7 +908,7 @@ pub fn scenario_lease_management(clock: &MockClock, seed: u64) -> ScenarioResult
 // ---------------------------------------------------------------------------
 
 /// Audit log flow: action -> service -> persistence -> verifier -> TUI.
-pub fn scenario_audit_log(clock: &MockClock, seed: u64) -> ScenarioResult {
+pub fn scenario_audit_log(clock: &TestClock, seed: u64) -> ScenarioResult {
     let mut events = vec![E2E_SCENARIO_START.to_string()];
     let trace_id = make_trace_id(seed);
     let substrates = [
@@ -919,9 +919,9 @@ pub fn scenario_audit_log(clock: &MockClock, seed: u64) -> ScenarioResult {
     ];
     let trace = build_cross_substrate_trace(&trace_id, clock, &substrates, "audit_log");
 
-    let mut service = MockService::new(clock.clone());
-    let token = FencingToken::new(1, 1, "op-audit");
-    let mut tui = MockTui::new();
+    let mut service = TestService::new(clock.clone());
+    let auth_tkn = FencingToken::new(1, 1, "op-audit");
+    let mut tui = TestTui::new();
 
     // Perform an action that generates audit entries
     let _ = service.update_operator_status("op-audit", "active", &token, &trace_id);
@@ -974,7 +974,7 @@ pub fn scenario_audit_log(clock: &MockClock, seed: u64) -> ScenarioResult {
 // ---------------------------------------------------------------------------
 
 /// Error propagation flow: invalid request -> structured error -> TUI -> audit.
-pub fn scenario_error_propagation(clock: &MockClock, seed: u64) -> ScenarioResult {
+pub fn scenario_error_propagation(clock: &TestClock, seed: u64) -> ScenarioResult {
     let mut events = vec![E2E_SCENARIO_START.to_string()];
     let trace_id = make_trace_id(seed);
     let substrates = [
@@ -985,16 +985,16 @@ pub fn scenario_error_propagation(clock: &MockClock, seed: u64) -> ScenarioResul
     ];
     let trace = build_cross_substrate_trace(&trace_id, clock, &substrates, "error_propagation");
 
-    let mut service = MockService::new(clock.clone());
-    let mut tui = MockTui::new();
+    let mut service = TestService::new(clock.clone());
+    let mut tui = TestTui::new();
 
     // Use a stale fencing token to trigger an error
-    let stale_token = FencingToken::new(1, 1, "op-err");
-    let _ = service.update_operator_status("op-err", "active", &stale_token, &trace_id);
+    let auth_stale_tkn = FencingToken::new(1, 1, "op-err");
+    let _ = service.update_operator_status("op-err", "active", &auth_stale_tkn, &trace_id);
 
     // Now try with an older token — should fail
-    let older_token = FencingToken::new(0, 0, "op-err-stale");
-    match service.update_operator_status("op-err", "draining", &older_token, &trace_id) {
+    let auth_older_tkn = FencingToken::new(0, 0, "op-err-stale");
+    match service.update_operator_status("op-err", "draining", &auth_older_tkn, &trace_id) {
         Ok(_) => {
             events.push(E2E_SCENARIO_FAIL.to_string());
             ScenarioResult {
@@ -1045,7 +1045,7 @@ pub fn scenario_error_propagation(clock: &MockClock, seed: u64) -> ScenarioResul
 // ---------------------------------------------------------------------------
 
 /// Concurrent access flow: multi-operator -> fencing -> consistency.
-pub fn scenario_concurrent_access(clock: &MockClock, seed: u64) -> ScenarioResult {
+pub fn scenario_concurrent_access(clock: &TestClock, seed: u64) -> ScenarioResult {
     let mut events = vec![E2E_SCENARIO_START.to_string()];
     let trace_id = make_trace_id(seed);
     let substrates = [
@@ -1056,7 +1056,7 @@ pub fn scenario_concurrent_access(clock: &MockClock, seed: u64) -> ScenarioResul
     ];
     let trace = build_cross_substrate_trace(&trace_id, clock, &substrates, "concurrent_access");
 
-    let mut service = MockService::new(clock.clone());
+    let mut service = TestService::new(clock.clone());
 
     // Operator A acquires lease with epoch 1, seq 1
     let token_a = FencingToken::new(1, 1, "op-A");
@@ -1115,7 +1115,7 @@ pub fn scenario_concurrent_access(clock: &MockClock, seed: u64) -> ScenarioResul
 // ---------------------------------------------------------------------------
 
 /// Validates that trace context is propagated without orphaned spans.
-pub fn scenario_trace_propagation(clock: &MockClock, seed: u64) -> ScenarioResult {
+pub fn scenario_trace_propagation(clock: &TestClock, seed: u64) -> ScenarioResult {
     let mut events = vec![E2E_SCENARIO_START.to_string()];
     let trace_id = make_trace_id(seed);
     let substrates = [
@@ -1177,15 +1177,15 @@ pub fn scenario_replay_determinism(clock_start_ms: u64, seed: u64) -> ScenarioRe
     let mut events = vec![E2E_SCENARIO_START.to_string()];
 
     // Run the same scenario twice with identical seeds/clocks
-    let clock_a = MockClock::new(clock_start_ms);
+    let clock_a = TestClock::new(clock_start_ms);
     let result_a = scenario_operator_status(&clock_a, seed);
 
-    let clock_b = MockClock::new(clock_start_ms);
+    let clock_b = TestClock::new(clock_start_ms);
     let result_b = scenario_operator_status(&clock_b, seed);
 
     // Build a trace for this scenario itself
     let trace_id = make_trace_id(seed.wrapping_add(1000));
-    let clock = MockClock::new(clock_start_ms);
+    let clock = TestClock::new(clock_start_ms);
     let trace = build_cross_substrate_trace(
         &trace_id,
         &clock,
@@ -1197,7 +1197,7 @@ pub fn scenario_replay_determinism(clock_start_ms: u64, seed: u64) -> ScenarioRe
     let replay_a = ReplayResult {
         seed: ReplaySeed {
             seed,
-            mock_clock_ms: clock_start_ms,
+            test_clock_ms: clock_start_ms,
         },
         output_hash: deterministic_hash(seed, &format!("{:?}", result_a.outcome)),
         events: result_a.events.clone(),
@@ -1205,7 +1205,7 @@ pub fn scenario_replay_determinism(clock_start_ms: u64, seed: u64) -> ScenarioRe
     let replay_b = ReplayResult {
         seed: ReplaySeed {
             seed,
-            mock_clock_ms: clock_start_ms,
+            test_clock_ms: clock_start_ms,
         },
         output_hash: deterministic_hash(seed, &format!("{:?}", result_b.outcome)),
         events: result_b.events.clone(),
@@ -1247,22 +1247,22 @@ pub fn run_all_scenarios() -> ScenarioRunner {
 
     let mut runner = ScenarioRunner::new();
 
-    let clock1 = MockClock::new(clock_start);
+    let clock1 = TestClock::new(clock_start);
     runner.record(scenario_operator_status(&clock1, seed));
 
-    let clock2 = MockClock::new(clock_start);
+    let clock2 = TestClock::new(clock_start);
     runner.record(scenario_lease_management(&clock2, seed + 1));
 
-    let clock3 = MockClock::new(clock_start);
+    let clock3 = TestClock::new(clock_start);
     runner.record(scenario_audit_log(&clock3, seed + 2));
 
-    let clock4 = MockClock::new(clock_start);
+    let clock4 = TestClock::new(clock_start);
     runner.record(scenario_error_propagation(&clock4, seed + 3));
 
-    let clock5 = MockClock::new(clock_start);
+    let clock5 = TestClock::new(clock_start);
     runner.record(scenario_concurrent_access(&clock5, seed + 4));
 
-    let clock6 = MockClock::new(clock_start);
+    let clock6 = TestClock::new(clock_start);
     runner.record(scenario_trace_propagation(&clock6, seed + 5));
 
     runner.record(scenario_replay_determinism(clock_start, seed + 6));
@@ -1338,7 +1338,7 @@ mod tests {
 
     #[test]
     fn test_trace_tree_no_orphans() {
-        let clock = MockClock::new(1000);
+        let clock = TestClock::new(1000);
         let substrates = [
             Substrate::FrankenTui,
             Substrate::FastapiRust,
@@ -1375,7 +1375,7 @@ mod tests {
 
     #[test]
     fn test_trace_spans_by_substrate_uses_btreemap() {
-        let clock = MockClock::new(1000);
+        let clock = TestClock::new(1000);
         let substrates = [
             Substrate::FrankenTui,
             Substrate::FastapiRust,
@@ -1480,15 +1480,15 @@ mod tests {
 
     #[test]
     fn test_persistence_write_read() {
-        let mut store = MockPersistence::new();
-        let token = FencingToken::new(1, 1, "op");
+        let mut store = TestPersistence::new();
+        let auth_tkn = FencingToken::new(1, 1, "op");
         store.write("key1", "value1", &token).unwrap();
         assert_eq!(store.read("key1"), Some(&"value1".to_string()));
     }
 
     #[test]
     fn test_persistence_fencing_rejects_stale() {
-        let mut store = MockPersistence::new();
+        let mut store = TestPersistence::new();
         let token_new = FencingToken::new(1, 2, "op-new");
         store.write("key1", "v1", &token_new).unwrap();
         let token_old = FencingToken::new(1, 1, "op-old");
@@ -1502,7 +1502,7 @@ mod tests {
 
     #[test]
     fn test_persistence_fencing_accepts_newer() {
-        let mut store = MockPersistence::new();
+        let mut store = TestPersistence::new();
         let token1 = FencingToken::new(1, 1, "op");
         store.write("key1", "v1", &token1).unwrap();
         let token2 = FencingToken::new(1, 2, "op");
@@ -1514,9 +1514,9 @@ mod tests {
 
     #[test]
     fn test_service_update_and_get_status() {
-        let clock = MockClock::new(1000);
-        let mut svc = MockService::new(clock);
-        let token = FencingToken::new(1, 1, "op-1");
+        let clock = TestClock::new(1000);
+        let mut svc = TestService::new(clock);
+        let auth_tkn = FencingToken::new(1, 1, "op-1");
         svc.update_operator_status("op-1", "active", &token, "trace-1")
             .unwrap();
         let status = svc.get_operator_status("op-1").unwrap();
@@ -1525,9 +1525,9 @@ mod tests {
 
     #[test]
     fn test_service_audit_log_populated() {
-        let clock = MockClock::new(1000);
-        let mut svc = MockService::new(clock);
-        let token = FencingToken::new(1, 1, "op-1");
+        let clock = TestClock::new(1000);
+        let mut svc = TestService::new(clock);
+        let auth_tkn = FencingToken::new(1, 1, "op-1");
         svc.update_operator_status("op-1", "active", &token, "trace-1")
             .unwrap();
         assert_eq!(svc.audit_log().len(), 1);
@@ -1536,8 +1536,8 @@ mod tests {
 
     #[test]
     fn test_service_get_missing_status() {
-        let clock = MockClock::new(1000);
-        let svc = MockService::new(clock);
+        let clock = TestClock::new(1000);
+        let svc = TestService::new(clock);
         let result = svc.get_operator_status("nonexistent");
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code, ERR_E2E_PERSISTENCE_MISMATCH);
@@ -1547,7 +1547,7 @@ mod tests {
 
     #[test]
     fn test_tui_render_status() {
-        let mut tui = MockTui::new();
+        let mut tui = TestTui::new();
         tui.render_status_panel("op-1", "active").unwrap();
         assert_eq!(tui.panel_count(), 1);
         assert_eq!(
@@ -1558,7 +1558,7 @@ mod tests {
 
     #[test]
     fn test_tui_render_empty_status_fails() {
-        let mut tui = MockTui::new();
+        let mut tui = TestTui::new();
         let result = tui.render_status_panel("op-1", "");
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code, ERR_E2E_TUI_RENDER_FAILED);
@@ -1566,7 +1566,7 @@ mod tests {
 
     #[test]
     fn test_tui_render_error() {
-        let mut tui = MockTui::new();
+        let mut tui = TestTui::new();
         let err = StructuredError {
             code: ERR_E2E_FENCING_REJECTED.to_string(),
             message: "stale token".to_string(),
@@ -1586,7 +1586,7 @@ mod tests {
         let a = ReplayResult {
             seed: ReplaySeed {
                 seed: 42,
-                mock_clock_ms: 1000,
+                test_clock_ms: 1000,
             },
             output_hash: "abc123".to_string(),
             events: vec!["E1".to_string()],
@@ -1600,7 +1600,7 @@ mod tests {
         let a = ReplayResult {
             seed: ReplaySeed {
                 seed: 42,
-                mock_clock_ms: 1000,
+                test_clock_ms: 1000,
             },
             output_hash: "abc123".to_string(),
             events: vec!["E1".to_string()],
@@ -1619,7 +1619,7 @@ mod tests {
         let a = ReplayResult {
             seed: ReplaySeed {
                 seed: 42,
-                mock_clock_ms: 1000,
+                test_clock_ms: 1000,
             },
             output_hash: "abc123".to_string(),
             events: vec!["E1".to_string()],
@@ -1635,16 +1635,16 @@ mod tests {
     // -- Mock clock tests ---------------------------------------------------
 
     #[test]
-    fn test_mock_clock_advance() {
-        let clock = MockClock::new(1000);
+    fn test_clock_advance() {
+        let clock = TestClock::new(1000);
         assert_eq!(clock.now_ms(), 1000);
         clock.advance(500);
         assert_eq!(clock.now_ms(), 1500);
     }
 
     #[test]
-    fn test_mock_clock_clone_independence() {
-        let clock = MockClock::new(1000);
+    fn test_clock_clone_independence() {
+        let clock = TestClock::new(1000);
         let cloned = clock.clone();
         clock.advance(500);
         // Clones share state (Arc<Mutex>)
@@ -1685,7 +1685,7 @@ mod tests {
 
     #[test]
     fn test_scenario_operator_status_passes() {
-        let clock = MockClock::new(1_700_000_000_000);
+        let clock = TestClock::new(1_700_000_000_000);
         let result = scenario_operator_status(&clock, 42);
         assert!(result.passed(), "Scenario failed: {:?}", result.outcome);
         assert!(result.events.contains(&E2E_SCENARIO_START.to_string()));
@@ -1694,35 +1694,35 @@ mod tests {
 
     #[test]
     fn test_scenario_lease_management_passes() {
-        let clock = MockClock::new(1_700_000_000_000);
+        let clock = TestClock::new(1_700_000_000_000);
         let result = scenario_lease_management(&clock, 43);
         assert!(result.passed(), "Scenario failed: {:?}", result.outcome);
     }
 
     #[test]
     fn test_scenario_audit_log_passes() {
-        let clock = MockClock::new(1_700_000_000_000);
+        let clock = TestClock::new(1_700_000_000_000);
         let result = scenario_audit_log(&clock, 44);
         assert!(result.passed(), "Scenario failed: {:?}", result.outcome);
     }
 
     #[test]
     fn test_scenario_error_propagation_passes() {
-        let clock = MockClock::new(1_700_000_000_000);
+        let clock = TestClock::new(1_700_000_000_000);
         let result = scenario_error_propagation(&clock, 45);
         assert!(result.passed(), "Scenario failed: {:?}", result.outcome);
     }
 
     #[test]
     fn test_scenario_concurrent_access_passes() {
-        let clock = MockClock::new(1_700_000_000_000);
+        let clock = TestClock::new(1_700_000_000_000);
         let result = scenario_concurrent_access(&clock, 46);
         assert!(result.passed(), "Scenario failed: {:?}", result.outcome);
     }
 
     #[test]
     fn test_scenario_trace_propagation_passes() {
-        let clock = MockClock::new(1_700_000_000_000);
+        let clock = TestClock::new(1_700_000_000_000);
         let result = scenario_trace_propagation(&clock, 47);
         assert!(result.passed(), "Scenario failed: {:?}", result.outcome);
     }
@@ -1791,7 +1791,7 @@ mod tests {
 
     #[test]
     fn test_concurrent_scenario_emits_conflict_event() {
-        let clock = MockClock::new(1_700_000_000_000);
+        let clock = TestClock::new(1_700_000_000_000);
         let result = scenario_concurrent_access(&clock, 46);
         assert!(
             result.events.contains(&E2E_CONCURRENT_CONFLICT.to_string()),
@@ -1848,9 +1848,9 @@ mod tests {
     #[test]
     fn test_invariant_fencing() {
         // INV-E2E-FENCING
-        let mut store = MockPersistence::new();
-        let new_token = FencingToken::new(2, 1, "op");
-        store.write("k", "v", &new_token).unwrap();
+        let mut store = TestPersistence::new();
+        let auth_new_tkn = FencingToken::new(2, 1, "op");
+        store.write("k", "v", &auth_new_tkn).unwrap();
         let stale = FencingToken::new(1, 1, "op");
         assert!(store.write("k", "v2", &stale).is_err());
     }
@@ -1858,9 +1858,9 @@ mod tests {
     #[test]
     fn test_invariant_audit_chain() {
         // INV-E2E-AUDIT
-        let clock = MockClock::new(1000);
-        let mut svc = MockService::new(clock);
-        let token = FencingToken::new(1, 1, "op");
+        let clock = TestClock::new(1000);
+        let mut svc = TestService::new(clock);
+        let auth_tkn = FencingToken::new(1, 1, "op");
         svc.update_operator_status("op", "a", &token, "t").unwrap();
         svc.update_operator_status("op", "b", &token, "t").unwrap();
         assert!(svc.audit_log().verify_chain().is_ok());
@@ -1869,9 +1869,9 @@ mod tests {
     #[test]
     fn test_invariant_error_fidelity() {
         // INV-E2E-ERROR-FIDELITY
-        let mut store = MockPersistence::new();
-        let new_token = FencingToken::new(2, 1, "op");
-        store.write("k", "v", &new_token).unwrap();
+        let mut store = TestPersistence::new();
+        let auth_new_tkn = FencingToken::new(2, 1, "op");
+        store.write("k", "v", &auth_new_tkn).unwrap();
         let stale = FencingToken::new(1, 1, "op");
         let err = store.write("k", "v2", &stale).unwrap_err();
         assert_eq!(err.code, ERR_E2E_FENCING_REJECTED);

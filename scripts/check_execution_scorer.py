@@ -6,6 +6,9 @@ import os
 import re
 import subprocess
 import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = []
@@ -24,13 +27,14 @@ def check(check_id, description, passed, details=None):
 
 
 def main():
+    logger = configure_test_logging("check_execution_scorer")
     print("bd-jxgt: Execution Planner Scorer — Verification\n")
     all_pass = True
 
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/execution_scorer.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_weights = "struct ScoringWeights" in content
         has_input = "struct CandidateInput" in content
         has_scored = "struct ScoredCandidate" in content
@@ -43,7 +47,7 @@ def main():
     all_pass &= check("EPS-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         errors = ["EPS_INVALID_WEIGHTS", "EPS_NO_CANDIDATES", "EPS_INVALID_INPUT", "EPS_SCORE_OVERFLOW"]
         found = [e for e in errors if e in content]
         all_pass &= check("EPS-ERRORS", "All 4 error codes present",
@@ -55,7 +59,7 @@ def main():
     fixtures_valid = False
     if os.path.isfile(fixtures_path):
         try:
-            data = json.load(open(fixtures_path))
+            data = json.loads(__import__("pathlib").Path(fixtures_path).read_text(encoding="utf-8"))
             fixtures_valid = "scenarios" in data and len(data["scenarios"]) >= 3
         except json.JSONDecodeError:
             pass
@@ -64,7 +68,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/execution_planner_determinism.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = open(integ_path).read()
+        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
         has_det = "inv_eps_deterministic" in content
         has_tie = "inv_eps_tiebreak" in content
         has_exp = "inv_eps_explainable" in content
@@ -92,7 +96,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-jxgt_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = open(spec_path).read()
+        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
         has_invariants = "INV-EPS" in content
         has_types = "ExecutionScorer" in content and "ScoringWeights" in content
     else:

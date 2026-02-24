@@ -11,7 +11,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 CONTRACT_PATH = ROOT / "docs" / "specs" / "frankensqlite_persistence_contract.md"
 MATRIX_PATH = ROOT / "artifacts" / "10.16" / "frankensqlite_persistence_matrix.json"
@@ -453,6 +456,7 @@ def self_test() -> tuple[bool, dict[str, Any]]:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_frankensqlite_contract")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON output")
     parser.add_argument("--self-test", action="store_true", help="run internal self-test")

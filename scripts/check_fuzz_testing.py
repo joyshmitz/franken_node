@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 # ── Paths ────────────────────────────────────────────────────────────
 
@@ -339,6 +341,7 @@ def self_test() -> tuple[bool, list[dict[str, Any]]]:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_fuzz_testing")
     parser = argparse.ArgumentParser(
         description="Verify bd-1ul fuzz/adversarial testing implementation"
     )

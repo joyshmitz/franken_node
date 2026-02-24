@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 IMPL = ROOT / "crates" / "franken-node" / "src" / "security" / "degraded_mode_policy.rs"
 MOD_RS = ROOT / "crates" / "franken-node" / "src" / "security" / "mod.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_5" / "bd-3nr_contract.md"
@@ -397,6 +399,7 @@ def self_test() -> tuple[bool, list[dict[str, Any]]]:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_degraded_mode")
     if "--self-test" in sys.argv:
         ok, checks = self_test()
         print(f"self_test: {'PASS' if ok else 'FAIL'} ({len(checks)} checks)")

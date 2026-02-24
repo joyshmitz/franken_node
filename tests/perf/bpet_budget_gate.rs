@@ -325,7 +325,7 @@ mod tests {
         let outcome = evaluate_budget(&budget, &measurement);
         match outcome {
             BudgetOutcome::Degraded { code, .. } => assert_eq!(code, event_codes::BPET_PERF_005),
-            _ => panic!("expected degraded outcome"),
+            _ => unreachable!("expected degraded outcome"),
         }
     }
 
@@ -340,7 +340,7 @@ mod tests {
         let outcome = evaluate_budget(&budget, &measurement);
         match outcome {
             BudgetOutcome::Fail { code, .. } => assert_eq!(code, event_codes::BPET_PERF_003),
-            _ => panic!("expected failure outcome"),
+            _ => unreachable!("expected failure outcome"),
         }
     }
 
@@ -355,7 +355,7 @@ mod tests {
         let outcome = evaluate_budget(&budget, &measurement);
         match outcome {
             BudgetOutcome::Fail { code, .. } => assert_eq!(code, event_codes::BPET_PERF_004),
-            _ => panic!("expected failure outcome"),
+            _ => unreachable!("expected failure outcome"),
         }
     }
 

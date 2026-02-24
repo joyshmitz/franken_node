@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 # ---- Paths: Rust library module (suite runner) ----
 SRC = ROOT / "crates" / "franken-node" / "src" / "conformance" / "fsqlite_inspired_suite.rs"
@@ -437,6 +439,7 @@ def self_test() -> tuple:
 
 
 def main():
+    logger = configure_test_logging("check_conformance_suite")
     if "--self-test" in sys.argv:
         ok, msg = self_test()
         print(msg)

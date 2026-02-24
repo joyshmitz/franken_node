@@ -40,8 +40,8 @@ pub const EVT_REPRO_EXPORTED: &str = "FN-LB-007";
 pub const EVT_SCENARIO_FAILED: &str = "FN-LB-008";
 /// A virtual link was created.
 pub const EVT_VIRTUAL_LINK_CREATED: &str = "FN-LB-009";
-/// The mock clock was advanced.
-pub const EVT_MOCK_CLOCK_ADVANCED: &str = "FN-LB-010";
+/// The test clock was advanced.
+pub const EVT_TEST_CLOCK_ADVANCED: &str = "FN-LB-010";
 
 // ---------------------------------------------------------------------------
 // Error codes
@@ -49,7 +49,7 @@ pub const EVT_MOCK_CLOCK_ADVANCED: &str = "FN-LB-010";
 
 /// No seed was provided in the lab configuration.
 pub const ERR_LB_NO_SEED: &str = "ERR_LB_NO_SEED";
-/// Mock clock tick would overflow u64.
+/// Test clock tick would overflow u64.
 pub const ERR_LB_TICK_OVERFLOW: &str = "ERR_LB_TICK_OVERFLOW";
 /// Referenced virtual link does not exist.
 pub const ERR_LB_LINK_NOT_FOUND: &str = "ERR_LB_LINK_NOT_FOUND";
@@ -74,7 +74,7 @@ pub const INV_LB_FAULT_APPLIED: &str = "INV-LB-FAULT-APPLIED";
 pub const INV_LB_REPLAY: &str = "INV-LB-REPLAY";
 /// All required scenarios have lab tests.
 pub const INV_LB_COVERAGE: &str = "INV-LB-COVERAGE";
-/// No std::time usage in lab mode — all timing via MockClock.
+/// No std::time usage in lab mode — all timing via TestClock.
 pub const INV_LB_NO_WALLCLOCK: &str = "INV-LB-NO-WALLCLOCK";
 
 // ---------------------------------------------------------------------------
@@ -86,7 +86,7 @@ pub const INV_LB_NO_WALLCLOCK: &str = "INV-LB-NO-WALLCLOCK";
 pub enum LabError {
     /// No seed was supplied.
     NoSeed,
-    /// Mock clock would overflow.
+    /// Test clock would overflow.
     TickOverflow { current: u64, delta: u64 },
     /// Virtual link not found.
     LinkNotFound { source: String, target: String },
@@ -266,7 +266,7 @@ impl VirtualLink {
 /// A structured event emitted during lab execution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LabEvent {
-    /// Mock-clock tick at which the event occurred.
+    /// Test-clock tick at which the event occurred.
     pub tick: u64,
     /// Event code (FN-LB-xxx).
     pub event_code: String,
@@ -326,7 +326,7 @@ impl LabConfig {
 // TimerCallback
 // ---------------------------------------------------------------------------
 
-/// A pending timer callback in the mock clock.
+/// A pending timer callback in the test clock.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimerCallback {
     /// Unique timer identifier.
@@ -336,14 +336,14 @@ pub struct TimerCallback {
 }
 
 // ---------------------------------------------------------------------------
-// MockClock
+// TestClock
 // ---------------------------------------------------------------------------
 
-/// Deterministic mock clock driven by explicit tick advancement.
+/// Deterministic test clock driven by explicit tick advancement.
 /// INV-LB-TIMER-ORDER: timers fire in ascending tick order (BTreeMap guarantees).
 /// INV-LB-NO-WALLCLOCK: no std::time usage.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MockClock {
+pub struct TestClock {
     /// Current tick.
     pub current_tick: u64,
     /// Pending timers keyed by fire-tick. BTreeMap guarantees ascending order.
@@ -352,8 +352,8 @@ pub struct MockClock {
     next_timer_id: u64,
 }
 
-impl MockClock {
-    /// Create a new mock clock starting at tick 0.
+impl TestClock {
+    /// Create a new test clock starting at tick 0.
     pub fn new() -> Self {
         Self {
             current_tick: 0,
@@ -426,7 +426,7 @@ impl MockClock {
     }
 }
 
-impl Default for MockClock {
+impl Default for TestClock {
     fn default() -> Self {
         Self::new()
     }
@@ -529,15 +529,15 @@ pub type ScenarioFn = Box<dyn Fn(&mut LabRuntime) -> Result<bool, LabError>>;
 /// # Invariants
 ///
 /// - INV-LB-DETERMINISTIC: identical seeds → identical event sequences
-/// - INV-LB-TIMER-ORDER: timers fire in tick order (delegated to MockClock)
+/// - INV-LB-TIMER-ORDER: timers fire in tick order (delegated to TestClock)
 /// - INV-LB-FAULT-APPLIED: faults applied per profile
-/// - INV-LB-NO-WALLCLOCK: no std::time — only MockClock ticks
+/// - INV-LB-NO-WALLCLOCK: no std::time — only TestClock ticks
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LabRuntime {
     /// Deterministic seed.
     pub seed: u64,
-    /// Mock clock for deterministic time.
-    pub mock_clock: MockClock,
+    /// Test clock for deterministic time.
+    pub test_clock: TestClock,
     /// Active virtual links.
     pub virtual_links: Vec<VirtualLink>,
     /// Accumulated event log.
@@ -559,7 +559,7 @@ impl LabRuntime {
         let rng = SplitMix64::new(seed);
         let mut runtime = Self {
             seed,
-            mock_clock: MockClock::new(),
+            test_clock: TestClock::new(),
             virtual_links: Vec::new(),
             events: Vec::new(),
             config,
@@ -667,19 +667,19 @@ impl LabRuntime {
         })
     }
 
-    /// Schedule a timer on the mock clock.
+    /// Schedule a timer on the test clock.
     pub fn schedule_timer(
         &mut self,
         delay: u64,
         label: impl Into<String>,
     ) -> Result<u64, LabError> {
-        self.mock_clock.schedule_timer(delay, label)
+        self.test_clock.schedule_timer(delay, label)
     }
 
-    /// Advance the mock clock and fire pending timers.
+    /// Advance the test clock and fire pending timers.
     /// Returns the list of fired timer callbacks with their tick.
     pub fn advance_clock(&mut self, delta: u64) -> Result<Vec<(u64, TimerCallback)>, LabError> {
-        let fired = self.mock_clock.advance(delta)?;
+        let fired = self.test_clock.advance(delta)?;
         if !fired.is_empty() {
             for (tick, cb) in &fired {
                 self.events.push(LabEvent {
@@ -690,9 +690,9 @@ impl LabRuntime {
             }
         }
         self.events.push(LabEvent {
-            tick: self.mock_clock.current_tick,
-            event_code: EVT_MOCK_CLOCK_ADVANCED.to_string(),
-            payload: format!("delta={delta}, now={}", self.mock_clock.current_tick),
+            tick: self.test_clock.current_tick,
+            event_code: EVT_TEST_CLOCK_ADVANCED.to_string(),
+            payload: format!("delta={delta}, now={}", self.test_clock.current_tick),
         });
         Ok(fired)
     }
@@ -842,7 +842,7 @@ impl LabRuntime {
 
     /// Get the current mock-clock tick.
     pub fn now(&self) -> u64 {
-        self.mock_clock.now()
+        self.test_clock.now()
     }
 
     /// Get all recorded events.
@@ -865,7 +865,7 @@ impl LabRuntime {
 
     fn emit(&mut self, code: &str, payload: String) {
         self.events.push(LabEvent {
-            tick: self.mock_clock.current_tick,
+            tick: self.test_clock.current_tick,
             event_code: code.to_string(),
             payload,
         });
@@ -965,28 +965,28 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // MockClock
+    // TestClock
     // ---------------------------------------------------------------
 
     #[test]
-    fn test_mock_clock_starts_at_zero() {
-        let clock = MockClock::new();
+    fn test_clock_starts_at_zero() {
+        let clock = TestClock::new();
         assert_eq!(clock.now(), 0);
         assert_eq!(clock.pending_count(), 0);
     }
 
     #[test]
-    fn test_mock_clock_advance_no_timers() {
-        let mut clock = MockClock::new();
+    fn test_clock_advance_no_timers() {
+        let mut clock = TestClock::new();
         let fired = clock.advance(100).unwrap();
         assert!(fired.is_empty());
         assert_eq!(clock.now(), 100);
     }
 
     #[test]
-    fn test_mock_clock_timer_fires_at_correct_tick() {
+    fn test_clock_timer_fires_at_correct_tick() {
         // INV-LB-TIMER-ORDER: timer at tick 50 fires when advancing to 50.
-        let mut clock = MockClock::new();
+        let mut clock = TestClock::new();
         clock.schedule_timer(50, "t1").unwrap();
         let fired = clock.advance(50).unwrap();
         assert_eq!(fired.len(), 1);
@@ -995,9 +995,9 @@ mod tests {
     }
 
     #[test]
-    fn test_mock_clock_timer_order_invariant() {
+    fn test_clock_timer_order_invariant() {
         // INV-LB-TIMER-ORDER: timers fire in ascending tick order.
-        let mut clock = MockClock::new();
+        let mut clock = TestClock::new();
         clock.schedule_timer(30, "second").unwrap();
         clock.schedule_timer(10, "first").unwrap();
         clock.schedule_timer(50, "third").unwrap();
@@ -1012,8 +1012,8 @@ mod tests {
     }
 
     #[test]
-    fn test_mock_clock_multiple_timers_same_tick() {
-        let mut clock = MockClock::new();
+    fn test_clock_multiple_timers_same_tick() {
+        let mut clock = TestClock::new();
         clock.schedule_timer(10, "a").unwrap();
         clock.schedule_timer(10, "b").unwrap();
         let fired = clock.advance(10).unwrap();
@@ -1024,8 +1024,8 @@ mod tests {
     }
 
     #[test]
-    fn test_mock_clock_timer_not_fired_early() {
-        let mut clock = MockClock::new();
+    fn test_clock_timer_not_fired_early() {
+        let mut clock = TestClock::new();
         clock.schedule_timer(100, "future").unwrap();
         let fired = clock.advance(50).unwrap();
         assert!(fired.is_empty());
@@ -1033,8 +1033,8 @@ mod tests {
     }
 
     #[test]
-    fn test_mock_clock_tick_overflow_error() {
-        let mut clock = MockClock::new();
+    fn test_clock_tick_overflow_error() {
+        let mut clock = TestClock::new();
         clock.current_tick = u64::MAX - 5;
         let result = clock.advance(10);
         assert!(result.is_err());
@@ -1043,13 +1043,13 @@ mod tests {
                 assert_eq!(current, u64::MAX - 5);
                 assert_eq!(delta, 10);
             }
-            other => panic!("unexpected error: {other}"),
+            other => unreachable!("unexpected error: {other}"),
         }
     }
 
     #[test]
-    fn test_mock_clock_schedule_overflow_error() {
-        let mut clock = MockClock::new();
+    fn test_clock_schedule_overflow_error() {
+        let mut clock = TestClock::new();
         clock.current_tick = u64::MAX;
         let result = clock.schedule_timer(1, "overflow");
         assert!(result.is_err());
@@ -1207,7 +1207,7 @@ mod tests {
         let outcome = rt.send_message(0, "hello").unwrap();
         match outcome {
             MessageOutcome::Delivered { delay_ticks } => assert_eq!(delay_ticks, 5),
-            other => panic!("expected Delivered, got {other:?}"),
+            other => unreachable!("expected Delivered, got {other:?}"),
         }
     }
 
@@ -1486,7 +1486,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             LabError::ReplayDivergence { .. } => {}
-            other => panic!("expected ReplayDivergence, got {other}"),
+            other => unreachable!("expected ReplayDivergence, got {other}"),
         }
     }
 
@@ -1621,7 +1621,7 @@ mod tests {
             EVT_REPRO_EXPORTED,
             EVT_SCENARIO_FAILED,
             EVT_VIRTUAL_LINK_CREATED,
-            EVT_MOCK_CLOCK_ADVANCED,
+            EVT_TEST_CLOCK_ADVANCED,
         ];
         for code in codes {
             assert!(code.starts_with("FN-LB-"), "bad prefix: {code}");

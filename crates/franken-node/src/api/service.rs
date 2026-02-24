@@ -696,7 +696,7 @@ mod integration_tests {
             crate::api::error::ApiError::RateLimited { retry_after_ms, .. } => {
                 assert!(retry_after_ms > 0);
             }
-            other => panic!("expected RateLimited, got {:?}", other),
+            other => unreachable!("expected RateLimited, got {:?}", other),
         }
     }
 
@@ -885,10 +885,12 @@ mod integration_tests {
                 let effect = make_effect("e-unreg", "ext-unknown");
                 let fw_result = fw.evaluate(&effect, "trace-unreg", "2026-01-01T00:00:00Z");
                 assert!(fw_result.is_err());
-                Err(crate::api::error::ApiError::Internal {
-                    detail: format!("firewall error: {}", fw_result.unwrap_err()),
-                    trace_id: "trace-unreg".to_string(),
-                })
+                Result::<FirewallVerdict, crate::api::error::ApiError>::Err(
+                    crate::api::error::ApiError::Internal {
+                        detail: format!("firewall error: {}", fw_result.unwrap_err()),
+                        trace_id: "trace-unreg".to_string(),
+                    },
+                )
             });
 
         assert!(result.is_err());

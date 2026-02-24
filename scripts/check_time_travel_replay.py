@@ -16,6 +16,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 # Implementation is in the replay/ subdirectory, not runtime/
 SRC = ROOT / "crates" / "franken-node" / "src" / "replay" / "time_travel_engine.rs"
@@ -222,6 +224,7 @@ def run_checks() -> dict:
 
 
 def main():
+    logger = configure_test_logging("check_time_travel_replay")
     if "--self-test" in sys.argv:
         result = self_test()
         if result["verdict"] == "PASS":

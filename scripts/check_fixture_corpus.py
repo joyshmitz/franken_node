@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 FIXTURE_DIRS = {
     "core": ROOT / "docs" / "fixtures" / "core",
     "high-value": ROOT / "docs" / "fixtures" / "high_value",
@@ -168,6 +170,7 @@ def check_registry_alignment(fixtures: list[dict]) -> dict:
 
 
 def main():
+    logger = configure_test_logging("check_fixture_corpus")
     json_output = "--json" in sys.argv
     timestamp = datetime.now(timezone.utc).isoformat()
 

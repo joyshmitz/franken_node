@@ -1,0 +1,342 @@
+{
+  "bead_id": "bd-17ds.2.1",
+  "title": "Mock/Fake/Synthetic Pattern Catalog",
+  "generated_at": "2026-02-24T09:18:00Z",
+  "generated_by": "CrimsonCrane",
+  "summary": {
+    "total_patterns": 40,
+    "by_category": {
+      "mock_function": 3,
+      "fake_constructor": 5,
+      "synthetic_data": 16,
+      "dummy_value": 7,
+      "hardcoded_bypass": 6,
+      "skip_validation": 5,
+      "stub_function": 1
+    },
+    "files_affected": 24,
+    "priority_replacements": 8
+  },
+  "catalog": [
+    {
+      "file": "vef/proof_generator.rs",
+      "function": "mock_generator",
+      "pattern": "mock_function",
+      "priority": "high",
+      "description": "Creates MockProofBackend for testing without real cryptography",
+      "replacement_recommendation": "Use test harness accepting abstract ProofBackend interface with real backend validation"
+    },
+    {
+      "file": "vef/proof_generator.rs",
+      "function": "sample_chain_entries",
+      "pattern": "synthetic_data",
+      "priority": "medium",
+      "description": "Hardcoded ReceiptChainEntry list (n=0..4, timestamps 1_702_000_010_000+n)",
+      "replacement_recommendation": "Use property-based testing or parametrized edge case sets"
+    },
+    {
+      "file": "vef/proof_generator.rs",
+      "function": "sample_window",
+      "pattern": "synthetic_data",
+      "priority": "medium",
+      "description": "ProofWindow with hardcoded window_id='win-0-3', start=0, end=3",
+      "replacement_recommendation": "Use Builder pattern with configurable parameters"
+    },
+    {
+      "file": "vef/proof_generator.rs",
+      "function": "MockProofBackend::new",
+      "pattern": "fake_constructor",
+      "priority": "high",
+      "description": "Hardcoded backend name 'mock-hash' instead of real algorithm identifier",
+      "replacement_recommendation": "Make name configurable and validate against actual backend registry"
+    },
+    {
+      "file": "vef/proof_generator.rs",
+      "function": "compute_proof_bytes",
+      "pattern": "hardcoded_bypass",
+      "priority": "high",
+      "description": "Hardcoded domain separator 'mock-proof-v1:' differs from production separators",
+      "replacement_recommendation": "Use shared domain separator constant from production module"
+    },
+    {
+      "file": "connector/vef_policy_constraints.rs",
+      "function": "mock_proof_generator_accepts",
+      "pattern": "mock_function",
+      "priority": "high",
+      "description": "Test shim validating structure but bypassing actual proof verification",
+      "replacement_recommendation": "Move to #[cfg(test)] and use property-based testing against compiler rules"
+    },
+    {
+      "file": "security/revocation_freshness_gate.rs",
+      "function": "dummy_sig",
+      "pattern": "dummy_value",
+      "priority": "high",
+      "description": "Fake signature format(\"sig-{}-{}\", nonce, epoch) without cryptographic validity",
+      "replacement_recommendation": "Use real signing backend or deterministic test key pair"
+    },
+    {
+      "file": "connector/supervision.rs",
+      "function": "synthetic_now_ms",
+      "pattern": "synthetic_data",
+      "priority": "medium",
+      "description": "Synthetic timestamp based on restart_timestamps.len() * 1000",
+      "replacement_recommendation": "Inject clock abstraction via dependency injection trait"
+    },
+    {
+      "file": "tools/replay_bundle.rs",
+      "function": "synthetic_incident_events",
+      "pattern": "synthetic_data",
+      "priority": "low",
+      "description": "Hardcoded incident events with fixed timestamps and confidences",
+      "replacement_recommendation": "Use builders with configurable time bases and confidence distributions"
+    },
+    {
+      "file": "config.rs",
+      "function": "resolve_with_env (test)",
+      "pattern": "hardcoded_bypass",
+      "priority": "low",
+      "description": "Tests use BTreeMap literals without env validation",
+      "replacement_recommendation": "Create EnvFixture builder validating against schema"
+    },
+    {
+      "file": "extensions/artifact_contract.rs",
+      "function": "test_capabilities",
+      "pattern": "synthetic_data",
+      "priority": "medium",
+      "description": "Hardcoded entries: fs.read, net.egress with fixed max_calls (1000, 100)",
+      "replacement_recommendation": "Use CapabilityBuilder with varying boundaries"
+    },
+    {
+      "file": "extensions/artifact_contract.rs",
+      "function": "test_contract",
+      "pattern": "fake_constructor",
+      "priority": "medium",
+      "description": "Hardcoded 'signer-A' and 'ext-alpha' without registry validation",
+      "replacement_recommendation": "Inject real/mocked extension identity matching manifest"
+    },
+    {
+      "file": "extensions/artifact_contract.rs",
+      "function": "test_gate",
+      "pattern": "mock_function",
+      "priority": "medium",
+      "description": "AdmissionGate with hardcoded signer and schema version",
+      "replacement_recommendation": "Use config fixtures matching admission policy"
+    },
+    {
+      "file": "runtime/lane_scheduler.rs",
+      "function": "make_scheduler",
+      "pattern": "fake_constructor",
+      "priority": "medium",
+      "description": "LaneScheduler with default_policy() not verified against registry",
+      "replacement_recommendation": "Parametrize with real task mappings and validate invariants"
+    },
+    {
+      "file": "runtime/lane_scheduler.rs",
+      "function": "default_policy",
+      "pattern": "synthetic_data",
+      "priority": "medium",
+      "description": "Hardcoded 4 lanes and 10 rules not matching deployment topology",
+      "replacement_recommendation": "Load from config or use property-based topology generation"
+    },
+    {
+      "file": "remote/idempotency.rs",
+      "function": "seeded_payload",
+      "pattern": "synthetic_data",
+      "priority": "low",
+      "description": "24-byte payload with deterministic seed pattern",
+      "replacement_recommendation": "Use cryptographically sound random or realistic compute inputs"
+    },
+    {
+      "file": "remote/idempotency.rs",
+      "function": "demo_registry",
+      "pattern": "fake_constructor",
+      "priority": "medium",
+      "description": "Single hardcoded entry 'core.remote_compute.v1'",
+      "replacement_recommendation": "Load from actual computation manifest"
+    },
+    {
+      "file": "runtime/bounded_mask.rs",
+      "function": "spin_for",
+      "pattern": "stub_function",
+      "priority": "medium",
+      "description": "Busy-wait loop instead of precise clock control",
+      "replacement_recommendation": "Use mock clock (tokio::time::pause) or deterministic framework"
+    },
+    {
+      "file": "supply_chain/revocation_registry.rs",
+      "function": "head",
+      "pattern": "synthetic_data",
+      "priority": "low",
+      "description": "RevocationHead with hardcoded reason='compromised'",
+      "replacement_recommendation": "Use builder with configurable reasons from policy"
+    },
+    {
+      "file": "testing/lab_runtime.rs",
+      "function": "ScenarioFn callback",
+      "pattern": "skip_validation",
+      "priority": "high",
+      "description": "Returns Ok(bool) without validating invariants",
+      "replacement_recommendation": "Return Result<(bool, InvariantReport)> and validate all safety properties"
+    },
+    {
+      "file": "connector/repair_controller.rs",
+      "function": "test_* (multiple)",
+      "pattern": "hardcoded_bypass",
+      "priority": "medium",
+      "description": "Tests use fixed repair_budget without policy validation",
+      "replacement_recommendation": "Inject policy fixtures enforcing constraints"
+    },
+    {
+      "file": "security/intent_firewall.rs",
+      "function": "test_inv_extension_scoped_bypass",
+      "pattern": "skip_validation",
+      "priority": "medium",
+      "description": "Test doesn't validate bypass actually violates invariant",
+      "replacement_recommendation": "Add assertion bypass fails or document exception"
+    },
+    {
+      "file": "connector/saga.rs",
+      "function": "test_skipped_step_not_compensated",
+      "pattern": "skip_validation",
+      "priority": "medium",
+      "description": "Doesn't validate compensation was actually skipped",
+      "replacement_recommendation": "Assert compensation ledger empty"
+    },
+    {
+      "file": "vef/proof_generator.rs",
+      "function": "receipt (hardcoded)",
+      "pattern": "dummy_value",
+      "priority": "low",
+      "description": "ReceiptChainEntry with artifact_identity=format!(\"artifact-{n}\")",
+      "replacement_recommendation": "Use real artifacts from manifest or property-based generation"
+    },
+    {
+      "file": "vef/proof_generator.rs",
+      "function": "mock_backend_generates_proof",
+      "pattern": "hardcoded_bypass",
+      "priority": "medium",
+      "description": "ProofRequest with hardcoded timeout_millis=60_000 without enforcement validation",
+      "replacement_recommendation": "Parametrize timeouts and verify enforcement"
+    },
+    {
+      "file": "control_plane/marker_stream.rs",
+      "function": "inject_raw",
+      "pattern": "skip_validation",
+      "priority": "high",
+      "description": "Explicitly bypasses invariant checks in #[cfg(test)]",
+      "replacement_recommendation": "Use TestHelper trait with optional validation mode"
+    },
+    {
+      "file": "tools/security_ops_case_studies.rs",
+      "function": "sample_case_study",
+      "pattern": "synthetic_data",
+      "priority": "low",
+      "description": "Hardcoded org_type='SaaS', industry='FinTech', migration_days=21",
+      "replacement_recommendation": "Use realistic customer scenarios or parametrized fixtures"
+    },
+    {
+      "file": "tools/migration_validation_cohorts.rs",
+      "function": "sample_cohort",
+      "pattern": "synthetic_data",
+      "priority": "low",
+      "description": "Cohort with hardcoded name format",
+      "replacement_recommendation": "Use CohortBuilder validated against project registry"
+    },
+    {
+      "file": "vef/proof_scheduler.rs",
+      "function": "sample_stream",
+      "pattern": "synthetic_data",
+      "priority": "low",
+      "description": "Chain with hardcoded checkpoint_every_entries=2",
+      "replacement_recommendation": "Generate varied intervals with property-based testing"
+    },
+    {
+      "file": "tools/security_trust_metrics.rs",
+      "function": "make_passing_security_measurements",
+      "pattern": "dummy_value",
+      "priority": "low",
+      "description": "Fixed score=0.85, interval=(0.80, 0.90) across categories",
+      "replacement_recommendation": "Use realistic distributions or parametrized matrices"
+    },
+    {
+      "file": "tools/security_trust_metrics.rs",
+      "function": "make_failing_measurement",
+      "pattern": "dummy_value",
+      "priority": "low",
+      "description": "Fixed score=0.3 regardless of metric type",
+      "replacement_recommendation": "Vary thresholds by actual policy criteria"
+    },
+    {
+      "file": "vef/proof_service.rs",
+      "function": "sample_request",
+      "pattern": "synthetic_data",
+      "priority": "low",
+      "description": "ProofInputEnvelope with hardcoded checkpoint_every_entries=2",
+      "replacement_recommendation": "Use builders parametrizing intervals"
+    },
+    {
+      "file": "tools/benchmark_methodology.rs",
+      "function": "sample_pub",
+      "pattern": "synthetic_data",
+      "priority": "low",
+      "description": "Publication with template content and title",
+      "replacement_recommendation": "Use realistic methodologies from actual studies"
+    },
+    {
+      "file": "connector/rollout_state.rs",
+      "function": "sample_state",
+      "pattern": "synthetic_data",
+      "priority": "low",
+      "description": "RolloutState without topology validation",
+      "replacement_recommendation": "Use manifest fixtures matching rollout scenarios"
+    },
+    {
+      "file": "security/copilot_engine.rs",
+      "function": "make_candidate",
+      "pattern": "dummy_value",
+      "priority": "low",
+      "description": "Candidate with hardcoded confidence=(10.0, 50.0)",
+      "replacement_recommendation": "Generate from risk models or distributions"
+    },
+    {
+      "file": "connector/operator_intelligence.rs",
+      "function": "classify_artifact",
+      "pattern": "skip_validation",
+      "priority": "medium",
+      "description": "Test returns Ok(true) without full logic evaluation",
+      "replacement_recommendation": "Always execute full decision tree"
+    },
+    {
+      "file": "runtime/bounded_mask.rs",
+      "function": "test_timeout_exceeded_returns_error",
+      "pattern": "hardcoded_bypass",
+      "priority": "medium",
+      "description": "Duration=500us but enforce_timeout flag can skip enforcement",
+      "replacement_recommendation": "Verify all paths block when flag is true"
+    },
+    {
+      "file": "supply_chain/trust_card.rs",
+      "function": "test_trust_card_*",
+      "pattern": "synthetic_data",
+      "priority": "low",
+      "description": "Hardcoded reputation_trend=Declining, risk values",
+      "replacement_recommendation": "Use real history or parametrized matrices"
+    },
+    {
+      "file": "policy/bayesian_diagnostics.rs",
+      "function": "obs()",
+      "pattern": "dummy_value",
+      "priority": "low",
+      "description": "Observation helper with hardcoded success/failure booleans",
+      "replacement_recommendation": "Use ObservationBuilder or type-safe Enum with severity"
+    },
+    {
+      "file": "connector/capability_artifact.rs",
+      "function": "sample_envelope",
+      "pattern": "synthetic_data",
+      "priority": "low",
+      "description": "Hardcoded 'cap:fs:read', 'cap:network:connect'",
+      "replacement_recommendation": "Load from capability_policy or Builder with validation"
+    }
+  ]
+}

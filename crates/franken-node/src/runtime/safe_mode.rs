@@ -990,7 +990,7 @@ mod tests {
                 assert_eq!(flag, "--unknown");
                 assert!(recovery_hint.contains("Valid flags"));
             }
-            _ => panic!("expected UnknownFlag error"),
+            _ => unreachable!("expected UnknownFlag error"),
         }
     }
 
@@ -1981,7 +1981,7 @@ mod tests {
             assert_eq!(*local_epoch, 10);
             assert_eq!(*peer_epoch, 15);
         } else {
-            panic!("expected epoch mismatch reason");
+            unreachable!("expected epoch mismatch reason");
         }
     }
 

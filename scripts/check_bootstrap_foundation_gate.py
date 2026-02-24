@@ -26,6 +26,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BEAD_ID = "bd-3ohj"
 SECTION = "bootstrap"
@@ -726,6 +728,7 @@ def write_outputs(report: dict[str, Any], emit_samples: bool = False) -> None:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_bootstrap_foundation_gate")
     parser = argparse.ArgumentParser(description=TITLE)
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON report.")
     parser.add_argument("--self-test", action="store_true", help="Run internal checker self-tests.")

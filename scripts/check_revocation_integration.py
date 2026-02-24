@@ -9,7 +9,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC_PATH = ROOT / "docs/specs/section_10_4/bd-12q_contract.md"
 RUST_IMPL_PATH = ROOT / "crates/franken-node/src/supply_chain/revocation_integration.rs"
@@ -258,6 +261,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_revocation_integration")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--json",

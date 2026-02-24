@@ -164,7 +164,7 @@ class TestSpecificChecks(unittest.TestCase):
         result = mod.run_all()
         check_names = [c["check"] for c in result["checks"]]
         self.assertIn("contract_backend_trait", check_names)
-        self.assertIn("contract_mock_backend", check_names)
+        self.assertIn("contract_test_backend", check_names)
         self.assertIn("contract_swap_backend", check_names)
 
     def test_versioned_format_checks_present(self) -> None:

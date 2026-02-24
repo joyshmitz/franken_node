@@ -432,26 +432,26 @@ impl TrustCardRegistry {
             "query by extension id",
         );
 
-        if let Some(cached) = self.cache_by_extension.get(extension_id) {
-            if now_secs.saturating_sub(cached.cached_at_secs) <= self.cache_ttl_secs {
-                self.emit(
-                    TRUST_CARD_CACHE_HIT,
-                    Some(extension_id.to_string()),
-                    trace_id,
-                    now_secs,
-                    "served from cache",
-                );
-                let card = cached.card.clone();
-                verify_card_signature(&card, &self.registry_key)?;
-                self.emit(
-                    TRUST_CARD_SERVED,
-                    Some(extension_id.to_string()),
-                    trace_id,
-                    now_secs,
-                    "served verified trust card",
-                );
-                return Ok(Some(card));
-            }
+        if let Some(cached) = self.cache_by_extension.get(extension_id)
+            && now_secs.saturating_sub(cached.cached_at_secs) <= self.cache_ttl_secs
+        {
+            let card = cached.card.clone();
+            self.emit(
+                TRUST_CARD_CACHE_HIT,
+                Some(extension_id.to_string()),
+                trace_id,
+                now_secs,
+                "served from cache",
+            );
+            verify_card_signature(&card, &self.registry_key)?;
+            self.emit(
+                TRUST_CARD_SERVED,
+                Some(extension_id.to_string()),
+                trace_id,
+                now_secs,
+                "served verified trust card",
+            );
+            return Ok(Some(card));
         }
 
         let latest = self.latest_card(extension_id).cloned();

@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 SPEC = ROOT / "docs" / "specs" / "vef_claim_integration.md"
 CONFORMANCE = ROOT / "tests" / "conformance" / "vef_claim_gate.rs"
 SNAPSHOT = ROOT / "artifacts" / "10.18" / "vef_claim_coverage_snapshot.json"
@@ -404,6 +406,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_vef_claim_integration")
     parser = argparse.ArgumentParser(
         description="Verify bd-3go4: VEF coverage and proof-validity metrics integration"
     )

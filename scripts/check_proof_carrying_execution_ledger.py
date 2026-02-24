@@ -22,6 +22,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BEAD_ID = "bd-2hqd.4"
 SECTION = "10.17"
@@ -679,6 +681,7 @@ def _print_human(report: dict[str, Any]) -> None:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_proof_carrying_execution_ledger")
     parser = argparse.ArgumentParser(description="Proof-Carrying Execution Ledger (PCEL) v1 gate")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output")
     parser.add_argument("--self-test", action="store_true", help="Run checker self-tests")

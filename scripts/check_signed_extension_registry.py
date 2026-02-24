@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SRC = ROOT / "crates" / "franken-node" / "src" / "supply_chain" / "extension_registry.rs"
 MOD_RS = ROOT / "crates" / "franken-node" / "src" / "supply_chain" / "mod.rs"
@@ -250,6 +252,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_signed_extension_registry")
     parser = argparse.ArgumentParser(description="bd-209w gate: Signed Extension Registry")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--self-test", action="store_true", help="Run self-test")

@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC = ROOT / "docs" / "specs" / "section_13" / "bd-28sz_contract.md"
 POLICY = ROOT / "docs" / "policy" / "compat_corpus_gate.md"
@@ -372,6 +374,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_compat_corpus_gate")
     parser = argparse.ArgumentParser(
         description="Verify bd-28sz: compatibility corpus gate (>= 95%)"
     )

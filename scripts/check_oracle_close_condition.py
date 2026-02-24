@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 DEFAULT_ARTIFACTS_DIR = ROOT / "artifacts" / "oracle"
 
 REQUIRED_DIMENSIONS = [
@@ -82,6 +84,7 @@ def check_dimension(artifacts_dir: Path, dim: dict) -> dict:
 
 
 def main():
+    logger = configure_test_logging("check_oracle_close_condition")
     json_output = "--json" in sys.argv
     artifacts_dir = DEFAULT_ARTIFACTS_DIR
 

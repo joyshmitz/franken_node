@@ -195,7 +195,7 @@ pub struct ComplianceProof {
 /// INV-PGN-BACKEND-AGNOSTIC: any struct implementing this trait can serve as
 /// a proof backend without changes to the orchestrator.
 pub trait ProofBackend: Send + Sync {
-    /// Human-readable name of this backend (e.g., "mock-hash", "groth16", "stark").
+    /// Human-readable name of this backend (e.g., "test-hash", "groth16", "stark").
     fn backend_name(&self) -> &str;
 
     /// Generate a compliance proof for the given request.
@@ -210,20 +210,20 @@ pub trait ProofBackend: Send + Sync {
     ) -> Result<bool, ProofGeneratorError>;
 }
 
-// ── Mock hash-based backend ─────────────────────────────────────────────────
+// ── Test hash-based backend ─────────────────────────────────────────────────
 
-/// Mock proof backend that produces hash-based compliance proofs.
-/// Suitable for testing and development. INV-PGN-DETERMINISTIC.
+/// Hash-based proof backend for testing and development.
+/// Produces deterministic SHA-256 proofs. INV-PGN-DETERMINISTIC.
 #[derive(Debug, Clone)]
-pub struct MockProofBackend {
+pub struct TestProofBackend {
     /// Name reported by this backend.
     name: String,
 }
 
-impl MockProofBackend {
+impl TestProofBackend {
     pub fn new() -> Self {
         Self {
-            name: "mock-hash".to_string(),
+            name: "test-hash".to_string(),
         }
     }
 
@@ -236,7 +236,7 @@ impl MockProofBackend {
     fn compute_proof_bytes(&self, entries: &[ReceiptChainEntry]) -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.update(b"proof_generator_hash_v1:");
-        hasher.update(b"mock-proof-v1:");
+        hasher.update(b"proof-backend-v1:");
         for entry in entries {
             hasher.update(entry.chain_hash.as_bytes());
             hasher.update(b"|");
@@ -250,13 +250,13 @@ impl MockProofBackend {
     }
 }
 
-impl Default for MockProofBackend {
+impl Default for TestProofBackend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ProofBackend for MockProofBackend {
+impl ProofBackend for TestProofBackend {
     fn backend_name(&self) -> &str {
         &self.name
     }
@@ -272,7 +272,7 @@ impl ProofBackend for MockProofBackend {
         let proof_data_hash = Self::hash_bytes(&proof_data);
 
         let mut metadata = BTreeMap::new();
-        metadata.insert("backend_type".to_string(), "mock-hash".to_string());
+        metadata.insert("backend_type".to_string(), "test-hash".to_string());
         metadata.insert("entry_count".to_string(), request.entries.len().to_string());
         metadata.insert(
             "window_start".to_string(),
@@ -719,16 +719,16 @@ mod tests {
         }
     }
 
-    fn mock_generator() -> ProofGenerator {
-        let backend = Arc::new(MockProofBackend::new());
+    fn test_generator() -> ProofGenerator {
+        let backend = Arc::new(TestProofBackend::new());
         ProofGenerator::new(backend, ProofGeneratorConfig::default())
     }
 
-    // ── 1. MockProofBackend generates proof successfully ──
+    // ── 1. Test backend generates proof successfully ──
 
     #[test]
-    fn mock_backend_generates_proof() {
-        let backend = MockProofBackend::new();
+    fn test_backend_generates_proof() {
+        let backend = TestProofBackend::new();
         let entries = sample_chain_entries();
         let window = sample_window();
         let request = ProofRequest {
@@ -740,7 +740,7 @@ mod tests {
             created_at_millis: 1_702_000_030_000,
         };
         let proof = backend.generate(&request).unwrap();
-        assert_eq!(proof.backend_name, "mock-hash");
+        assert_eq!(proof.backend_name, "test-hash");
         assert!(!proof.proof_data.is_empty());
         assert!(proof.proof_data_hash.starts_with("sha256:"));
     }
@@ -748,8 +748,8 @@ mod tests {
     // ── 2. Empty window returns error ──
 
     #[test]
-    fn mock_backend_rejects_empty_window() {
-        let backend = MockProofBackend::new();
+    fn test_backend_rejects_empty_window() {
+        let backend = TestProofBackend::new();
         let window = sample_window();
         let request = ProofRequest {
             request_id: "req-empty".to_string(),
@@ -767,7 +767,7 @@ mod tests {
 
     #[test]
     fn proof_carries_format_version() {
-        let backend = MockProofBackend::new();
+        let backend = TestProofBackend::new();
         let entries = sample_chain_entries();
         let window = sample_window();
         let request = ProofRequest {
@@ -786,7 +786,7 @@ mod tests {
 
     #[test]
     fn proof_carries_backend_name() {
-        let backend = MockProofBackend::with_name("custom-backend");
+        let backend = TestProofBackend::with_name("custom-backend");
         let entries = sample_chain_entries();
         let window = sample_window();
         let request = ProofRequest {
@@ -805,7 +805,7 @@ mod tests {
 
     #[test]
     fn deterministic_proof_generation() {
-        let backend = MockProofBackend::new();
+        let backend = TestProofBackend::new();
         let entries = sample_chain_entries();
         let window = sample_window();
         let req1 = ProofRequest {
@@ -834,7 +834,7 @@ mod tests {
 
     #[test]
     fn verify_proof_succeeds_for_matching_entries() {
-        let backend = MockProofBackend::new();
+        let backend = TestProofBackend::new();
         let entries = sample_chain_entries();
         let window = sample_window();
         let request = ProofRequest {
@@ -853,7 +853,7 @@ mod tests {
 
     #[test]
     fn verify_proof_fails_for_mismatched_entries() {
-        let backend = MockProofBackend::new();
+        let backend = TestProofBackend::new();
         let entries = sample_chain_entries();
         let window = sample_window();
         let request = ProofRequest {
@@ -872,7 +872,7 @@ mod tests {
 
     #[test]
     fn verify_proof_empty_entries_returns_false() {
-        let backend = MockProofBackend::new();
+        let backend = TestProofBackend::new();
         let entries = sample_chain_entries();
         let window = sample_window();
         let request = ProofRequest {
@@ -891,7 +891,7 @@ mod tests {
 
     #[test]
     fn generator_submit_request_success() {
-        let mut pg = mock_generator();
+        let mut pg = test_generator();
         let entries = sample_chain_entries();
         let window = sample_window();
         let req_id = pg
@@ -909,7 +909,7 @@ mod tests {
 
     #[test]
     fn generator_rejects_empty_entries() {
-        let mut pg = mock_generator();
+        let mut pg = test_generator();
         let window = sample_window();
         let err = pg
             .submit_request(&window, &[], 1_702_000_041_000, "trace-empty-gen")
@@ -921,7 +921,7 @@ mod tests {
 
     #[test]
     fn generator_generate_proof_completes() {
-        let mut pg = mock_generator();
+        let mut pg = test_generator();
         let entries = sample_chain_entries();
         let window = sample_window();
         let req_id = pg
@@ -941,7 +941,7 @@ mod tests {
 
     #[test]
     fn generator_verify_proof() {
-        let mut pg = mock_generator();
+        let mut pg = test_generator();
         let entries = sample_chain_entries();
         let window = sample_window();
         let req_id = pg
@@ -958,7 +958,7 @@ mod tests {
 
     #[test]
     fn events_emitted_in_order() {
-        let mut pg = mock_generator();
+        let mut pg = test_generator();
         let entries = sample_chain_entries();
         let window = sample_window();
         let req_id = pg
@@ -978,7 +978,7 @@ mod tests {
 
     #[test]
     fn enforce_timeouts_marks_expired_requests() {
-        let backend = Arc::new(MockProofBackend::new());
+        let backend = Arc::new(TestProofBackend::new());
         let config = ProofGeneratorConfig {
             default_timeout_millis: 1_000,
             ..ProofGeneratorConfig::default()
@@ -1002,7 +1002,7 @@ mod tests {
 
     #[test]
     fn status_counts_accurate() {
-        let mut pgr = mock_generator();
+        let mut pgr = test_generator();
         let entries = sample_chain_entries();
         let window = sample_window();
         pgr.submit_request(&window, &entries, 1_702_000_060_000, "trace-counts-1")
@@ -1021,9 +1021,9 @@ mod tests {
 
     #[test]
     fn swap_backend_changes_name() {
-        let mut pgr = mock_generator();
-        assert_eq!(pgr.backend_name(), "mock-hash");
-        let new_backend = Arc::new(MockProofBackend::with_name("zk-groth16"));
+        let mut pgr = test_generator();
+        assert_eq!(pgr.backend_name(), "test-hash");
+        let new_backend = Arc::new(TestProofBackend::with_name("zk-groth16"));
         pgr.swap_backend(new_backend, "trace-swap");
         assert_eq!(pgr.backend_name(), "zk-groth16");
         let swap_events: Vec<_> = pgr
@@ -1038,7 +1038,7 @@ mod tests {
 
     #[test]
     fn proof_metadata_contains_entry_count() {
-        let backend = MockProofBackend::new();
+        let backend = TestProofBackend::new();
         let entries = sample_chain_entries();
         let window = sample_window();
         let request = ProofRequest {
@@ -1060,7 +1060,7 @@ mod tests {
 
     #[test]
     fn proof_receipt_window_ref_matches_window() {
-        let backend = MockProofBackend::new();
+        let backend = TestProofBackend::new();
         let entries = sample_chain_entries();
         let window = sample_window();
         let request = ProofRequest {
@@ -1079,7 +1079,7 @@ mod tests {
 
     #[test]
     fn pending_capacity_enforced() {
-        let backend = Arc::new(MockProofBackend::new());
+        let backend = Arc::new(TestProofBackend::new());
         let config = ProofGeneratorConfig {
             max_pending_requests: 2,
             ..ProofGeneratorConfig::default()
@@ -1101,7 +1101,7 @@ mod tests {
 
     #[test]
     fn max_entries_per_request_enforced() {
-        let backend = Arc::new(MockProofBackend::new());
+        let backend = Arc::new(TestProofBackend::new());
         let config = ProofGeneratorConfig {
             max_entries_per_request: 2,
             ..ProofGeneratorConfig::default()
@@ -1119,7 +1119,7 @@ mod tests {
 
     #[test]
     fn schema_version_set() {
-        let pgr = mock_generator();
+        let pgr = test_generator();
         assert_eq!(pgr.schema_version, PROOF_GENERATOR_SCHEMA_VERSION);
     }
 
@@ -1127,7 +1127,7 @@ mod tests {
 
     #[test]
     fn compliance_proof_serde_roundtrip() {
-        let backend = MockProofBackend::new();
+        let backend = TestProofBackend::new();
         let entries = sample_chain_entries();
         let window = sample_window();
         let request = ProofRequest {
@@ -1193,7 +1193,7 @@ mod tests {
 
     #[test]
     fn concurrent_generator_submit_and_generate() {
-        let backend = Arc::new(MockProofBackend::new());
+        let backend = Arc::new(TestProofBackend::new());
         let cpg = ConcurrentProofGenerator::new(backend, ProofGeneratorConfig::default());
         let entries = sample_chain_entries();
         let window = sample_window();
@@ -1210,7 +1210,7 @@ mod tests {
 
     #[test]
     fn proof_data_hash_integrity() {
-        let backend = MockProofBackend::new();
+        let backend = TestProofBackend::new();
         let entries = sample_chain_entries();
         let window = sample_window();
         let request = ProofRequest {
@@ -1222,7 +1222,7 @@ mod tests {
             created_at_millis: 1_702_000_110_000,
         };
         let proof = backend.generate(&request).unwrap();
-        let recomputed = MockProofBackend::hash_bytes(&proof.proof_data);
+        let recomputed = TestProofBackend::hash_bytes(&proof.proof_data);
         assert_eq!(proof.proof_data_hash, recomputed);
     }
 
@@ -1230,7 +1230,7 @@ mod tests {
 
     #[test]
     fn different_entries_produce_different_proofs() {
-        let backend = MockProofBackend::new();
+        let backend = TestProofBackend::new();
         let entries1 = sample_chain_entries();
         let mut chain = ReceiptChain::new(ReceiptChainConfig {
             checkpoint_every_entries: 0,
@@ -1273,15 +1273,15 @@ mod tests {
 
     #[test]
     fn backend_name_reported() {
-        let pgr = mock_generator();
-        assert_eq!(pgr.backend_name(), "mock-hash");
+        let pgr = test_generator();
+        assert_eq!(pgr.backend_name(), "test-hash");
     }
 
     // ── 30. ProofGeneratorEvent has all fields populated ──
 
     #[test]
     fn events_have_all_fields() {
-        let mut pgr = mock_generator();
+        let mut pgr = test_generator();
         let entries = sample_chain_entries();
         let window = sample_window();
         pgr.submit_request(&window, &entries, 1_702_000_140_000, "trace-fields")

@@ -131,7 +131,7 @@ def test_evidence_artifact_paths():
     assert "section_10_13" in source
     assert "verification_evidence.json" in source
 
-def test_build_report_no_exec():
+def test_build_report_no_execution():
     mod.CHECKS.clear()
     mod._json_mode = True
     report = mod.build_report(execute=False)

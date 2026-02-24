@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 DEFAULT_CONTRACT = ROOT / "docs" / "architecture" / "tri_kernel_ownership_contract.md"
 DEFAULT_MATRIX = ROOT / "artifacts" / "10.15" / "workflow_primitive_matrix.json"
 
@@ -440,6 +442,7 @@ canonical_asupersync_primitives:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_workflow_primitive_map")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", dest="json_output")
     parser.add_argument("--self-test", action="store_true", dest="self_test_mode")

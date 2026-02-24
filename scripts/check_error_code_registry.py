@@ -6,6 +6,9 @@ import os
 import re
 import subprocess
 import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = []
@@ -24,13 +27,14 @@ def check(check_id, description, passed, details=None):
 
 
 def main():
+    logger = configure_test_logging("check_error_code_registry")
     print("bd-novi: Stable Error Code Namespace — Verification\n")
     all_pass = True
 
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/error_code_registry.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_registry = "struct ErrorCodeRegistry" in content
         has_entry = "struct ErrorCodeEntry" in content
         has_recovery = "struct RecoveryInfo" in content
@@ -41,7 +45,7 @@ def main():
     all_pass &= check("ECR-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         errors = ["ECR_INVALID_NAMESPACE", "ECR_DUPLICATE_CODE", "ECR_MISSING_RECOVERY",
                   "ECR_FROZEN_CONFLICT", "ECR_NOT_FOUND"]
         found = [e for e in errors if e in content]
@@ -54,7 +58,7 @@ def main():
     catalog_valid = False
     if os.path.isfile(catalog_path):
         try:
-            data = json.load(open(catalog_path))
+            data = json.loads(__import__("pathlib").Path(catalog_path).read_text(encoding="utf-8"))
             catalog_valid = "error_codes" in data and len(data["error_codes"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -63,7 +67,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/error_contract_stability.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = open(integ_path).read()
+        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
         has_namespaced = "inv_ecr_namespaced" in content
         has_unique = "inv_ecr_unique" in content
         has_recovery = "inv_ecr_recovery" in content
@@ -91,7 +95,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-novi_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = open(spec_path).read()
+        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
         has_invariants = "INV-ECR" in content
         has_types = "ErrorCodeRegistry" in content and "RecoveryInfo" in content
     else:

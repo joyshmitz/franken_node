@@ -538,6 +538,113 @@ mod tests {
     }
 
     #[test]
+    fn default_thresholds_are_positive() {
+        let t = MigrationGateThresholds::default();
+        assert!(t.max_cascade_risk_delta > 0.0);
+        assert!(t.max_new_fragility_findings > 0);
+        assert!(t.max_new_articulation_points > 0);
+    }
+
+    #[test]
+    fn zero_delta_allows_admission() {
+        let snap = baseline();
+        let evaluation = evaluate_admission(
+            "trace-zero",
+            snap,
+            snap,
+            MigrationGateThresholds::default(),
+            &[],
+        );
+        assert_eq!(evaluation.verdict, GateVerdict::Allow);
+    }
+
+    #[test]
+    fn negative_delta_is_improvement() {
+        let improved = GraphHealthSnapshot {
+            cascade_risk: 0.10,
+            fragility_findings: 1,
+            articulation_points: 0,
+        };
+        let delta = HealthDelta::between(baseline(), improved);
+        assert!(delta.cascade_risk_delta < 0.0);
+    }
+
+    #[test]
+    fn empty_candidates_no_replans() {
+        let blocked_delta = HealthDelta {
+            cascade_risk_delta: 1.0,
+            new_fragility_findings: 20,
+            new_articulation_points: 10,
+        };
+        let suggestions = suggest_replans(
+            baseline(),
+            blocked_delta,
+            &[],
+            MigrationGateThresholds::default(),
+        );
+        assert!(suggestions.is_empty());
+    }
+
+    #[test]
+    fn verdict_serde_roundtrip() {
+        let v = GateVerdict::Block;
+        let json = serde_json::to_string(&v).unwrap();
+        let parsed: GateVerdict = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, v);
+    }
+
+    #[test]
+    fn progression_phase_canary_event() {
+        let projected = GraphHealthSnapshot {
+            cascade_risk: 0.28,
+            fragility_findings: 5,
+            articulation_points: 3,
+        };
+        let phase_eval = evaluate_progression_phase(
+            "trace-phase",
+            "canary",
+            baseline(),
+            projected,
+            MigrationGateThresholds::default(),
+            &[],
+        );
+        assert!(!phase_eval.events.is_empty());
+        assert!(!phase_eval.events[0].code.is_empty());
+    }
+
+    #[test]
+    fn single_candidate_replan_sorted() {
+        let delta = HealthDelta {
+            cascade_risk_delta: 1.0,
+            new_fragility_findings: 20,
+            new_articulation_points: 10,
+        };
+        let candidates = vec![MigrationPathCandidate {
+            path_id: "alt-1".to_string(),
+            notes: "lower risk".to_string(),
+            projected: GraphHealthSnapshot {
+                cascade_risk: 0.15,
+                fragility_findings: 2,
+                articulation_points: 1,
+            },
+        }];
+        let suggestions = suggest_replans(
+            baseline(),
+            delta,
+            &candidates,
+            MigrationGateThresholds::default(),
+        );
+        assert_eq!(suggestions.len(), 1);
+    }
+
+    #[test]
+    fn event_codes_are_nonempty() {
+        assert!(!event_codes::BASELINE_CAPTURED.is_empty());
+        assert!(!event_codes::ADMISSION_ALLOWED.is_empty());
+        assert!(!event_codes::ADMISSION_BLOCKED.is_empty());
+    }
+
+    #[test]
     fn health_report_wraps_evaluation() {
         let evaluation = evaluate_admission(
             "trace-report",

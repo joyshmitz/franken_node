@@ -858,7 +858,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             SerializerError::SchemaNotFound { .. } => {}
-            other => panic!("expected SchemaNotFound, got {other}"),
+            other => unreachable!("expected SchemaNotFound, got {other}"),
         }
     }
 
@@ -870,7 +870,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             SerializerError::FloatingPointRejected { .. } => {}
-            other => panic!("expected FloatingPointRejected, got {other}"),
+            other => unreachable!("expected FloatingPointRejected, got {other}"),
         }
     }
 

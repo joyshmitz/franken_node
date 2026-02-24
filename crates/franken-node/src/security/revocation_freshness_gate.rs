@@ -393,13 +393,13 @@ impl fmt::Debug for RevocationFreshnessGate {
 mod tests {
     use super::*;
 
-    fn dummy_sig(proof: &FreshnessProof) -> String {
+    fn test_sig(proof: &FreshnessProof) -> String {
         format!("sig-{}-{}", proof.nonce, proof.epoch)
     }
 
     fn gate() -> RevocationFreshnessGate {
         RevocationFreshnessGate::new(
-            Box::new(dummy_sig),
+            Box::new(test_sig),
             vec![
                 ("key_rotate".to_string(), SafetyTier::Critical),
                 ("trust_anchor".to_string(), SafetyTier::Critical),
@@ -419,7 +419,7 @@ mod tests {
             tier,
             epoch,
         };
-        p.signature = dummy_sig(&p);
+        p.signature = test_sig(&p);
         p
     }
 

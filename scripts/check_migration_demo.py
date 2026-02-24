@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC_PATH = ROOT / "docs" / "specs" / "section_10_9" / "bd-1e0_contract.md"
 POLICY_PATH = ROOT / "docs" / "policy" / "migration_singularity_demo.md"
@@ -449,6 +451,7 @@ def self_test():
 
 
 def main():
+    logger = configure_test_logging("check_migration_demo")
     if "--self-test" in sys.argv:
         self_test()
         return

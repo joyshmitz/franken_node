@@ -1250,3 +1250,493 @@ mod tests {
         assert!(tu.to_string().contains("target unreachable"));
     }
 }
+
+// ===========================================================================
+// Integration tests: Storage → Migration (bd-17ds.5.4)
+// ===========================================================================
+
+#[cfg(test)]
+mod storage_migration_integration_tests {
+    use super::*;
+    use crate::migration::bpet_migration_gate::{
+        self, GateVerdict, RolloutHealthSnapshot, RolloutPhase, StabilityThresholds,
+        TrajectorySnapshot, evaluate_admission, evaluate_rollout_health,
+    };
+
+    fn aid(s: &str) -> ArtifactId {
+        ArtifactId(s.to_string())
+    }
+
+    fn sid(s: &str) -> SegmentId {
+        SegmentId(s.to_string())
+    }
+
+    fn good_target(hash: &str) -> TargetTierState {
+        TargetTierState {
+            content_hash: hash.to_string(),
+            reachable: true,
+            fetch_latency_ms: 80,
+        }
+    }
+
+    fn stable_trajectory() -> TrajectorySnapshot {
+        TrajectorySnapshot {
+            instability_score: 0.20,
+            drift_score: 0.18,
+            regime_shift_probability: 0.10,
+        }
+    }
+
+    fn mild_projected() -> TrajectorySnapshot {
+        TrajectorySnapshot {
+            instability_score: 0.23,
+            drift_score: 0.20,
+            regime_shift_probability: 0.14,
+        }
+    }
+
+    fn severe_projected() -> TrajectorySnapshot {
+        TrajectorySnapshot {
+            instability_score: 0.70,
+            drift_score: 0.40,
+            regime_shift_probability: 0.53,
+        }
+    }
+
+    // -- 1. Successful retrievability proof enables direct migration admission --
+
+    #[test]
+    fn retrievability_proof_enables_direct_migration_admission() {
+        let hash = content_hash(b"artifact-payload-v1");
+        let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
+        gate.register_target(&aid("art-1"), StorageTier::L3Archive, good_target(&hash));
+
+        // Proof succeeds → eviction permitted
+        let permit = gate
+            .attempt_eviction(&aid("art-1"), &sid("seg-1"), &hash)
+            .unwrap();
+        assert_eq!(permit.proof.content_hash, hash);
+
+        // Stable trajectory → direct admit
+        let decision = evaluate_admission(
+            "trace-sm-1",
+            stable_trajectory(),
+            mild_projected(),
+            StabilityThresholds::default(),
+            "v3.0.0",
+        );
+        assert_eq!(decision.verdict, GateVerdict::Allow);
+
+        // Both gates passed: eviction proof + stable admission
+        assert_eq!(gate.passed_count(), 1);
+        assert!(decision.additional_evidence_required.is_empty());
+    }
+
+    // -- 2. Failed retrievability proof blocks eviction regardless of stable migration --
+
+    #[test]
+    fn failed_proof_blocks_eviction_even_when_migration_stable() {
+        let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
+        // No target registered → unreachable
+        let err = gate
+            .attempt_eviction(&aid("art-2"), &sid("seg-2"), "somehash")
+            .unwrap_err();
+        assert_eq!(err.code, ERR_TARGET_UNREACHABLE);
+
+        // Migration would allow it, but storage gate already blocked
+        let decision = evaluate_admission(
+            "trace-sm-2",
+            stable_trajectory(),
+            mild_projected(),
+            StabilityThresholds::default(),
+            "v3.0.0",
+        );
+        assert_eq!(decision.verdict, GateVerdict::Allow);
+
+        // Gate recorded failure
+        assert_eq!(gate.failed_count(), 1);
+        assert_eq!(gate.passed_count(), 0);
+    }
+
+    // -- 3. Hash mismatch + migration evidence requirement both block --
+
+    #[test]
+    fn hash_mismatch_and_migration_evidence_both_gate() {
+        let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
+        gate.register_target(
+            &aid("art-3"),
+            StorageTier::L3Archive,
+            good_target("corrupted_hash"),
+        );
+
+        // Storage gate: hash mismatch
+        let err = gate
+            .attempt_eviction(&aid("art-3"), &sid("seg-3"), "expected_hash")
+            .unwrap_err();
+        assert_eq!(err.code, ERR_HASH_MISMATCH);
+
+        // Migration gate: moderate risk → evidence required
+        let moderate = TrajectorySnapshot {
+            instability_score: 0.33,
+            drift_score: 0.29,
+            regime_shift_probability: 0.26,
+        };
+        let decision = evaluate_admission(
+            "trace-sm-3",
+            stable_trajectory(),
+            moderate,
+            StabilityThresholds::default(),
+            "v3.0.0",
+        );
+        assert_eq!(decision.verdict, GateVerdict::RequireAdditionalEvidence);
+
+        // Both subsystems independently gating
+        assert_eq!(gate.failed_count(), 1);
+        assert!(!decision.additional_evidence_required.is_empty());
+    }
+
+    // -- 4. Eviction permit + severe migration triggers staged rollout --
+
+    #[test]
+    fn eviction_permit_with_severe_migration_requires_staged_rollout() {
+        let hash = content_hash(b"payload-severe");
+        let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
+        gate.register_target(&aid("art-4"), StorageTier::L3Archive, good_target(&hash));
+
+        // Storage gate passes
+        let permit = gate
+            .attempt_eviction(&aid("art-4"), &sid("seg-4"), &hash)
+            .unwrap();
+        assert!(permit.permit_id.contains("evict"));
+
+        // Migration gate: severe → staged rollout
+        let decision = evaluate_admission(
+            "trace-sm-4",
+            stable_trajectory(),
+            severe_projected(),
+            StabilityThresholds::default(),
+            "v3.0.0",
+        );
+        assert_eq!(decision.verdict, GateVerdict::StagedRolloutRequired);
+        let rollout = decision.staged_rollout.as_ref().unwrap();
+        assert_eq!(rollout.steps.len(), 4);
+        assert_eq!(rollout.steps[0].phase, RolloutPhase::Canary);
+    }
+
+    // -- 5. Staged rollout health check with retrievability receipts --
+
+    #[test]
+    fn rollout_health_check_correlates_with_proof_receipts() {
+        let hash = content_hash(b"payload-rollout");
+        let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
+        gate.register_target(&aid("art-5"), StorageTier::L3Archive, good_target(&hash));
+
+        // Storage proof passes
+        gate.attempt_eviction(&aid("art-5"), &sid("seg-5"), &hash)
+            .unwrap();
+        let receipts = gate.receipts();
+        assert_eq!(receipts.len(), 1);
+        assert!(receipts[0].passed);
+
+        // Migration: severe → staged rollout plan
+        let decision = evaluate_admission(
+            "trace-sm-5",
+            stable_trajectory(),
+            severe_projected(),
+            StabilityThresholds::default(),
+            "v3.0.0",
+        );
+        let rollout = decision.staged_rollout.unwrap();
+
+        // Canary health check: within limits → advance
+        let healthy = RolloutHealthSnapshot {
+            phase: RolloutPhase::Canary,
+            observed: TrajectorySnapshot {
+                instability_score: 0.58,
+                drift_score: 0.32,
+                regime_shift_probability: 0.41,
+            },
+        };
+        let rollback = evaluate_rollout_health("trace-sm-5", &rollout, &healthy);
+        assert!(!rollback.should_rollback);
+        assert_eq!(
+            rollback.event.code,
+            bpet_migration_gate::event_codes::PHASE_ADVANCED
+        );
+    }
+
+    // -- 6. Rollback triggered during staged rollout after eviction --
+
+    #[test]
+    fn rollback_triggered_after_eviction_completed() {
+        let hash = content_hash(b"payload-rollback");
+        let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
+        gate.register_target(&aid("art-6"), StorageTier::L3Archive, good_target(&hash));
+
+        // Eviction completed
+        gate.attempt_eviction(&aid("art-6"), &sid("seg-6"), &hash)
+            .unwrap();
+
+        // Staged rollout plan
+        let decision = evaluate_admission(
+            "trace-sm-6",
+            stable_trajectory(),
+            severe_projected(),
+            StabilityThresholds::default(),
+            "v3.0.0",
+        );
+        let rollout = decision.staged_rollout.unwrap();
+
+        // Canary goes bad → rollback
+        let unhealthy = RolloutHealthSnapshot {
+            phase: RolloutPhase::Canary,
+            observed: TrajectorySnapshot {
+                instability_score: 0.80,
+                drift_score: 0.50,
+                regime_shift_probability: 0.65,
+            },
+        };
+        let rollback = evaluate_rollout_health("trace-sm-6", &rollout, &unhealthy);
+        assert!(rollback.should_rollback);
+        assert_eq!(
+            rollback.event.code,
+            bpet_migration_gate::event_codes::ROLLBACK_TRIGGERED
+        );
+
+        // Eviction receipt still recorded — rollback is migration-level, not storage-level
+        assert_eq!(gate.passed_count(), 1);
+    }
+
+    // -- 7. Content hash verified across storage-migration boundary --
+
+    #[test]
+    fn content_hash_deterministic_across_boundary() {
+        let payload = b"migration-artifact-content";
+        let hash = content_hash(payload);
+        let hash2 = content_hash(payload);
+        assert_eq!(hash, hash2);
+        assert_eq!(hash.len(), 64); // SHA-256
+
+        let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
+        gate.register_target(&aid("art-7"), StorageTier::L3Archive, good_target(&hash));
+
+        // Proof binds the content hash
+        let proof = gate
+            .check_retrievability(
+                &aid("art-7"),
+                &sid("seg-7"),
+                StorageTier::L2Warm,
+                StorageTier::L3Archive,
+                &hash,
+            )
+            .unwrap();
+        assert_eq!(proof.content_hash, hash);
+
+        // Same hash used in migration report context
+        let decision = evaluate_admission(
+            "trace-sm-7",
+            stable_trajectory(),
+            mild_projected(),
+            StabilityThresholds::default(),
+            "v3.0.0",
+        );
+        let report = bpet_migration_gate::build_migration_report(
+            &format!("migrate-{}", &hash[..16]),
+            decision,
+        );
+        assert!(report.migration_id.starts_with("migrate-"));
+        assert_eq!(report.admission.verdict, GateVerdict::Allow);
+    }
+
+    // -- 8. Latency-exceeded storage failure + stable migration --
+
+    #[test]
+    fn latency_failure_blocks_despite_stable_migration() {
+        let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
+        gate.register_target(
+            &aid("art-8"),
+            StorageTier::L3Archive,
+            TargetTierState {
+                content_hash: "h1".to_string(),
+                reachable: true,
+                fetch_latency_ms: 15000, // exceeds 5000ms limit
+            },
+        );
+
+        let err = gate
+            .attempt_eviction(&aid("art-8"), &sid("seg-8"), "h1")
+            .unwrap_err();
+        assert_eq!(err.code, ERR_LATENCY_EXCEEDED);
+
+        // Migration is stable
+        let decision = evaluate_admission(
+            "trace-sm-8",
+            stable_trajectory(),
+            mild_projected(),
+            StabilityThresholds::default(),
+            "v3.0.0",
+        );
+        assert_eq!(decision.verdict, GateVerdict::Allow);
+
+        // Storage still blocked — latency failure is unconditional
+        assert_eq!(gate.failed_count(), 1);
+    }
+
+    // -- 9. Multiple artifacts: mixed pass/fail with admission --
+
+    #[test]
+    fn multiple_artifacts_mixed_proofs_with_admission() {
+        let hash_a = content_hash(b"artifact-a");
+        let hash_b = content_hash(b"artifact-b");
+
+        let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
+        gate.register_target(&aid("art-a"), StorageTier::L3Archive, good_target(&hash_a));
+        // art-b not registered → will fail
+
+        let _permit_a = gate
+            .attempt_eviction(&aid("art-a"), &sid("seg-a"), &hash_a)
+            .unwrap();
+        let err_b = gate
+            .attempt_eviction(&aid("art-b"), &sid("seg-b"), &hash_b)
+            .unwrap_err();
+        assert_eq!(err_b.code, ERR_TARGET_UNREACHABLE);
+
+        assert_eq!(gate.passed_count(), 1);
+        assert_eq!(gate.failed_count(), 1);
+
+        // Single admission decision covers the batch
+        let decision = evaluate_admission(
+            "trace-sm-9",
+            stable_trajectory(),
+            mild_projected(),
+            StabilityThresholds::default(),
+            "v3.0.0",
+        );
+        assert_eq!(decision.verdict, GateVerdict::Allow);
+    }
+
+    // -- 10. Fallback plan references match storage artifact structure --
+
+    #[test]
+    fn fallback_plan_structure_consistent_with_storage_receipts() {
+        let hash = content_hash(b"payload-fb");
+        let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
+        gate.register_target(&aid("art-fb"), StorageTier::L3Archive, good_target(&hash));
+        gate.attempt_eviction(&aid("art-fb"), &sid("seg-fb"), &hash)
+            .unwrap();
+
+        let decision = evaluate_admission(
+            "trace-sm-10",
+            stable_trajectory(),
+            severe_projected(),
+            StabilityThresholds::default(),
+            "v3.0.0",
+        );
+        let rollout = decision.staged_rollout.unwrap();
+
+        // Fallback plan has rollback version and required artifacts
+        assert!(rollout.fallback.rollback_to_version.contains("previous"));
+        assert!(rollout.fallback.quarantine_window_minutes > 0);
+        assert!(!rollout.fallback.required_artifacts.is_empty());
+
+        // Storage receipts JSON is valid and includes our proof
+        let json = gate.receipts_json();
+        let receipts: Vec<ProofReceipt> = serde_json::from_str(&json).unwrap();
+        assert_eq!(receipts.len(), 1);
+        assert!(receipts[0].passed);
+        assert_eq!(receipts[0].content_hash, hash);
+    }
+
+    // -- 11. Audit events span both storage and migration gates --
+
+    #[test]
+    fn audit_events_span_storage_and_migration() {
+        let hash = content_hash(b"audit-trail");
+        let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
+        gate.register_target(&aid("art-au"), StorageTier::L3Archive, good_target(&hash));
+        gate.attempt_eviction(&aid("art-au"), &sid("seg-au"), &hash)
+            .unwrap();
+
+        // Storage events: init + proof_passed + eviction_permitted
+        let storage_events = gate.events();
+        assert!(storage_events.iter().any(|e| e.code == RG_GATE_INITIALIZED));
+        assert!(storage_events.iter().any(|e| e.code == RG_PROOF_PASSED));
+        assert!(
+            storage_events
+                .iter()
+                .any(|e| e.code == RG_EVICTION_PERMITTED)
+        );
+
+        // Migration events: baseline captured + admission
+        let decision = evaluate_admission(
+            "trace-sm-11",
+            stable_trajectory(),
+            mild_projected(),
+            StabilityThresholds::default(),
+            "v3.0.0",
+        );
+        assert!(
+            decision
+                .events
+                .iter()
+                .any(|e| e.code == bpet_migration_gate::event_codes::BASELINE_CAPTURED)
+        );
+        assert!(
+            decision
+                .events
+                .iter()
+                .any(|e| e.code == bpet_migration_gate::event_codes::ADMISSION_ALLOWED)
+        );
+
+        // Combined audit trail covers both subsystems
+        let total_events = storage_events.len() + decision.events.len();
+        assert!(total_events >= 5);
+    }
+
+    // -- 12. Progressive rollout phases with storage gate interlock --
+
+    #[test]
+    fn progressive_rollout_phases_after_eviction() {
+        let hash = content_hash(b"progressive-payload");
+        let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
+        gate.register_target(&aid("art-prog"), StorageTier::L3Archive, good_target(&hash));
+        gate.attempt_eviction(&aid("art-prog"), &sid("seg-prog"), &hash)
+            .unwrap();
+
+        let decision = evaluate_admission(
+            "trace-sm-12",
+            stable_trajectory(),
+            severe_projected(),
+            StabilityThresholds::default(),
+            "v3.0.0",
+        );
+        let rollout = decision.staged_rollout.unwrap();
+
+        // Walk through each phase: Canary → Limited → Progressive → General
+        let phases = [
+            RolloutPhase::Canary,
+            RolloutPhase::Limited,
+            RolloutPhase::Progressive,
+            RolloutPhase::General,
+        ];
+        for (i, &phase) in phases.iter().enumerate() {
+            let step = &rollout.steps[i];
+            assert_eq!(step.phase, phase);
+
+            // Observe within limits → no rollback
+            let snap = RolloutHealthSnapshot {
+                phase,
+                observed: TrajectorySnapshot {
+                    instability_score: step.max_instability_score * 0.95,
+                    drift_score: 0.30,
+                    regime_shift_probability: step.max_regime_shift_probability * 0.95,
+                },
+            };
+            let rb = evaluate_rollout_health("trace-sm-12", &rollout, &snap);
+            assert!(!rb.should_rollback, "phase {:?} should not rollback", phase);
+        }
+
+        // Storage gate was passed once for the artifact
+        assert_eq!(gate.passed_count(), 1);
+    }
+}

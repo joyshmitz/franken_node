@@ -11,7 +11,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC = ROOT / "docs" / "specs" / "section_13" / "bd-3cpa_contract.md"
 REPORT = ROOT / "artifacts" / "13" / "compromise_reduction_report.json"
@@ -551,6 +554,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_compromise_reduction_gate")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON output.")
     parser.add_argument("--self-test", action="store_true", help="Run internal self-test and exit.")

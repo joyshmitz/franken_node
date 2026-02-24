@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 # ── File paths ─────────────────────────────────────────────────────────────
 
@@ -320,6 +322,7 @@ def self_test() -> dict[str, Any]:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_transport_fault_gate")
     json_mode = "--json" in sys.argv
     self_test_mode = "--self-test" in sys.argv
 

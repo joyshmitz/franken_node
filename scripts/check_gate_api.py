@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC_PATH = ROOT / "docs" / "specs" / "section_10_5" / "bd-137_contract.md"
 POLICY_PATH = ROOT / "docs" / "policy" / "compatibility_gate_api.md"
@@ -199,6 +201,7 @@ def self_test():
 
 
 def main():
+    logger = configure_test_logging("check_gate_api")
     if "--self-test" in sys.argv:
         self_test()
         return

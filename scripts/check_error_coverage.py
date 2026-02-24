@@ -7,7 +7,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+import sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 REGISTRY_PATH = ROOT / "artifacts" / "section_10_13" / "bd-novi" / "error_code_registry.json"
 AUDIT_PATH = ROOT / "artifacts" / "section_10_10" / "bd-13q" / "error_audit.json"
 IMPL_PATH = ROOT / "crates" / "franken-node" / "src" / "connector" / "error_surface.rs"
@@ -177,6 +180,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_error_coverage")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--audit", type=Path, default=AUDIT_PATH)
     parser.add_argument("--registry", type=Path, default=REGISTRY_PATH)

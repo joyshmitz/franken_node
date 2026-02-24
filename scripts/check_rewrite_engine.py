@@ -12,11 +12,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 sys.path.insert(0, str(ROOT / "scripts"))
 import rewrite_suggestion_engine as engine
 
 
 def main():
+    logger = configure_test_logging("check_rewrite_engine")
     json_output = "--json" in sys.argv
     result = engine.self_test()
 

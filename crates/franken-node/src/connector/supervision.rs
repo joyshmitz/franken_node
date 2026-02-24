@@ -428,7 +428,7 @@ impl Supervisor {
         }
 
         // Prune restart timestamps outside the sliding window.
-        let now_ms = self.synthetic_now_ms();
+        let now_ms = self.computed_now_ms();
         self.restart_timestamps
             .retain(|&ts| now_ms.saturating_sub(ts) < self.time_window_ms);
 
@@ -596,7 +596,7 @@ impl Supervisor {
 
     // Internal: monotonic clock stub.  In production this would read a real
     // monotonic clock; here we use restart_timestamps length as a proxy.
-    fn synthetic_now_ms(&self) -> u64 {
+    fn computed_now_ms(&self) -> u64 {
         // Use a simple incrementing value to avoid non-determinism in tests.
         (self.restart_timestamps.len() as u64 + 1) * 1000
     }
@@ -664,7 +664,7 @@ mod tests {
             SupervisionAction::Restart { children } => {
                 assert_eq!(children, vec!["w1".to_string()]);
             }
-            _ => panic!("expected Restart action"),
+            _ => unreachable!("expected Restart action"),
         }
         // w2 should still be running
         assert_eq!(sup.child_state("w2"), Some(ChildState::Running));
@@ -684,7 +684,7 @@ mod tests {
                 assert!(children.contains(&"b".to_string()));
                 assert!(children.contains(&"c".to_string()));
             }
-            _ => panic!("expected Restart for all children"),
+            _ => unreachable!("expected Restart for all children"),
         }
     }
 
@@ -702,7 +702,7 @@ mod tests {
                 assert!(children.contains(&"c".to_string()));
                 assert!(!children.contains(&"a".to_string()));
             }
-            _ => panic!("expected Restart for rest"),
+            _ => unreachable!("expected Restart for rest"),
         }
     }
 

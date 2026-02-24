@@ -207,8 +207,12 @@ impl fmt::Display for AuthError {
 impl std::error::Error for AuthError {}
 
 /// Derive an epoch+domain scoped key via HKDF-SHA256.
-pub fn derive_epoch_key(root_secret: &RootSecret, epoch: ControlEpoch, domain: &str) -> DerivedKey {
-    let hkdf = Hkdf::<Sha256>::new(Some(KDF_SALT), root_secret.as_bytes());
+pub fn derive_epoch_key(
+    sec_root_val: &RootSecret,
+    epoch: ControlEpoch,
+    domain: &str,
+) -> DerivedKey {
+    let hkdf = Hkdf::<Sha256>::new(Some(KDF_SALT), sec_root_val.as_bytes());
     let info = format!("franken-node:epoch={}:domain={domain}", epoch.value());
     let mut okm = [0u8; DERIVED_KEY_LEN];
     hkdf.expand(info.as_bytes(), &mut okm)
@@ -221,13 +225,13 @@ pub fn sign_epoch_artifact(
     artifact: &[u8],
     epoch: ControlEpoch,
     domain: &str,
-    root_secret: &RootSecret,
+    sec_root_val: &RootSecret,
 ) -> Result<Signature, AuthError> {
     if domain.is_empty() {
         return Err(AuthError::DomainEmpty);
     }
 
-    let derived_key = derive_epoch_key(root_secret, epoch, domain);
+    let derived_key = derive_epoch_key(sec_root_val, epoch, domain);
     let mut mac = HmacSha256::new_from_slice(derived_key.as_bytes()).map_err(|e| {
         AuthError::KeyDerivationFailed {
             reason: e.to_string(),
@@ -246,13 +250,13 @@ pub fn verify_epoch_signature(
     signature: &Signature,
     epoch: ControlEpoch,
     domain: &str,
-    root_secret: &RootSecret,
+    sec_root_val: &RootSecret,
 ) -> Result<(), AuthError> {
     if domain.is_empty() {
         return Err(AuthError::DomainEmpty);
     }
 
-    let derived_key = derive_epoch_key(root_secret, epoch, domain);
+    let derived_key = derive_epoch_key(sec_root_val, epoch, domain);
     let mut mac = HmacSha256::new_from_slice(derived_key.as_bytes()).map_err(|e| {
         AuthError::KeyDerivationFailed {
             reason: e.to_string(),
@@ -270,14 +274,14 @@ pub fn verify_epoch_signature(
 mod tests {
     use super::*;
 
-    fn root_secret() -> RootSecret {
+    fn sec_root_val() -> RootSecret {
         RootSecret::from_hex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
             .expect("valid root secret")
     }
 
     #[test]
     fn known_answer_vector_epoch_1_marker() {
-        let key = derive_epoch_key(&root_secret(), ControlEpoch::new(1), "marker");
+        let key = derive_epoch_key(&sec_root_val(), ControlEpoch::new(1), "marker");
         assert_eq!(
             key.to_hex(),
             "3a2c69af2025b183040dd2646c3c6c2a4ca2e7f74c20a3a0bd88f38ae2236af6"
@@ -286,7 +290,7 @@ mod tests {
 
     #[test]
     fn known_answer_vector_epoch_13_marker() {
-        let key = derive_epoch_key(&root_secret(), ControlEpoch::new(13), "marker");
+        let key = derive_epoch_key(&sec_root_val(), ControlEpoch::new(13), "marker");
         assert_eq!(
             key.to_hex(),
             "7b2a3bbde4103713f9986ccde3c763e116d0d5723635e353297e724c1d2a50f0"
@@ -295,21 +299,21 @@ mod tests {
 
     #[test]
     fn different_epochs_produce_different_keys() {
-        let a = derive_epoch_key(&root_secret(), ControlEpoch::new(7), "marker");
-        let b = derive_epoch_key(&root_secret(), ControlEpoch::new(8), "marker");
+        let a = derive_epoch_key(&sec_root_val(), ControlEpoch::new(7), "marker");
+        let b = derive_epoch_key(&sec_root_val(), ControlEpoch::new(8), "marker");
         assert_ne!(a, b);
     }
 
     #[test]
     fn different_domains_produce_different_keys() {
-        let a = derive_epoch_key(&root_secret(), ControlEpoch::new(7), "marker");
-        let b = derive_epoch_key(&root_secret(), ControlEpoch::new(7), "manifest");
+        let a = derive_epoch_key(&sec_root_val(), ControlEpoch::new(7), "marker");
+        let b = derive_epoch_key(&sec_root_val(), ControlEpoch::new(7), "manifest");
         assert_ne!(a, b);
     }
 
     #[test]
     fn sign_and_verify_success() {
-        let secret = root_secret();
+        let secret = sec_root_val();
         let artifact = b"artifact-alpha";
         let sig = sign_epoch_artifact(artifact, ControlEpoch::new(13), "marker", &secret).unwrap();
         verify_epoch_signature(artifact, &sig, ControlEpoch::new(13), "marker", &secret).unwrap();
@@ -317,7 +321,7 @@ mod tests {
 
     #[test]
     fn verify_rejects_mismatched_epoch() {
-        let secret = root_secret();
+        let secret = sec_root_val();
         let artifact = b"artifact-alpha";
         let sig = sign_epoch_artifact(artifact, ControlEpoch::new(13), "marker", &secret).unwrap();
         let err = verify_epoch_signature(artifact, &sig, ControlEpoch::new(14), "marker", &secret)
@@ -327,7 +331,7 @@ mod tests {
 
     #[test]
     fn verify_rejects_mismatched_domain() {
-        let secret = root_secret();
+        let secret = sec_root_val();
         let artifact = b"artifact-alpha";
         let sig = sign_epoch_artifact(artifact, ControlEpoch::new(13), "marker", &secret).unwrap();
         let err =
@@ -338,7 +342,7 @@ mod tests {
 
     #[test]
     fn signature_known_answer_vector() {
-        let secret = root_secret();
+        let secret = sec_root_val();
         let sig = sign_epoch_artifact(b"artifact-alpha", ControlEpoch::new(13), "marker", &secret)
             .unwrap();
         assert_eq!(
@@ -349,14 +353,14 @@ mod tests {
 
     #[test]
     fn reject_empty_domain() {
-        let secret = root_secret();
+        let secret = sec_root_val();
         let err = sign_epoch_artifact(b"x", ControlEpoch::new(1), "", &secret).unwrap_err();
         assert_eq!(err, AuthError::DomainEmpty);
     }
 
     #[test]
     fn epoch_auth_events_use_stable_codes() {
-        let key = derive_epoch_key(&root_secret(), ControlEpoch::new(1), "marker");
+        let key = derive_epoch_key(&sec_root_val(), ControlEpoch::new(1), "marker");
         let derived = EpochAuthEvent::key_derived(ControlEpoch::new(1), "marker", &key, "t1");
         assert_eq!(derived.event_code, event_codes::EPOCH_KEY_DERIVED);
 

@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BEAD = "bd-gad3"
 SECTION = "10.17"
@@ -192,6 +194,7 @@ def self_test() -> dict:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_isolation_mesh")
     parser = argparse.ArgumentParser(description="bd-gad3 checker")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--self-test", action="store_true")

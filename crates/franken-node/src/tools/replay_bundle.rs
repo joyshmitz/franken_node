@@ -166,7 +166,7 @@ struct PreparedEvent {
     timestamp_micros: i64,
     event_type: EventType,
     payload: Value,
-    payload_hash: String,
+    _payload_hash: String,
     causal_parent: Option<u64>,
     state_snapshot: Option<Value>,
     policy_version: Option<String>,
@@ -207,7 +207,7 @@ pub fn generate_replay_bundle(
             timestamp_micros,
             event_type: event.event_type,
             payload,
-            payload_hash,
+            _payload_hash: payload_hash,
             causal_parent: event.causal_parent,
             state_snapshot,
             policy_version: event.policy_version.clone(),
@@ -373,7 +373,7 @@ pub fn to_canonical_json(bundle: &ReplayBundle) -> Result<String, ReplayBundleEr
 }
 
 #[must_use]
-pub fn synthetic_incident_events(incident_id: &str) -> Vec<RawEvent> {
+pub fn sample_incident_events(incident_id: &str) -> Vec<RawEvent> {
     vec![
         RawEvent::new(
             "2026-02-20T12:00:00.000001Z",
@@ -756,9 +756,9 @@ mod tests {
     }
 
     #[test]
-    fn synthetic_events_are_stable() {
-        let first = synthetic_incident_events("INC-STABLE-001");
-        let second = synthetic_incident_events("INC-STABLE-001");
+    fn sample_events_are_stable() {
+        let first = sample_incident_events("INC-STABLE-001");
+        let second = sample_incident_events("INC-STABLE-001");
         assert_eq!(first, second);
     }
 }

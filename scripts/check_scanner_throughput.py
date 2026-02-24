@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC = ROOT / "docs" / "specs" / "section_10_6" / "bd-2q5_contract.md"
 POLICY = ROOT / "docs" / "policy" / "scanner_throughput_optimization.md"
@@ -317,6 +319,7 @@ def self_test() -> tuple[bool, list[dict[str, Any]]]:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_scanner_throughput")
     parser = argparse.ArgumentParser(
         description="Verify bd-2q5: scanner throughput optimization"
     )

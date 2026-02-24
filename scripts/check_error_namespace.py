@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 SPEC = ROOT / "docs" / "specs" / "section_10_10" / "bd-13q_contract.md"
 IMPL = ROOT / "crates" / "franken-node" / "src" / "connector" / "error_surface.rs"
 MOD_RS = ROOT / "crates" / "franken-node" / "src" / "connector" / "mod.rs"
@@ -205,6 +207,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_error_namespace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Output JSON")
     parser.add_argument("--self-test", action="store_true", help="Run checker self-test")

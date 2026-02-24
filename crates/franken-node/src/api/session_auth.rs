@@ -1109,7 +1109,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             SessionError::MaxSessionsReached { limit } => assert_eq!(limit, 2),
-            other => panic!("unexpected error: {other}"),
+            other => unreachable!("unexpected error: {other}"),
         }
     }
 
@@ -1184,7 +1184,7 @@ mod tests {
             SessionError::NoSession { session_id } => {
                 assert_eq!(session_id, "nonexistent");
             }
-            other => panic!("unexpected: {other}"),
+            other => unreachable!("unexpected: {other}"),
         }
     }
 
@@ -1202,7 +1202,7 @@ mod tests {
             SessionError::SessionTerminated { session_id } => {
                 assert_eq!(session_id, "s1");
             }
-            other => panic!("unexpected: {other}"),
+            other => unreachable!("unexpected: {other}"),
         }
     }
 
@@ -1278,7 +1278,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             SessionError::ReplayDetected { sequence, .. } => assert_eq!(sequence, 0),
-            other => panic!("unexpected: {other}"),
+            other => unreachable!("unexpected: {other}"),
         }
     }
 
@@ -1321,7 +1321,7 @@ mod tests {
             SessionError::RoleMismatch { expected_role, .. } => {
                 assert_eq!(expected_role, "Encryption");
             }
-            other => panic!("unexpected: {other}"),
+            other => unreachable!("unexpected: {other}"),
         }
     }
 
@@ -1333,7 +1333,7 @@ mod tests {
             SessionError::RoleMismatch { expected_role, .. } => {
                 assert_eq!(expected_role, "Signing");
             }
-            other => panic!("unexpected: {other}"),
+            other => unreachable!("unexpected: {other}"),
         }
     }
 

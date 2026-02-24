@@ -6,6 +6,9 @@ import os
 import re
 import subprocess
 import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = []
@@ -24,6 +27,7 @@ def check(check_id, description, passed, details=None):
 
 
 def main():
+    logger = configure_test_logging("check_device_profile")
     print("bd-8vby: Device Profile Registry — Verification\n")
     all_pass = True
 
@@ -31,7 +35,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/device_profile.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_profile = "struct DeviceProfile" in content
         has_constraint = "struct PlacementConstraint" in content
         has_policy = "struct PlacementPolicy" in content
@@ -46,7 +50,7 @@ def main():
 
     # DPR-ERRORS: All error codes present
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         errors = ["DPR_SCHEMA_INVALID", "DPR_STALE_PROFILE", "DPR_INVALID_CONSTRAINT", "DPR_NO_MATCH"]
         found = [e for e in errors if e in content]
         all_pass &= check("DPR-ERRORS", "All 4 error codes present",
@@ -59,7 +63,7 @@ def main():
     fixtures_valid = False
     if os.path.isfile(fixtures_path):
         try:
-            data = json.load(open(fixtures_path))
+            data = json.loads(__import__("pathlib").Path(fixtures_path).read_text(encoding="utf-8"))
             fixtures_valid = "profiles" in data and len(data["profiles"]) >= 3
         except json.JSONDecodeError:
             pass
@@ -69,7 +73,7 @@ def main():
     conf_path = os.path.join(ROOT, "tests/conformance/placement_policy_schema.rs")
     conf_exists = os.path.isfile(conf_path)
     if conf_exists:
-        content = open(conf_path).read()
+        content = __import__("pathlib").Path(conf_path).read_text(encoding="utf-8")
         has_schema = "inv_dpr_schema" in content
         has_freshness = "inv_dpr_freshness" in content
         has_deterministic = "inv_dpr_deterministic" in content
@@ -99,7 +103,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-8vby_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = open(spec_path).read()
+        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
         has_invariants = "INV-DPR" in content
         has_types = "DeviceProfileRegistry" in content and "PlacementPolicy" in content
     else:

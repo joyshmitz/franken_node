@@ -28,6 +28,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 IMPL_PATH = ROOT / "crates" / "franken-node" / "src" / "policy" / "correctness_envelope.rs"
 MOD_PATH = ROOT / "crates" / "franken-node" / "src" / "policy" / "mod.rs"
 SPEC_PATH = ROOT / "docs" / "specs" / "section_10_14" / "bd-sddz_contract.md"
@@ -202,6 +204,7 @@ def self_test() -> bool:
 
 
 def main():
+    logger = configure_test_logging("check_correctness_envelope")
     parser = argparse.ArgumentParser(description="Verify correctness envelope (bd-sddz)")
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()

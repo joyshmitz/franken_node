@@ -9,6 +9,9 @@ import os
 import re
 import sys
 from typing import Any
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -177,6 +180,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_idempotency_key_derivation")
     if "--self-test" in sys.argv:
         self_test()
         return 0

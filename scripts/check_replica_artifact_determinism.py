@@ -21,6 +21,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 IMPL = ROOT / "tests" / "conformance" / "replica_artifact_determinism.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_14" / "bd-1iyx_contract.md"
 SEED_RS = ROOT / "crates" / "franken-node" / "src" / "encoding" / "deterministic_seed.rs"
@@ -227,6 +229,7 @@ def run_checks():
 
 
 def main():
+    logger = configure_test_logging("check_replica_artifact_determinism")
     if "--self-test" in sys.argv:
         ok, results = self_test()
         print(f"self_test: {'PASS' if ok else 'FAIL'}")

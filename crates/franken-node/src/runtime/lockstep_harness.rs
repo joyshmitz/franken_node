@@ -67,7 +67,7 @@ impl LockstepHarness {
         }
 
         // Run the cross-runtime check
-        let check_id = format!("check-{}", uuid::Uuid::new_v4());
+        let check_id = format!("check-{}", uuid::Uuid::now_v7());
         // Simple heuristic: passing the source code as input payload for auditing
         let input_payload = std::fs::read(app_path).unwrap_or_default();
 
@@ -121,7 +121,7 @@ impl LockstepHarness {
         let strace_output_file = format!(
             "/tmp/strace_{}_{}.log",
             runtime.replace('-', "_"),
-            uuid::Uuid::new_v4()
+            uuid::Uuid::now_v7()
         );
         let _cleanup = TempFileCleanup {
             path: strace_output_file.clone(),
@@ -215,28 +215,82 @@ impl LockstepHarness {
     /// Strips out PIDs, memory addresses, and timestamps from strace logs
     /// to ensure they can be compared deterministically across runtimes.
     fn sanitize_strace_output(raw: &[u8]) -> Vec<u8> {
+        // Syscalls whose first argument is a runtime-specific file descriptor.
+        const FD_SYSCALLS: &[&str] = &[
+            "read",
+            "write",
+            "close",
+            "fstat",
+            "lseek",
+            "mmap",
+            "ioctl",
+            "pread64",
+            "pwrite64",
+            "readv",
+            "writev",
+            "dup",
+            "dup2",
+            "fcntl",
+            "flock",
+            "fsync",
+            "fdatasync",
+            "ftruncate",
+            "fchmod",
+            "fchown",
+            "sendfile",
+            "fstatfs",
+            "fadvise64",
+            "epoll_ctl",
+            "splice",
+        ];
+
         let raw_str = String::from_utf8_lossy(raw);
         let mut sanitized = Vec::new();
 
         for line in raw_str.lines() {
             let mut current = line.trim();
+            // Strip [pid NNN] prefix
             if current.starts_with("[pid ") {
                 if let Some(idx) = current.find(']') {
                     current = current[idx + 1..].trim();
                 }
             } else if let Some(idx) = current.find(' ') {
+                // Strip leading numeric timestamp
                 if current[..idx].chars().all(|c| c.is_ascii_digit()) {
                     current = current[idx + 1..].trim();
                 }
             }
 
+            // Strip return value (everything after last '=')
             if let Some(end_idx) = current.rfind('=') {
                 let deterministic_line = current[..end_idx].trim();
-                sanitized.extend_from_slice(deterministic_line.as_bytes());
+                // Normalize fd arguments: for fd-based syscalls, replace the
+                // first numeric arg (the fd) with "FD" so that different fd
+                // numbers across runs still match.
+                let normalized = Self::normalize_fd_arg(deterministic_line, FD_SYSCALLS);
+                sanitized.extend_from_slice(normalized.as_bytes());
                 sanitized.push(b'\n');
             }
         }
         sanitized
+    }
+
+    /// Replace the first numeric argument of known fd-based syscalls with "FD".
+    fn normalize_fd_arg(line: &str, fd_syscalls: &[&str]) -> String {
+        if let Some(paren) = line.find('(') {
+            let name = &line[..paren];
+            if fd_syscalls.contains(&name) {
+                let args = &line[paren + 1..];
+                // Find the end of the first numeric argument
+                let num_end = args
+                    .find(|c: char| !c.is_ascii_digit())
+                    .unwrap_or(args.len());
+                if num_end > 0 && args[..num_end].chars().all(|c| c.is_ascii_digit()) {
+                    return format!("{name}(FD{}", &args[num_end..]);
+                }
+            }
+        }
+        line.to_string()
     }
 }
 
@@ -275,7 +329,7 @@ mod tests {
 
     #[test]
     fn temp_file_cleanup_removes_file_on_drop() {
-        let path = format!("/tmp/lockstep_test_{}", uuid::Uuid::new_v4());
+        let path = format!("/tmp/lockstep_test_{}", uuid::Uuid::now_v7());
         std::fs::write(&path, b"test").expect("write temp");
         assert!(Path::new(&path).exists());
 
@@ -436,7 +490,7 @@ mod tests {
         match check.outcome.unwrap() {
             crate::runtime::nversion_oracle::CheckOutcome::Agree { .. } => {}
             crate::runtime::nversion_oracle::CheckOutcome::Diverge { .. } => {
-                panic!("expected agreement for identical outputs");
+                unreachable!("expected agreement for identical outputs");
             }
         }
     }
@@ -476,7 +530,7 @@ mod tests {
                 assert!(div.contains_key("franken-node"));
             }
             crate::runtime::nversion_oracle::CheckOutcome::Agree { .. } => {
-                panic!("expected divergence for different outputs");
+                unreachable!("expected divergence for different outputs");
             }
         }
     }

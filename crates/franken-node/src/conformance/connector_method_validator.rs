@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+use tracing::{debug, info, instrument, warn};
 
 /// The nine standard connector methods.
 pub const STANDARD_METHODS: &[MethodSpec] = &[
@@ -137,7 +138,13 @@ pub struct ReportSummary {
 ///
 /// Takes the connector's declared methods and checks each against the
 /// pinned specification. Returns a machine-readable report.
+#[instrument(skip(declarations), fields(methods = declarations.len()))]
 pub fn validate_contract(connector_id: &str, declarations: &[MethodDeclaration]) -> ContractReport {
+    info!(
+        connector_id,
+        declared = declarations.len(),
+        "validating connector contract"
+    );
     let decl_map: BTreeMap<&str, &MethodDeclaration> =
         declarations.iter().map(|d| (d.name.as_str(), d)).collect();
 
@@ -148,10 +155,16 @@ pub fn validate_contract(connector_id: &str, declarations: &[MethodDeclaration])
             None => {
                 let mut errors = Vec::new();
                 if spec.required {
+                    warn!(method = spec.name, "required method missing");
                     errors.push(MethodValidationError {
                         code: MethodErrorCode::MethodMissing,
                         message: format!("Required method '{}' is not implemented", spec.name),
                     });
+                } else {
+                    debug!(
+                        method = spec.name,
+                        "optional method not declared — skipping"
+                    );
                 }
                 results.push(MethodValidationResult {
                     method: spec.name.to_string(),
@@ -167,6 +180,12 @@ pub fn validate_contract(connector_id: &str, declarations: &[MethodDeclaration])
 
                 // Version compatibility check (major version must match)
                 if !is_version_compatible(spec.version, &decl.version) {
+                    warn!(
+                        method = spec.name,
+                        expected = spec.version,
+                        found = %decl.version,
+                        "version incompatible"
+                    );
                     errors.push(MethodValidationError {
                         code: MethodErrorCode::VersionIncompatible,
                         message: format!(
@@ -178,6 +197,12 @@ pub fn validate_contract(connector_id: &str, declarations: &[MethodDeclaration])
 
                 // Schema presence check
                 if !decl.has_input_schema || !decl.has_output_schema {
+                    warn!(
+                        method = spec.name,
+                        has_input = decl.has_input_schema,
+                        has_output = decl.has_output_schema,
+                        "schema mismatch"
+                    );
                     errors.push(MethodValidationError {
                         code: MethodErrorCode::SchemaMismatch,
                         message: format!(
@@ -190,6 +215,10 @@ pub fn validate_contract(connector_id: &str, declarations: &[MethodDeclaration])
                             }
                         ),
                     });
+                }
+
+                if errors.is_empty() {
+                    debug!(method = spec.name, "method PASS");
                 }
 
                 results.push(MethodValidationResult {
@@ -210,6 +239,11 @@ pub fn validate_contract(connector_id: &str, declarations: &[MethodDeclaration])
     let required_count = STANDARD_METHODS.iter().filter(|m| m.required).count();
 
     let verdict = if failing == 0 { "PASS" } else { "FAIL" };
+
+    info!(
+        connector_id,
+        passing, failing, skipped, verdict, "contract validation complete"
+    );
 
     ContractReport {
         connector_id: connector_id.to_string(),

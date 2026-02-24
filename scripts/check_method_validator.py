@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 STANDARD_METHODS = [
     "handshake", "describe", "introspect", "capabilities",
@@ -172,6 +174,7 @@ def self_test() -> dict:
 
 
 def main():
+    logger = configure_test_logging("check_method_validator")
     json_output = "--json" in sys.argv
     result = self_test()
 

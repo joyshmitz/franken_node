@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 
 def check_harness_impl() -> dict:
@@ -174,6 +176,7 @@ def self_test() -> dict:
 
 
 def main():
+    logger = configure_test_logging("check_conformance_harness")
     json_output = "--json" in sys.argv
     result = self_test()
 

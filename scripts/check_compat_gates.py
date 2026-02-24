@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 # ── File paths ────────────────────────────────────────────────────────────────
 
@@ -386,6 +388,7 @@ def self_test() -> tuple[bool, str]:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_compat_gates")
     parser = argparse.ArgumentParser(description="Verify bd-137 compatibility gate APIs")
     parser.add_argument("--json", action="store_true", help="Output JSON")
     parser.add_argument("--self-test", action="store_true", help="Run self-test")

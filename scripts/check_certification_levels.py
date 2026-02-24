@@ -9,7 +9,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC_PATH = ROOT / "docs/specs/section_10_4/bd-273_contract.md"
 RUST_IMPL_PATH = ROOT / "crates/franken-node/src/supply_chain/certification.rs"
@@ -288,6 +291,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_certification_levels")
     parser = argparse.ArgumentParser(description="Verify bd-273 certification levels")
     parser.add_argument("--json", action="store_true", help="Output JSON evidence")
     parser.add_argument("--self-test", action="store_true", help="Run self-test")

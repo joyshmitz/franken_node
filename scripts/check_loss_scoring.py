@@ -8,6 +8,9 @@ import json
 import os
 import sys
 from typing import Any
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS: list[dict[str, str]] = []
@@ -249,6 +252,7 @@ def self_test() -> dict[str, Any]:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_loss_scoring")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--json",
@@ -262,7 +266,7 @@ def main() -> int:
 
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/execution_scorer.rs")
     impl_exists = os.path.isfile(impl_path)
-    impl_content = open(impl_path).read() if impl_exists else ""
+    impl_content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8") if impl_exists else ""
     required_symbols = [
         "struct LossMatrix",
         "struct ExpectedLossScore",
@@ -280,7 +284,7 @@ def main() -> int:
 
     spec_path = os.path.join(ROOT, "docs/specs/section_10_5/bd-33b_contract.md")
     spec_exists = os.path.isfile(spec_path)
-    spec_content = open(spec_path).read() if spec_exists else ""
+    spec_content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8") if spec_exists else ""
     spec_markers = [
         "INV-ELS-MATRIX-EXPLICIT",
         "INV-ELS-PROBABILITY-VALID",

@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BEAD = "bd-kcg9"
 SECTION = "10.17"
@@ -309,6 +311,7 @@ def self_test() -> dict:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_zk_attestation")
     parser = argparse.ArgumentParser(description="bd-kcg9 checker")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--self-test", action="store_true")

@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC = ROOT / "docs" / "specs" / "section_10_21" / "bd-1naf_contract.md"
 POLICY = ROOT / "docs" / "policy" / "bpet_governance_policy.md"
@@ -284,6 +286,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_bpet_governance")
     parser = argparse.ArgumentParser(description="Verify bd-1naf BPET governance deliverables")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--self-test", action="store_true")

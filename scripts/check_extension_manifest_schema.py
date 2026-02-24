@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC_PATH = ROOT / "docs/specs/section_10_4/extension_manifest_schema.md"
 SCHEMA_PATH = ROOT / "schemas/extension_manifest.schema.json"
@@ -221,6 +223,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_extension_manifest_schema")
     checks = collect_checks()
     passing = sum(1 for check in checks if check["status"] == "PASS")
     total = len(checks)

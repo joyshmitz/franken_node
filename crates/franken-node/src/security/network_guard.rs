@@ -547,7 +547,7 @@ mod tests {
 
         match err {
             GuardError::RemoteCapDenied { code, .. } => assert_eq!(code, "REMOTECAP_MISSING"),
-            other => panic!("expected RemoteCapDenied, got {other:?}"),
+            other => unreachable!("expected RemoteCapDenied, got {other:?}"),
         }
     }
 

@@ -41,7 +41,7 @@ impl EngineDispatcher {
         };
 
         let serialized_config = config.to_toml()?;
-        let socket_path = format!("/tmp/franken_telemetry_{}.sock", uuid::Uuid::new_v4());
+        let socket_path = format!("/tmp/franken_telemetry_{}.sock", uuid::Uuid::now_v7());
 
         // Spawn background listener to record telemetry events for deterministic replay
         let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));

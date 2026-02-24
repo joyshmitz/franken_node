@@ -63,7 +63,7 @@ class TestHelpers(TestCase):
 
 
 class TestReportAssembly(TestCase):
-    def test_build_report_no_exec(self) -> None:
+    def test_build_report_no_execution(self) -> None:
         report = mod.build_report(execute=False, write_outputs=False)
         self.assertEqual(report["bead_id"], "bd-z7bt")
         self.assertEqual(report["section"], "13")

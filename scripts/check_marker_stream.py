@@ -21,6 +21,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 IMPL = ROOT / "crates" / "franken-node" / "src" / "control_plane" / "marker_stream.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_14" / "bd-126h_contract.md"
 CONFORMANCE = ROOT / "tests" / "conformance" / "marker_stream_invariants.rs"
@@ -192,6 +194,7 @@ def self_test():
 
 
 def main():
+    logger = configure_test_logging("check_marker_stream")
     if "--self-test" in sys.argv:
         self_test()
         return

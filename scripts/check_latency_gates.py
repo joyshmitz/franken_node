@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC_PATH = ROOT / "docs" / "specs" / "section_10_6" / "bd-3lh_contract.md"
 BUDGETS_PATH = ROOT / "perf" / "budgets.toml"
@@ -388,6 +390,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_latency_gates")
     parser = argparse.ArgumentParser(description="Verify bd-3lh latency gates")
     parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
     parser.add_argument("--self-test", action="store_true", help="Run self-test")

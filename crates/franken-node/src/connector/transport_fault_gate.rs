@@ -946,9 +946,9 @@ mod tests {
             }
             Err(TransportFaultGateError::GateFailed { failures, total }) => {
                 // This should not happen with our evaluate_outcome logic
-                panic!("Gate failed: {failures}/{total}");
+                unreachable!("Gate failed: {failures}/{total}");
             }
-            Err(e) => panic!("Unexpected error: {e}"),
+            Err(e) => unreachable!("Unexpected error: {e}"),
         }
     }
 

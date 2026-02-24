@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "tools" / "profile_tuning_harness.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_14" / "bd-27o2_contract.md"

@@ -63,9 +63,10 @@ fn fixture_path() -> std::path::PathBuf {
 fn load_fixture() -> FixtureState {
     let path = fixture_path();
     let raw = fs::read_to_string(&path)
-        .unwrap_or_else(|err| panic!("failed reading fixture `{}`: {err}", path.display()));
-    serde_json::from_str::<FixtureState>(&raw)
-        .unwrap_or_else(|err| panic!("failed parsing fixture `{}` as json: {err}", path.display()))
+        .unwrap_or_else(|err| unreachable!("failed reading fixture `{}`: {err}", path.display()));
+    serde_json::from_str::<FixtureState>(&raw).unwrap_or_else(|err| {
+        unreachable!("failed parsing fixture `{}` as json: {err}", path.display())
+    })
 }
 
 fn posterior_from_beta(alpha: u64, beta: u64) -> f64 {
@@ -136,7 +137,7 @@ fn threshold_policy_maps_to_all_control_actions() {
 
     for (posterior, expected) in cases {
         let actual = action_for_posterior(posterior, &thresholds)
-            .unwrap_or_else(|| panic!("expected action for posterior {posterior}"));
+            .unwrap_or_else(|| unreachable!("expected action for posterior {posterior}"));
         assert_eq!(
             actual, expected,
             "threshold policy should deterministically map posterior to action"
@@ -175,8 +176,10 @@ fn fixture_actions_have_deterministic_signatures() {
     let thresholds = fixture.thresholds;
 
     for action in fixture.actions {
-        let expected_decision = action_for_posterior(action.posterior, &thresholds)
-            .unwrap_or_else(|| panic!("missing threshold decision for {}", action.principal_id));
+        let expected_decision =
+            action_for_posterior(action.posterior, &thresholds).unwrap_or_else(|| {
+                unreachable!("missing threshold decision for {}", action.principal_id)
+            });
         assert_eq!(
             action.decision, expected_decision,
             "decision mismatch for {}",

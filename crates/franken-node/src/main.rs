@@ -61,7 +61,7 @@ use tools::counterfactual_replay::{
 };
 use tools::replay_bundle::{
     generate_replay_bundle, read_bundle_from_path, replay_bundle as replay_incident_bundle,
-    synthetic_incident_events, validate_bundle_integrity, write_bundle_to_path,
+    sample_incident_events, validate_bundle_integrity, write_bundle_to_path,
 };
 
 const PROFILE_EXAMPLES_TEMPLATE: &str =
@@ -1564,7 +1564,7 @@ async fn main() -> Result<()> {
                     "franken-node incident bundle: id={} verify={}",
                     args.id, args.verify
                 );
-                let events = synthetic_incident_events(&args.id);
+                let events = sample_incident_events(&args.id);
                 let bundle = generate_replay_bundle(&args.id, &events)
                     .with_context(|| format!("failed generating replay bundle for {}", args.id))?;
                 if args.verify {

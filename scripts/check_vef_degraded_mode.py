@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 # ── File paths ─────────────────────────────────────────────────────────────
 
@@ -509,6 +511,7 @@ def self_test() -> tuple[bool, list[dict[str, Any]]]:
 # ── CLI ────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    logger = configure_test_logging("check_vef_degraded_mode")
     if "--self-test" in sys.argv:
         ok, checks = self_test()
         passed = sum(1 for c in checks if c["pass"])

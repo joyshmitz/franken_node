@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BEAD_ID = "bd-2nt"
 SECTION = "10.11"
@@ -320,6 +322,7 @@ def self_test() -> bool:
 
 
 def main():
+    logger = configure_test_logging("check_voi_scheduler")
     import argparse
     parser = argparse.ArgumentParser(description=f"Verify {BEAD_ID}")
     parser.add_argument("--json", action="store_true")

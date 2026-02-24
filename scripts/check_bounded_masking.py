@@ -9,7 +9,10 @@ import re
 from pathlib import Path
 from typing import Any
 
+import sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "runtime" / "bounded_mask.rs"
 MOD_RS = ROOT / "crates" / "franken-node" / "src" / "runtime" / "mod.rs"
@@ -228,6 +231,7 @@ def self_test() -> tuple[bool, dict[str, Any]]:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_bounded_masking")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     parser.add_argument("--self-test", action="store_true", help="run script self-test")

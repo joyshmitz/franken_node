@@ -741,4 +741,117 @@ mod tests {
             RevocationIntegrationEvent::ExtensionRevocationStaleWarning
         );
     }
+
+    #[test]
+    fn default_policy_has_positive_max_ages() {
+        let policy = RevocationIntegrationPolicy::default_policy();
+        assert!(policy.max_age_for_tier(ExtensionSafetyTier::High) > 0);
+        assert!(policy.max_age_for_tier(ExtensionSafetyTier::Low) > 0);
+        assert!(
+            policy.max_age_for_tier(ExtensionSafetyTier::Low)
+                >= policy.max_age_for_tier(ExtensionSafetyTier::High)
+        );
+    }
+
+    #[test]
+    fn fresh_high_safety_is_allowed() {
+        let mut engine = engine();
+        engine
+            .process_propagation(&propagation_update(1, "other-ext", 1_900, 1_905))
+            .expect("propagation");
+        let ctx = operation_context(
+            "ext-fresh",
+            ExtensionOperation::Invoke,
+            ExtensionSafetyTier::High,
+            10,
+        );
+        let decision = engine.evaluate_operation(&ctx);
+        assert!(decision.allowed, "fresh high-safety should be allowed");
+    }
+
+    #[test]
+    fn init_zone_twice_is_safe() {
+        let mut engine = engine();
+        engine.init_zone("prod"); // double init
+        engine.init_zone("staging");
+        // Should not panic
+    }
+
+    #[test]
+    fn cascade_includes_dependent_extensions() {
+        let mut engine = engine();
+        // Revoke ext-cascade so cascade actions are generated
+        engine
+            .process_propagation(&propagation_update(1, "ext-cascade", 1_900, 1_901))
+            .expect("propagation");
+        let ctx = operation_context(
+            "ext-cascade",
+            ExtensionOperation::Install,
+            ExtensionSafetyTier::High,
+            10,
+        );
+        let decision = engine.evaluate_operation(&ctx);
+        assert!(!decision.allowed, "revoked extension should be denied");
+        assert!(
+            !decision.cascade_actions.is_empty(),
+            "cascade should have actions for dependents"
+        );
+    }
+
+    #[test]
+    fn propagation_update_increases_sequence() {
+        let mut engine = engine();
+        let update1 = propagation_update(1, "ext-a", 100, 110);
+        engine
+            .process_propagation(&update1)
+            .expect("first propagation");
+        let update2 = propagation_update(2, "ext-b", 200, 210);
+        engine
+            .process_propagation(&update2)
+            .expect("second propagation");
+        // Should process both without error
+    }
+
+    #[test]
+    fn evidence_ledger_starts_empty() {
+        let engine =
+            RevocationIntegrationEngine::new(RevocationIntegrationPolicy::default_policy());
+        assert!(engine.evidence_ledger.is_empty());
+    }
+
+    #[test]
+    fn event_enum_values_are_distinct() {
+        let events = [
+            RevocationIntegrationEvent::ExtensionRevocationCheckPassed,
+            RevocationIntegrationEvent::ExtensionRevocationCheckFailed,
+            RevocationIntegrationEvent::ExtensionRevocationStaleWarning,
+            RevocationIntegrationEvent::RevocationPropagationReceived,
+            RevocationIntegrationEvent::RevocationCascadeInitiated,
+        ];
+        // All events format differently
+        let labels: std::collections::BTreeSet<String> =
+            events.iter().map(|e| format!("{e:?}")).collect();
+        assert_eq!(labels.len(), events.len());
+    }
+
+    #[test]
+    fn operation_types_exhaustive() {
+        // Verify all operation types can be used
+        let _install = ExtensionOperation::Install;
+        let _update = ExtensionOperation::Update;
+        let _load = ExtensionOperation::Load;
+        let _invoke = ExtensionOperation::Invoke;
+        let _uninstall = ExtensionOperation::Uninstall;
+        let _bg = ExtensionOperation::BackgroundRefresh;
+    }
+
+    #[test]
+    fn safety_tier_ordering() {
+        // High is stricter than Low
+        let policy = RevocationIntegrationPolicy::default_policy();
+        assert!(
+            policy.max_age_for_tier(ExtensionSafetyTier::High)
+                <= policy.max_age_for_tier(ExtensionSafetyTier::Low)
+        );
+    }
 }

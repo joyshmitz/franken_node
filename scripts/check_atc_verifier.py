@@ -11,7 +11,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC_PATH = ROOT / "docs" / "specs" / "atc_verifier_contract.md"
 CONFORMANCE_PATH = ROOT / "tests" / "conformance" / "atc_verifier_apis.rs"
@@ -532,6 +535,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_atc_verifier")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--spec", type=Path, default=SPEC_PATH)
     parser.add_argument("--report", type=Path, default=REPORT_PATH)

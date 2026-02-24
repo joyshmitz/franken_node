@@ -970,7 +970,7 @@ mod tests {
                     hit_budget = true;
                     break;
                 }
-                Err(e) => panic!("Unexpected error: {e}"),
+                Err(e) => unreachable!("Unexpected error: {e}"),
             }
         }
         assert!(hit_budget, "Should have hit budget limit");

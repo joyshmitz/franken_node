@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 REGISTRY_PATH = ROOT / "docs" / "COMPATIBILITY_REGISTRY.json"
 SCHEMA_PATH = ROOT / "schemas" / "compatibility_registry.schema.json"
 
@@ -188,6 +190,7 @@ def check_band_coverage() -> dict:
 
 
 def main():
+    logger = configure_test_logging("check_compat_registry")
     json_output = "--json" in sys.argv
     timestamp = datetime.now(timezone.utc).isoformat()
 

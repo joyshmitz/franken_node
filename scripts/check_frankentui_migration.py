@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 IMPL = ROOT / "tests" / "integration" / "frankentui_surface_migration.rs"
 INVENTORY_CSV = ROOT / "artifacts" / "10.16" / "frankentui_surface_inventory.csv"

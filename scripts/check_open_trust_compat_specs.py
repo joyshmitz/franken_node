@@ -9,7 +9,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 SPEC_PATH = ROOT / "docs" / "specs" / "section_16" / "bd-f955_open_trust_compatibility_specs.md"
 ARTIFACT_PATH = ROOT / "artifacts" / "16" / "open_trust_compatibility_specs.json"
 
@@ -245,6 +248,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_open_trust_compat_specs")
     parser = argparse.ArgumentParser(description="Check bd-f955 open trust/compatibility specs")
     parser.add_argument("--json", action="store_true", help="emit JSON report")
     parser.add_argument("--self-test", action="store_true", help="run checker self-test")

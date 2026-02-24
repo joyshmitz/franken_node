@@ -16,6 +16,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BEAD = "bd-2o8b"
 SECTION = "10.17"
@@ -320,6 +322,7 @@ def self_test():
 
 
 def main():
+    logger = configure_test_logging("check_hardware_planner")
     parser = argparse.ArgumentParser(description="bd-2o8b checker")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--self-test", action="store_true")

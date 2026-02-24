@@ -9,6 +9,9 @@ import re
 import sys
 from datetime import datetime, timezone
 from typing import Any
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -247,6 +250,7 @@ def self_test() -> dict[str, Any]:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_ambient_authority")
     if "--self-test" in sys.argv:
         result = self_test()
         if "--json" in sys.argv:

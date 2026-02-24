@@ -12,7 +12,7 @@ mod tests {
 
     use super::vef_policy_constraints::{
         ActionClass, LANGUAGE_VERSION, PolicyRule, RuleEffect, RuntimePolicy, compile_policy,
-        mock_proof_generator_accepts, round_trip_semantics,
+        proof_generator_accepts, round_trip_semantics,
     };
 
     fn sample_policy() -> RuntimePolicy {
@@ -97,7 +97,7 @@ mod tests {
             "coverage must include all action classes"
         );
         assert!(
-            mock_proof_generator_accepts(&envelope),
+            proof_generator_accepts(&envelope),
             "compiled envelope rejected by proof worker shim"
         );
         assert!(

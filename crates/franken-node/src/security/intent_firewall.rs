@@ -1078,6 +1078,30 @@ mod tests {
             .unwrap();
         assert_eq!(decision.verdict, FirewallVerdict::Allow);
         assert!(decision.rationale.contains("node-internal"));
+
+        // Verify that the same request from a registered extension would
+        // NOT receive the node-internal bypass — confirming scope is correct.
+        let ext_effect = RemoteEffect {
+            effect_id: "e-ext-scoped".into(),
+            origin: TrafficOrigin::Extension {
+                extension_id: "ext-001".into(),
+            },
+            target_host: "api.example.com".into(),
+            target_port: 443,
+            method: "GET".into(),
+            path: "/data".into(),
+            has_sensitive_payload: false,
+            carries_credentials: false,
+            metadata: BTreeMap::new(),
+        };
+        let ext_decision = fw
+            .evaluate(&ext_effect, "trace-4b", "2026-01-01T00:00:00Z")
+            .unwrap();
+        // Extension traffic goes through full evaluation, not the bypass path.
+        assert!(
+            !ext_decision.rationale.contains("node-internal"),
+            "extension traffic must not receive node-internal bypass"
+        );
     }
 
     #[test]
@@ -1121,7 +1145,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             FirewallError::InvalidEffect(_) => {}
-            other => panic!("expected InvalidEffect, got {:?}", other),
+            other => unreachable!("expected InvalidEffect, got {:?}", other),
         }
     }
 

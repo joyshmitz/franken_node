@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BEAD = "bd-nbwo"
 SECTION = "10.17"
@@ -381,6 +383,7 @@ def self_test() -> dict:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_verifier_sdk_capsule")
     parser = argparse.ArgumentParser(description="bd-nbwo checker")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--self-test", action="store_true")

@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SCENARIOS_DOC = ROOT / "docs" / "testing" / "control_lab_scenarios.md"
 SEED_MATRIX = ROOT / "artifacts" / "10.15" / "control_lab_seed_matrix.json"
@@ -64,11 +66,11 @@ def check_seed_controlled_model() -> dict:
         return {"id": "CLS-SEED", "status": "FAIL", "details": {"error": "doc not found"}}
     content = SCENARIOS_DOC.read_text()
     has_seed = "Seed-controlled" in content or "seed-controlled" in content
-    has_mock_clock = "Mock clock" in content or "mock clock" in content
+    has_test_clock = "Test clock" in content or "test clock" in content
     has_replay = "Replay guarantee" in content or "replay guarantee" in content
-    ok = has_seed and has_mock_clock and has_replay
+    ok = has_seed and has_test_clock and has_replay
     return {"id": "CLS-SEED", "status": "PASS" if ok else "FAIL",
-            "details": {"seed": has_seed, "clock": has_mock_clock, "replay": has_replay}}
+            "details": {"seed": has_seed, "clock": has_test_clock, "replay": has_replay}}
 
 
 def check_invariants_per_scenario() -> dict:
@@ -185,6 +187,7 @@ def self_test() -> dict:
 
 
 def main():
+    logger = configure_test_logging("check_control_lab_scenarios")
     json_output = "--json" in sys.argv
     result = self_test()
     if json_output:

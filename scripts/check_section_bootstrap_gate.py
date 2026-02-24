@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BEAD_ID = "bd-3ohj"
 SECTION = "bootstrap"
@@ -416,6 +418,7 @@ def self_test() -> tuple[bool, list[dict[str, Any]]]:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_section_bootstrap_gate")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Output JSON")
     parser.add_argument("--self-test", action="store_true", help="Run gate self-test")

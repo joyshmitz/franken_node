@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BEAD_ID = "bd-3uoo"
 SECTION = "10.13"
@@ -224,6 +226,7 @@ def self_test() -> tuple[bool, list[dict]]:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_section_10_13_gate")
     global _json_mode
 
     parser = argparse.ArgumentParser(description=__doc__)
@@ -253,7 +256,7 @@ def main() -> int:
     if not _json_mode:
         print("Section 10.13 — FCP Deep-Mined Expansion Verification Gate\n")
 
-    report = build_report(execute=not args.no_exec)
+    report = build_report(execute=not args.no_execution)
 
     if _json_mode:
         print(json.dumps(report, indent=2))

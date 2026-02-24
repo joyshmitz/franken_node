@@ -11,7 +11,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC_PATH = ROOT / "docs" / "conformance" / "vef_release_claim_gate.md"
 REPORT_PATH = ROOT / "artifacts" / "10.18" / "vef_release_gate_report.json"
@@ -415,6 +418,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_vef_claim_gate")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--spec", type=Path, default=SPEC_PATH)
     parser.add_argument("--report", type=Path, default=REPORT_PATH)

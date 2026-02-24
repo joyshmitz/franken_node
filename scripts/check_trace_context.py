@@ -6,6 +6,9 @@ import os
 import re
 import subprocess
 import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = []
@@ -24,13 +27,14 @@ def check(check_id, description, passed, details=None):
 
 
 def main():
+    logger = configure_test_logging("check_trace_context")
     print("bd-1gnb: Distributed Trace Correlation IDs — Verification\n")
     all_pass = True
 
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/trace_context.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_ctx = "struct TraceContext" in content
         has_store = "struct TraceStore" in content
         has_report = "struct ConformanceReport" in content
@@ -41,7 +45,7 @@ def main():
     all_pass &= check("TRC-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         errors = ["TRC_MISSING_TRACE_ID", "TRC_MISSING_SPAN_ID", "TRC_INVALID_FORMAT",
                   "TRC_PARENT_NOT_FOUND", "TRC_CONFORMANCE_FAILED"]
         found = [e for e in errors if e in content]
@@ -54,7 +58,7 @@ def main():
     sample_valid = False
     if os.path.isfile(sample_path):
         try:
-            data = json.load(open(sample_path))
+            data = json.loads(__import__("pathlib").Path(sample_path).read_text(encoding="utf-8"))
             sample_valid = "spans" in data and len(data["spans"]) >= 3
         except json.JSONDecodeError:
             pass
@@ -63,7 +67,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/trace_correlation_end_to_end.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = open(integ_path).read()
+        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
         has_required = "inv_trc_required" in content
         has_propagated = "inv_trc_propagated" in content
         has_stitchable = "inv_trc_stitchable" in content
@@ -91,7 +95,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-1gnb_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = open(spec_path).read()
+        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
         has_invariants = "INV-TRC" in content
         has_types = "TraceContext" in content and "ConformanceReport" in content
     else:

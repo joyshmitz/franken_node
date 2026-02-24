@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """bd-e5cz: Externally replicated high-impact claims — verification gate."""
 import json, os, re, sys
+import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMPL = os.path.join(ROOT, "crates", "franken-node", "src", "tools", "external_replication_claims.rs")
@@ -45,6 +49,7 @@ def self_test():
     return True
 
 def main():
+    logger = configure_test_logging("check_external_replication_claims")
     as_json = "--json" in sys.argv
     if "--self-test" in sys.argv: self_test(); return
     results = _checks(); p = sum(1 for x in results if x["passed"]); t = len(results); v = "PASS" if p == t else "FAIL"

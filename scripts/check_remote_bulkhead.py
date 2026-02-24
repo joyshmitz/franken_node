@@ -4,6 +4,9 @@ import json
 import os
 import re
 import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "crates", "franken-node", "src", "remote", "remote_bulkhead.rs")
@@ -204,6 +207,7 @@ def self_test():
 
 
 def main():
+    logger = configure_test_logging("check_remote_bulkhead")
     if "--self-test" in sys.argv:
         ok = self_test()
         sys.exit(0 if ok else 1)

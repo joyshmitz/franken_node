@@ -26,6 +26,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 BARRIER_SRC = ROOT / "crates/franken-node/src/security/dgis/barrier_primitives.rs"
 DGIS_MOD = ROOT / "crates/franken-node/src/security/dgis/mod.rs"
 SECURITY_MOD = ROOT / "crates/franken-node/src/security/mod.rs"
@@ -254,6 +256,7 @@ def self_test() -> bool:
 
 
 def main():
+    logger = configure_test_logging("check_dgis_barrier")
     parser = argparse.ArgumentParser(description="DGIS barrier primitives verification gate")
     parser.add_argument("--json", action="store_true", help="machine-readable JSON output")
     parser.add_argument("--self-test", action="store_true", help="run self-test")

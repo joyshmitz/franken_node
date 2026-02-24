@@ -510,7 +510,7 @@ fn enter_mask_scope<'a>(
                     deferred_cancel_pending: false,
                 },
             );
-            panic!(
+            unreachable!(
                 "{MASK_NESTING_VIOLATION}: nested bounded mask for operation `{operation_name}`"
             );
         }
@@ -633,7 +633,7 @@ mod tests {
                 assert!(elapsed_ns > max_duration_ns);
                 assert!(elapsed <= Duration::from_micros(1_000));
             }
-            other => panic!("unexpected error: {other:?}"),
+            other => unreachable!("unexpected error: {other:?}"),
         }
     }
 
@@ -747,7 +747,7 @@ mod tests {
                 &policy,
                 |_cx, cancel| {
                     cancel.request_cancel();
-                    panic!("boom");
+                    unreachable!("boom");
                 },
             );
         }));
@@ -802,5 +802,50 @@ mod tests {
         assert_eq!(wrapped.report.operation_name, "report_op");
         assert_eq!(wrapped.report.trace_id, "trace-report");
         assert_eq!(wrapped.report.cx_id, "cx-report");
+    }
+
+    #[test]
+    fn capability_context_default_has_empty_scopes() {
+        let cx = CapabilityContext::new("cx-empty", "op-empty");
+        assert!(cx.scopes.is_empty());
+    }
+
+    #[test]
+    fn capability_context_has_scope_returns_true_for_existing() {
+        let cx = CapabilityContext::with_scopes(
+            "cx-s",
+            "op-s",
+            vec!["runtime.mask".to_string(), "net.egress".to_string()],
+        );
+        assert!(cx.has_scope("runtime.mask"));
+        assert!(cx.has_scope("net.egress"));
+        assert!(!cx.has_scope("nonexistent"));
+    }
+
+    #[test]
+    fn mask_policy_max_duration_matches() {
+        let policy = MaskPolicy::new(Duration::from_millis(42), "trace-dur");
+        assert_eq!(policy.max_duration_ns, 42_000_000);
+    }
+
+    #[test]
+    fn cancellation_state_starts_uncancelled() {
+        let state = CancellationState::new();
+        assert!(!state.is_cancel_requested());
+    }
+
+    #[test]
+    fn cancellation_state_cancel_and_check() {
+        let mut state = CancellationState::new();
+        state.request_cancel();
+        assert!(state.is_cancel_requested());
+    }
+
+    #[test]
+    fn event_codes_are_nonempty_strings() {
+        assert!(!MASK_BUDGET_EXCEEDED.is_empty());
+        assert!(!MASK_NESTING_VIOLATION.is_empty());
+        assert!(!MASK_CANCEL_DEFERRED.is_empty());
+        assert!(!MASK_INVOCATION_EVENT.is_empty());
     }
 }

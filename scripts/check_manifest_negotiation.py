@@ -6,6 +6,9 @@ import os
 import re
 import subprocess
 import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = []
@@ -24,6 +27,7 @@ def check(check_id, description, passed, details=None):
 
 
 def main():
+    logger = configure_test_logging("check_manifest_negotiation")
     print("bd-17mb: Fail-Closed Manifest Negotiation — Verification\n")
     all_pass = True
 
@@ -31,7 +35,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/manifest_negotiation.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_semver = "struct SemVer" in content
         has_manifest = "struct ConnectorManifest" in content
         has_host = "struct HostCapabilities" in content
@@ -44,7 +48,7 @@ def main():
 
     # MN-SEMVER: Semantic ordering (not lexical)
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_ord = "impl Ord for SemVer" in content
         has_cmp = "self.major" in content and ".cmp(" in content
         all_pass &= check("MN-SEMVER", "Semantic version ordering implemented", has_ord and has_cmp)
@@ -53,7 +57,7 @@ def main():
 
     # MN-ERRORS: All 4 error codes
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         errors = ["MANIFEST_VERSION_UNSUPPORTED", "MANIFEST_FEATURE_MISSING",
                   "MANIFEST_TRANSPORT_MISMATCH", "MANIFEST_INVALID"]
         found = [e for e in errors if e in content]
@@ -64,7 +68,7 @@ def main():
 
     # MN-TRANSPORT: Transport capability types
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         caps = ["Http1", "Http2", "Http3", "WebSocket", "Grpc"]
         found = [c for c in caps if c in content]
         all_pass &= check("MN-TRANSPORT", "All 5 transport capability types",
@@ -77,7 +81,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.load(open(fixture_path))
+            data = json.loads(__import__("pathlib").Path(fixture_path).read_text(encoding="utf-8"))
             fixture_valid = "cases" in data and len(data["cases"]) >= 5
         except json.JSONDecodeError:
             pass
@@ -88,7 +92,7 @@ def main():
     trace_valid = False
     if os.path.isfile(trace_path):
         try:
-            data = json.load(open(trace_path))
+            data = json.loads(__import__("pathlib").Path(trace_path).read_text(encoding="utf-8"))
             trace_valid = "negotiations" in data and len(data["negotiations"]) >= 2
         except json.JSONDecodeError:
             pass
@@ -98,7 +102,7 @@ def main():
     conf_path = os.path.join(ROOT, "tests/conformance/manifest_negotiation_fail_closed.rs")
     conf_exists = os.path.isfile(conf_path)
     if conf_exists:
-        content = open(conf_path).read()
+        content = __import__("pathlib").Path(conf_path).read_text(encoding="utf-8")
         has_fail_closed = "fails_closed" in content
         has_semantic = "semantic" in content.lower()
         has_trace = "trace" in content
@@ -128,7 +132,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-17mb_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = open(spec_path).read()
+        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
         has_invariants = "INV-MANIFEST" in content
         has_outcome = "Outcome" in content
     else:

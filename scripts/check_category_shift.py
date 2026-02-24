@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "supply_chain" / "category_shift.rs"
 MOD_FILE = ROOT / "crates" / "franken-node" / "src" / "supply_chain" / "mod.rs"
@@ -468,6 +470,7 @@ def self_test() -> tuple[bool, list[dict[str, Any]]]:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_category_shift")
     parser = argparse.ArgumentParser(
         description="Verify bd-15t category-shift reporting pipeline"
     )

@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use tracing::{debug, info, instrument, warn};
 
 use super::connector_method_validator::{
     ContractReport, MethodDeclaration, MethodErrorCode, validate_contract,
@@ -72,15 +73,22 @@ pub struct HarnessReport {
 /// Run the conformance harness for a single connector.
 ///
 /// Validates method contracts and applies policy overrides if available.
+#[instrument(skip(declarations, override_policy), fields(methods = declarations.len()))]
 pub fn check_publication(
     connector_id: &str,
     declarations: &[MethodDeclaration],
     override_policy: Option<&PolicyOverride>,
     current_time: &str,
 ) -> PublicationGateResult {
+    info!(
+        connector_id,
+        methods = declarations.len(),
+        "starting conformance check"
+    );
     let contract_report = validate_contract(connector_id, declarations);
 
     if contract_report.verdict == "PASS" {
+        info!(connector_id, "conformance PASS — publication allowed");
         return PublicationGateResult {
             connector_id: connector_id.to_string(),
             conformance_verdict: "PASS".to_string(),
@@ -90,26 +98,40 @@ pub fn check_publication(
         };
     }
 
+    debug!(
+        connector_id,
+        failing = contract_report.summary.failing,
+        "conformance FAIL — checking for override"
+    );
+
     // Contract failed — check for override
     match override_policy {
-        None => PublicationGateResult {
-            connector_id: connector_id.to_string(),
-            conformance_verdict: "FAIL".to_string(),
-            gate_decision: "BLOCK".to_string(),
-            override_applied: false,
-            errors: vec![GateError {
-                code: GateErrorCode::PublicationBlocked,
-                message: format!(
-                    "Connector '{}' failed conformance with {} error(s)",
-                    connector_id, contract_report.summary.failing
-                ),
-            }],
-        },
+        None => {
+            warn!(
+                connector_id,
+                failing = contract_report.summary.failing,
+                "publication BLOCKED — no override available"
+            );
+            PublicationGateResult {
+                connector_id: connector_id.to_string(),
+                conformance_verdict: "FAIL".to_string(),
+                gate_decision: "BLOCK".to_string(),
+                override_applied: false,
+                errors: vec![GateError {
+                    code: GateErrorCode::PublicationBlocked,
+                    message: format!(
+                        "Connector '{}' failed conformance with {} error(s)",
+                        connector_id, contract_report.summary.failing
+                    ),
+                }],
+            }
+        }
         Some(policy) => apply_override(connector_id, &contract_report, policy, current_time),
     }
 }
 
 /// Apply a policy override to a failing conformance result.
+#[instrument(skip(report, policy), fields(override_id = %policy.override_id))]
 fn apply_override(
     connector_id: &str,
     report: &ContractReport,
@@ -120,6 +142,11 @@ fn apply_override(
 
     // Check expiry
     if current_time > policy.expires_at.as_str() {
+        warn!(
+            override_id = %policy.override_id,
+            expires_at = %policy.expires_at,
+            "override expired"
+        );
         errors.push(GateError {
             code: GateErrorCode::OverrideExpired,
             message: format!(
@@ -156,6 +183,11 @@ fn apply_override(
         .collect();
 
     if !uncovered.is_empty() {
+        warn!(
+            override_id = %policy.override_id,
+            uncovered_count = uncovered.len(),
+            "override scope mismatch"
+        );
         errors.push(GateError {
             code: GateErrorCode::OverrideScopeMismatch,
             message: format!(
@@ -170,6 +202,7 @@ fn apply_override(
     }
 
     if errors.is_empty() {
+        info!(connector_id, override_id = %policy.override_id, "override accepted — publication allowed");
         PublicationGateResult {
             connector_id: connector_id.to_string(),
             conformance_verdict: "FAIL".to_string(),
@@ -189,10 +222,15 @@ fn apply_override(
 }
 
 /// Run the harness across multiple connectors.
+#[instrument(skip(connectors), fields(connector_count = connectors.len()))]
 pub fn run_harness(
     connectors: &[(String, Vec<MethodDeclaration>, Option<PolicyOverride>)],
     current_time: &str,
 ) -> HarnessReport {
+    info!(
+        connector_count = connectors.len(),
+        "starting conformance harness run"
+    );
     let mut results = Vec::new();
     for (id, decls, override_policy) in connectors {
         results.push(check_publication(
@@ -216,6 +254,8 @@ pub fn run_harness(
         .filter(|r| r.gate_decision == "BLOCK")
         .count();
     let verdict = if blocked == 0 { "PASS" } else { "FAIL" };
+
+    info!(passed, blocked, overridden, verdict, "harness run complete");
 
     HarnessReport {
         total_connectors: results.len(),

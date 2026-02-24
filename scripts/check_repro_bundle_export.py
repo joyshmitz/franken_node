@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 IMPL = ROOT / "crates" / "franken-node" / "src" / "tools" / "repro_bundle_export.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_14" / "bd-2808_contract.md"
 MOD_RS = ROOT / "crates" / "franken-node" / "src" / "tools" / "mod.rs"
@@ -234,6 +236,7 @@ def run_checks():
 
 
 def main():
+    logger = configure_test_logging("check_repro_bundle_export")
     if "--self-test" in sys.argv:
         ok, results = self_test()
         print(f"self_test: {'PASS' if ok else 'FAIL'}")

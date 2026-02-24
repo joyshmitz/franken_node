@@ -6,6 +6,9 @@ import os
 import re
 import subprocess
 import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = []
@@ -24,13 +27,14 @@ def check(check_id, description, passed, details=None):
 
 
 def main():
+    logger = configure_test_logging("check_golden_vectors")
     print("bd-3n2u: Formal Schema Spec & Golden Vectors — Verification\n")
     all_pass = True
 
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/golden_vectors.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_registry = "struct SchemaRegistry" in content
         has_vector = "struct GoldenVector" in content
         has_spec = "struct SchemaSpec" in content
@@ -41,7 +45,7 @@ def main():
     all_pass &= check("GSV-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         errors = ["GSV_MISSING_SCHEMA", "GSV_MISSING_VECTOR", "GSV_VECTOR_MISMATCH",
                   "GSV_NO_CHANGELOG", "GSV_INVALID_VERSION"]
         found = [e for e in errors if e in content]
@@ -54,7 +58,7 @@ def main():
     vectors_valid = False
     if os.path.isfile(vectors_path):
         try:
-            data = json.load(open(vectors_path))
+            data = json.loads(__import__("pathlib").Path(vectors_path).read_text(encoding="utf-8"))
             vectors_valid = "vectors" in data and len(data["vectors"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -66,7 +70,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/golden_vector_verification.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = open(integ_path).read()
+        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
         has_schema = "inv_gsv_schema" in content
         has_vectors = "inv_gsv_vectors" in content
         has_verified = "inv_gsv_verified" in content
@@ -94,7 +98,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-3n2u_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = open(spec_path).read()
+        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
         has_invariants = "INV-GSV" in content
         has_types = "SchemaRegistry" in content or "GoldenVector" in content
     else:

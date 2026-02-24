@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 RESULTS: list[dict] = []
 
@@ -242,6 +244,7 @@ def self_test():
 
 
 def main():
+    logger = configure_test_logging("check_architecture_blueprint")
     if "--self-test" in sys.argv:
         self_test()
         return

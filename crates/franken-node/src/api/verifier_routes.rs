@@ -323,6 +323,107 @@ mod tests {
     }
 
     #[test]
+    fn all_routes_are_stable_lifecycle() {
+        let routes = route_metadata();
+        for r in &routes {
+            assert_eq!(
+                r.lifecycle,
+                EndpointLifecycle::Stable,
+                "route {} should be Stable",
+                r.path
+            );
+        }
+    }
+
+    #[test]
+    fn conformance_pass_verdict() {
+        let identity = test_identity();
+        let trace = test_trace();
+        let request = ConformanceTriggerRequest {
+            scope: None,
+            verbose: false,
+        };
+        let result = trigger_conformance(&identity, &trace, &request).expect("conformance");
+        assert_eq!(result.data.status, ConformanceStatus::Pass);
+    }
+
+    #[test]
+    fn conformance_with_scope_filter() {
+        let identity = test_identity();
+        let trace = test_trace();
+        let request = ConformanceTriggerRequest {
+            scope: Some("crypto".to_string()),
+            verbose: true,
+        };
+        let result = trigger_conformance(&identity, &trace, &request).expect("conformance");
+        assert!(result.ok);
+    }
+
+    #[test]
+    fn evidence_artifact_has_content() {
+        let identity = test_identity();
+        let trace = test_trace();
+        let result = get_evidence(&identity, &trace, "art-001").expect("evidence");
+        assert!(result.ok);
+        assert!(!result.data.check_id.is_empty());
+        assert!(!result.data.content.is_null());
+    }
+
+    #[test]
+    fn evidence_artifact_serde_roundtrip() {
+        let artifact = EvidenceArtifact {
+            check_id: "chk-123".to_string(),
+            artifact_type: "hash-proof".to_string(),
+            content_hash: "sha256:abc".to_string(),
+            size_bytes: 42,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            content: serde_json::json!({"test": true}),
+        };
+        let json = serde_json::to_string(&artifact).unwrap();
+        let parsed: EvidenceArtifact = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.check_id, "chk-123");
+    }
+
+    #[test]
+    fn audit_log_query_with_filter() {
+        let identity = test_identity();
+        let trace = test_trace();
+        let query = AuditLogQuery {
+            action: Some("conformance".to_string()),
+            actor: Some("test-verifier".to_string()),
+            limit: Some(5),
+            since: Some("2026-01-01T00:00:00Z".to_string()),
+        };
+        let result = query_audit_log(&identity, &trace, &query).expect("audit log");
+        assert!(result.ok);
+    }
+
+    #[test]
+    fn conformance_result_serde_roundtrip() {
+        let result = ConformanceResult {
+            check_id: "chk-test".to_string(),
+            status: ConformanceStatus::Pass,
+            total_checks: 2,
+            passed: 2,
+            failed: 0,
+            skipped: 0,
+            findings: vec![],
+            triggered_at: "2026-01-01T00:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let parsed: ConformanceResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.status, ConformanceStatus::Pass);
+    }
+
+    #[test]
+    fn conformance_status_variants() {
+        assert_ne!(
+            format!("{:?}", ConformanceStatus::Pass),
+            format!("{:?}", ConformanceStatus::Fail)
+        );
+    }
+
+    #[test]
     fn conformance_check_id_handles_unicode_trace() {
         let identity = test_identity();
         let trace = TraceContext {

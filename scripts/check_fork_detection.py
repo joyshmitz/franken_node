@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC = ROOT / "docs" / "specs" / "section_10_10" / "bd-2ms_contract.md"
 IMPL = ROOT / "crates" / "franken-node" / "src" / "control_plane" / "divergence_gate.rs"
@@ -360,6 +362,7 @@ def self_test() -> tuple:
 
 
 def main():
+    logger = configure_test_logging("check_fork_detection")
     if "--self-test" in sys.argv:
         ok, msg = self_test()
         print(msg)

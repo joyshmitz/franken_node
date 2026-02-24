@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "connector" / "vef_policy_constraints.rs"
 MOD_RS = ROOT / "crates" / "franken-node" / "src" / "connector" / "mod.rs"
@@ -70,7 +72,7 @@ REQUIRED_IMPL_SYMBOLS = [
     "pub fn compile_policy",
     "pub fn decompile_projection",
     "pub fn round_trip_semantics",
-    "pub fn mock_proof_generator_accepts",
+    "pub fn proof_generator_accepts",
 ]
 
 RESULTS: list[dict[str, Any]] = []
@@ -340,6 +342,7 @@ def self_test() -> dict[str, Any]:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_vef_policy_constraints")
     parser = argparse.ArgumentParser(description="Verify bd-16fq artifacts")
     parser.add_argument("--json", action="store_true", help="emit JSON result")
     parser.add_argument("--self-test", action="store_true", help="run script self-test")

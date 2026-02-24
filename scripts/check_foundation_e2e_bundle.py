@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 HARNESS = ROOT / "tests" / "e2e" / "foundation_bootstrap_suite.sh"
 SUMMARY_JSON = ROOT / "artifacts" / "section_bootstrap" / "bd-3k9t" / "foundation_e2e_summary.json"
@@ -283,6 +285,7 @@ def self_test() -> None:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_foundation_e2e_bundle")
     if "--self-test" in sys.argv:
         self_test()
         return 0

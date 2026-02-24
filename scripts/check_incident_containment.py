@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC = ROOT / "docs" / "specs" / "section_13" / "bd-pga7_contract.md"
 POLICY = ROOT / "docs" / "policy" / "deterministic_incident_containment.md"
@@ -461,6 +463,7 @@ def self_test() -> tuple[bool, str]:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_incident_containment")
     parser = argparse.ArgumentParser(
         description="Verify bd-pga7: deterministic incident containment/explanation"
     )

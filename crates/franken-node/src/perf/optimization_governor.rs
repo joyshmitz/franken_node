@@ -209,6 +209,240 @@ impl GovernorGate {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Engine dispatch hooks and knob enumeration (bd-1p2r)
+// ---------------------------------------------------------------------------
+
+/// Event code: knob enumeration was performed.
+pub const GOV_008_KNOB_ENUMERATION: &str = "GOV_008";
+/// Event code: dispatch hook payload was built.
+pub const GOV_009_DISPATCH_HOOK: &str = "GOV_009";
+/// Event code: knob change dispatched to engine.
+pub const GOV_010_KNOB_DISPATCHED: &str = "GOV_010";
+
+/// Metadata for a single enumerated runtime knob.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnobDescriptor {
+    /// The knob identifier.
+    pub knob: RuntimeKnob,
+    /// Human-readable label.
+    pub label: String,
+    /// Current live value.
+    pub current_value: u64,
+    /// Whether the knob is locked.
+    pub locked: bool,
+    /// Suggested minimum value (advisory).
+    pub min_value: u64,
+    /// Suggested maximum value (advisory).
+    pub max_value: u64,
+}
+
+/// Result of enumerating all governor-managed knobs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnobEnumeration {
+    pub knobs: Vec<KnobDescriptor>,
+    pub schema_version: String,
+}
+
+impl KnobEnumeration {
+    /// How many knobs are enumerated.
+    pub fn count(&self) -> usize {
+        self.knobs.len()
+    }
+
+    /// Look up a knob by its variant.
+    pub fn get(&self, knob: &RuntimeKnob) -> Option<&KnobDescriptor> {
+        self.knobs.iter().find(|d| &d.knob == knob)
+    }
+
+    /// All unlocked knobs (available for optimization).
+    pub fn unlocked(&self) -> Vec<&KnobDescriptor> {
+        self.knobs.iter().filter(|d| !d.locked).collect()
+    }
+
+    /// All locked knobs.
+    pub fn locked(&self) -> Vec<&KnobDescriptor> {
+        self.knobs.iter().filter(|d| d.locked).collect()
+    }
+}
+
+/// Advisory ranges for each knob (used during enumeration).
+fn knob_range(knob: &RuntimeKnob) -> (u64, u64) {
+    match knob {
+        RuntimeKnob::ConcurrencyLimit => (1, 4096),
+        RuntimeKnob::BatchSize => (1, 8192),
+        RuntimeKnob::CacheCapacity => (64, 65536),
+        RuntimeKnob::DrainTimeoutMs => (1000, 300_000),
+        RuntimeKnob::RetryBudget => (0, 20),
+    }
+}
+
+/// Payload that the governor produces for the engine dispatcher.
+///
+/// Each entry maps an environment variable name to its value, so the
+/// dispatcher can inject governor knob state into the engine process
+/// environment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DispatchHookPayload {
+    /// Environment variables to set on the engine process.
+    pub env_vars: std::collections::BTreeMap<String, String>,
+    /// The governor schema version at time of dispatch.
+    pub schema_version: String,
+    /// Number of applied optimizations reflected in this payload.
+    pub applied_count: usize,
+}
+
+impl DispatchHookPayload {
+    /// Convert knob state to an env var name.
+    fn env_key(knob: &RuntimeKnob) -> String {
+        format!("FRANKEN_GOV_{}", knob.as_str().to_uppercase())
+    }
+}
+
+/// Record of a single dispatch hook invocation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DispatchHookRecord {
+    pub event_code: String,
+    pub knob: Option<RuntimeKnob>,
+    pub detail: String,
+}
+
+impl GovernorGate {
+    /// Enumerate all governor-managed runtime knobs with metadata.
+    ///
+    /// INV-GOV-KNOBS-ONLY: the enumeration is exhaustive over the
+    /// `RuntimeKnob` enum — no engine-core internals appear.
+    pub fn enumerate_knobs(&mut self) -> KnobEnumeration {
+        let inner = self.inner();
+        let mut knobs = Vec::new();
+
+        for knob in [
+            RuntimeKnob::ConcurrencyLimit,
+            RuntimeKnob::BatchSize,
+            RuntimeKnob::CacheCapacity,
+            RuntimeKnob::DrainTimeoutMs,
+            RuntimeKnob::RetryBudget,
+        ] {
+            let current_value = inner.knob_value(&knob).unwrap_or(0);
+            let (min_value, max_value) = knob_range(&knob);
+            // Infer locked status: attempt lookup via the snapshot.
+            let snap = inner.snapshot();
+            let locked = snap
+                .knob_states
+                .iter()
+                .find(|s| s.knob == knob)
+                .is_some_and(|s| s.locked);
+
+            knobs.push(KnobDescriptor {
+                knob,
+                label: knob.as_str().to_string(),
+                current_value,
+                locked,
+                min_value,
+                max_value,
+            });
+        }
+
+        self.audit_trail_mut().push(GateAuditEntry {
+            event_code: GOV_008_KNOB_ENUMERATION.to_string(),
+            proposal_id: String::new(),
+            detail: format!("{} knobs enumerated", knobs.len()),
+        });
+
+        KnobEnumeration {
+            knobs,
+            schema_version: SCHEMA_VERSION.to_string(),
+        }
+    }
+
+    /// Build a dispatch hook payload projecting current governor knob state
+    /// into environment variables for the engine process.
+    ///
+    /// The mapping is: `FRANKEN_GOV_<KNOB_NAME>` = `<value>`.
+    pub fn build_dispatch_payload(&mut self) -> DispatchHookPayload {
+        let inner = self.inner();
+        let snap = inner.snapshot();
+        let mut env_vars = std::collections::BTreeMap::new();
+
+        for ks in &snap.knob_states {
+            let key = DispatchHookPayload::env_key(&ks.knob);
+            env_vars.insert(key, ks.value.to_string());
+        }
+
+        // Also inject the safety envelope bounds
+        env_vars.insert(
+            "FRANKEN_GOV_MAX_LATENCY_MS".to_string(),
+            snap.envelope.max_latency_ms.to_string(),
+        );
+        env_vars.insert(
+            "FRANKEN_GOV_MIN_THROUGHPUT_RPS".to_string(),
+            snap.envelope.min_throughput_rps.to_string(),
+        );
+        env_vars.insert(
+            "FRANKEN_GOV_MAX_ERROR_RATE_PCT".to_string(),
+            format!("{:.2}", snap.envelope.max_error_rate_pct),
+        );
+        env_vars.insert(
+            "FRANKEN_GOV_MAX_MEMORY_MB".to_string(),
+            snap.envelope.max_memory_mb.to_string(),
+        );
+
+        let applied_count = inner.applied_count();
+
+        self.audit_trail_mut().push(GateAuditEntry {
+            event_code: GOV_009_DISPATCH_HOOK.to_string(),
+            proposal_id: String::new(),
+            detail: format!(
+                "dispatch payload: {} env vars, {} applied",
+                env_vars.len(),
+                applied_count
+            ),
+        });
+
+        DispatchHookPayload {
+            env_vars,
+            schema_version: SCHEMA_VERSION.to_string(),
+            applied_count,
+        }
+    }
+
+    /// Submit a proposal and, if approved, generate an updated dispatch payload.
+    ///
+    /// This is the primary "hook" entry point: submit → gate → dispatch.
+    pub fn submit_and_dispatch(
+        &mut self,
+        proposal: OptimizationProposal,
+    ) -> (GovernorDecision, Option<DispatchHookPayload>) {
+        let knob = proposal.knob;
+        let decision = self.submit(proposal);
+
+        if matches!(decision, GovernorDecision::Approved) {
+            let payload = self.build_dispatch_payload();
+            self.audit_trail_mut().push(GateAuditEntry {
+                event_code: GOV_010_KNOB_DISPATCHED.to_string(),
+                proposal_id: String::new(),
+                detail: format!("knob {} dispatched to engine", knob),
+            });
+            (decision, Some(payload))
+        } else {
+            (decision, None)
+        }
+    }
+
+    /// Mutable access to audit trail (internal helper for dispatch hooks).
+    fn audit_trail_mut(&mut self) -> &mut Vec<GateAuditEntry> {
+        &mut self.audit_trail
+    }
+}
+
+/// Snapshot of governor state (re-exported here for dispatch hook use).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GovernorDispatchSnapshot {
+    pub enumeration: KnobEnumeration,
+    pub dispatch_payload: DispatchHookPayload,
+    pub applied_count: usize,
+}
+
 // ===========================================================================
 // Tests
 // ===========================================================================
@@ -484,5 +718,353 @@ mod tests {
             gate2.inner().decision_log().len()
         );
         assert_eq!(gate.audit_trail().len(), gate2.audit_trail().len());
+    }
+
+    // =========================================================================
+    // Engine dispatch hooks and knob enumeration tests (bd-1p2r)
+    // =========================================================================
+
+    // -- KnobEnumeration --
+
+    #[test]
+    fn test_enumerate_knobs_returns_all_five() {
+        let mut gate = GovernorGate::with_defaults();
+        let enumeration = gate.enumerate_knobs();
+        assert_eq!(enumeration.count(), 5);
+    }
+
+    #[test]
+    fn test_enumerate_knobs_has_concurrency_limit() {
+        let mut gate = GovernorGate::with_defaults();
+        let enumeration = gate.enumerate_knobs();
+        let desc = enumeration.get(&RuntimeKnob::ConcurrencyLimit).unwrap();
+        assert_eq!(desc.current_value, 64);
+        assert!(!desc.locked);
+        assert_eq!(desc.label, "concurrency_limit");
+    }
+
+    #[test]
+    fn test_enumerate_knobs_has_batch_size() {
+        let mut gate = GovernorGate::with_defaults();
+        let enumeration = gate.enumerate_knobs();
+        let desc = enumeration.get(&RuntimeKnob::BatchSize).unwrap();
+        assert_eq!(desc.current_value, 128);
+    }
+
+    #[test]
+    fn test_enumerate_knobs_ranges_set() {
+        let mut gate = GovernorGate::with_defaults();
+        let enumeration = gate.enumerate_knobs();
+        for desc in &enumeration.knobs {
+            assert!(
+                desc.min_value < desc.max_value,
+                "min < max for {}",
+                desc.label
+            );
+        }
+    }
+
+    #[test]
+    fn test_enumerate_knobs_locked_shows_locked() {
+        let mut gov = OptimizationGovernor::with_defaults();
+        gov.lock_knob(RuntimeKnob::RetryBudget);
+        let mut gate = GovernorGate::new(gov);
+        let enumeration = gate.enumerate_knobs();
+        let retry = enumeration.get(&RuntimeKnob::RetryBudget).unwrap();
+        assert!(retry.locked);
+        assert_eq!(enumeration.locked().len(), 1);
+        assert_eq!(enumeration.unlocked().len(), 4);
+    }
+
+    #[test]
+    fn test_enumerate_emits_gov008() {
+        let mut gate = GovernorGate::with_defaults();
+        gate.enumerate_knobs();
+        let codes: Vec<&str> = gate
+            .audit_trail()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
+        assert!(codes.contains(&GOV_008_KNOB_ENUMERATION));
+    }
+
+    #[test]
+    fn test_enumerate_schema_version() {
+        let mut gate = GovernorGate::with_defaults();
+        let enumeration = gate.enumerate_knobs();
+        assert_eq!(enumeration.schema_version, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn test_enumerate_reflects_knob_change() {
+        let mut gate = GovernorGate::with_defaults();
+        gate.submit(good_proposal("p1")); // ConcurrencyLimit 64 → 128
+        let enumeration = gate.enumerate_knobs();
+        let desc = enumeration.get(&RuntimeKnob::ConcurrencyLimit).unwrap();
+        assert_eq!(desc.current_value, 128);
+    }
+
+    #[test]
+    fn test_knob_enumeration_serde_roundtrip() {
+        let mut gate = GovernorGate::with_defaults();
+        let enumeration = gate.enumerate_knobs();
+        let json = serde_json::to_string(&enumeration).unwrap();
+        let parsed: KnobEnumeration = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.count(), 5);
+        assert_eq!(parsed.schema_version, SCHEMA_VERSION);
+    }
+
+    // -- DispatchHookPayload --
+
+    #[test]
+    fn test_build_dispatch_payload_has_all_knobs() {
+        let mut gate = GovernorGate::with_defaults();
+        let payload = gate.build_dispatch_payload();
+        assert!(
+            payload
+                .env_vars
+                .contains_key("FRANKEN_GOV_CONCURRENCY_LIMIT")
+        );
+        assert!(payload.env_vars.contains_key("FRANKEN_GOV_BATCH_SIZE"));
+        assert!(payload.env_vars.contains_key("FRANKEN_GOV_CACHE_CAPACITY"));
+        assert!(
+            payload
+                .env_vars
+                .contains_key("FRANKEN_GOV_DRAIN_TIMEOUT_MS")
+        );
+        assert!(payload.env_vars.contains_key("FRANKEN_GOV_RETRY_BUDGET"));
+    }
+
+    #[test]
+    fn test_build_dispatch_payload_has_envelope_bounds() {
+        let mut gate = GovernorGate::with_defaults();
+        let payload = gate.build_dispatch_payload();
+        assert!(payload.env_vars.contains_key("FRANKEN_GOV_MAX_LATENCY_MS"));
+        assert!(
+            payload
+                .env_vars
+                .contains_key("FRANKEN_GOV_MIN_THROUGHPUT_RPS")
+        );
+        assert!(
+            payload
+                .env_vars
+                .contains_key("FRANKEN_GOV_MAX_ERROR_RATE_PCT")
+        );
+        assert!(payload.env_vars.contains_key("FRANKEN_GOV_MAX_MEMORY_MB"));
+    }
+
+    #[test]
+    fn test_build_dispatch_payload_values_correct() {
+        let mut gate = GovernorGate::with_defaults();
+        let payload = gate.build_dispatch_payload();
+        assert_eq!(payload.env_vars["FRANKEN_GOV_CONCURRENCY_LIMIT"], "64");
+        assert_eq!(payload.env_vars["FRANKEN_GOV_BATCH_SIZE"], "128");
+        assert_eq!(payload.env_vars["FRANKEN_GOV_RETRY_BUDGET"], "3");
+    }
+
+    #[test]
+    fn test_dispatch_payload_schema_version() {
+        let mut gate = GovernorGate::with_defaults();
+        let payload = gate.build_dispatch_payload();
+        assert_eq!(payload.schema_version, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn test_dispatch_payload_applied_count_zero() {
+        let mut gate = GovernorGate::with_defaults();
+        let payload = gate.build_dispatch_payload();
+        assert_eq!(payload.applied_count, 0);
+    }
+
+    #[test]
+    fn test_dispatch_payload_applied_count_after_submit() {
+        let mut gate = GovernorGate::with_defaults();
+        gate.submit(good_proposal("p1"));
+        let payload = gate.build_dispatch_payload();
+        assert_eq!(payload.applied_count, 1);
+    }
+
+    #[test]
+    fn test_dispatch_payload_reflects_knob_change() {
+        let mut gate = GovernorGate::with_defaults();
+        gate.submit(good_proposal("p1")); // ConcurrencyLimit 64 → 128
+        let payload = gate.build_dispatch_payload();
+        assert_eq!(payload.env_vars["FRANKEN_GOV_CONCURRENCY_LIMIT"], "128");
+    }
+
+    #[test]
+    fn test_build_dispatch_emits_gov009() {
+        let mut gate = GovernorGate::with_defaults();
+        gate.build_dispatch_payload();
+        let codes: Vec<&str> = gate
+            .audit_trail()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
+        assert!(codes.contains(&GOV_009_DISPATCH_HOOK));
+    }
+
+    #[test]
+    fn test_dispatch_payload_serde_roundtrip() {
+        let mut gate = GovernorGate::with_defaults();
+        let payload = gate.build_dispatch_payload();
+        let json = serde_json::to_string(&payload).unwrap();
+        let parsed: DispatchHookPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.env_vars.len(), payload.env_vars.len());
+    }
+
+    // -- submit_and_dispatch --
+
+    #[test]
+    fn test_submit_and_dispatch_approved() {
+        let mut gate = GovernorGate::with_defaults();
+        let (decision, payload) = gate.submit_and_dispatch(good_proposal("p1"));
+        assert!(matches!(decision, GovernorDecision::Approved));
+        assert!(payload.is_some());
+        let payload = payload.unwrap();
+        assert_eq!(payload.env_vars["FRANKEN_GOV_CONCURRENCY_LIMIT"], "128");
+    }
+
+    #[test]
+    fn test_submit_and_dispatch_rejected_no_payload() {
+        let mut gate = GovernorGate::with_defaults();
+        let (decision, payload) = gate.submit_and_dispatch(unsafe_proposal("p2"));
+        assert!(matches!(decision, GovernorDecision::Rejected(_)));
+        assert!(payload.is_none());
+    }
+
+    #[test]
+    fn test_submit_and_dispatch_emits_gov010() {
+        let mut gate = GovernorGate::with_defaults();
+        gate.submit_and_dispatch(good_proposal("p1"));
+        let codes: Vec<&str> = gate
+            .audit_trail()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
+        assert!(codes.contains(&GOV_010_KNOB_DISPATCHED));
+    }
+
+    #[test]
+    fn test_submit_and_dispatch_rejected_no_gov010() {
+        let mut gate = GovernorGate::with_defaults();
+        gate.submit_and_dispatch(unsafe_proposal("p2"));
+        let codes: Vec<&str> = gate
+            .audit_trail()
+            .iter()
+            .map(|e| e.event_code.as_str())
+            .collect();
+        assert!(!codes.contains(&GOV_010_KNOB_DISPATCHED));
+    }
+
+    // -- Full pipeline --
+
+    #[test]
+    fn test_full_pipeline_enumerate_submit_dispatch() {
+        let mut gate = GovernorGate::with_defaults();
+
+        // 1. Enumerate knobs
+        let enum_before = gate.enumerate_knobs();
+        assert_eq!(
+            enum_before
+                .get(&RuntimeKnob::ConcurrencyLimit)
+                .unwrap()
+                .current_value,
+            64
+        );
+
+        // 2. Submit and dispatch
+        let (decision, payload) = gate.submit_and_dispatch(good_proposal("p1"));
+        assert!(matches!(decision, GovernorDecision::Approved));
+        let payload = payload.unwrap();
+        assert_eq!(payload.env_vars["FRANKEN_GOV_CONCURRENCY_LIMIT"], "128");
+
+        // 3. Enumerate again — reflects new value
+        let enum_after = gate.enumerate_knobs();
+        assert_eq!(
+            enum_after
+                .get(&RuntimeKnob::ConcurrencyLimit)
+                .unwrap()
+                .current_value,
+            128
+        );
+    }
+
+    #[test]
+    fn test_dispatch_after_revert_restores_old_values() {
+        let mut gate = GovernorGate::with_defaults();
+        gate.submit(good_proposal("p1")); // 64 → 128
+
+        // Live check with bad metrics → auto-revert
+        let bad_live = PredictedMetrics {
+            latency_ms: 999,
+            throughput_rps: 10,
+            error_rate_pct: 50.0,
+            memory_mb: 9999,
+        };
+        let reverted = gate.live_check(&bad_live);
+        assert_eq!(reverted, vec!["p1"]);
+
+        // Dispatch payload should reflect reverted value
+        let payload = gate.build_dispatch_payload();
+        assert_eq!(payload.env_vars["FRANKEN_GOV_CONCURRENCY_LIMIT"], "64");
+        assert_eq!(payload.applied_count, 0);
+    }
+
+    // -- Event code constants --
+
+    #[test]
+    fn test_dispatch_event_codes_defined() {
+        assert!(!GOV_008_KNOB_ENUMERATION.is_empty());
+        assert!(!GOV_009_DISPATCH_HOOK.is_empty());
+        assert!(!GOV_010_KNOB_DISPATCHED.is_empty());
+    }
+
+    // -- KnobDescriptor serde --
+
+    #[test]
+    fn test_knob_descriptor_serde_roundtrip() {
+        let desc = KnobDescriptor {
+            knob: RuntimeKnob::BatchSize,
+            label: "batch_size".to_string(),
+            current_value: 128,
+            locked: false,
+            min_value: 1,
+            max_value: 8192,
+        };
+        let json = serde_json::to_string(&desc).unwrap();
+        let parsed: KnobDescriptor = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, desc);
+    }
+
+    // -- DispatchHookRecord serde --
+
+    #[test]
+    fn test_dispatch_hook_record_serde_roundtrip() {
+        let record = DispatchHookRecord {
+            event_code: GOV_010_KNOB_DISPATCHED.to_string(),
+            knob: Some(RuntimeKnob::ConcurrencyLimit),
+            detail: "dispatched".to_string(),
+        };
+        let json = serde_json::to_string(&record).unwrap();
+        let parsed: DispatchHookRecord = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, record);
+    }
+
+    // -- GovernorDispatchSnapshot --
+
+    #[test]
+    fn test_governor_dispatch_snapshot_serde() {
+        let mut gate = GovernorGate::with_defaults();
+        let enumeration = gate.enumerate_knobs();
+        let dispatch_payload = gate.build_dispatch_payload();
+        let snap = GovernorDispatchSnapshot {
+            enumeration,
+            dispatch_payload,
+            applied_count: 0,
+        };
+        let json = serde_json::to_string(&snap).unwrap();
+        let parsed: GovernorDispatchSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.enumeration.count(), 5);
     }
 }

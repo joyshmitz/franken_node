@@ -399,15 +399,15 @@ impl Config {
             }
         }
 
-        if let Some(section) = &overrides.fleet {
-            if let Some(value) = section.convergence_timeout_seconds {
-                self.fleet.convergence_timeout_seconds = value;
-                decisions.push(MergeDecision::new(
-                    stage.clone(),
-                    "fleet.convergence_timeout_seconds",
-                    value,
-                ));
-            }
+        if let Some(section) = &overrides.fleet
+            && let Some(value) = section.convergence_timeout_seconds
+        {
+            self.fleet.convergence_timeout_seconds = value;
+            decisions.push(MergeDecision::new(
+                stage.clone(),
+                "fleet.convergence_timeout_seconds",
+                value,
+            ));
         }
 
         if let Some(section) = &overrides.observability {

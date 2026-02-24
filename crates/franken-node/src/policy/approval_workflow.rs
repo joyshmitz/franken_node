@@ -1031,3 +1031,542 @@ mod tests {
         assert_eq!(engine.audit_ledger().len(), 100); // 50 proposals + 50 approvals
     }
 }
+
+/// Integration tests: Policy approval workflow × Observability (evidence ledger, durability violations).
+/// bd-17ds.5.3
+#[cfg(test)]
+mod policy_observability_integration_tests {
+    use super::*;
+    use crate::observability::durability_violation::{
+        CausalEvent, CausalEventType, DurabilityViolationDetector, FailedArtifact, HaltPolicy,
+        ProofContext, ViolationContext,
+    };
+    use crate::observability::evidence_ledger::{
+        DecisionKind, EvidenceEntry, EvidenceLedger, LedgerCapacity,
+    };
+
+    // ── Helpers ────────────────────────────────────────────────────────
+
+    fn make_proposal(id: &str, proposer: &str, approvers: Vec<&str>) -> PolicyChangeProposal {
+        PolicyChangeProposal {
+            proposal_id: id.to_owned(),
+            proposed_by: proposer.to_owned(),
+            proposed_at: "2026-01-15T00:00:00Z".to_owned(),
+            policy_diff: vec![PolicyDiffEntry {
+                field: "max_quarantine_grace_secs".to_owned(),
+                old_value: "300".to_owned(),
+                new_value: "600".to_owned(),
+            }],
+            justification: "Increasing grace period for data export during quarantine operations"
+                .to_owned(),
+            risk_assessment: RiskAssessment::Medium,
+            required_approvers: approvers.into_iter().map(|s| s.to_owned()).collect(),
+            rollback_of: None,
+            envelope_guarded: false,
+        }
+    }
+
+    fn make_signature(signer: &str) -> ApprovalSignature {
+        ApprovalSignature {
+            signer: signer.to_owned(),
+            signature: format!("ed25519-sig-{signer}"),
+            signed_at: "2026-01-15T01:00:00Z".to_owned(),
+            comment: None,
+        }
+    }
+
+    fn make_evidence_entry(decision_id: &str, kind: DecisionKind, epoch: u64) -> EvidenceEntry {
+        EvidenceEntry {
+            schema_version: "1.0".to_string(),
+            entry_id: None,
+            decision_id: decision_id.to_string(),
+            decision_kind: kind,
+            decision_time: "2026-01-15T00:00:00Z".to_string(),
+            timestamp_ms: epoch * 1000,
+            trace_id: format!("trace-{decision_id}"),
+            epoch_id: epoch,
+            payload: serde_json::json!({}),
+            size_bytes: 0,
+        }
+    }
+
+    fn make_violation_context(epoch: u64) -> ViolationContext {
+        ViolationContext {
+            events: vec![CausalEvent {
+                event_type: CausalEventType::IntegrityCheckFailed,
+                timestamp_ms: epoch * 1000,
+                description: "integrity check failed during policy activation".into(),
+                evidence_ref: Some(format!("EVD-epoch-{epoch}")),
+            }],
+            artifacts: vec![FailedArtifact {
+                artifact_path: "policy/quarantine_config.json".into(),
+                expected_hash: "aabb".into(),
+                actual_hash: "ccdd".into(),
+                failure_reason: "hash mismatch after policy mutation".into(),
+            }],
+            proofs: ProofContext {
+                failed_proofs: vec!["policy-integrity-proof".into()],
+                missing_proofs: vec![],
+                passed_proofs: vec![],
+            },
+            hardening_level: "critical".into(),
+            epoch_id: epoch,
+            timestamp_ms: epoch * 1000 + 100,
+        }
+    }
+
+    // ── 1. Policy activation emits evidence to ledger ──────────────────
+
+    #[test]
+    fn policy_activation_evidence_recorded_in_ledger() {
+        let mut engine = PolicyChangeEngine::new(2);
+        let proposal = make_proposal("p-001", "alice", vec!["bob", "charlie"]);
+        engine.propose(proposal).unwrap();
+        engine.approve("p-001", make_signature("bob")).unwrap();
+        engine.approve("p-001", make_signature("charlie")).unwrap();
+
+        let evidence = engine
+            .activate("p-001", "admin", "2026-01-15T02:00:00Z")
+            .unwrap();
+
+        // Record the activation evidence in the observability ledger
+        let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
+        let entry = make_evidence_entry("policy-activate-p-001", DecisionKind::Admit, 1);
+        let entry_id = ledger.append(entry).unwrap();
+
+        assert_eq!(ledger.len(), 1);
+        assert_eq!(entry_id.0, 1);
+        assert_eq!(evidence.proposal_id, "p-001");
+        assert_eq!(evidence.approval_chain.len(), 2);
+    }
+
+    // ── 2. Policy audit chain → evidence snapshot correlation ──────────
+
+    #[test]
+    fn policy_audit_entries_correlate_with_evidence_snapshot() {
+        let mut engine = PolicyChangeEngine::new(2);
+        let proposal = make_proposal("p-002", "alice", vec!["bob", "charlie"]);
+        engine.propose(proposal).unwrap();
+        engine.approve("p-002", make_signature("bob")).unwrap();
+        engine.approve("p-002", make_signature("charlie")).unwrap();
+        engine
+            .activate("p-002", "admin", "2026-01-15T02:00:00Z")
+            .unwrap();
+
+        // Record one evidence entry per audit entry
+        let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
+        let audit_entries = engine.query_audit_by_proposal("p-002");
+
+        for (i, audit_entry) in audit_entries.iter().enumerate() {
+            let kind = match audit_entry.event_code.as_str() {
+                POLICY_CHANGE_PROPOSED => DecisionKind::Admit,
+                POLICY_CHANGE_REVIEWED => DecisionKind::Throttle,
+                POLICY_CHANGE_APPROVED => DecisionKind::Release,
+                POLICY_CHANGE_ACTIVATED => DecisionKind::Admit,
+                _ => DecisionKind::Escalate,
+            };
+            let entry = make_evidence_entry(
+                &format!("audit-{}-{}", audit_entry.proposal_id, i),
+                kind,
+                (i + 1) as u64,
+            );
+            ledger.append(entry).unwrap();
+        }
+
+        // Audit chain has 4 entries: propose, review, approve, activate
+        assert_eq!(audit_entries.len(), 4);
+        assert_eq!(ledger.len(), 4);
+
+        // Snapshot captures all
+        let snap = ledger.snapshot();
+        assert_eq!(snap.entries.len(), 4);
+        assert_eq!(snap.total_appended, 4);
+        assert_eq!(snap.total_evicted, 0);
+    }
+
+    // ── 3. Durability violation halts policy activation ─────────────────
+
+    #[test]
+    fn durability_violation_blocks_policy_activation_scope() {
+        let mut detector = DurabilityViolationDetector::new(HaltPolicy::HaltAll);
+        let ctx = make_violation_context(42);
+        detector.generate_bundle(&ctx);
+
+        // Detector is now halted
+        assert!(detector.is_halted());
+        let halt_err = detector.check_durable_op("policy-activation").unwrap_err();
+        assert!(!halt_err.bundle_id.as_str().is_empty());
+
+        // Policy engine itself can still propose (no direct coupling),
+        // but the durability gate would prevent activation in a real system
+        let mut engine = PolicyChangeEngine::new(2);
+        let proposal = make_proposal("p-blocked", "alice", vec!["bob", "charlie"]);
+        engine.propose(proposal).unwrap();
+        engine.approve("p-blocked", make_signature("bob")).unwrap();
+        engine
+            .approve("p-blocked", make_signature("charlie"))
+            .unwrap();
+
+        // Before activating, check the durability gate
+        let gate_result = detector.check_durable_op("policy-activation");
+        assert!(gate_result.is_err());
+
+        // After clearing halt, activation proceeds
+        detector.clear_halt();
+        assert!(detector.check_durable_op("policy-activation").is_ok());
+        let evidence = engine
+            .activate("p-blocked", "admin", "2026-01-15T03:00:00Z")
+            .unwrap();
+        assert_eq!(evidence.proposal_id, "p-blocked");
+    }
+
+    // ── 4. Policy rollback emits violation diagnostic + evidence ────────
+
+    #[test]
+    fn policy_rollback_generates_violation_and_evidence_trail() {
+        let mut engine = PolicyChangeEngine::new(2);
+        let proposal = make_proposal("p-roll", "alice", vec!["bob", "charlie"]);
+        engine.propose(proposal).unwrap();
+        engine.approve("p-roll", make_signature("bob")).unwrap();
+        engine.approve("p-roll", make_signature("charlie")).unwrap();
+        engine
+            .activate("p-roll", "admin", "2026-01-15T02:00:00Z")
+            .unwrap();
+
+        // A violation is detected after activation
+        let mut detector = DurabilityViolationDetector::with_defaults();
+        let ctx = make_violation_context(50);
+        let bundle = detector.generate_bundle(&ctx);
+
+        // Record violation in evidence ledger
+        let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
+        let violation_entry = EvidenceEntry {
+            schema_version: "1.0".to_string(),
+            entry_id: None,
+            decision_id: format!("violation-{}", bundle.bundle_id),
+            decision_kind: DecisionKind::Deny,
+            decision_time: "2026-01-15T02:30:00Z".to_string(),
+            timestamp_ms: 50_100,
+            trace_id: "trace-violation".to_string(),
+            epoch_id: 50,
+            payload: serde_json::json!({
+                "bundle_id": bundle.bundle_id.as_str(),
+                "event_count": bundle.event_count(),
+            }),
+            size_bytes: 0,
+        };
+        ledger.append(violation_entry).unwrap();
+        assert!(detector.is_halted());
+
+        // Rollback the policy
+        engine
+            .rollback("p-roll", "admin", "p-roll-rb", "2026-01-15T03:00:00Z")
+            .unwrap();
+        let original = engine.get_proposal("p-roll").unwrap();
+        assert_eq!(original.state, ProposalState::RolledBack);
+
+        // Record rollback in evidence ledger
+        let rollback_entry =
+            make_evidence_entry("policy-rollback-p-roll", DecisionKind::Rollback, 51);
+        ledger.append(rollback_entry).unwrap();
+
+        // Clear halt after remediation
+        detector.clear_halt();
+        assert!(!detector.is_halted());
+
+        // Evidence ledger now has violation + rollback entries
+        assert_eq!(ledger.len(), 2);
+        let snap = ledger.snapshot();
+        assert_eq!(snap.entries[0].1.decision_kind, DecisionKind::Deny);
+        assert_eq!(snap.entries[1].1.decision_kind, DecisionKind::Rollback);
+    }
+
+    // ── 5. Evidence ledger bounded capacity during heavy policy churn ───
+
+    #[test]
+    fn evidence_ledger_bounded_during_policy_churn() {
+        let mut engine = PolicyChangeEngine::new(1);
+        let mut ledger = EvidenceLedger::new(LedgerCapacity::new(5, 100_000));
+
+        // 20 proposals, each emits an evidence entry
+        for i in 0..20 {
+            let id = format!("p-churn-{i:03}");
+            let proposal = make_proposal(&id, "alice", vec!["bob"]);
+            engine.propose(proposal).unwrap();
+            engine.approve(&id, make_signature("bob")).unwrap();
+
+            let entry = make_evidence_entry(&format!("policy-{id}"), DecisionKind::Admit, i + 1);
+            ledger.append(entry).unwrap();
+        }
+
+        // Ledger stays bounded at 5
+        assert_eq!(ledger.len(), 5);
+        assert_eq!(ledger.total_appended(), 20);
+        assert_eq!(ledger.total_evicted(), 15);
+
+        // Most recent entries are the last 5
+        let snap = ledger.snapshot();
+        assert!(snap.entries[0].1.decision_id.contains("p-churn-015"));
+        assert!(snap.entries[4].1.decision_id.contains("p-churn-019"));
+    }
+
+    // ── 6. Scoped halt only blocks matching policy scope ───────────────
+
+    #[test]
+    fn scoped_halt_allows_unrelated_policy_operations() {
+        let mut detector =
+            DurabilityViolationDetector::new(HaltPolicy::HaltScope("storage".into()));
+        let ctx = make_violation_context(10);
+        detector.generate_bundle(&ctx);
+
+        // Storage scope is halted
+        assert!(detector.check_durable_op("storage").is_err());
+        // Policy scope is NOT halted
+        assert!(detector.check_durable_op("policy").is_ok());
+
+        // So policy activation can still proceed
+        let mut engine = PolicyChangeEngine::new(2);
+        let proposal = make_proposal("p-scoped", "alice", vec!["bob", "charlie"]);
+        engine.propose(proposal).unwrap();
+        engine.approve("p-scoped", make_signature("bob")).unwrap();
+        engine
+            .approve("p-scoped", make_signature("charlie"))
+            .unwrap();
+        let evidence = engine
+            .activate("p-scoped", "admin", "2026-01-15T02:00:00Z")
+            .unwrap();
+        assert_eq!(evidence.proposal_id, "p-scoped");
+    }
+
+    // ── 7. Audit chain integrity verified alongside evidence snapshot ───
+
+    #[test]
+    fn audit_chain_integrity_and_evidence_snapshot_both_valid() {
+        let mut engine = PolicyChangeEngine::new(2);
+        let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
+
+        // Full lifecycle: propose → approve → activate
+        let proposal = make_proposal("p-full", "alice", vec!["bob", "charlie"]);
+        engine.propose(proposal).unwrap();
+        ledger
+            .append(make_evidence_entry(
+                "propose-p-full",
+                DecisionKind::Throttle,
+                1,
+            ))
+            .unwrap();
+
+        engine.approve("p-full", make_signature("bob")).unwrap();
+        ledger
+            .append(make_evidence_entry(
+                "review-p-full",
+                DecisionKind::Throttle,
+                2,
+            ))
+            .unwrap();
+
+        engine.approve("p-full", make_signature("charlie")).unwrap();
+        ledger
+            .append(make_evidence_entry(
+                "approve-p-full",
+                DecisionKind::Release,
+                3,
+            ))
+            .unwrap();
+
+        engine
+            .activate("p-full", "admin", "2026-01-15T02:00:00Z")
+            .unwrap();
+        ledger
+            .append(make_evidence_entry(
+                "activate-p-full",
+                DecisionKind::Admit,
+                4,
+            ))
+            .unwrap();
+
+        // Both subsystems are consistent
+        assert!(engine.verify_audit_chain().unwrap());
+        let snap = ledger.snapshot();
+        assert_eq!(snap.entries.len(), 4);
+        assert_eq!(engine.audit_ledger().len(), 4);
+    }
+
+    // ── 8. Warn-only violation doesn't block policy operations ─────────
+
+    #[test]
+    fn warn_only_violation_does_not_block_policy() {
+        let mut detector = DurabilityViolationDetector::new(HaltPolicy::WarnOnly);
+        let ctx = make_violation_context(99);
+        let bundle = detector.generate_bundle(&ctx);
+        assert!(!bundle.bundle_id.as_str().is_empty());
+
+        // Not halted
+        assert!(!detector.is_halted());
+        assert!(detector.check_durable_op("policy").is_ok());
+
+        // Policy operations proceed normally
+        let mut engine = PolicyChangeEngine::new(2);
+        let proposal = make_proposal("p-warn", "alice", vec!["bob", "charlie"]);
+        engine.propose(proposal).unwrap();
+        engine.approve("p-warn", make_signature("bob")).unwrap();
+        engine.approve("p-warn", make_signature("charlie")).unwrap();
+        let evidence = engine
+            .activate("p-warn", "admin", "2026-01-15T02:00:00Z")
+            .unwrap();
+        assert_eq!(evidence.approval_chain.len(), 2);
+    }
+
+    // ── 9. Rejection recorded in evidence ledger ───────────────────────
+
+    #[test]
+    fn rejected_proposal_emits_deny_evidence() {
+        let mut engine = PolicyChangeEngine::new(2);
+        let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
+
+        let proposal = make_proposal("p-deny", "alice", vec!["bob"]);
+        engine.propose(proposal).unwrap();
+        engine
+            .reject(
+                "p-deny",
+                "security-review",
+                "Policy violates safety boundary",
+                "2026-01-15T01:30:00Z",
+            )
+            .unwrap();
+
+        let record = engine.get_proposal("p-deny").unwrap();
+        assert_eq!(record.state, ProposalState::Rejected);
+
+        // Record the denial in evidence ledger
+        let entry = make_evidence_entry("policy-deny-p-deny", DecisionKind::Deny, 1);
+        ledger.append(entry).unwrap();
+
+        assert_eq!(ledger.len(), 1);
+        let snap = ledger.snapshot();
+        assert_eq!(snap.entries[0].1.decision_kind, DecisionKind::Deny);
+    }
+
+    // ── 10. Multiple violations accumulate in both systems ─────────────
+
+    #[test]
+    fn multiple_violations_tracked_across_policy_and_observability() {
+        let mut detector = DurabilityViolationDetector::with_defaults();
+        let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
+
+        for epoch in 1..=5u64 {
+            let ctx = make_violation_context(epoch);
+            let bundle = detector.generate_bundle(&ctx);
+
+            let entry = EvidenceEntry {
+                schema_version: "1.0".to_string(),
+                entry_id: None,
+                decision_id: format!("violation-{}", bundle.bundle_id),
+                decision_kind: DecisionKind::Deny,
+                decision_time: "2026-01-15T00:00:00Z".to_string(),
+                timestamp_ms: epoch * 1000,
+                trace_id: format!("trace-v-{epoch}"),
+                epoch_id: epoch,
+                payload: serde_json::json!({}),
+                size_bytes: 0,
+            };
+            ledger.append(entry).unwrap();
+        }
+
+        assert_eq!(detector.bundle_count(), 5);
+        assert_eq!(detector.active_halts().len(), 5);
+        assert_eq!(ledger.len(), 5);
+
+        // All ledger entries are Deny decisions
+        let snap = ledger.snapshot();
+        assert!(
+            snap.entries
+                .iter()
+                .all(|(_, e)| e.decision_kind == DecisionKind::Deny)
+        );
+    }
+
+    // ── 11. Evidence package matches ledger record ─────────────────────
+
+    #[test]
+    fn evidence_package_fields_preserved_in_ledger() {
+        let mut engine = PolicyChangeEngine::new(2);
+        let proposal = make_proposal("p-pkg", "alice", vec!["bob", "charlie"]);
+        engine.propose(proposal).unwrap();
+        engine.approve("p-pkg", make_signature("bob")).unwrap();
+        engine.approve("p-pkg", make_signature("charlie")).unwrap();
+        let evidence = engine
+            .activate("p-pkg", "admin", "2026-01-15T02:00:00Z")
+            .unwrap();
+
+        // Serialize evidence package into ledger payload
+        let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
+        let entry = EvidenceEntry {
+            schema_version: "1.0".to_string(),
+            entry_id: None,
+            decision_id: format!("activate-{}", evidence.proposal_id),
+            decision_kind: DecisionKind::Admit,
+            decision_time: evidence.activated_at.clone(),
+            timestamp_ms: 2000,
+            trace_id: "trace-activation".to_string(),
+            epoch_id: 1,
+            payload: serde_json::json!({
+                "approval_chain": evidence.approval_chain,
+                "diff_count": evidence.policy_diff.len(),
+            }),
+            size_bytes: 0,
+        };
+        let eid = ledger.append(entry).unwrap();
+        assert_eq!(eid.0, 1);
+
+        // Verify payload round-trips
+        let snap = ledger.snapshot();
+        let payload = &snap.entries[0].1.payload;
+        let chain = payload["approval_chain"]
+            .as_array()
+            .expect("approval_chain is array");
+        assert_eq!(chain.len(), 2);
+        assert_eq!(chain[0].as_str(), Some("bob"));
+        assert_eq!(chain[1].as_str(), Some("charlie"));
+    }
+
+    // ── 12. Violation bundle JSON contains causal chain from policy ─────
+
+    #[test]
+    fn violation_bundle_json_contains_policy_causal_chain() {
+        let ctx = ViolationContext {
+            events: vec![
+                CausalEvent {
+                    event_type: CausalEventType::GuardrailRejection,
+                    timestamp_ms: 1000,
+                    description: "policy mutation rejected by compat gate".into(),
+                    evidence_ref: Some("EVD-COMPAT-001".into()),
+                },
+                CausalEvent {
+                    event_type: CausalEventType::HardeningEscalation,
+                    timestamp_ms: 1100,
+                    description: "escalated after repeated policy violations".into(),
+                    evidence_ref: None,
+                },
+            ],
+            artifacts: vec![],
+            proofs: ProofContext::new(),
+            hardening_level: "high".into(),
+            epoch_id: 77,
+            timestamp_ms: 1200,
+        };
+
+        let bundle = crate::observability::durability_violation::generate_bundle(&ctx);
+        let json = bundle.to_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["event_count"], 2);
+        assert_eq!(parsed["causal_events"][0]["type"], "guardrail_rejection");
+        assert!(
+            parsed["causal_events"][0]["description"]
+                .as_str()
+                .unwrap()
+                .contains("compat gate")
+        );
+    }
+}

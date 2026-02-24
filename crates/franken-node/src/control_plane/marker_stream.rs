@@ -561,10 +561,20 @@ impl MarkerStream {
         }
     }
 
-    /// Inject a marker directly (for testing torn-tail recovery).
-    /// This bypasses invariant checks.
+    /// Inject a marker directly for testing torn-tail recovery.
+    ///
+    /// Validates structural fields (non-empty event type, trace_id, payload_hash)
+    /// but skips chain-hash continuity to allow simulating torn-tail scenarios.
     #[cfg(test)]
-    fn inject_raw(&mut self, marker: Marker) {
+    fn inject_for_test(&mut self, marker: Marker) {
+        assert!(
+            !marker.trace_id.is_empty(),
+            "inject_for_test: trace_id must be non-empty"
+        );
+        assert!(
+            !marker.payload_hash.is_empty(),
+            "inject_for_test: payload_hash must be non-empty"
+        );
         self.markers.push(marker);
     }
 }
@@ -898,8 +908,8 @@ mod tests {
 
         // Replace via raw injection after clearing
         let mut new_stream = MarkerStream::new();
-        new_stream.inject_raw(first);
-        new_stream.inject_raw(corrupted);
+        new_stream.inject_for_test(first);
+        new_stream.inject_for_test(corrupted);
 
         // Integrity check detects corruption (either chain break or hash mismatch)
         let err = new_stream.verify_integrity().unwrap_err();
@@ -939,7 +949,7 @@ mod tests {
             timestamp: 1001,
             trace_id: trace(2),
         };
-        stream.inject_raw(corrupt);
+        stream.inject_for_test(corrupt);
         assert_eq!(stream.len(), 2);
 
         // Recovery should remove the corrupt tail

@@ -6,6 +6,9 @@ import os
 import re
 import subprocess
 import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = []
@@ -24,6 +27,7 @@ def check(check_id, description, passed, details=None):
 
 
 def main():
+    logger = configure_test_logging("check_sandbox_profiles")
     print("bd-3ua7: Sandbox Profile System — Verification\n")
     all_pass = True
 
@@ -31,7 +35,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/security/sandbox_policy_compiler.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_profile = "enum SandboxProfile" in content
         has_compiler = "fn compile_policy" in content
         has_tracker = "struct ProfileTracker" in content
@@ -44,7 +48,7 @@ def main():
 
     # SANDBOX-PROFILES: All 4 profiles
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         profiles = ["Strict", "StrictPlus", "Moderate", "Permissive"]
         found = [p for p in profiles if p in content]
         all_pass &= check("SANDBOX-PROFILES", "All 4 profiles defined",
@@ -54,7 +58,7 @@ def main():
 
     # SANDBOX-CAPABILITIES: 6 capabilities
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         caps = ["network_access", "fs_read", "fs_write", "process_exec", "ipc", "env_access"]
         found = [c for c in caps if c in content]
         all_pass &= check("SANDBOX-CAPABILITIES", "All 6 capabilities defined",
@@ -64,7 +68,7 @@ def main():
 
     # SANDBOX-ERRORS: All 4 error codes
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         errors = ["SANDBOX_DOWNGRADE_BLOCKED", "SANDBOX_PROFILE_UNKNOWN",
                   "SANDBOX_POLICY_CONFLICT", "SANDBOX_COMPILE_ERROR"]
         found = [e for e in errors if e in content]
@@ -86,7 +90,7 @@ def main():
     output_valid = False
     if os.path.isfile(output_path):
         try:
-            data = json.load(open(output_path))
+            data = json.loads(__import__("pathlib").Path(output_path).read_text(encoding="utf-8"))
             output_valid = "compiled_policies" in data and len(data["compiled_policies"]) == 4
         except json.JSONDecodeError:
             pass
@@ -97,7 +101,7 @@ def main():
     conf_path = os.path.join(ROOT, "tests/conformance/sandbox_profile_conformance.rs")
     conf_exists = os.path.isfile(conf_path)
     if conf_exists:
-        content = open(conf_path).read()
+        content = __import__("pathlib").Path(conf_path).read_text(encoding="utf-8")
         has_order = "order" in content.lower()
         has_downgrade = "downgrade" in content.lower()
         has_audit = "audit" in content.lower()
@@ -127,7 +131,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-3ua7_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = open(spec_path).read()
+        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
         has_invariants = "INV-SANDBOX" in content
         has_profiles = "strict" in content and "moderate" in content and "permissive" in content
     else:

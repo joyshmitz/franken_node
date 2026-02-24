@@ -4,8 +4,13 @@ import json, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import rollout_planner as planner
+import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 def main():
+    logger = configure_test_logging("check_rollout_planner")
     json_output = "--json" in sys.argv
     result = planner.self_test()
     if json_output:

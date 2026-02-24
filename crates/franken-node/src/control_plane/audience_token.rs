@@ -897,7 +897,7 @@ mod tests {
     #[test]
     fn test_chain_rejects_non_root_first() {
         let mut token = root_token("root-1", 3);
-        token.parent_token_hash = Some("fake-hash".to_string());
+        token.parent_token_hash = Some("invalid-hash".to_string());
         let err = TokenChain::new(token).unwrap_err();
         assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
     }

@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 # --- File paths -----------------------------------------------------------
 
@@ -553,6 +555,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_incident_bundles")
     parser = argparse.ArgumentParser(
         description="Verify bd-f2y: incident bundle retention and export policy"
     )

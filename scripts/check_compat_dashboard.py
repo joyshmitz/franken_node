@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 SPEC_PATH = ROOT / "docs" / "COMPAT_DASHBOARD_SPEC.md"
 SCHEMA_PATH = ROOT / "schemas" / "compat_dashboard.schema.json"
 
@@ -89,6 +91,7 @@ def check_ci_integration() -> dict:
 
 
 def main():
+    logger = configure_test_logging("check_compat_dashboard")
     json_output = "--json" in sys.argv
     timestamp = datetime.now(timezone.utc).isoformat()
 

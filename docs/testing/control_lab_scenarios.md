@@ -12,7 +12,7 @@ from Section 10.14.
 ## Deterministic Lab Runtime Model
 
 - **Seed-controlled scheduler**: All scheduling decisions derive from a PRNG seeded with a fixed u64 value.
-- **Mock clock**: Time advances only when explicitly ticked, eliminating wall-clock non-determinism.
+- **Test clock**: Time advances only when explicitly ticked, eliminating wall-clock non-determinism.
 - **Injected faults**: Cancellation injection and transport faults are deterministically triggered by the seed.
 - **Replay guarantee**: Given the same seed, the same scenario produces byte-identical execution traces.
 

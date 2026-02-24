@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 REQUIRED_FILES = [
     "crates/franken-node/src/migration/mod.rs",
@@ -330,6 +332,7 @@ def self_test() -> dict:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_dgis_migration_gate")
     json_output = "--json" in sys.argv
     run_self_test = "--self-test" in sys.argv
 

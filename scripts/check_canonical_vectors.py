@@ -19,6 +19,8 @@ except ModuleNotFoundError:  # pragma: no cover - Python <3.11 fallback
     import tomli as tomllib  # type: ignore[no-redef]
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 DEFAULT_MANIFEST = ROOT / "vectors" / "canonical_manifest.toml"
 DEFAULT_CHANGELOG = ROOT / "vectors" / "CHANGELOG.md"
 
@@ -668,6 +670,7 @@ publication_tag = "test"
 
 
 def main() -> int:
+    logger = configure_test_logging("check_canonical_vectors")
     parser = argparse.ArgumentParser(description="Verify canonical trust vector gate (bd-s6y)")
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--changelog", type=Path, default=DEFAULT_CHANGELOG)

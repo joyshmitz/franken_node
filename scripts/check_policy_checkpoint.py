@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 SPEC = ROOT / "docs" / "specs" / "section_10_10" / "bd-174_contract.md"
 POLICY = ROOT / "docs" / "policy" / "policy_checkpoint_chain.md"
@@ -493,6 +495,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
+    logger = configure_test_logging("check_policy_checkpoint")
     parser = argparse.ArgumentParser(
         description="Verify bd-174: policy checkpoint chain"
     )

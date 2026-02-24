@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 SPEC_PATH = ROOT / "docs" / "specs" / "object_class_profiles.md"
 CONFIG_PATH = ROOT / "config" / "object_class_profiles.toml"
 REGISTRY_PATH = ROOT / "artifacts" / "10.14" / "object_class_registry.json"
@@ -267,6 +269,7 @@ def self_test() -> dict[str, Any]:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_object_class_profiles")
     json_output = "--json" in sys.argv
     result = self_test()
 

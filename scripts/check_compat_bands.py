@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 BANDS_PATH = ROOT / "docs" / "COMPATIBILITY_BANDS.md"
 
 REQUIRED_BANDS = ["core", "high-value", "edge", "unsafe"]
@@ -165,6 +167,7 @@ def check_plan_reference() -> dict:
 
 
 def main():
+    logger = configure_test_logging("check_compat_bands")
     json_output = "--json" in sys.argv
     timestamp = datetime.now(timezone.utc).isoformat()
 

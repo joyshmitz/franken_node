@@ -457,6 +457,233 @@ impl PerformanceBudgetGuard {
 }
 
 // ---------------------------------------------------------------------------
+// Timing instrumentation (bd-2wjg)
+// ---------------------------------------------------------------------------
+
+/// Event code for timing sample recorded.
+pub const PRF_006_TIMING_SAMPLE: &str = "PRF-006";
+/// Event code for percentile stats computed.
+pub const PRF_007_PERCENTILE_COMPUTED: &str = "PRF-007";
+/// Event code for cold-start timing recorded.
+pub const PRF_008_COLD_START_TIMING: &str = "PRF-008";
+
+/// A single timing observation in microseconds.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimingSample {
+    pub hot_path: String,
+    pub duration_us: f64,
+    /// Whether this sample is from a cold start (first invocation).
+    pub is_cold_start: bool,
+}
+
+/// Computed percentile statistics from collected timing samples.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PercentileStats {
+    pub count: usize,
+    pub p50_us: f64,
+    pub p95_us: f64,
+    pub p99_us: f64,
+    pub min_us: f64,
+    pub max_us: f64,
+}
+
+impl PercentileStats {
+    /// Compute percentile stats from a slice of durations (microseconds).
+    /// Returns `None` if the slice is empty.
+    pub fn from_samples(durations_us: &[f64]) -> Option<Self> {
+        if durations_us.is_empty() {
+            return None;
+        }
+        let mut sorted: Vec<f64> = durations_us.to_vec();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let n = sorted.len();
+        Some(Self {
+            count: n,
+            p50_us: percentile_at(&sorted, 0.50),
+            p95_us: percentile_at(&sorted, 0.95),
+            p99_us: percentile_at(&sorted, 0.99),
+            min_us: sorted[0],
+            max_us: sorted[n - 1],
+        })
+    }
+}
+
+/// Nearest-rank percentile calculation.
+fn percentile_at(sorted: &[f64], pct: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let idx = ((pct * sorted.len() as f64).ceil() as usize).saturating_sub(1);
+    let idx = idx.min(sorted.len() - 1);
+    sorted[idx]
+}
+
+/// Collects timing samples for baseline and integrated runs per hot path,
+/// then synthesizes `BenchmarkMeasurement` values for the budget guard.
+pub struct TimingCollector {
+    /// Baseline samples per hot path label.
+    baseline: BTreeMap<String, Vec<f64>>,
+    /// Integrated (with asupersync) samples per hot path label.
+    integrated: BTreeMap<String, Vec<f64>>,
+    /// Cold-start durations per hot path label (ms).
+    cold_starts: BTreeMap<String, f64>,
+    events: Vec<PerfEvent>,
+    trace_id: String,
+}
+
+impl TimingCollector {
+    pub fn new(trace_id: &str) -> Self {
+        Self {
+            baseline: BTreeMap::new(),
+            integrated: BTreeMap::new(),
+            cold_starts: BTreeMap::new(),
+            events: Vec::new(),
+            trace_id: trace_id.to_string(),
+        }
+    }
+
+    /// Record a baseline timing sample (microseconds).
+    pub fn record_baseline(&mut self, hot_path: &str, duration_us: f64) {
+        self.baseline
+            .entry(hot_path.to_string())
+            .or_default()
+            .push(duration_us);
+        self.emit(
+            PRF_006_TIMING_SAMPLE,
+            hot_path,
+            &format!("baseline sample: {:.1}us", duration_us),
+        );
+    }
+
+    /// Record an integrated (asupersync) timing sample (microseconds).
+    pub fn record_integrated(&mut self, hot_path: &str, duration_us: f64) {
+        self.integrated
+            .entry(hot_path.to_string())
+            .or_default()
+            .push(duration_us);
+        self.emit(
+            PRF_006_TIMING_SAMPLE,
+            hot_path,
+            &format!("integrated sample: {:.1}us", duration_us),
+        );
+    }
+
+    /// Record the cold-start duration for a hot path (milliseconds).
+    pub fn record_cold_start(&mut self, hot_path: &str, cold_start_ms: f64) {
+        self.cold_starts.insert(hot_path.to_string(), cold_start_ms);
+        self.emit(
+            PRF_008_COLD_START_TIMING,
+            hot_path,
+            &format!("cold-start: {:.2}ms", cold_start_ms),
+        );
+    }
+
+    /// Compute percentile stats for baseline samples of a hot path.
+    pub fn baseline_stats(&self, hot_path: &str) -> Option<PercentileStats> {
+        self.baseline
+            .get(hot_path)
+            .and_then(|samples| PercentileStats::from_samples(samples))
+    }
+
+    /// Compute percentile stats for integrated samples of a hot path.
+    pub fn integrated_stats(&self, hot_path: &str) -> Option<PercentileStats> {
+        self.integrated
+            .get(hot_path)
+            .and_then(|samples| PercentileStats::from_samples(samples))
+    }
+
+    /// All hot paths that have both baseline and integrated samples.
+    pub fn measured_paths(&self) -> Vec<String> {
+        self.baseline
+            .keys()
+            .filter(|k| self.integrated.contains_key(*k))
+            .cloned()
+            .collect()
+    }
+
+    /// Sample count for a hot path (baseline).
+    pub fn baseline_count(&self, hot_path: &str) -> usize {
+        self.baseline.get(hot_path).map_or(0, |v| v.len())
+    }
+
+    /// Sample count for a hot path (integrated).
+    pub fn integrated_count(&self, hot_path: &str) -> usize {
+        self.integrated.get(hot_path).map_or(0, |v| v.len())
+    }
+
+    /// Synthesize `BenchmarkMeasurement` values from collected timing data.
+    /// Only paths with both baseline and integrated samples are included.
+    pub fn to_measurements(&mut self) -> Vec<BenchmarkMeasurement> {
+        let paths = self.measured_paths();
+        let mut measurements = Vec::new();
+
+        for path in &paths {
+            let baseline = match self.baseline_stats(path) {
+                Some(s) => s,
+                None => continue,
+            };
+            let integrated = match self.integrated_stats(path) {
+                Some(s) => s,
+                None => continue,
+            };
+
+            self.emit(
+                PRF_007_PERCENTILE_COMPUTED,
+                path,
+                &format!(
+                    "baseline p50={:.1} p95={:.1} p99={:.1}; integrated p50={:.1} p95={:.1} p99={:.1}",
+                    baseline.p50_us,
+                    baseline.p95_us,
+                    baseline.p99_us,
+                    integrated.p50_us,
+                    integrated.p95_us,
+                    integrated.p99_us,
+                ),
+            );
+
+            let cold_start_ms = self.cold_starts.get(path).copied().unwrap_or(0.0);
+
+            measurements.push(BenchmarkMeasurement {
+                hot_path: path.clone(),
+                baseline_p50_us: baseline.p50_us,
+                baseline_p95_us: baseline.p95_us,
+                baseline_p99_us: baseline.p99_us,
+                integrated_p50_us: integrated.p50_us,
+                integrated_p95_us: integrated.p95_us,
+                integrated_p99_us: integrated.p99_us,
+                cold_start_ms,
+            });
+        }
+
+        measurements
+    }
+
+    /// Collect samples, synthesize measurements, and run the budget gate.
+    pub fn evaluate_against_policy(
+        &mut self,
+        policy: BudgetPolicy,
+    ) -> Result<GateResult, PerfBudgetError> {
+        let measurements = self.to_measurements();
+        let mut guard = PerformanceBudgetGuard::new(policy, &self.trace_id);
+        guard.evaluate(&measurements)
+    }
+
+    /// Access emitted events.
+    pub fn events(&self) -> &[PerfEvent] {
+        &self.events
+    }
+
+    fn emit(&mut self, code: &str, hot_path: &str, detail: &str) {
+        self.events.push(PerfEvent {
+            code: code.to_string(),
+            hot_path: hot_path.to_string(),
+            detail: detail.to_string(),
+            trace_id: self.trace_id.clone(),
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Send + Sync
 // ---------------------------------------------------------------------------
 
@@ -465,6 +692,8 @@ fn _assert_send_sync() {
     fn assert_sync<T: Sync>() {}
     assert_send::<PerformanceBudgetGuard>();
     assert_sync::<PerformanceBudgetGuard>();
+    assert_send::<TimingCollector>();
+    assert_sync::<TimingCollector>();
 }
 
 // ===========================================================================
@@ -955,5 +1184,365 @@ mod tests {
             format!("{}", HotPath::LifecycleTransition),
             "lifecycle_transition"
         );
+    }
+
+    // =========================================================================
+    // Timing instrumentation tests (bd-2wjg)
+    // =========================================================================
+
+    // -- PercentileStats --
+
+    #[test]
+    fn test_percentile_stats_from_samples() {
+        let samples: Vec<f64> = (1..=100).map(|i| i as f64).collect();
+        let stats = PercentileStats::from_samples(&samples).unwrap();
+        assert_eq!(stats.count, 100);
+        assert!((stats.p50_us - 50.0).abs() < 1.0);
+        assert!((stats.p95_us - 95.0).abs() < 1.0);
+        assert!((stats.p99_us - 99.0).abs() < 1.0);
+        assert_eq!(stats.min_us, 1.0);
+        assert_eq!(stats.max_us, 100.0);
+    }
+
+    #[test]
+    fn test_percentile_stats_single_sample() {
+        let stats = PercentileStats::from_samples(&[42.0]).unwrap();
+        assert_eq!(stats.count, 1);
+        assert_eq!(stats.p50_us, 42.0);
+        assert_eq!(stats.p95_us, 42.0);
+        assert_eq!(stats.p99_us, 42.0);
+        assert_eq!(stats.min_us, 42.0);
+        assert_eq!(stats.max_us, 42.0);
+    }
+
+    #[test]
+    fn test_percentile_stats_empty() {
+        assert!(PercentileStats::from_samples(&[]).is_none());
+    }
+
+    #[test]
+    fn test_percentile_stats_two_samples() {
+        let stats = PercentileStats::from_samples(&[10.0, 20.0]).unwrap();
+        assert_eq!(stats.count, 2);
+        assert_eq!(stats.min_us, 10.0);
+        assert_eq!(stats.max_us, 20.0);
+    }
+
+    #[test]
+    fn test_percentile_stats_serde_roundtrip() {
+        let stats = PercentileStats::from_samples(&[1.0, 2.0, 3.0]).unwrap();
+        let json = serde_json::to_string(&stats).unwrap();
+        let parsed: PercentileStats = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, stats);
+    }
+
+    // -- TimingCollector basic --
+
+    #[test]
+    fn test_collector_record_baseline() {
+        let mut c = TimingCollector::new("trace-tc1");
+        c.record_baseline("lifecycle_transition", 100.0);
+        c.record_baseline("lifecycle_transition", 110.0);
+        assert_eq!(c.baseline_count("lifecycle_transition"), 2);
+    }
+
+    #[test]
+    fn test_collector_record_integrated() {
+        let mut c = TimingCollector::new("trace-tc2");
+        c.record_integrated("health_gate_evaluation", 55.0);
+        assert_eq!(c.integrated_count("health_gate_evaluation"), 1);
+    }
+
+    #[test]
+    fn test_collector_record_cold_start() {
+        let mut c = TimingCollector::new("trace-tc3");
+        c.record_cold_start("lifecycle_transition", 25.0);
+        // Cold start shows up in synthesized measurements
+        c.record_baseline("lifecycle_transition", 100.0);
+        c.record_integrated("lifecycle_transition", 110.0);
+        let measurements = c.to_measurements();
+        assert_eq!(measurements.len(), 1);
+        assert!((measurements[0].cold_start_ms - 25.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_collector_measured_paths_requires_both() {
+        let mut c = TimingCollector::new("trace-tc4");
+        c.record_baseline("path_a", 100.0);
+        // path_a has baseline only — not in measured_paths
+        assert!(c.measured_paths().is_empty());
+        c.record_integrated("path_a", 110.0);
+        assert_eq!(c.measured_paths(), vec!["path_a"]);
+    }
+
+    #[test]
+    fn test_collector_baseline_stats() {
+        let mut c = TimingCollector::new("trace-tc5");
+        for i in 1..=100 {
+            c.record_baseline("test", i as f64);
+        }
+        let stats = c.baseline_stats("test").unwrap();
+        assert_eq!(stats.count, 100);
+        assert!(stats.p95_us >= 90.0);
+    }
+
+    #[test]
+    fn test_collector_integrated_stats() {
+        let mut c = TimingCollector::new("trace-tc6");
+        for i in 1..=50 {
+            c.record_integrated("test", i as f64 * 2.0);
+        }
+        let stats = c.integrated_stats("test").unwrap();
+        assert_eq!(stats.count, 50);
+    }
+
+    #[test]
+    fn test_collector_stats_for_unknown_path() {
+        let c = TimingCollector::new("trace-tc7");
+        assert!(c.baseline_stats("nope").is_none());
+        assert!(c.integrated_stats("nope").is_none());
+    }
+
+    // -- TimingCollector → BenchmarkMeasurement synthesis --
+
+    #[test]
+    fn test_collector_to_measurements() {
+        let mut c = TimingCollector::new("trace-syn1");
+        for i in 0..20 {
+            c.record_baseline("lifecycle_transition", 100.0 + i as f64);
+            c.record_integrated("lifecycle_transition", 110.0 + i as f64);
+        }
+        c.record_cold_start("lifecycle_transition", 30.0);
+
+        let m = c.to_measurements();
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].hot_path, "lifecycle_transition");
+        assert!(m[0].baseline_p95_us > 0.0);
+        assert!(m[0].integrated_p95_us > m[0].baseline_p95_us);
+        assert!((m[0].cold_start_ms - 30.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_collector_to_measurements_multi_path() {
+        let mut c = TimingCollector::new("trace-syn2");
+        for path in &["health_gate_evaluation", "fencing_token_acquire"] {
+            for i in 0..10 {
+                c.record_baseline(path, 50.0 + i as f64);
+                c.record_integrated(path, 55.0 + i as f64);
+            }
+        }
+        let m = c.to_measurements();
+        assert_eq!(m.len(), 2);
+    }
+
+    #[test]
+    fn test_collector_to_measurements_default_cold_start() {
+        let mut c = TimingCollector::new("trace-syn3");
+        c.record_baseline("test", 100.0);
+        c.record_integrated("test", 110.0);
+        // No cold_start recorded → defaults to 0.0
+        let m = c.to_measurements();
+        assert_eq!(m[0].cold_start_ms, 0.0);
+    }
+
+    // -- TimingCollector → evaluate_against_policy --
+
+    #[test]
+    fn test_collector_evaluate_within_budget() {
+        let mut c = TimingCollector::new("trace-eval1");
+        for i in 0..20 {
+            c.record_baseline("lifecycle_transition", 100.0 + i as f64);
+            c.record_integrated("lifecycle_transition", 108.0 + i as f64); // ~8% overhead
+        }
+        c.record_cold_start("lifecycle_transition", 20.0);
+
+        let result = c.evaluate_against_policy(BudgetPolicy::default()).unwrap();
+        assert!(result.overall_pass);
+    }
+
+    #[test]
+    fn test_collector_evaluate_over_budget() {
+        let mut c = TimingCollector::new("trace-eval2");
+        for i in 0..20 {
+            c.record_baseline("lifecycle_transition", 100.0 + i as f64);
+            c.record_integrated("lifecycle_transition", 200.0 + i as f64); // 100% overhead
+        }
+        c.record_cold_start("lifecycle_transition", 10.0);
+
+        let result = c.evaluate_against_policy(BudgetPolicy::default()).unwrap();
+        assert!(!result.overall_pass);
+    }
+
+    #[test]
+    fn test_collector_evaluate_empty_returns_error() {
+        let mut c = TimingCollector::new("trace-eval3");
+        let err = c
+            .evaluate_against_policy(BudgetPolicy::default())
+            .unwrap_err();
+        assert_eq!(err.code, ERR_NO_MEASUREMENTS);
+    }
+
+    // -- TimingCollector events --
+
+    #[test]
+    fn test_collector_emits_prf006_on_record() {
+        let mut c = TimingCollector::new("trace-ev1");
+        c.record_baseline("test", 100.0);
+        c.record_integrated("test", 110.0);
+        let prf006: Vec<_> = c
+            .events()
+            .iter()
+            .filter(|e| e.code == PRF_006_TIMING_SAMPLE)
+            .collect();
+        assert_eq!(prf006.len(), 2);
+    }
+
+    #[test]
+    fn test_collector_emits_prf007_on_synthesis() {
+        let mut c = TimingCollector::new("trace-ev2");
+        c.record_baseline("test", 100.0);
+        c.record_integrated("test", 110.0);
+        let _ = c.to_measurements();
+        let prf007: Vec<_> = c
+            .events()
+            .iter()
+            .filter(|e| e.code == PRF_007_PERCENTILE_COMPUTED)
+            .collect();
+        assert_eq!(prf007.len(), 1);
+    }
+
+    #[test]
+    fn test_collector_emits_prf008_on_cold_start() {
+        let mut c = TimingCollector::new("trace-ev3");
+        c.record_cold_start("test", 25.0);
+        let prf008: Vec<_> = c
+            .events()
+            .iter()
+            .filter(|e| e.code == PRF_008_COLD_START_TIMING)
+            .collect();
+        assert_eq!(prf008.len(), 1);
+    }
+
+    #[test]
+    fn test_collector_trace_id_propagation() {
+        let mut c = TimingCollector::new("my-trace-99");
+        c.record_baseline("test", 100.0);
+        for event in c.events() {
+            assert_eq!(event.trace_id, "my-trace-99");
+        }
+    }
+
+    // -- TimingSample serde --
+
+    #[test]
+    fn test_timing_sample_serde_roundtrip() {
+        let sample = TimingSample {
+            hot_path: "lifecycle_transition".into(),
+            duration_us: 123.45,
+            is_cold_start: false,
+        };
+        let json = serde_json::to_string(&sample).unwrap();
+        let parsed: TimingSample = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.hot_path, "lifecycle_transition");
+        assert!(!parsed.is_cold_start);
+    }
+
+    // -- Event code constants --
+
+    #[test]
+    fn test_timing_event_codes_defined() {
+        assert!(!PRF_006_TIMING_SAMPLE.is_empty());
+        assert!(!PRF_007_PERCENTILE_COMPUTED.is_empty());
+        assert!(!PRF_008_COLD_START_TIMING.is_empty());
+    }
+
+    // -- Determinism --
+
+    #[test]
+    fn test_percentile_deterministic() {
+        let samples: Vec<f64> = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let s1 = PercentileStats::from_samples(&samples).unwrap();
+        let s2 = PercentileStats::from_samples(&samples).unwrap();
+        assert_eq!(s1, s2);
+    }
+
+    #[test]
+    fn test_collector_measurement_deterministic() {
+        let build = || {
+            let mut c = TimingCollector::new("det");
+            for i in 0..10 {
+                c.record_baseline("path", 100.0 + i as f64);
+                c.record_integrated("path", 110.0 + i as f64);
+            }
+            c.record_cold_start("path", 20.0);
+            c.to_measurements()
+        };
+        let m1 = build();
+        let m2 = build();
+        assert_eq!(m1[0].baseline_p95_us, m2[0].baseline_p95_us);
+        assert_eq!(m1[0].integrated_p95_us, m2[0].integrated_p95_us);
+    }
+
+    // -- Edge: many samples --
+
+    #[test]
+    fn test_percentile_large_sample_set() {
+        let samples: Vec<f64> = (1..=10_000).map(|i| i as f64).collect();
+        let stats = PercentileStats::from_samples(&samples).unwrap();
+        assert_eq!(stats.count, 10_000);
+        assert!(stats.p50_us >= 4900.0 && stats.p50_us <= 5100.0);
+        assert!(stats.p95_us >= 9400.0 && stats.p95_us <= 9600.0);
+        assert!(stats.p99_us >= 9800.0 && stats.p99_us <= 10100.0);
+    }
+
+    // -- Edge: unsorted input --
+
+    #[test]
+    fn test_percentile_unsorted_input() {
+        let samples = vec![50.0, 10.0, 30.0, 40.0, 20.0];
+        let stats = PercentileStats::from_samples(&samples).unwrap();
+        assert_eq!(stats.min_us, 10.0);
+        assert_eq!(stats.max_us, 50.0);
+    }
+
+    // -- Full pipeline: collect → synthesize → gate --
+
+    #[test]
+    fn test_full_pipeline_all_canonical_within_budget() {
+        let mut c = TimingCollector::new("trace-pipeline");
+        for path in HotPath::canonical() {
+            let label = path.label();
+            for i in 0..30 {
+                c.record_baseline(label, 100.0 + i as f64);
+                c.record_integrated(label, 107.0 + i as f64); // ~7% overhead
+            }
+            c.record_cold_start(label, 15.0);
+        }
+        let result = c.evaluate_against_policy(BudgetPolicy::default()).unwrap();
+        assert!(result.overall_pass);
+        assert_eq!(result.total_paths, 5);
+        assert_eq!(result.paths_over_budget, 0);
+    }
+
+    #[test]
+    fn test_full_pipeline_one_path_over_budget() {
+        let mut c = TimingCollector::new("trace-pipeline2");
+        // Within budget
+        for i in 0..20 {
+            c.record_baseline("lifecycle_transition", 100.0 + i as f64);
+            c.record_integrated("lifecycle_transition", 107.0 + i as f64);
+        }
+        c.record_cold_start("lifecycle_transition", 15.0);
+        // Over budget
+        for i in 0..20 {
+            c.record_baseline("health_gate_evaluation", 100.0 + i as f64);
+            c.record_integrated("health_gate_evaluation", 200.0 + i as f64); // 100%
+        }
+        c.record_cold_start("health_gate_evaluation", 10.0);
+
+        let result = c.evaluate_against_policy(BudgetPolicy::default()).unwrap();
+        assert!(!result.overall_pass);
+        assert_eq!(result.paths_within_budget, 1);
+        assert_eq!(result.paths_over_budget, 1);
     }
 }

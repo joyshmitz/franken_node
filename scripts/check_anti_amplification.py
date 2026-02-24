@@ -6,6 +6,9 @@ import os
 import re
 import subprocess
 import sys
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = []
@@ -24,13 +27,14 @@ def check(check_id, description, passed, details=None):
 
 
 def main():
+    logger = configure_test_logging("check_anti_amplification")
     print("bd-3b8m: Anti-Amplification Response Bounds — Verification\n")
     all_pass = True
 
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/anti_amplification.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_policy = "struct AmplificationPolicy" in content
         has_bound = "struct ResponseBound" in content
         has_request = "struct BoundCheckRequest" in content
@@ -43,7 +47,7 @@ def main():
     all_pass &= check("AAR-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         errors = ["AAR_RESPONSE_TOO_LARGE", "AAR_RATIO_EXCEEDED", "AAR_UNAUTH_LIMIT",
                   "AAR_ITEMS_EXCEEDED", "AAR_INVALID_POLICY"]
         found = [e for e in errors if e in content]
@@ -56,7 +60,7 @@ def main():
     report_valid = False
     if os.path.isfile(report_path):
         try:
-            data = json.load(open(report_path))
+            data = json.loads(__import__("pathlib").Path(report_path).read_text(encoding="utf-8"))
             report_valid = "scenarios" in data and len(data["scenarios"]) >= 3
         except json.JSONDecodeError:
             pass
@@ -65,7 +69,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/anti_amplification_harness.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = open(integ_path).read()
+        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
         has_bounded = "inv_aar_bounded" in content
         has_unauth = "inv_aar_unauth_strict" in content
         has_audit = "inv_aar_auditable" in content
@@ -93,7 +97,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-3b8m_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = open(spec_path).read()
+        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
         has_invariants = "INV-AAR" in content
         has_types = "AmplificationPolicy" in content and "BoundCheckRequest" in content
     else:

@@ -624,8 +624,8 @@ pub fn round_trip_semantics(
     Ok(expected == actual)
 }
 
-/// Minimal integration shim for downstream proof workers.
-pub fn mock_proof_generator_accepts(envelope: &CompiledConstraintEnvelope) -> bool {
+/// Structural validation shim for downstream proof workers.
+pub fn proof_generator_accepts(envelope: &CompiledConstraintEnvelope) -> bool {
     if envelope.schema_version != COMPILED_SCHEMA_VERSION {
         return false;
     }
@@ -808,16 +808,16 @@ mod tests {
     }
 
     #[test]
-    fn mock_proof_generator_accepts_valid_envelope() {
+    fn proof_generator_accepts_valid_envelope() {
         let envelope = compile_policy(&full_policy(), "trace-proofgen").unwrap();
-        assert!(mock_proof_generator_accepts(&envelope));
+        assert!(proof_generator_accepts(&envelope));
     }
 
     #[test]
-    fn mock_proof_generator_rejects_invalid_schema() {
+    fn proof_generator_rejects_invalid_schema() {
         let mut envelope = compile_policy(&full_policy(), "trace-proofgen-bad").unwrap();
         envelope.schema_version = "bad-schema".to_string();
-        assert!(!mock_proof_generator_accepts(&envelope));
+        assert!(!proof_generator_accepts(&envelope));
     }
 
     #[test]

@@ -10,7 +10,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 CONTRACT_PATH = ROOT / "docs" / "specs" / "frankentui_integration_contract.md"
 CHECKLIST_PATH = ROOT / "artifacts" / "10.16" / "frankentui_contract_checklist.json"
@@ -330,6 +333,7 @@ def self_test() -> tuple[bool, dict[str, Any]]:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_frankentui_contract")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checklist", default=str(CHECKLIST_PATH), help="Checklist JSON path.")
     parser.add_argument("--contract", default=str(CONTRACT_PATH), help="Contract markdown path.")

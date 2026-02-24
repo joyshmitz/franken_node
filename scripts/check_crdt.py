@@ -21,6 +21,7 @@ def check(check_id, description, passed, details=None):
     return passed
 
 def main():
+    logger = configure_test_logging("check_crdt")
     print("bd-19u: CRDT State Mode Scaffolding — Verification\n")
     all_pass = True
 
@@ -28,7 +29,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/crdt.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_lww = "struct LwwMap" in content
         has_or = "struct OrSet" in content
         has_gc = "struct GCounter" in content
@@ -40,7 +41,7 @@ def main():
 
     # CRDT-MERGE: Each type has a merge method
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         merge_count = content.count("fn merge(")
         all_pass &= check("CRDT-MERGE", "All 4 CRDT types implement merge", merge_count >= 4,
                           f"found {merge_count} merge methods")
@@ -49,7 +50,7 @@ def main():
 
     # CRDT-ERROR: CrdtError with TypeMismatch variant
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         has_error = "enum CrdtError" in content and "TypeMismatch" in content
         all_pass &= check("CRDT-ERROR", "CrdtError with TypeMismatch variant", has_error)
     else:
@@ -57,7 +58,7 @@ def main():
 
     # CRDT-TAGGED: Each CRDT carries crdt_type field
     if impl_exists:
-        content = open(impl_path).read()
+        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
         tagged_count = content.count("pub crdt_type: CrdtType")
         # LwwMap, OrSet, GCounter, PnCounter = 4, but PnCounter embeds GCounters so 4 struct-level
         all_pass &= check("CRDT-TAGGED", "Schema tag on each CRDT struct", tagged_count >= 4,
@@ -82,7 +83,7 @@ def main():
         fpath = os.path.join(fixture_dir, f)
         if os.path.isfile(fpath):
             try:
-                data = json.load(open(fpath))
+                data = json.loads(__import__("pathlib").Path(fpath).read_text(encoding="utf-8"))
                 if "cases" not in data or len(data["cases"]) == 0:
                     fixture_valid = False
             except (json.JSONDecodeError, KeyError):
@@ -95,7 +96,7 @@ def main():
     conf_path = os.path.join(ROOT, "tests/conformance/crdt_merge_fixtures.rs")
     conf_exists = os.path.isfile(conf_path)
     if conf_exists:
-        content = open(conf_path).read()
+        content = __import__("pathlib").Path(conf_path).read_text(encoding="utf-8")
         has_comm = "commutativity" in content
         has_assoc = "associativity" in content
         has_idemp = "idempotency" in content
@@ -115,6 +116,9 @@ def main():
         test_output = result.stdout + result.stderr
         # Count passed tests
         import re
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
         rust_tests = int(match.group(1)) if match else 0
         tests_pass = result.returncode == 0 and rust_tests > 0
@@ -127,7 +131,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-19u_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = open(spec_path).read()
+        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
         has_types = "lww_map" in content and "or_set" in content and "gcounter" in content and "pncounter" in content
     else:
         has_types = False

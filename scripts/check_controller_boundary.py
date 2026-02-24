@@ -23,6 +23,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 IMPL = ROOT / "crates" / "franken-node" / "src" / "policy" / "controller_boundary_checks.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_14" / "bd-bq4p_contract.md"
 MOD_RS = ROOT / "crates" / "franken-node" / "src" / "policy" / "mod.rs"
@@ -302,6 +304,7 @@ def self_test():
 
 
 def main():
+    logger = configure_test_logging("check_controller_boundary")
     if "--self-test" in sys.argv:
         self_test()
         return

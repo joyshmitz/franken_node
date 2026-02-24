@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 BEAD_ID = "bd-nr4"
 SECTION = "10.8"
@@ -374,6 +376,7 @@ def self_test() -> tuple[bool, list[dict[str, Any]]]:
 
 
 def main() -> int:
+    logger = configure_test_logging("check_operator_runbooks")
     as_json = "--json" in sys.argv
     run_self_test = "--self-test" in sys.argv
 
