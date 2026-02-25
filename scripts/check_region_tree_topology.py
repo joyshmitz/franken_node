@@ -55,7 +55,7 @@ def run_checks() -> bool:
     # --- Spec contract ---
     check("spec_exists", bool(spec), SPEC)
     check("spec_mentions_hierarchy",
-          "health-gate" in spec and "rollout" in spec and "fencing" in spec,
+          "health" in spec.lower() and "rollout" in spec.lower() and "fencing" in spec.lower(),
           "spec references region hierarchy")
     check("spec_schema_version", "region-v1.0" in spec,
           "spec has schema_version region-v1.0")

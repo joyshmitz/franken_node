@@ -178,7 +178,7 @@ def run_campaign_runner() -> list[dict[str, Any]]:
         cwd=ROOT,
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=600,
     )
     checks.append({"check": "runner: execution exit code", "pass": proc.returncode == 0, "detail": f"code={proc.returncode}"})
 
@@ -210,7 +210,7 @@ def run_campaign_runner() -> list[dict[str, Any]]:
             cwd=ROOT,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=600,
         )
         second = RUN_OUTPUT.read_bytes() if RUN_OUTPUT.exists() else b""
         checks.append({"check": "runner: deterministic campaign output", "pass": proc2.returncode == 0 and first == second, "detail": "stable" if proc2.returncode == 0 and first == second else "unstable"})

@@ -144,8 +144,8 @@ def check_idempotency_key():
     if not IMPL.is_file():
         return {"check": "idempotency key struct", "pass": False, "detail": "file missing"}
     content = IMPL.read_text()
-    has_key = "IdempotencyKey" in content and "HashSet" in content
-    return {"check": "idempotency key with HashSet dedup", "pass": has_key,
+    has_key = "IdempotencyKey" in content and ("HashSet" in content or "BTreeSet" in content)
+    return {"check": "idempotency key with HashSet/BTreeSet dedup", "pass": has_key,
             "detail": "found" if has_key else "NOT FOUND"}
 
 

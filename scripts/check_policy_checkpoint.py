@@ -311,11 +311,11 @@ def check_impl_canonical_serialization() -> None:
         _check("impl_canonical_serialization", False, "impl file missing")
         return
     text = IMPL_RS.read_text()
-    ok = "pchk:canonical:v1" in text
+    ok = "policy_checkpoint_hash_v1:" in text
     _check(
         "impl_canonical_serialization",
         ok,
-        "canonical domain tag pchk:canonical:v1 present"
+        "canonical domain tag policy_checkpoint_hash_v1: present"
         if ok else "missing canonical serialization domain tag",
     )
 

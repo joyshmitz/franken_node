@@ -64,7 +64,7 @@ def discover_beads() -> list[str]:
         return []
     beads = []
     for entry in sorted(SECTION_ARTIFACTS_DIR.iterdir()):
-        if entry.is_dir() and entry.name.startswith("bd-") and entry.name != BEAD_ID:
+        if entry.is_dir() and __import__("re").match(r"^bd-[a-z0-9]+$", entry.name) and entry.name != BEAD_ID:
             beads.append(entry.name)
     return beads
 

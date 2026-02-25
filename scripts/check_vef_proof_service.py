@@ -179,7 +179,7 @@ def check_evidence_summary() -> None:
             evidence.get("verdict") in ("PASS", "FAIL", "PENDING"),
             str(evidence.get("verdict")),
         )
-        _check("evidence_checks_list", isinstance(evidence.get("checks"), list), "checks list")
+        _check("evidence_checks_list", isinstance(evidence.get("evidence"), dict), "evidence dict")
 
     summary = _read(SUMMARY)
     _check("summary_mentions_bead", "bd-1u8m" in summary.lower(), "bd-1u8m")

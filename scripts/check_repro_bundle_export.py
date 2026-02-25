@@ -190,10 +190,10 @@ def check_schema_version():
 
 def check_default_hasher():
     if not IMPL.is_file():
-        return {"check": "DefaultHasher for determinism", "pass": False, "detail": "file missing"}
+        return {"check": "Sha256 for determinism", "pass": False, "detail": "file missing"}
     content = IMPL.read_text()
-    found = "DefaultHasher" in content
-    return {"check": "DefaultHasher for determinism", "pass": found,
+    found = "Sha256" in content
+    return {"check": "Sha256 for determinism", "pass": found,
             "detail": "found" if found else "NOT FOUND"}
 
 

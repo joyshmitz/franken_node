@@ -931,7 +931,7 @@ def main() -> int:
             print(f"self_test verdict: {payload['verdict']}")
         return 0 if ok else 1
 
-    report = build_report(execute=not args.no_execution, write_outputs=True)
+    report = build_report(execute=not args.no_exec, write_outputs=True)
     if args.json:
         print(json.dumps(report, indent=2))
     else:

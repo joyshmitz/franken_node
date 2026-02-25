@@ -49,7 +49,7 @@ def main() -> int:
 
     impl_path = os.path.join(ROOT, "crates/franken-node/src/security/decision_receipt.rs")
     impl_exists = os.path.isfile(impl_path)
-    impl_content = open(impl_path).read() if impl_exists else ""
+    impl_content = __import__("pathlib").Path(impl_path).read_text() if impl_exists else ""
     required_symbols = [
         "struct Receipt",
         "struct SignedReceipt",
@@ -80,8 +80,8 @@ def main() -> int:
     main_path = os.path.join(ROOT, "crates/franken-node/src/main.rs")
     cli_ok = False
     if os.path.isfile(cli_path) and os.path.isfile(main_path):
-        cli_content = open(cli_path).read()
-        main_content = open(main_path).read()
+        cli_content = __import__("pathlib").Path(cli_path).read_text()
+        main_content = __import__("pathlib").Path(main_path).read_text()
         cli_ok = (
             "receipt_out" in cli_content
             and "receipt_summary_out" in cli_content
@@ -100,7 +100,7 @@ def main() -> int:
     fixture_ok = False
     if os.path.isfile(fixture_path):
         try:
-            fixture = json.loads(open(fixture_path).read())
+            fixture = json.loads(__import__("pathlib").Path(fixture_path).read_text())
             fixture_ok = "cases" in fixture and len(fixture["cases"]) >= 4
         except json.JSONDecodeError:
             fixture_ok = False
@@ -112,7 +112,7 @@ def main() -> int:
     artifact_ok = False
     if os.path.isfile(artifact_path):
         try:
-            artifact = json.loads(open(artifact_path).read())
+            artifact = json.loads(__import__("pathlib").Path(artifact_path).read_text())
             chain = artifact.get("chain", [])
             artifact_ok = (
                 isinstance(chain, list)
@@ -126,7 +126,7 @@ def main() -> int:
     spec_path = os.path.join(ROOT, "docs/specs/section_10_5/bd-21z_contract.md")
     spec_ok = False
     if os.path.isfile(spec_path):
-        spec_content = open(spec_path).read()
+        spec_content = __import__("pathlib").Path(spec_path).read_text()
         spec_ok = all(
             inv in spec_content
             for inv in [
@@ -143,7 +143,7 @@ def main() -> int:
     signature_ok = False
     signature_details = None
     try:
-        chain = json.loads(open(artifact_path).read()).get("chain", [])
+        chain = json.loads(__import__("pathlib").Path(artifact_path).read_text()).get("chain", [])
         verify_key = SigningKey(bytes([42] * 32)).verify_key
         previous = None
         for receipt in chain:
