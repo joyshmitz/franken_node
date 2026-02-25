@@ -1,0 +1,31 @@
+{
+  "epoch_id": 4343,
+  "system_state": {
+    "memory_used_bytes": 430000000,
+    "memory_budget_bytes": 1000000000,
+    "durability_level": 0.96,
+    "hardening_level": "standard",
+    "proposed_hardening_level": "enhanced",
+    "evidence_emission_active": true,
+    "memory_tail_risk": {
+      "sample_count": 512,
+      "mean_utilization": 0.60,
+      "variance_utilization": 0.008,
+      "peak_utilization": 0.69
+    },
+    "reliability_telemetry": {
+      "sample_count": 5000,
+      "nonconforming_count": 275
+    }
+  },
+  "candidates": ["aggressive_patch", "balanced_patch", "rollback_path"],
+  "prefiltered_candidates": [],
+  "observations": [
+    {"candidate": "aggressive_patch", "success": false},
+    {"candidate": "aggressive_patch", "success": false},
+    {"candidate": "balanced_patch", "success": true},
+    {"candidate": "balanced_patch", "success": true},
+    {"candidate": "balanced_patch", "success": true},
+    {"candidate": "rollback_path", "success": true}
+  ]
+}
