@@ -499,6 +499,12 @@ impl EvictionSaga {
             action.as_str(),
         );
 
+        // If we crashed mid-compensation, finish the compensation flow.
+        if self.current_phase == SagaPhase::Compensating {
+            self.compensation_complete()?;
+            return Ok(self.compensation_action.unwrap_or(CompensationAction::None));
+        }
+
         if action == CompensationAction::ResumeRetire {
             // Special case: L3 is confirmed, so resume retirement
             // rather than aborting
@@ -541,7 +547,10 @@ impl EvictionSaga {
         if self.current_phase != expected_phase {
             return Ok(());
         }
-        if self.remote_cap_validated && has_remote_cap {
+
+        // Recheck success revalidates capability for the current phase.
+        if has_remote_cap {
+            self.remote_cap_validated = true;
             return Ok(());
         }
         self.remote_cap_validated = false;
@@ -799,6 +808,22 @@ mod tests {
     }
 
     #[test]
+    fn upload_complete_allows_retry_after_remote_cap_restored() {
+        let mut saga = EvictionSaga::new("saga-002e", "artifact-xyz");
+        saga.begin_upload(true).unwrap();
+
+        let err = saga.upload_complete(false).unwrap_err();
+        assert_eq!(err.code(), ERR_ES_REMOTE_CAP_RECHECK_FAILED);
+        assert_eq!(saga.current_phase(), SagaPhase::Uploading);
+        assert!(!saga.remote_cap_validated());
+
+        saga.upload_complete(true).unwrap();
+        assert_eq!(saga.current_phase(), SagaPhase::Verifying);
+        assert!(saga.remote_cap_validated());
+        assert!(saga.tier_presence().l3_present);
+    }
+
+    #[test]
     fn verify_complete_requires_remote_cap_recheck() {
         let mut saga = EvictionSaga::new("saga-002c", "artifact-xyz");
         saga.begin_upload(true).unwrap();
@@ -962,6 +987,20 @@ mod tests {
         assert_eq!(action, CompensationAction::ResumeRetire);
         // Should NOT be aborted — retirement can proceed
         assert_eq!(saga.current_phase(), SagaPhase::Retiring);
+    }
+
+    #[test]
+    fn crash_recovery_from_compensating_completes_aborted() {
+        let mut saga = EvictionSaga::new("saga-033", "art-10");
+        saga.begin_upload(true).unwrap();
+        let expected = saga.compensate().unwrap();
+        assert_eq!(expected, CompensationAction::AbortUpload);
+        assert_eq!(saga.current_phase(), SagaPhase::Compensating);
+
+        let action = saga.crash_recovery().unwrap();
+        assert_eq!(action, CompensationAction::AbortUpload);
+        assert_eq!(saga.current_phase(), SagaPhase::Aborted);
+        assert!(saga.is_terminal());
     }
 
     // -- Content hash --------------------------------------------------------

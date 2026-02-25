@@ -364,6 +364,7 @@ impl EvictionSagaManager {
         if saga.phase != SagaPhase::Retiring {
             return Err(format!("invalid transition: {} -> Complete", saga.phase));
         }
+        Self::ensure_remote_cap_active(saga, saga_id, "complete_retire")?;
 
         saga.l2_present = false;
         saga.record_transition(SagaPhase::Complete, "retirement_complete");
@@ -663,6 +664,41 @@ mod tests {
 
         mgr.recheck_remote_cap(&id, true, "t5").unwrap();
         mgr.complete_upload(&id, "t6").unwrap();
+    }
+
+    #[test]
+    fn test_remote_cap_recheck_blocks_complete_verify_until_restored() {
+        let mut mgr = EvictionSagaManager::new();
+        let id = mgr.start_saga("a", true, "t1").unwrap();
+        mgr.begin_upload(&id, "t2").unwrap();
+        mgr.complete_upload(&id, "t3").unwrap();
+
+        let err = mgr.recheck_remote_cap(&id, false, "t4").unwrap_err();
+        assert!(err.contains("RemoteCap recheck failed"));
+
+        let err = mgr.complete_verify(&id, "t5").unwrap_err();
+        assert!(err.contains("RemoteCap recheck failed"));
+
+        mgr.recheck_remote_cap(&id, true, "t6").unwrap();
+        mgr.complete_verify(&id, "t7").unwrap();
+    }
+
+    #[test]
+    fn test_remote_cap_recheck_blocks_complete_retire_until_restored() {
+        let mut mgr = EvictionSagaManager::new();
+        let id = mgr.start_saga("a", true, "t1").unwrap();
+        mgr.begin_upload(&id, "t2").unwrap();
+        mgr.complete_upload(&id, "t3").unwrap();
+        mgr.complete_verify(&id, "t4").unwrap();
+
+        let err = mgr.recheck_remote_cap(&id, false, "t5").unwrap_err();
+        assert!(err.contains("RemoteCap recheck failed"));
+
+        let err = mgr.complete_retire(&id, "t6").unwrap_err();
+        assert!(err.contains("RemoteCap recheck failed"));
+
+        mgr.recheck_remote_cap(&id, true, "t7").unwrap();
+        mgr.complete_retire(&id, "t8").unwrap();
     }
 
     #[test]
