@@ -51,6 +51,34 @@
       "boundary_type": "diagnostic_renderer",
       "styling_strategy": "token_only",
       "snapshot_hook": "tests/conformance/frankentui/replay_diff.snap"
+    },
+    {
+      "franken_node_module": "crates/franken-node/src/connector/obligation_tracker.rs",
+      "frankentui_component": "ObligationPanel",
+      "boundary_type": "diagnostic_renderer",
+      "styling_strategy": "token_only",
+      "snapshot_hook": "tests/conformance/frankentui/obligation_tracker.snap"
+    },
+    {
+      "franken_node_module": "crates/franken-node/src/ops/engine_dispatcher.rs",
+      "frankentui_component": "DispatcherPanel",
+      "boundary_type": "diagnostic_renderer",
+      "styling_strategy": "token_only",
+      "snapshot_hook": "tests/conformance/frankentui/engine_dispatcher.snap"
+    },
+    {
+      "franken_node_module": "crates/franken-node/src/ops/telemetry_bridge.rs",
+      "frankentui_component": "TelemetryPanel",
+      "boundary_type": "diagnostic_renderer",
+      "styling_strategy": "token_only",
+      "snapshot_hook": "tests/conformance/frankentui/telemetry_bridge.snap"
+    },
+    {
+      "franken_node_module": "crates/franken-node/src/runtime/lockstep_harness.rs",
+      "frankentui_component": "LockstepPanel",
+      "boundary_type": "diagnostic_renderer",
+      "styling_strategy": "token_only",
+      "snapshot_hook": "tests/conformance/frankentui/lockstep_harness.snap"
     }
   ],
   "event_loop_contract": {
