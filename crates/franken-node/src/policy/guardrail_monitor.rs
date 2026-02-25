@@ -112,8 +112,37 @@ pub struct SystemState {
     pub proposed_hardening_level: Option<HardeningLevel>,
     /// Whether evidence emission is active.
     pub evidence_emission_active: bool,
+    /// Optional rolling memory telemetry for tail-risk estimation.
+    pub memory_tail_risk: Option<MemoryTailRiskTelemetry>,
     /// Current epoch ID.
     pub epoch_id: u64,
+}
+
+/// Rolling telemetry summary for memory-utilization tail-risk estimation.
+///
+/// Values are expected in `[0.0, 1.0]` for utilization fractions.
+#[derive(Debug, Clone)]
+pub struct MemoryTailRiskTelemetry {
+    /// Number of observations in the rolling window.
+    pub sample_count: u64,
+    /// Mean memory utilization over the window.
+    pub mean_utilization: f64,
+    /// Sample variance of memory utilization over the window.
+    pub variance_utilization: f64,
+    /// Maximum observed memory utilization in the same window.
+    pub peak_utilization: f64,
+}
+
+impl MemoryTailRiskTelemetry {
+    /// Clamp and sanitize telemetry to a conservative, bounded representation.
+    fn sanitized(&self) -> Self {
+        Self {
+            sample_count: self.sample_count,
+            mean_utilization: self.mean_utilization.clamp(0.0, 1.0),
+            variance_utilization: self.variance_utilization.clamp(0.0, 0.25),
+            peak_utilization: self.peak_utilization.clamp(0.0, 1.0),
+        }
+    }
 }
 
 impl SystemState {
@@ -210,6 +239,128 @@ impl GuardrailMonitor for MemoryBudgetGuardrail {
 
     fn name(&self) -> &str {
         "MemoryBudgetGuardrail"
+    }
+
+    fn budget_id(&self) -> &BudgetId {
+        &self.budget_id
+    }
+}
+
+/// Tail-risk memory guardrail using an anytime-style empirical-Bernstein bound.
+///
+/// This guardrail protects against high-variance pressure where point-in-time
+/// utilization still appears safe but the upper tail is already unsafe.
+#[derive(Debug, Clone)]
+pub struct MemoryTailRiskGuardrail {
+    budget_id: BudgetId,
+    /// Block when the tail envelope exceeds this utilization.
+    block_threshold: f64,
+    /// Warn when the tail envelope exceeds this utilization.
+    warn_threshold: f64,
+    /// Target false-alarm budget (smaller = more conservative).
+    alpha: f64,
+    /// Minimum number of telemetry samples required to evaluate.
+    min_samples: u64,
+    /// Correctness envelope minimum block threshold.
+    #[allow(dead_code)]
+    min_block_threshold: f64,
+}
+
+impl MemoryTailRiskGuardrail {
+    /// Correctness envelope minimum: block threshold cannot be below 0.5.
+    const ENVELOPE_MIN_BLOCK_THRESHOLD: f64 = 0.5;
+    /// Conservative lower bound on alpha.
+    const MIN_ALPHA: f64 = 1e-6;
+    /// Conservative upper bound on alpha.
+    const MAX_ALPHA: f64 = 0.2;
+    /// Minimum supported telemetry window.
+    const MIN_SAMPLES: u64 = 8;
+
+    pub fn new(block_threshold: f64, warn_threshold: f64, alpha: f64, min_samples: u64) -> Self {
+        let effective_block = block_threshold.clamp(Self::ENVELOPE_MIN_BLOCK_THRESHOLD, 1.0);
+        let effective_warn = warn_threshold.clamp(0.0, effective_block);
+        let effective_alpha = alpha.clamp(Self::MIN_ALPHA, Self::MAX_ALPHA);
+        let effective_samples = min_samples.max(Self::MIN_SAMPLES);
+        Self {
+            budget_id: BudgetId::new("memory_tail_risk"),
+            block_threshold: effective_block,
+            warn_threshold: effective_warn,
+            alpha: effective_alpha,
+            min_samples: effective_samples,
+            min_block_threshold: Self::ENVELOPE_MIN_BLOCK_THRESHOLD,
+        }
+    }
+
+    pub fn default_guardrail() -> Self {
+        Self::new(0.95, 0.85, 0.01, 32)
+    }
+
+    /// Law-of-the-iterated-log style correction term for optional stopping.
+    fn anytime_log_term(&self, n: f64) -> f64 {
+        let n_eff = n.max(3.0);
+        let log_inv_alpha = (1.0 / self.alpha).ln();
+        let lil_correction = ((n_eff + std::f64::consts::E).ln().ln()).max(0.0);
+        log_inv_alpha + (2.0 * lil_correction)
+    }
+
+    /// One-sided empirical-Bernstein upper bound for bounded `[0, 1]` telemetry.
+    fn upper_confidence_bound(&self, telemetry: &MemoryTailRiskTelemetry) -> f64 {
+        let t = telemetry.sanitized();
+        let n = t.sample_count as f64;
+        if t.sample_count == 0 {
+            return 0.0;
+        }
+        let log_term = self.anytime_log_term(n);
+        let variance_term = ((2.0 * t.variance_utilization * log_term) / n).sqrt();
+        let bounded_range_term = (2.0 * log_term) / (3.0 * n);
+        (t.mean_utilization + variance_term + bounded_range_term).clamp(0.0, 1.0)
+    }
+
+    fn tail_envelope_utilization(&self, telemetry: &MemoryTailRiskTelemetry) -> f64 {
+        let t = telemetry.sanitized();
+        self.upper_confidence_bound(&t).max(t.peak_utilization)
+    }
+}
+
+impl GuardrailMonitor for MemoryTailRiskGuardrail {
+    fn check(&self, state: &SystemState) -> GuardrailVerdict {
+        let Some(raw) = &state.memory_tail_risk else {
+            return GuardrailVerdict::Allow;
+        };
+        let telemetry = raw.sanitized();
+        if telemetry.sample_count < self.min_samples {
+            return GuardrailVerdict::Allow;
+        }
+
+        let tail_util = self.tail_envelope_utilization(&telemetry);
+        if tail_util >= self.block_threshold {
+            GuardrailVerdict::Block {
+                reason: format!(
+                    "tail-risk memory envelope {:.1}% exceeds block threshold {:.1}% (n={}, alpha={:.4})",
+                    tail_util * 100.0,
+                    self.block_threshold * 100.0,
+                    telemetry.sample_count,
+                    self.alpha,
+                ),
+                budget_id: self.budget_id.clone(),
+            }
+        } else if tail_util >= self.warn_threshold {
+            GuardrailVerdict::Warn {
+                reason: format!(
+                    "tail-risk memory envelope {:.1}% exceeds warn threshold {:.1}% (n={}, alpha={:.4})",
+                    tail_util * 100.0,
+                    self.warn_threshold * 100.0,
+                    telemetry.sample_count,
+                    self.alpha,
+                ),
+            }
+        } else {
+            GuardrailVerdict::Allow
+        }
+    }
+
+    fn name(&self) -> &str {
+        "MemoryTailRiskGuardrail"
     }
 
     fn budget_id(&self) -> &BudgetId {
@@ -378,6 +529,25 @@ pub struct GuardrailRejection {
     pub epoch_id: u64,
 }
 
+/// A single monitor outcome emitted as part of a guardrail certificate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuardrailFinding {
+    pub monitor_name: String,
+    pub budget_id: BudgetId,
+    pub verdict: GuardrailVerdict,
+    pub event_code: &'static str,
+    pub anytime_valid: bool,
+}
+
+/// Structured certificate for a full monitor evaluation pass.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuardrailCertificate {
+    pub epoch_id: u64,
+    pub dominant_verdict: GuardrailVerdict,
+    pub findings: Vec<GuardrailFinding>,
+    pub blocking_budget_ids: Vec<BudgetId>,
+}
+
 /// Runs all registered monitors and returns the most restrictive verdict.
 ///
 /// INV-GUARD-RESTRICTIVE: when multiple monitors fire, the most restrictive
@@ -399,6 +569,7 @@ impl GuardrailMonitorSet {
     pub fn with_defaults() -> Self {
         let mut set = Self::new();
         set.register(Box::new(MemoryBudgetGuardrail::default_guardrail()));
+        set.register(Box::new(MemoryTailRiskGuardrail::default_guardrail()));
         set.register(Box::new(DurabilityLossGuardrail::default_guardrail()));
         set.register(Box::new(HardeningRegressionGuardrail::new()));
         set.register(Box::new(EvidenceEmissionGuardrail::new()));
@@ -435,6 +606,40 @@ impl GuardrailMonitorSet {
             .iter()
             .map(|m| (m.name(), m.check(state)))
             .collect()
+    }
+
+    /// Evaluate all guardrails and emit an inspectable certificate.
+    pub fn certify(&self, state: &SystemState) -> GuardrailCertificate {
+        let mut dominant_verdict = GuardrailVerdict::Allow;
+        let mut findings = Vec::with_capacity(self.monitors.len());
+        let mut blocking_budget_ids = Vec::new();
+
+        for monitor in &self.monitors {
+            let verdict = monitor.check(state);
+            if verdict.severity() > dominant_verdict.severity() {
+                dominant_verdict = verdict.clone();
+            }
+            if let GuardrailVerdict::Block { budget_id, .. } = &verdict {
+                blocking_budget_ids.push(budget_id.clone());
+            }
+            findings.push(GuardrailFinding {
+                monitor_name: monitor.name().to_string(),
+                budget_id: monitor.budget_id().clone(),
+                event_code: verdict.event_code(),
+                anytime_valid: monitor.is_valid_at_any_stopping_point(),
+                verdict,
+            });
+        }
+
+        blocking_budget_ids.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        blocking_budget_ids.dedup_by(|a, b| a.as_str() == b.as_str());
+
+        GuardrailCertificate {
+            epoch_id: state.epoch_id,
+            dominant_verdict,
+            findings,
+            blocking_budget_ids,
+        }
     }
 
     /// Check if the proposed action is allowed and produce rejection if not.
@@ -474,7 +679,22 @@ mod tests {
             hardening_level: HardeningLevel::Standard,
             proposed_hardening_level: None,
             evidence_emission_active: true,
+            memory_tail_risk: None,
             epoch_id: 42,
+        }
+    }
+
+    fn tail_telemetry(
+        samples: u64,
+        mean: f64,
+        variance: f64,
+        peak: f64,
+    ) -> MemoryTailRiskTelemetry {
+        MemoryTailRiskTelemetry {
+            sample_count: samples,
+            mean_utilization: mean,
+            variance_utilization: variance,
+            peak_utilization: peak,
         }
     }
 
@@ -627,6 +847,55 @@ mod tests {
         assert_eq!(guard.name(), "MemoryBudgetGuardrail");
     }
 
+    // ── MemoryTailRiskGuardrail tests ──
+
+    #[test]
+    fn tail_risk_guard_allows_without_telemetry() {
+        let guard = MemoryTailRiskGuardrail::default_guardrail();
+        let state = healthy_state();
+        assert_eq!(guard.check(&state), GuardrailVerdict::Allow);
+    }
+
+    #[test]
+    fn tail_risk_guard_ignores_small_sample_window() {
+        let guard = MemoryTailRiskGuardrail::new(0.95, 0.85, 0.01, 32);
+        let mut state = healthy_state();
+        state.memory_tail_risk = Some(tail_telemetry(12, 0.92, 0.01, 0.95));
+        assert_eq!(guard.check(&state), GuardrailVerdict::Allow);
+    }
+
+    #[test]
+    fn tail_risk_guard_warns_on_elevated_envelope() {
+        let guard = MemoryTailRiskGuardrail::new(0.95, 0.85, 0.01, 32);
+        let mut state = healthy_state();
+        state.memory_tail_risk = Some(tail_telemetry(128, 0.80, 0.01, 0.82));
+        match guard.check(&state) {
+            GuardrailVerdict::Warn { .. } => {}
+            other => unreachable!("expected Warn, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tail_risk_guard_blocks_on_tail_budget_breach() {
+        let guard = MemoryTailRiskGuardrail::new(0.95, 0.85, 0.01, 32);
+        let mut state = healthy_state();
+        state.memory_tail_risk = Some(tail_telemetry(64, 0.90, 0.02, 0.93));
+        match guard.check(&state) {
+            GuardrailVerdict::Block { budget_id, .. } => {
+                assert_eq!(budget_id.as_str(), "memory_tail_risk");
+            }
+            other => unreachable!("expected Block, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tail_risk_guard_name_and_budget_id() {
+        let guard = MemoryTailRiskGuardrail::default_guardrail();
+        assert_eq!(guard.name(), "MemoryTailRiskGuardrail");
+        assert_eq!(guard.budget_id().as_str(), "memory_tail_risk");
+        assert!(guard.is_valid_at_any_stopping_point());
+    }
+
     // ── DurabilityLossGuardrail tests ──
 
     #[test]
@@ -751,9 +1020,9 @@ mod tests {
     // ── GuardrailMonitorSet tests ──
 
     #[test]
-    fn set_with_defaults_has_four_monitors() {
+    fn set_with_defaults_has_five_monitors() {
         let set = GuardrailMonitorSet::with_defaults();
-        assert_eq!(set.monitor_count(), 4);
+        assert_eq!(set.monitor_count(), 5);
     }
 
     #[test]
@@ -789,7 +1058,7 @@ mod tests {
         let set = GuardrailMonitorSet::with_defaults();
         let state = healthy_state();
         let detailed = set.check_all_detailed(&state);
-        assert_eq!(detailed.len(), 4);
+        assert_eq!(detailed.len(), 5);
     }
 
     #[test]
@@ -820,7 +1089,39 @@ mod tests {
     #[test]
     fn set_default_is_with_defaults() {
         let set = GuardrailMonitorSet::default();
-        assert_eq!(set.monitor_count(), 4);
+        assert_eq!(set.monitor_count(), 5);
+    }
+
+    #[test]
+    fn certificate_includes_all_findings_and_blocks() {
+        let set = GuardrailMonitorSet::with_defaults();
+        let mut state = healthy_state();
+        state.evidence_emission_active = false;
+        state.durability_level = 0.80;
+        state.memory_tail_risk = Some(tail_telemetry(64, 0.90, 0.02, 0.93));
+
+        let certificate = set.certify(&state);
+        assert_eq!(certificate.epoch_id, 42);
+        assert_eq!(certificate.findings.len(), 5);
+        assert_eq!(certificate.dominant_verdict.severity(), 2);
+        assert!(
+            certificate
+                .blocking_budget_ids
+                .iter()
+                .any(|b| b.as_str() == "evidence_emission")
+        );
+        assert!(
+            certificate
+                .blocking_budget_ids
+                .iter()
+                .any(|b| b.as_str() == "durability_budget")
+        );
+        assert!(
+            certificate
+                .blocking_budget_ids
+                .iter()
+                .any(|b| b.as_str() == "memory_tail_risk")
+        );
     }
 
     // ── Optional stopping / anytime-valid tests ──

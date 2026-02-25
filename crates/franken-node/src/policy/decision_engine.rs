@@ -149,15 +149,16 @@ impl DecisionEngine {
             };
         }
 
-        // Collect system-level guardrail violations.
-        let system_blocks: Vec<(String, GuardrailId, String)> = monitors
-            .check_all_detailed(state)
+        // Collect system-level guardrail violations from a single certified pass.
+        let certificate = monitors.certify(state);
+        let system_blocks: Vec<(String, GuardrailId, String)> = certificate
+            .findings
             .into_iter()
-            .filter_map(|(name, verdict)| {
-                if let GuardrailVerdict::Block { reason, budget_id } = verdict {
+            .filter_map(|finding| {
+                if let GuardrailVerdict::Block { reason, .. } = finding.verdict {
                     Some((
-                        name.to_string(),
-                        GuardrailId::new(budget_id.as_str()),
+                        finding.monitor_name,
+                        GuardrailId::new(finding.budget_id.as_str()),
                         reason,
                     ))
                 } else {
@@ -275,6 +276,7 @@ mod tests {
             hardening_level: HardeningLevel::Standard,
             proposed_hardening_level: None,
             evidence_emission_active: true,
+            memory_tail_risk: None,
             epoch_id: 42,
         }
     }
