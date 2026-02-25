@@ -273,7 +273,8 @@ impl OperatorAuthorization {
         let authorization_hash = format!("{:x}", hasher.finalize());
 
         use hmac::{Hmac, Mac};
-        let mut mac = Hmac::<Sha256>::new_from_slice(signing_key).expect("HMAC accepts any key length");
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(signing_key).expect("HMAC accepts any key length");
         mac.update(b"divergence_gate_sign_v1:");
         mac.update(authorization_hash.as_bytes());
         let signature = hex::encode(mac.finalize().into_bytes());
@@ -303,7 +304,8 @@ impl OperatorAuthorization {
         }
 
         use hmac::{Hmac, Mac};
-        let mut mac = Hmac::<Sha256>::new_from_slice(verification_key).expect("HMAC accepts any key length");
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(verification_key).expect("HMAC accepts any key length");
         mac.update(b"divergence_gate_sign_v1:");
         mac.update(self.authorization_hash.as_bytes());
         let expected_sig = hex::encode(mac.finalize().into_bytes());
@@ -1028,7 +1030,7 @@ mod tests {
             DivergenceGateError::DivergenceBlock { mutation_kind, .. } => {
                 assert_eq!(mutation_kind, "token_issuance")
             }
-            _ => unreachable!("expected DivergenceBlock"),
+            _ => panic!("expected DivergenceBlock"),
         }
     }
 
@@ -1214,7 +1216,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             DivergenceGateError::UnauthorizedRecovery { .. } => {}
-            _ => unreachable!("expected UnauthorizedRecovery"),
+            _ => panic!("expected UnauthorizedRecovery"),
         }
     }
 
@@ -1414,7 +1416,8 @@ mod tests {
         let (local, remote) = forked_pair();
         gate.check_propagation(&local, &remote, 2000, "trace-1");
         let auth = OperatorAuthorization::new("op-1", 9, 2001, "fix", b"test-key");
-        gate.respond_recover(&auth, b"test-key", 10, 2001, "trace-2").unwrap();
+        gate.respond_recover(&auth, b"test-key", 10, 2001, "trace-2")
+            .unwrap();
         let last = gate.audit_log().last().unwrap();
         assert_eq!(last.event_code, event_codes::DG_004_RECOVERY_COMPLETED);
     }
@@ -1445,7 +1448,8 @@ mod tests {
 
         // Recover
         let auth = OperatorAuthorization::new("admin", 9, 2004, "approved fix", b"test-key");
-        gate.respond_recover(&auth, b"test-key", 10, 2004, "trace-5").unwrap();
+        gate.respond_recover(&auth, b"test-key", 10, 2004, "trace-5")
+            .unwrap();
         assert_eq!(gate.state(), GateState::Normal);
 
         // Now mutations work

@@ -610,12 +610,11 @@ mod tests {
         let engine = EnforcementEngine::from_contract(&contract);
         let active = vec!["fs.read".to_string()]; // missing net.egress
         let result = engine.check_drift(&active);
-        match result {
-            DriftCheckResult::DriftDetected { missing, extra, .. } => {
-                assert!(missing.contains(&"net.egress".to_string()));
-                assert!(extra.is_empty());
-            }
-            _ => unreachable!("expected drift detected"),
+        if let DriftCheckResult::DriftDetected { missing, extra, .. } = result {
+            assert!(missing.contains(&"net.egress".to_string()));
+            assert!(extra.is_empty());
+        } else {
+            assert!(false, "expected drift detected");
         }
     }
 
@@ -629,12 +628,11 @@ mod tests {
             "crypto.sign".to_string(),
         ];
         let result = engine.check_drift(&active);
-        match result {
-            DriftCheckResult::DriftDetected { missing, extra, .. } => {
-                assert!(missing.is_empty());
-                assert!(extra.contains(&"crypto.sign".to_string()));
-            }
-            _ => unreachable!("expected drift detected"),
+        if let DriftCheckResult::DriftDetected { missing, extra, .. } = result {
+            assert!(missing.is_empty());
+            assert!(extra.contains(&"crypto.sign".to_string()));
+        } else {
+            assert!(false, "expected drift detected");
         }
     }
 
@@ -644,12 +642,11 @@ mod tests {
         let engine = EnforcementEngine::from_contract(&contract);
         let active = vec!["crypto.sign".to_string()];
         let result = engine.check_drift(&active);
-        match result {
-            DriftCheckResult::DriftDetected { missing, extra, .. } => {
-                assert!(!missing.is_empty());
-                assert!(!extra.is_empty());
-            }
-            _ => unreachable!("expected drift detected"),
+        if let DriftCheckResult::DriftDetected { missing, extra, .. } = result {
+            assert!(!missing.is_empty());
+            assert!(!extra.is_empty());
+        } else {
+            assert!(false, "expected drift detected");
         }
     }
 

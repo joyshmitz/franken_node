@@ -832,7 +832,7 @@ mod tests {
                 assert_eq!(link_id, "bad-link");
                 assert_eq!(missing_node, "nonexistent");
             }
-            other => unreachable!("expected InvalidLinkEndpoint, got {other}"),
+            other => panic!("expected InvalidLinkEndpoint, got {other}"),
         }
         assert!(err.to_string().contains(ERR_SB_INVALID_LINK_ENDPOINT));
     }
@@ -854,7 +854,7 @@ mod tests {
                 assert_eq!(link_id, "bad-link");
                 assert_eq!(missing_node, "ghost");
             }
-            other => unreachable!("expected InvalidLinkEndpoint, got {other}"),
+            other => panic!("expected InvalidLinkEndpoint, got {other}"),
         }
     }
 

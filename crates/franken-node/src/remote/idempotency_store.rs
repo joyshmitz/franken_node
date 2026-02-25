@@ -584,7 +584,7 @@ mod tests {
             DedupeResult::Duplicate(outcome) => {
                 assert_eq!(outcome.result_data, b"result-ok");
             }
-            other => unreachable!("expected Duplicate, got {other:?}"),
+            other => panic!("expected Duplicate, got {other:?}"),
         }
     }
 
@@ -607,7 +607,7 @@ mod tests {
             } => {
                 assert_ne!(expected_hash, actual_hash);
             }
-            other => unreachable!("expected Conflict, got {other:?}"),
+            other => panic!("expected Conflict, got {other:?}"),
         }
     }
 
@@ -640,7 +640,7 @@ mod tests {
                 assert_eq!(outcome.completed_at_secs, 1001);
                 assert!(!outcome.result_hash.is_empty());
             }
-            other => unreachable!("expected Duplicate, got {other:?}"),
+            other => panic!("expected Duplicate, got {other:?}"),
         }
     }
 
@@ -673,7 +673,7 @@ mod tests {
                 assert_eq!(expected_hash, payload_hash);
                 assert_eq!(actual_hash, payload_hash);
             }
-            other => unreachable!("expected Conflict for corrupted complete entry, got {other:?}"),
+            other => panic!("expected Conflict for corrupted complete entry, got {other:?}"),
         }
 
         let has_corrupt_conflict_audit = store.audit_log().iter().any(|record| {

@@ -439,7 +439,7 @@ mod tests {
         if let Outcome::Rejected { reason } = &result.outcome {
             assert!(reason.contains("MANIFEST_VERSION_UNSUPPORTED"));
         } else {
-            unreachable!("expected rejected");
+            panic!("expected rejected");
         }
     }
 

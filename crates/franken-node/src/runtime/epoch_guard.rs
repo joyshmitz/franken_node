@@ -190,9 +190,9 @@ impl EpochTaggedArtifact {
         creation_epoch: ControlEpoch,
         domain: &str,
         payload: Vec<u8>,
-        sec_root_val: &RootSecret,
+        root_secret: &RootSecret,
     ) -> Result<Self, EpochGuardError> {
-        let signature = sign_epoch_artifact(&payload, creation_epoch, domain, sec_root_val)?;
+        let signature = sign_epoch_artifact(&payload, creation_epoch, domain, root_secret)?;
         Ok(Self {
             artifact_id: artifact_id.to_string(),
             creation_epoch,
@@ -296,7 +296,7 @@ impl EpochGuard {
         &self,
         artifact: &EpochTaggedArtifact,
         source: &S,
-        sec_root_val: &RootSecret,
+        root_secret: &RootSecret,
         trace_id: &str,
     ) -> Result<Vec<EpochGuardEvent>, EpochGuardError> {
         let epoch_event = self.validate_artifact_epoch(
@@ -310,7 +310,7 @@ impl EpochGuard {
             artifact.signature(),
             artifact.creation_epoch(),
             artifact.domain(),
-            sec_root_val,
+            root_secret,
         )?;
         Ok(vec![
             EpochGuardEvent {
@@ -346,7 +346,7 @@ mod tests {
     use super::*;
     use crate::security::epoch_scoped_keys::sign_epoch_artifact;
 
-    fn sec_root_val() -> RootSecret {
+    fn root_secret() -> RootSecret {
         RootSecret::from_hex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
             .expect("valid root secret")
     }
@@ -434,7 +434,7 @@ mod tests {
 
     #[test]
     fn epoch_scoped_signature_rejects_cross_epoch_verification() {
-        let root = sec_root_val();
+        let root = root_secret();
         let payload = b"artifact";
         let signature = sign_epoch_artifact(payload, ControlEpoch::new(5), "trust", &root).unwrap();
         let verify =
@@ -447,7 +447,7 @@ mod tests {
 
     #[test]
     fn tagged_artifact_creation_epoch_is_preserved() {
-        let root = sec_root_val();
+        let root = root_secret();
         let artifact = EpochTaggedArtifact::new_signed(
             "artifact-1",
             ControlEpoch::new(9),
@@ -461,7 +461,7 @@ mod tests {
 
     #[test]
     fn verify_tagged_artifact_emits_epoch_and_signature_events() {
-        let root = sec_root_val();
+        let root = root_secret();
         let guard = EpochGuard::new(1);
         let source = StaticEpochSource::available(ControlEpoch::new(9));
         let artifact = EpochTaggedArtifact::new_signed(

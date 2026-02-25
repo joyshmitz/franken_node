@@ -150,24 +150,40 @@ fn parse_ipv4_lax(ip: &str) -> Option<[u8; 4]> {
     match parsed_parts.len() {
         1 => {
             let val = parsed_parts[0];
-            Some([(val >> 24) as u8, (val >> 16) as u8, (val >> 8) as u8, val as u8])
+            Some([
+                (val >> 24) as u8,
+                (val >> 16) as u8,
+                (val >> 8) as u8,
+                val as u8,
+            ])
         }
         2 => {
             let (a, b) = (parsed_parts[0], parsed_parts[1]);
-            if a > 255 || b > 0xFFFFFF { return None; }
+            if a > 255 || b > 0xFFFFFF {
+                return None;
+            }
             Some([a as u8, (b >> 16) as u8, (b >> 8) as u8, b as u8])
         }
         3 => {
             let (a, b, c) = (parsed_parts[0], parsed_parts[1], parsed_parts[2]);
-            if a > 255 || b > 255 || c > 0xFFFF { return None; }
+            if a > 255 || b > 255 || c > 0xFFFF {
+                return None;
+            }
             Some([a as u8, b as u8, (c >> 8) as u8, c as u8])
         }
         4 => {
-            let (a, b, c, d) = (parsed_parts[0], parsed_parts[1], parsed_parts[2], parsed_parts[3]);
-            if a > 255 || b > 255 || c > 255 || d > 255 { return None; }
+            let (a, b, c, d) = (
+                parsed_parts[0],
+                parsed_parts[1],
+                parsed_parts[2],
+                parsed_parts[3],
+            );
+            if a > 255 || b > 255 || c > 255 || d > 255 {
+                return None;
+            }
             Some([a as u8, b as u8, c as u8, d as u8])
         }
-        _ => None
+        _ => None,
     }
 }
 
@@ -601,7 +617,7 @@ mod tests {
                 assert_eq!(host, "127.0.0.1");
                 assert!(cidr.contains("127.0.0.0/8"));
             }
-            other => unreachable!("expected SsrfDenied, got {:?}", other),
+            other => panic!("expected SsrfDenied, got {:?}", other),
         }
     }
 

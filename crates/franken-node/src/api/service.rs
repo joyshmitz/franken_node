@@ -696,7 +696,7 @@ mod integration_tests {
             crate::api::error::ApiError::RateLimited { retry_after_ms, .. } => {
                 assert!(retry_after_ms > 0);
             }
-            other => unreachable!("expected RateLimited, got {:?}", other),
+            other => panic!("expected RateLimited, got {:?}", other),
         }
     }
 

@@ -591,7 +591,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             LedgerError::EntryTooLarge { .. } => {}
-            other => unreachable!("expected EntryTooLarge, got: {other}"),
+            other => panic!("expected EntryTooLarge, got: {other}"),
         }
     }
 

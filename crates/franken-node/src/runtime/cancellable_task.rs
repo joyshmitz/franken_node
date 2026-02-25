@@ -1214,7 +1214,7 @@ mod tests {
             CancellableTaskError::TaskNotFound { task_id } => {
                 assert_eq!(task_id, "missing-child");
             }
-            other => unreachable!("unexpected error: {other:?}"),
+            other => panic!("unexpected error: {other:?}"),
         }
     }
 

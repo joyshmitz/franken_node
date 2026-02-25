@@ -639,6 +639,10 @@ pub struct DoctorArgs {
     #[arg(long)]
     pub profile: Option<String>,
 
+    /// Path to policy activation input JSON for live guardrail diagnostics.
+    #[arg(long)]
+    pub policy_activation_input: Option<PathBuf>,
+
     /// Emit machine-readable JSON report.
     #[arg(long)]
     pub json: bool,

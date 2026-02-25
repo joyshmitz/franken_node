@@ -1173,7 +1173,7 @@ mod tests {
                 assert!(msg.contains("node-a"));
                 assert!(msg.contains("strict"));
             }
-            other => unreachable!("unexpected error: {other}"),
+            other => panic!("unexpected error: {other}"),
         }
     }
 
@@ -1237,7 +1237,7 @@ mod tests {
                 assert_eq!(capability, "exec_child");
                 assert_eq!(boundary, "trust-boundary-1");
             }
-            other => unreachable!("unexpected error: {other}"),
+            other => panic!("unexpected error: {other}"),
         }
     }
 
@@ -1453,7 +1453,7 @@ mod tests {
             BarrierError::CompositionConflict(msg) => {
                 assert!(msg.contains("same-node"));
             }
-            other => unreachable!("unexpected error: {other}"),
+            other => panic!("unexpected error: {other}"),
         }
     }
 

@@ -1462,7 +1462,7 @@ mod tests {
                 assert_eq!(provided, 5);
                 assert_eq!(code, ERR_STAKE_INSUFFICIENT);
             }
-            other => unreachable!("unexpected error: {other}"),
+            other => panic!("unexpected error: {other}"),
         }
     }
 
@@ -1526,7 +1526,7 @@ mod tests {
             .unwrap_err();
         match err {
             StakingError::AlreadySlashed { .. } => {}
-            other => unreachable!("unexpected error: {other}"),
+            other => panic!("unexpected error: {other}"),
         }
     }
 
@@ -1548,7 +1548,7 @@ mod tests {
             .unwrap_err();
         match err {
             StakingError::AlreadySlashed { .. } => {}
-            other => unreachable!("unexpected error: {other}"),
+            other => panic!("unexpected error: {other}"),
         }
     }
 
@@ -1626,7 +1626,7 @@ mod tests {
                 assert_eq!(from, StakeState::Slashed);
                 assert_eq!(to, StakeState::Withdrawn);
             }
-            other => unreachable!("unexpected error: {other}"),
+            other => panic!("unexpected error: {other}"),
         }
     }
 
@@ -1655,7 +1655,7 @@ mod tests {
             StakingError::WithdrawalBlocked { code, .. } => {
                 assert_eq!(code, ERR_STAKE_WITHDRAWAL_BLOCKED);
             }
-            other => unreachable!("unexpected error: {other}"),
+            other => panic!("unexpected error: {other}"),
         }
     }
 
@@ -1700,7 +1700,7 @@ mod tests {
             StakingError::AppealExpired { code, .. } => {
                 assert_eq!(code, ERR_STAKE_APPEAL_EXPIRED);
             }
-            other => unreachable!("unexpected error: {other}"),
+            other => panic!("unexpected error: {other}"),
         }
     }
 
@@ -1724,7 +1724,7 @@ mod tests {
             StakingError::InvalidTransition { code, .. } => {
                 assert_eq!(code, ERR_STAKE_INVALID_TRANSITION);
             }
-            other => unreachable!("unexpected error: {other}"),
+            other => panic!("unexpected error: {other}"),
         }
     }
 
@@ -1788,7 +1788,7 @@ mod tests {
         let err = ledger.expire(id, 400).unwrap_err();
         match err {
             StakingError::InvalidTransition { .. } => {}
-            other => unreachable!("unexpected error: {other}"),
+            other => panic!("unexpected error: {other}"),
         }
     }
 
@@ -1925,7 +1925,7 @@ mod tests {
             StakingError::StakeNotFound { code, .. } => {
                 assert_eq!(code, ERR_STAKE_NOT_FOUND);
             }
-            other => unreachable!("unexpected error: {other}"),
+            other => panic!("unexpected error: {other}"),
         }
     }
 

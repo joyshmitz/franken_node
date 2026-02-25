@@ -490,7 +490,7 @@ mod tests {
         match check.outcome.unwrap() {
             crate::runtime::nversion_oracle::CheckOutcome::Agree { .. } => {}
             crate::runtime::nversion_oracle::CheckOutcome::Diverge { .. } => {
-                unreachable!("expected agreement for identical outputs");
+                panic!("expected agreement for identical outputs");
             }
         }
     }
@@ -530,7 +530,7 @@ mod tests {
                 assert!(div.contains_key("franken-node"));
             }
             crate::runtime::nversion_oracle::CheckOutcome::Agree { .. } => {
-                unreachable!("expected divergence for different outputs");
+                panic!("expected divergence for different outputs");
             }
         }
     }

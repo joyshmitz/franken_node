@@ -277,6 +277,7 @@ mod tests {
             proposed_hardening_level: None,
             evidence_emission_active: true,
             memory_tail_risk: None,
+            reliability_telemetry: None,
             epoch_id: 42,
         }
     }

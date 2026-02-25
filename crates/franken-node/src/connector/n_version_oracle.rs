@@ -340,7 +340,7 @@ pub fn run_harness(
                 match div.risk_tier {
                     RiskTier::Medium => medium += 1,
                     RiskTier::Low => low += 1,
-                    _ => unreachable!(),
+                    _ => panic!(),
                 }
                 match receipt_index.get(div.divergence_id.as_str()) {
                     Some(receipt) => {
@@ -486,7 +486,7 @@ mod tests {
                         .any(|r| matches!(r, ReleaseBlockReason::HighRiskUnresolved { .. }))
                 );
             }
-            _ => unreachable!("expected blocked verdict"),
+            _ => panic!("expected blocked verdict"),
         }
         assert!(result.stats.high_risk_count > 0);
         assert!(result.stats.unresolved_high_risk > 0);
@@ -508,7 +508,7 @@ mod tests {
                         .any(|r| matches!(r, ReleaseBlockReason::MissingReceipt { .. }))
                 );
             }
-            _ => unreachable!("expected blocked verdict for missing receipt"),
+            _ => panic!("expected blocked verdict for missing receipt"),
         }
     }
 
@@ -566,7 +566,7 @@ mod tests {
                         .any(|r| matches!(r, ReleaseBlockReason::L1LinkBroken { .. }))
                 );
             }
-            _ => unreachable!("expected blocked verdict for broken L1 link"),
+            _ => panic!("expected blocked verdict for broken L1 link"),
         }
     }
 
@@ -582,7 +582,7 @@ mod tests {
                         .any(|r| matches!(r, ReleaseBlockReason::ReferenceUnavailable { .. }))
                 );
             }
-            _ => unreachable!("expected blocked when no references configured"),
+            _ => panic!("expected blocked when no references configured"),
         }
     }
 

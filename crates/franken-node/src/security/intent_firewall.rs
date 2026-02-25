@@ -602,7 +602,7 @@ impl EffectsFirewall {
         // Check extension registration.
         let ext_id = match &effect.origin {
             TrafficOrigin::Extension { extension_id } => extension_id.clone(),
-            _ => unreachable!(), // Already checked is_extension above.
+            _ => panic!(), // Already checked is_extension above.
         };
         if !self.policy.registered_extensions.contains(&ext_id) {
             return Err(FirewallError::ExtensionUnknown(ext_id));
@@ -1145,7 +1145,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             FirewallError::InvalidEffect(_) => {}
-            other => unreachable!("expected InvalidEffect, got {:?}", other),
+            other => panic!("expected InvalidEffect, got {:?}", other),
         }
     }
 

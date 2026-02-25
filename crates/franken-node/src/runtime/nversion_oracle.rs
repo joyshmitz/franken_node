@@ -903,7 +903,7 @@ mod tests {
             CheckOutcome::Agree { canonical_output } => {
                 assert_eq!(canonical_output, vec![1, 2, 3]);
             }
-            CheckOutcome::Diverge { .. } => unreachable!("expected agreement"),
+            CheckOutcome::Diverge { .. } => panic!("expected agreement"),
         }
     }
 
@@ -926,7 +926,7 @@ mod tests {
             CheckOutcome::Diverge { outputs } => {
                 assert_eq!(outputs.len(), 2);
             }
-            CheckOutcome::Agree { .. } => unreachable!("expected divergence"),
+            CheckOutcome::Agree { .. } => panic!("expected divergence"),
         }
     }
 
@@ -1119,7 +1119,7 @@ mod tests {
             } => {
                 assert!(blocking_divergence_ids.contains(&"div-crit".to_string()));
             }
-            _ => unreachable!("expected BlockRelease"),
+            _ => panic!("expected BlockRelease"),
         }
     }
 
@@ -1137,7 +1137,7 @@ mod tests {
         let verdict = oracle.check_release_gate();
         match verdict {
             OracleVerdict::BlockRelease { .. } => {}
-            _ => unreachable!("expected BlockRelease for High risk"),
+            _ => panic!("expected BlockRelease for High risk"),
         }
     }
 
@@ -1159,7 +1159,7 @@ mod tests {
             } => {
                 assert!(pending_divergence_ids.contains(&"div-low".to_string()));
             }
-            _ => unreachable!("expected RequiresReceipt"),
+            _ => panic!("expected RequiresReceipt"),
         }
     }
 

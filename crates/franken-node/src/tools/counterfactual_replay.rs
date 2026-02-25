@@ -926,7 +926,7 @@ mod tests {
                 assert_eq!(results.len(), 3);
                 assert!(results.iter().any(|r| !r.divergence_points.is_empty()));
             }
-            CounterfactualSimulationOutput::Single(_) => unreachable!("expected sweep output"),
+            CounterfactualSimulationOutput::Single(_) => panic!("expected sweep output"),
         }
     }
 
@@ -959,7 +959,7 @@ mod tests {
                 assert_eq!(processed_steps, 1);
                 assert_eq!(partial_result.summary_statistics.total_decisions, 1);
             }
-            _ => unreachable!("expected step limit error"),
+            _ => panic!("expected step limit error"),
         }
     }
 
@@ -987,7 +987,7 @@ mod tests {
             CounterfactualReplayError::WallClockExceeded { partial_result, .. } => {
                 assert_eq!(partial_result.summary_statistics.total_decisions, 0);
             }
-            _ => unreachable!("expected wall clock error"),
+            _ => panic!("expected wall clock error"),
         }
     }
 
@@ -1002,7 +1002,7 @@ mod tests {
                 assert_eq!(alternate_policy.policy_name, "trial");
                 assert_eq!(alternate_policy.quarantine_threshold, 61);
             }
-            SimulationMode::ParameterSweep { .. } => unreachable!("expected single mode"),
+            SimulationMode::ParameterSweep { .. } => panic!("expected single mode"),
         }
     }
 
@@ -1018,7 +1018,7 @@ mod tests {
                 assert_eq!(parameter, "observe_threshold");
                 assert_eq!(values, vec![40, 50, 60]);
             }
-            SimulationMode::SinglePolicySwap { .. } => unreachable!("expected sweep mode"),
+            SimulationMode::SinglePolicySwap { .. } => panic!("expected sweep mode"),
         }
     }
 

@@ -581,7 +581,7 @@ mod tests {
                 assert!(!contract.contract_digest.is_empty());
                 assert!(!contract.signature.is_empty());
             }
-            CompilationResult::Rejected { .. } => unreachable!("expected compiled"),
+            CompilationResult::Rejected { .. } => panic!("expected compiled"),
         }
     }
 
@@ -673,7 +673,7 @@ mod tests {
                 assert_eq!(c1.contract_digest, c2.contract_digest);
                 assert_eq!(c1.signature, c2.signature);
             }
-            _ => unreachable!("expected both compiled"),
+            _ => panic!("expected both compiled"),
         }
     }
 
@@ -691,7 +691,7 @@ mod tests {
             ) => {
                 assert_ne!(ct1.contract_digest, ct2.contract_digest);
             }
-            _ => unreachable!("expected both compiled"),
+            _ => panic!("expected both compiled"),
         }
     }
 
@@ -720,7 +720,7 @@ mod tests {
         let claim = make_test_claim("sc1", "src-1");
         let contract = match cc.compile(&claim) {
             CompilationResult::Compiled { contract, .. } => contract,
-            _ => unreachable!("expected compiled"),
+            _ => panic!("expected compiled"),
         };
         let result = sb.publish("snap-1", &[contract]);
         assert!(matches!(
@@ -737,7 +737,7 @@ mod tests {
         let claim = make_test_claim("sc2", "src-1");
         let contract = match cc.compile(&claim) {
             CompilationResult::Compiled { contract, .. } => contract,
-            _ => unreachable!("expected compiled"),
+            _ => panic!("expected compiled"),
         };
         let result = sb.publish("snap-2", &[contract]);
         assert!(matches!(
@@ -757,7 +757,7 @@ mod tests {
         let claim = make_test_claim("sc3", "src-1");
         let mut contract = match cc.compile(&claim) {
             CompilationResult::Compiled { contract, .. } => contract,
-            _ => unreachable!("expected compiled"),
+            _ => panic!("expected compiled"),
         };
         contract.signature = "tampered-sig".to_string();
         let result = sb.publish("snap-3", &[contract]);
@@ -800,7 +800,7 @@ mod tests {
         let claim = make_test_claim("det-1", "src-1");
         let contract = match cc.compile(&claim) {
             CompilationResult::Compiled { contract, .. } => contract,
-            _ => unreachable!("expected compiled"),
+            _ => panic!("expected compiled"),
         };
         let s1 = sb
             .build_snapshot("snap-det", std::slice::from_ref(&contract))
@@ -816,7 +816,7 @@ mod tests {
         let claim = make_test_claim("stale-1", "src-1");
         let contract = match cc.compile(&claim) {
             CompilationResult::Compiled { contract, .. } => contract,
-            _ => unreachable!("expected compiled"),
+            _ => panic!("expected compiled"),
         };
         assert!(sb.build_snapshot("snap-stale", &[contract]).is_none());
     }

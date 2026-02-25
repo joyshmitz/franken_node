@@ -622,7 +622,7 @@ mod tests {
                 assert_eq!(event.artifact_id, "future-artifact");
                 assert_eq!(event.trace_id, "trace-future");
             }
-            other => unreachable!("expected epoch rejection, got {other:?}"),
+            other => panic!("expected epoch rejection, got {other:?}"),
         }
     }
 

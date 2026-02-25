@@ -804,17 +804,17 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(err.code(), "KRS_ROLE_SEPARATION_VIOLATION");
-        match err {
-            KeyRoleSeparationError::RoleSeparationViolation {
-                key_id,
-                existing_role,
-                attempted_role,
-            } => {
-                assert_eq!(key_id, "k-shared");
-                assert_eq!(existing_role, KeyRole::Signing);
-                assert_eq!(attempted_role, KeyRole::Encryption);
-            }
-            _ => unreachable!("expected RoleSeparationViolation"),
+        if let KeyRoleSeparationError::RoleSeparationViolation {
+            key_id,
+            existing_role,
+            attempted_role,
+        } = err
+        {
+            assert_eq!(key_id, "k-shared");
+            assert_eq!(existing_role, KeyRole::Signing);
+            assert_eq!(attempted_role, KeyRole::Encryption);
+        } else {
+            assert!(false, "expected RoleSeparationViolation");
         }
     }
 
@@ -1188,17 +1188,17 @@ mod tests {
             .verify_role("k-mm", KeyRole::Encryption, &tid(2))
             .unwrap_err();
         assert_eq!(err.code(), "KRS_KEY_ROLE_MISMATCH");
-        match err {
-            KeyRoleSeparationError::KeyRoleMismatch {
-                key_id,
-                expected_role,
-                actual_role,
-            } => {
-                assert_eq!(key_id, "k-mm");
-                assert_eq!(expected_role, KeyRole::Encryption);
-                assert_eq!(actual_role, KeyRole::Signing);
-            }
-            _ => unreachable!("expected KeyRoleMismatch"),
+        if let KeyRoleSeparationError::KeyRoleMismatch {
+            key_id,
+            expected_role,
+            actual_role,
+        } = err
+        {
+            assert_eq!(key_id, "k-mm");
+            assert_eq!(expected_role, KeyRole::Encryption);
+            assert_eq!(actual_role, KeyRole::Signing);
+        } else {
+            assert!(false, "expected KeyRoleMismatch");
         }
     }
 

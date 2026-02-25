@@ -114,6 +114,8 @@ pub struct SystemState {
     pub evidence_emission_active: bool,
     /// Optional rolling memory telemetry for tail-risk estimation.
     pub memory_tail_risk: Option<MemoryTailRiskTelemetry>,
+    /// Optional reliability telemetry for conformal-risk style error budgeting.
+    pub reliability_telemetry: Option<ReliabilityTelemetry>,
     /// Current epoch ID.
     pub epoch_id: u64,
 }
@@ -150,6 +152,32 @@ impl MemoryTailRiskTelemetry {
             variance_utilization: Self::sanitize_unit_interval(self.variance_utilization, 0.25)
                 .clamp(0.0, 0.25),
             peak_utilization: Self::sanitize_unit_interval(self.peak_utilization, 1.0),
+        }
+    }
+}
+
+/// Rolling reliability telemetry for finite-sample error-budget control.
+#[derive(Debug, Clone)]
+pub struct ReliabilityTelemetry {
+    /// Number of observations in the rolling calibration/evaluation window.
+    pub sample_count: u64,
+    /// Number of nonconforming/error observations in the same window.
+    pub nonconforming_count: u64,
+}
+
+impl ReliabilityTelemetry {
+    fn sanitized(&self) -> Self {
+        Self {
+            sample_count: self.sample_count,
+            nonconforming_count: self.nonconforming_count.min(self.sample_count),
+        }
+    }
+
+    fn empirical_error_rate(&self) -> f64 {
+        if self.sample_count == 0 {
+            0.0
+        } else {
+            self.nonconforming_count as f64 / self.sample_count as f64
         }
     }
 }
@@ -377,6 +405,122 @@ impl GuardrailMonitor for MemoryTailRiskGuardrail {
     }
 }
 
+/// Reliability guardrail for finite-sample conformal-risk style error budgets.
+///
+/// Uses a one-sided empirical-Bernstein upper bound over observed nonconformity
+/// to control action under uncertainty and optional stopping.
+#[derive(Debug, Clone)]
+pub struct ConformalRiskGuardrail {
+    budget_id: BudgetId,
+    /// Block when the upper error envelope exceeds this threshold.
+    block_error_rate: f64,
+    /// Warn when the upper error envelope exceeds this threshold.
+    warn_error_rate: f64,
+    /// Tail probability for the confidence envelope.
+    delta: f64,
+    /// Minimum telemetry size required for evaluation.
+    min_samples: u64,
+    /// Correctness envelope maximum block threshold.
+    #[allow(dead_code)]
+    max_allowed_block_error_rate: f64,
+}
+
+impl ConformalRiskGuardrail {
+    /// Correctness envelope: allowed block threshold range.
+    const ENVELOPE_MIN_BLOCK_ERROR_RATE: f64 = 0.001;
+    const ENVELOPE_MAX_BLOCK_ERROR_RATE: f64 = 0.5;
+    /// Conservative `delta` bounds.
+    const MIN_DELTA: f64 = 1e-6;
+    const MAX_DELTA: f64 = 0.2;
+    /// Minimum supported telemetry window.
+    const MIN_SAMPLES: u64 = 16;
+
+    pub fn new(block_error_rate: f64, warn_error_rate: f64, delta: f64, min_samples: u64) -> Self {
+        let effective_block = block_error_rate.clamp(
+            Self::ENVELOPE_MIN_BLOCK_ERROR_RATE,
+            Self::ENVELOPE_MAX_BLOCK_ERROR_RATE,
+        );
+        let effective_warn = warn_error_rate.clamp(0.0, effective_block);
+        let effective_delta = delta.clamp(Self::MIN_DELTA, Self::MAX_DELTA);
+        let effective_samples = min_samples.max(Self::MIN_SAMPLES);
+        Self {
+            budget_id: BudgetId::new("conformal_risk"),
+            block_error_rate: effective_block,
+            warn_error_rate: effective_warn,
+            delta: effective_delta,
+            min_samples: effective_samples,
+            max_allowed_block_error_rate: Self::ENVELOPE_MAX_BLOCK_ERROR_RATE,
+        }
+    }
+
+    pub fn default_guardrail() -> Self {
+        Self::new(0.10, 0.07, 0.01, 64)
+    }
+
+    fn anytime_log_term(&self, n: f64) -> f64 {
+        let n_eff = n.max(3.0);
+        let log_inv_delta = (1.0 / self.delta).ln();
+        let lil_correction = ((n_eff + std::f64::consts::E).ln().ln()).max(0.0);
+        log_inv_delta + (2.0 * lil_correction)
+    }
+
+    fn upper_error_bound(&self, telemetry: &ReliabilityTelemetry) -> f64 {
+        let t = telemetry.sanitized();
+        if t.sample_count == 0 {
+            return 0.0;
+        }
+        let n = t.sample_count as f64;
+        let p_hat = t.empirical_error_rate();
+        let var = p_hat * (1.0 - p_hat);
+        let log_term = self.anytime_log_term(n);
+        let variance_term = ((2.0 * var * log_term) / n).sqrt();
+        let bounded_range_term = (3.0 * log_term) / n;
+        (p_hat + variance_term + bounded_range_term).clamp(0.0, 1.0)
+    }
+}
+
+impl GuardrailMonitor for ConformalRiskGuardrail {
+    fn check(&self, state: &SystemState) -> GuardrailVerdict {
+        let Some(raw) = &state.reliability_telemetry else {
+            return GuardrailVerdict::Allow;
+        };
+        let telemetry = raw.sanitized();
+        if telemetry.sample_count < self.min_samples {
+            return GuardrailVerdict::Allow;
+        }
+
+        let empirical = telemetry.empirical_error_rate();
+        let upper = self.upper_error_bound(&telemetry);
+
+        if upper >= self.block_error_rate {
+            GuardrailVerdict::Block {
+                reason: format!(
+                    "conformal-risk upper error bound {:.3} exceeds block threshold {:.3} (empirical {:.3}, n={}, delta={:.4})",
+                    upper, self.block_error_rate, empirical, telemetry.sample_count, self.delta,
+                ),
+                budget_id: self.budget_id.clone(),
+            }
+        } else if upper >= self.warn_error_rate {
+            GuardrailVerdict::Warn {
+                reason: format!(
+                    "conformal-risk upper error bound {:.3} exceeds warn threshold {:.3} (empirical {:.3}, n={}, delta={:.4})",
+                    upper, self.warn_error_rate, empirical, telemetry.sample_count, self.delta,
+                ),
+            }
+        } else {
+            GuardrailVerdict::Allow
+        }
+    }
+
+    fn name(&self) -> &str {
+        "ConformalRiskGuardrail"
+    }
+
+    fn budget_id(&self) -> &BudgetId {
+        &self.budget_id
+    }
+}
+
 /// Blocks actions that would reduce durability below threshold.
 #[derive(Debug, Clone)]
 pub struct DurabilityLossGuardrail {
@@ -579,6 +723,7 @@ impl GuardrailMonitorSet {
         let mut set = Self::new();
         set.register(Box::new(MemoryBudgetGuardrail::default_guardrail()));
         set.register(Box::new(MemoryTailRiskGuardrail::default_guardrail()));
+        set.register(Box::new(ConformalRiskGuardrail::default_guardrail()));
         set.register(Box::new(DurabilityLossGuardrail::default_guardrail()));
         set.register(Box::new(HardeningRegressionGuardrail::new()));
         set.register(Box::new(EvidenceEmissionGuardrail::new()));
@@ -689,6 +834,7 @@ mod tests {
             proposed_hardening_level: None,
             evidence_emission_active: true,
             memory_tail_risk: None,
+            reliability_telemetry: None,
             epoch_id: 42,
         }
     }
@@ -704,6 +850,13 @@ mod tests {
             mean_utilization: mean,
             variance_utilization: variance,
             peak_utilization: peak,
+        }
+    }
+
+    fn reliability_telemetry(samples: u64, nonconforming: u64) -> ReliabilityTelemetry {
+        ReliabilityTelemetry {
+            sample_count: samples,
+            nonconforming_count: nonconforming,
         }
     }
 
@@ -812,7 +965,7 @@ mod tests {
         state.memory_used_bytes = 850_000_000; // 85% > warn(80%) < block(95%)
         match guard.check(&state) {
             GuardrailVerdict::Warn { .. } => {}
-            other => unreachable!("expected Warn, got {other:?}"),
+            other => panic!("expected Warn, got {other:?}"),
         }
     }
 
@@ -825,7 +978,7 @@ mod tests {
             GuardrailVerdict::Block { budget_id, .. } => {
                 assert_eq!(budget_id.as_str(), "memory_budget");
             }
-            other => unreachable!("expected Block, got {other:?}"),
+            other => panic!("expected Block, got {other:?}"),
         }
     }
 
@@ -880,7 +1033,7 @@ mod tests {
         state.memory_tail_risk = Some(tail_telemetry(128, 0.80, 0.01, 0.82));
         match guard.check(&state) {
             GuardrailVerdict::Warn { .. } => {}
-            other => unreachable!("expected Warn, got {other:?}"),
+            other => panic!("expected Warn, got {other:?}"),
         }
     }
 
@@ -893,7 +1046,7 @@ mod tests {
             GuardrailVerdict::Block { budget_id, .. } => {
                 assert_eq!(budget_id.as_str(), "memory_tail_risk");
             }
-            other => unreachable!("expected Block, got {other:?}"),
+            other => panic!("expected Block, got {other:?}"),
         }
     }
 
@@ -914,8 +1067,70 @@ mod tests {
             GuardrailVerdict::Block { budget_id, .. } => {
                 assert_eq!(budget_id.as_str(), "memory_tail_risk");
             }
-            other => unreachable!("expected Block, got {other:?}"),
+            other => panic!("expected Block, got {other:?}"),
         }
+    }
+
+    // ── ConformalRiskGuardrail tests ──
+
+    #[test]
+    fn conformal_guard_allows_without_telemetry() {
+        let guard = ConformalRiskGuardrail::default_guardrail();
+        let state = healthy_state();
+        assert_eq!(guard.check(&state), GuardrailVerdict::Allow);
+    }
+
+    #[test]
+    fn conformal_guard_ignores_small_sample_window() {
+        let guard = ConformalRiskGuardrail::default_guardrail();
+        let mut state = healthy_state();
+        state.reliability_telemetry = Some(reliability_telemetry(20, 5));
+        assert_eq!(guard.check(&state), GuardrailVerdict::Allow);
+    }
+
+    #[test]
+    fn conformal_guard_warns_when_upper_bound_near_limit() {
+        let guard = ConformalRiskGuardrail::default_guardrail();
+        let mut state = healthy_state();
+        state.reliability_telemetry = Some(reliability_telemetry(5000, 275));
+        match guard.check(&state) {
+            GuardrailVerdict::Warn { .. } => {}
+            other => panic!("expected Warn, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn conformal_guard_blocks_when_upper_bound_exceeds_budget() {
+        let guard = ConformalRiskGuardrail::default_guardrail();
+        let mut state = healthy_state();
+        state.reliability_telemetry = Some(reliability_telemetry(3000, 270));
+        match guard.check(&state) {
+            GuardrailVerdict::Block { budget_id, .. } => {
+                assert_eq!(budget_id.as_str(), "conformal_risk");
+            }
+            other => panic!("expected Block, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn conformal_guard_sanitizes_nonconforming_count() {
+        let guard = ConformalRiskGuardrail::default_guardrail();
+        let mut state = healthy_state();
+        state.reliability_telemetry = Some(reliability_telemetry(100, 1_000));
+        match guard.check(&state) {
+            GuardrailVerdict::Block { budget_id, .. } => {
+                assert_eq!(budget_id.as_str(), "conformal_risk");
+            }
+            other => panic!("expected Block, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn conformal_guard_name_and_budget_id() {
+        let guard = ConformalRiskGuardrail::default_guardrail();
+        assert_eq!(guard.name(), "ConformalRiskGuardrail");
+        assert_eq!(guard.budget_id().as_str(), "conformal_risk");
+        assert!(guard.is_valid_at_any_stopping_point());
     }
 
     // ── DurabilityLossGuardrail tests ──
@@ -934,7 +1149,7 @@ mod tests {
         state.durability_level = 0.92; // Above 0.9 min, within 0.05 margin
         match guard.check(&state) {
             GuardrailVerdict::Warn { .. } => {}
-            other => unreachable!("expected Warn, got {other:?}"),
+            other => panic!("expected Warn, got {other:?}"),
         }
     }
 
@@ -947,7 +1162,7 @@ mod tests {
             GuardrailVerdict::Block { budget_id, .. } => {
                 assert_eq!(budget_id.as_str(), "durability_budget");
             }
-            other => unreachable!("expected Block, got {other:?}"),
+            other => panic!("expected Block, got {other:?}"),
         }
     }
 
@@ -991,7 +1206,7 @@ mod tests {
                 assert!(reason.contains("INV-001"));
                 assert_eq!(budget_id.as_str(), "hardening_regression");
             }
-            other => unreachable!("expected Block, got {other:?}"),
+            other => panic!("expected Block, got {other:?}"),
         }
     }
 
@@ -1029,7 +1244,7 @@ mod tests {
                 assert!(reason.contains("INV-002"));
                 assert_eq!(budget_id.as_str(), "evidence_emission");
             }
-            other => unreachable!("expected Block, got {other:?}"),
+            other => panic!("expected Block, got {other:?}"),
         }
     }
 
@@ -1042,9 +1257,9 @@ mod tests {
     // ── GuardrailMonitorSet tests ──
 
     #[test]
-    fn set_with_defaults_has_five_monitors() {
+    fn set_with_defaults_has_six_monitors() {
         let set = GuardrailMonitorSet::with_defaults();
-        assert_eq!(set.monitor_count(), 5);
+        assert_eq!(set.monitor_count(), 6);
     }
 
     #[test]
@@ -1080,7 +1295,7 @@ mod tests {
         let set = GuardrailMonitorSet::with_defaults();
         let state = healthy_state();
         let detailed = set.check_all_detailed(&state);
-        assert_eq!(detailed.len(), 5);
+        assert_eq!(detailed.len(), 6);
     }
 
     #[test]
@@ -1111,7 +1326,7 @@ mod tests {
     #[test]
     fn set_default_is_with_defaults() {
         let set = GuardrailMonitorSet::default();
-        assert_eq!(set.monitor_count(), 5);
+        assert_eq!(set.monitor_count(), 6);
     }
 
     #[test]
@@ -1121,10 +1336,11 @@ mod tests {
         state.evidence_emission_active = false;
         state.durability_level = 0.80;
         state.memory_tail_risk = Some(tail_telemetry(64, 0.90, 0.02, 0.93));
+        state.reliability_telemetry = Some(reliability_telemetry(3000, 270));
 
         let certificate = set.certify(&state);
         assert_eq!(certificate.epoch_id, 42);
-        assert_eq!(certificate.findings.len(), 5);
+        assert_eq!(certificate.findings.len(), 6);
         assert_eq!(certificate.dominant_verdict.severity(), 2);
         assert!(
             certificate
@@ -1143,6 +1359,12 @@ mod tests {
                 .blocking_budget_ids
                 .iter()
                 .any(|b| b.as_str() == "memory_tail_risk")
+        );
+        assert!(
+            certificate
+                .blocking_budget_ids
+                .iter()
+                .any(|b| b.as_str() == "conformal_risk")
         );
     }
 

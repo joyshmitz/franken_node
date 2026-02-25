@@ -30,7 +30,7 @@ pub mod verifier_economy;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -44,6 +44,16 @@ use cli::{
     VerifyReleaseArgs,
 };
 use config::{CliOverrides, Profile};
+use policy::bayesian_diagnostics::{BayesianDiagnostics, CandidateRef, Observation};
+use policy::decision_engine::{DecisionEngine, DecisionOutcome, DecisionReason};
+use policy::guardrail_monitor::{
+    GuardrailCertificate, GuardrailFinding, GuardrailMonitorSet, GuardrailVerdict,
+    MemoryTailRiskTelemetry, ReliabilityTelemetry, SystemState,
+};
+use policy::hardening_state_machine::HardeningLevel;
+use policy::policy_explainer::{
+    PolicyExplainer, PolicyExplanation, WordingValidation, validate_wording,
+};
 use security::decision_receipt::{
     Decision, Receipt, ReceiptQuery, append_signed_receipt, demo_signing_key,
     export_receipts_to_path, write_receipts_markdown,
@@ -376,6 +386,306 @@ fn render_init_report_human(report: &InitReport, verbose: bool) -> String {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum DoctorGuardrailVerdictKind {
+    Allow,
+    Warn,
+    Block,
+}
+
+impl DoctorGuardrailVerdictKind {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Allow => "allow",
+            Self::Warn => "warn",
+            Self::Block => "block",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct DoctorGuardrailFindingReport {
+    monitor_name: String,
+    budget_id: String,
+    verdict: DoctorGuardrailVerdictKind,
+    event_code: String,
+    anytime_valid: bool,
+    reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct DoctorGuardrailCertificateReport {
+    epoch_id: u64,
+    dominant_verdict: DoctorGuardrailVerdictKind,
+    findings: Vec<DoctorGuardrailFindingReport>,
+    blocking_budget_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct DoctorPolicyActivationReport {
+    input_path: String,
+    candidate_count: usize,
+    observation_count: usize,
+    prefiltered_candidate_count: usize,
+    top_ranked_candidate: Option<String>,
+    guardrail_certificate: DoctorGuardrailCertificateReport,
+    decision_outcome: DecisionOutcome,
+    explanation: PolicyExplanation,
+    wording_validation: WordingValidation,
+}
+
+#[derive(Debug, Deserialize)]
+struct DoctorPolicyMemoryTailRiskInput {
+    sample_count: u64,
+    mean_utilization: f64,
+    variance_utilization: f64,
+    peak_utilization: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct DoctorPolicyReliabilityTelemetryInput {
+    sample_count: u64,
+    nonconforming_count: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct DoctorPolicySystemStateInput {
+    memory_used_bytes: u64,
+    memory_budget_bytes: u64,
+    durability_level: f64,
+    hardening_level: String,
+    #[serde(default)]
+    proposed_hardening_level: Option<String>,
+    #[serde(default = "doctor_policy_default_evidence_emission_active")]
+    evidence_emission_active: bool,
+    #[serde(default)]
+    memory_tail_risk: Option<DoctorPolicyMemoryTailRiskInput>,
+    #[serde(default)]
+    reliability_telemetry: Option<DoctorPolicyReliabilityTelemetryInput>,
+    #[serde(default)]
+    epoch_id: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DoctorPolicyObservationInput {
+    candidate: String,
+    success: bool,
+    #[serde(default)]
+    epoch_id: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DoctorPolicyActivationInput {
+    #[serde(default)]
+    epoch_id: Option<u64>,
+    system_state: DoctorPolicySystemStateInput,
+    candidates: Vec<String>,
+    #[serde(default)]
+    prefiltered_candidates: Vec<String>,
+    #[serde(default)]
+    observations: Vec<DoctorPolicyObservationInput>,
+}
+
+const fn doctor_policy_default_evidence_emission_active() -> bool {
+    true
+}
+
+fn parse_hardening_level(label: &str, field: &str) -> Result<HardeningLevel> {
+    let normalized = label.trim().to_ascii_lowercase();
+    HardeningLevel::from_label(&normalized).ok_or_else(|| {
+        anyhow::anyhow!(
+            "invalid {} `{}`; expected one of: baseline, standard, enhanced, maximum, critical",
+            field,
+            label
+        )
+    })
+}
+
+fn map_guardrail_verdict(verdict: &GuardrailVerdict) -> DoctorGuardrailVerdictKind {
+    match verdict {
+        GuardrailVerdict::Allow => DoctorGuardrailVerdictKind::Allow,
+        GuardrailVerdict::Warn { .. } => DoctorGuardrailVerdictKind::Warn,
+        GuardrailVerdict::Block { .. } => DoctorGuardrailVerdictKind::Block,
+    }
+}
+
+fn guardrail_reason(verdict: &GuardrailVerdict) -> Option<String> {
+    match verdict {
+        GuardrailVerdict::Allow => None,
+        GuardrailVerdict::Warn { reason } => Some(reason.clone()),
+        GuardrailVerdict::Block { reason, .. } => Some(reason.clone()),
+    }
+}
+
+fn map_guardrail_finding(finding: &GuardrailFinding) -> DoctorGuardrailFindingReport {
+    DoctorGuardrailFindingReport {
+        monitor_name: finding.monitor_name.clone(),
+        budget_id: finding.budget_id.as_str().to_string(),
+        verdict: map_guardrail_verdict(&finding.verdict),
+        event_code: finding.event_code.to_string(),
+        anytime_valid: finding.anytime_valid,
+        reason: guardrail_reason(&finding.verdict),
+    }
+}
+
+fn map_guardrail_certificate(
+    certificate: &GuardrailCertificate,
+) -> DoctorGuardrailCertificateReport {
+    DoctorGuardrailCertificateReport {
+        epoch_id: certificate.epoch_id,
+        dominant_verdict: map_guardrail_verdict(&certificate.dominant_verdict),
+        findings: certificate
+            .findings
+            .iter()
+            .map(map_guardrail_finding)
+            .collect(),
+        blocking_budget_ids: certificate
+            .blocking_budget_ids
+            .iter()
+            .map(|id| id.as_str().to_string())
+            .collect(),
+    }
+}
+
+fn load_doctor_policy_activation_input(path: &Path) -> Result<DoctorPolicyActivationInput> {
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("failed reading policy activation input {}", path.display()))?;
+    let input = serde_json::from_str::<DoctorPolicyActivationInput>(&raw).with_context(|| {
+        format!(
+            "failed parsing policy activation input {} as JSON",
+            path.display()
+        )
+    })?;
+    Ok(input)
+}
+
+fn build_system_state(input: &DoctorPolicyActivationInput) -> Result<SystemState> {
+    let epoch_id = input
+        .system_state
+        .epoch_id
+        .or(input.epoch_id)
+        .unwrap_or_default();
+
+    let hardening_level =
+        parse_hardening_level(&input.system_state.hardening_level, "hardening_level")?;
+    let proposed_hardening_level = input
+        .system_state
+        .proposed_hardening_level
+        .as_ref()
+        .map(|label| parse_hardening_level(label, "proposed_hardening_level"))
+        .transpose()?;
+
+    let memory_tail_risk =
+        input
+            .system_state
+            .memory_tail_risk
+            .as_ref()
+            .map(|raw| MemoryTailRiskTelemetry {
+                sample_count: raw.sample_count,
+                mean_utilization: raw.mean_utilization,
+                variance_utilization: raw.variance_utilization,
+                peak_utilization: raw.peak_utilization,
+            });
+
+    let reliability_telemetry = input
+        .system_state
+        .reliability_telemetry
+        .as_ref()
+        .map(|raw| ReliabilityTelemetry {
+            sample_count: raw.sample_count,
+            nonconforming_count: raw.nonconforming_count,
+        });
+
+    Ok(SystemState {
+        memory_used_bytes: input.system_state.memory_used_bytes,
+        memory_budget_bytes: input.system_state.memory_budget_bytes,
+        durability_level: input.system_state.durability_level,
+        hardening_level,
+        proposed_hardening_level,
+        evidence_emission_active: input.system_state.evidence_emission_active,
+        memory_tail_risk,
+        reliability_telemetry,
+        epoch_id,
+    })
+}
+
+fn normalize_candidate_ids(raw_candidates: &[String], field: &str) -> Result<Vec<CandidateRef>> {
+    let mut unique = std::collections::BTreeSet::new();
+    let mut candidates = Vec::new();
+
+    for raw in raw_candidates {
+        let candidate = raw.trim();
+        if candidate.is_empty() {
+            anyhow::bail!("{field} contains an empty candidate identifier");
+        }
+        if unique.insert(candidate.to_string()) {
+            candidates.push(CandidateRef::new(candidate));
+        }
+    }
+
+    Ok(candidates)
+}
+
+fn required_candidate_ids(raw_candidates: &[String], field: &str) -> Result<Vec<CandidateRef>> {
+    let candidates = normalize_candidate_ids(raw_candidates, field)?;
+    if candidates.is_empty() {
+        anyhow::bail!("{field} must include at least one candidate identifier");
+    }
+    Ok(candidates)
+}
+
+fn build_observations(
+    input: &DoctorPolicyActivationInput,
+    epoch_id: u64,
+) -> Result<Vec<Observation>> {
+    let mut observations = Vec::with_capacity(input.observations.len());
+    for raw in &input.observations {
+        let candidate = raw.candidate.trim();
+        if candidate.is_empty() {
+            anyhow::bail!("observations contains an empty candidate identifier");
+        }
+        observations.push(Observation::new(
+            CandidateRef::new(candidate),
+            raw.success,
+            raw.epoch_id.unwrap_or(epoch_id),
+        ));
+    }
+    Ok(observations)
+}
+
+fn run_doctor_policy_activation(path: &Path) -> Result<DoctorPolicyActivationReport> {
+    let input = load_doctor_policy_activation_input(path)?;
+    let system_state = build_system_state(&input)?;
+    let candidate_refs = required_candidate_ids(&input.candidates, "candidates")?;
+    let prefiltered_refs =
+        normalize_candidate_ids(&input.prefiltered_candidates, "prefiltered_candidates")?;
+    let observations = build_observations(&input, system_state.epoch_id)?;
+
+    let diagnostics = BayesianDiagnostics::replay_from(&observations);
+    let ranked = diagnostics.rank_candidates(&candidate_refs, &prefiltered_refs);
+    let top_ranked_candidate = ranked.first().map(|entry| entry.candidate_ref.0.clone());
+
+    let monitors = GuardrailMonitorSet::with_defaults();
+    let certificate = monitors.certify(&system_state);
+    let decision_outcome =
+        DecisionEngine::new(system_state.epoch_id).decide(&ranked, &monitors, &system_state);
+    let explanation = PolicyExplainer::explain(&decision_outcome, &diagnostics);
+    let wording_validation = validate_wording(&explanation);
+
+    Ok(DoctorPolicyActivationReport {
+        input_path: path.display().to_string(),
+        candidate_count: candidate_refs.len(),
+        observation_count: observations.len(),
+        prefiltered_candidate_count: prefiltered_refs.len(),
+        top_ranked_candidate,
+        guardrail_certificate: map_guardrail_certificate(&certificate),
+        decision_outcome,
+        explanation,
+        wording_validation,
+    })
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 enum DoctorStatus {
     Pass,
@@ -434,6 +744,8 @@ struct DoctorReport {
     structured_logs: Vec<DoctorLogEvent>,
     merge_decision_count: usize,
     merge_decisions: Vec<config::MergeDecision>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    policy_activation: Option<DoctorPolicyActivationReport>,
 }
 
 fn summarize_statuses(checks: &[DoctorCheck]) -> (DoctorStatusCounts, DoctorStatus) {
@@ -479,13 +791,40 @@ fn evaluate_doctor_check(
 }
 
 fn build_doctor_report(resolved: &config::ResolvedConfig, trace_id: &str) -> DoctorReport {
-    build_doctor_report_with_cwd(resolved, trace_id, std::env::current_dir())
+    build_doctor_report_with_cwd_and_policy_input(resolved, trace_id, std::env::current_dir(), None)
 }
 
+fn build_doctor_report_with_policy_input(
+    resolved: &config::ResolvedConfig,
+    trace_id: &str,
+    policy_activation_input: Option<&Path>,
+) -> DoctorReport {
+    if let Some(path) = policy_activation_input {
+        build_doctor_report_with_cwd_and_policy_input(
+            resolved,
+            trace_id,
+            std::env::current_dir(),
+            Some(path),
+        )
+    } else {
+        build_doctor_report(resolved, trace_id)
+    }
+}
+
+#[cfg(test)]
 fn build_doctor_report_with_cwd(
     resolved: &config::ResolvedConfig,
     trace_id: &str,
     cwd_result: std::io::Result<PathBuf>,
+) -> DoctorReport {
+    build_doctor_report_with_cwd_and_policy_input(resolved, trace_id, cwd_result, None)
+}
+
+fn build_doctor_report_with_cwd_and_policy_input(
+    resolved: &config::ResolvedConfig,
+    trace_id: &str,
+    cwd_result: std::io::Result<PathBuf>,
+    policy_activation_input: Option<&Path>,
 ) -> DoctorReport {
     let source = resolved
         .source_path
@@ -706,6 +1045,172 @@ fn build_doctor_report_with_cwd(
         ));
     }
 
+    let mut policy_activation = None;
+    if let Some(input_path) = policy_activation_input {
+        match run_doctor_policy_activation(input_path) {
+            Ok(report) => {
+                let dominant_verdict = report.guardrail_certificate.dominant_verdict;
+                let blocked_budgets = report.guardrail_certificate.blocking_budget_ids.clone();
+                let guardrail_status = match dominant_verdict {
+                    DoctorGuardrailVerdictKind::Allow => DoctorStatus::Pass,
+                    DoctorGuardrailVerdictKind::Warn => DoctorStatus::Warn,
+                    DoctorGuardrailVerdictKind::Block => DoctorStatus::Fail,
+                };
+                checks.push(evaluate_doctor_check(
+                    "DR-POLICY-009",
+                    "DOC-009",
+                    "policy.guardrails",
+                    || {
+                        let message = match dominant_verdict {
+                            DoctorGuardrailVerdictKind::Allow => format!(
+                                "Policy guardrails passed with dominant verdict {} across {} monitors.",
+                                dominant_verdict.as_str(),
+                                report.guardrail_certificate.findings.len()
+                            ),
+                            DoctorGuardrailVerdictKind::Warn => format!(
+                                "Policy guardrails reported WARN with dominant verdict {} (blocking_budgets={}).",
+                                dominant_verdict.as_str(),
+                                blocked_budgets.len()
+                            ),
+                            DoctorGuardrailVerdictKind::Block => format!(
+                                "Policy guardrails reported BLOCK with budgets: {}.",
+                                blocked_budgets.join(", ")
+                            ),
+                        };
+                        let remediation = match dominant_verdict {
+                            DoctorGuardrailVerdictKind::Allow => "No action required.".to_string(),
+                            DoctorGuardrailVerdictKind::Warn => {
+                                "Review high-risk telemetry before promoting aggressive policy actions."
+                                    .to_string()
+                            }
+                            DoctorGuardrailVerdictKind::Block => {
+                                "Resolve blocked budgets before executing policy actions."
+                                    .to_string()
+                            }
+                        };
+                        (guardrail_status, message, remediation)
+                    },
+                ));
+
+                let decision_reason = report.decision_outcome.reason.clone();
+                let chosen_candidate = report.decision_outcome.chosen.as_ref().map(|c| c.0.clone());
+                checks.push(evaluate_doctor_check(
+                    "DR-POLICY-010",
+                    "DOC-010",
+                    "policy.decision_engine",
+                    || {
+                        let (status, message, remediation) = match decision_reason {
+                            DecisionReason::TopCandidateAccepted => (
+                                DoctorStatus::Pass,
+                                format!(
+                                    "Decision engine selected top candidate `{}`.",
+                                    chosen_candidate.clone().unwrap_or_else(|| "unknown".to_string())
+                                ),
+                                "No action required.".to_string(),
+                            ),
+                            DecisionReason::TopCandidateBlockedFallbackUsed { fallback_rank } => (
+                                DoctorStatus::Warn,
+                                format!(
+                                    "Decision engine used fallback candidate `{}` at rank {}.",
+                                    chosen_candidate.clone().unwrap_or_else(|| "unknown".to_string()),
+                                    fallback_rank
+                                ),
+                                "Inspect blocked higher-ranked candidates before rollout."
+                                    .to_string(),
+                            ),
+                            DecisionReason::AllCandidatesBlocked => (
+                                DoctorStatus::Fail,
+                                "Decision engine blocked all candidates after guardrail evaluation."
+                                    .to_string(),
+                                "Reduce risk exposure or provide safer candidate actions."
+                                    .to_string(),
+                            ),
+                            DecisionReason::NoCandidates => (
+                                DoctorStatus::Fail,
+                                "Decision engine received no candidates from policy activation input."
+                                    .to_string(),
+                                "Populate `candidates` with at least one viable policy action."
+                                    .to_string(),
+                            ),
+                        };
+                        (status, message, remediation)
+                    },
+                ));
+
+                let wording_valid = report.wording_validation.valid;
+                let violations = report.wording_validation.violations.clone();
+                checks.push(evaluate_doctor_check(
+                    "DR-POLICY-011",
+                    "DOC-011",
+                    "policy.explainer_wording",
+                    || {
+                        if wording_valid {
+                            (
+                                DoctorStatus::Pass,
+                                "Policy explanation wording passed diagnostic/guarantee separation checks."
+                                    .to_string(),
+                                "No action required.".to_string(),
+                            )
+                        } else {
+                            (
+                                DoctorStatus::Fail,
+                                format!(
+                                    "Policy explanation wording validation failed (violations={}).",
+                                    violations.join("; ")
+                                ),
+                                "Fix explanation wording to preserve diagnostic vs guarantee separation."
+                                    .to_string(),
+                            )
+                        }
+                    },
+                ));
+
+                policy_activation = Some(report);
+            }
+            Err(err) => {
+                let detail = err.to_string();
+                checks.push(evaluate_doctor_check(
+                    "DR-POLICY-009",
+                    "DOC-009",
+                    "policy.guardrails",
+                    || {
+                        (
+                            DoctorStatus::Fail,
+                            format!("Policy activation input failed to load: {detail}"),
+                            "Provide a valid JSON input via --policy-activation-input.".to_string(),
+                        )
+                    },
+                ));
+                checks.push(evaluate_doctor_check(
+                    "DR-POLICY-010",
+                    "DOC-010",
+                    "policy.decision_engine",
+                    || {
+                        (
+                            DoctorStatus::Fail,
+                            "Decision engine check skipped because policy activation input failed."
+                                .to_string(),
+                            "Fix policy activation input errors first.".to_string(),
+                        )
+                    },
+                ));
+                checks.push(evaluate_doctor_check(
+                    "DR-POLICY-011",
+                    "DOC-011",
+                    "policy.explainer_wording",
+                    || {
+                        (
+                            DoctorStatus::Fail,
+                            "Policy explanation check skipped because decision pipeline did not run."
+                                .to_string(),
+                            "Fix policy activation input errors first.".to_string(),
+                        )
+                    },
+                ));
+            }
+        }
+    }
+
     let (status_counts, overall_status) = summarize_statuses(&checks);
     let structured_logs = checks
         .iter()
@@ -731,6 +1236,7 @@ fn build_doctor_report_with_cwd(
         structured_logs,
         merge_decision_count: resolved.decisions.len(),
         merge_decisions: resolved.decisions.clone(),
+        policy_activation,
     }
 }
 
@@ -767,6 +1273,20 @@ fn render_doctor_report_human(report: &DoctorReport, verbose: bool) -> String {
         lines.push(format!(
             "  remediation: {} (duration_ms={})",
             check.remediation, check.duration_ms
+        ));
+    }
+
+    if let Some(policy_activation) = &report.policy_activation {
+        lines.push(String::new());
+        lines.push(format!(
+            "policy_activation: dominant_verdict={} candidates={} observations={} input={}",
+            policy_activation
+                .guardrail_certificate
+                .dominant_verdict
+                .as_str(),
+            policy_activation.candidate_count,
+            policy_activation.observation_count,
+            policy_activation.input_path
         ));
     }
 
@@ -998,6 +1518,96 @@ mod doctor_tests {
         assert!(rendered.contains("merge decisions:"));
         assert!(rendered.contains("structured logs:"));
         assert!(rendered.contains("trace_id=trace-verbose"));
+    }
+
+    #[test]
+    fn doctor_report_runs_policy_activation_pipeline_when_input_is_present() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let policy_input_path = dir.path().join("policy_activation.json");
+        std::fs::write(
+            &policy_input_path,
+            r#"{
+  "epoch_id": 77,
+  "system_state": {
+    "memory_used_bytes": 400000000,
+    "memory_budget_bytes": 1000000000,
+    "durability_level": 0.97,
+    "hardening_level": "standard",
+    "proposed_hardening_level": "enhanced",
+    "evidence_emission_active": true,
+    "memory_tail_risk": {
+      "sample_count": 128,
+      "mean_utilization": 0.62,
+      "variance_utilization": 0.01,
+      "peak_utilization": 0.70
+    },
+    "reliability_telemetry": {
+      "sample_count": 4096,
+      "nonconforming_count": 24
+    }
+  },
+  "candidates": ["fast-path", "safe-path"],
+  "prefiltered_candidates": [],
+  "observations": [
+    {"candidate": "fast-path", "success": false},
+    {"candidate": "fast-path", "success": false},
+    {"candidate": "safe-path", "success": true},
+    {"candidate": "safe-path", "success": true}
+  ]
+}"#,
+        )
+        .expect("write policy input");
+
+        let report = build_doctor_report_with_cwd_and_policy_input(
+            &resolved_fixture(Profile::Balanced),
+            "trace-policy",
+            Ok(PathBuf::from(".")),
+            Some(&policy_input_path),
+        );
+
+        let codes = report
+            .checks
+            .iter()
+            .map(|check| check.code.as_str())
+            .collect::<Vec<_>>();
+        assert!(codes.contains(&"DR-POLICY-009"));
+        assert!(codes.contains(&"DR-POLICY-010"));
+        assert!(codes.contains(&"DR-POLICY-011"));
+
+        let policy = report.policy_activation.expect("policy activation report");
+        assert_eq!(
+            policy.guardrail_certificate.dominant_verdict,
+            DoctorGuardrailVerdictKind::Allow
+        );
+        assert!(policy.wording_validation.valid);
+    }
+
+    #[test]
+    fn doctor_report_records_policy_input_failures_without_panicking() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let policy_input_path = dir.path().join("policy_activation_invalid.json");
+        std::fs::write(&policy_input_path, "{ invalid json").expect("write policy input");
+
+        let report = build_doctor_report_with_cwd_and_policy_input(
+            &resolved_fixture(Profile::Balanced),
+            "trace-policy-invalid",
+            Ok(PathBuf::from(".")),
+            Some(&policy_input_path),
+        );
+
+        assert!(report.policy_activation.is_none());
+        let policy_checks = report
+            .checks
+            .iter()
+            .filter(|check| check.code.starts_with("DR-POLICY-"))
+            .collect::<Vec<_>>();
+        assert_eq!(policy_checks.len(), 3);
+        assert!(
+            policy_checks
+                .iter()
+                .all(|check| matches!(check.status, DoctorStatus::Fail))
+        );
+        assert_eq!(report.overall_status, DoctorStatus::Fail);
     }
 }
 
@@ -1688,7 +2298,11 @@ async fn main() -> Result<()> {
                 },
             )
             .context("failed resolving configuration for doctor")?;
-            let report = build_doctor_report(&resolved, &args.trace_id);
+            let report = build_doctor_report_with_policy_input(
+                &resolved,
+                &args.trace_id,
+                args.policy_activation_input.as_deref(),
+            );
 
             if args.json {
                 println!("{}", serde_json::to_string_pretty(&report)?);

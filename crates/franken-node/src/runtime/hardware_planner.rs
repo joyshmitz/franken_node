@@ -1098,7 +1098,7 @@ impl HardwarePlanner {
     /// stable comparison criteria.
     fn select_best(&self, candidates: &[String], policy: Option<&PlacementPolicy>) -> String {
         if candidates.is_empty() {
-            unreachable!("select_best called with empty candidates");
+            panic!("select_best called with empty candidates");
         }
         if candidates.len() == 1 {
             return candidates[0].clone();

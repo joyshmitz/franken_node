@@ -510,7 +510,7 @@ fn enter_mask_scope<'a>(
                     deferred_cancel_pending: false,
                 },
             );
-            unreachable!(
+            panic!(
                 "{MASK_NESTING_VIOLATION}: nested bounded mask for operation `{operation_name}`"
             );
         }
@@ -633,7 +633,7 @@ mod tests {
                 assert!(elapsed_ns > max_duration_ns);
                 assert!(elapsed <= Duration::from_micros(1_000));
             }
-            other => unreachable!("unexpected error: {other:?}"),
+            other => panic!("unexpected error: {other:?}"),
         }
     }
 
@@ -747,7 +747,7 @@ mod tests {
                 &policy,
                 |_cx, cancel| {
                     cancel.request_cancel();
-                    unreachable!("boom");
+                    panic!("boom");
                 },
             );
         }));

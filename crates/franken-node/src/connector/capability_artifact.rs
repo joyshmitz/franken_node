@@ -1157,7 +1157,7 @@ mod tests {
         if let ArtifactError::OverScoped { out_of_scope, .. } = err {
             assert!(out_of_scope.contains(&"cap:forbidden:escalate".to_string()));
         } else {
-            unreachable!("expected OverScoped error");
+            panic!("expected OverScoped error");
         }
     }
 

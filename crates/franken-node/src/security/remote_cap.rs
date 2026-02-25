@@ -324,7 +324,7 @@ impl CapabilityProvider {
         let normalized_scope = RemoteScope::new(scope.operations, scope.endpoint_prefixes);
         let token_id = sha256_hex(
             format!(
-                "id:v1|issuer={issuer_identity}|issued={now_epoch_secs}|expires={expires_at_epoch_secs}|scope={}",
+                "id:v1|issuer={issuer_identity}|issued={now_epoch_secs}|expires={expires_at_epoch_secs}|scope={}|single_use={single_use}|trace_id={trace_id}",
                 scope_fingerprint(&normalized_scope)
             )
             .as_bytes(),

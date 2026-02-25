@@ -1204,7 +1204,7 @@ mod tests {
             ZkVerificationResult::Rejected { error_code, .. } => {
                 assert_eq!(error_code, error_codes::ERR_ZKA_POLICY_MISMATCH);
             }
-            _ => unreachable!("Expected Rejected"),
+            _ => panic!("Expected Rejected"),
         }
     }
 
@@ -1227,7 +1227,7 @@ mod tests {
             ZkVerificationResult::Rejected { error_code, .. } => {
                 assert_eq!(error_code, error_codes::ERR_ZKA_EXPIRED);
             }
-            _ => unreachable!("Expected Rejected"),
+            _ => panic!("Expected Rejected"),
         }
     }
 
@@ -1249,7 +1249,7 @@ mod tests {
             ZkVerificationResult::Rejected { error_code, .. } => {
                 assert_eq!(error_code, error_codes::ERR_ZKA_REVOKED);
             }
-            _ => unreachable!("Expected Rejected"),
+            _ => panic!("Expected Rejected"),
         }
     }
 
@@ -1271,7 +1271,7 @@ mod tests {
             ZkVerificationResult::Rejected { error_code, .. } => {
                 assert_eq!(error_code, error_codes::ERR_ZKA_INVALID_PROOF);
             }
-            _ => unreachable!("Expected Rejected"),
+            _ => panic!("Expected Rejected"),
         }
     }
 
@@ -1292,7 +1292,7 @@ mod tests {
             ZkVerificationResult::Rejected { error_code, .. } => {
                 assert_eq!(error_code, error_codes::ERR_ZKA_PREDICATE_UNSATISFIED);
             }
-            _ => unreachable!("Expected Rejected"),
+            _ => panic!("Expected Rejected"),
         }
     }
 

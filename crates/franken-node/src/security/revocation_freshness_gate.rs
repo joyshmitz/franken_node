@@ -819,12 +819,13 @@ mod tests {
     fn very_large_epoch() {
         let mut g = gate();
         let p = proof(SafetyTier::Advisory, u64::MAX - 5, "n-large");
-        let err = g.check(&p, u64::MAX - 10, true, false, "act", "tr").unwrap_err();
-        match err {
-            FreshnessError::ProofTampered { detail } => {
-                assert!(detail.contains("in the future"));
-            }
-            _ => panic!("Expected ProofTampered error"),
+        let err = g
+            .check(&p, u64::MAX - 10, true, false, "act", "tr")
+            .unwrap_err();
+        if let FreshnessError::ProofTampered { detail } = err {
+            assert!(detail.contains("in the future"));
+        } else {
+            assert!(false, "Expected ProofTampered error");
         }
     }
 }
