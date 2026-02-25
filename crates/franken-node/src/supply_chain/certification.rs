@@ -990,13 +990,20 @@ mod tests {
     #[test]
     fn test_demotion_non_adjacent_rejected() {
         let mut reg = CertificationRegistry::new();
-        let input = make_input(
+        let mut input = make_input(
             "ext-1",
             ProvenanceLevel::SignedReproducible,
             ReputationTier::Trusted,
             90.0,
         );
+        input.has_reproducible_build_evidence = true;
+        input.has_test_coverage_evidence = true;
+        input.test_coverage_pct = Some(90.0);
         reg.evaluate_and_register(&input, &ts(1));
+        assert_eq!(
+            reg.get_record("ext-1", "1.0.0").unwrap().level,
+            CertificationLevel::Verified
+        );
         // Verified (rank 3) to Basic (rank 1) is a 2-rank jump — must be rejected.
         let err = reg
             .demote(

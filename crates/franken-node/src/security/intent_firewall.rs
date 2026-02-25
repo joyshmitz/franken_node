@@ -1461,11 +1461,20 @@ mod tests {
         // ERR_FIREWALL_CLASSIFICATION_FAILED, ERR_FIREWALL_CHALLENGE_TIMEOUT,
         // ERR_FIREWALL_SIMULATE_FAILED, ERR_FIREWALL_QUARANTINE_FULL,
         // ERR_FIREWALL_RECEIPT_UNSIGNED, ERR_FIREWALL_POLICY_MISSING
-        assert_eq!(ERR_FIREWALL_CLASSIFICATION_FAILED, "ERR_FIREWALL_CLASSIFICATION_FAILED");
-        assert_eq!(ERR_FIREWALL_CHALLENGE_TIMEOUT, "ERR_FIREWALL_CHALLENGE_TIMEOUT");
+        assert_eq!(
+            ERR_FIREWALL_CLASSIFICATION_FAILED,
+            "ERR_FIREWALL_CLASSIFICATION_FAILED"
+        );
+        assert_eq!(
+            ERR_FIREWALL_CHALLENGE_TIMEOUT,
+            "ERR_FIREWALL_CHALLENGE_TIMEOUT"
+        );
         assert_eq!(ERR_FIREWALL_SIMULATE_FAILED, "ERR_FIREWALL_SIMULATE_FAILED");
         assert_eq!(ERR_FIREWALL_QUARANTINE_FULL, "ERR_FIREWALL_QUARANTINE_FULL");
-        assert_eq!(ERR_FIREWALL_RECEIPT_UNSIGNED, "ERR_FIREWALL_RECEIPT_UNSIGNED");
+        assert_eq!(
+            ERR_FIREWALL_RECEIPT_UNSIGNED,
+            "ERR_FIREWALL_RECEIPT_UNSIGNED"
+        );
         assert_eq!(ERR_FIREWALL_POLICY_MISSING, "ERR_FIREWALL_POLICY_MISSING");
     }
 
@@ -1473,8 +1482,14 @@ mod tests {
     fn test_semantic_invariants_defined() {
         // INV-FIREWALL-STABLE-CLASSIFICATION, INV-FIREWALL-DETERMINISTIC-RECEIPT,
         // INV-FIREWALL-FAIL-DENY, INV-FIREWALL-RISKY-PATHWAY
-        assert_eq!(INV_FIREWALL_STABLE_CLASSIFICATION, "INV-FIREWALL-STABLE-CLASSIFICATION");
-        assert_eq!(INV_FIREWALL_DETERMINISTIC_RECEIPT, "INV-FIREWALL-DETERMINISTIC-RECEIPT");
+        assert_eq!(
+            INV_FIREWALL_STABLE_CLASSIFICATION,
+            "INV-FIREWALL-STABLE-CLASSIFICATION"
+        );
+        assert_eq!(
+            INV_FIREWALL_DETERMINISTIC_RECEIPT,
+            "INV-FIREWALL-DETERMINISTIC-RECEIPT"
+        );
         assert_eq!(INV_FIREWALL_FAIL_DENY, "INV-FIREWALL-FAIL-DENY");
         assert_eq!(INV_FIREWALL_RISKY_PATHWAY, "INV-FIREWALL-RISKY-PATHWAY");
     }
@@ -1519,7 +1534,9 @@ mod tests {
         assert!(c.is_none());
 
         let mut fw = make_firewall();
-        let d = fw.evaluate(&effect, "trace-fd", "2026-01-01T00:00:00Z").unwrap();
+        let d = fw
+            .evaluate(&effect, "trace-fd", "2026-01-01T00:00:00Z")
+            .unwrap();
         assert_eq!(d.verdict, FirewallVerdict::Deny);
     }
 

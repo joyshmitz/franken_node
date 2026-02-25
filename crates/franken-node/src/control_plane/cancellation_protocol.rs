@@ -950,7 +950,9 @@ mod tests {
         let mut resources = ResourceTracker::empty();
         resources.held_locks.push("db-lock".to_string());
 
-        let err = proto.finalize("wf-leak", &resources, 1300, "t1").unwrap_err();
+        let err = proto
+            .finalize("wf-leak", &resources, 1300, "t1")
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CANCEL_LEAK);
 
         // Phase must remain Finalizing, not Finalized.
