@@ -188,7 +188,7 @@
     "bead_id": "bd-3ohj",
     "section": "bootstrap",
     "artifact_type": "gate_verdict",
-    "scenario_id": "bootstrap_foundation_gate",
+    "scenario_id": "bootstrap_foundation_check_report",
     "timestamp": "2026-02-22T02:39:59Z",
     "commit": "f1d41ad9b488c06ff83cc4b4c259a9bbb48335e9",
     "trace_id": "trace-bd-3ohj-foundation-gate"

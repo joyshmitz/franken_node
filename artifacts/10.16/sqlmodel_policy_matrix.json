@@ -192,6 +192,33 @@
       "version": "1.0.0",
       "model_name": "LifecycleTransitionCacheRecord",
       "typed_model_defined": true
+    },
+    {
+      "name": "incident_bundle_retention",
+      "owner_module": "crates/franken-node/src/connector/incident_bundle_retention.rs",
+      "classification": "mandatory",
+      "model_source": "codegen",
+      "version": "1.0.0",
+      "model_name": "IncidentBundleRetentionRecord",
+      "typed_model_defined": true
+    },
+    {
+      "name": "migration_artifact",
+      "owner_module": "crates/franken-node/src/connector/migration_artifact.rs",
+      "classification": "mandatory",
+      "model_source": "hand_authored",
+      "version": "1.0.0",
+      "model_name": "MigrationArtifactRecord",
+      "typed_model_defined": true
+    },
+    {
+      "name": "migration_pipeline",
+      "owner_module": "crates/franken-node/src/connector/migration_pipeline.rs",
+      "classification": "mandatory",
+      "model_source": "hand_authored",
+      "version": "1.0.0",
+      "model_name": "MigrationPipelineRecord",
+      "typed_model_defined": true
     }
   ],
   "ownership_rules": {
@@ -258,6 +285,15 @@
       ],
       "crates/franken-node/src/connector/lifecycle.rs": [
         "LifecycleTransitionCacheRecord"
+      ],
+      "crates/franken-node/src/connector/incident_bundle_retention.rs": [
+        "IncidentBundleRetentionRecord"
+      ],
+      "crates/franken-node/src/connector/migration_artifact.rs": [
+        "MigrationArtifactRecord"
+      ],
+      "crates/franken-node/src/connector/migration_pipeline.rs": [
+        "MigrationPipelineRecord"
       ]
     },
     "model_to_module": {
@@ -281,7 +317,10 @@
       "OfflineCoverageMetricRecord": "crates/franken-node/src/connector/offline_coverage.rs",
       "RepairCycleAuditRecord": "crates/franken-node/src/connector/repair_controller.rs",
       "LeaseConflictAuditRecord": "crates/franken-node/src/connector/lease_conflict.rs",
-      "LifecycleTransitionCacheRecord": "crates/franken-node/src/connector/lifecycle.rs"
+      "LifecycleTransitionCacheRecord": "crates/franken-node/src/connector/lifecycle.rs",
+      "IncidentBundleRetentionRecord": "crates/franken-node/src/connector/incident_bundle_retention.rs",
+      "MigrationArtifactRecord": "crates/franken-node/src/connector/migration_artifact.rs",
+      "MigrationPipelineRecord": "crates/franken-node/src/connector/migration_pipeline.rs"
     }
   },
   "codegen_config": {

@@ -2013,24 +2013,1321 @@
         }
       ],
       "justification": "tooling exports/replays durable evidence and may expose service endpoints"
+    },
+    {
+      "path": "crates/franken-node/src/api",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/api/compat_gate.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/api/error.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/api/fleet_control_routes.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/api/fleet_quarantine.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/api/middleware.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/api/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/api/operator_routes.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/api/service.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/api/session_auth.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/api/trust_card_routes.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/api/verifier_routes.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/atc",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/atc/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/claims",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/claims/claim_compiler.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/claims/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/conformance/fsqlite_inspired_suite.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/bocpd.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/cancel_injection_gate.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/cancellation_protocol.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/canonical_serializer.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/capability_artifact.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/capability_guard.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/claim_compiler.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/control_evidence.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/control_evidence_replay.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/diagnostic_registry.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/dpor_schedule_gate.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/ecosystem_compliance.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/ecosystem_registry.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/ecosystem_reputation.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/error_surface.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/eviction_saga.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/incident_bundle_retention.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/migration_artifact.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/migration_pipeline.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/n_version_oracle.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/obligation_tracker.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/operator_intelligence.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/perf_budget_guard.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/policy_checkpoint.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/region_ownership.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/rollback_bundle.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/saga.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/supervision.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/transport_fault_gate.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/trust_fabric.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/trust_object_id.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/trust_zone.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/universal_verifier_sdk.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/vef_claim_integration.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/vef_execution_receipt.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/vef_perf_budget.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/vef_policy_constraints.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/connector/verifier_sdk.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/control_plane/audience_token.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/control_plane/cancellation_injection.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/control_plane/cancellation_protocol.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/control_plane/control_lane_mapping.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/control_plane/control_lane_policy.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/control_plane/divergence_gate.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/control_plane/dpor_exploration.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/control_plane/epoch_transition_barrier.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/control_plane/evidence_replay_gate.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/control_plane/fork_detection.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/control_plane/key_role_separation.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/control_plane/transition_abort.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/extensions",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/extensions/artifact_contract.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/extensions/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/federation",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/federation/atc_participation_weighting.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/federation/atc_reciprocity.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/federation/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/lib.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/migration",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/migration/bpet_migration_gate.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/migration/dgis_migration_gate.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/migration/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/ops",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/ops/engine_dispatcher.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/ops/mitigation_synthesis.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/ops/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/ops/telemetry_bridge.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/perf",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/perf/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/perf/optimization_governor.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/policy/approval_workflow.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/policy/compat_gates.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/policy/compatibility_gate.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/policy/object_class_tuning.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/policy/perf_budget_guard.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/registry",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/registry/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/registry/staking_governance.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/remote",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/remote/computation_registry.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/remote/eviction_saga.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/remote/idempotency.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/remote/idempotency_store.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/remote/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/remote/remote_bulkhead.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/remote/virtual_transport_faults.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/replay",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/replay/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/replay/time_travel_engine.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/anti_entropy.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/authority_audit.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/bounded_mask.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/bulkhead.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/cancellable_task.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/checkpoint.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/checkpoint_guard.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/epoch_guard.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/epoch_transition.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/hardware_planner.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/incident_lab.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/isolation_mesh.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/lane_router.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/lane_scheduler.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/lockstep_harness.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/nversion_oracle.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/obligation_channel.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/optimization_governor.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/region_tree.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/safe_mode.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/speculation",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/speculation/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/speculation/proof_executor.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/runtime/time_travel.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/sdk",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/sdk/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/sdk/replay_capsule.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/sdk/verifier_sdk.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/adversarial_runner.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/adversary_graph.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/bpet",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/bpet/economic_integration.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/bpet/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/challenge_flow.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/copilot_engine.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/dgis",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/dgis/barrier_primitives.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/dgis/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/dgis/update_copilot.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/impossible_default.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/intent_firewall.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/isolation_rail_router.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/lineage_tracker.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/quarantine_controller.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/revocation_freshness_gate.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/staking_governance.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/sybil_defense.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/trust_complexity.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/trust_zone.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/vef_degraded_mode.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/security/zk_attestation.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/storage",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/storage/frankensqlite_adapter.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/storage/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/storage/models.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/storage/retrievability_gate.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/supply_chain/artifact_signing.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/supply_chain/category_shift.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/supply_chain/certification.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/supply_chain/ecosystem_telemetry.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/supply_chain/extension_registry.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/supply_chain/migration_kit.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/supply_chain/quarantine.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/supply_chain/reputation.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/supply_chain/trust_card.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/testing",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/testing/lab_runtime.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/testing/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/testing/scenario_builder.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/testing/virtual_transport.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/adversarial_resilience_metrics.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/benchmark_methodology.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/benchmark_suite.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/compatibility_correctness_metrics.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/containment_revocation_metrics.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/enterprise_governance.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/external_replication_claims.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/frontier_demo_gate.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/migration_incident_datasets.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/migration_speed_failure_metrics.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/migration_validation_cohorts.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/partner_lighthouse_programs.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/performance_hardening_metrics.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/profile_tuning_harness.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/redteam_evaluations.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/replay_determinism_metrics.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/report_output_contract.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/reputation_graph_apis.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/safe_extension_onboarding.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/security_ops_case_studies.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/security_trust_metrics.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/transparent_reports.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/trust_economics_dashboard.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/vef_perf_budget_gate.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/verifier_benchmark_releases.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/verifier_toolkit.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/tools/version_benchmark_standards.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/vef",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/vef/constraint_compiler.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/vef/control_integration.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/vef/evidence_capsule.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/vef/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/vef/proof_generator.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/vef/proof_scheduler.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/vef/proof_service.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/vef/proof_verifier.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/vef/receipt_chain.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/vef/sdk_integration.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/vef/verification_state.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/verifier_economy",
+      "kind": "directory",
+      "substrates": [],
+      "justification": "auto-filled"
+    },
+    {
+      "path": "crates/franken-node/src/verifier_economy/mod.rs",
+      "kind": "file",
+      "substrates": [],
+      "justification": "auto-filled"
     }
   ],
   "unmapped_modules": [],
   "coverage_summary": {
-    "module_count": 109,
-    "directory_count": 12,
-    "file_count": 97,
-    "planes": {
-      "presentation": 3,
-      "persistence": 68,
-      "model": 91,
-      "service": 89
-    },
-    "substrates": {
-      "frankentui": 3,
-      "frankensqlite": 68,
-      "sqlmodel_rust": 91,
-      "fastapi_rust": 89
-    }
+    "total_modules": 327,
+    "mapped_modules": 327,
+    "unmapped_modules": 0,
+    "coverage_percentage": 100.0
   }
 }

@@ -1,2 +1,10 @@
-{"ts":"2026-02-22T02:20:45Z","trace_id":"trace-bd-1pk-doctor-e2e","event_code":"DOC-E2E-001","status":"info","detail":"Starting bd-1pk doctor diagnostics gate."}
-{"ts":"2026-02-22T02:20:45Z","trace_id":"trace-bd-1pk-doctor-e2e","event_code":"DOC-E2E-099","status":"pass","detail":"Doctor diagnostics gate passed."}
+{"ts":"2026-02-25T06:29:47Z","trace_id":"trace-bd-1pk-doctor-e2e","event_code":"DOC-E2E-001","status":"info","detail":"Starting bd-1pk doctor diagnostics gate with live policy activation scenarios."}
+{"ts":"2026-02-25T06:29:47Z","trace_id":"trace-bd-1pk-doctor-e2e","event_code":"DOC-E2E-010","status":"info","detail":"Running policy-pass: fixture=fixtures/policy_activation/doctor_policy_activation_pass.json"}
+{"ts":"2026-02-25T06:29:47Z","trace_id":"trace-bd-1pk-doctor-e2e","event_code":"DOC-E2E-010","status":"pass","detail":"policy-pass completed"}
+{"ts":"2026-02-25T06:29:47Z","trace_id":"trace-bd-1pk-doctor-e2e","event_code":"DOC-E2E-011","status":"info","detail":"Running policy-warn: fixture=fixtures/policy_activation/doctor_policy_activation_warn.json"}
+{"ts":"2026-02-25T06:29:47Z","trace_id":"trace-bd-1pk-doctor-e2e","event_code":"DOC-E2E-011","status":"pass","detail":"policy-warn completed"}
+{"ts":"2026-02-25T06:29:47Z","trace_id":"trace-bd-1pk-doctor-e2e","event_code":"DOC-E2E-012","status":"info","detail":"Running policy-block: fixture=fixtures/policy_activation/doctor_policy_activation_block.json"}
+{"ts":"2026-02-25T06:29:47Z","trace_id":"trace-bd-1pk-doctor-e2e","event_code":"DOC-E2E-012","status":"pass","detail":"policy-block completed"}
+{"ts":"2026-02-25T06:29:47Z","trace_id":"trace-bd-1pk-doctor-e2e","event_code":"DOC-E2E-013","status":"info","detail":"Running policy-invalid: fixture=fixtures/policy_activation/doctor_policy_activation_invalid.json"}
+{"ts":"2026-02-25T06:29:47Z","trace_id":"trace-bd-1pk-doctor-e2e","event_code":"DOC-E2E-013","status":"pass","detail":"policy-invalid completed"}
+{"ts":"2026-02-25T06:29:47Z","trace_id":"trace-bd-1pk-doctor-e2e","event_code":"DOC-E2E-099","status":"pass","detail":"Doctor diagnostics gate passed."}

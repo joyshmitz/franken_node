@@ -49,6 +49,24 @@
       "event_code": "DOC-008",
       "scope": "config.provenance",
       "remediation": "Investigate resolver instrumentation before relying on doctor provenance."
+    },
+    {
+      "code": "DR-POLICY-009",
+      "event_code": "DOC-009",
+      "scope": "policy.guardrails",
+      "remediation": "Resolve blocked budgets before executing policy actions."
+    },
+    {
+      "code": "DR-POLICY-010",
+      "event_code": "DOC-010",
+      "scope": "policy.decision_engine",
+      "remediation": "Reduce risk exposure or provide safer candidate actions."
+    },
+    {
+      "code": "DR-POLICY-011",
+      "event_code": "DOC-011",
+      "scope": "policy.explainer_wording",
+      "remediation": "Fix explanation wording to preserve diagnostic vs guarantee separation."
     }
   ]
 }

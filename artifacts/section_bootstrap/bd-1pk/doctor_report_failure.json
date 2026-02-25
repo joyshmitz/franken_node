@@ -1,155 +1,366 @@
 {
+  "command": "doctor",
+  "trace_id": "doctor-policy-block",
+  "generated_at_utc": "2026-02-25T06:29:47.550311946+00:00",
+  "selected_profile": "balanced",
+  "source_path": null,
+  "overall_status": "fail",
+  "status_counts": {
+    "pass": 8,
+    "warn": 1,
+    "fail": 2
+  },
   "checks": [
     {
       "code": "DR-CONFIG-001",
-      "duration_ms": 0,
-      "event_code": "DOC-001",
-      "message": "Configuration resolved successfully.",
-      "remediation": "No action required.",
-      "scope": "config.resolve",
-      "status": "pass"
-    },
-    {
-      "code": "DR-CONFIG-002",
-      "duration_ms": 0,
-      "event_code": "DOC-002",
-      "message": "No config file discovered; defaults are active.",
-      "remediation": "Create franken_node.toml or pass --config to lock deterministic project settings.",
-      "scope": "config.source",
-      "status": "warn"
-    },
-    {
-      "code": "DR-PROFILE-003",
-      "duration_ms": 0,
-      "event_code": "DOC-003",
-      "message": "Profile is legacy-risky.",
-      "remediation": "Prefer --profile balanced or --profile strict for stronger controls.",
-      "scope": "profile.safety",
-      "status": "warn"
-    },
-    {
-      "code": "DR-TRUST-004",
-      "duration_ms": 0,
-      "event_code": "DOC-004",
-      "message": "Registry assurance level is below bootstrap target (3).",
-      "remediation": "Raise registry.minimum_assurance_level to 3+.",
-      "scope": "registry.assurance",
-      "status": "warn"
-    },
-    {
-      "code": "DR-MIGRATE-005",
-      "duration_ms": 0,
-      "event_code": "DOC-005",
-      "message": "Lockstep validation requirement is disabled.",
-      "remediation": "Set migration.require_lockstep_validation=true for safer rollout validation.",
-      "scope": "migration.lockstep",
-      "status": "warn"
-    },
-    {
-      "code": "DR-OBS-006",
-      "duration_ms": 0,
-      "event_code": "DOC-006",
-      "message": "Structured audit events are disabled.",
-      "remediation": "Set observability.emit_structured_audit_events=true for stronger traceability.",
-      "scope": "observability.audit_events",
-      "status": "warn"
-    },
-    {
-      "code": "DR-ENV-007",
-      "duration_ms": 0,
-      "event_code": "DOC-007",
-      "message": "Current working directory is unavailable.",
-      "remediation": "Fix working directory access before running operations.",
-      "scope": "environment.cwd",
-      "status": "fail"
-    },
-    {
-      "code": "DR-CONFIG-008",
-      "duration_ms": 0,
-      "event_code": "DOC-008",
-      "message": "No merge decisions recorded for this configuration.",
-      "remediation": "Investigate resolver instrumentation before relying on doctor provenance.",
-      "scope": "config.provenance",
-      "status": "warn"
-    }
-  ],
-  "command": "doctor",
-  "generated_at_utc": "2026-02-22T00:00:00Z",
-  "merge_decision_count": 0,
-  "merge_decisions": [],
-  "overall_status": "fail",
-  "selected_profile": "legacy-risky",
-  "source_path": null,
-  "status_counts": {
-    "fail": 1,
-    "pass": 1,
-    "warn": 6
-  },
-  "structured_logs": [
-    {
-      "check_code": "DR-CONFIG-001",
-      "duration_ms": 0,
       "event_code": "DOC-001",
       "scope": "config.resolve",
       "status": "pass",
-      "trace_id": "doctor-failure"
+      "message": "Configuration resolved successfully.",
+      "remediation": "No action required.",
+      "duration_ms": 0
     },
     {
-      "check_code": "DR-CONFIG-002",
-      "duration_ms": 0,
+      "code": "DR-CONFIG-002",
       "event_code": "DOC-002",
       "scope": "config.source",
       "status": "warn",
-      "trace_id": "doctor-failure"
+      "message": "No config file discovered; defaults are active.",
+      "remediation": "Create franken_node.toml or pass --config to lock deterministic project settings.",
+      "duration_ms": 0
     },
     {
-      "check_code": "DR-PROFILE-003",
-      "duration_ms": 0,
+      "code": "DR-PROFILE-003",
       "event_code": "DOC-003",
       "scope": "profile.safety",
-      "status": "warn",
-      "trace_id": "doctor-failure"
+      "status": "pass",
+      "message": "Profile safety level is acceptable.",
+      "remediation": "No action required.",
+      "duration_ms": 0
     },
     {
-      "check_code": "DR-TRUST-004",
-      "duration_ms": 0,
+      "code": "DR-TRUST-004",
       "event_code": "DOC-004",
       "scope": "registry.assurance",
-      "status": "warn",
-      "trace_id": "doctor-failure"
+      "status": "pass",
+      "message": "Registry assurance level meets bootstrap target.",
+      "remediation": "No action required.",
+      "duration_ms": 0
     },
     {
-      "check_code": "DR-MIGRATE-005",
-      "duration_ms": 0,
+      "code": "DR-MIGRATE-005",
       "event_code": "DOC-005",
       "scope": "migration.lockstep",
-      "status": "warn",
-      "trace_id": "doctor-failure"
+      "status": "pass",
+      "message": "Lockstep validation requirement is enabled.",
+      "remediation": "No action required.",
+      "duration_ms": 0
     },
     {
-      "check_code": "DR-OBS-006",
-      "duration_ms": 0,
+      "code": "DR-OBS-006",
       "event_code": "DOC-006",
       "scope": "observability.audit_events",
-      "status": "warn",
-      "trace_id": "doctor-failure"
+      "status": "pass",
+      "message": "Structured audit events are enabled.",
+      "remediation": "No action required.",
+      "duration_ms": 0
     },
     {
-      "check_code": "DR-ENV-007",
-      "duration_ms": 0,
+      "code": "DR-ENV-007",
       "event_code": "DOC-007",
       "scope": "environment.cwd",
-      "status": "fail",
-      "trace_id": "doctor-failure"
+      "status": "pass",
+      "message": "Current working directory is available: /data/projects/franken_node",
+      "remediation": "No action required.",
+      "duration_ms": 0
     },
     {
-      "check_code": "DR-CONFIG-008",
-      "duration_ms": 0,
+      "code": "DR-CONFIG-008",
       "event_code": "DOC-008",
       "scope": "config.provenance",
-      "status": "warn",
-      "trace_id": "doctor-failure"
+      "status": "pass",
+      "message": "Merge provenance recorded (1 decisions).",
+      "remediation": "No action required.",
+      "duration_ms": 0
+    },
+    {
+      "code": "DR-POLICY-009",
+      "event_code": "DOC-009",
+      "scope": "policy.guardrails",
+      "status": "fail",
+      "message": "Policy guardrails reported BLOCK with budgets: conformal_risk.",
+      "remediation": "Resolve blocked budgets before executing policy actions.",
+      "duration_ms": 0
+    },
+    {
+      "code": "DR-POLICY-010",
+      "event_code": "DOC-010",
+      "scope": "policy.decision_engine",
+      "status": "fail",
+      "message": "Decision engine blocked all candidates after guardrail evaluation.",
+      "remediation": "Reduce risk exposure or provide safer candidate actions.",
+      "duration_ms": 0
+    },
+    {
+      "code": "DR-POLICY-011",
+      "event_code": "DOC-011",
+      "scope": "policy.explainer_wording",
+      "status": "pass",
+      "message": "Policy explanation wording passed diagnostic/guarantee separation checks.",
+      "remediation": "No action required.",
+      "duration_ms": 0
     }
   ],
-  "trace_id": "doctor-failure"
+  "structured_logs": [
+    {
+      "trace_id": "doctor-policy-block",
+      "event_code": "DOC-001",
+      "check_code": "DR-CONFIG-001",
+      "scope": "config.resolve",
+      "status": "pass",
+      "duration_ms": 0
+    },
+    {
+      "trace_id": "doctor-policy-block",
+      "event_code": "DOC-002",
+      "check_code": "DR-CONFIG-002",
+      "scope": "config.source",
+      "status": "warn",
+      "duration_ms": 0
+    },
+    {
+      "trace_id": "doctor-policy-block",
+      "event_code": "DOC-003",
+      "check_code": "DR-PROFILE-003",
+      "scope": "profile.safety",
+      "status": "pass",
+      "duration_ms": 0
+    },
+    {
+      "trace_id": "doctor-policy-block",
+      "event_code": "DOC-004",
+      "check_code": "DR-TRUST-004",
+      "scope": "registry.assurance",
+      "status": "pass",
+      "duration_ms": 0
+    },
+    {
+      "trace_id": "doctor-policy-block",
+      "event_code": "DOC-005",
+      "check_code": "DR-MIGRATE-005",
+      "scope": "migration.lockstep",
+      "status": "pass",
+      "duration_ms": 0
+    },
+    {
+      "trace_id": "doctor-policy-block",
+      "event_code": "DOC-006",
+      "check_code": "DR-OBS-006",
+      "scope": "observability.audit_events",
+      "status": "pass",
+      "duration_ms": 0
+    },
+    {
+      "trace_id": "doctor-policy-block",
+      "event_code": "DOC-007",
+      "check_code": "DR-ENV-007",
+      "scope": "environment.cwd",
+      "status": "pass",
+      "duration_ms": 0
+    },
+    {
+      "trace_id": "doctor-policy-block",
+      "event_code": "DOC-008",
+      "check_code": "DR-CONFIG-008",
+      "scope": "config.provenance",
+      "status": "pass",
+      "duration_ms": 0
+    },
+    {
+      "trace_id": "doctor-policy-block",
+      "event_code": "DOC-009",
+      "check_code": "DR-POLICY-009",
+      "scope": "policy.guardrails",
+      "status": "fail",
+      "duration_ms": 0
+    },
+    {
+      "trace_id": "doctor-policy-block",
+      "event_code": "DOC-010",
+      "check_code": "DR-POLICY-010",
+      "scope": "policy.decision_engine",
+      "status": "fail",
+      "duration_ms": 0
+    },
+    {
+      "trace_id": "doctor-policy-block",
+      "event_code": "DOC-011",
+      "check_code": "DR-POLICY-011",
+      "scope": "policy.explainer_wording",
+      "status": "pass",
+      "duration_ms": 0
+    }
+  ],
+  "merge_decision_count": 1,
+  "merge_decisions": [
+    {
+      "stage": "default",
+      "field": "profile",
+      "value": "balanced"
+    }
+  ],
+  "policy_activation": {
+    "input_path": "/data/projects/franken_node/fixtures/policy_activation/doctor_policy_activation_block.json",
+    "candidate_count": 3,
+    "observation_count": 6,
+    "prefiltered_candidate_count": 0,
+    "top_ranked_candidate": "balanced_patch",
+    "guardrail_certificate": {
+      "epoch_id": 4444,
+      "dominant_verdict": "block",
+      "findings": [
+        {
+          "monitor_name": "MemoryBudgetGuardrail",
+          "budget_id": "memory_budget",
+          "verdict": "allow",
+          "event_code": "EVD-GUARD-001",
+          "anytime_valid": true,
+          "reason": null
+        },
+        {
+          "monitor_name": "MemoryTailRiskGuardrail",
+          "budget_id": "memory_tail_risk",
+          "verdict": "allow",
+          "event_code": "EVD-GUARD-001",
+          "anytime_valid": true,
+          "reason": null
+        },
+        {
+          "monitor_name": "ConformalRiskGuardrail",
+          "budget_id": "conformal_risk",
+          "verdict": "block",
+          "event_code": "EVD-GUARD-002",
+          "anytime_valid": true,
+          "reason": "conformal-risk upper error bound 0.121 exceeds block threshold 0.100 (empirical 0.090, n=3000, delta=0.0100)"
+        },
+        {
+          "monitor_name": "DurabilityLossGuardrail",
+          "budget_id": "durability_budget",
+          "verdict": "allow",
+          "event_code": "EVD-GUARD-001",
+          "anytime_valid": true,
+          "reason": null
+        },
+        {
+          "monitor_name": "HardeningRegressionGuardrail",
+          "budget_id": "hardening_regression",
+          "verdict": "allow",
+          "event_code": "EVD-GUARD-001",
+          "anytime_valid": true,
+          "reason": null
+        },
+        {
+          "monitor_name": "EvidenceEmissionGuardrail",
+          "budget_id": "evidence_emission",
+          "verdict": "allow",
+          "event_code": "EVD-GUARD-001",
+          "anytime_valid": true,
+          "reason": null
+        }
+      ],
+      "blocking_budget_ids": [
+        "conformal_risk"
+      ]
+    },
+    "decision_outcome": {
+      "chosen": null,
+      "blocked": [
+        {
+          "candidate": "balanced_patch",
+          "blocked_by": [
+            "conformal_risk"
+          ],
+          "bayesian_rank": 0,
+          "reasons": [
+            "conformal-risk upper error bound 0.121 exceeds block threshold 0.100 (empirical 0.090, n=3000, delta=0.0100)"
+          ]
+        },
+        {
+          "candidate": "rollback_path",
+          "blocked_by": [
+            "conformal_risk"
+          ],
+          "bayesian_rank": 1,
+          "reasons": [
+            "conformal-risk upper error bound 0.121 exceeds block threshold 0.100 (empirical 0.090, n=3000, delta=0.0100)"
+          ]
+        },
+        {
+          "candidate": "aggressive_patch",
+          "blocked_by": [
+            "conformal_risk"
+          ],
+          "bayesian_rank": 2,
+          "reasons": [
+            "conformal-risk upper error bound 0.121 exceeds block threshold 0.100 (empirical 0.090, n=3000, delta=0.0100)"
+          ]
+        }
+      ],
+      "reason": "AllCandidatesBlocked",
+      "epoch_id": 4444
+    },
+    "explanation": {
+      "diagnostic_confidence": {
+        "posterior_prob": null,
+        "observation_count": 6,
+        "confidence_interval": null,
+        "confidence_level": "medium",
+        "summary": "Data indicates 6 observations were processed with medium diagnostic confidence, but no candidate was eligible for selection. This is an observation-based assessment."
+      },
+      "guarantee_confidence": {
+        "all_guardrails_passed": false,
+        "guardrails_checked": [
+          "conformal_risk"
+        ],
+        "invariants_verified": [
+          "INV-DECIDE-PRECEDENCE",
+          "INV-DECIDE-NO-PANIC",
+          "INV-GUARD-ANYTIME"
+        ],
+        "summary": "No action could be verified by guardrail checks. All candidates were blocked, guaranteed by invariant enforcement to prevent unsafe operations."
+      },
+      "action_summary": "No action selected: all 3 candidate(s) blocked by guardrails.",
+      "blocked_alternatives": [
+        {
+          "candidate": "balanced_patch",
+          "bayesian_rank": 0,
+          "blocked_by": [
+            "conformal_risk"
+          ],
+          "explanation": "Candidate 'balanced_patch' (rank 0) was blocked by guardrail(s): conformal_risk. Reasons: conformal-risk upper error bound 0.121 exceeds block threshold 0.100 (empirical 0.090, n=3000, delta=0.0100)"
+        },
+        {
+          "candidate": "rollback_path",
+          "bayesian_rank": 1,
+          "blocked_by": [
+            "conformal_risk"
+          ],
+          "explanation": "Candidate 'rollback_path' (rank 1) was blocked by guardrail(s): conformal_risk. Reasons: conformal-risk upper error bound 0.121 exceeds block threshold 0.100 (empirical 0.090, n=3000, delta=0.0100)"
+        },
+        {
+          "candidate": "aggressive_patch",
+          "bayesian_rank": 2,
+          "blocked_by": [
+            "conformal_risk"
+          ],
+          "explanation": "Candidate 'aggressive_patch' (rank 2) was blocked by guardrail(s): conformal_risk. Reasons: conformal-risk upper error bound 0.121 exceeds block threshold 0.100 (empirical 0.090, n=3000, delta=0.0100)"
+        }
+      ],
+      "epoch_id": 4444
+    },
+    "wording_validation": {
+      "valid": true,
+      "violations": []
+    }
+  }
 }

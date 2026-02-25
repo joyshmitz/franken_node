@@ -1,8 +1,8 @@
 {
   "bead_id": "bd-1pk",
   "gate_script": "doctor_command_diagnostics.sh",
-  "checks_passed": 34,
-  "checks_total": 34,
+  "checks_passed": 65,
+  "checks_total": 65,
   "verdict": "PASS",
   "checks": [
     {
@@ -31,6 +31,11 @@
       "detail": "--trace-id"
     },
     {
+      "check": "doctor_args_policy_activation_input_flag",
+      "passed": true,
+      "detail": "--policy-activation-input"
+    },
+    {
       "check": "doctor_args_trace_id_default",
       "passed": true,
       "detail": "doctor-bootstrap"
@@ -49,6 +54,16 @@
       "check": "doctor_builder_with_cwd",
       "passed": true,
       "detail": "cwd injectable builder"
+    },
+    {
+      "check": "doctor_builder_with_policy_input",
+      "passed": true,
+      "detail": "policy input injectable builder"
+    },
+    {
+      "check": "doctor_policy_activation_runner",
+      "passed": true,
+      "detail": "policy activation pipeline runner"
     },
     {
       "check": "doctor_json_output_path",
@@ -101,6 +116,21 @@
       "detail": "DR-CONFIG-008"
     },
     {
+      "check": "doctor_code_DR-POLICY-009",
+      "passed": true,
+      "detail": "DR-POLICY-009"
+    },
+    {
+      "check": "doctor_code_DR-POLICY-010",
+      "passed": true,
+      "detail": "DR-POLICY-010"
+    },
+    {
+      "check": "doctor_code_DR-POLICY-011",
+      "passed": true,
+      "detail": "DR-POLICY-011"
+    },
+    {
       "check": "doctor_event_code_DOC-001",
       "passed": true,
       "detail": "DOC-001"
@@ -141,9 +171,24 @@
       "detail": "DOC-008"
     },
     {
+      "check": "doctor_event_code_DOC-009",
+      "passed": true,
+      "detail": "DOC-009"
+    },
+    {
+      "check": "doctor_event_code_DOC-010",
+      "passed": true,
+      "detail": "DOC-010"
+    },
+    {
+      "check": "doctor_event_code_DOC-011",
+      "passed": true,
+      "detail": "DOC-011"
+    },
+    {
       "check": "doctor_code_order_deterministic",
       "passed": true,
-      "detail": "[14334, 14693, 15579, 16444, 17334, 18248, 19125, 19988]"
+      "detail": "[26027, 26386, 27272, 28162, 29052, 29991, 30868, 31731, 33383, 35554, 38122]"
     },
     {
       "check": "contract_has_matrix_and_schema",
@@ -151,35 +196,146 @@
       "detail": "matrix+schema sections"
     },
     {
+      "check": "contract_mentions_policy_activation_flag",
+      "passed": true,
+      "detail": "policy activation command surface"
+    },
+    {
+      "check": "contract_mentions_policy_codes",
+      "passed": true,
+      "detail": "policy code rows"
+    },
+    {
+      "check": "report_exists_doctor_report_healthy.json",
+      "passed": true,
+      "detail": "artifacts/section_bootstrap/bd-1pk/doctor_report_healthy.json"
+    },
+    {
+      "check": "report_valid_json_doctor_report_healthy.json",
+      "passed": true,
+      "detail": "valid json"
+    },
+    {
+      "check": "report_exists_doctor_report_degraded.json",
+      "passed": true,
+      "detail": "artifacts/section_bootstrap/bd-1pk/doctor_report_degraded.json"
+    },
+    {
+      "check": "report_valid_json_doctor_report_degraded.json",
+      "passed": true,
+      "detail": "valid json"
+    },
+    {
+      "check": "report_exists_doctor_report_failure.json",
+      "passed": true,
+      "detail": "artifacts/section_bootstrap/bd-1pk/doctor_report_failure.json"
+    },
+    {
+      "check": "report_valid_json_doctor_report_failure.json",
+      "passed": true,
+      "detail": "valid json"
+    },
+    {
+      "check": "report_exists_doctor_report_invalid_input.json",
+      "passed": true,
+      "detail": "artifacts/section_bootstrap/bd-1pk/doctor_report_invalid_input.json"
+    },
+    {
+      "check": "report_valid_json_doctor_report_invalid_input.json",
+      "passed": true,
+      "detail": "valid json"
+    },
+    {
+      "check": "policy_pass_statuses",
+      "passed": true,
+      "detail": "{'DR-POLICY-009': 'pass', 'DR-POLICY-010': 'pass', 'DR-POLICY-011': 'pass'}"
+    },
+    {
+      "check": "policy_warn_statuses",
+      "passed": true,
+      "detail": "{'DR-POLICY-009': 'warn', 'DR-POLICY-010': 'pass', 'DR-POLICY-011': 'pass'}"
+    },
+    {
+      "check": "policy_block_statuses",
+      "passed": true,
+      "detail": "{'DR-POLICY-009': 'fail', 'DR-POLICY-010': 'fail', 'DR-POLICY-011': 'pass'}"
+    },
+    {
+      "check": "policy_invalid_statuses",
+      "passed": true,
+      "detail": "{'DR-POLICY-009': 'fail', 'DR-POLICY-010': 'fail', 'DR-POLICY-011': 'fail'}"
+    },
+    {
+      "check": "policy_pass_dominant_verdict_allow",
+      "passed": true,
+      "detail": "allow"
+    },
+    {
+      "check": "policy_warn_dominant_verdict_warn",
+      "passed": true,
+      "detail": "warn"
+    },
+    {
+      "check": "policy_block_dominant_verdict_block",
+      "passed": true,
+      "detail": "block"
+    },
+    {
+      "check": "policy_block_contains_conformal_budget",
+      "passed": true,
+      "detail": "['conformal_risk']"
+    },
+    {
+      "check": "policy_invalid_omits_policy_activation",
+      "passed": true,
+      "detail": "None"
+    },
+    {
+      "check": "policy_pass_decision_reason",
+      "passed": true,
+      "detail": "TopCandidateAccepted"
+    },
+    {
+      "check": "policy_warn_decision_reason",
+      "passed": true,
+      "detail": "TopCandidateAccepted"
+    },
+    {
+      "check": "policy_block_decision_reason",
+      "passed": true,
+      "detail": "AllCandidatesBlocked"
+    },
+    {
+      "check": "policy_pass_top_ranked_candidate",
+      "passed": true,
+      "detail": "balanced_patch"
+    },
+    {
+      "check": "policy_warn_conformal_finding_warn",
+      "passed": true,
+      "detail": "{'monitor_name': 'ConformalRiskGuardrail', 'budget_id': 'conformal_risk', 'verdict': 'warn', 'event_code': 'EVD-GUARD-003', 'anytime_valid': True, 'reason': 'conformal-risk upper error bound 0.074 exceeds warn threshold 0.070 (empirical 0.055, n=5000, delta=0.0100)'}"
+    },
+    {
+      "check": "policy_invalid_message_mentions_parse_failure",
+      "passed": true,
+      "detail": "Policy activation input failed to load: failed parsing policy activation input /data/projects/franken_node/fixtures/policy_activation/doctor_policy_activation_invalid.json as JSON"
+    },
+    {
       "check": "matrix_written",
       "passed": true,
       "detail": "/data/projects/franken_node/artifacts/section_bootstrap/bd-1pk/doctor_checks_matrix.json"
     },
     {
-      "check": "healthy_report_written",
-      "passed": true,
-      "detail": "/data/projects/franken_node/artifacts/section_bootstrap/bd-1pk/doctor_report_healthy.json"
-    },
-    {
-      "check": "degraded_report_written",
-      "passed": true,
-      "detail": "/data/projects/franken_node/artifacts/section_bootstrap/bd-1pk/doctor_report_degraded.json"
-    },
-    {
-      "check": "failure_report_written",
-      "passed": true,
-      "detail": "/data/projects/franken_node/artifacts/section_bootstrap/bd-1pk/doctor_report_failure.json"
-    },
-    {
       "check": "healthy_report_deterministic_hash",
       "passed": true,
-      "detail": "b4e79d33da13773659cecf849739c4bbfd2f1a229117aae4dccd8e91bb3d8eb1"
+      "detail": "15dc287bb8821ade48ae963ae61ad03be954c2b79463db88382fc192fb468dca"
     }
   ],
   "sample_reports": {
     "healthy": "artifacts/section_bootstrap/bd-1pk/doctor_report_healthy.json",
     "degraded": "artifacts/section_bootstrap/bd-1pk/doctor_report_degraded.json",
-    "failure": "artifacts/section_bootstrap/bd-1pk/doctor_report_failure.json"
+    "failure": "artifacts/section_bootstrap/bd-1pk/doctor_report_failure.json",
+    "invalid": "artifacts/section_bootstrap/bd-1pk/doctor_report_invalid_input.json"
   },
   "doctor_matrix_path": "artifacts/section_bootstrap/bd-1pk/doctor_checks_matrix.json"
 }
