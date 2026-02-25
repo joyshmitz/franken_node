@@ -13,7 +13,7 @@
     {
       "module_path": "crates/franken-node/src/connector/eviction_saga.rs",
       "ambient_api": "std::time::SystemTime",
-      "line": 288,
+      "line": 289,
       "callsite": "SystemTime::now()",
       "status": "allowlisted",
       "allowlist_entry_id": "AAL-005",
@@ -316,7 +316,7 @@
     {
       "module_path": "crates/franken-node/src/connector/eviction_saga.rs",
       "ambient_api": "std::time::SystemTime",
-      "line": 288,
+      "line": 289,
       "event_code": "AMB-003",
       "message": "allowlist exception AAL-005 applied"
     },

@@ -60,8 +60,9 @@ use security::decision_receipt::{
 };
 use security::remote_cap::{CapabilityProvider, RemoteOperation, RemoteScope};
 use supply_chain::trust_card::{
-    TrustCard, TrustCardListFilter, TrustCardRegistry, demo_registry as demo_trust_registry,
-    render_comparison_human, render_trust_card_human, to_canonical_json as trust_card_to_json,
+    RevocationStatus, RiskLevel, TrustCard, TrustCardListFilter, TrustCardRegistry,
+    demo_registry as demo_trust_registry, render_comparison_human, render_trust_card_human,
+    to_canonical_json as trust_card_to_json,
 };
 use tools::counterfactual_replay::{
     CounterfactualReplayEngine, PolicyConfig, summarize_output,
@@ -1611,6 +1612,80 @@ mod doctor_tests {
     }
 }
 
+#[cfg(test)]
+mod trust_command_tests {
+    use super::*;
+
+    #[test]
+    fn parse_risk_level_filter_accepts_supported_values() {
+        assert_eq!(
+            parse_risk_level_filter(Some("low")).expect("parse low"),
+            Some(RiskLevel::Low)
+        );
+        assert_eq!(
+            parse_risk_level_filter(Some("MEDIUM")).expect("parse medium"),
+            Some(RiskLevel::Medium)
+        );
+        assert_eq!(
+            parse_risk_level_filter(Some("high")).expect("parse high"),
+            Some(RiskLevel::High)
+        );
+        assert_eq!(
+            parse_risk_level_filter(Some("critical")).expect("parse critical"),
+            Some(RiskLevel::Critical)
+        );
+        let err = parse_risk_level_filter(Some("critical-risk")).expect_err("invalid");
+        assert!(
+            err.to_string()
+                .contains("expected one of: low, medium, high, critical")
+        );
+    }
+
+    #[test]
+    fn parse_risk_level_filter_rejects_unknown_value() {
+        let err = parse_risk_level_filter(Some("severe")).expect_err("invalid risk");
+        assert!(
+            err.to_string()
+                .contains("expected one of: low, medium, high, critical")
+        );
+    }
+
+    #[test]
+    fn parse_risk_level_filter_handles_absent_value() {
+        assert!(parse_risk_level_filter(None).expect("none").is_none());
+    }
+
+    #[test]
+    fn trust_list_filters_by_risk_and_revocation_status() {
+        let mut registry = trust_card_cli_registry().expect("registry");
+        let cards = registry.list(&TrustCardListFilter::empty(), "trace-test", now_unix_secs());
+
+        let critical_revoked = filter_trust_cards_for_trust_command(
+            cards.clone(),
+            Some(RiskLevel::Critical),
+            Some(true),
+        );
+        assert_eq!(critical_revoked.len(), 1);
+        assert_eq!(
+            critical_revoked[0].extension.extension_id,
+            "npm:@beta/telemetry-bridge"
+        );
+        assert!(matches!(
+            &critical_revoked[0].revocation_status,
+            RevocationStatus::Revoked { .. }
+        ));
+
+        let low_active =
+            filter_trust_cards_for_trust_command(cards, Some(RiskLevel::Low), Some(false));
+        assert_eq!(low_active.len(), 1);
+        assert_eq!(low_active[0].extension.extension_id, "npm:@acme/auth-guard");
+        assert!(matches!(
+            &low_active[0].revocation_status,
+            RevocationStatus::Active
+        ));
+    }
+}
+
 fn handle_remotecap_issue(args: &RemoteCapIssueArgs) -> Result<()> {
     let operations = args
         .scope
@@ -1686,6 +1761,56 @@ fn handle_remotecap_issue(args: &RemoteCapIssueArgs) -> Result<()> {
 
 fn trust_card_cli_registry() -> Result<TrustCardRegistry> {
     demo_trust_registry(now_unix_secs()).map_err(Into::into)
+}
+
+fn parse_risk_level_filter(raw: Option<&str>) -> Result<Option<RiskLevel>> {
+    let Some(raw_value) = raw else {
+        return Ok(None);
+    };
+
+    let normalized = raw_value.trim().to_ascii_lowercase().replace('-', "_");
+    let level = match normalized.as_str() {
+        "low" => RiskLevel::Low,
+        "medium" => RiskLevel::Medium,
+        "high" => RiskLevel::High,
+        "critical" => RiskLevel::Critical,
+        _ => {
+            anyhow::bail!(
+                "invalid --risk `{raw_value}`; expected one of: low, medium, high, critical"
+            )
+        }
+    };
+    Ok(Some(level))
+}
+
+fn filter_trust_cards_for_trust_command(
+    cards: Vec<TrustCard>,
+    risk_filter: Option<RiskLevel>,
+    revoked_filter: Option<bool>,
+) -> Vec<TrustCard> {
+    let mut filtered = cards
+        .into_iter()
+        .filter(|card| {
+            let risk_matches = risk_filter
+                .map(|risk| card.user_facing_risk_assessment.level == risk)
+                .unwrap_or(true);
+            let revoked_matches = revoked_filter
+                .map(|revoked| {
+                    let is_revoked =
+                        matches!(&card.revocation_status, RevocationStatus::Revoked { .. });
+                    is_revoked == revoked
+                })
+                .unwrap_or(true);
+            risk_matches && revoked_matches
+        })
+        .collect::<Vec<_>>();
+
+    filtered.sort_by(|left, right| {
+        left.extension
+            .extension_id
+            .cmp(&right.extension.extension_id)
+    });
+    filtered
 }
 
 fn render_trust_card_list(cards: &[TrustCard]) -> String {
@@ -2100,15 +2225,29 @@ async fn main() -> Result<()> {
 
         Command::Trust(sub) => match sub {
             TrustCommand::Card(args) => {
-                eprintln!("franken-node trust card: extension={}", args.extension_id);
-                eprintln!("[not yet implemented]");
+                let mut registry = trust_card_cli_registry()?;
+                let response = get_trust_card(
+                    &mut registry,
+                    &args.extension_id,
+                    now_unix_secs(),
+                    "trace-cli-trust-card",
+                )?;
+                let card = response.data.ok_or_else(|| {
+                    anyhow::anyhow!("trust card not found: {}", args.extension_id)
+                })?;
+                println!("{}", render_trust_card_human(&card));
             }
             TrustCommand::List(args) => {
-                eprintln!(
-                    "franken-node trust list: risk={:?} revoked={:?}",
-                    args.risk, args.revoked
+                let risk_filter = parse_risk_level_filter(args.risk.as_deref())?;
+                let mut registry = trust_card_cli_registry()?;
+                let cards = registry.list(
+                    &TrustCardListFilter::empty(),
+                    "trace-cli-trust-list",
+                    now_unix_secs(),
                 );
-                eprintln!("[not yet implemented]");
+                let filtered =
+                    filter_trust_cards_for_trust_command(cards, risk_filter, args.revoked);
+                println!("{}", render_trust_card_list(&filtered));
             }
             TrustCommand::Revoke(args) => {
                 eprintln!("franken-node trust revoke: extension={}", args.extension_id);
