@@ -440,7 +440,7 @@ pub fn new(cohort: &CohortDefinition) -> Result<PipelineState, PipelineError> {
         extensions.insert(ext.name.clone(), ext.source_version.clone());
     }
 
-    let idempotency_key = compute_idempotency_key(cohort);
+    let idempotency_key = calculate_idempotency_key(cohort);
 
     Ok(PipelineState {
         current_stage: PipelineStage::Intake,
@@ -586,7 +586,7 @@ pub fn is_idempotent(a: &PipelineState, b: &PipelineState) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Compute a deterministic idempotency key from a cohort definition.
-fn compute_idempotency_key(cohort: &CohortDefinition) -> String {
+fn calculate_idempotency_key(cohort: &CohortDefinition) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"migration_idempotency_v1:");
     hasher.update(cohort.cohort_id.as_bytes());

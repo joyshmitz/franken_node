@@ -134,13 +134,22 @@ pub struct MemoryTailRiskTelemetry {
 }
 
 impl MemoryTailRiskTelemetry {
+    fn sanitize_unit_interval(value: f64, conservative_default: f64) -> f64 {
+        if value.is_finite() {
+            value.clamp(0.0, 1.0)
+        } else {
+            conservative_default
+        }
+    }
+
     /// Clamp and sanitize telemetry to a conservative, bounded representation.
     fn sanitized(&self) -> Self {
         Self {
             sample_count: self.sample_count,
-            mean_utilization: self.mean_utilization.clamp(0.0, 1.0),
-            variance_utilization: self.variance_utilization.clamp(0.0, 0.25),
-            peak_utilization: self.peak_utilization.clamp(0.0, 1.0),
+            mean_utilization: Self::sanitize_unit_interval(self.mean_utilization, 1.0),
+            variance_utilization: Self::sanitize_unit_interval(self.variance_utilization, 0.25)
+                .clamp(0.0, 0.25),
+            peak_utilization: Self::sanitize_unit_interval(self.peak_utilization, 1.0),
         }
     }
 }
@@ -644,11 +653,11 @@ impl GuardrailMonitorSet {
 
     /// Check if the proposed action is allowed and produce rejection if not.
     pub fn evaluate(&self, state: &SystemState) -> Result<(), GuardrailRejection> {
-        for monitor in &self.monitors {
-            let verdict = monitor.check(state);
-            if let GuardrailVerdict::Block { reason, budget_id } = verdict {
+        let certificate = self.certify(state);
+        for finding in certificate.findings {
+            if let GuardrailVerdict::Block { reason, budget_id } = finding.verdict {
                 return Err(GuardrailRejection {
-                    monitor_name: monitor.name().to_string(),
+                    monitor_name: finding.monitor_name,
                     budget_id,
                     reason,
                     epoch_id: state.epoch_id,
@@ -896,6 +905,19 @@ mod tests {
         assert!(guard.is_valid_at_any_stopping_point());
     }
 
+    #[test]
+    fn tail_risk_guard_blocks_on_non_finite_telemetry_values() {
+        let guard = MemoryTailRiskGuardrail::new(0.95, 0.85, 0.01, 32);
+        let mut state = healthy_state();
+        state.memory_tail_risk = Some(tail_telemetry(64, f64::NAN, f64::INFINITY, f64::NAN));
+        match guard.check(&state) {
+            GuardrailVerdict::Block { budget_id, .. } => {
+                assert_eq!(budget_id.as_str(), "memory_tail_risk");
+            }
+            other => unreachable!("expected Block, got {other:?}"),
+        }
+    }
+
     // ── DurabilityLossGuardrail tests ──
 
     #[test]
@@ -1122,6 +1144,23 @@ mod tests {
                 .iter()
                 .any(|b| b.as_str() == "memory_tail_risk")
         );
+    }
+
+    #[test]
+    fn evaluate_matches_certificate_blocking_result() {
+        let set = GuardrailMonitorSet::with_defaults();
+        let mut state = healthy_state();
+        state.evidence_emission_active = false;
+        let certificate = set.certify(&state);
+        assert!(
+            certificate
+                .blocking_budget_ids
+                .iter()
+                .any(|b| b.as_str() == "evidence_emission")
+        );
+
+        let rejection = set.evaluate(&state).unwrap_err();
+        assert_eq!(rejection.budget_id.as_str(), "evidence_emission");
     }
 
     // ── Optional stopping / anytime-valid tests ──
