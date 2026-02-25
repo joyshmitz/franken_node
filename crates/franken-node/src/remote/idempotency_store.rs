@@ -121,7 +121,7 @@ impl DedupeEntry {
     /// Returns `true` if this entry has outlived its TTL at `now_secs`.
     #[must_use]
     pub fn is_expired(&self, now_secs: u64) -> bool {
-        now_secs > self.created_at_secs.saturating_add(self.ttl_secs)
+        now_secs >= self.created_at_secs.saturating_add(self.ttl_secs)
     }
 }
 
@@ -891,5 +891,25 @@ mod tests {
         let swept = store.sweep_expired(1101, "tk");
         assert_eq!(swept, 1);
         assert_eq!(store.entry_count(), 1);
+    }
+
+    #[test]
+    fn entry_expired_at_exact_ttl_boundary() {
+        // Entry created at t=1000, TTL=100 → expires at t=1100.
+        let entry = DedupeEntry {
+            key: test_key(99),
+            payload_hash: "0".repeat(64),
+            status: EntryStatus::Processing,
+            outcome: None,
+            created_at_secs: 1000,
+            ttl_secs: 100,
+        };
+        // At exact boundary (1100), entry IS expired (fail-closed).
+        assert!(
+            entry.is_expired(1100),
+            "entry must be expired at exact TTL boundary"
+        );
+        // One second before, entry is NOT expired.
+        assert!(!entry.is_expired(1099));
     }
 }

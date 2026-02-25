@@ -718,7 +718,7 @@ impl TrustGovernanceState {
                 "slashed stake has no slash events",
             )
         })?;
-        if self.current_time > latest_slash.appeal_deadline {
+        if self.current_time >= latest_slash.appeal_deadline {
             return Err(StakingError::new(
                 ERR_STAKE_APPEAL_EXPIRED,
                 "appeal window has closed",
@@ -1263,6 +1263,21 @@ mod tests {
         gov.set_time(2000 + 36 * 3600 + 1);
         let result = gov.appeal(id, "too late");
         assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, ERR_STAKE_APPEAL_EXPIRED);
+    }
+
+    #[test]
+    fn test_appeal_expired_at_exact_deadline() {
+        // INV-STAKE-APPEAL-WINDOW: appeal exactly AT the deadline must fail (fail-closed)
+        let mut gov = TrustGovernanceState::new();
+        gov.set_time(1000);
+        let id = gov.deposit_stake("alice", 500, RiskTier::High, 0).unwrap();
+        gov.set_time(2000);
+        gov.slash(id, make_evidence("ev-boundary")).unwrap();
+        // Set time exactly at the appeal deadline (36 hours for High)
+        gov.set_time(2000 + 36 * 3600);
+        let result = gov.appeal(id, "exactly at deadline");
+        assert!(result.is_err(), "appeal at exact deadline must fail closed");
         assert_eq!(result.unwrap_err().code, ERR_STAKE_APPEAL_EXPIRED);
     }
 

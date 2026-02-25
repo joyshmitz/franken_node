@@ -1166,14 +1166,15 @@ mod tests {
     // -- Exactly at budget boundary --
 
     #[test]
-    fn test_exactly_at_p95_budget_passes() {
+    fn test_exactly_at_p95_budget_fails_closed() {
+        // Fail-closed: exactly at the budget boundary must NOT pass.
         let policy = BudgetPolicy::default(); // 15%
         let mut guard = PerformanceBudgetGuard::new(policy, "trace-boundary");
         let measurements = vec![
             make_measurement("lifecycle_transition", 100.0, 115.0, 10.0), // exactly 15%
         ];
         let result = guard.evaluate(&measurements).unwrap();
-        assert!(result.overall_pass);
+        assert!(!result.overall_pass, "exact boundary must fail closed");
     }
 
     #[test]

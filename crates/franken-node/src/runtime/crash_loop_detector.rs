@@ -182,7 +182,7 @@ impl CrashLoopDetector {
         if self.last_rollback_epoch == 0 {
             return false;
         }
-        now < self.last_rollback_epoch + self.config.cooldown_secs
+        now <= self.last_rollback_epoch + self.config.cooldown_secs
     }
 
     /// Remaining cooldown seconds (0 if not in cooldown).
@@ -608,5 +608,26 @@ mod tests {
             .unwrap();
         assert!(decision.rollback_target.is_some());
         assert_eq!(decision.rollback_target.unwrap().version, "1.0.0");
+    }
+
+    #[test]
+    fn cooldown_active_at_exact_boundary() {
+        let mut det = CrashLoopDetector::new(config());
+        // Record enough crashes to trigger rollback
+        for i in 0..3 {
+            let ev = crash("conn-1", "t", "oom");
+            det.record_crash(&ev, 100 + i);
+        }
+        // Trigger rollback at epoch 102
+        let events: Vec<_> = (0..3).map(|_| crash("conn-1", "t", "oom")).collect();
+        let _ = det.evaluate("conn-1", &events, Some(&trusted_pin()), 102, "tr1", "ts1");
+        // Cooldown is 30 secs: epoch 102 + 30 = 132.
+        // At exactly 132, cooldown must still be active (fail-closed).
+        assert!(
+            det.in_cooldown(132),
+            "cooldown must still be active at exact boundary"
+        );
+        // One second later, cooldown expires.
+        assert!(!det.in_cooldown(133));
     }
 }

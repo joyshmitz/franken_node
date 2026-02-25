@@ -158,7 +158,7 @@ impl DegradedModeState {
     }
 
     pub fn is_expired(&self) -> bool {
-        self.active && self.elapsed_seconds > self.max_duration_seconds
+        self.active && self.elapsed_seconds >= self.max_duration_seconds
     }
 
     pub fn is_capability_cached(&self, cap: &str) -> bool {
@@ -1023,5 +1023,20 @@ mod tests {
         let a = serde_json::to_string(&build().to_report()).unwrap();
         let b = serde_json::to_string(&build().to_report()).unwrap();
         assert_eq!(a, b, "report must be deterministic");
+    }
+
+    #[test]
+    fn degraded_mode_expired_at_exact_boundary() {
+        let mut state = DegradedModeState::new(60);
+        state.activate("test", vec!["read".into()], "2026-01-01T00:00:00Z");
+        // Set elapsed to exactly the max.
+        state.elapsed_seconds = 60;
+        assert!(
+            state.is_expired(),
+            "degraded mode must be expired at exact duration boundary"
+        );
+        // One second before the boundary: not expired.
+        state.elapsed_seconds = 59;
+        assert!(!state.is_expired());
     }
 }

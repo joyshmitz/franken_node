@@ -215,8 +215,8 @@ impl FenceState {
             });
         }
 
-        // Check lease expiry
-        if current_time > lease.expires_at.as_str() {
+        // Check lease expiry (fail-closed: expired AT the boundary)
+        if current_time >= lease.expires_at.as_str() {
             return Err(FencingError::LeaseExpired {
                 expires_at: lease.expires_at.clone(),
                 current_time: current_time.to_string(),
@@ -526,5 +526,27 @@ mod tests {
             }
             _ => panic!("expected epoch rejection"),
         }
+    }
+
+    #[test]
+    fn lease_expired_at_exact_boundary_is_rejected() {
+        let mut fs = FenceState::new("obj-1".into());
+        let lease = fs.acquire_lease(
+            "writer-a".into(),
+            "2026-01-01T00:00:00Z".into(),
+            "2026-06-01T00:00:00Z".into(),
+        );
+        let write = FencedWrite {
+            fence_seq: Some(1),
+            target_object_id: "obj-1".into(),
+            payload: json!({"data": "boundary"}),
+        };
+        // Write at exact expiry instant must be rejected (fail-closed).
+        let result = fs.validate_write(&write, &lease, "2026-06-01T00:00:00Z");
+        assert!(
+            result.is_err(),
+            "write at exact lease expiry must be rejected"
+        );
+        assert!(matches!(result, Err(FencingError::LeaseExpired { .. })));
     }
 }

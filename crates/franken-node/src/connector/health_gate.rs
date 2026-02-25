@@ -41,7 +41,9 @@ impl HealthGateResult {
     ///
     /// The gate passes if and only if all required checks pass.
     pub fn evaluate(checks: Vec<HealthCheck>) -> Self {
-        let gate_passed = checks.iter().filter(|c| c.required).all(|c| c.passed);
+        let required_checks: Vec<_> = checks.iter().filter(|c| c.required).collect();
+        // Fail-closed: if no required checks exist, gate must not pass.
+        let gate_passed = !required_checks.is_empty() && required_checks.iter().all(|c| c.passed);
         Self {
             checks,
             gate_passed,
@@ -388,5 +390,27 @@ mod tests {
             err,
             EpochHealthGateError::StaleEpochRejected { .. }
         ));
+    }
+
+    #[test]
+    fn empty_checks_fails_closed() {
+        // No required checks → gate must NOT pass (fail-closed).
+        let result = HealthGateResult::evaluate(vec![]);
+        assert!(!result.gate_passed, "empty checks must fail gate");
+    }
+
+    #[test]
+    fn all_optional_checks_fails_closed() {
+        let checks = vec![HealthCheck {
+            name: "optional_only".to_string(),
+            required: false,
+            passed: true,
+            message: None,
+        }];
+        let result = HealthGateResult::evaluate(checks);
+        assert!(
+            !result.gate_passed,
+            "all-optional checks must fail gate (no required checks)"
+        );
     }
 }

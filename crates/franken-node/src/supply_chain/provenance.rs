@@ -579,8 +579,8 @@ fn validate_links(
         }
 
         let age = now_epoch.saturating_sub(link.issued_at_epoch);
-        let stale_by_age = age > policy.max_attestation_age_secs;
-        let stale_by_expiry = now_epoch > link.expires_at_epoch;
+        let stale_by_age = age >= policy.max_attestation_age_secs;
+        let stale_by_expiry = now_epoch >= link.expires_at_epoch;
         if stale_by_age || stale_by_expiry {
             let within_cached_window = matches!(policy.mode, VerificationMode::CachedTrustWindow)
                 && age
@@ -1021,5 +1021,51 @@ mod tests {
         let first = canonical_attestation_json(&attestation).expect("canonical json #1");
         let second = canonical_attestation_json(&attestation).expect("canonical json #2");
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn link_stale_at_exact_expiry_boundary() {
+        let mut attestation = base_attestation();
+        // Set all links to expire at exactly 1_700_100_000.
+        for link in &mut attestation.links {
+            link.expires_at_epoch = 1_700_100_000;
+        }
+        sign_links_in_place(&mut attestation).expect("sign links");
+
+        let policy = VerificationPolicy {
+            max_attestation_age_secs: u64::MAX, // don't trigger age-based staleness
+            ..VerificationPolicy::development_profile()
+        };
+
+        // Verify at exact expiry: must detect staleness (fail-closed).
+        let report =
+            verify_attestation_chain(&attestation, &policy, 1_700_100_000, "boundary-test");
+        let has_staleness = report
+            .issues
+            .iter()
+            .any(|i| matches!(i.code, VerificationErrorCode::ChainStale));
+        assert!(
+            has_staleness,
+            "links at exact expiry boundary must be stale"
+        );
+    }
+
+    #[test]
+    fn link_stale_at_exact_age_boundary() {
+        let attestation = base_attestation();
+        // First link issued_at_epoch = 1_700_000_200.
+        // Set max_attestation_age_secs so boundary is exactly at now_epoch.
+        let now_epoch = 1_700_000_200 + 86_400; // 1 day later
+        let policy = VerificationPolicy {
+            max_attestation_age_secs: 86_400,
+            ..VerificationPolicy::development_profile()
+        };
+
+        let report = verify_attestation_chain(&attestation, &policy, now_epoch, "age-boundary");
+        let has_staleness = report
+            .issues
+            .iter()
+            .any(|i| matches!(i.code, VerificationErrorCode::ChainStale));
+        assert!(has_staleness, "links at exact age boundary must be stale");
     }
 }
