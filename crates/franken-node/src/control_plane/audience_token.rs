@@ -807,29 +807,29 @@ mod tests {
 
     #[test]
     fn test_root_token_creation() {
-        let tkn = root_token("root-1", 3);
-        assert!(tkn.is_root());
-        assert!(tkn.has_valid_window());
-        assert!(!tkn.is_expired(50_000));
+        let token = root_token("admin-user-id", 3);
+        assert!(token.is_root());
+        assert!(token.has_valid_window());
+        assert!(!token.is_expired(50_000));
     }
 
     #[test]
     fn test_token_hash_deterministic() {
-        let t1 = root_token("root-1", 3);
-        let t2 = root_token("root-1", 3);
+        let t1 = root_token("admin-user-id", 3);
+        let t2 = root_token("admin-user-id", 3);
         assert_eq!(t1.hash(), t2.hash());
     }
 
     #[test]
     fn test_token_hash_changes_with_id() {
-        let t1 = root_token("root-1", 3);
-        let t2 = root_token("root-2", 3);
+        let t1 = root_token("admin-user-id", 3);
+        let t2 = root_token("admin-user-id-2", 3);
         assert_ne!(t1.hash(), t2.hash());
     }
 
     #[test]
     fn test_token_is_expired() {
-        let tkn = root_token("root-1", 0);
+        let token = root_token("admin-user-id", 0);
         assert!(!token.is_expired(99_999));
         assert!(token.is_expired(100_000));
         assert!(token.is_expired(200_000));
@@ -837,7 +837,7 @@ mod tests {
 
     #[test]
     fn test_token_has_valid_window() {
-        let mut tkn = root_token("root-1", 0);
+        let mut token = root_token("admin-user-id", 0);
         assert!(token.has_valid_window());
         token.expires_at = token.issued_at; // zero window
         assert!(!token.has_valid_window());
@@ -847,7 +847,7 @@ mod tests {
 
     #[test]
     fn test_token_audience_contains() {
-        let tkn = root_token("root-1", 0);
+        let token = root_token("admin-user-id", 0);
         assert!(token.audience_contains("kernel-A"));
         assert!(token.audience_contains("kernel-B"));
         assert!(!token.audience_contains("kernel-C"));
@@ -855,7 +855,7 @@ mod tests {
 
     #[test]
     fn test_token_serde_roundtrip() {
-        let tkn = root_token("root-1", 3);
+        let token = root_token("admin-user-id", 3);
         let json = serde_json::to_string(&token).unwrap();
         let parsed: AudienceBoundToken = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, token);
@@ -903,7 +903,7 @@ mod tests {
 
     #[test]
     fn test_chain_new_root() {
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let chain = TokenChain::new(root.clone()).unwrap();
         assert_eq!(chain.depth(), 1);
         assert_eq!(chain.root().token_id, root.token_id);
@@ -912,7 +912,7 @@ mod tests {
 
     #[test]
     fn test_chain_rejects_non_root_first() {
-        let mut tkn = root_token("root-1", 3);
+        let mut tkn = root_token("admin-user-id", 3);
         token.parent_token_hash = Some("invalid-hash".to_string());
         let err = TokenChain::new(token).unwrap_err();
         assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
@@ -920,7 +920,7 @@ mod tests {
 
     #[test]
     fn test_chain_single_hop_delegation() {
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let child = delegate_token(
             &root,
             "child-1",
@@ -934,7 +934,7 @@ mod tests {
 
     #[test]
     fn test_chain_multi_hop_delegation() {
-        let root = root_token("root-1", 5);
+        let root = root_token("admin-user-id", 5);
         let mut chain = TokenChain::new(root.clone()).unwrap();
 
         let c1 = delegate_token(
@@ -966,7 +966,7 @@ mod tests {
 
     #[test]
     fn test_chain_audience_escalation_rejected() {
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let child = delegate_token(
             &root,
             "child-1",
@@ -982,7 +982,7 @@ mod tests {
     #[test]
     fn test_chain_scope_escalation_rejected() {
         // Parent only has narrow caps (Migrate, Rollback). Child tries to add Configure.
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let narrow_root = AudienceBoundToken {
             capabilities: narrow_caps(),
             ..root.clone()
@@ -1002,7 +1002,7 @@ mod tests {
 
     #[test]
     fn test_chain_depth_limit_exceeded() {
-        let root = root_token("root-1", 1); // max depth 1 => root + 1 child max
+        let root = root_token("admin-user-id", 1); // max depth 1 => root + 1 child max
         let child = delegate_token(
             &root,
             "child-1",
@@ -1025,7 +1025,7 @@ mod tests {
 
     #[test]
     fn test_chain_zero_validity_rejected() {
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let mut child = delegate_token(
             &root,
             "child-1",
@@ -1042,7 +1042,7 @@ mod tests {
 
     #[test]
     fn test_chain_root_zero_validity_rejected() {
-        let mut root = root_token("root-1", 0);
+        let mut root = root_token("admin-user-id", 0);
         root.expires_at = root.issued_at;
         let err = TokenChain::new(root).unwrap_err();
         assert_eq!(err.code, ERR_ABT_TOKEN_EXPIRED);
@@ -1050,7 +1050,7 @@ mod tests {
 
     #[test]
     fn test_chain_forged_parent_hash() {
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let mut child = delegate_token(
             &root,
             "child-1",
@@ -1066,7 +1066,7 @@ mod tests {
 
     #[test]
     fn test_chain_missing_parent_hash_on_delegate() {
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let mut child = delegate_token(
             &root,
             "child-1",
@@ -1082,7 +1082,7 @@ mod tests {
     #[test]
     fn test_chain_empty_capabilities_valid() {
         // Fully attenuated token (grants nothing) is valid.
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let child = delegate_token(
             &root,
             "child-1",
@@ -1096,14 +1096,14 @@ mod tests {
 
     #[test]
     fn test_chain_tokens_accessor() {
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let chain = TokenChain::new(root).unwrap();
         assert_eq!(chain.tokens().len(), 1);
     }
 
     #[test]
     fn test_chain_depth_20() {
-        let root = root_token("root-1", 25);
+        let root = root_token("admin-user-id", 25);
         let mut chain = TokenChain::new(root.clone()).unwrap();
         let mut prev = root;
         for i in 1..=20 {
@@ -1133,7 +1133,7 @@ mod tests {
     #[test]
     fn test_validator_record_issuance() {
         let mut v = TokenValidator::new(1);
-        let tkn = root_token("root-1", 0);
+        let tkn = root_token("admin-user-id", 0);
         v.record_issuance(&token, "trace-1", 1000);
         assert_eq!(v.tokens_issued(), 1);
         assert_eq!(v.events().len(), 1);
@@ -1143,7 +1143,7 @@ mod tests {
     #[test]
     fn test_validator_record_delegation() {
         let mut v = TokenValidator::new(1);
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let child = delegate_token(
             &root,
             "child-1",
@@ -1158,7 +1158,7 @@ mod tests {
     #[test]
     fn test_validator_verify_chain_success() {
         let mut v = TokenValidator::new(1);
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let child = delegate_token(
             &root,
             "child-1",
@@ -1176,7 +1176,7 @@ mod tests {
     #[test]
     fn test_validator_audience_mismatch() {
         let mut v = TokenValidator::new(1);
-        let root = root_token("root-1", 0);
+        let root = root_token("admin-user-id", 0);
         let chain = TokenChain::new(root).unwrap();
 
         let err = v
@@ -1189,7 +1189,7 @@ mod tests {
     #[test]
     fn test_validator_expired_token_rejected() {
         let mut v = TokenValidator::new(1);
-        let root = root_token("root-1", 0);
+        let root = root_token("admin-user-id", 0);
         let chain = TokenChain::new(root).unwrap();
 
         let err = v
@@ -1202,7 +1202,7 @@ mod tests {
     #[test]
     fn test_validator_expired_intermediate_rejected() {
         let mut v = TokenValidator::new(1);
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let mut child = delegate_token(
             &root,
             "child-1",
@@ -1223,14 +1223,14 @@ mod tests {
     #[test]
     fn test_validator_nonce_replay_detected() {
         let mut v = TokenValidator::new(1);
-        let root = root_token("root-1", 0);
+        let root = root_token("admin-user-id", 0);
         let chain = TokenChain::new(root).unwrap();
 
         v.verify_chain(&chain, "kernel-A", 50_000, "trace-1")
             .unwrap();
 
         // Same chain again => nonce replay.
-        let root2 = root_token("root-1", 0); // same nonce
+        let root2 = root_token("admin-user-id", 0); // same nonce
         let chain2 = TokenChain::new(root2).unwrap();
         let err = v
             .verify_chain(&chain2, "kernel-A", 50_000, "trace-2")
@@ -1241,7 +1241,7 @@ mod tests {
     #[test]
     fn test_validator_advance_epoch_clears_nonces() {
         let mut v = TokenValidator::new(1);
-        let root = root_token("root-1", 0);
+        let root = root_token("admin-user-id", 0);
         let chain = TokenChain::new(root).unwrap();
         v.verify_chain(&chain, "kernel-A", 50_000, "trace-1")
             .unwrap();
@@ -1251,7 +1251,7 @@ mod tests {
         assert_eq!(v.nonce_count(), 0);
 
         // Same nonce now allowed in new epoch.
-        let root2 = root_token("root-1", 0);
+        let root2 = root_token("admin-user-id", 0);
         let chain2 = TokenChain::new(root2).unwrap();
         v.verify_chain(&chain2, "kernel-A", 50_000, "trace-2")
             .unwrap();
@@ -1260,14 +1260,14 @@ mod tests {
     #[test]
     fn test_validator_check_audience_pass() {
         let v = TokenValidator::new(1);
-        let tkn = root_token("root-1", 0);
+        let tkn = root_token("admin-user-id", 0);
         v.check_audience(&token, "kernel-A").unwrap();
     }
 
     #[test]
     fn test_validator_check_audience_fail() {
         let v = TokenValidator::new(1);
-        let tkn = root_token("root-1", 0);
+        let tkn = root_token("admin-user-id", 0);
         let err = v.check_audience(&token, "kernel-C").unwrap_err();
         assert_eq!(err.code, ERR_ABT_AUDIENCE_MISMATCH);
     }
@@ -1275,7 +1275,7 @@ mod tests {
     #[test]
     fn test_validator_take_events_drains() {
         let mut v = TokenValidator::new(1);
-        let tkn = root_token("root-1", 0);
+        let tkn = root_token("admin-user-id", 0);
         v.record_issuance(&token, "trace-1", 1000);
         assert_eq!(v.events().len(), 1);
         let drained = v.take_events();
@@ -1286,7 +1286,7 @@ mod tests {
     #[test]
     fn test_validator_chain_integrity_violation() {
         let mut v = TokenValidator::new(1);
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let mut child = delegate_token(
             &root,
             "child-1",
@@ -1310,7 +1310,7 @@ mod tests {
     #[test]
     fn test_validator_verify_deep_chain() {
         let mut v = TokenValidator::new(1);
-        let root = root_token("root-1", 25);
+        let root = root_token("admin-user-id", 25);
         let mut chain = TokenChain::new(root.clone()).unwrap();
         let mut prev = root;
         for i in 1..=10 {
@@ -1362,7 +1362,7 @@ mod tests {
 
     #[test]
     fn test_delegate_with_all_parent_caps() {
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let child = delegate_token(
             &root,
             "child-1",
@@ -1375,7 +1375,7 @@ mod tests {
 
     #[test]
     fn test_chain_serde_roundtrip() {
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let child = delegate_token(
             &root,
             "child-1",
@@ -1409,11 +1409,11 @@ mod tests {
     fn test_validator_metrics_accumulate() {
         let mut v = TokenValidator::new(1);
 
-        let t1 = root_token("root-1", 0);
+        let t1 = root_token("admin-user-id", 0);
         v.record_issuance(&t1, "tr", 1000);
 
         let t2 = AudienceBoundToken {
-            token_id: TokenId::new("root-2"),
+            token_id: TokenId::new("admin-user-id-2"),
             nonce: "nonce-root-2".to_string(),
             signature: "sig-root-2".to_string(),
             ..t1.clone()
@@ -1427,7 +1427,7 @@ mod tests {
     #[test]
     fn test_verify_rejects_after_leaf_audience_narrowed() {
         let mut v = TokenValidator::new(1);
-        let root = root_token("root-1", 3);
+        let root = root_token("admin-user-id", 3);
         let child = delegate_token(
             &root,
             "child-1",
@@ -1449,13 +1449,13 @@ mod tests {
         let mut v = TokenValidator::new(1);
 
         // First: verify for kernel-A
-        let root = root_token("root-1", 0);
+        let root = root_token("admin-user-id", 0);
         let chain = TokenChain::new(root).unwrap();
         v.verify_chain(&chain, "kernel-A", 50_000, "trace-1")
             .unwrap();
 
         // Same token replay for kernel-B
-        let root2 = root_token("root-1", 0); // same nonce
+        let root2 = root_token("admin-user-id", 0); // same nonce
         let chain2 = TokenChain::new(root2).unwrap();
         let err = v
             .verify_chain(&chain2, "kernel-B", 50_000, "trace-2")
