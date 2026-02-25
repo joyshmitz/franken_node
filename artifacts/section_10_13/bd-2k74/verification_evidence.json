@@ -2,7 +2,7 @@
   "gate": "admission_budget_verification",
   "bead": "bd-2k74",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "PAB-IMPL",
@@ -28,8 +28,8 @@
     {
       "id": "PAB-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "28 tests passed"
+      "status": "FAIL",
+      "details": "Command '['cargo', 'test', '--', 'connector::admission_budget']' timed out after 120 seconds"
     },
     {
       "id": "PAB-SPEC",
@@ -39,7 +39,7 @@
   ],
   "summary": {
     "total_checks": 6,
-    "passing_checks": 6,
-    "failing_checks": 0
+    "passing_checks": 5,
+    "failing_checks": 1
   }
 }

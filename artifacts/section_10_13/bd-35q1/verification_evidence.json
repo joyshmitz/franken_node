@@ -39,7 +39,7 @@
       "id": "TS-TESTS",
       "description": "Rust unit tests pass",
       "status": "PASS",
-      "details": "18 tests passed"
+      "details": "19 tests passed"
     },
     {
       "id": "TS-SPEC",

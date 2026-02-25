@@ -39,7 +39,7 @@
       "id": "GUARD-TESTS",
       "description": "Rust unit tests pass",
       "status": "PASS",
-      "details": "19 tests passed"
+      "details": "20 tests passed"
     },
     {
       "id": "GUARD-SPEC",

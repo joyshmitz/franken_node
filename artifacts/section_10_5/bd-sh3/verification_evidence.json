@@ -2,7 +2,7 @@
   "bead_id": "bd-sh3",
   "section": "10.5",
   "title": "Policy Change Approval Workflows with Cryptographic Audit Trail",
-  "timestamp": "2026-02-22T08:17:54.589852+00:00",
+  "timestamp": "2026-02-25T03:07:10.821680+00:00",
   "overall_pass": true,
   "checks": {
     "files": {
@@ -14,7 +14,7 @@
       "rust_impl": {
         "path": "crates/franken-node/src/policy/approval_workflow.rs",
         "exists": true,
-        "size_bytes": 35860
+        "size_bytes": 58477
       },
       "mod_rs": {
         "path": "crates/franken-node/src/policy/mod.rs",

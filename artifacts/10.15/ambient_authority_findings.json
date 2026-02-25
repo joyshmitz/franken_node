@@ -1,5 +1,5 @@
 {
-  "generated_on": "2026-02-24",
+  "generated_on": "2026-02-25",
   "findings": [
     {
       "module_path": "crates/franken-node/src/connector/durable_claim_gate.rs",
@@ -31,7 +31,7 @@
     {
       "module_path": "crates/franken-node/src/connector/region_ownership.rs",
       "ambient_api": "std::time::Instant",
-      "line": 269,
+      "line": 374,
       "callsite": "let start = Instant::now();",
       "status": "allowlisted",
       "allowlist_entry_id": "AAL-007",
@@ -505,7 +505,7 @@
     {
       "module_path": "crates/franken-node/src/connector/region_ownership.rs",
       "ambient_api": "std::time::Instant",
-      "line": 269,
+      "line": 374,
       "event_code": "AMB-003",
       "message": "allowlist exception AAL-007 applied"
     },
