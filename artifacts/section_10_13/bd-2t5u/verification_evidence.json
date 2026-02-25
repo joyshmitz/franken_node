@@ -2,7 +2,7 @@
   "gate": "prestage_engine_verification",
   "bead": "bd-2t5u",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "PSE-IMPL",
@@ -28,8 +28,8 @@
     {
       "id": "PSE-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "19 tests passed"
+      "status": "FAIL",
+      "details": "[Errno 2] No such file or directory: 'cargo'"
     },
     {
       "id": "PSE-SPEC",
@@ -39,7 +39,7 @@
   ],
   "summary": {
     "total_checks": 6,
-    "passing_checks": 6,
-    "failing_checks": 0
+    "passing_checks": 5,
+    "failing_checks": 1
   }
 }

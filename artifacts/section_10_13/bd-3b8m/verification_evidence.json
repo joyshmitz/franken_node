@@ -2,7 +2,7 @@
   "gate": "anti_amplification_verification",
   "bead": "bd-3b8m",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "AAR-IMPL",
@@ -28,8 +28,8 @@
     {
       "id": "AAR-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "21 tests passed"
+      "status": "FAIL",
+      "details": "[Errno 2] No such file or directory: 'cargo'"
     },
     {
       "id": "AAR-SPEC",
@@ -39,7 +39,7 @@
   ],
   "summary": {
     "total_checks": 6,
-    "passing_checks": 6,
-    "failing_checks": 0
+    "passing_checks": 5,
+    "failing_checks": 1
   }
 }

@@ -2,7 +2,7 @@
   "gate": "ssrf_policy_verification",
   "bead": "bd-1nk5",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "SSRF-IMPL",
@@ -44,8 +44,8 @@
     {
       "id": "SSRF-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "31 tests passed"
+      "status": "FAIL",
+      "details": "[Errno 2] No such file or directory: 'cargo'"
     },
     {
       "id": "SSRF-SPEC",
@@ -55,7 +55,7 @@
   ],
   "summary": {
     "total_checks": 9,
-    "passing_checks": 9,
-    "failing_checks": 0
+    "passing_checks": 8,
+    "failing_checks": 1
   }
 }

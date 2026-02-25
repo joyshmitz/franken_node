@@ -2,7 +2,7 @@
   "gate": "telemetry_namespace_verification",
   "bead": "bd-1ugy",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "TNS-IMPL",
@@ -28,8 +28,8 @@
     {
       "id": "TNS-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "17 tests passed"
+      "status": "FAIL",
+      "details": "[Errno 2] No such file or directory: 'cargo'"
     },
     {
       "id": "TNS-SPEC",
@@ -39,7 +39,7 @@
   ],
   "summary": {
     "total_checks": 6,
-    "passing_checks": 6,
-    "failing_checks": 0
+    "passing_checks": 5,
+    "failing_checks": 1
   }
 }

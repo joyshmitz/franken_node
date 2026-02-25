@@ -2,7 +2,7 @@
   "gate": "isolation_backend_verification",
   "bead": "bd-1vvs",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "ISOL-IMPL",
@@ -39,8 +39,8 @@
     {
       "id": "ISOL-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "15 tests passed"
+      "status": "FAIL",
+      "details": "[Errno 2] No such file or directory: 'cargo'"
     },
     {
       "id": "ISOL-SPEC",
@@ -50,7 +50,7 @@
   ],
   "summary": {
     "total_checks": 8,
-    "passing_checks": 8,
-    "failing_checks": 0
+    "passing_checks": 7,
+    "failing_checks": 1
   }
 }

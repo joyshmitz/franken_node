@@ -2,7 +2,7 @@
   "gate": "lease_conflict_verification",
   "bead": "bd-8uvb",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "OLC-IMPL",
@@ -28,8 +28,8 @@
     {
       "id": "OLC-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "23 tests passed"
+      "status": "FAIL",
+      "details": "[Errno 2] No such file or directory: 'cargo'"
     },
     {
       "id": "OLC-SPEC",
@@ -39,7 +39,7 @@
   ],
   "summary": {
     "total_checks": 6,
-    "passing_checks": 6,
-    "failing_checks": 0
+    "passing_checks": 5,
+    "failing_checks": 1
   }
 }

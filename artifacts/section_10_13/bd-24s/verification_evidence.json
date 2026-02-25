@@ -2,7 +2,7 @@
   "gate": "snapshot_policy_verification",
   "bead": "bd-24s",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "SNAP-IMPL",
@@ -44,8 +44,8 @@
     {
       "id": "SNAP-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "22 tests passed"
+      "status": "FAIL",
+      "details": "[Errno 2] No such file or directory: 'cargo'"
     },
     {
       "id": "SNAP-SPEC",
@@ -55,7 +55,7 @@
   ],
   "summary": {
     "total_checks": 9,
-    "passing_checks": 9,
-    "failing_checks": 0
+    "passing_checks": 8,
+    "failing_checks": 1
   }
 }
