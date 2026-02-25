@@ -235,7 +235,7 @@ impl Placement {
     }
 
     pub fn budget_exceeded(&self) -> bool {
-        self.latency_consumed_us > self.latency_budget_us
+        self.latency_consumed_us >= self.latency_budget_us
     }
 }
 
@@ -956,6 +956,17 @@ mod tests {
         let wl = test_workload("wl-over", TrustProfile::Untrusted, true);
         router.assign_workload(&wl).unwrap();
         let err = router.record_latency("wl-over", 2_000).unwrap_err();
+        assert!(matches!(err, RailRouterError::BudgetExceeded { .. }));
+    }
+
+    #[test]
+    fn budget_exceeded_at_exact_boundary() {
+        // Fail-closed: consuming exactly the budget must trigger exceeded.
+        let mut router = RailRouter::default_router();
+        let wl = test_workload("wl-exact", TrustProfile::Untrusted, true);
+        router.assign_workload(&wl).unwrap();
+        // Budget is 1_000; consuming exactly 1_000 should fail.
+        let err = router.record_latency("wl-exact", 1_000).unwrap_err();
         assert!(matches!(err, RailRouterError::BudgetExceeded { .. }));
     }
 

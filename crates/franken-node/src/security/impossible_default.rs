@@ -531,7 +531,7 @@ impl CapabilityEnforcer {
         // Verify signature (INV-IBD-TOKEN).
         if !self.verifier.verify(&token) {
             self.log_event(
-                IBD_001_CAPABILITY_BLOCKED,
+                ERR_IBD_INVALID_SIGNATURE,
                 capability,
                 actor,
                 current_time_ms,

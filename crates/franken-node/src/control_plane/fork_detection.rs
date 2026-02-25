@@ -1002,7 +1002,7 @@ mod tests {
                 assert_eq!(missing_start, 4);
                 assert_eq!(missing_end, 10);
             }
-            _ => assert!(false, "Expected FillGap"),
+            _ => panic!("Expected FillGap"),
         }
     }
 
@@ -1016,7 +1016,7 @@ mod tests {
             ReconciliationSuggestion::ResolveConflict { epoch, .. } => {
                 assert_eq!(epoch, 5);
             }
-            _ => assert!(false, "Expected ResolveConflict"),
+            _ => panic!("Expected ResolveConflict"),
         }
     }
 

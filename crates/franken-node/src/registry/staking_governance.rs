@@ -554,7 +554,7 @@ impl SlashingEngine {
     ) -> bool {
         if let Some(tier_policy) = self.penalty_schedule.get_tier(risk_tier) {
             let deadline = slash_timestamp.saturating_add(tier_policy.appeal_window_secs);
-            current_time <= deadline
+            current_time < deadline
         } else {
             false
         }
@@ -1695,6 +1695,32 @@ mod tests {
         // Appeal window is 48h = 172800s, so at 200 + 172801 = expired
         let err = ledger
             .file_appeal(id, 1, "too late", 200 + 172801)
+            .unwrap_err();
+        match err {
+            StakingError::AppealExpired { code, .. } => {
+                assert_eq!(code, ERR_STAKE_APPEAL_EXPIRED);
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+    }
+
+    #[test]
+    fn test_file_appeal_at_exact_deadline_is_expired() {
+        // Fail-closed: appeal filed exactly at deadline boundary must be rejected.
+        let mut ledger = StakingLedger::new();
+        let id = ledger
+            .deposit("pub-1", 1000, RiskTier::Critical, 100)
+            .unwrap();
+        ledger
+            .slash(
+                id,
+                test_evidence_unique(ViolationType::MaliciousCode, "boundary-ev"),
+                200,
+            )
+            .unwrap();
+        // Deadline = 200 + 172800 = 173000; filing at exactly 173000 must fail.
+        let err = ledger
+            .file_appeal(id, 1, "exactly at deadline", 200 + 172800)
             .unwrap_err();
         match err {
             StakingError::AppealExpired { code, .. } => {

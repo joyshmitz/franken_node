@@ -312,19 +312,19 @@ impl PerformanceBudgetGuard {
 
             let mut violations = Vec::new();
 
-            if overhead_p95 > budget.max_overhead_p95_pct {
+            if overhead_p95 >= budget.max_overhead_p95_pct {
                 violations.push(format!(
                     "p95 overhead {:.1}% exceeds budget {:.1}%",
                     overhead_p95, budget.max_overhead_p95_pct
                 ));
             }
-            if overhead_p99 > budget.max_overhead_p99_pct {
+            if overhead_p99 >= budget.max_overhead_p99_pct {
                 violations.push(format!(
                     "p99 overhead {:.1}% exceeds budget {:.1}%",
                     overhead_p99, budget.max_overhead_p99_pct
                 ));
             }
-            if cold_start > budget.max_cold_start_ms {
+            if cold_start >= budget.max_cold_start_ms {
                 violations.push(format!(
                     "cold-start {:.1}ms exceeds budget {:.1}ms",
                     cold_start, budget.max_cold_start_ms
@@ -896,6 +896,17 @@ mod tests {
                 .iter()
                 .any(|v| v.contains("cold-start"))
         );
+    }
+
+    #[test]
+    fn test_exact_boundary_p95_fails_closed() {
+        // Fail-closed: overhead exactly at the budget limit must trigger violation.
+        let mut guard = PerformanceBudgetGuard::new(BudgetPolicy::default(), "trace-boundary");
+        // p95 = 115/100 - 1 = 15% exactly = budget of 15%
+        let measurements = vec![make_measurement("lifecycle_transition", 100.0, 115.0, 10.0)];
+        let result = guard.evaluate(&measurements).unwrap();
+        assert!(!result.overall_pass, "exact boundary should fail closed");
+        assert_eq!(result.paths_over_budget, 1);
     }
 
     #[test]

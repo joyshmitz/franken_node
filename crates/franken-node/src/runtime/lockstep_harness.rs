@@ -267,16 +267,19 @@ impl LockstepHarness {
                 }
             }
 
-            // Strip return value (everything after last '=')
-            if let Some(end_idx) = current.rfind('=') {
-                let deterministic_line = current[..end_idx].trim();
-                // Normalize fd arguments: for fd-based syscalls, replace the
-                // first numeric arg (the fd) with "FD" so that different fd
-                // numbers across runs still match.
-                let normalized = Self::normalize_fd_arg(deterministic_line, FD_SYSCALLS);
-                sanitized.extend_from_slice(normalized.as_bytes());
-                sanitized.push(b'\n');
-            }
+            let Some((syscall_expr, return_expr)) = current.rsplit_once(" = ") else {
+                continue;
+            };
+
+            // Normalize fd arguments: for fd-based syscalls, replace the
+            // first numeric arg (the fd) with "FD" so that different fd
+            // numbers across runs still match.
+            let normalized = Self::normalize_fd_arg(syscall_expr.trim(), FD_SYSCALLS);
+            let outcome = Self::normalize_return_outcome(return_expr);
+            sanitized.extend_from_slice(normalized.as_bytes());
+            sanitized.extend_from_slice(b" => ");
+            sanitized.extend_from_slice(outcome.as_bytes());
+            sanitized.push(b'\n');
         }
         sanitized
     }
@@ -297,6 +300,28 @@ impl LockstepHarness {
             }
         }
         line.to_string()
+    }
+
+    fn normalize_return_outcome(return_expr: &str) -> String {
+        let trimmed = return_expr.trim();
+        if trimmed.starts_with("-1") {
+            let errno = trimmed
+                .split_whitespace()
+                .nth(1)
+                .filter(|token| {
+                    token
+                        .chars()
+                        .all(|ch| ch.is_ascii_uppercase() || ch == '_' || ch.is_ascii_digit())
+                })
+                .unwrap_or("ERR");
+            return format!("err:{errno}");
+        }
+
+        if trimmed.starts_with('?') {
+            return "unknown".to_string();
+        }
+
+        "ok".to_string()
     }
 }
 
@@ -421,8 +446,23 @@ mod tests {
         let raw = b"open(\"/etc/hosts\", O_RDONLY) = 3\n";
         let result = LockstepHarness::sanitize_strace_output(raw);
         let output = String::from_utf8_lossy(&result);
-        // The return value "= 3" should be stripped (everything after last '=')
+        // Raw return payload should be removed while outcome classification is retained.
         assert!(!output.contains("= 3"));
+        assert!(output.contains("=> ok"));
+    }
+
+    #[test]
+    fn sanitize_preserves_success_vs_error_outcomes() {
+        let ok = b"open(\"/tmp/demo\", O_RDONLY) = 3\n";
+        let err = b"open(\"/tmp/demo\", O_RDONLY) = -1 ENOENT (No such file or directory)\n";
+        let ok_out = LockstepHarness::sanitize_strace_output(ok);
+        let err_out = LockstepHarness::sanitize_strace_output(err);
+        let ok_text = String::from_utf8_lossy(&ok_out);
+        let err_text = String::from_utf8_lossy(&err_out);
+
+        assert_ne!(ok_out, err_out);
+        assert!(ok_text.contains("=> ok"));
+        assert!(err_text.contains("=> err:ENOENT"));
     }
 
     #[test]
@@ -458,11 +498,10 @@ mod tests {
         let raw = b"--- SIGCHLD {si_signo=SIGCHLD} ---\nopen(\"/tmp\") = 3\n";
         let result = LockstepHarness::sanitize_strace_output(raw);
         let output = String::from_utf8_lossy(&result);
-        // The signal line has '=' in field not as return, but rfind('=') will find it
-        // Lines without '=' would be skipped
+        // Only syscall lines containing ` = ` return separators are retained.
         let lines: Vec<&str> = output.lines().filter(|l| !l.is_empty()).collect();
-        // Both lines contain '=' so both are kept (with content up to last '=')
-        assert!(!lines.is_empty());
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("open(\"/tmp\")"));
     }
 
     #[test]

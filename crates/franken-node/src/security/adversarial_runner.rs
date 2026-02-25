@@ -485,7 +485,10 @@ impl AdversarialRunner {
 
         let total = results.len();
         let breach_count = breaches.len();
-        let overall_pass = breach_count == 0;
+        // Fail-closed: pass only when no breaches AND either no campaigns ran
+        // (vacuous pass) or at least one defense held. All-inconclusive
+        // campaigns must not pass the gate.
+        let overall_pass = breach_count == 0 && (total == 0 || held > 0);
 
         RunnerGateResult {
             verdict: if overall_pass { "PASS" } else { "FAIL" }.to_string(),
@@ -783,6 +786,33 @@ mod tests {
             .filter(|e| e.code == event_codes::ADV_RUN_ERR_002_CONTAINMENT)
             .collect();
         assert_eq!(containment_events.len(), 1);
+    }
+
+    #[test]
+    fn test_all_inconclusive_fails_gate() {
+        // Fail-closed: all-inconclusive campaigns must not pass the gate.
+        let config = RunnerConfig::default_config();
+        let corpus = build_default_corpus();
+        let runner = AdversarialRunner::new(config, corpus);
+
+        let results = vec![CampaignResult {
+            campaign_id: "CAMP-INC-001".to_string(),
+            execution_id: "exec-inc".to_string(),
+            timestamp: "2026-02-25T00:00:00Z".to_string(),
+            verdict: ExecutionVerdict::Inconclusive,
+            defense_decisions: vec![],
+            sandbox_verified: true,
+            duration_ms: 100,
+            severity_if_breached: CampaignSeverity::High,
+            integration_targets: vec![],
+        }];
+
+        let gate = runner.evaluate_results(&results);
+        assert!(!gate.overall_pass, "all-inconclusive must fail gate");
+        assert_eq!(gate.verdict, "FAIL");
+        assert_eq!(gate.inconclusive, 1);
+        assert_eq!(gate.defense_held, 0);
+        assert_eq!(gate.defense_breached, 0);
     }
 
     #[test]

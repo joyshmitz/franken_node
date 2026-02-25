@@ -29,18 +29,18 @@ pub struct GraphHealthSnapshot {
 pub struct HealthDelta {
     /// Positive values indicate increased risk relative to baseline.
     pub cascade_risk_delta: f64,
-    pub new_fragility_findings: i32,
-    pub new_articulation_points: i32,
+    pub new_fragility_findings: i64,
+    pub new_articulation_points: i64,
 }
 
 impl HealthDelta {
     pub fn between(baseline: GraphHealthSnapshot, projected: GraphHealthSnapshot) -> Self {
         Self {
             cascade_risk_delta: projected.cascade_risk - baseline.cascade_risk,
-            new_fragility_findings: projected.fragility_findings as i32
-                - baseline.fragility_findings as i32,
-            new_articulation_points: projected.articulation_points as i32
-                - baseline.articulation_points as i32,
+            new_fragility_findings: i64::from(projected.fragility_findings)
+                - i64::from(baseline.fragility_findings),
+            new_articulation_points: i64::from(projected.articulation_points)
+                - i64::from(baseline.articulation_points),
         }
     }
 }
@@ -133,7 +133,7 @@ fn evaluate_policy(
         });
     }
 
-    if delta.new_fragility_findings > thresholds.max_new_fragility_findings as i32 {
+    if delta.new_fragility_findings > i64::from(thresholds.max_new_fragility_findings) {
         reasons.push(RejectionReason {
             code: "DGIS-MIGRATE-FRAGILITY-DELTA".to_string(),
             detail: format!(
@@ -143,7 +143,7 @@ fn evaluate_policy(
         });
     }
 
-    if delta.new_articulation_points > thresholds.max_new_articulation_points as i32 {
+    if delta.new_articulation_points > i64::from(thresholds.max_new_articulation_points) {
         reasons.push(RejectionReason {
             code: "DGIS-MIGRATE-ARTICULATION-DELTA".to_string(),
             detail: format!(

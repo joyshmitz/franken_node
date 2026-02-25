@@ -599,14 +599,14 @@ impl CancellationProtocol {
                 event_codes::CAN_006,
                 workflow_id,
                 CancelPhase::Finalizing,
-                CancelPhase::Finalized,
+                CancelPhase::Finalizing,
                 timestamp_ms,
                 trace_id,
                 &format!("resource leak detected: {}", leaks.join(", ")),
             ));
 
-            self.records[idx].current_phase = CancelPhase::Finalized;
-            self.records[idx].finalize_ms = Some(timestamp_ms);
+            // INV-CANP-FINALIZE-CLEAN: do NOT advance to Finalized when leaks
+            // exist. Keep phase as Finalizing so operator can intervene.
 
             return Err(CancelProtocolError::ResourceLeak {
                 workflow_id: workflow_id.to_string(),
@@ -937,6 +937,25 @@ mod tests {
             .filter(|e| e.event_code == event_codes::CAN_006)
             .collect();
         assert_eq!(leak_events.len(), 1);
+    }
+
+    #[test]
+    fn resource_leak_keeps_phase_finalizing() {
+        // INV-CANP-FINALIZE-CLEAN: leaks must NOT advance phase to Finalized.
+        let mut proto = CancellationProtocol::default();
+        proto.request_cancel("wf-leak", 0, 1000, "t1").unwrap();
+        proto.start_drain("wf-leak", 1100, "t1").unwrap();
+        proto.complete_drain("wf-leak", 1200, "t1").unwrap();
+
+        let mut resources = ResourceTracker::empty();
+        resources.held_locks.push("db-lock".to_string());
+
+        let err = proto.finalize("wf-leak", &resources, 1300, "t1").unwrap_err();
+        assert_eq!(err.code(), error_codes::ERR_CANCEL_LEAK);
+
+        // Phase must remain Finalizing, not Finalized.
+        let phase = proto.current_phase("wf-leak").unwrap();
+        assert_eq!(phase, CancelPhase::Finalizing);
     }
 
     // ---- Resource tracker ----

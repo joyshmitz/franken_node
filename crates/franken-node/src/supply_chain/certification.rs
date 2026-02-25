@@ -38,6 +38,11 @@ pub enum CertificationError {
         from: CertificationLevel,
         to: CertificationLevel,
     },
+    #[error("cannot demote from `{from:?}` to `{to:?}`: must be adjacent levels")]
+    InvalidDemotion {
+        from: CertificationLevel,
+        to: CertificationLevel,
+    },
     #[error("capability `{capability}` not allowed at certification level `{level:?}`")]
     CapabilityDenied {
         capability: String,
@@ -546,6 +551,19 @@ impl CertificationRegistry {
             .ok_or_else(|| CertificationError::ExtensionNotFound(key.clone()))?;
 
         let old_level = record.level;
+        if new_level.rank() >= old_level.rank() {
+            return Err(CertificationError::InvalidDemotion {
+                from: old_level,
+                to: new_level,
+            });
+        }
+        if old_level.rank() - new_level.rank() > 1 {
+            return Err(CertificationError::InvalidDemotion {
+                from: old_level,
+                to: new_level,
+            });
+        }
+
         record.level = new_level;
         record.evaluated_at = timestamp.to_owned();
 
@@ -966,6 +984,58 @@ mod tests {
         assert_eq!(
             reg.get_record("ext-1", "1.0.0").unwrap().level,
             CertificationLevel::Basic
+        );
+    }
+
+    #[test]
+    fn test_demotion_non_adjacent_rejected() {
+        let mut reg = CertificationRegistry::new();
+        let input = make_input(
+            "ext-1",
+            ProvenanceLevel::SignedReproducible,
+            ReputationTier::Trusted,
+            90.0,
+        );
+        reg.evaluate_and_register(&input, &ts(1));
+        // Verified (rank 3) to Basic (rank 1) is a 2-rank jump — must be rejected.
+        let err = reg
+            .demote(
+                "ext-1",
+                "1.0.0",
+                CertificationLevel::Basic,
+                "non-adjacent demotion",
+                &ts(2),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(err, CertificationError::InvalidDemotion { .. }),
+            "expected InvalidDemotion, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_demotion_same_level_rejected() {
+        let mut reg = CertificationRegistry::new();
+        let input = make_input(
+            "ext-1",
+            ProvenanceLevel::PublisherSigned,
+            ReputationTier::Established,
+            60.0,
+        );
+        reg.evaluate_and_register(&input, &ts(1));
+        // Standard → Standard is not a demotion.
+        let err = reg
+            .demote(
+                "ext-1",
+                "1.0.0",
+                CertificationLevel::Standard,
+                "same level",
+                &ts(2),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(err, CertificationError::InvalidDemotion { .. }),
+            "expected InvalidDemotion, got {err:?}"
         );
     }
 

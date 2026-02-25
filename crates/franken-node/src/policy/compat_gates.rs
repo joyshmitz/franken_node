@@ -688,8 +688,10 @@ impl CompatGateEvaluator {
                         GateDecision::Audit
                     }
                     CompatibilityMode::LegacyRisky => {
-                        rationale.push("legacy_risky mode: unknown packages allowed".to_string());
-                        GateDecision::Allow
+                        // INV-PCG-RECEIPT: unknown packages are divergences that
+                        // must produce a receipt even in permissive modes.
+                        rationale.push("legacy_risky mode: unknown packages audited".to_string());
+                        GateDecision::Audit
                     }
                 }
             }
@@ -1435,7 +1437,10 @@ mod tests {
         let result = eval
             .evaluate_gate("unknown-pkg", "scope-risky", "trace-7")
             .unwrap();
-        assert_eq!(result.decision, GateDecision::Allow);
+        // INV-PCG-RECEIPT: unknown packages are divergences that produce
+        // receipts even in permissive modes.
+        assert_eq!(result.decision, GateDecision::Audit);
+        assert!(result.receipt_id.is_some(), "receipt must be generated");
     }
 
     #[test]
