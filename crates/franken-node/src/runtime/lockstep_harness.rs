@@ -28,6 +28,24 @@ impl LockstepHarness {
         Self { runtimes }
     }
 
+    fn is_franken_runtime(runtime: &str) -> bool {
+        matches!(
+            runtime,
+            "franken-node" | "franken_engine" | "franken-engine"
+        )
+    }
+
+    fn resolve_runtime_binary(runtime: &str) -> String {
+        match runtime {
+            "node" => "node".to_string(),
+            "bun" => "bun".to_string(),
+            runtime_name if Self::is_franken_runtime(runtime_name) => {
+                crate::ops::engine_dispatcher::resolve_engine_binary_path("franken-engine")
+            }
+            _ => runtime.to_string(),
+        }
+    }
+
     /// Spawns the specified runtimes concurrently, intercepts their outputs,
     /// and feeds the results to the Oracle.
     pub fn verify_lockstep(&self, app_path: &Path) -> Result<()> {
@@ -39,7 +57,7 @@ impl LockstepHarness {
                     runtime_id: rt.clone(),
                     runtime_name: rt.clone(),
                     version: "unknown".to_string(),
-                    is_reference: rt != "franken-node" && rt != "franken_engine",
+                    is_reference: !Self::is_franken_runtime(rt),
                 })
                 .map_err(|e| anyhow::anyhow!("Oracle registration error: {}", e))?;
         }
@@ -102,19 +120,7 @@ impl LockstepHarness {
     }
 
     fn execute_runtime(runtime: &str, app_path: &Path) -> Result<Vec<u8>> {
-        let bin_path = match runtime {
-            "node" => "node",
-            "bun" => "bun",
-            "franken-node" | "franken_engine" => {
-                let path = "/dp/franken_engine/target/release/franken-engine";
-                if Path::new(path).exists() {
-                    path
-                } else {
-                    "franken-engine"
-                }
-            }
-            _ => runtime,
-        };
+        let bin_path = Self::resolve_runtime_binary(runtime);
 
         let mut cmd = Command::new("strace");
 
@@ -136,9 +142,9 @@ impl LockstepHarness {
             .arg("trace=file,network")
             .arg("-o")
             .arg(&strace_output_file)
-            .arg(bin_path);
+            .arg(&bin_path);
 
-        if runtime == "franken-node" || runtime == "franken_engine" {
+        if Self::is_franken_runtime(runtime) {
             cmd.arg("run").arg(app_path);
         } else {
             cmd.arg(app_path);
@@ -321,8 +327,40 @@ mod tests {
             "bun".into(),
             "franken-node".into(),
             "franken_engine".into(),
+            "franken-engine".into(),
         ]);
-        assert_eq!(h.runtimes.len(), 4);
+        assert_eq!(h.runtimes.len(), 5);
+    }
+
+    #[test]
+    fn resolve_runtime_binary_known_values() {
+        assert_eq!(LockstepHarness::resolve_runtime_binary("node"), "node");
+        assert_eq!(LockstepHarness::resolve_runtime_binary("bun"), "bun");
+        let canonical = LockstepHarness::resolve_runtime_binary("franken-node");
+        assert_eq!(
+            LockstepHarness::resolve_runtime_binary("franken_engine"),
+            canonical
+        );
+        assert_eq!(
+            LockstepHarness::resolve_runtime_binary("franken-engine"),
+            canonical
+        );
+    }
+
+    #[test]
+    fn recognizes_franken_runtime_aliases() {
+        assert!(LockstepHarness::is_franken_runtime("franken-node"));
+        assert!(LockstepHarness::is_franken_runtime("franken_engine"));
+        assert!(LockstepHarness::is_franken_runtime("franken-engine"));
+        assert!(!LockstepHarness::is_franken_runtime("node"));
+    }
+
+    #[test]
+    fn resolve_runtime_binary_passthrough_custom_runtime() {
+        assert_eq!(
+            LockstepHarness::resolve_runtime_binary("custom-runtime"),
+            "custom-runtime"
+        );
     }
 
     // ── TempFileCleanup ──────────────────────────────────────────────
@@ -439,7 +477,12 @@ mod tests {
 
     #[test]
     fn harness_oracle_registration_marks_reference_runtimes() {
-        let h = LockstepHarness::new(vec!["node".into(), "bun".into(), "franken-node".into()]);
+        let h = LockstepHarness::new(vec![
+            "node".into(),
+            "bun".into(),
+            "franken-node".into(),
+            "franken-engine".into(),
+        ]);
         let mut oracle = RuntimeOracle::new("test-trace", 100);
 
         for rt in &h.runtimes {
@@ -447,12 +490,12 @@ mod tests {
                 runtime_id: rt.clone(),
                 runtime_name: rt.clone(),
                 version: "unknown".to_string(),
-                is_reference: rt != "franken-node" && rt != "franken_engine",
+                is_reference: !LockstepHarness::is_franken_runtime(rt),
             };
             oracle.register_runtime(entry).expect("register");
         }
 
-        // node and bun are reference, franken-node is not
+        // node and bun are reference, franken runtimes are not
         let report = oracle.generate_report();
         let json = serde_json::to_value(&report).expect("serialize");
         assert!(json.get("schema_version").is_some());
