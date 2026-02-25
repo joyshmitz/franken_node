@@ -19,8 +19,6 @@ pub mod registry;
 pub mod remote;
 pub mod repair;
 pub mod replay;
-#[path = "control_plane/root_pointer.rs"]
-pub mod root_pointer;
 pub mod runtime;
 pub mod sdk;
 pub mod security;

@@ -4,7 +4,9 @@
 // as programmatic APIs. Every decision produces structured evidence -- no opaque gates.
 
 use std::collections::BTreeMap;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
+
+use chrono::{DateTime, Utc};
 
 // ---------------------------------------------------------------------------
 // Event codes
@@ -208,10 +210,8 @@ impl GateEngine {
     }
 
     fn now_iso(&self) -> String {
-        let dur = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default();
-        format!("1970-01-01T00:00:{:02}Z", dur.as_secs() % 60)
+        let now: DateTime<Utc> = SystemTime::now().into();
+        now.to_rfc3339()
     }
 
     fn sign(&self, payload: &str) -> String {
@@ -225,7 +225,11 @@ impl GateEngine {
         let digest = h.finalize();
         format!(
             "{:016x}",
-            u64::from_le_bytes(digest[..8].try_into().unwrap())
+            u64::from_le_bytes(
+                digest[..8]
+                    .try_into()
+                    .expect("SHA-256 digest is 32 bytes, first 8 always valid")
+            )
         )
     }
 

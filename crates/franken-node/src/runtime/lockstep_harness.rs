@@ -424,7 +424,7 @@ mod tests {
         // Lines without '=' would be skipped
         let lines: Vec<&str> = output.lines().filter(|l| !l.is_empty()).collect();
         // Both lines contain '=' so both are kept (with content up to last '=')
-        assert!(lines.len() >= 1);
+        assert!(!lines.is_empty());
     }
 
     #[test]

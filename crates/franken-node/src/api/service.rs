@@ -418,12 +418,12 @@ mod integration_tests {
     use super::*;
     use crate::api::middleware::{
         AuthIdentity, AuthMethod, AuthzDecision, EndpointGroup, EndpointLifecycle, PolicyHook,
-        RateLimitConfig, RateLimiter, RouteMetadata, TraceContext, authenticate, authorize,
-        check_rate_limit, default_rate_limit, enforce_policy, execute_middleware_chain,
+        RateLimitConfig, RateLimiter, RouteMetadata, authorize, check_rate_limit,
+        default_rate_limit, execute_middleware_chain,
     };
     use crate::security::intent_firewall::{
         EffectsFirewall, FirewallVerdict, IntentClassification, IntentClassifier, RemoteEffect,
-        TrafficOrigin, TrafficPolicy, TrafficPolicyRule,
+        TrafficOrigin,
     };
     use std::collections::BTreeMap;
 

@@ -21,7 +21,11 @@ fn hash_pair(left: &str, right: &str) -> String {
     let digest = h.finalize();
     format!(
         "{:016x}",
-        u64::from_le_bytes(digest[..8].try_into().unwrap())
+        u64::from_le_bytes(
+            digest[..8]
+                .try_into()
+                .expect("SHA-256 digest is 32 bytes, first 8 always valid")
+        )
     )
 }
 
@@ -33,7 +37,11 @@ pub fn leaf_hash(data: &str) -> String {
     let digest = h.finalize();
     format!(
         "{:016x}",
-        u64::from_le_bytes(digest[..8].try_into().unwrap())
+        u64::from_le_bytes(
+            digest[..8]
+                .try_into()
+                .expect("SHA-256 digest is 32 bytes, first 8 always valid")
+        )
     )
 }
 

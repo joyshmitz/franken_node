@@ -532,7 +532,7 @@ mod connector_runtime_integration_tests {
         let proof = flow.closure_proof(3000);
         assert!(proof.complete);
         assert_eq!(proof.obligations.len(), 2);
-        for (_, status) in &proof.obligations {
+        for status in proof.obligations.values() {
             assert_eq!(*status, ObligationStatus::Fulfilled);
         }
     }
@@ -559,7 +559,7 @@ mod connector_runtime_integration_tests {
         // All obligations should be cancelled
         let proof = flow.closure_proof(3000);
         assert!(proof.complete);
-        for (_, status) in &proof.obligations {
+        for status in proof.obligations.values() {
             assert_eq!(*status, ObligationStatus::Cancelled);
         }
     }
@@ -767,7 +767,7 @@ mod connector_runtime_integration_tests {
         // Proof shows all cancelled
         let proof = flow.closure_proof(3000);
         assert!(proof.complete);
-        for (_, status) in &proof.obligations {
+        for status in proof.obligations.values() {
             assert_eq!(*status, ObligationStatus::Cancelled);
         }
     }
