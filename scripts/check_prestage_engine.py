@@ -32,7 +32,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/prestage_engine.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_config = "struct PrestageConfig" in content
         has_candidate = "struct ArtifactCandidate" in content
         has_decision = "struct PrestageDecision" in content
@@ -45,7 +45,7 @@ def main():
     all_pass &= check("PSE-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         errors = ["PSE_BUDGET_EXCEEDED", "PSE_INVALID_CONFIG", "PSE_NO_CANDIDATES", "PSE_THRESHOLD_INVALID"]
         found = [e for e in errors if e in content]
         all_pass &= check("PSE-ERRORS", "All 4 error codes present",
@@ -56,7 +56,7 @@ def main():
     report_path = os.path.join(ROOT, "artifacts/section_10_13/bd-2t5u/prestaging_model_report.csv")
     report_valid = False
     if os.path.isfile(report_path):
-        content = __import__("pathlib").Path(report_path).read_text(encoding="utf-8")
+        content = open(report_path).read()
         lines = [l for l in content.strip().split("\n") if l.strip()]
         report_valid = len(lines) >= 4  # header + 3 data rows minimum
     all_pass &= check("PSE-REPORT", "Pre-staging model report CSV", report_valid)
@@ -64,7 +64,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/prestaging_coverage_improvement.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
+        content = open(integ_path).read()
         has_budget = "inv_pse_budget" in content
         has_coverage = "inv_pse_coverage" in content
         has_det = "inv_pse_deterministic" in content
@@ -78,7 +78,7 @@ def main():
         result = subprocess.run(
             ["cargo", "test", "--", "connector::prestage_engine"],
             capture_output=True, text=True, timeout=120,
-            cwd=ROOT
+            cwd=os.path.join(ROOT, "crates/franken-node")
         )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
@@ -92,7 +92,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-2t5u_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
+        content = open(spec_path).read()
         has_invariants = "INV-PSE" in content
         has_types = "PrestageEngine" in content and "PrestageConfig" in content
     else:

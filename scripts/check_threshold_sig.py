@@ -33,7 +33,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/security/threshold_sig.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_config = "struct ThresholdConfig" in content
         has_artifact = "struct PublicationArtifact" in content
         has_result = "struct VerificationResult" in content
@@ -46,7 +46,7 @@ def main():
 
     # TS-QUORUM: Threshold quorum logic
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_threshold = "threshold" in content
         has_quorum = "valid_count >= config.threshold" in content or "valid_count" in content
         all_pass &= check("TS-QUORUM", "Quorum check against threshold", has_threshold and has_quorum)
@@ -55,7 +55,7 @@ def main():
 
     # TS-ERRORS: All 4 error codes
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         errors = ["THRESH_BELOW_QUORUM", "THRESH_UNKNOWN_SIGNER",
                   "THRESH_INVALID_SIG", "THRESH_CONFIG_INVALID"]
         found = [e for e in errors if e in content]
@@ -69,7 +69,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixture_path).read_text(encoding="utf-8"))
+            data = json.loads(open(fixture_path).read())
             fixture_valid = "cases" in data and len(data["cases"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -80,7 +80,7 @@ def main():
     vectors_valid = False
     if os.path.isfile(vectors_path):
         try:
-            data = json.loads(__import__("pathlib").Path(vectors_path).read_text(encoding="utf-8"))
+            data = json.loads(open(vectors_path).read())
             vectors_valid = "vectors" in data and len(data["vectors"]) >= 2
         except json.JSONDecodeError:
             pass
@@ -90,7 +90,7 @@ def main():
     sec_path = os.path.join(ROOT, "tests/security/threshold_signature_verification.rs")
     sec_exists = os.path.isfile(sec_path)
     if sec_exists:
-        content = __import__("pathlib").Path(sec_path).read_text(encoding="utf-8")
+        content = open(sec_path).read()
         has_quorum = "quorum" in content
         has_partial = "partial" in content
         has_duplicate = "duplicate" in content
@@ -104,7 +104,7 @@ def main():
         result = subprocess.run(
             ["cargo", "test", "-p", "frankenengine-node", "--", "security::threshold_sig"],
             capture_output=True, text=True, timeout=120,
-            cwd=ROOT
+            cwd=os.path.join(ROOT, "crates/franken-node")
         )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
@@ -119,7 +119,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-35q1_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
+        content = open(spec_path).read()
         has_invariants = "INV-THRESH" in content
         has_failure = "FailureReason" in content
     else:

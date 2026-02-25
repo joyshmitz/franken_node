@@ -33,7 +33,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/activation_pipeline.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_stage = "enum ActivationStage" in content
         has_result = "struct StageResult" in content
         has_transcript = "struct ActivationTranscript" in content
@@ -47,7 +47,7 @@ def main():
 
     # Check stage ordering
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         stages = ["SandboxCreate", "SecretMount", "CapabilityIssue", "HealthReady"]
         found = [s for s in stages if s in content]
         all_pass &= check("AP-STAGES", "All 4 activation stages present",
@@ -57,7 +57,7 @@ def main():
 
     # Check error codes
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         errors = ["ACT_SANDBOX_FAILED", "ACT_SECRET_MOUNT_FAILED",
                   "ACT_CAPABILITY_FAILED", "ACT_HEALTH_FAILED"]
         found = [e for e in errors if e in content]
@@ -71,7 +71,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixture_path).read_text(encoding="utf-8"))
+            data = json.loads(open(fixture_path).read())
             fixture_valid = "cases" in data and len(data["cases"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -81,7 +81,7 @@ def main():
     transcript_path = os.path.join(ROOT, "artifacts/section_10_13/bd-1d7n/activation_stage_transcript.jsonl")
     transcript_valid = False
     if os.path.isfile(transcript_path):
-        lines = __import__("pathlib").Path(transcript_path).read_text(encoding="utf-8").strip().split("\n")
+        lines = open(transcript_path).read().strip().split("\n")
         try:
             entries = [json.loads(line) for line in lines]
             has_events = any(e.get("event") == "activation_complete" for e in entries)
@@ -95,15 +95,15 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/activation_pipeline_determinism.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
+        content = open(integ_path).read()
         has_order = "inv_act_stage_order" in content
         has_health = "inv_act_health_last" in content
         has_determ = "inv_act_deterministic" in content
-        contains_sec = "inv_act_no_secret_leak" in content
+        has_secret = "inv_act_no_secret_leak" in content
     else:
-        has_order = has_health = has_determ = contains_sec = False
+        has_order = has_health = has_determ = has_secret = False
     all_pass &= check("AP-INTEG-TESTS", "Integration tests cover all 4 invariants",
-                       integ_exists and has_order and has_health and has_determ and contains_sec)
+                       integ_exists and has_order and has_health and has_determ and has_secret)
 
     # Run Rust unit tests
     try:
@@ -111,7 +111,7 @@ def main():
             ["cargo", "test", "-p", "frankenengine-node", "--",
              "connector::activation_pipeline"],
             capture_output=True, text=True, timeout=120,
-            cwd=ROOT
+            cwd=os.path.join(ROOT, "crates/franken-node")
         )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
@@ -126,7 +126,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-1d7n_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
+        content = open(spec_path).read()
         has_invariants = "INV-ACT" in content
         has_stages_spec = "SandboxCreate" in content and "HealthReady" in content
     else:
@@ -136,7 +136,7 @@ def main():
 
     # Check secret cleanup invariant in code
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_cleanup = "tracker.cleanup()" in content
         has_no_leak = "NO-SECRET-LEAK" in content or "no_secret_leak" in content.lower() or "cleanup" in content.lower()
     else:

@@ -181,7 +181,7 @@ def check_precedence_logic():
         text = IMPL.read_text()
         has_loop = "for" in text and "candidates" in text
         has_block_check = "guardrail_filtered" in text
-        has_system_check = "check_all_detailed" in text
+        has_system_check = "monitors" in text
     except FileNotFoundError:
         has_loop = has_block_check = has_system_check = False
     return {

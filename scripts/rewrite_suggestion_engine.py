@@ -109,9 +109,9 @@ REWRITE_RULES = {
 UNSAFE_REWRITES = {
     "eval": {
         "category": "removal-needed",
-        "description": "eva" + "l() is blocked in franken_node — must be removed or replaced",
-        "before": "eva" + "l(code)",
-        "after": "// REMOVED: e_v_a_l() is unsafe and blocked by default policy",
+        "description": "eval() is blocked in franken_node — must be removed or replaced",
+        "before": "eval(code)",
+        "after": "// REMOVED: eval() is unsafe and blocked by default policy",
         "test_cmd": None,
     },
     "Function": {

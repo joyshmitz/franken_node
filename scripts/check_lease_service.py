@@ -32,7 +32,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/lease_service.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_purpose = "enum LeasePurpose" in content
         has_lease = "struct Lease" in content
         has_service = "struct LeaseService" in content
@@ -47,7 +47,7 @@ def main():
                        impl_exists and all_types)
 
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         errors = ["LS_EXPIRED", "LS_STALE_USE", "LS_ALREADY_REVOKED", "LS_PURPOSE_MISMATCH"]
         found = [e for e in errors if e in content]
         all_pass &= check("LS-ERRORS", "All 4 error codes present",
@@ -56,7 +56,7 @@ def main():
         all_pass &= check("LS-ERRORS", "Error codes", False)
 
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         purposes = ["Operation", "StateWrite", "MigrationHandoff"]
         found = [p for p in purposes if p in content]
         all_pass &= check("LS-PURPOSES", "All 3 lease purposes present",
@@ -68,7 +68,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixture_path).read_text(encoding="utf-8"))
+            data = json.loads(open(fixture_path).read())
             fixture_valid = "cases" in data and len(data["cases"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -78,7 +78,7 @@ def main():
     contract_valid = False
     if os.path.isfile(contract_path):
         try:
-            data = json.loads(__import__("pathlib").Path(contract_path).read_text(encoding="utf-8"))
+            data = json.loads(open(contract_path).read())
             contract_valid = "leases" in data and len(data["leases"]) >= 2
         except json.JSONDecodeError:
             pass
@@ -87,7 +87,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/lease_service_contract.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
+        content = open(integ_path).read()
         has_expiry = "inv_ls_expiry" in content
         has_renewal = "inv_ls_renewal" in content
         has_stale = "inv_ls_stale" in content
@@ -102,7 +102,7 @@ def main():
             ["cargo", "test", "-p", "frankenengine-node", "--",
              "connector::lease_service"],
             capture_output=True, text=True, timeout=120,
-            cwd=ROOT
+            cwd=os.path.join(ROOT, "crates/franken-node")
         )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
@@ -116,7 +116,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-bq6y_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
+        content = open(spec_path).read()
         has_invariants = "INV-LS" in content
         has_types = "LeaseService" in content and "LeasePurpose" in content
     else:

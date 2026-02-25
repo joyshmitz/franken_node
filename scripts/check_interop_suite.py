@@ -32,7 +32,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/interop_suite.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_class = "enum InteropClass" in content
         has_result = "struct InteropResult" in content
         has_check = "fn check_serialization" in content
@@ -43,7 +43,7 @@ def main():
     all_pass &= check("IOP-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         errors = ["IOP_SERIALIZATION_MISMATCH", "IOP_OBJECT_ID_MISMATCH", "IOP_SIGNATURE_INVALID",
                   "IOP_REVOCATION_DISAGREEMENT", "IOP_SOURCE_DIVERSITY_INSUFFICIENT"]
         found = [e for e in errors if e in content]
@@ -56,7 +56,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixture_path).read_text(encoding="utf-8"))
+            data = json.loads(open(fixture_path).read())
             fixture_valid = "test_vectors" in data and len(data["test_vectors"]) >= 5
         except json.JSONDecodeError:
             pass
@@ -65,7 +65,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/interop_mandatory_suites.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
+        content = open(integ_path).read()
         has_ser = "inv_iop_serialization" in content
         has_oid = "inv_iop_object_id" in content
         has_sig = "inv_iop_signature" in content
@@ -80,7 +80,7 @@ def main():
         result = subprocess.run(
             ["cargo", "test", "--", "connector::interop_suite"],
             capture_output=True, text=True, timeout=120,
-            cwd=ROOT
+            cwd=os.path.join(ROOT, "crates/franken-node")
         )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
@@ -94,7 +94,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-35by_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
+        content = open(spec_path).read()
         has_invariants = "INV-IOP" in content
         has_types = "InteropClass" in content and "InteropResult" in content
     else:

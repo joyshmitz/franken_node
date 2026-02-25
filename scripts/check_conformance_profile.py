@@ -32,7 +32,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/conformance_profile.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_matrix = "struct ProfileMatrix" in content
         has_eval = "struct ClaimEvaluation" in content
         has_profile = "enum Profile" in content
@@ -43,7 +43,7 @@ def main():
     all_pass &= check("CPM-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         errors = ["CPM_UNKNOWN_PROFILE", "CPM_MISSING_RESULT", "CPM_CAPABILITY_FAILED",
                   "CPM_CLAIM_BLOCKED", "CPM_INVALID_MATRIX"]
         found = [e for e in errors if e in content]
@@ -56,7 +56,7 @@ def main():
     report_valid = False
     if os.path.isfile(report_path):
         try:
-            data = json.loads(__import__("pathlib").Path(report_path).read_text(encoding="utf-8"))
+            data = json.loads(open(report_path).read())
             report_valid = "profiles" in data and "sample_evaluation" in data
         except json.JSONDecodeError:
             pass
@@ -65,7 +65,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/profile_claim_gate.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
+        content = open(integ_path).read()
         has_matrix = "inv_cpm_matrix" in content
         has_measured = "inv_cpm_measured" in content
         has_blocked = "inv_cpm_blocked" in content
@@ -79,7 +79,7 @@ def main():
         result = subprocess.run(
             ["cargo", "test", "--", "connector::conformance_profile"],
             capture_output=True, text=True, timeout=120,
-            cwd=ROOT
+            cwd=os.path.join(ROOT, "crates/franken-node")
         )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
@@ -93,7 +93,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-ck2h_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
+        content = open(spec_path).read()
         has_invariants = "INV-CPM" in content
         has_types = "ProfileMatrix" in content and "ClaimEvaluation" in content
     else:

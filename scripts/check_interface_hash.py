@@ -33,7 +33,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/security/interface_hash.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_hash = "struct InterfaceHash" in content
         has_telemetry = "struct AdmissionTelemetry" in content
         has_check = "struct AdmissionCheck" in content
@@ -46,7 +46,7 @@ def main():
 
     # IH-DOMAIN-SEP: Domain separation in hash computation
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_domain_hash = "domain.hash" in content or "domain" in content
         has_separator = '":"' in content or 'separator' in content.lower()
         all_pass &= check("IH-DOMAIN-SEP", "Domain separation in hash derivation",
@@ -56,7 +56,7 @@ def main():
 
     # IH-ERRORS: All 4 error codes
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         errors = ["IFACE_HASH_MISMATCH", "IFACE_DOMAIN_MISMATCH",
                   "IFACE_HASH_EXPIRED", "IFACE_HASH_MALFORMED"]
         found = [e for e in errors if e in content]
@@ -70,7 +70,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixture_path).read_text(encoding="utf-8"))
+            data = json.loads(open(fixture_path).read())
             fixture_valid = "cases" in data and len(data["cases"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -80,7 +80,7 @@ def main():
     csv_path = os.path.join(ROOT, "artifacts/section_10_13/bd-3n58/interface_hash_rejection_metrics.csv")
     csv_valid = False
     if os.path.isfile(csv_path):
-        content = __import__("pathlib").Path(csv_path).read_text(encoding="utf-8")
+        content = open(csv_path).read()
         csv_valid = ("rejection_code" in content and "IFACE_HASH_MISMATCH" in content
                      and "IFACE_DOMAIN_MISMATCH" in content)
     all_pass &= check("IH-METRICS", "Rejection metrics CSV with distribution", csv_valid)
@@ -89,7 +89,7 @@ def main():
     conf_path = os.path.join(ROOT, "tests/conformance/interface_hash_verification.rs")
     conf_exists = os.path.isfile(conf_path)
     if conf_exists:
-        content = __import__("pathlib").Path(conf_path).read_text(encoding="utf-8")
+        content = open(conf_path).read()
         has_domain = "domain_separation" in content
         has_admission = "blocks_admission" in content
         has_telemetry = "telemetry" in content
@@ -103,7 +103,7 @@ def main():
         result = subprocess.run(
             ["cargo", "test", "-p", "frankenengine-node", "--", "security::interface_hash"],
             capture_output=True, text=True, timeout=120,
-            cwd=ROOT
+            cwd=os.path.join(ROOT, "crates/franken-node")
         )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
@@ -118,7 +118,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-3n58_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
+        content = open(spec_path).read()
         has_invariants = "INV-HASH" in content
         has_rejection = "RejectionCode" in content
     else:

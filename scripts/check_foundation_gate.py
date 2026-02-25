@@ -64,7 +64,7 @@ def _discover_beads(artifacts_dir: Path) -> list[str]:
         return []
     beads = []
     for child in sorted(artifacts_dir.iterdir()):
-        if child.is_dir() and child.name.startswith("bd-") and child.name != SELF_BEAD:
+        if child.is_dir() and __import__("re").match(r"^bd-[a-z0-9]+$", child.name) and child.name != SELF_BEAD:
             beads.append(child.name)
     return beads
 

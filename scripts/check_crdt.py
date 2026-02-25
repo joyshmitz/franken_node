@@ -33,7 +33,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/crdt.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_lww = "struct LwwMap" in content
         has_or = "struct OrSet" in content
         has_gc = "struct GCounter" in content
@@ -45,7 +45,7 @@ def main():
 
     # CRDT-MERGE: Each type has a merge method
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         merge_count = content.count("fn merge(")
         all_pass &= check("CRDT-MERGE", "All 4 CRDT types implement merge", merge_count >= 4,
                           f"found {merge_count} merge methods")
@@ -54,7 +54,7 @@ def main():
 
     # CRDT-ERROR: CrdtError with TypeMismatch variant
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_error = "enum CrdtError" in content and "TypeMismatch" in content
         all_pass &= check("CRDT-ERROR", "CrdtError with TypeMismatch variant", has_error)
     else:
@@ -62,7 +62,7 @@ def main():
 
     # CRDT-TAGGED: Each CRDT carries crdt_type field
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         tagged_count = content.count("pub crdt_type: CrdtType")
         # LwwMap, OrSet, GCounter, PnCounter = 4, but PnCounter embeds GCounters so 4 struct-level
         all_pass &= check("CRDT-TAGGED", "Schema tag on each CRDT struct", tagged_count >= 4,
@@ -87,7 +87,7 @@ def main():
         fpath = os.path.join(fixture_dir, f)
         if os.path.isfile(fpath):
             try:
-                data = json.loads(__import__("pathlib").Path(fpath).read_text(encoding="utf-8"))
+                data = json.loads(open(fpath).read())
                 if "cases" not in data or len(data["cases"]) == 0:
                     fixture_valid = False
             except (json.JSONDecodeError, KeyError):
@@ -100,7 +100,7 @@ def main():
     conf_path = os.path.join(ROOT, "tests/conformance/crdt_merge_fixtures.rs")
     conf_exists = os.path.isfile(conf_path)
     if conf_exists:
-        content = __import__("pathlib").Path(conf_path).read_text(encoding="utf-8")
+        content = open(conf_path).read()
         has_comm = "commutativity" in content
         has_assoc = "associativity" in content
         has_idemp = "idempotency" in content
@@ -132,7 +132,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-19u_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
+        content = open(spec_path).read()
         has_types = "lww_map" in content and "or_set" in content and "gcounter" in content and "pncounter" in content
     else:
         has_types = False

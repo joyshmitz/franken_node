@@ -33,7 +33,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/schema_migration.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_version = "struct SchemaVersion" in content
         has_contract = "struct SchemaContract" in content
         has_hint = "struct MigrationHint" in content
@@ -46,7 +46,7 @@ def main():
 
     # MIGRATE-HINTS: All 4 hint types
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         hints = ["AddField", "RemoveField", "RenameField", "Transform"]
         found = [h for h in hints if h in content]
         all_pass &= check("MIGRATE-HINTS", "All 4 hint types (add/remove/rename/transform)",
@@ -56,7 +56,7 @@ def main():
 
     # MIGRATE-ERRORS: All 4 error codes
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         errors = ["MIGRATION_PATH_MISSING", "MIGRATION_ALREADY_APPLIED",
                   "MIGRATION_ROLLBACK_FAILED", "SCHEMA_VERSION_INVALID"]
         found = [e for e in errors if e in content]
@@ -67,7 +67,7 @@ def main():
 
     # MIGRATE-IDEMPOTENT: Idempotency check function
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_idemp = "fn check_idempotency" in content
         all_pass &= check("MIGRATE-IDEMPOTENT", "Idempotency check function", has_idemp)
     else:
@@ -86,7 +86,7 @@ def main():
     receipts_valid = False
     if os.path.isfile(receipts_path):
         try:
-            data = json.loads(__import__("pathlib").Path(receipts_path).read_text(encoding="utf-8"))
+            data = json.loads(open(receipts_path).read())
             receipts_valid = "receipts" in data and len(data["receipts"]) > 0
         except json.JSONDecodeError:
             pass
@@ -96,7 +96,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/state_migration_contract.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
+        content = open(integ_path).read()
         has_e2e = "end_to_end" in content
         has_idemp = "idempotent" in content
         has_range = "range_check" in content or "contract" in content
@@ -125,7 +125,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-b44_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
+        content = open(spec_path).read()
         has_invariants = "INV-MIGRATE" in content
         has_hints = "add_field" in content and "remove_field" in content
     else:

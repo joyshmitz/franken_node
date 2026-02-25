@@ -33,7 +33,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/supply_chain/transparency_verifier.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_root = "struct LogRoot" in content
         has_proof = "struct InclusionProof" in content
         has_policy = "struct TransparencyPolicy" in content
@@ -47,7 +47,7 @@ def main():
 
     # TL-MERKLE: Merkle path recomputation
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_recompute = "fn recompute_root" in content
         has_hash_pair = "fn hash_pair" in content
         all_pass &= check("TL-MERKLE", "Merkle path recomputation with hash_pair",
@@ -57,7 +57,7 @@ def main():
 
     # TL-ERRORS: All 4 error codes
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         errors = ["TLOG_PROOF_MISSING", "TLOG_ROOT_NOT_PINNED",
                   "TLOG_PATH_INVALID", "TLOG_LEAF_MISMATCH"]
         found = [e for e in errors if e in content]
@@ -71,7 +71,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixture_path).read_text(encoding="utf-8"))
+            data = json.loads(open(fixture_path).read())
             fixture_valid = "cases" in data and len(data["cases"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -82,7 +82,7 @@ def main():
     receipts_valid = False
     if os.path.isfile(receipts_path):
         try:
-            data = json.loads(__import__("pathlib").Path(receipts_path).read_text(encoding="utf-8"))
+            data = json.loads(open(receipts_path).read())
             receipts_valid = "receipts" in data and len(data["receipts"]) >= 2
         except json.JSONDecodeError:
             pass
@@ -92,7 +92,7 @@ def main():
     sec_path = os.path.join(ROOT, "tests/security/transparency_inclusion.rs")
     sec_exists = os.path.isfile(sec_path)
     if sec_exists:
-        content = __import__("pathlib").Path(sec_path).read_text(encoding="utf-8")
+        content = open(sec_path).read()
         has_install = "install" in content
         has_proof = "proof" in content
         has_pinned = "pinned" in content
@@ -107,7 +107,7 @@ def main():
             ["cargo", "test", "-p", "frankenengine-node", "--",
              "supply_chain::transparency_verifier"],
             capture_output=True, text=True, timeout=120,
-            cwd=ROOT
+            cwd=os.path.join(ROOT, "crates/franken-node")
         )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
@@ -122,7 +122,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-1z9s_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
+        content = open(spec_path).read()
         has_invariants = "INV-TLOG" in content
         has_failure = "ProofFailure" in content
     else:

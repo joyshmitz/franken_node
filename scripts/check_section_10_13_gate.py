@@ -56,7 +56,7 @@ def _run_rust_tests() -> bool:
         cmd = [rch, "exec", "--"] + cmd
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=600, cwd=ROOT,
+            cmd, capture_output=True, text=True, timeout=600, cwd=os.path.join(ROOT, "crates/franken-node"),
         )
         test_output = result.stdout + result.stderr
         # Match both "ok" and "FAILED" result lines to capture total passing
@@ -108,7 +108,7 @@ def _run_python_tests() -> bool:
         try:
             result = subprocess.run(
                 [sys.executable, "-m", "pytest", tf, "-q", "--tb=no"],
-                capture_output=True, text=True, timeout=60, cwd=ROOT,
+                capture_output=True, text=True, timeout=60, cwd=os.path.join(ROOT, "crates/franken-node"),
             )
             m = re.search(r"(\d+) passed", result.stdout)
             py_tests += int(m.group(1)) if m else 0

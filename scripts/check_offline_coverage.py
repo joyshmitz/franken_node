@@ -32,7 +32,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/offline_coverage.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_tracker = "struct OfflineCoverageTracker" in content
         has_metrics = "struct CoverageMetrics" in content
         has_slo = "struct SloTarget" in content
@@ -46,7 +46,7 @@ def main():
     all_pass &= check("OCT-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         errors = ["OCT_SLO_BREACH", "OCT_INVALID_EVENT", "OCT_NO_EVENTS", "OCT_SCOPE_UNKNOWN"]
         found = [e for e in errors if e in content]
         all_pass &= check("OCT-ERRORS", "All 4 error codes present",
@@ -58,7 +58,7 @@ def main():
     snap_valid = False
     if os.path.isfile(snap_path):
         try:
-            data = json.loads(__import__("pathlib").Path(snap_path).read_text(encoding="utf-8"))
+            data = json.loads(open(snap_path).read())
             snap_valid = "snapshots" in data and len(data["snapshots"]) >= 3
         except json.JSONDecodeError:
             pass
@@ -67,7 +67,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/offline_coverage_metrics.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
+        content = open(integ_path).read()
         has_cont = "inv_oct_continuous" in content
         has_breach = "inv_oct_slo_breach" in content
         has_trace = "inv_oct_traceable" in content
@@ -81,7 +81,7 @@ def main():
         result = subprocess.run(
             ["cargo", "test", "--", "connector::offline_coverage"],
             capture_output=True, text=True, timeout=120,
-            cwd=ROOT
+            cwd=os.path.join(ROOT, "crates/franken-node")
         )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
@@ -95,7 +95,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-29w6_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
+        content = open(spec_path).read()
         has_invariants = "INV-OCT" in content
         has_types = "OfflineCoverageTracker" in content and "CoverageMetrics" in content
     else:

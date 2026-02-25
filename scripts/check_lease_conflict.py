@@ -33,7 +33,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/lease_conflict.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_policy = "struct ConflictPolicy" in content
         has_conflict = "struct LeaseConflict" in content
         has_resolution = "struct ConflictResolution" in content
@@ -48,7 +48,7 @@ def main():
 
     # OLC-ERRORS: All error codes present
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         errors = ["OLC_DANGEROUS_HALT", "OLC_BOTH_ACTIVE", "OLC_NO_WINNER", "OLC_FORK_LOG_INCOMPLETE"]
         found = [e for e in errors if e in content]
         all_pass &= check("OLC-ERRORS", "All 4 error codes present",
@@ -61,7 +61,7 @@ def main():
     fixtures_valid = False
     if os.path.isfile(fixtures_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixtures_path).read_text(encoding="utf-8"))
+            data = json.loads(open(fixtures_path).read())
             fixtures_valid = "scenarios" in data and len(data["scenarios"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -71,7 +71,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/overlapping_lease_conflicts.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
+        content = open(integ_path).read()
         has_deterministic = "inv_olc_deterministic" in content
         has_halt = "inv_olc_dangerous_halt" in content
         has_fork = "inv_olc_fork_log" in content
@@ -86,7 +86,7 @@ def main():
         result = subprocess.run(
             ["cargo", "test", "--", "connector::lease_conflict"],
             capture_output=True, text=True, timeout=120,
-            cwd=ROOT
+            cwd=os.path.join(ROOT, "crates/franken-node")
         )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
@@ -101,7 +101,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-8uvb_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
+        content = open(spec_path).read()
         has_invariants = "INV-OLC" in content
         has_types = "ConflictPolicy" in content and "LeaseConflict" in content
     else:

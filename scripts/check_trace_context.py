@@ -32,7 +32,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/trace_context.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_ctx = "struct TraceContext" in content
         has_store = "struct TraceStore" in content
         has_report = "struct ConformanceReport" in content
@@ -43,7 +43,7 @@ def main():
     all_pass &= check("TRC-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         errors = ["TRC_MISSING_TRACE_ID", "TRC_MISSING_SPAN_ID", "TRC_INVALID_FORMAT",
                   "TRC_PARENT_NOT_FOUND", "TRC_CONFORMANCE_FAILED"]
         found = [e for e in errors if e in content]
@@ -56,7 +56,7 @@ def main():
     sample_valid = False
     if os.path.isfile(sample_path):
         try:
-            data = json.loads(__import__("pathlib").Path(sample_path).read_text(encoding="utf-8"))
+            data = json.loads(open(sample_path).read())
             sample_valid = "spans" in data and len(data["spans"]) >= 3
         except json.JSONDecodeError:
             pass
@@ -65,7 +65,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/trace_correlation_end_to_end.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text(encoding="utf-8")
+        content = open(integ_path).read()
         has_required = "inv_trc_required" in content
         has_propagated = "inv_trc_propagated" in content
         has_stitchable = "inv_trc_stitchable" in content
@@ -79,7 +79,7 @@ def main():
         result = subprocess.run(
             ["cargo", "test", "--", "connector::trace_context"],
             capture_output=True, text=True, timeout=120,
-            cwd=ROOT
+            cwd=os.path.join(ROOT, "crates/franken-node")
         )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
@@ -93,7 +93,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-1gnb_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
+        content = open(spec_path).read()
         has_invariants = "INV-TRC" in content
         has_types = "TraceContext" in content and "ConformanceReport" in content
     else:

@@ -33,7 +33,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/supply_chain/revocation_registry.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         has_head = "struct RevocationHead" in content
         has_registry = "struct RevocationRegistry" in content
         has_error = "enum RevocationError" in content
@@ -48,7 +48,7 @@ def main():
 
     # Check error codes
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text(encoding="utf-8")
+        content = open(impl_path).read()
         errors = ["REV_STALE_HEAD", "REV_ZONE_NOT_FOUND", "REV_RECOVERY_FAILED"]
         found = [e for e in errors if e in content]
         all_pass &= check("RR-ERRORS", "All 3 error codes present",
@@ -61,7 +61,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixture_path).read_text(encoding="utf-8"))
+            data = json.loads(open(fixture_path).read())
             fixture_valid = "cases" in data and len(data["cases"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -72,7 +72,7 @@ def main():
     history_valid = False
     if os.path.isfile(history_path):
         try:
-            data = json.loads(__import__("pathlib").Path(history_path).read_text(encoding="utf-8"))
+            data = json.loads(open(history_path).read())
             history_valid = "zones" in data and len(data["zones"]) >= 2
         except json.JSONDecodeError:
             pass
@@ -82,7 +82,7 @@ def main():
     conf_path = os.path.join(ROOT, "tests/conformance/revocation_head_monotonicity.rs")
     conf_exists = os.path.isfile(conf_path)
     if conf_exists:
-        content = __import__("pathlib").Path(conf_path).read_text(encoding="utf-8")
+        content = open(conf_path).read()
         has_monotonic = "inv_rev_monotonic" in content
         has_stale = "inv_rev_stale" in content
         has_recoverable = "inv_rev_recoverable" in content
@@ -98,7 +98,7 @@ def main():
             ["cargo", "test", "-p", "frankenengine-node", "--",
              "supply_chain::revocation_registry"],
             capture_output=True, text=True, timeout=120,
-            cwd=ROOT
+            cwd=os.path.join(ROOT, "crates/franken-node")
         )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
@@ -113,7 +113,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-y7lu_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text(encoding="utf-8")
+        content = open(spec_path).read()
         has_invariants = "INV-REV" in content
         has_types = "RevocationHead" in content and "RevocationRegistry" in content
     else:
