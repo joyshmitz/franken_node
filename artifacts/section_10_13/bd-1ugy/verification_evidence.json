@@ -29,7 +29,7 @@
       "id": "TNS-TESTS",
       "description": "Rust unit tests pass",
       "status": "FAIL",
-      "details": "Command '['cargo', 'test', '--', 'connector::telemetry_namespace']' timed out after 120 seconds"
+      "details": "[Errno 2] No such file or directory: 'cargo'"
     },
     {
       "id": "TNS-SPEC",
