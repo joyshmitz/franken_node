@@ -391,6 +391,10 @@ impl EvictionSagaManager {
     }
 
     /// Recover a saga from a persisted phase (crash recovery).
+    ///
+    /// Handles the `Compensating` state (crash mid-compensation) by examining
+    /// the transition log to determine the original compensation action and
+    /// re-applying it. All compensation operations are idempotent.
     pub fn recover_saga(
         &mut self,
         saga_id: &str,
@@ -401,13 +405,30 @@ impl EvictionSagaManager {
                 .sagas
                 .get(saga_id)
                 .ok_or_else(|| format!("saga not found: {saga_id}"))?;
-            let action = saga.compensation_action();
+
+            // If crashed mid-compensation, recover the original action from transition history
+            let action = if saga.phase == SagaPhase::Compensating {
+                saga.transitions
+                    .iter()
+                    .rev()
+                    .find(|t| t.to_phase == SagaPhase::Compensating)
+                    .map(|t| match t.from_phase {
+                        SagaPhase::Uploading => CompensationAction::AbortUpload,
+                        SagaPhase::Verifying => CompensationAction::CleanupL3,
+                        SagaPhase::Retiring => CompensationAction::CompleteRetirement,
+                        _ => CompensationAction::None,
+                    })
+                    .unwrap_or(CompensationAction::None)
+            } else {
+                saga.compensation_action()
+            };
+
             self.log(event_codes::ES_CRASH_RECOVERY, trace_id,
                 serde_json::json!({"saga_id": saga_id, "phase": format!("{}", saga.phase), "action": format!("{action}")}));
             action
         };
 
-        // Actually apply the compensation (cancel_saga equivalent for crash recovery)
+        // Apply the compensation (idempotent operations safe to re-execute)
         match &action {
             CompensationAction::AbortUpload => {
                 let saga = self
@@ -437,6 +458,14 @@ impl EvictionSagaManager {
             CompensationAction::None => {}
         }
 
+        if !matches!(action, CompensationAction::None) {
+            self.log(
+                event_codes::ES_COMPENSATION_COMPLETE,
+                trace_id,
+                serde_json::json!({"saga_id": saga_id, "action": format!("{action}"), "via": "crash_recovery"}),
+            );
+        }
+
         Ok(action)
     }
 
@@ -452,6 +481,10 @@ impl EvictionSagaManager {
             // Orphan: L3 present but not verified and saga complete
             if saga.phase == SagaPhase::Complete && saga.l3_present && !saga.l3_verified {
                 orphans.push(format!("{id}: L3 present but unverified in Complete state"));
+            }
+            // Orphan: stuck in Compensating (crash during compensation)
+            if saga.phase == SagaPhase::Compensating {
+                orphans.push(format!("{id}: stuck in Compensating state"));
             }
         }
 
@@ -695,5 +728,151 @@ mod tests {
     fn test_phase_display() {
         assert_eq!(format!("{}", SagaPhase::Uploading), "Uploading");
         assert_eq!(format!("{}", SagaPhase::Complete), "Complete");
+    }
+
+    #[test]
+    fn test_crash_recovery_from_compensating_during_verify() {
+        let mut mgr = EvictionSagaManager::new();
+        let id = mgr.start_saga("a", true, "t1").unwrap();
+        mgr.begin_upload(&id, "t2").unwrap();
+        mgr.complete_upload(&id, "t3").unwrap();
+
+        // Simulate crash mid-compensation: manually transition to Compensating
+        // (as if cancel_saga crashed after first record_transition but before completing)
+        {
+            let saga = mgr.sagas.get_mut(&id).unwrap();
+            saga.record_transition(SagaPhase::Compensating, "compensation: CleanupL3");
+        }
+        assert_eq!(mgr.get_saga(&id).unwrap().phase, SagaPhase::Compensating);
+
+        let action = mgr.recover_saga(&id, "t4").unwrap();
+        assert!(matches!(action, CompensationAction::CleanupL3));
+
+        let saga = mgr.get_saga(&id).unwrap();
+        assert_eq!(saga.phase, SagaPhase::Compensated);
+        assert!(!saga.l3_present);
+        assert!(!saga.l3_verified);
+    }
+
+    #[test]
+    fn test_crash_recovery_from_compensating_during_upload() {
+        let mut mgr = EvictionSagaManager::new();
+        let id = mgr.start_saga("a", true, "t1").unwrap();
+        mgr.begin_upload(&id, "t2").unwrap();
+
+        {
+            let saga = mgr.sagas.get_mut(&id).unwrap();
+            saga.record_transition(SagaPhase::Compensating, "compensation: AbortUpload");
+        }
+
+        let action = mgr.recover_saga(&id, "t3").unwrap();
+        assert!(matches!(action, CompensationAction::AbortUpload));
+
+        let saga = mgr.get_saga(&id).unwrap();
+        assert_eq!(saga.phase, SagaPhase::Compensated);
+        assert!(saga.l2_present);
+        assert!(!saga.l3_present);
+    }
+
+    #[test]
+    fn test_crash_recovery_from_compensating_during_retire() {
+        let mut mgr = EvictionSagaManager::new();
+        let id = mgr.start_saga("a", true, "t1").unwrap();
+        mgr.begin_upload(&id, "t2").unwrap();
+        mgr.complete_upload(&id, "t3").unwrap();
+        mgr.complete_verify(&id, "t4").unwrap();
+
+        {
+            let saga = mgr.sagas.get_mut(&id).unwrap();
+            saga.record_transition(SagaPhase::Compensating, "compensation: CompleteRetirement");
+        }
+
+        let action = mgr.recover_saga(&id, "t5").unwrap();
+        assert!(matches!(action, CompensationAction::CompleteRetirement));
+
+        let saga = mgr.get_saga(&id).unwrap();
+        assert_eq!(saga.phase, SagaPhase::Complete);
+        assert!(!saga.l2_present);
+    }
+
+    #[test]
+    fn test_crash_recovery_from_uploading() {
+        let mut mgr = EvictionSagaManager::new();
+        let id = mgr.start_saga("a", true, "t1").unwrap();
+        mgr.begin_upload(&id, "t2").unwrap();
+
+        let action = mgr.recover_saga(&id, "t3").unwrap();
+        assert!(matches!(action, CompensationAction::AbortUpload));
+
+        let saga = mgr.get_saga(&id).unwrap();
+        assert_eq!(saga.phase, SagaPhase::Compensated);
+        assert!(!saga.l3_present);
+    }
+
+    #[test]
+    fn test_crash_recovery_from_retiring() {
+        let mut mgr = EvictionSagaManager::new();
+        let id = mgr.start_saga("a", true, "t1").unwrap();
+        mgr.begin_upload(&id, "t2").unwrap();
+        mgr.complete_upload(&id, "t3").unwrap();
+        mgr.complete_verify(&id, "t4").unwrap();
+
+        let action = mgr.recover_saga(&id, "t5").unwrap();
+        assert!(matches!(action, CompensationAction::CompleteRetirement));
+
+        let saga = mgr.get_saga(&id).unwrap();
+        assert_eq!(saga.phase, SagaPhase::Complete);
+        assert!(!saga.l2_present);
+    }
+
+    #[test]
+    fn test_crash_recovery_noop_for_terminal_states() {
+        let mut mgr = EvictionSagaManager::new();
+        let id = mgr.start_saga("a", true, "t1").unwrap();
+        mgr.begin_upload(&id, "t2").unwrap();
+        mgr.complete_upload(&id, "t3").unwrap();
+        mgr.complete_verify(&id, "t4").unwrap();
+        mgr.complete_retire(&id, "t5").unwrap();
+
+        // Recovery on Complete state should be a no-op
+        let action = mgr.recover_saga(&id, "t6").unwrap();
+        assert!(matches!(action, CompensationAction::None));
+        assert_eq!(mgr.get_saga(&id).unwrap().phase, SagaPhase::Complete);
+    }
+
+    #[test]
+    fn test_leak_check_detects_stuck_compensating() {
+        let mut mgr = EvictionSagaManager::new();
+        let id = mgr.start_saga("a", true, "t1").unwrap();
+        mgr.begin_upload(&id, "t2").unwrap();
+        mgr.complete_upload(&id, "t3").unwrap();
+
+        // Simulate crash mid-compensation
+        {
+            let saga = mgr.sagas.get_mut(&id).unwrap();
+            saga.record_transition(SagaPhase::Compensating, "compensation: CleanupL3");
+        }
+
+        let result = mgr.leak_check("t4");
+        assert!(!result.passed);
+        assert_eq!(result.orphans_found, 1);
+        assert!(result.details[0].contains("Compensating"));
+    }
+
+    #[test]
+    fn test_crash_recovery_emits_compensation_complete_audit() {
+        let mut mgr = EvictionSagaManager::new();
+        let id = mgr.start_saga("a", true, "t1").unwrap();
+        mgr.begin_upload(&id, "t2").unwrap();
+
+        let audit_len_before = mgr.export_audit_log_jsonl().lines().count();
+        mgr.recover_saga(&id, "t3").unwrap();
+        let audit = mgr.export_audit_log_jsonl();
+        let audit_len_after = audit.lines().count();
+
+        // Should have both ES_CRASH_RECOVERY and ES_COMPENSATION_COMPLETE events
+        assert!(audit_len_after > audit_len_before);
+        assert!(audit.contains("ES_CRASH_RECOVERY"));
+        assert!(audit.contains("ES_COMPENSATION_COMPLETE"));
     }
 }
