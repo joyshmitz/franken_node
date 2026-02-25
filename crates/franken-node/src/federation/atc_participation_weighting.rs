@@ -718,7 +718,7 @@ mod tests {
         // Established median weight
         let mut est_weights: Vec<f64> =
             record.weights[..3].iter().map(|w| w.final_weight).collect();
-        est_weights.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        est_weights.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let median = est_weights[1];
 
         assert!(

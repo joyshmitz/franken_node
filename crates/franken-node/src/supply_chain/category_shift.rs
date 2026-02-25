@@ -776,7 +776,7 @@ exit 0
 fn format_iso_timestamp(secs: u64) -> String {
     chrono::DateTime::from_timestamp(secs as i64, 0)
         .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
-        .unwrap_or_else(|| format!("{secs}Z"))
+        .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string())
 }
 
 /// Compute a deterministic hash of the report (excluding the hash field itself).
@@ -1471,5 +1471,21 @@ mod tests {
         };
         let result2 = pipeline.verify_evidence(&evidence2, now).unwrap();
         assert_eq!(result2.freshness, FreshnessStatus::Stale);
+    }
+
+    #[test]
+    fn format_iso_timestamp_produces_valid_iso8601() {
+        let ts = format_iso_timestamp(1_700_000_000);
+        assert!(ts.contains('T'), "must contain T separator: {ts}");
+        assert!(ts.ends_with('Z'), "must end with Z: {ts}");
+        assert_eq!(ts, "2023-11-14T22:13:20Z");
+    }
+
+    #[test]
+    fn format_iso_timestamp_fallback_is_valid_iso8601() {
+        // u64::MAX overflows i64, triggering the fallback path
+        let ts = format_iso_timestamp(u64::MAX);
+        assert!(ts.contains('T'), "fallback must be valid ISO8601: {ts}");
+        assert!(ts.ends_with('Z'), "fallback must end with Z: {ts}");
     }
 }

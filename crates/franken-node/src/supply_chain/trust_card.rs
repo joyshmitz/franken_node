@@ -1055,7 +1055,7 @@ fn sorted_dependencies(mut dependencies: Vec<DependencyTrustStatus>) -> Vec<Depe
 fn timestamp_from_secs(timestamp_secs: u64) -> String {
     chrono::DateTime::from_timestamp(timestamp_secs as i64, 0)
         .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
-        .unwrap_or_else(|| format!("{timestamp_secs}Z"))
+        .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string())
 }
 
 fn canonicalize_value(value: Value) -> Value {
@@ -1275,5 +1275,25 @@ mod tests {
             .map(|evt| evt.event_code.as_str())
             .collect();
         assert!(codes.contains(&TRUST_CARD_CACHE_HIT));
+    }
+
+    #[test]
+    fn timestamp_from_secs_produces_valid_iso8601() {
+        let ts = timestamp_from_secs(1_700_000_000);
+        assert!(ts.contains('T'), "must contain T separator: {ts}");
+        assert!(ts.ends_with('Z'), "must end with Z: {ts}");
+        assert_eq!(ts, "2023-11-14T22:13:20Z");
+    }
+
+    #[test]
+    fn timestamp_from_secs_fallback_is_valid_iso8601() {
+        // u64::MAX overflows i64, so from_timestamp returns None → fallback fires
+        let ts = timestamp_from_secs(u64::MAX);
+        assert!(ts.contains('T'), "fallback must be valid ISO8601: {ts}");
+        assert!(ts.ends_with('Z'), "fallback must end with Z: {ts}");
+        assert!(
+            !ts.chars().all(|c| c.is_ascii_digit() || c == 'Z'),
+            "fallback must not be raw digits+Z: {ts}"
+        );
     }
 }
