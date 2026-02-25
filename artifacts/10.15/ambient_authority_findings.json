@@ -65,24 +65,6 @@
       "event_code": "AMB-003"
     },
     {
-      "module_path": "crates/franken-node/src/connector/rollout_state.rs",
-      "ambient_api": "std::time::SystemTime",
-      "line": 377,
-      "callsite": "let duration = SystemTime::now()",
-      "status": "allowlisted",
-      "allowlist_entry_id": "AAL-003",
-      "event_code": "AMB-003"
-    },
-    {
-      "module_path": "crates/franken-node/src/connector/rollout_state.rs",
-      "ambient_api": "std::time::SystemTime",
-      "line": 378,
-      "callsite": ".duration_since(SystemTime::UNIX_EPOCH)",
-      "status": "allowlisted",
-      "allowlist_entry_id": "AAL-003",
-      "event_code": "AMB-003"
-    },
-    {
       "module_path": "crates/franken-node/src/connector/state_model.rs",
       "ambient_api": "std::time::SystemTime",
       "line": 224,
@@ -552,20 +534,6 @@
       "message": "allowlist exception AAL-002 applied"
     },
     {
-      "module_path": "crates/franken-node/src/connector/rollout_state.rs",
-      "ambient_api": "std::time::SystemTime",
-      "line": 377,
-      "event_code": "AMB-003",
-      "message": "allowlist exception AAL-003 applied"
-    },
-    {
-      "module_path": "crates/franken-node/src/connector/rollout_state.rs",
-      "ambient_api": "std::time::SystemTime",
-      "line": 378,
-      "event_code": "AMB-003",
-      "message": "allowlist exception AAL-003 applied"
-    },
-    {
       "module_path": "crates/franken-node/src/connector/saga.rs",
       "ambient_api": null,
       "line": null,
@@ -701,9 +669,9 @@
   ],
   "summary": {
     "modules_scanned": 80,
-    "findings_total": 11,
+    "findings_total": 9,
     "violations": 0,
-    "allowlisted": 11,
+    "allowlisted": 9,
     "expired_allowlist": 0,
     "invalid_allowlist": 0,
     "clean_modules": 74

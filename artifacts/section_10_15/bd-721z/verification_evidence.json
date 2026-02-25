@@ -4,9 +4,9 @@
   "generated_on": "2026-02-25",
   "status": "pass",
   "modules_scanned": 80,
-  "findings_total": 11,
+  "findings_total": 9,
   "violations": 0,
-  "allowlisted": 11,
+  "allowlisted": 9,
   "expired_allowlist": 0,
   "invalid_allowlist": 0,
   "violation_details": []
