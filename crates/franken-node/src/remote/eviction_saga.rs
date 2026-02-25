@@ -27,6 +27,7 @@ pub mod event_codes {
     pub const ES_LEAK_CHECK_FAILED: &str = "ES_LEAK_CHECK_FAILED";
     pub const ES_CRASH_RECOVERY: &str = "ES_CRASH_RECOVERY";
     pub const ES_CANCEL_REQUESTED: &str = "ES_CANCEL_REQUESTED";
+    pub const ES_REMOTECAP_RECHECK: &str = "ES_REMOTECAP_RECHECK";
     pub const ES_AUDIT_EMITTED: &str = "ES_AUDIT_EMITTED";
 }
 
@@ -208,6 +209,30 @@ impl EvictionSagaManager {
         });
     }
 
+    fn ensure_remote_cap_active(
+        saga: &SagaInstance,
+        saga_id: &str,
+        phase_name: &str,
+    ) -> Result<(), String> {
+        if saga.has_remote_cap {
+            Ok(())
+        } else {
+            Err(format!(
+                "RemoteCap recheck failed for saga {saga_id} before {phase_name}"
+            ))
+        }
+    }
+
+    fn ensure_cancel_allowed(phase: SagaPhase, saga_id: &str) -> Result<(), String> {
+        match phase {
+            SagaPhase::Complete | SagaPhase::Compensated | SagaPhase::Failed => Err(format!(
+                "saga {saga_id} is in terminal phase {phase} and cannot be cancelled"
+            )),
+            SagaPhase::Compensating => Err(format!("saga {saga_id} is already compensating")),
+            _ => Ok(()),
+        }
+    }
+
     /// Start a new eviction saga.
     pub fn start_saga(
         &mut self,
@@ -235,6 +260,35 @@ impl EvictionSagaManager {
         Ok(saga_id)
     }
 
+    /// Re-validate remote capability for an in-flight saga.
+    ///
+    /// This is intended to be called before sensitive remote-bound steps in
+    /// long-lived workflows where capability validity may change.
+    pub fn recheck_remote_cap(
+        &mut self,
+        saga_id: &str,
+        has_remote_cap: bool,
+        trace_id: &str,
+    ) -> Result<(), String> {
+        let saga = self
+            .sagas
+            .get_mut(saga_id)
+            .ok_or_else(|| format!("saga not found: {saga_id}"))?;
+        saga.has_remote_cap = has_remote_cap;
+
+        self.log(
+            event_codes::ES_REMOTECAP_RECHECK,
+            trace_id,
+            serde_json::json!({"saga_id": saga_id, "has_remote_cap": has_remote_cap}),
+        );
+
+        if has_remote_cap {
+            Ok(())
+        } else {
+            Err(format!("RemoteCap recheck failed for saga {saga_id}"))
+        }
+    }
+
     /// Advance saga to Uploading phase.
     pub fn begin_upload(&mut self, saga_id: &str, trace_id: &str) -> Result<(), String> {
         let saga = self
@@ -245,6 +299,7 @@ impl EvictionSagaManager {
         if saga.phase != SagaPhase::Created {
             return Err(format!("invalid transition: {} -> Uploading", saga.phase));
         }
+        Self::ensure_remote_cap_active(saga, saga_id, "begin_upload")?;
 
         saga.record_transition(SagaPhase::Uploading, "upload_started");
         self.log(
@@ -265,6 +320,7 @@ impl EvictionSagaManager {
         if saga.phase != SagaPhase::Uploading {
             return Err(format!("invalid transition: {} -> Verifying", saga.phase));
         }
+        Self::ensure_remote_cap_active(saga, saga_id, "complete_upload")?;
 
         saga.l3_present = true;
         saga.record_transition(SagaPhase::Verifying, "upload_complete");
@@ -286,6 +342,7 @@ impl EvictionSagaManager {
         if saga.phase != SagaPhase::Verifying {
             return Err(format!("invalid transition: {} -> Retiring", saga.phase));
         }
+        Self::ensure_remote_cap_active(saga, saga_id, "complete_verify")?;
 
         saga.l3_verified = true;
         saga.record_transition(SagaPhase::Retiring, "verification_passed");
@@ -331,19 +388,7 @@ impl EvictionSagaManager {
                 .get(saga_id)
                 .ok_or_else(|| format!("saga not found: {saga_id}"))?;
 
-            // Guard: cannot cancel already-terminal sagas
-            match saga.phase {
-                SagaPhase::Complete | SagaPhase::Compensated | SagaPhase::Failed => {
-                    return Err(format!(
-                        "saga {saga_id} is in terminal phase {} and cannot be cancelled",
-                        saga.phase
-                    ));
-                }
-                SagaPhase::Compensating => {
-                    return Err(format!("saga {saga_id} is already compensating"));
-                }
-                _ => {}
-            }
+            Self::ensure_cancel_allowed(saga.phase, saga_id)?;
 
             let action = saga.compensation_action();
             let phase_str = format!("{}", saga.phase);
@@ -358,6 +403,8 @@ impl EvictionSagaManager {
             .sagas
             .get_mut(saga_id)
             .expect("saga existence verified above");
+        // Re-check after mutable borrow as a defensive invariant.
+        Self::ensure_cancel_allowed(saga.phase, saga_id)?;
         saga.record_transition(SagaPhase::Compensating, &format!("compensation: {action}"));
 
         // Apply compensation
@@ -588,6 +635,37 @@ mod tests {
     }
 
     #[test]
+    fn test_remote_cap_recheck_blocks_begin_upload_until_restored() {
+        let mut mgr = EvictionSagaManager::new();
+        let id = mgr.start_saga("a", true, "t1").unwrap();
+
+        let err = mgr.recheck_remote_cap(&id, false, "t2").unwrap_err();
+        assert!(err.contains("RemoteCap recheck failed"));
+
+        let err = mgr.begin_upload(&id, "t3").unwrap_err();
+        assert!(err.contains("RemoteCap recheck failed"));
+
+        mgr.recheck_remote_cap(&id, true, "t4").unwrap();
+        mgr.begin_upload(&id, "t5").unwrap();
+    }
+
+    #[test]
+    fn test_remote_cap_recheck_blocks_complete_upload_until_restored() {
+        let mut mgr = EvictionSagaManager::new();
+        let id = mgr.start_saga("a", true, "t1").unwrap();
+        mgr.begin_upload(&id, "t2").unwrap();
+
+        let err = mgr.recheck_remote_cap(&id, false, "t3").unwrap_err();
+        assert!(err.contains("RemoteCap recheck failed"));
+
+        let err = mgr.complete_upload(&id, "t4").unwrap_err();
+        assert!(err.contains("RemoteCap recheck failed"));
+
+        mgr.recheck_remote_cap(&id, true, "t5").unwrap();
+        mgr.complete_upload(&id, "t6").unwrap();
+    }
+
+    #[test]
     fn test_invalid_transition_rejected() {
         let mut mgr = EvictionSagaManager::new();
         let id = mgr.start_saga("a", true, "t1").unwrap();
@@ -635,6 +713,30 @@ mod tests {
 
         let saga = mgr.get_saga(&id).unwrap();
         assert!(!saga.l2_present); // Retirement completed
+    }
+
+    #[test]
+    fn test_cancel_terminal_complete_rejected() {
+        let mut mgr = EvictionSagaManager::new();
+        let id = mgr.start_saga("a", true, "t1").unwrap();
+        mgr.begin_upload(&id, "t2").unwrap();
+        mgr.complete_upload(&id, "t3").unwrap();
+        mgr.complete_verify(&id, "t4").unwrap();
+        mgr.complete_retire(&id, "t5").unwrap();
+
+        let err = mgr.cancel_saga(&id, "t6").unwrap_err();
+        assert!(err.contains("terminal phase Complete"));
+    }
+
+    #[test]
+    fn test_cancel_terminal_compensated_rejected() {
+        let mut mgr = EvictionSagaManager::new();
+        let id = mgr.start_saga("a", true, "t1").unwrap();
+        mgr.begin_upload(&id, "t2").unwrap();
+        mgr.cancel_saga(&id, "t3").unwrap();
+
+        let err = mgr.cancel_saga(&id, "t4").unwrap_err();
+        assert!(err.contains("terminal phase Compensated"));
     }
 
     #[test]

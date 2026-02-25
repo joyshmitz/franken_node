@@ -45,6 +45,7 @@ pub const ES_CRASH_RECOVERY: &str = "ES_CRASH_RECOVERY";
 
 pub const ERR_ES_ILLEGAL_TRANSITION: &str = "ERR_ES_ILLEGAL_TRANSITION";
 pub const ERR_ES_REMOTE_CAP_REQUIRED: &str = "ERR_ES_REMOTE_CAP_REQUIRED";
+pub const ERR_ES_REMOTE_CAP_RECHECK_FAILED: &str = "ERR_ES_REMOTE_CAP_RECHECK_FAILED";
 pub const ERR_ES_UPLOAD_FAILED: &str = "ERR_ES_UPLOAD_FAILED";
 pub const ERR_ES_VERIFY_FAILED: &str = "ERR_ES_VERIFY_FAILED";
 pub const ERR_ES_RETIRE_FAILED: &str = "ERR_ES_RETIRE_FAILED";
@@ -391,13 +392,15 @@ impl EvictionSaga {
     }
 
     /// Mark upload as successful and transition to verification.
-    pub fn upload_complete(&mut self) -> Result<(), EvictionSagaError> {
+    pub fn upload_complete(&mut self, has_remote_cap: bool) -> Result<(), EvictionSagaError> {
+        self.require_remote_cap_recheck(SagaPhase::Uploading, has_remote_cap, "upload_complete")?;
         self.tier_presence.l3_present = true;
         self.transition(SagaPhase::Verifying, ES_PHASE_VERIFY, "upload_done")
     }
 
     /// Mark verification as successful and transition to retirement.
-    pub fn verify_complete(&mut self) -> Result<(), EvictionSagaError> {
+    pub fn verify_complete(&mut self, has_remote_cap: bool) -> Result<(), EvictionSagaError> {
+        self.require_remote_cap_recheck(SagaPhase::Verifying, has_remote_cap, "verify_complete")?;
         self.tier_presence.l3_verified = true;
         // INV-ES-NO-PARTIAL-RETIRE: only proceed if L3 is verified
         if !self.tier_presence.can_retire_l2() {
@@ -410,7 +413,8 @@ impl EvictionSaga {
     }
 
     /// Mark retirement complete; saga is done.
-    pub fn retire_complete(&mut self) -> Result<(), EvictionSagaError> {
+    pub fn retire_complete(&mut self, has_remote_cap: bool) -> Result<(), EvictionSagaError> {
+        self.require_remote_cap_recheck(SagaPhase::Retiring, has_remote_cap, "retire_complete")?;
         self.tier_presence.l2_present = false;
         self.transition(SagaPhase::Complete, ES_SAGA_COMPLETE, "retired")
     }
@@ -423,9 +427,16 @@ impl EvictionSaga {
                 format!("saga is already in terminal state: {}", self.current_phase),
             ));
         }
+        if self.current_phase == SagaPhase::Compensating {
+            return Err(EvictionSagaError::new(
+                ERR_ES_COMPENSATION_FAILED,
+                "saga is already compensating",
+            ));
+        }
 
         let action = CompensationAction::for_phase(self.current_phase);
         self.compensation_action = Some(action);
+        self.remote_cap_validated = false;
 
         // Apply compensation effects
         match action {
@@ -519,6 +530,25 @@ impl EvictionSaga {
         self.record_transition(self.current_phase, to, event_code, outcome);
         self.current_phase = to;
         Ok(())
+    }
+
+    fn require_remote_cap_recheck(
+        &mut self,
+        expected_phase: SagaPhase,
+        has_remote_cap: bool,
+        operation: &str,
+    ) -> Result<(), EvictionSagaError> {
+        if self.current_phase != expected_phase {
+            return Ok(());
+        }
+        if self.remote_cap_validated && has_remote_cap {
+            return Ok(());
+        }
+        self.remote_cap_validated = false;
+        Err(EvictionSagaError::new(
+            ERR_ES_REMOTE_CAP_RECHECK_FAILED,
+            format!("RemoteCap recheck failed before {operation}"),
+        ))
     }
 
     fn record_transition(
@@ -730,13 +760,13 @@ mod tests {
         assert_eq!(saga.current_phase(), SagaPhase::Uploading);
         assert!(saga.remote_cap_validated());
 
-        saga.upload_complete().unwrap();
+        saga.upload_complete(true).unwrap();
         assert_eq!(saga.current_phase(), SagaPhase::Verifying);
 
-        saga.verify_complete().unwrap();
+        saga.verify_complete(true).unwrap();
         assert_eq!(saga.current_phase(), SagaPhase::Retiring);
 
-        saga.retire_complete().unwrap();
+        saga.retire_complete(true).unwrap();
         assert_eq!(saga.current_phase(), SagaPhase::Complete);
         assert!(saga.is_terminal());
 
@@ -757,10 +787,50 @@ mod tests {
     }
 
     #[test]
+    fn upload_complete_requires_remote_cap_recheck() {
+        let mut saga = EvictionSaga::new("saga-002b", "artifact-xyz");
+        saga.begin_upload(true).unwrap();
+
+        let err = saga.upload_complete(false).unwrap_err();
+        assert_eq!(err.code(), ERR_ES_REMOTE_CAP_RECHECK_FAILED);
+        assert_eq!(saga.current_phase(), SagaPhase::Uploading);
+        assert!(!saga.tier_presence().l3_present);
+        assert!(!saga.remote_cap_validated());
+    }
+
+    #[test]
+    fn verify_complete_requires_remote_cap_recheck() {
+        let mut saga = EvictionSaga::new("saga-002c", "artifact-xyz");
+        saga.begin_upload(true).unwrap();
+        saga.upload_complete(true).unwrap();
+
+        let err = saga.verify_complete(false).unwrap_err();
+        assert_eq!(err.code(), ERR_ES_REMOTE_CAP_RECHECK_FAILED);
+        assert_eq!(saga.current_phase(), SagaPhase::Verifying);
+        assert!(!saga.tier_presence().l3_verified);
+        assert!(!saga.remote_cap_validated());
+    }
+
+    #[test]
+    fn retire_complete_requires_remote_cap_recheck() {
+        let mut saga = EvictionSaga::new("saga-002d", "artifact-xyz");
+        saga.begin_upload(true).unwrap();
+        saga.upload_complete(true).unwrap();
+        saga.verify_complete(true).unwrap();
+
+        let err = saga.retire_complete(false).unwrap_err();
+        assert_eq!(err.code(), ERR_ES_REMOTE_CAP_RECHECK_FAILED);
+        assert_eq!(saga.current_phase(), SagaPhase::Retiring);
+        assert!(saga.tier_presence().l2_present);
+        assert!(!saga.is_terminal());
+        assert!(!saga.remote_cap_validated());
+    }
+
+    #[test]
     fn illegal_transition_rejected() {
         let mut saga = EvictionSaga::new("saga-003", "artifact-xyz");
         // Cannot go directly to verifying
-        let err = saga.upload_complete().unwrap_err();
+        let err = saga.upload_complete(true).unwrap_err();
         assert_eq!(err.code(), ERR_ES_ILLEGAL_TRANSITION);
     }
 
@@ -784,7 +854,7 @@ mod tests {
     fn compensate_during_verify() {
         let mut saga = EvictionSaga::new("saga-011", "art-2");
         saga.begin_upload(true).unwrap();
-        saga.upload_complete().unwrap();
+        saga.upload_complete(true).unwrap();
 
         let action = saga.compensate().unwrap();
         assert_eq!(action, CompensationAction::CleanupL3);
@@ -799,8 +869,8 @@ mod tests {
     fn compensate_during_retire_uses_resume() {
         let mut saga = EvictionSaga::new("saga-012", "art-3");
         saga.begin_upload(true).unwrap();
-        saga.upload_complete().unwrap();
-        saga.verify_complete().unwrap();
+        saga.upload_complete(true).unwrap();
+        saga.verify_complete(true).unwrap();
 
         let action = saga.compensate().unwrap();
         assert_eq!(action, CompensationAction::ResumeRetire);
@@ -810,12 +880,23 @@ mod tests {
     }
 
     #[test]
+    fn compensate_rejects_when_already_compensating() {
+        let mut saga = EvictionSaga::new("saga-012b", "art-3");
+        saga.begin_upload(true).unwrap();
+
+        saga.compensate().unwrap();
+        let err = saga.compensate().unwrap_err();
+        assert_eq!(err.code(), ERR_ES_COMPENSATION_FAILED);
+        assert_eq!(saga.current_phase(), SagaPhase::Compensating);
+    }
+
+    #[test]
     fn cannot_compensate_terminal_state() {
         let mut saga = EvictionSaga::new("saga-013", "art-4");
         saga.begin_upload(true).unwrap();
-        saga.upload_complete().unwrap();
-        saga.verify_complete().unwrap();
-        saga.retire_complete().unwrap();
+        saga.upload_complete(true).unwrap();
+        saga.verify_complete(true).unwrap();
+        saga.retire_complete(true).unwrap();
 
         let err = saga.compensate().unwrap_err();
         assert_eq!(err.code(), ERR_ES_ALREADY_COMPLETE);
@@ -840,9 +921,9 @@ mod tests {
     fn leak_check_passes_after_happy_path() {
         let mut saga = EvictionSaga::new("saga-021", "art-6");
         saga.begin_upload(true).unwrap();
-        saga.upload_complete().unwrap();
-        saga.verify_complete().unwrap();
-        saga.retire_complete().unwrap();
+        saga.upload_complete(true).unwrap();
+        saga.verify_complete(true).unwrap();
+        saga.retire_complete(true).unwrap();
         saga.leak_check().unwrap();
     }
 
@@ -863,7 +944,7 @@ mod tests {
     fn crash_recovery_from_verifying() {
         let mut saga = EvictionSaga::new("saga-031", "art-8");
         saga.begin_upload(true).unwrap();
-        saga.upload_complete().unwrap();
+        saga.upload_complete(true).unwrap();
 
         let action = saga.crash_recovery().unwrap();
         assert_eq!(action, CompensationAction::CleanupL3);
@@ -874,8 +955,8 @@ mod tests {
     fn crash_recovery_from_retiring_signals_resume() {
         let mut saga = EvictionSaga::new("saga-032", "art-9");
         saga.begin_upload(true).unwrap();
-        saga.upload_complete().unwrap();
-        saga.verify_complete().unwrap();
+        saga.upload_complete(true).unwrap();
+        saga.verify_complete(true).unwrap();
 
         let action = saga.crash_recovery().unwrap();
         assert_eq!(action, CompensationAction::ResumeRetire);

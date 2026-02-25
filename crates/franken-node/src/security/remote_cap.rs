@@ -462,6 +462,34 @@ impl CapabilityGate {
         now_epoch_secs: u64,
         trace_id: &str,
     ) -> Result<(), RemoteCapError> {
+        self.authorize_network_internal(cap, operation, endpoint, now_epoch_secs, trace_id, true)
+    }
+
+    /// Recheck capability validity for one network-bound operation without
+    /// consuming single-use tokens.
+    ///
+    /// This is intended for preflight checks in long-running workflows where
+    /// capability validity can change between phases.
+    pub fn recheck_network(
+        &mut self,
+        cap: Option<&RemoteCap>,
+        operation: RemoteOperation,
+        endpoint: &str,
+        now_epoch_secs: u64,
+        trace_id: &str,
+    ) -> Result<(), RemoteCapError> {
+        self.authorize_network_internal(cap, operation, endpoint, now_epoch_secs, trace_id, false)
+    }
+
+    fn authorize_network_internal(
+        &mut self,
+        cap: Option<&RemoteCap>,
+        operation: RemoteOperation,
+        endpoint: &str,
+        now_epoch_secs: u64,
+        trace_id: &str,
+        consume_single_use: bool,
+    ) -> Result<(), RemoteCapError> {
         let Some(cap) = cap else {
             let err = RemoteCapError::Missing;
             self.audit_log.push(build_audit_event(
@@ -585,13 +613,18 @@ impl CapabilityGate {
             return Err(err);
         }
 
-        if cap.single_use {
+        if cap.single_use && consume_single_use {
             self.consumed_tokens.insert(cap.token_id.clone());
         }
 
+        let (event_code, legacy_event_code) = if consume_single_use {
+            ("REMOTECAP_CONSUMED", "RC_CHECK_PASSED")
+        } else {
+            ("REMOTECAP_RECHECK_PASSED", "RC_RECHECK_PASSED")
+        };
         self.audit_log.push(build_audit_event(
-            "REMOTECAP_CONSUMED",
-            "RC_CHECK_PASSED",
+            event_code,
+            legacy_event_code,
             Some(cap.token_id.clone()),
             Some(cap.issuer_identity.clone()),
             Some(operation),
@@ -882,6 +915,87 @@ mod tests {
             )
             .expect_err("replay must fail");
         assert_eq!(err.code(), "REMOTECAP_REPLAY");
+    }
+
+    #[test]
+    fn recheck_does_not_consume_single_use_token() {
+        let provider = CapabilityProvider::new("secret-a");
+        let (cap, _) = provider
+            .issue(
+                "operator",
+                scope(),
+                1_700_000_000,
+                300,
+                true,
+                true,
+                "trace-11a",
+            )
+            .expect("issue");
+
+        let mut gate = CapabilityGate::new("secret-a");
+        gate.recheck_network(
+            Some(&cap),
+            RemoteOperation::TelemetryExport,
+            "https://telemetry.example.com/v1",
+            1_700_000_010,
+            "trace-11b",
+        )
+        .expect("recheck should pass without consuming");
+
+        gate.authorize_network(
+            Some(&cap),
+            RemoteOperation::TelemetryExport,
+            "https://telemetry.example.com/v1",
+            1_700_000_011,
+            "trace-11c",
+        )
+        .expect("first real use should still pass");
+
+        let err = gate
+            .authorize_network(
+                Some(&cap),
+                RemoteOperation::TelemetryExport,
+                "https://telemetry.example.com/v1",
+                1_700_000_012,
+                "trace-11d",
+            )
+            .expect_err("second real use must fail");
+        assert_eq!(err.code(), "REMOTECAP_REPLAY");
+        assert!(
+            gate.audit_log()
+                .iter()
+                .any(|event| event.event_code == "REMOTECAP_RECHECK_PASSED")
+        );
+    }
+
+    #[test]
+    fn recheck_honors_revocation() {
+        let provider = CapabilityProvider::new("secret-a");
+        let (cap, _) = provider
+            .issue(
+                "operator",
+                scope(),
+                1_700_000_000,
+                300,
+                true,
+                false,
+                "trace-11e",
+            )
+            .expect("issue");
+
+        let mut gate = CapabilityGate::new("secret-a");
+        gate.revoke(&cap, 1_700_000_020, "trace-11f");
+
+        let err = gate
+            .recheck_network(
+                Some(&cap),
+                RemoteOperation::TelemetryExport,
+                "https://telemetry.example.com/v1",
+                1_700_000_021,
+                "trace-11g",
+            )
+            .expect_err("revoked token must fail recheck");
+        assert_eq!(err.code(), "REMOTECAP_REVOKED");
     }
 
     #[test]
