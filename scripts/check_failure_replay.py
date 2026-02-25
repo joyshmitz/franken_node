@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """Failure Replay Verifier. Usage: python3 scripts/check_failure_replay.py [--json]"""
-import json, sys
+import json
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import failure_replay
 import sys
+from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging

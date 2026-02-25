@@ -188,12 +188,12 @@ def main():
         print("--- Verification Scripts ---")
         for r in script_results:
             print(f"  [{'OK' if r['status'] == 'PASS' else 'FAIL'}] {r['bead']}: {r['name']}")
-        print(f"\n--- Unit Tests ---")
+        print("\n--- Unit Tests ---")
         print(f"  {test_result.get('summary', 'N/A')}")
-        print(f"\n--- Evidence Artifacts ---")
+        print("\n--- Evidence Artifacts ---")
         for bead, exists in evidence_result["details"].items():
             print(f"  [{'OK' if exists else 'FAIL'}] {bead}")
-        print(f"\n--- Governance Docs ---")
+        print("\n--- Governance Docs ---")
         for doc, exists in governance_result["details"].items():
             print(f"  [{'OK' if exists else 'FAIL'}] {doc}")
         scripts_pass_count = sum(1 for r in script_results if r["status"] == "PASS")

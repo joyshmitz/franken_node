@@ -5,16 +5,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 SPEC_PATH = ROOT / "docs" / "specs" / "section_10_6" / "bd-2pw_contract.md"
 POLICY_PATH = ROOT / "docs" / "policy" / "artifact_signing_verification.md"

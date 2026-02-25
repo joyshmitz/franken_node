@@ -15,10 +15,11 @@ import json
 import re
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 
 # ---- Paths: Rust library module (suite runner) ----
 SRC = ROOT / "crates" / "franken-node" / "src" / "conformance" / "fsqlite_inspired_suite.rs"
@@ -205,7 +206,7 @@ def check_lib_serde() -> list:
 def check_lib_test_count() -> list:
     src = _read(SRC)
     count = len(re.findall(r"#\[test\]", src))
-    return [_check(f"library inline tests >= 25", count >= 25, f"{count} tests")]
+    return [_check("library inline tests >= 25", count >= 25, f"{count} tests")]
 
 
 # ==========================================================================
@@ -239,7 +240,7 @@ def load_fixtures() -> tuple:
 
 def check_fixture_count(all_fixtures: list) -> list:
     total = len(all_fixtures)
-    return [_check(f"total fixture count >= 40", total >= 40, f"{total} fixtures")]
+    return [_check("total fixture count >= 40", total >= 40, f"{total} fixtures")]
 
 
 def check_domain_minimums(all_fixtures: list) -> list:

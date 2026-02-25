@@ -16,12 +16,13 @@ Exit codes:
 import json
 import re
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from datetime import datetime, timezone
+from pathlib import Path
+
 BANDS_PATH = ROOT / "docs" / "COMPATIBILITY_BANDS.md"
 
 REQUIRED_BANDS = ["core", "high-value", "edge", "unsafe"]

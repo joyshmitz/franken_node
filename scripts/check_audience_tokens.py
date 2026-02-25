@@ -10,10 +10,11 @@ Usage:
 import json
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 
 SPEC = ROOT / "docs" / "specs" / "section_10_10" / "bd-1r2_contract.md"
 IMPL = ROOT / "crates" / "franken-node" / "src" / "control_plane" / "audience_token.rs"
@@ -319,7 +320,7 @@ def check_test_count() -> dict:
         return _check("test count >= 50", False, "impl file missing")
     content = IMPL.read_text()
     count = content.count("#[test]")
-    return _check(f"test count >= 50", count >= 50, f"{count} tests found")
+    return _check("test count >= 50", count >= 50, f"{count} tests found")
 
 
 def check_serde_derives() -> dict:
@@ -492,7 +493,7 @@ def main():
     if "--json" in sys.argv:
         print(json.dumps(result, indent=2))
     else:
-        print(f"=== bd-1r2: Audience-Bound Token Chains Verification ===")
+        print("=== bd-1r2: Audience-Bound Token Chains Verification ===")
         print(f"Verdict: {result['verdict']}")
         s = result["summary"]
         print(f"Checks: {s['passing_checks']}/{s['total_checks']}")

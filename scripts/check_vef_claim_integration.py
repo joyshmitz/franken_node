@@ -15,11 +15,12 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+from typing import Any
+
 SPEC = ROOT / "docs" / "specs" / "vef_claim_integration.md"
 CONFORMANCE = ROOT / "tests" / "conformance" / "vef_claim_gate.rs"
 SNAPSHOT = ROOT / "artifacts" / "10.18" / "vef_claim_coverage_snapshot.json"

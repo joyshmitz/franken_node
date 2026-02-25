@@ -6,11 +6,12 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+from typing import Any
+
 DEFAULT_REGISTRY = ROOT / "artifacts" / "section_10_13" / "bd-novi" / "error_code_registry.json"
 
 CATEGORY_BY_SEVERITY = {

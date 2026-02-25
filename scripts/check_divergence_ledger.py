@@ -16,12 +16,13 @@ Exit codes:
 import json
 import re
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from datetime import datetime, timezone
+from pathlib import Path
+
 LEDGER_PATH = ROOT / "docs" / "DIVERGENCE_LEDGER.json"
 SCHEMA_PATH = ROOT / "schemas" / "divergence_ledger.schema.json"
 
@@ -72,7 +73,7 @@ def check_ledger_structure() -> dict:
         return check
     if data.get("schema_version") != "1.0":
         check["status"] = "FAIL"
-        check["details"]["error"] = f"schema_version must be '1.0'"
+        check["details"]["error"] = "schema_version must be '1.0'"
         return check
     if "entries" not in data or not isinstance(data["entries"], list):
         check["status"] = "FAIL"

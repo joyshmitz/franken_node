@@ -5,6 +5,10 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = []
@@ -116,9 +120,6 @@ def main():
         test_output = result.stdout + result.stderr
         # Count passed tests
         import re
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
         rust_tests = int(match.group(1)) if match else 0
         tests_pass = result.returncode == 0 and rust_tests > 0

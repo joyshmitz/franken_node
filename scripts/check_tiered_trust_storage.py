@@ -8,13 +8,11 @@ Usage:
 
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "connector" / "tiered_trust_storage.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_14" / "bd-okqy_contract.md"

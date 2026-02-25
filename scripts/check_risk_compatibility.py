@@ -12,13 +12,13 @@ Usage:
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 
 RESULTS: list[dict] = []
 
@@ -234,7 +234,7 @@ def main() -> None:
     if "--json" in sys.argv:
         print(json.dumps(result, indent=2))
     else:
-        print(f"bd-s4cu: Risk Control — Compatibility Illusion")
+        print("bd-s4cu: Risk Control — Compatibility Illusion")
         print(f"{'=' * 55}")
         for check in result["checks"]:
             mark = "PASS" if check["passed"] else "FAIL"

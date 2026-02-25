@@ -14,11 +14,12 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+from typing import Any
+
 
 BEAD_ID = "bd-c4f"
 SECTION = "10.8"

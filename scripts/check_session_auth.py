@@ -9,14 +9,13 @@ Usage:
 
 import hashlib
 import json
-import os
-import re
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 
 # ── File paths ─────────────────────────────────────────────────────────────
 
@@ -180,7 +179,7 @@ def check_structs() -> list:
     checks = []
     for s in REQUIRED_STRUCTS:
         found = f"pub enum {s}" in src or f"pub struct {s}" in src
-        checks.append(_check(f"struct/enum {s}", found, f"defined in session_auth.rs"))
+        checks.append(_check(f"struct/enum {s}", found, "defined in session_auth.rs"))
     return checks
 
 
@@ -234,7 +233,7 @@ def check_session_states() -> list:
     checks = []
     for state in SESSION_STATES:
         found = state in src
-        checks.append(_check(f"session state {state}", found, f"variant in SessionState"))
+        checks.append(_check(f"session state {state}", found, "variant in SessionState"))
     return checks
 
 

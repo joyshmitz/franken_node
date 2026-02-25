@@ -20,10 +20,11 @@ import json
 import re
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 IMPL = ROOT / "crates" / "franken-node" / "src" / "control_plane" / "control_epoch.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_14" / "bd-3hdv_contract.md"
 MOD_RS = ROOT / "crates" / "franken-node" / "src" / "control_plane" / "mod.rs"
@@ -259,7 +260,7 @@ def main():
     if "--json" in sys.argv:
         print(json.dumps(result, indent=2))
     else:
-        print(f"=== bd-3hdv: Control Epoch Verification ===")
+        print("=== bd-3hdv: Control Epoch Verification ===")
         print(f"Verdict: {result['verdict']}")
         s = result["summary"]
         print(f"Checks: {s['passing_checks']}/{s['total_checks']}")

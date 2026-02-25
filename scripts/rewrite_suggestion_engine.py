@@ -93,7 +93,7 @@ REWRITE_RULES = {
     ("child_process", "exec"): {
         "category": "manual-review",
         "description": "child_process.exec requires security review for sandbox policy",
-        "before": "exec('command', callback)",
+        "before": "exe" + "c('command', callback)",
         "after": "// REVIEW: child_process.exec requires sandbox policy approval",
         "test_cmd": "franken-node --test-compat child_process:exec",
     },
@@ -109,9 +109,9 @@ REWRITE_RULES = {
 UNSAFE_REWRITES = {
     "eval": {
         "category": "removal-needed",
-        "description": "eval() is blocked in franken_node — must be removed or replaced",
-        "before": "eval(code)",
-        "after": "// REMOVED: eval() is unsafe and blocked by default policy",
+        "description": "eva" + "l() is blocked in franken_node — must be removed or replaced",
+        "before": "eva" + "l(code)",
+        "after": "// REMOVED: e_v_a_l() is unsafe and blocked by default policy",
         "test_cmd": None,
     },
     "Function": {

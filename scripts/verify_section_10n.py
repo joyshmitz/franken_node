@@ -18,10 +18,13 @@ Exit codes:
 import json
 import subprocess
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
 
 # 10.N deliverables to verify
 CHECKS = [
@@ -166,6 +169,7 @@ def run_unit_tests(tests: list[dict]) -> list[dict]:
 
 
 def main():
+    logger = configure_test_logging("verify_section_10n")
     json_output = "--json" in sys.argv
     timestamp = datetime.now(timezone.utc).isoformat()
 

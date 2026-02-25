@@ -17,6 +17,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -318,9 +322,6 @@ def self_test() -> bool:
     """
     import importlib
     import types
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
     # We need to temporarily override the module-level path constants to point
     # at our synthetic fixtures.  We do this by monkey-patching the globals,

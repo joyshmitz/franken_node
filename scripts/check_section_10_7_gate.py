@@ -11,12 +11,13 @@ Usage:
 
 import json
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from datetime import datetime, timezone
+from pathlib import Path
+
 
 # Section 10.7 beads and their evidence paths
 SECTION_BEADS = [

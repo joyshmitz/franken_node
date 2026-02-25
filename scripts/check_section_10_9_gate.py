@@ -19,14 +19,15 @@ import json
 import re
 import subprocess
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 
 @dataclass(frozen=True)
@@ -513,7 +514,7 @@ def main() -> None:
         for check in report["checks"]:
             status = "PASS" if check["status"] == "PASS" else "FAIL"
             print(f"[{status}] {check['id']}")
-        print(f"\nPer-bead results:")
+        print("\nPer-bead results:")
         for bead_result in report["per_bead_results"]:
             status = "PASS" if bead_result["overall_pass"] else "FAIL"
             print(f"  [{status}] {bead_result['bead_id']}: {bead_result['name']}")

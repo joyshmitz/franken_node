@@ -6,15 +6,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import re
 import sys
 from pathlib import Path
-from typing import Any
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+from typing import Any
+
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "supply_chain" / "category_shift.rs"
 MOD_FILE = ROOT / "crates" / "franken-node" / "src" / "supply_chain" / "mod.rs"

@@ -8,14 +8,15 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 DEFAULT_CONTRACT = ROOT / "docs" / "architecture" / "tri_kernel_ownership_contract.md"
 DEFAULT_MATRIX = ROOT / "artifacts" / "10.15" / "workflow_primitive_matrix.json"
 

@@ -16,10 +16,11 @@ import json
 import re
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 
 # ---- Paths ----
 SRC = ROOT / "crates" / "franken-node" / "src" / "control_plane" / "control_lane_mapping.rs"
@@ -153,7 +154,7 @@ def check_task_classes() -> list:
 def check_cancel_lane_tasks() -> list:
     src = _read(SRC)
     for task in CANCEL_TASKS:
-        if f"ControlLane::Cancel" not in src:
+        if "ControlLane::Cancel" not in src:
             return [_check("cancel lane assignments", False, "ControlLane::Cancel not found")]
     return [_check("cancel lane assignments", True, f"{len(CANCEL_TASKS)} tasks")]
 
@@ -221,7 +222,7 @@ def check_serde() -> list:
 def check_test_count() -> list:
     src = _read(SRC)
     count = len(re.findall(r"#\[test\]", src))
-    return [_check(f"inline tests >= 25", count >= 25, f"{count} tests")]
+    return [_check("inline tests >= 25", count >= 25, f"{count} tests")]
 
 
 # ==========================================================================

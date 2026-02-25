@@ -17,10 +17,11 @@ import json
 import re
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 
 BEAD_ID = "bd-33kj"
 SECTION = "10.15"
@@ -121,7 +122,7 @@ def run_checks() -> dict:
         checks.append(_check(
             f"rule:{rule}",
             found,
-            f"rule present" if found else f"rule NOT FOUND in policy",
+            "rule present" if found else "rule NOT FOUND in policy",
         ))
 
     # --- Event codes ---
@@ -184,7 +185,7 @@ def run_checks() -> dict:
     checks.append(_check(
         "no_unbacked_claims",
         len(unbacked) == 0,
-        f"0 unbacked claims" if not unbacked else f"unbacked: {', '.join(unbacked)}",
+        "0 unbacked claims" if not unbacked else f"unbacked: {', '.join(unbacked)}",
     ))
 
     # --- Evidence artifact verdict ---

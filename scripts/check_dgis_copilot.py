@@ -21,13 +21,14 @@ import argparse
 import json
 import re
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 COPILOT_SRC = ROOT / "crates/franken-node/src/security/dgis/update_copilot.rs"
 DGIS_MOD = ROOT / "crates/franken-node/src/security/dgis/mod.rs"
 

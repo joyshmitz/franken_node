@@ -20,11 +20,14 @@ Exit codes:
 import json
 import os
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_ARTIFACTS_DIR = ROOT / "artifacts"
 
 VALID_ARTIFACT_TYPES = {
@@ -135,6 +138,7 @@ def check_collisions(artifacts: list[dict]) -> list[dict]:
 
 
 def main():
+    logger = configure_test_logging("verify_artifact_namespace")
     json_output = "--json" in sys.argv
     artifacts_dir = DEFAULT_ARTIFACTS_DIR
 

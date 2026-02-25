@@ -7,11 +7,12 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+from typing import Any
+
 
 # ── File paths ────────────────────────────────────────────────────────────────
 
@@ -291,7 +292,7 @@ def check_band_mode_matrix_complete() -> dict[str, Any]:
     return {
         "check": "Band-mode matrix complete (12 cells)",
         "pass": has_test and count == 4,
-        "detail": f"4 bands covered, completeness test present" if has_test else "INCOMPLETE",
+        "detail": "4 bands covered, completeness test present" if has_test else "INCOMPLETE",
     }
 
 

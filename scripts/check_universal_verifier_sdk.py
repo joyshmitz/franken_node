@@ -8,14 +8,14 @@ Usage:
 """
 
 import json
-import os
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from datetime import datetime, timezone
+from pathlib import Path
+
 
 # -- File paths ----------------------------------------------------------------
 
@@ -330,7 +330,7 @@ def run_all() -> dict:
         events.append({"code": code, "status": "defined"})
 
     summary_lines = [
-        f"bd-nbwo: Universal Verifier SDK and Replay Capsule Format",
+        "bd-nbwo: Universal Verifier SDK and Replay Capsule Format",
         f"Checks: {passed}/{len(checks)} passing",
         f"Verdict: {verdict}",
     ]

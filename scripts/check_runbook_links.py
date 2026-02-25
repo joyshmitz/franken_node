@@ -15,7 +15,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 REGION_RUNBOOK = ROOT / "docs" / "runbooks" / "region_quiescence_breach.md"
 OBLIGATION_RUNBOOK = ROOT / "docs" / "runbooks" / "obligation_leak_incident.md"

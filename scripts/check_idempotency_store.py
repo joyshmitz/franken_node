@@ -12,10 +12,11 @@ import json
 import re
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 
 # ── File paths ─────────────────────────────────────────────────────────────
 
@@ -103,7 +104,7 @@ def check_event_codes() -> list:
     checks = []
     for ec in REQUIRED_EVENT_CODES:
         checks.append(_check(f"event code {ec}", ec in src))
-    checks.append(_check(f"EVENT_CODES all 7 present",
+    checks.append(_check("EVENT_CODES all 7 present",
                          all(ec in src for ec in REQUIRED_EVENT_CODES),
                          f"{sum(1 for ec in REQUIRED_EVENT_CODES if ec in src)}/7"))
     return checks
@@ -114,7 +115,7 @@ def check_invariants() -> list:
     checks = []
     for inv in REQUIRED_INVARIANTS:
         checks.append(_check(f"invariant {inv}", inv in src))
-    checks.append(_check(f"INVARIANTS all 5 present",
+    checks.append(_check("INVARIANTS all 5 present",
                          all(inv in src for inv in REQUIRED_INVARIANTS),
                          f"{sum(1 for inv in REQUIRED_INVARIANTS if inv in src)}/5"))
     return checks

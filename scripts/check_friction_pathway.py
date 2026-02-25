@@ -8,17 +8,17 @@ Usage:
 
 import argparse
 import json
-import os
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 from datetime import datetime, timezone
 from pathlib import Path
 
 BEAD_ID = "bd-34d5"
 SECTION = "section_13"
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 SPEC_PATH = ROOT / "docs" / "specs" / "section_13" / "bd-34d5_contract.md"
 POLICY_PATH = ROOT / "docs" / "policy" / "friction_minimized_pathway.md"
@@ -307,10 +307,10 @@ def write_summary(results: list[dict]) -> None:
     passed = sum(1 for r in results if r["passed"])
     failed = total - passed
     lines = [
-        f"# bd-34d5 Verification Summary",
+        "# bd-34d5 Verification Summary",
         "",
         f"**Bead:** {BEAD_ID}",
-        f"**Section:** 13 -- Friction-Minimized Install-to-Production Pathway",
+        "**Section:** 13 -- Friction-Minimized Install-to-Production Pathway",
         f"**Date:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
         "",
         f"## Results: {passed}/{total} checks passed",

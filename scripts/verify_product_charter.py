@@ -17,10 +17,13 @@ Exit codes:
 import json
 import re
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
 CHARTER_PATH = ROOT / "docs" / "PRODUCT_CHARTER.md"
 
 REQUIRED_SECTIONS = [
@@ -48,6 +51,7 @@ README_CHARTER_LINK = "docs/PRODUCT_CHARTER.md"
 
 
 def main():
+    logger = configure_test_logging("verify_product_charter")
     json_output = "--json" in sys.argv
     timestamp = datetime.now(timezone.utc).isoformat()
 

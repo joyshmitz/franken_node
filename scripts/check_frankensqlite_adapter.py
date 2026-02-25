@@ -13,7 +13,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 IMPL = ROOT / "tests" / "integration" / "frankensqlite_adapter_conformance.rs"
 REPORT = ROOT / "artifacts" / "10.16" / "frankensqlite_adapter_report.json"

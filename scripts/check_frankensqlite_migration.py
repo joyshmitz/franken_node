@@ -13,7 +13,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 MIGRATION_DOC = ROOT / "docs" / "migration" / "to_frankensqlite.md"
 MIGRATION_TEST = ROOT / "tests" / "migration" / "frankensqlite_migration_idempotence.rs"

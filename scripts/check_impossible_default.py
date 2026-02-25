@@ -12,6 +12,10 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -385,9 +389,6 @@ def self_test():
 def main():
     logger = configure_test_logging("check_impossible_default")
     import argparse
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
     parser = argparse.ArgumentParser(description="Verify bd-1xao: impossible-by-default adoption")
     parser.add_argument("--json", action="store_true", help="Output JSON")

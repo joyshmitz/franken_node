@@ -14,14 +14,14 @@ Exit codes:
 """
 
 import json
-import re
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from datetime import datetime, timezone
+from pathlib import Path
+
 DESIGN_PATH = ROOT / "docs" / "L2_ENGINE_BOUNDARY_ORACLE.md"
 SPLIT_CONTRACT = ROOT / "docs" / "ENGINE_SPLIT_CONTRACT.md"
 

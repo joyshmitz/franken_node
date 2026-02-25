@@ -61,7 +61,7 @@ def validate_manifest(data: dict) -> list[str]:
             errors.append(f"manifest.json: missing required field '{field}'")
 
     if data.get("schema_version") != "1.0":
-        errors.append(f"manifest.json: schema_version must be '1.0'")
+        errors.append("manifest.json: schema_version must be '1.0'")
 
     # Validate commands
     for i, cmd in enumerate(data.get("commands", [])):
@@ -91,7 +91,7 @@ def validate_lock(data: dict) -> list[str]:
             errors.append(f"repro.lock: missing required field '{field}'")
 
     if data.get("schema_version") != "1.0":
-        errors.append(f"repro.lock: schema_version must be '1.0'")
+        errors.append("repro.lock: schema_version must be '1.0'")
 
     commit = data.get("git_commit", "")
     if commit and not re.match(r'^[a-f0-9]{40}$', commit):
@@ -99,7 +99,7 @@ def validate_lock(data: dict) -> list[str]:
 
     lock_hash = data.get("cargo_lock_sha256", "")
     if lock_hash and not re.match(r'^[a-f0-9]{64}$', lock_hash):
-        errors.append(f"repro.lock: cargo_lock_sha256 must be 64-char hex")
+        errors.append("repro.lock: cargo_lock_sha256 must be 64-char hex")
 
     return errors
 

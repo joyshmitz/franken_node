@@ -14,10 +14,11 @@ Usage:
 import json
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 
 SPEC_PATH = ROOT / "docs" / "specs" / "section_10_7" / "bd-1u4_contract.md"
 POLICY_PATH = ROOT / "docs" / "policy" / "metamorphic_testing.md"

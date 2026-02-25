@@ -8,14 +8,14 @@ Usage:
 """
 
 import json
-import os
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from datetime import datetime, timezone
+from pathlib import Path
+
 
 # -- File paths ----------------------------------------------------------------
 
@@ -338,7 +338,7 @@ def run_all() -> dict:
         events.append({"code": code, "status": "defined"})
 
     summary_lines = [
-        f"bd-3j4: End-to-End Migration Singularity Pipeline",
+        "bd-3j4: End-to-End Migration Singularity Pipeline",
         f"Checks: {passed}/{len(checks)} passing",
         f"Verdict: {verdict}",
     ]

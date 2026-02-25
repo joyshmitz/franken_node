@@ -10,10 +10,11 @@ import json
 import re
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 IMPL = ROOT / "crates" / "franken-node" / "src" / "tools" / "repro_bundle_export.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_14" / "bd-2808_contract.md"
 MOD_RS = ROOT / "crates" / "franken-node" / "src" / "tools" / "mod.rs"
@@ -246,7 +247,7 @@ def main():
     if "--json" in sys.argv:
         print(json.dumps(result, indent=2))
     else:
-        print(f"=== bd-2808: Repro Bundle Export Verification ===")
+        print("=== bd-2808: Repro Bundle Export Verification ===")
         print(f"Verdict: {result['verdict']}")
         s = result["summary"]
         print(f"Checks: {s['passing']}/{s['total']}")

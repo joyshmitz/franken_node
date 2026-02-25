@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import json
 import sys
-
-import check_obligation_channel_protocol as protocol
+from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+
+import check_obligation_channel_protocol as protocol
 
 
 def run_all() -> dict:

@@ -22,14 +22,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 IMPL_PATH = ROOT / "crates" / "franken-node" / "src" / "policy" / "correctness_envelope.rs"
 MOD_PATH = ROOT / "crates" / "franken-node" / "src" / "policy" / "mod.rs"
 SPEC_PATH = ROOT / "docs" / "specs" / "section_10_14" / "bd-sddz_contract.md"

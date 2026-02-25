@@ -15,7 +15,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 IMPL = ROOT / "tests" / "perf" / "adjacent_substrate_overhead_gate.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_16" / "bd-35l5_contract.md"

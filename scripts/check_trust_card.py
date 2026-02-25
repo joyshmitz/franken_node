@@ -11,11 +11,12 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+from typing import Any
+
 
 TRUST_CARD_IMPL = ROOT / "crates" / "franken-node" / "src" / "supply_chain" / "trust_card.rs"
 SUPPLY_CHAIN_MOD = ROOT / "crates" / "franken-node" / "src" / "supply_chain" / "mod.rs"

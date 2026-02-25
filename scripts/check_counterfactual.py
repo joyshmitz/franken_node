@@ -5,14 +5,15 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 IMPL = ROOT / "crates" / "franken-node" / "src" / "tools" / "counterfactual_replay.rs"
 MOD_RS = ROOT / "crates" / "franken-node" / "src" / "tools" / "mod.rs"
 MAIN_RS = ROOT / "crates" / "franken-node" / "src" / "main.rs"

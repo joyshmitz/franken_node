@@ -6,13 +6,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "vef" / "proof_service.rs"
 MOD = ROOT / "crates" / "franken-node" / "src" / "vef" / "mod.rs"

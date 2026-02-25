@@ -8,13 +8,13 @@ Usage:
 """
 
 import json
-import re
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 
 SPEC = ROOT / "docs" / "specs" / "section_10_10" / "bd-2ms_contract.md"
 IMPL = ROOT / "crates" / "franken-node" / "src" / "control_plane" / "divergence_gate.rs"
@@ -274,7 +274,7 @@ def check_test_count() -> dict:
         return _check("test count >= 40", False, "impl file missing")
     content = IMPL.read_text()
     count = content.count("#[test]")
-    return _check(f"test count >= 40", count >= 40, f"{count} tests found")
+    return _check("test count >= 40", count >= 40, f"{count} tests found")
 
 
 def check_upstream_integration() -> list:

@@ -13,11 +13,12 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+from typing import Any
+
 
 SPEC = ROOT / "docs" / "specs" / "section_10_8" / "bd-3m6_contract.md"
 SCHEMA_FILE = ROOT / "fixtures" / "drills" / "drill_schema.json"

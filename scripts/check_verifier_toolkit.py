@@ -13,10 +13,11 @@ import json
 import re
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 
 SRC = ROOT / "crates" / "franken-node" / "src" / "tools" / "verifier_toolkit.rs"
 MOD_RS = ROOT / "crates" / "franken-node" / "src" / "tools" / "mod.rs"

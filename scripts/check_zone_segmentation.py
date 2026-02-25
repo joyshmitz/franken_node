@@ -15,11 +15,12 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+from typing import Any
+
 
 SPEC = ROOT / "docs" / "specs" / "section_10_10" / "bd-1vp_contract.md"
 POLICY = ROOT / "docs" / "policy" / "zone_trust_segmentation.md"

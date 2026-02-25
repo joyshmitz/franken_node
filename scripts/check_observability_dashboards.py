@@ -12,7 +12,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 DOC = ROOT / "docs" / "observability" / "asupersync_control_dashboards.md"
 SNAPSHOT = ROOT / "artifacts" / "10.15" / "dashboard_snapshot.json"

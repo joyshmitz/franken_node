@@ -13,7 +13,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "policy" / "approval_workflow.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_5" / "bd-sh3_contract.md"

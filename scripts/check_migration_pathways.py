@@ -14,14 +14,14 @@ Usage:
 from __future__ import annotations
 
 import json
-import os
 import re
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 BEAD_ID = "bd-2f43"
 
 RESULTS: list[dict] = []

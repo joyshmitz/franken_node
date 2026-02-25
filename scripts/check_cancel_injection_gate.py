@@ -12,10 +12,11 @@ import json
 import re
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 
 SRC = ROOT / "crates" / "franken-node" / "src" / "connector" / "cancel_injection_gate.rs"
 MOD = ROOT / "crates" / "franken-node" / "src" / "connector" / "mod.rs"
@@ -154,7 +155,7 @@ def check_serde() -> list:
 def check_test_count() -> list:
     src = _read(SRC)
     count = len(re.findall(r"#\[test\]", src))
-    return [_check(f"inline tests >= 15", count >= 15, f"{count} tests")]
+    return [_check("inline tests >= 15", count >= 15, f"{count} tests")]
 
 
 def check_spec_sections() -> list:

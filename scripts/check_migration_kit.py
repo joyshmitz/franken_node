@@ -9,11 +9,9 @@ import json
 import os
 import re
 import sys
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMPL = os.path.join(ROOT, "crates", "franken-node", "src", "supply_chain",
                      "migration_kit.rs")
 MOD_RS = os.path.join(ROOT, "crates", "franken-node", "src", "supply_chain", "mod.rs")

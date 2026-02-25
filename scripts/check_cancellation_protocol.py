@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """bd-1cs7: Three-phase cancellation protocol (REQUEST -> DRAIN -> FINALIZE) — verification gate."""
-import json, os, re, sys
+import json
+import os
+import re
 import sys
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMPL = os.path.join(ROOT, "crates", "franken-node", "src", "connector", "cancellation_protocol.rs")
 MOD_RS = os.path.join(ROOT, "crates", "franken-node", "src", "connector", "mod.rs")
 SPEC = os.path.join(ROOT, "docs", "specs", "section_10_15", "bd-1cs7_contract.md")

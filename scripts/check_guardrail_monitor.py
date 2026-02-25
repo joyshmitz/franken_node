@@ -27,10 +27,11 @@ import json
 import re
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 IMPL_PATH = ROOT / "crates" / "franken-node" / "src" / "policy" / "guardrail_monitor.rs"
 SPEC_PATH = ROOT / "docs" / "specs" / "section_10_14" / "bd-3a3q_contract.md"
 TELEMETRY_PATH = ROOT / "artifacts" / "10.14" / "guardrail_monitor_telemetry.csv"

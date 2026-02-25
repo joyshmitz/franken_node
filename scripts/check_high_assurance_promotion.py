@@ -6,6 +6,10 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMPL = os.path.join(ROOT, "crates/franken-node/src/connector/high_assurance_promotion.rs")
@@ -161,9 +165,6 @@ def self_test():
 def main():
     logger = configure_test_logging("check_high_assurance_promotion")
     import argparse
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
     parser = argparse.ArgumentParser()
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--self-test", action="store_true")

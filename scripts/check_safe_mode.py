@@ -13,10 +13,11 @@ import json
 import re
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "runtime" / "safe_mode.rs"
 MOD_RS = ROOT / "crates" / "franken-node" / "src" / "runtime" / "mod.rs"

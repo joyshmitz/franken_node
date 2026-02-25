@@ -11,13 +11,14 @@ from __future__ import annotations
 import json
 import re
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 SCHEMA_PATH = ROOT / "spec" / "evidence_entry_v1.json"
 SPEC_PATH = ROOT / "docs" / "specs" / "evidence_entry_schema.md"
 VALIDATION_REPORT_PATH = ROOT / "artifacts" / "10.14" / "evidence_schema_validation_report.json"

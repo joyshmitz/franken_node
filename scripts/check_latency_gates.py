@@ -15,11 +15,12 @@ import json
 import math
 import sys
 from pathlib import Path
-from typing import Any
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+from typing import Any
+
 
 SPEC_PATH = ROOT / "docs" / "specs" / "section_10_6" / "bd-3lh_contract.md"
 BUDGETS_PATH = ROOT / "perf" / "budgets.toml"
@@ -249,7 +250,7 @@ def check_budgets_has_profiles() -> dict[str, Any]:
     return _check(
         "budgets_has_profiles",
         not missing,
-        f"all 3 profiles present" if not missing else f"missing: {', '.join(missing)}",
+        "all 3 profiles present" if not missing else f"missing: {', '.join(missing)}",
     )
 
 
@@ -262,7 +263,7 @@ def check_budgets_has_workflows() -> dict[str, Any]:
     return _check(
         "budgets_has_workflows",
         not missing,
-        f"all 5 workflows present" if not missing else f"missing: {', '.join(missing)}",
+        "all 5 workflows present" if not missing else f"missing: {', '.join(missing)}",
     )
 
 

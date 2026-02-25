@@ -7,12 +7,13 @@ Usage:
 
 import json
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from datetime import datetime, timezone
+from pathlib import Path
+
 
 BARRIER_SRC = ROOT / "crates" / "franken-node" / "src" / "control_plane" / "epoch_transition_barrier.rs"
 BARRIER_MOD = ROOT / "crates" / "franken-node" / "src" / "control_plane" / "mod.rs"

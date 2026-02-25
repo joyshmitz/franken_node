@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """bd-3id1: Red-team and independent evaluations — verification gate."""
 
-import json, os, re, sys
+import json
+import os
+import re
 import sys
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMPL = os.path.join(ROOT, "crates", "franken-node", "src", "tools",
                      "redteam_evaluations.rs")
 MOD_RS = os.path.join(ROOT, "crates", "franken-node", "src", "tools", "mod.rs")

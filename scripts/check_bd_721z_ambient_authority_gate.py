@@ -8,6 +8,10 @@ import hashlib
 import json
 import subprocess
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -17,9 +21,6 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     tomllib = None  # type: ignore[assignment]
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 BEAD_ID = "bd-721z"
 SECTION = "10.15"
@@ -98,7 +99,7 @@ def _load_allowlist(path: Path) -> dict[str, Any] | None:
 
 
 def _compute_allowlist_signature(entry: dict[str, Any]) -> str:
-    payload = "\n".join(
+    payload = "ambient_authority_signature_v1:" + "\n".join(
         [
             str(entry.get("module_path", "")),
             str(entry.get("ambient_api", "")),

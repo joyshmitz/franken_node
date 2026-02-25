@@ -19,10 +19,11 @@ import json
 import re
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 IMPL = ROOT / "tests" / "conformance" / "replica_artifact_determinism.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_14" / "bd-1iyx_contract.md"
 SEED_RS = ROOT / "crates" / "franken-node" / "src" / "encoding" / "deterministic_seed.rs"
@@ -239,7 +240,7 @@ def main():
     if "--json" in sys.argv:
         print(json.dumps(result, indent=2))
     else:
-        print(f"=== bd-1iyx: Determinism Conformance Verification ===")
+        print("=== bd-1iyx: Determinism Conformance Verification ===")
         print(f"Verdict: {result['verdict']}")
         s = result["summary"]
         print(f"Checks: {s['passing']}/{s['total']}")

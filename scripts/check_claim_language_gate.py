@@ -13,7 +13,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 IMPL = ROOT / "tests" / "conformance" / "adjacent_claim_language_gate.rs"
 POLICY_DOC = ROOT / "docs" / "policy" / "adjacent_substrate_claim_language.md"

@@ -7,6 +7,10 @@ import argparse
 import json
 import shutil
 import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
 import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -18,9 +22,6 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - Python <3.11 fallback
     import tomli as tomllib  # type: ignore[no-redef]
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 DEFAULT_MANIFEST = ROOT / "vectors" / "canonical_manifest.toml"
 DEFAULT_CHANGELOG = ROOT / "vectors" / "CHANGELOG.md"
 

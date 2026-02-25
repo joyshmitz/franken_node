@@ -11,10 +11,11 @@ import json
 import struct
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+
 IMPL = ROOT / "crates" / "franken-node" / "src" / "encoding" / "deterministic_seed.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_14" / "bd-29r6_contract.md"
 VECTORS = ROOT / "artifacts" / "10.14" / "seed_derivation_vectors.json"

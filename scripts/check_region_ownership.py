@@ -15,13 +15,14 @@ import argparse
 import json
 import sys
 from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
 
 BEAD = "bd-2tdi"
 SECTION = "10.15"
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 REGION_MODULE = ROOT / "crates" / "franken-node" / "src" / "connector" / "region_ownership.rs"
 SPEC_DOC = ROOT / "docs" / "specs" / "region_tree_topology.md"

@@ -20,11 +20,9 @@ Usage:
 import json
 import os
 import sys
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 SPEC_CONTRACT = os.path.join(ROOT, "docs", "specs", "section_9", "bd-3hig_contract.md")
 GOVERNANCE_DOC = os.path.join(ROOT, "docs", "governance", "build_program.md")
@@ -109,7 +107,7 @@ def check_exit_gates():
         track_label = track.replace("-", "-")
         idx = gov.find(f"### {track_label}")
         if idx < 0:
-            _check(f"exit_gate:{track}", False, f"track section not found")
+            _check(f"exit_gate:{track}", False, "track section not found")
             continue
         # Check for "Exit Gate" within the track section (next 2000 chars)
         section = gov[idx:idx + 2000]
@@ -219,8 +217,8 @@ def self_test():
     assert ENHANCEMENT_MAPS[0] == "9A", f"First map should be 9A, got {ENHANCEMENT_MAPS[0]}"
     assert ENHANCEMENT_MAPS[-1] == "9O", f"Last map should be 9O, got {ENHANCEMENT_MAPS[-1]}"
     assert len(REQUIRED_FILES) == 2, f"Expected 2 required files, got {len(REQUIRED_FILES)}"
-    assert len(REQUIRED_SECTIONS) == 8, f"Expected 8 required sections"
-    assert len(SPEC_KEYWORDS) == 5, f"Expected 5 spec keywords"
+    assert len(REQUIRED_SECTIONS) == 8, "Expected 8 required sections"
+    assert len(SPEC_KEYWORDS) == 5, "Expected 5 spec keywords"
 
     # Run checks and verify structure
     result = run_all()
@@ -250,7 +248,7 @@ def main():
     if "--json" in sys.argv:
         print(json.dumps(result, indent=2))
     else:
-        print(f"bd-3hig: Multi-Track Build Program")
+        print("bd-3hig: Multi-Track Build Program")
         print(f"{'=' * 50}")
         print(f"Total: {result['total']}  Passed: {result['passed']}  "
               f"Failed: {result['failed']}  OK: {result['ok']}")

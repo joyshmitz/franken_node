@@ -16,11 +16,12 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
+from pathlib import Path
+from typing import Any
+
 
 DOC = ROOT / "docs" / "testing" / "control_virtual_transport_faults.md"
 REPORT = ROOT / "artifacts" / "10.15" / "control_fault_harness_summary.json"
