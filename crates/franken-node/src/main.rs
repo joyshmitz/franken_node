@@ -38,6 +38,13 @@ use api::trust_card_routes::{
     Pagination, compare_trust_card_versions, compare_trust_cards, get_trust_card,
     get_trust_cards_by_publisher, list_trust_cards, search_trust_cards,
 };
+use api::{
+    fleet_quarantine::{
+        FleetActionResult, FleetStatus, ReleaseRequest, handle_reconcile as handle_fleet_reconcile,
+        handle_release as handle_fleet_release, handle_status as handle_fleet_status,
+    },
+    middleware::{AuthIdentity, AuthMethod, TraceContext},
+};
 use cli::{
     BenchCommand, Cli, Command, FleetCommand, IncidentCommand, MigrateCommand, RegistryCommand,
     RemoteCapCommand, RemoteCapIssueArgs, TrustCardCommand, TrustCommand, VerifyCommand,
@@ -1686,6 +1693,77 @@ mod trust_command_tests {
     }
 }
 
+#[cfg(test)]
+mod fleet_command_tests {
+    use super::*;
+    use crate::api::fleet_quarantine::{ConvergencePhase, ConvergenceState, DecisionReceipt};
+
+    #[test]
+    fn fleet_cli_identity_has_operator_and_admin_roles() {
+        let identity = fleet_cli_identity();
+        assert_eq!(identity.principal, "cli-fleet-operator");
+        assert_eq!(identity.method, AuthMethod::MtlsClientCert);
+        assert!(identity.roles.iter().any(|role| role == "fleet-admin"));
+        assert!(identity.roles.iter().any(|role| role == "operator"));
+    }
+
+    #[test]
+    fn fleet_cli_trace_uses_supplied_trace_id() {
+        let trace = fleet_cli_trace("trace-test-fleet");
+        assert_eq!(trace.trace_id, "trace-test-fleet");
+        assert_eq!(trace.trace_flags, 1);
+    }
+
+    #[test]
+    fn fleet_status_render_includes_activation_and_counts() {
+        let status = FleetStatus {
+            zone_id: "zone-1".to_string(),
+            active_quarantines: 2,
+            active_revocations: 1,
+            healthy_nodes: 9,
+            total_nodes: 10,
+            activated: false,
+            pending_convergences: Vec::new(),
+        };
+        let rendered = render_fleet_status_human(&status, true);
+        assert!(rendered.contains("fleet status: zone=zone-1"));
+        assert!(rendered.contains("activated=false"));
+        assert!(rendered.contains("quarantines=2 revocations=1"));
+        assert!(rendered.contains("healthy_nodes=9/10"));
+        assert!(rendered.contains("pending_convergences=0"));
+    }
+
+    #[test]
+    fn fleet_action_render_includes_convergence_details() {
+        let action = FleetActionResult {
+            operation_id: "fleet-op-7".to_string(),
+            action_type: "reconcile".to_string(),
+            success: true,
+            receipt: DecisionReceipt {
+                receipt_id: "rcpt-7".to_string(),
+                issuer: "cli-fleet-operator".to_string(),
+                issued_at: "2026-02-25T00:00:00Z".to_string(),
+                zone_id: "all".to_string(),
+                payload_hash: "hash".to_string(),
+            },
+            convergence: Some(ConvergenceState {
+                converged_nodes: 4,
+                total_nodes: 5,
+                progress_pct: 80,
+                eta_seconds: Some(5),
+                phase: ConvergencePhase::Propagating,
+            }),
+            trace_id: "trace-fleet".to_string(),
+            event_code: "FLEET-005".to_string(),
+        };
+        let rendered = render_fleet_action_human(&action);
+        assert!(rendered.contains("fleet action: type=reconcile operation_id=fleet-op-7"));
+        assert!(rendered.contains("success=true"));
+        assert!(rendered.contains("event_code=FLEET-005"));
+        assert!(rendered.contains("convergence=4/5 (80%)"));
+    }
+}
+
 fn handle_remotecap_issue(args: &RemoteCapIssueArgs) -> Result<()> {
     let operations = args
         .scope
@@ -1835,6 +1913,72 @@ fn render_trust_card_list(cards: &[TrustCard]) -> String {
             card.reputation_score_basis_points,
             card.reputation_trend,
             status
+        ));
+    }
+    lines.join("\n")
+}
+
+fn fleet_cli_identity() -> AuthIdentity {
+    AuthIdentity {
+        principal: "cli-fleet-operator".to_string(),
+        method: AuthMethod::MtlsClientCert,
+        roles: vec!["fleet-admin".to_string(), "operator".to_string()],
+    }
+}
+
+fn fleet_cli_trace(trace_id: &str) -> TraceContext {
+    TraceContext {
+        trace_id: trace_id.to_string(),
+        span_id: "0000000000000001".to_string(),
+        trace_flags: 1,
+    }
+}
+
+fn render_fleet_status_human(status: &FleetStatus, verbose: bool) -> String {
+    let mut lines = vec![
+        format!("fleet status: zone={}", status.zone_id),
+        format!("  activated={}", status.activated),
+        format!(
+            "  quarantines={} revocations={}",
+            status.active_quarantines, status.active_revocations
+        ),
+        format!(
+            "  healthy_nodes={}/{}",
+            status.healthy_nodes, status.total_nodes
+        ),
+    ];
+
+    if verbose {
+        lines.push(format!(
+            "  pending_convergences={}",
+            status.pending_convergences.len()
+        ));
+    }
+    lines.join("\n")
+}
+
+fn render_fleet_action_human(action: &FleetActionResult) -> String {
+    let mut lines = vec![
+        format!(
+            "fleet action: type={} operation_id={}",
+            action.action_type, action.operation_id
+        ),
+        format!("  success={}", action.success),
+        format!("  event_code={}", action.event_code),
+        format!(
+            "  receipt_id={} issuer={} zone={}",
+            action.receipt.receipt_id, action.receipt.issuer, action.receipt.zone_id
+        ),
+    ];
+
+    if let Some(convergence) = &action.convergence {
+        lines.push(format!(
+            "  convergence={}/{} ({}%) phase={:?} eta_seconds={:?}",
+            convergence.converged_nodes,
+            convergence.total_nodes,
+            convergence.progress_pct,
+            convergence.phase,
+            convergence.eta_seconds
         ));
     }
     lines.join("\n")
@@ -2289,19 +2433,35 @@ async fn main() -> Result<()> {
 
         Command::Fleet(sub) => match sub {
             FleetCommand::Status(args) => {
-                eprintln!(
-                    "franken-node fleet status: zone={:?} verbose={}",
-                    args.zone, args.verbose
+                let zone_id = args.zone.unwrap_or_else(|| "all".to_string());
+                let identity = fleet_cli_identity();
+                let trace = fleet_cli_trace("trace-cli-fleet-status");
+                let response = handle_fleet_status(&identity, &trace, &zone_id)
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                println!(
+                    "{}",
+                    render_fleet_status_human(&response.data, args.verbose)
                 );
-                eprintln!("[not yet implemented]");
             }
             FleetCommand::Release(args) => {
-                eprintln!("franken-node fleet release: incident={}", args.incident);
-                eprintln!("[not yet implemented]");
+                let identity = fleet_cli_identity();
+                let trace = fleet_cli_trace("trace-cli-fleet-release");
+                let response = handle_fleet_release(
+                    &identity,
+                    &trace,
+                    &ReleaseRequest {
+                        incident_id: args.incident,
+                    },
+                )
+                .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                println!("{}", render_fleet_action_human(&response.data));
             }
             FleetCommand::Reconcile(_) => {
-                eprintln!("franken-node fleet reconcile");
-                eprintln!("[not yet implemented]");
+                let identity = fleet_cli_identity();
+                let trace = fleet_cli_trace("trace-cli-fleet-reconcile");
+                let response = handle_fleet_reconcile(&identity, &trace)
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                println!("{}", render_fleet_action_human(&response.data));
             }
         },
 
