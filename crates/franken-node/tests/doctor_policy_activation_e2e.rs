@@ -34,6 +34,21 @@ fn run_doctor(policy_input_path: &Path, trace_id: &str) -> Value {
             ])
             .output()
             .expect("failed to run franken-node doctor")
+    } else if repo.join("target/debug/frankenengine-node").is_file() {
+        Command::new(repo.join("target/debug/frankenengine-node"))
+            .current_dir(&repo)
+            .args([
+                "doctor",
+                "--json",
+                "--trace-id",
+                trace_id,
+                "--policy-activation-input",
+                policy_input_path
+                    .to_str()
+                    .expect("policy fixture path must be utf-8"),
+            ])
+            .output()
+            .expect("failed to run franken-node doctor from target/debug")
     } else {
         Command::new("cargo")
             .current_dir(&repo)
@@ -74,6 +89,16 @@ fn check_status<'a>(report: &'a Value, code: &str) -> &'a str {
         .unwrap_or_else(|| panic!("missing doctor check {code}"))
 }
 
+fn check_message<'a>(report: &'a Value, code: &str) -> &'a str {
+    report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|entry| entry["code"].as_str() == Some(code))
+        .and_then(|entry| entry["message"].as_str())
+        .unwrap_or_else(|| panic!("missing doctor check message {code}"))
+}
+
 #[test]
 fn doctor_policy_activation_pass_path() {
     let report = run_doctor(
@@ -94,6 +119,18 @@ fn doctor_policy_activation_pass_path() {
         report["policy_activation"]["wording_validation"]["valid"],
         true
     );
+    assert_eq!(
+        report["policy_activation"]["top_ranked_candidate"],
+        "balanced_patch"
+    );
+    assert_eq!(
+        report["policy_activation"]["decision_outcome"]["chosen"],
+        "balanced_patch"
+    );
+    assert_eq!(
+        report["policy_activation"]["decision_outcome"]["reason"],
+        "TopCandidateAccepted"
+    );
 }
 
 #[test]
@@ -111,6 +148,10 @@ fn doctor_policy_activation_warn_path_surfaces_conformal_warning() {
     assert_eq!(
         report["policy_activation"]["guardrail_certificate"]["dominant_verdict"],
         "warn"
+    );
+    assert_eq!(
+        report["policy_activation"]["decision_outcome"]["reason"],
+        "TopCandidateAccepted"
     );
 
     let findings = report["policy_activation"]["guardrail_certificate"]["findings"]
@@ -139,6 +180,11 @@ fn doctor_policy_activation_block_path_blocks_on_conformal_risk() {
         report["policy_activation"]["guardrail_certificate"]["dominant_verdict"],
         "block"
     );
+    assert_eq!(
+        report["policy_activation"]["decision_outcome"]["reason"],
+        "AllCandidatesBlocked"
+    );
+    assert_eq!(report["policy_activation"]["decision_outcome"]["chosen"], Value::Null);
 
     let blocked_budgets =
         report["policy_activation"]["guardrail_certificate"]["blocking_budget_ids"]
@@ -162,5 +208,8 @@ fn doctor_policy_activation_invalid_input_fails_safely() {
     assert_eq!(check_status(&report, "DR-POLICY-009"), "fail");
     assert_eq!(check_status(&report, "DR-POLICY-010"), "fail");
     assert_eq!(check_status(&report, "DR-POLICY-011"), "fail");
+    assert!(
+        check_message(&report, "DR-POLICY-009").contains("failed parsing policy activation input")
+    );
     assert!(report.get("policy_activation").is_none());
 }
