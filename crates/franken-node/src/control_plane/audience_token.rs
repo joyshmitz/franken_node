@@ -807,10 +807,10 @@ mod tests {
 
     #[test]
     fn test_root_token_creation() {
-        let token = root_token("root-1", 3);
-        assert!(token.is_root());
-        assert!(token.has_valid_window());
-        assert!(!token.is_expired(50_000));
+        let tkn = root_token("root-1", 3);
+        assert!(tkn.is_root());
+        assert!(tkn.has_valid_window());
+        assert!(!tkn.is_expired(50_000));
     }
 
     #[test]
@@ -829,7 +829,7 @@ mod tests {
 
     #[test]
     fn test_token_is_expired() {
-        let token = root_token("root-1", 0);
+        let tkn = root_token("root-1", 0);
         assert!(!token.is_expired(99_999));
         assert!(token.is_expired(100_000));
         assert!(token.is_expired(200_000));
@@ -837,7 +837,7 @@ mod tests {
 
     #[test]
     fn test_token_has_valid_window() {
-        let mut token = root_token("root-1", 0);
+        let mut tkn = root_token("root-1", 0);
         assert!(token.has_valid_window());
         token.expires_at = token.issued_at; // zero window
         assert!(!token.has_valid_window());
@@ -847,7 +847,7 @@ mod tests {
 
     #[test]
     fn test_token_audience_contains() {
-        let token = root_token("root-1", 0);
+        let tkn = root_token("root-1", 0);
         assert!(token.audience_contains("kernel-A"));
         assert!(token.audience_contains("kernel-B"));
         assert!(!token.audience_contains("kernel-C"));
@@ -855,7 +855,7 @@ mod tests {
 
     #[test]
     fn test_token_serde_roundtrip() {
-        let token = root_token("root-1", 3);
+        let tkn = root_token("root-1", 3);
         let json = serde_json::to_string(&token).unwrap();
         let parsed: AudienceBoundToken = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, token);
@@ -912,7 +912,7 @@ mod tests {
 
     #[test]
     fn test_chain_rejects_non_root_first() {
-        let mut token = root_token("root-1", 3);
+        let mut tkn = root_token("root-1", 3);
         token.parent_token_hash = Some("invalid-hash".to_string());
         let err = TokenChain::new(token).unwrap_err();
         assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
@@ -1133,7 +1133,7 @@ mod tests {
     #[test]
     fn test_validator_record_issuance() {
         let mut v = TokenValidator::new(1);
-        let token = root_token("root-1", 0);
+        let tkn = root_token("root-1", 0);
         v.record_issuance(&token, "trace-1", 1000);
         assert_eq!(v.tokens_issued(), 1);
         assert_eq!(v.events().len(), 1);
@@ -1260,14 +1260,14 @@ mod tests {
     #[test]
     fn test_validator_check_audience_pass() {
         let v = TokenValidator::new(1);
-        let token = root_token("root-1", 0);
+        let tkn = root_token("root-1", 0);
         v.check_audience(&token, "kernel-A").unwrap();
     }
 
     #[test]
     fn test_validator_check_audience_fail() {
         let v = TokenValidator::new(1);
-        let token = root_token("root-1", 0);
+        let tkn = root_token("root-1", 0);
         let err = v.check_audience(&token, "kernel-C").unwrap_err();
         assert_eq!(err.code, ERR_ABT_AUDIENCE_MISMATCH);
     }
@@ -1275,7 +1275,7 @@ mod tests {
     #[test]
     fn test_validator_take_events_drains() {
         let mut v = TokenValidator::new(1);
-        let token = root_token("root-1", 0);
+        let tkn = root_token("root-1", 0);
         v.record_issuance(&token, "trace-1", 1000);
         assert_eq!(v.events().len(), 1);
         let drained = v.take_events();

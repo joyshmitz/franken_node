@@ -1789,9 +1789,9 @@ fn handle_remotecap_issue(args: &RemoteCapIssueArgs) -> Result<()> {
 
     let ttl_secs = parse_ttl_secs(&args.ttl)?;
     let now_epoch_secs = now_unix_secs();
-    let secret = std::env::var("FRANKEN_NODE_REMOTECAP_SECRET")
-        .unwrap_or_else(|_| ["franken-node", "dev", "remotecap", "secret"].join("-"));
-    let provider = CapabilityProvider::new(&secret);
+    let signing_key = std::env::var("FRANKEN_NODE_REMOTECAP_KEY")
+        .unwrap_or_else(|_| ["franken-node", "dev", "remotecap", "key"].join("-"));
+    let provider = CapabilityProvider::new(&signing_key);
     let scope = RemoteScope::new(operations, endpoint_prefixes);
 
     let (cap, audit_event) = provider
