@@ -907,19 +907,30 @@ pub fn handle_revoke(
 pub fn handle_release(
     identity: &AuthIdentity,
     trace: &TraceContext,
-    _request: &ReleaseRequest,
+    request: &ReleaseRequest,
 ) -> Result<ApiResponse<FleetActionResult>, ApiError> {
-    // In a real system this would look up the incident from persistent state
+    let incident_id = request.incident_id.trim();
+    if incident_id.is_empty() {
+        return Err(ApiError::BadRequest {
+            detail: format!("{}: incident_id must not be empty", FLEET_SCOPE_INVALID),
+            trace_id: trace.trace_id.clone(),
+        });
+    }
+
+    let incident_prefix = utf8_prefix(incident_id, 16);
+    let payload_hash =
+        receipt_payload_hash(format!("release:{incident_id}:{}", trace.trace_id).as_bytes());
+
     let result = FleetActionResult {
-        operation_id: format!("fleet-op-release-{}", utf8_prefix(&trace.trace_id, 8)),
+        operation_id: format!("fleet-op-release-{incident_prefix}"),
         action_type: "release".to_string(),
         success: true,
         receipt: DecisionReceipt {
-            receipt_id: format!("rcpt-release-{}", utf8_prefix(&trace.trace_id, 8)),
+            receipt_id: format!("rcpt-release-{incident_prefix}"),
             issuer: identity.principal.clone(),
             issued_at: chrono::Utc::now().to_rfc3339(),
             zone_id: "pending-lookup".to_string(),
-            payload_hash: "0000000000000000".to_string(),
+            payload_hash,
         },
         convergence: None,
         trace_id: trace.trace_id.clone(),
@@ -934,18 +945,14 @@ pub fn handle_release(
 
 pub fn handle_status(
     _identity: &AuthIdentity,
-    _trace: &TraceContext,
+    trace: &TraceContext,
     zone_id: &str,
 ) -> Result<ApiResponse<FleetStatus>, ApiError> {
-    let status = FleetStatus {
-        zone_id: zone_id.to_string(),
-        active_quarantines: 0,
-        active_revocations: 0,
-        healthy_nodes: 0,
-        total_nodes: 0,
-        activated: true,
-        pending_convergences: Vec::new(),
-    };
+    let mgr = FleetControlManager::new();
+    let status = mgr.status(zone_id).map_err(|e| ApiError::BadRequest {
+        detail: format!("{}: {}", e.error_code(), "status failed"),
+        trace_id: trace.trace_id.clone(),
+    })?;
     Ok(ApiResponse {
         ok: true,
         data: status,
@@ -1569,6 +1576,17 @@ mod tests {
             handle_status(&admin_identity(), &test_trace(), "zone-1").expect("handle status");
         assert!(result.ok);
         assert_eq!(result.data.zone_id, "zone-1");
+        assert!(!result.data.activated);
+    }
+
+    #[test]
+    fn handle_status_rejects_empty_zone() {
+        let err = handle_status(&admin_identity(), &test_trace(), "").expect_err("empty zone");
+        let detail = match err {
+            ApiError::BadRequest { detail, .. } => detail,
+            other => panic!("unexpected error: {other:?}"),
+        };
+        assert!(detail.contains(FLEET_SCOPE_INVALID));
     }
 
     #[test]
@@ -1587,11 +1605,11 @@ mod tests {
             trace_flags: 1,
         };
         let request = ReleaseRequest {
-            incident_id: "inc-1".to_string(),
+            incident_id: "🔥incident-with-unicode🔥".to_string(),
         };
 
         let result = handle_release(&identity, &trace, &request).expect("release");
-        let expected: String = trace.trace_id.chars().take(8).collect();
+        let expected: String = request.incident_id.chars().take(16).collect();
         assert_eq!(
             result.data.operation_id,
             format!("fleet-op-release-{expected}")
@@ -1600,6 +1618,21 @@ mod tests {
             result.data.receipt.receipt_id,
             format!("rcpt-release-{expected}")
         );
+    }
+
+    #[test]
+    fn handle_release_rejects_empty_incident_id() {
+        let identity = admin_identity();
+        let trace = test_trace();
+        let request = ReleaseRequest {
+            incident_id: "   ".to_string(),
+        };
+        let err = handle_release(&identity, &trace, &request).expect_err("empty incident");
+        let detail = match err {
+            ApiError::BadRequest { detail, .. } => detail,
+            other => panic!("unexpected error: {other:?}"),
+        };
+        assert!(detail.contains(FLEET_SCOPE_INVALID));
     }
 
     // ── Serde round-trip tests ────────────────────────────────────────────
