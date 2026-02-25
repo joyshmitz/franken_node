@@ -774,8 +774,9 @@ exit 0
 
 /// Format a Unix timestamp as ISO 8601.
 fn format_iso_timestamp(secs: u64) -> String {
-    // Simple UTC formatting without chrono dependency in this module.
-    format!("{}Z", secs)
+    chrono::DateTime::from_timestamp(secs as i64, 0)
+        .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+        .unwrap_or_else(|| format!("{secs}Z"))
 }
 
 /// Compute a deterministic hash of the report (excluding the hash field itself).

@@ -1053,7 +1053,9 @@ fn sorted_dependencies(mut dependencies: Vec<DependencyTrustStatus>) -> Vec<Depe
 }
 
 fn timestamp_from_secs(timestamp_secs: u64) -> String {
-    format!("{timestamp_secs}Z")
+    chrono::DateTime::from_timestamp(timestamp_secs as i64, 0)
+        .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+        .unwrap_or_else(|| format!("{timestamp_secs}Z"))
 }
 
 fn canonicalize_value(value: Value) -> Value {
