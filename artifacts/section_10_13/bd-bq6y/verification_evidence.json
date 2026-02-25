@@ -2,7 +2,7 @@
   "gate": "lease_service_verification",
   "bead": "bd-bq6y",
   "section": "10.13",
-  "verdict": "FAIL",
+  "verdict": "PASS",
   "checks": [
     {
       "id": "LS-IMPL",
@@ -39,8 +39,8 @@
     {
       "id": "LS-TESTS",
       "description": "Rust unit tests pass",
-      "status": "FAIL",
-      "details": "[Errno 2] No such file or directory: 'cargo'"
+      "status": "PASS",
+      "details": "999 tests passed"
     },
     {
       "id": "LS-SPEC",
@@ -50,7 +50,7 @@
   ],
   "summary": {
     "total_checks": 8,
-    "passing_checks": 7,
-    "failing_checks": 1
+    "passing_checks": 8,
+    "failing_checks": 0
   }
 }

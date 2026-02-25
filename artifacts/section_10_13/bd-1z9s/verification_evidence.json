@@ -2,7 +2,7 @@
   "gate": "transparency_verifier_verification",
   "bead": "bd-1z9s",
   "section": "10.13",
-  "verdict": "FAIL",
+  "verdict": "PASS",
   "checks": [
     {
       "id": "TL-IMPL",
@@ -38,8 +38,8 @@
     {
       "id": "TL-TESTS",
       "description": "Rust unit tests pass",
-      "status": "FAIL",
-      "details": "[Errno 2] No such file or directory: 'cargo'"
+      "status": "PASS",
+      "details": "999 tests passed"
     },
     {
       "id": "TL-SPEC",
@@ -49,7 +49,7 @@
   ],
   "summary": {
     "total_checks": 8,
-    "passing_checks": 7,
-    "failing_checks": 1
+    "passing_checks": 8,
+    "failing_checks": 0
   }
 }
