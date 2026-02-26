@@ -528,14 +528,15 @@ impl EpochTransitionBarrier {
         }
 
         // Validate target epoch is current + 1
-        if target_epoch != current_epoch + 1 {
+        let expected_epoch = current_epoch.saturating_add(1);
+        if target_epoch != expected_epoch {
             return Err(BarrierError::EpochMismatch {
-                expected: current_epoch + 1,
+                expected: expected_epoch,
                 provided: target_epoch,
             });
         }
 
-        self.barrier_counter += 1;
+        self.barrier_counter = self.barrier_counter.saturating_add(1);
         let barrier_id = format!("barrier-{:06}", self.barrier_counter);
 
         let mut transcript = BarrierTranscript::new(

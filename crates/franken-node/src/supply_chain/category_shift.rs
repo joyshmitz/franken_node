@@ -400,7 +400,7 @@ impl ReportingPipeline {
         let mut bet_status = self.bet_entries.clone();
         bet_status.sort_by(|a, b| a.initiative_id.cmp(&b.initiative_id));
 
-        let version = self.history.len() as u64 + 1;
+        let version = (self.history.len() as u64).saturating_add(1);
 
         let mut report = CategoryShiftReport {
             version,

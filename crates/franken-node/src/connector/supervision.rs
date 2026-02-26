@@ -441,7 +441,7 @@ impl Supervisor {
             });
 
             // INV-SUP-ESCALATION-BOUNDED: check escalation depth.
-            self.escalation_depth += 1;
+            self.escalation_depth = self.escalation_depth.saturating_add(1);
             if self.escalation_depth > self.max_escalation_depth {
                 self.events.push(SupervisionEvent::Escalation {
                     depth: self.escalation_depth,

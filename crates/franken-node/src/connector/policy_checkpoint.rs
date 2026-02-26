@@ -354,7 +354,7 @@ impl PolicyCheckpointChain {
 
         self.checkpoints.push(checkpoint);
         self.head_hash = Some(checkpoint_hash);
-        self.next_seq = sequence + 1;
+        self.next_seq = sequence.saturating_add(1);
 
         self.events.push(CheckpointChainEvent {
             event_code: event_codes::PCK_001_CHECKPOINT_CREATED.to_string(),
@@ -436,7 +436,7 @@ impl PolicyCheckpointChain {
 
         self.checkpoints.push(checkpoint);
         self.head_hash = Some(hash);
-        self.next_seq = seq + 1;
+        self.next_seq = seq.saturating_add(1);
 
         self.events.push(CheckpointChainEvent {
             event_code: event_codes::PCK_001_CHECKPOINT_CREATED.to_string(),

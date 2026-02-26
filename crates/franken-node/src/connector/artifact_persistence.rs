@@ -251,7 +251,8 @@ impl ArtifactStore {
             .entry(artifact_type)
             .or_default()
             .push(artifact_id.to_string());
-        self.next_sequence.insert(artifact_type, seq + 1);
+        self.next_sequence
+            .insert(artifact_type, seq.saturating_add(1));
 
         Ok(PersistenceResult {
             artifact_id: artifact_id.to_string(),

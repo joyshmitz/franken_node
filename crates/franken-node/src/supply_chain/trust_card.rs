@@ -285,7 +285,7 @@ impl TrustCardRegistry {
             .get(&extension_id)
             .and_then(|history| history.last());
         let previous_hash = previous.map(|card| card.card_hash.clone());
-        let next_version = previous.map_or(1, |card| card.trust_card_version + 1);
+        let next_version = previous.map_or(1, |card| card.trust_card_version.saturating_add(1));
 
         let mut card = TrustCard {
             schema_version: "1.0.0".to_string(),
@@ -357,7 +357,7 @@ impl TrustCardRegistry {
             .clone();
 
         let mut next = latest.clone();
-        next.trust_card_version = latest.trust_card_version + 1;
+        next.trust_card_version = latest.trust_card_version.saturating_add(1);
         next.previous_version_hash = Some(latest.card_hash.clone());
         if let Some(level) = mutation.certification_level {
             next.certification_level = level;
