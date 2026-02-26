@@ -165,6 +165,168 @@ fn incident_bundle_output_path(incident_id: &str) -> PathBuf {
     PathBuf::from(format!("{}.fnbundle", slug))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IncidentListEntry {
+    incident_id: String,
+    severity: String,
+    event_count: usize,
+    created_at: String,
+    path: String,
+}
+
+fn normalize_incident_severity_label(raw: &str) -> Option<&'static str> {
+    let normalized = raw.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "low" => Some("low"),
+        "medium" => Some("medium"),
+        "high" => Some("high"),
+        "critical" => Some("critical"),
+        "unknown" => Some("unknown"),
+        _ => None,
+    }
+}
+
+fn parse_incident_severity_filter(raw: Option<&str>) -> Result<Option<String>> {
+    raw.map(|value| {
+        normalize_incident_severity_label(value)
+            .map(str::to_string)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "invalid --severity `{value}`; expected one of: low, medium, high, critical, unknown"
+                )
+            })
+    })
+    .transpose()
+}
+
+fn should_skip_bundle_scan_dir(path: &Path) -> bool {
+    path.file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .is_some_and(|name| {
+            matches!(
+                name,
+                ".git" | ".beads" | "target" | "node_modules" | ".venv" | ".next"
+            )
+        })
+}
+
+fn collect_incident_bundle_paths(root: &Path) -> Result<Vec<PathBuf>> {
+    let mut bundles = Vec::new();
+    let mut pending = vec![root.to_path_buf()];
+
+    while let Some(dir) = pending.pop() {
+        let entries = std::fs::read_dir(&dir)
+            .with_context(|| format!("failed reading directory {}", dir.display()))?;
+        for entry in entries {
+            let entry = entry
+                .with_context(|| format!("failed reading entry in {}", dir.display()))?;
+            let path = entry.path();
+            if path.is_dir() {
+                if should_skip_bundle_scan_dir(&path) {
+                    continue;
+                }
+                pending.push(path);
+                continue;
+            }
+            if path.is_file()
+                && path
+                    .extension()
+                    .and_then(std::ffi::OsStr::to_str)
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("fnbundle"))
+            {
+                bundles.push(path);
+            }
+        }
+    }
+
+    bundles.sort();
+    Ok(bundles)
+}
+
+fn infer_incident_bundle_severity(bundle: &tools::replay_bundle::ReplayBundle) -> String {
+    for event in &bundle.timeline {
+        let candidate = event
+            .payload
+            .get("severity")
+            .and_then(serde_json::Value::as_str)
+            .or_else(|| event.payload.get("risk").and_then(serde_json::Value::as_str))
+            .or_else(|| {
+                event
+                    .payload
+                    .get("risk_level")
+                    .and_then(serde_json::Value::as_str)
+            });
+
+        if let Some(label) = candidate
+            && let Some(normalized) = normalize_incident_severity_label(label)
+        {
+            return normalized.to_string();
+        }
+    }
+    "unknown".to_string()
+}
+
+fn collect_incident_list_entries(
+    root: &Path,
+    severity_filter: Option<&str>,
+) -> Result<Vec<IncidentListEntry>> {
+    let mut entries = Vec::new();
+
+    for path in collect_incident_bundle_paths(root)? {
+        let bundle = read_bundle_from_path(&path)
+            .with_context(|| format!("failed reading incident bundle {}", path.display()))?;
+        let severity = infer_incident_bundle_severity(&bundle);
+        if let Some(filter) = severity_filter
+            && severity != filter
+        {
+            continue;
+        }
+        let display_path = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+        entries.push(IncidentListEntry {
+            incident_id: bundle.incident_id,
+            severity,
+            event_count: bundle.manifest.event_count,
+            created_at: bundle.created_at,
+            path: display_path,
+        });
+    }
+
+    entries.sort_by(|left, right| {
+        left.incident_id
+            .cmp(&right.incident_id)
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    Ok(entries)
+}
+
+fn render_incident_list(entries: &[IncidentListEntry], severity_filter: Option<&str>) -> String {
+    if entries.is_empty() {
+        return match severity_filter {
+            Some(filter) => format!("incident list: no bundles found for severity={filter}"),
+            None => "incident list: no bundles found".to_string(),
+        };
+    }
+
+    let mut lines = Vec::new();
+    lines.push(format!("incident list: count={}", entries.len()));
+    if let Some(filter) = severity_filter {
+        lines.push(format!("severity_filter={filter}"));
+    }
+    lines.push("incident_id | severity | events | created_at | path".to_string());
+    lines.push("----------- | -------- | ------ | ---------- | ----".to_string());
+    for entry in entries {
+        lines.push(format!(
+            "{} | {} | {} | {} | {}",
+            entry.incident_id, entry.severity, entry.event_count, entry.created_at, entry.path
+        ));
+    }
+    lines.join("\n")
+}
+
 fn now_unix_secs() -> u64 {
     let ts = chrono::Utc::now().timestamp();
     if ts <= 0 { 0 } else { ts as u64 }
@@ -218,6 +380,31 @@ fn parse_profile_override(raw: Option<&str>) -> Result<Option<Profile>> {
             .map_err(|err| anyhow::anyhow!(err.to_string()))
     })
     .transpose()
+}
+
+fn emit_migration_audit_report(rendered: &str, out_path: Option<&Path>) -> Result<Option<PathBuf>> {
+    if let Some(out_path) = out_path {
+        if let Some(parent) = out_path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "failed creating migrate audit output directory {}",
+                    parent.display()
+                )
+            })?;
+        }
+        std::fs::write(out_path, rendered.as_bytes()).with_context(|| {
+            format!(
+                "failed writing migrate audit report to {}",
+                out_path.display()
+            )
+        })?;
+        return Ok(Some(out_path.to_path_buf()));
+    }
+
+    println!("{rendered}");
+    Ok(None)
 }
 
 fn handle_bench_run(args: &cli::BenchRunArgs) -> Result<()> {
@@ -1778,6 +1965,25 @@ mod fleet_command_tests {
     }
 }
 
+#[cfg(test)]
+mod migrate_audit_output_tests {
+    use super::*;
+
+    #[test]
+    fn emit_migration_audit_report_writes_to_requested_path() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let output_path = temp.path().join("reports/migration/audit.txt");
+        let rendered = "migration-audit-report\nstatus: ok\n";
+
+        let written = emit_migration_audit_report(rendered, Some(&output_path)).expect("written");
+        assert_eq!(written, Some(output_path.clone()));
+        assert_eq!(
+            std::fs::read_to_string(&output_path).expect("read output"),
+            rendered
+        );
+    }
+}
+
 fn handle_remotecap_issue(args: &RemoteCapIssueArgs) -> Result<()> {
     let operations = args
         .scope
@@ -2632,26 +2838,9 @@ async fn main() -> Result<()> {
                 })?;
                 let rendered = migration::render_audit_report(&report, format)?;
 
-                if let Some(out_path) = args.out {
-                    if let Some(parent) = out_path.parent()
-                        && !parent.as_os_str().is_empty()
-                    {
-                        std::fs::create_dir_all(parent).with_context(|| {
-                            format!(
-                                "failed creating migrate audit output directory {}",
-                                parent.display()
-                            )
-                        })?;
-                    }
-                    std::fs::write(&out_path, rendered.as_bytes()).with_context(|| {
-                        format!(
-                            "failed writing migrate audit report to {}",
-                            out_path.display()
-                        )
-                    })?;
+                if let Some(out_path) = emit_migration_audit_report(&rendered, args.out.as_deref())?
+                {
                     eprintln!("migration audit report written: {}", out_path.display());
-                } else {
-                    println!("{rendered}");
                 }
             }
             MigrateCommand::Rewrite(args) => {
@@ -2908,8 +3097,14 @@ async fn main() -> Result<()> {
                 eprintln!("counterfactual output: {canonical}");
             }
             IncidentCommand::List(args) => {
-                eprintln!("franken-node incident list: severity={:?}", args.severity);
-                eprintln!("[not yet implemented]");
+                let severity_filter = parse_incident_severity_filter(args.severity.as_deref())?;
+                let cwd = std::env::current_dir()
+                    .context("failed resolving current working directory for incident list")?;
+                let entries = collect_incident_list_entries(&cwd, severity_filter.as_deref())?;
+                println!(
+                    "{}",
+                    render_incident_list(&entries, severity_filter.as_deref())
+                );
             }
         },
 

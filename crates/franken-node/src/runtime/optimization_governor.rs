@@ -738,7 +738,16 @@ impl OptimizationGovernor {
     pub fn export_decision_log_jsonl(&self) -> String {
         self.decision_log
             .iter()
-            .filter_map(|entry| serde_json::to_string(entry).ok())
+            .map(|entry| match serde_json::to_string(entry) {
+                Ok(line) => line,
+                Err(err) => serde_json::json!({
+                    "event_code": "GOV_EXPORT_SERIALIZE_ERROR",
+                    "seq": entry.seq,
+                    "proposal_id": entry.proposal_id,
+                    "detail": err.to_string(),
+                })
+                .to_string(),
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }

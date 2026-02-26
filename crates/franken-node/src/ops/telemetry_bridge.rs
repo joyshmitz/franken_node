@@ -57,8 +57,11 @@ impl TelemetryBridge {
             match line {
                 Ok(event_json) => {
                     let key = format!("telemetry_{}", uuid::Uuid::now_v7());
-                    if let Ok(mut db) = adapter.lock() {
-                        let _ = db.write(PersistenceClass::AuditLog, &key, event_json.as_bytes());
+                    if let Ok(mut db) = adapter.lock()
+                        && let Err(e) =
+                            db.write(PersistenceClass::AuditLog, &key, event_json.as_bytes())
+                    {
+                        eprintln!("Failed to persist audit telemetry event: {e}");
                     }
                 }
                 Err(e) => {

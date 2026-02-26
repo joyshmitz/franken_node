@@ -658,6 +658,37 @@ mod tests {
     }
 
     #[test]
+    fn render_text_report_contains_summary_and_findings() {
+        let report = MigrationAuditReport {
+            schema_version: "1.0.0".to_string(),
+            project_path: "/tmp/demo".to_string(),
+            generated_at_utc: "2026-02-26T00:00:00Z".to_string(),
+            summary: MigrationAuditSummary {
+                files_scanned: 3,
+                js_files: 2,
+                ts_files: 1,
+                package_manifests: 1,
+                risky_scripts: 1,
+                lockfiles: vec!["package-lock.json".to_string()],
+            },
+            findings: vec![MigrationAuditFinding {
+                id: "mig-audit-001".to_string(),
+                category: MigrationCategory::Scripts,
+                severity: MigrationSeverity::High,
+                message: "risky install/build script pattern detected in package.json".to_string(),
+                path: Some("package.json".to_string()),
+                recommendation: Some("Harden install scripts before rollout.".to_string()),
+            }],
+        };
+
+        let rendered = render_audit_report(&report, AuditOutputFormat::Text).expect("text");
+        assert!(rendered.contains("franken-node migrate audit"));
+        assert!(rendered.contains("summary: files=3 js=2 ts=1 manifests=1 lockfiles=1"));
+        assert!(rendered.contains("- [mig-audit-001:high]"));
+        assert!(rendered.contains("recommendation: Harden install scripts before rollout."));
+    }
+
+    #[test]
     fn render_sarif_emits_findings() {
         let report = MigrationAuditReport {
             schema_version: "1.0.0".to_string(),
