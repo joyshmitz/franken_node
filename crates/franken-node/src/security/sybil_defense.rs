@@ -408,7 +408,7 @@ impl StakeWeighter {
 
         let pairs = self.apply_weights(signals, nodes);
         let total_weight: f64 = pairs.iter().map(|(_, w)| w).sum();
-        if total_weight == 0.0 {
+        if total_weight.abs() < f64::EPSILON {
             return Err(SybilDefenseError::aggregation_failed(
                 "total weight is zero",
             ));

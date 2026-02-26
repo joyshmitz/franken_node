@@ -620,12 +620,12 @@ impl SessionManager {
         match direction {
             MessageDirection::Send => {
                 if sequence >= session_mut.send_seq {
-                    session_mut.send_seq = sequence + 1;
+                    session_mut.send_seq = sequence.saturating_add(1);
                 }
             }
             MessageDirection::Receive => {
                 if sequence >= session_mut.recv_seq {
-                    session_mut.recv_seq = sequence + 1;
+                    session_mut.recv_seq = sequence.saturating_add(1);
                 }
             }
         }
