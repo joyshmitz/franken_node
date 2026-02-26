@@ -2622,12 +2622,37 @@ async fn main() -> Result<()> {
 
         Command::Migrate(sub) => match sub {
             MigrateCommand::Audit(args) => {
-                eprintln!(
-                    "franken-node migrate audit: project={} format={}",
-                    args.project_path.display(),
-                    args.format
-                );
-                eprintln!("[not yet implemented]");
+                let format = migration::AuditOutputFormat::parse(&args.format)
+                    .map_err(|err| anyhow::anyhow!(err))?;
+                let report = migration::run_audit(&args.project_path).with_context(|| {
+                    format!(
+                        "failed running migration audit for {}",
+                        args.project_path.display()
+                    )
+                })?;
+                let rendered = migration::render_audit_report(&report, format)?;
+
+                if let Some(out_path) = args.out {
+                    if let Some(parent) = out_path.parent()
+                        && !parent.as_os_str().is_empty()
+                    {
+                        std::fs::create_dir_all(parent).with_context(|| {
+                            format!(
+                                "failed creating migrate audit output directory {}",
+                                parent.display()
+                            )
+                        })?;
+                    }
+                    std::fs::write(&out_path, rendered.as_bytes()).with_context(|| {
+                        format!(
+                            "failed writing migrate audit report to {}",
+                            out_path.display()
+                        )
+                    })?;
+                    eprintln!("migration audit report written: {}", out_path.display());
+                } else {
+                    println!("{rendered}");
+                }
             }
             MigrateCommand::Rewrite(args) => {
                 eprintln!(
