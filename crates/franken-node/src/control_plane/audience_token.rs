@@ -397,6 +397,17 @@ impl TokenChain {
             ));
         }
 
+        // Child must not be issued before parent.
+        if token.issued_at < parent.issued_at {
+            return Err(TokenError::new(
+                ERR_ABT_ATTENUATION_VIOLATION,
+                format!(
+                    "Delegated token issued_at {} is before parent's {}",
+                    token.issued_at, parent.issued_at
+                ),
+            ));
+        }
+
         // Validity window check.
         if !token.has_valid_window() {
             return Err(TokenError::new(
@@ -620,10 +631,9 @@ impl TokenValidator {
             return Err(err);
         }
 
-        // All checks passed: record all nonces and emit success event.
-        for token in tokens.iter() {
-            self.seen_nonces.insert(token.nonce.clone());
-        }
+        // All checks passed: record the leaf nonce and emit success event.
+        let leaf = chain.leaf().unwrap();
+        self.seen_nonces.insert(leaf.nonce.clone());
         self.tokens_verified += 1;
         self.events.push(TokenEvent {
             event_code: ABT_003.to_string(),
