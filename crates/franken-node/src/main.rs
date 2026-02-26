@@ -218,8 +218,8 @@ fn collect_incident_bundle_paths(root: &Path) -> Result<Vec<PathBuf>> {
         let entries = std::fs::read_dir(&dir)
             .with_context(|| format!("failed reading directory {}", dir.display()))?;
         for entry in entries {
-            let entry = entry
-                .with_context(|| format!("failed reading entry in {}", dir.display()))?;
+            let entry =
+                entry.with_context(|| format!("failed reading entry in {}", dir.display()))?;
             let path = entry.path();
             if path.is_dir() {
                 if should_skip_bundle_scan_dir(&path) {
@@ -249,7 +249,12 @@ fn infer_incident_bundle_severity(bundle: &tools::replay_bundle::ReplayBundle) -
             .payload
             .get("severity")
             .and_then(serde_json::Value::as_str)
-            .or_else(|| event.payload.get("risk").and_then(serde_json::Value::as_str))
+            .or_else(|| {
+                event
+                    .payload
+                    .get("risk")
+                    .and_then(serde_json::Value::as_str)
+            })
             .or_else(|| {
                 event
                     .payload
@@ -1980,6 +1985,71 @@ mod migrate_audit_output_tests {
         assert_eq!(
             std::fs::read_to_string(&output_path).expect("read output"),
             rendered
+        );
+    }
+}
+
+#[cfg(test)]
+mod incident_list_tests {
+    use super::*;
+
+    fn write_sample_bundle(path: &Path, incident_id: &str, severity: &str) {
+        let mut events = sample_incident_events(incident_id);
+        if let Some(first) = events.first_mut()
+            && let Some(payload) = first.payload.as_object_mut()
+        {
+            payload.insert("severity".to_string(), serde_json::json!(severity));
+        }
+        let bundle = generate_replay_bundle(incident_id, &events).expect("bundle");
+        write_bundle_to_path(&bundle, path).expect("write bundle");
+    }
+
+    #[test]
+    fn parse_incident_severity_filter_accepts_case_insensitive_input() {
+        assert_eq!(
+            parse_incident_severity_filter(Some("High")).expect("parse"),
+            Some("high".to_string())
+        );
+        assert_eq!(
+            parse_incident_severity_filter(Some("unknown")).expect("parse"),
+            Some("unknown".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_incident_severity_filter_rejects_unknown_values() {
+        let err = parse_incident_severity_filter(Some("severe")).expect_err("must fail");
+        assert!(err.to_string().contains(
+            "invalid --severity `severe`; expected one of: low, medium, high, critical, unknown"
+        ));
+    }
+
+    #[test]
+    fn collect_incident_list_entries_filters_by_severity() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        let nested = root.join("incidents");
+        std::fs::create_dir_all(&nested).expect("create nested dir");
+
+        write_sample_bundle(&root.join("high-incident.fnbundle"), "INC-HIGH-001", "high");
+        write_sample_bundle(&nested.join("low-incident.fnbundle"), "INC-LOW-001", "low");
+
+        let all = collect_incident_list_entries(root, None).expect("all entries");
+        assert_eq!(all.len(), 2);
+
+        let high = collect_incident_list_entries(root, Some("high")).expect("high entries");
+        assert_eq!(high.len(), 1);
+        assert_eq!(high[0].incident_id, "INC-HIGH-001");
+        assert_eq!(high[0].severity, "high");
+        assert!(high[0].path.ends_with("high-incident.fnbundle"));
+    }
+
+    #[test]
+    fn render_incident_list_handles_empty_results() {
+        let rendered = render_incident_list(&[], Some("critical"));
+        assert_eq!(
+            rendered,
+            "incident list: no bundles found for severity=critical"
         );
     }
 }
