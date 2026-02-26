@@ -87,7 +87,8 @@ impl LockstepHarness {
         // Run the cross-runtime check
         let check_id = format!("check-{}", uuid::Uuid::now_v7());
         // Simple heuristic: passing the source code as input payload for auditing
-        let input_payload = std::fs::read(app_path).unwrap_or_default();
+        let input_payload = std::fs::read(app_path)
+            .map_err(|e| anyhow::anyhow!("Failed to read app payload for auditing: {}", e))?;
 
         let check = oracle
             .run_cross_check(
@@ -214,7 +215,8 @@ impl LockstepHarness {
         // Append deterministic strace output to detect behavioral divergences
         combined_output.extend_from_slice(b"\n--- SYSTEM CALL BOUNDARIES ---\n");
         if Path::new(&strace_output_file).exists() {
-            let strace_content = std::fs::read(&strace_output_file).unwrap_or_default();
+            let strace_content = std::fs::read(&strace_output_file)
+                .map_err(|e| anyhow::anyhow!("Failed to read strace output: {}", e))?;
             // Filter out non-deterministic pointers/PIDs from strace output using simple heuristics
             // so we don't get false positive divergences for different runtimes doing the same thing.
             let deterministic_strace = Self::sanitize_strace_output(&strace_content);
