@@ -306,7 +306,10 @@ pub fn compare_actions(
 }
 
 fn perturb_probabilities(base: &[f64], index: usize, delta: f64) -> Option<Vec<f64>> {
-    if base.len() <= 1 {
+    if base.is_empty() {
+        return None;
+    }
+    if base.len() == 1 {
         return if (delta.abs() <= PROBABILITY_SUM_EPSILON)
             || (base[0] + delta - 1.0).abs() <= PROBABILITY_SUM_EPSILON
         {

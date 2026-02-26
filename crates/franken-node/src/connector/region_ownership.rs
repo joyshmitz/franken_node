@@ -428,7 +428,10 @@ impl Region {
                 TaskState::Completed => {
                     tasks_drained += 1;
                 }
-                _ => {}
+                TaskState::ForceTerminated => {
+                    tasks_force_terminated += 1;
+                }
+                TaskState::Running => {} // not yet draining; handled by next drain cycle
             }
         }
 

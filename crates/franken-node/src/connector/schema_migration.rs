@@ -166,6 +166,9 @@ impl MigrationRegistry {
     }
 
     pub fn register(&mut self, hint: MigrationHint) {
+        if hint.from_version == hint.to_version {
+            return; // self-loops are no-ops in BFS and waste exploration
+        }
         self.hints.push(hint);
     }
 
@@ -180,13 +183,13 @@ impl MigrationRegistry {
             return Ok(Vec::new());
         }
 
-        let mut queue: Vec<(SchemaVersion, Vec<MigrationHint>)> = vec![(from.clone(), Vec::new())];
+        let mut queue: std::collections::VecDeque<(SchemaVersion, Vec<MigrationHint>)> =
+            std::collections::VecDeque::new();
+        queue.push_back((from.clone(), Vec::new()));
         let mut visited = std::collections::BTreeSet::new();
         visited.insert(from.clone());
 
-        while let Some((current, path)) = queue.first().cloned() {
-            queue.remove(0);
-
+        while let Some((current, path)) = queue.pop_front() {
             for hint in &self.hints {
                 if hint.from_version == current && !visited.contains(&hint.to_version) {
                     let mut new_path = path.clone();
@@ -197,7 +200,7 @@ impl MigrationRegistry {
                     }
 
                     visited.insert(hint.to_version.clone());
-                    queue.push((hint.to_version.clone(), new_path));
+                    queue.push_back((hint.to_version.clone(), new_path));
                 }
             }
         }

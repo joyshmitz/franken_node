@@ -463,7 +463,12 @@ impl BocpdDetector {
                 ObservationModel::Gaussian(m) => m.predictive_prob(&self.gaussian_stats[r], x),
                 ObservationModel::Poisson(m) => m.predictive_prob(&self.poisson_stats[r], x),
                 ObservationModel::Categorical(m) => {
-                    m.predictive_prob(&self.categorical_stats[r], x as usize)
+                    let cat = if x < 0.0 || x.is_nan() {
+                        usize::MAX
+                    } else {
+                        x as usize
+                    };
+                    m.predictive_prob(&self.categorical_stats[r], cat)
                 }
             };
         }
