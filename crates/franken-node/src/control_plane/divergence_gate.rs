@@ -1024,14 +1024,11 @@ mod tests {
         let mut gate = ControlPlaneDivergenceGate::new("test");
         let (local, remote) = forked_pair();
         gate.check_propagation(&local, &remote, 2000, "trace-1");
-        let result = gate.check_mutation(&MutationKind::TokenIssuance, 2001, "trace-2");
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            DivergenceGateError::DivergenceBlock { mutation_kind, .. } => {
-                assert_eq!(mutation_kind, "token_issuance")
-            }
-            _ => panic!("expected DivergenceBlock"),
-        }
+        let err = gate.check_mutation(&MutationKind::TokenIssuance, 2001, "trace-2").unwrap_err();
+        assert!(matches!(
+            err,
+            DivergenceGateError::DivergenceBlock { ref mutation_kind, .. } if mutation_kind == "token_issuance"
+        ));
     }
 
     #[test]
@@ -1212,12 +1209,8 @@ mod tests {
         gate.check_propagation(&local, &remote, 2000, "trace-1");
         let mut auth = OperatorAuthorization::new("operator-1", 9, 2001, "fix", b"test-key");
         auth.authorization_hash = "tampered".to_string();
-        let result = gate.respond_recover(&auth, b"test-key", 10, 2001, "trace-2");
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            DivergenceGateError::UnauthorizedRecovery { .. } => {}
-            _ => panic!("expected UnauthorizedRecovery"),
-        }
+        let err = gate.respond_recover(&auth, b"test-key", 10, 2001, "trace-2").unwrap_err();
+        assert!(matches!(err, DivergenceGateError::UnauthorizedRecovery { .. }));
     }
 
     #[test]

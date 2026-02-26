@@ -460,19 +460,15 @@ mod tests {
         let mut gate = EvidenceReplayGate::new();
         let ev = make_evidence("d-001", DecisionType::Rollout, "proceed");
         let result = gate.replay_decision(&ev, "rollback", "2026-01-15T01:00:00Z");
-        match &result.verdict {
+        assert!(matches!(
+            result.verdict,
             ReplayVerdict::Diverged {
-                original_action,
-                replayed_action,
+                ref original_action,
+                ref replayed_action,
                 diff_size_bytes,
                 ..
-            } => {
-                assert_eq!(original_action, "proceed");
-                assert_eq!(replayed_action, "rollback");
-                assert!(*diff_size_bytes > 0);
-            }
-            _ => panic!("Expected Diverged verdict"),
-        }
+            } if original_action == "proceed" && replayed_action == "rollback" && diff_size_bytes > 0
+        ));
     }
 
     #[test]
