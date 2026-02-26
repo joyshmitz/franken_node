@@ -20,6 +20,8 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::security::constant_time::ct_eq;
+
 // ── Schema version ──────────────────────────────────────────────────────────
 
 /// Schema version for the VEF constraint compiler output format.
@@ -571,13 +573,13 @@ impl ConstraintCompiler {
         predicate_set: &PredicateSet,
     ) -> bool {
         let computed = self.compute_policy_hash(policy);
-        computed == predicate_set.policy_snapshot_hash
+        ct_eq(&computed, &predicate_set.policy_snapshot_hash)
     }
 
     /// Verify that a predicate expression matches its claimed hash.
     pub fn verify_predicate_integrity(&self, predicate: &Predicate) -> bool {
         let computed = self.sha256_hex(&predicate.expression);
-        computed == predicate.expression_hash
+        ct_eq(&computed, &predicate.expression_hash)
     }
 
     /// Perform a coverage check: returns the set of action classes NOT covered.

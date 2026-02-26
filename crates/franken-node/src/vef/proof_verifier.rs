@@ -13,6 +13,8 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+use crate::security::constant_time::ct_eq;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -451,7 +453,7 @@ impl ProofVerifier {
 
         // Check 6: Policy version binding
         let policy_version_satisfied = if self.config.enforce_policy_version {
-            proof.policy_version_hash == predicate.policy_version_hash
+            ct_eq(&proof.policy_version_hash, &predicate.policy_version_hash)
         } else {
             true
         };

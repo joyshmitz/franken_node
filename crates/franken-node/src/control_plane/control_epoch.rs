@@ -13,6 +13,19 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
+
+/// Constant-time string comparison (inline to avoid cross-crate path issues in test harnesses).
+fn ct_eq_inline(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut acc = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        acc |= x ^ y;
+    }
+    acc == 0
+}
 use std::fmt;
 
 /// Stable event codes for structured logging.
@@ -125,7 +138,7 @@ impl EpochTransition {
             &self.manifest_hash,
             &self.trace_id,
         );
-        self.event_mac == expected
+        ct_eq_inline(&self.event_mac, &expected)
     }
 }
 

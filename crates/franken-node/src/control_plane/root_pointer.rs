@@ -24,16 +24,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 fn constant_time_eq(a: &str, b: &str) -> bool {
-    let a_bytes = a.as_bytes();
-    let b_bytes = b.as_bytes();
-    if a_bytes.len() != b_bytes.len() {
-        return false;
-    }
-    let mut result = 0;
-    for (x, y) in a_bytes.iter().zip(b_bytes.iter()) {
-        result |= x ^ y;
-    }
-    result == 0
+    crate::security::constant_time::ct_eq(a, b)
 }
 
 /// RAII guard that removes a temp file on drop (unless defused after rename).

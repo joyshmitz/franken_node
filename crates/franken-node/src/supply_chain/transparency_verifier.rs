@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
 
+use crate::security::constant_time::ct_eq;
+
 // ── Hash helper ─────────────────────────────────────────────────────
 
 /// Compute a deterministic hash of two hex strings combined.
@@ -73,7 +75,9 @@ pub struct TransparencyPolicy {
 impl TransparencyPolicy {
     /// Check if a root hash is in the pinned set.
     pub fn is_root_pinned(&self, root_hash: &str) -> bool {
-        self.pinned_roots.iter().any(|r| r.root_hash == root_hash)
+        self.pinned_roots
+            .iter()
+            .any(|r| ct_eq(&r.root_hash, root_hash))
     }
 }
 
