@@ -409,6 +409,18 @@ pub fn verify_release(
         }
     }
 
+    // 4. Check for unlisted artifacts.
+    for name in artifacts.keys() {
+        if !manifest.entries.contains_key(name) {
+            results.push(ArtifactVerificationResult {
+                artifact_name: name.clone(),
+                passed: false,
+                key_id: manifest.key_id.0.clone(),
+                failure_reason: Some("unlisted artifact".into()),
+            });
+        }
+    }
+
     let overall_pass = manifest_ok && results.iter().all(|r| r.passed);
 
     VerificationReport {
@@ -740,9 +752,11 @@ mod tests {
 
         // The listed artifact should pass, but extra.bin is not in manifest.
         let report = verify_release(&manifest, &arts, &sigs, &ring);
-        // Overall still passes because we only check manifest entries.
-        // The caller should separately check for unlisted artifacts.
-        assert!(report.overall_pass);
+        // Overall should FAIL because extra.bin is injected unlisted malware.
+        assert!(!report.overall_pass);
+        assert!(
+            report.results.iter().any(|r| r.artifact_name == "extra.bin" && !r.passed)
+        );
     }
 
     #[test]
