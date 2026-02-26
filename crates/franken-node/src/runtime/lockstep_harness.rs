@@ -13,9 +13,8 @@ struct TempFileCleanup {
 
 impl Drop for TempFileCleanup {
     fn drop(&mut self) {
-        if Path::new(&self.path).exists() {
-            let _ = std::fs::remove_file(&self.path);
-        }
+        // Best-effort cleanup without an exists() pre-check to avoid TOCTOU races.
+        let _ = std::fs::remove_file(&self.path);
     }
 }
 
@@ -425,6 +424,19 @@ mod tests {
             let _cleanup = TempFileCleanup { path };
         }
         // Should not panic
+    }
+
+    #[test]
+    fn temp_file_cleanup_tolerates_file_removed_before_drop() {
+        let path = format!("/tmp/lockstep_test_race_{}", uuid::Uuid::now_v7());
+        std::fs::write(&path, b"test").expect("write temp");
+        let cleanup = TempFileCleanup { path: path.clone() };
+
+        // Simulate another actor deleting the file before cleanup drop executes.
+        std::fs::remove_file(&path).expect("remove temp before drop");
+        drop(cleanup);
+
+        assert!(!Path::new(&path).exists());
     }
 
     // ── sanitize_strace_output ───────────────────────────────────────

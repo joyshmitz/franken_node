@@ -830,9 +830,19 @@ impl TwoPhaseFlow {
             if let Some(o) = self.ledger.get(id)
                 && !o.status.is_terminal()
             {
-                let _ =
+                if let Err(e) =
                     self.ledger
-                        .update_status(id, ObligationStatus::Cancelled, now_ms, trace_id);
+                        .update_status(id, ObligationStatus::Cancelled, now_ms, trace_id)
+                {
+                    self.flow_audit_log.push(ChannelAuditRecord {
+                        event_code: event_codes::FN_OB_010.to_string(),
+                        obligation_id: id.clone(),
+                        status: "RollbackCancelFailed".to_string(),
+                        trace_id: trace_id.to_string(),
+                        schema_version: SCHEMA_VERSION.to_string(),
+                        detail: format!("rollback cancel failed for obligation {id}: {e:?}"),
+                    });
+                }
             }
         }
 
