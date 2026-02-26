@@ -646,7 +646,7 @@ impl EffectsFirewall {
         // Check extension registration.
         let ext_id = match &effect.origin {
             TrafficOrigin::Extension { extension_id } => extension_id.clone(),
-            _ => panic!(), // Already checked is_extension above.
+            _ => unreachable!("invariant: is_extension guard ensures Extension origin"),
         };
         if !self.policy.registered_extensions.contains(&ext_id) {
             return Err(FirewallError::ExtensionUnknown(ext_id));

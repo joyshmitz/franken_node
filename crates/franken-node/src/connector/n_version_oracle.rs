@@ -340,7 +340,7 @@ pub fn run_harness(
                 match div.risk_tier {
                     RiskTier::Medium => medium += 1,
                     RiskTier::Low => low += 1,
-                    _ => panic!(),
+                    _ => unreachable!("outer arm constrains to Medium|Low"),
                 }
                 match receipt_index.get(div.divergence_id.as_str()) {
                     Some(receipt) => {

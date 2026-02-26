@@ -1097,9 +1097,10 @@ impl HardwarePlanner {
     /// INV-HWP-DETERMINISTIC: deterministic selection using sorted IDs and
     /// stable comparison criteria.
     fn select_best(&self, candidates: &[String], policy: Option<&PlacementPolicy>) -> String {
-        if candidates.is_empty() {
-            panic!("select_best called with empty candidates");
-        }
+        assert!(
+            !candidates.is_empty(),
+            "select_best: invariant violated — candidates must be non-empty"
+        );
         if candidates.len() == 1 {
             return candidates[0].clone();
         }
