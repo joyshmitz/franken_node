@@ -2,7 +2,7 @@
   "bead_id": "bd-tyr2",
   "section": "10.15",
   "title": "Control-Plane Evidence Replay Gate",
-  "timestamp": "2026-02-26T01:26:26.367442+00:00",
+  "timestamp": "2026-02-26T22:15:20.407375+00:00",
   "overall_pass": true,
   "checks": {
     "files": {
@@ -14,7 +14,7 @@
       "rust_impl": {
         "path": "crates/franken-node/src/control_plane/evidence_replay_gate.rs",
         "exists": true,
-        "size_bytes": 22887
+        "size_bytes": 22774
       },
       "mod_rs": {
         "path": "crates/franken-node/src/control_plane/mod.rs",

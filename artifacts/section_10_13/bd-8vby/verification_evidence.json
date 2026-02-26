@@ -2,7 +2,7 @@
   "gate": "device_profile_verification",
   "bead": "bd-8vby",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "DPR-IMPL",
@@ -28,8 +28,8 @@
     {
       "id": "DPR-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "21 tests passed"
+      "status": "FAIL",
+      "details": "0 tests passed"
     },
     {
       "id": "DPR-SPEC",
@@ -39,7 +39,7 @@
   ],
   "summary": {
     "total_checks": 6,
-    "passing_checks": 6,
-    "failing_checks": 0
+    "passing_checks": 5,
+    "failing_checks": 1
   }
 }

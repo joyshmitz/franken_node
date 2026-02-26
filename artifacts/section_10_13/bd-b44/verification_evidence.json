@@ -46,7 +46,7 @@
       "id": "MIGRATE-TESTS",
       "description": "Rust unit tests pass",
       "status": "FAIL",
-      "details": "[Errno 2] No such file or directory: 'cargo'"
+      "details": "0 tests passed"
     },
     {
       "id": "MIGRATE-SPEC",

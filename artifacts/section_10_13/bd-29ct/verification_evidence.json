@@ -2,7 +2,7 @@
   "gate": "fuzz_corpus_verification",
   "bead": "bd-29ct",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "FCG-IMPL",
@@ -28,8 +28,8 @@
     {
       "id": "FCG-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "11 tests passed"
+      "status": "FAIL",
+      "details": "0 tests passed"
     },
     {
       "id": "FCG-SPEC",
@@ -39,7 +39,7 @@
   ],
   "summary": {
     "total_checks": 6,
-    "passing_checks": 6,
-    "failing_checks": 0
+    "passing_checks": 5,
+    "failing_checks": 1
   }
 }

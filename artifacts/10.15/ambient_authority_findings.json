@@ -40,7 +40,7 @@
     {
       "module_path": "crates/franken-node/src/connector/rollout_state.rs",
       "ambient_api": "std::fs",
-      "line": 321,
+      "line": 332,
       "callsite": "std::fs::write(&tmp_path, &json).map_err(|e| PersistError::IoError {",
       "status": "allowlisted",
       "allowlist_entry_id": "AAL-002",
@@ -49,7 +49,7 @@
     {
       "module_path": "crates/franken-node/src/connector/rollout_state.rs",
       "ambient_api": "std::fs",
-      "line": 324,
+      "line": 335,
       "callsite": "std::fs::rename(&tmp_path, path).map_err(|e| PersistError::IoError {",
       "status": "allowlisted",
       "allowlist_entry_id": "AAL-002",
@@ -58,7 +58,7 @@
     {
       "module_path": "crates/franken-node/src/connector/rollout_state.rs",
       "ambient_api": "std::fs",
-      "line": 333,
+      "line": 344,
       "callsite": "let content = std::fs::read_to_string(path).map_err(|e| PersistError::IoError {",
       "status": "allowlisted",
       "allowlist_entry_id": "AAL-002",
@@ -515,21 +515,21 @@
     {
       "module_path": "crates/franken-node/src/connector/rollout_state.rs",
       "ambient_api": "std::fs",
-      "line": 321,
+      "line": 332,
       "event_code": "AMB-003",
       "message": "allowlist exception AAL-002 applied"
     },
     {
       "module_path": "crates/franken-node/src/connector/rollout_state.rs",
       "ambient_api": "std::fs",
-      "line": 324,
+      "line": 335,
       "event_code": "AMB-003",
       "message": "allowlist exception AAL-002 applied"
     },
     {
       "module_path": "crates/franken-node/src/connector/rollout_state.rs",
       "ambient_api": "std::fs",
-      "line": 333,
+      "line": 344,
       "event_code": "AMB-003",
       "message": "allowlist exception AAL-002 applied"
     },
