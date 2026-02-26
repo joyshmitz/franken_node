@@ -387,25 +387,29 @@ fn parse_profile_override(raw: Option<&str>) -> Result<Option<Profile>> {
     .transpose()
 }
 
-fn emit_migration_audit_report(rendered: &str, out_path: Option<&Path>) -> Result<Option<PathBuf>> {
-    if let Some(out_path) = out_path {
-        if let Some(parent) = out_path.parent()
-            && !parent.as_os_str().is_empty()
-        {
-            std::fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "failed creating migrate audit output directory {}",
-                    parent.display()
-                )
-            })?;
-        }
-        std::fs::write(out_path, rendered.as_bytes()).with_context(|| {
+fn write_migration_report_file(
+    rendered: &str,
+    out_path: &Path,
+    report_label: &str,
+) -> Result<PathBuf> {
+    if let Some(parent) = out_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).with_context(|| {
             format!(
-                "failed writing migrate audit report to {}",
-                out_path.display()
+                "failed creating output directory {} for {report_label}",
+                parent.display()
             )
         })?;
-        return Ok(Some(out_path.to_path_buf()));
+    }
+    std::fs::write(out_path, rendered.as_bytes())
+        .with_context(|| format!("failed writing {report_label} to {}", out_path.display()))?;
+    Ok(out_path.to_path_buf())
+}
+
+fn emit_migration_audit_report(rendered: &str, out_path: Option<&Path>) -> Result<Option<PathBuf>> {
+    if let Some(out_path) = out_path {
+        return write_migration_report_file(rendered, out_path, "migrate audit report").map(Some);
     }
 
     println!("{rendered}");
@@ -2914,19 +2918,49 @@ async fn main() -> Result<()> {
                 }
             }
             MigrateCommand::Rewrite(args) => {
-                eprintln!(
-                    "franken-node migrate rewrite: project={} apply={}",
-                    args.project_path.display(),
-                    args.apply
-                );
-                eprintln!("[not yet implemented]");
+                let report =
+                    migration::run_rewrite(&args.project_path, args.apply).with_context(|| {
+                        format!(
+                            "failed running migration rewrite for {}",
+                            args.project_path.display()
+                        )
+                    })?;
+                println!("{}", migration::render_rewrite_report(&report));
+
+                if let Some(out_path) = args.emit_rollback.as_deref() {
+                    let rollback_plan = migration::build_rollback_plan(&report);
+                    let rollback_json =
+                        serde_json::to_string_pretty(&rollback_plan).with_context(|| {
+                            format!(
+                                "failed serializing migration rollback plan for {}",
+                                args.project_path.display()
+                            )
+                        })?;
+                    let written_path = write_migration_report_file(
+                        &rollback_json,
+                        out_path,
+                        "migration rollback artifact",
+                    )?;
+                    eprintln!(
+                        "migration rollback artifact written: {}",
+                        written_path.display()
+                    );
+                }
             }
             MigrateCommand::Validate(args) => {
-                eprintln!(
-                    "franken-node migrate validate: project={}",
-                    args.project_path.display()
-                );
-                eprintln!("[not yet implemented]");
+                let report = migration::run_validate(&args.project_path).with_context(|| {
+                    format!(
+                        "failed running migration validate for {}",
+                        args.project_path.display()
+                    )
+                })?;
+                println!("{}", migration::render_validate_report(&report));
+                if !report.is_pass() {
+                    anyhow::bail!(
+                        "migration validation failed for {}",
+                        args.project_path.display()
+                    );
+                }
             }
         },
 
