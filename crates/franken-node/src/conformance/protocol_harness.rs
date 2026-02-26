@@ -141,7 +141,7 @@ fn apply_override(
     let mut errors = Vec::new();
 
     // Check expiry
-    if current_time > policy.expires_at.as_str() {
+    if current_time >= policy.expires_at.as_str() {
         warn!(
             override_id = %policy.override_id,
             expires_at = %policy.expires_at,

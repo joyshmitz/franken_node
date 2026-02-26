@@ -467,20 +467,20 @@ impl TrustFabricNode {
     pub fn check_convergence(&mut self, now_ts: u64) {
         let lag = now_ts.saturating_sub(self.last_converged_ts);
 
-        if lag > self.config.convergence_lag_threshold && !self.degraded_mode {
+        if lag >= self.config.convergence_lag_threshold && !self.degraded_mode {
             self.degraded_mode = true;
             self.degraded_since = Some(now_ts);
             self.events.push(TrustFabricEvent {
                 code: EVT_DEGRADED_ENTERED.to_string(),
                 detail: format!(
-                    "lag={lag}s > threshold={}s",
+                    "lag={lag}s >= threshold={}s",
                     self.config.convergence_lag_threshold
                 ),
                 node_id: self.node_id.clone(),
             });
         }
 
-        if lag <= self.config.convergence_lag_threshold && self.degraded_mode {
+        if lag < self.config.convergence_lag_threshold && self.degraded_mode {
             self.degraded_mode = false;
             self.degraded_since = None;
             self.events.push(TrustFabricEvent {
@@ -493,7 +493,7 @@ impl TrustFabricNode {
         // Check escalation timeout.
         if let Some(since) = self.degraded_since {
             let degraded_duration = now_ts.saturating_sub(since);
-            if degraded_duration > self.config.max_degraded_secs {
+            if degraded_duration >= self.config.max_degraded_secs {
                 self.events.push(TrustFabricEvent {
                     code: EVT_CONVERGENCE_LAG.to_string(),
                     detail: format!(
@@ -616,8 +616,14 @@ impl TrustFabricFleet {
         for i in 0..node_ids.len() {
             let peer_idx = (i + 1) % node_ids.len();
             let peer_state = self.nodes[&node_ids[peer_idx]].state().clone();
-            if let Some(node) = self.nodes.get_mut(&node_ids[i]) {
-                let _ = node.receive_gossip(&peer_state);
+            if let Some(node) = self.nodes.get_mut(&node_ids[i])
+                && let Err(e) = node.receive_gossip(&peer_state)
+            {
+                node.events.push(TrustFabricEvent {
+                    code: "EVT_GOSSIP_FAILED".to_string(),
+                    detail: format!("gossip from {} failed: {}", node_ids[peer_idx], e),
+                    node_id: node.node_id.clone(),
+                });
             }
         }
     }

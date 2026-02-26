@@ -222,7 +222,7 @@ impl CancellationBudget {
 
     /// Check whether a given elapsed duration exceeds the budget.
     pub fn is_exceeded(&self, elapsed_ms: u64) -> bool {
-        elapsed_ms > self.timeout_ms
+        elapsed_ms >= self.timeout_ms
     }
 }
 
@@ -755,7 +755,7 @@ mod tests {
     fn budget_is_exceeded() {
         let b = CancellationBudget::new("test", 3000);
         assert!(!b.is_exceeded(2999));
-        assert!(!b.is_exceeded(3000));
+        assert!(b.is_exceeded(3000));
         assert!(b.is_exceeded(3001));
     }
 

@@ -322,7 +322,7 @@ impl VefDegradedModeEngine {
         let halt_slo = self.config.halt_slo();
 
         // Check halt first (heartbeat timeout OR SLO breach)
-        if metrics.heartbeat_age_secs > self.config.halt_heartbeat_timeout_secs
+        if metrics.heartbeat_age_secs >= self.config.halt_heartbeat_timeout_secs
             || halt_slo.breached_by(metrics)
         {
             return VefMode::Halt;
@@ -589,7 +589,7 @@ impl VefDegradedModeEngine {
         let slo = match target {
             VefMode::Halt => {
                 // Check heartbeat first
-                if metrics.heartbeat_age_secs > self.config.halt_heartbeat_timeout_secs {
+                if metrics.heartbeat_age_secs >= self.config.halt_heartbeat_timeout_secs {
                     return (
                         "heartbeat_age_secs",
                         metrics.heartbeat_age_secs as f64,

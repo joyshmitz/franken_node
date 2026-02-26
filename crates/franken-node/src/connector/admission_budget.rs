@@ -328,7 +328,7 @@ impl AdmissionBudgetTracker {
         }
 
         // Dimension 3: failed_auth (current count, no increment from request)
-        let auth_ok = usage.failed_auth_count < self.budget.max_failed_auth;
+        let auth_ok = usage.failed_auth_count <= self.budget.max_failed_auth;
         records.push(BudgetCheckRecord {
             peer_id: request.peer_id.clone(),
             timestamp: timestamp.to_string(),
@@ -552,8 +552,8 @@ mod tests {
     #[test]
     fn reject_failed_auth() {
         let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
-        // Exhaust failed auth budget
-        for _ in 0..3 {
+        // Exceed failed auth budget (max_failed_auth = 3, so 4th triggers rejection)
+        for _ in 0..4 {
             let _ = tracker.record_failed_auth("p1");
         }
         let req = request("p1", 10, 10, 10);
