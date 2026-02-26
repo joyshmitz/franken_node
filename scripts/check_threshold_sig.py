@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 """Verification script for bd-35q1: Threshold signature verification."""
 
 import json
@@ -33,7 +34,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/security/threshold_sig.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_config = "struct ThresholdConfig" in content
         has_artifact = "struct PublicationArtifact" in content
         has_result = "struct VerificationResult" in content
@@ -46,7 +47,7 @@ def main():
 
     # TS-QUORUM: Threshold quorum logic
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_threshold = "threshold" in content
         has_quorum = "valid_count >= config.threshold" in content or "valid_count" in content
         all_pass &= check("TS-QUORUM", "Quorum check against threshold", has_threshold and has_quorum)
@@ -55,7 +56,7 @@ def main():
 
     # TS-ERRORS: All 4 error codes
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         errors = ["THRESH_BELOW_QUORUM", "THRESH_UNKNOWN_SIGNER",
                   "THRESH_INVALID_SIG", "THRESH_CONFIG_INVALID"]
         found = [e for e in errors if e in content]
@@ -69,7 +70,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixture_path).read_text())
+            data = json.loads(Path(fixture_path).read_text())
             fixture_valid = "cases" in data and len(data["cases"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -80,7 +81,7 @@ def main():
     vectors_valid = False
     if os.path.isfile(vectors_path):
         try:
-            data = json.loads(__import__("pathlib").Path(vectors_path).read_text())
+            data = json.loads(Path(vectors_path).read_text())
             vectors_valid = "vectors" in data and len(data["vectors"]) >= 2
         except json.JSONDecodeError:
             pass
@@ -90,7 +91,7 @@ def main():
     sec_path = os.path.join(ROOT, "tests/security/threshold_signature_verification.rs")
     sec_exists = os.path.isfile(sec_path)
     if sec_exists:
-        content = __import__("pathlib").Path(sec_path).read_text()
+        content = Path(sec_path).read_text()
         has_quorum = "quorum" in content
         has_partial = "partial" in content
         has_duplicate = "duplicate" in content
@@ -101,16 +102,15 @@ def main():
 
     # TS-TESTS: Rust unit tests pass
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            [os.path.expanduser("~/.cargo/bin/cargo"), "test", "-p", "frankenengine-node", "--", "security::threshold_sig"],
+            capture_output=True, text=True, timeout=120,
+            cwd=os.path.join(ROOT, "crates/franken-node")
+        )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
         rust_tests = int(match.group(1)) if match else 0
-        tests_pass = True
-        rust_tests = 999
+        tests_pass = result.returncode == 0 and rust_tests > 0
         all_pass &= check("TS-TESTS", "Rust unit tests pass", tests_pass,
                           f"{rust_tests} tests passed")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
@@ -120,7 +120,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-35q1_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text()
+        content = Path(spec_path).read_text()
         has_invariants = "INV-THRESH" in content
         has_failure = "FailureReason" in content
     else:

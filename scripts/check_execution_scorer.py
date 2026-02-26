@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 """Verification script for bd-jxgt: Execution planner scorer."""
 
 import json
@@ -32,7 +33,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/execution_scorer.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_weights = "struct ScoringWeights" in content
         has_input = "struct CandidateInput" in content
         has_scored = "struct ScoredCandidate" in content
@@ -45,7 +46,7 @@ def main():
     all_pass &= check("EPS-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         errors = ["EPS_INVALID_WEIGHTS", "EPS_NO_CANDIDATES", "EPS_INVALID_INPUT", "EPS_SCORE_OVERFLOW"]
         found = [e for e in errors if e in content]
         all_pass &= check("EPS-ERRORS", "All 4 error codes present",
@@ -57,7 +58,7 @@ def main():
     fixtures_valid = False
     if os.path.isfile(fixtures_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixtures_path).read_text())
+            data = json.loads(Path(fixtures_path).read_text())
             fixtures_valid = "scenarios" in data and len(data["scenarios"]) >= 3
         except json.JSONDecodeError:
             pass
@@ -66,7 +67,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/execution_planner_determinism.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text()
+        content = Path(integ_path).read_text()
         has_det = "inv_eps_deterministic" in content
         has_tie = "inv_eps_tiebreak" in content
         has_exp = "inv_eps_explainable" in content
@@ -77,16 +78,15 @@ def main():
                        integ_exists and has_det and has_tie and has_exp and has_rej)
 
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            [os.path.expanduser("~/.cargo/bin/cargo"), "test", "--", "connector::execution_scorer"],
+            capture_output=True, text=True, timeout=120,
+            cwd=os.path.join(ROOT, "crates/franken-node")
+        )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
         rust_tests = int(match.group(1)) if match else 0
-        tests_pass = True
-        rust_tests = 999
+        tests_pass = result.returncode == 0 and rust_tests > 0
         all_pass &= check("EPS-TESTS", "Rust unit tests pass", tests_pass,
                           f"{rust_tests} tests passed")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
@@ -95,7 +95,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-jxgt_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text()
+        content = Path(spec_path).read_text()
         has_invariants = "INV-EPS" in content
         has_types = "ExecutionScorer" in content and "ScoringWeights" in content
     else:

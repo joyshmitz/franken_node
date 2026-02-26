@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 """Verification script for bd-29ct: Adversarial fuzz corpus gates."""
 
 import json
@@ -32,7 +33,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/fuzz_corpus.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_corpus = "struct FuzzCorpus" in content
         has_target = "struct FuzzTarget" in content
         has_verdict = "struct FuzzGateVerdict" in content
@@ -43,7 +44,7 @@ def main():
     all_pass &= check("FCG-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         errors = ["FCG_MISSING_TARGET", "FCG_INSUFFICIENT_CORPUS", "FCG_REGRESSION",
                   "FCG_UNTRIAGED_CRASH", "FCG_GATE_FAILED"]
         found = [e for e in errors if e in content]
@@ -56,7 +57,7 @@ def main():
     summary_valid = False
     if os.path.isfile(summary_path):
         try:
-            data = json.loads(__import__("pathlib").Path(summary_path).read_text())
+            data = json.loads(Path(summary_path).read_text())
             summary_valid = "targets" in data and len(data["targets"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -65,7 +66,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/fuzz_corpus_gates.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text()
+        content = Path(integ_path).read_text()
         has_targets = "inv_fcg_targets" in content
         has_corpus = "inv_fcg_corpus" in content
         has_triage = "inv_fcg_triage" in content
@@ -76,16 +77,15 @@ def main():
                        integ_exists and has_targets and has_corpus and has_triage and has_gate)
 
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            [os.path.expanduser("~/.cargo/bin/cargo"), "test", "--", "connector::fuzz_corpus"],
+            capture_output=True, text=True, timeout=120,
+            cwd=os.path.join(ROOT, "crates/franken-node")
+        )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
         rust_tests = int(match.group(1)) if match else 0
-        tests_pass = True
-        rust_tests = 999
+        tests_pass = result.returncode == 0 and rust_tests > 0
         all_pass &= check("FCG-TESTS", "Rust unit tests pass", tests_pass,
                           f"{rust_tests} tests passed")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
@@ -94,7 +94,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-29ct_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text()
+        content = Path(spec_path).read_text()
         has_invariants = "INV-FCG" in content
         has_types = "FuzzCorpus" in content or "FuzzTarget" in content
     else:

@@ -50,16 +50,14 @@ def _check(check_id: str, description: str, passed: bool, details: str | None = 
 
 def _run_rust_tests() -> bool:
     """GATE-RUST-UNIT: Run connector Rust unit tests via rch if available."""
-    cmd = ["cargo", "test", "--", "connector::"]
+    cmd = [os.path.expanduser("~/.cargo/bin/cargo"), "test", "--", "connector::"]
     rch = shutil.which("rch")
     if rch:
         cmd = [rch, "exec", "--"] + cmd
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=600, cwd=os.path.join(ROOT, "crates/franken-node"),
+        )
         test_output = result.stdout + result.stderr
         # Match both "ok" and "FAILED" result lines to capture total passing
         match = re.search(r"test result: (?:ok|FAILED)\. (\d+) passed", test_output)

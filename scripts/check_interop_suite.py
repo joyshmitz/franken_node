@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 """Verification script for bd-35by: Mandatory interop suites."""
 
 import json
@@ -32,7 +33,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/interop_suite.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_class = "enum InteropClass" in content
         has_result = "struct InteropResult" in content
         has_check = "fn check_serialization" in content
@@ -43,7 +44,7 @@ def main():
     all_pass &= check("IOP-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         errors = ["IOP_SERIALIZATION_MISMATCH", "IOP_OBJECT_ID_MISMATCH", "IOP_SIGNATURE_INVALID",
                   "IOP_REVOCATION_DISAGREEMENT", "IOP_SOURCE_DIVERSITY_INSUFFICIENT"]
         found = [e for e in errors if e in content]
@@ -56,7 +57,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixture_path).read_text())
+            data = json.loads(Path(fixture_path).read_text())
             fixture_valid = "test_vectors" in data and len(data["test_vectors"]) >= 5
         except json.JSONDecodeError:
             pass
@@ -65,7 +66,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/interop_mandatory_suites.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text()
+        content = Path(integ_path).read_text()
         has_ser = "inv_iop_serialization" in content
         has_oid = "inv_iop_object_id" in content
         has_sig = "inv_iop_signature" in content
@@ -77,16 +78,15 @@ def main():
                        integ_exists and has_ser and has_oid and has_sig and has_rev and has_sd)
 
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            [os.path.expanduser("~/.cargo/bin/cargo"), "test", "--", "connector::interop_suite"],
+            capture_output=True, text=True, timeout=120,
+            cwd=os.path.join(ROOT, "crates/franken-node")
+        )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
         rust_tests = int(match.group(1)) if match else 0
-        tests_pass = True
-        rust_tests = 999
+        tests_pass = result.returncode == 0 and rust_tests > 0
         all_pass &= check("IOP-TESTS", "Rust unit tests pass", tests_pass,
                           f"{rust_tests} tests passed")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
@@ -95,7 +95,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-35by_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text()
+        content = Path(spec_path).read_text()
         has_invariants = "INV-IOP" in content
         has_types = "InteropClass" in content and "InteropResult" in content
     else:

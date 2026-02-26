@@ -184,7 +184,7 @@ def main():
     passing = sum(1 for c in checks if c["pass"])
     failing = total - passing
 
-    test_count = len(re.findall(r"#\[test\]", __import__("pathlib").Path(IMPL).read_text())) if os.path.isfile(IMPL) else 0
+    test_count = len(re.findall(r"#\[test\]", Path(IMPL).read_text())) if os.path.isfile(IMPL) else 0
 
     if args.json:
         result = {

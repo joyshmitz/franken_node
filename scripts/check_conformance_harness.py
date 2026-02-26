@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """
 Conformance Harness and Publication Gate Verification (bd-3en).
@@ -72,11 +73,10 @@ def check_override_support() -> dict:
 def check_rust_tests() -> dict:
     """HARNESS-TESTS: Rust unit tests pass."""
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            [os.path.expanduser("~/.cargo/bin/cargo"), "test", "--", "conformance::protocol_harness"],
+            capture_output=True, text=True, timeout=120, cwd=str(ROOT),
+        )
         lines = result.stdout.strip().split("\n")
         summary = [l for l in lines if "test result:" in l]
         return {

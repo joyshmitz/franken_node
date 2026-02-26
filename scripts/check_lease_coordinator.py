@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 """Verification script for bd-2vs4: Lease coordinator and quorum verification."""
 
 import json
@@ -32,7 +33,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/lease_coordinator.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_candidate = "struct CoordinatorCandidate" in content
         has_selection = "struct CoordinatorSelection" in content
         has_qconfig = "struct QuorumConfig" in content
@@ -46,7 +47,7 @@ def main():
                        impl_exists and all_types)
 
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         errors = ["LC_BELOW_QUORUM", "LC_INVALID_SIGNATURE", "LC_UNKNOWN_SIGNER", "LC_NO_CANDIDATES"]
         found = [e for e in errors if e in content]
         all_pass &= check("LC-ERRORS", "All 4 error codes present",
@@ -58,7 +59,7 @@ def main():
     vectors_valid = False
     if os.path.isfile(vectors_path):
         try:
-            data = json.loads(__import__("pathlib").Path(vectors_path).read_text())
+            data = json.loads(Path(vectors_path).read_text())
             vectors_valid = "vectors" in data and len(data["vectors"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -67,7 +68,7 @@ def main():
     conf_path = os.path.join(ROOT, "tests/conformance/lease_coordinator_selection.rs")
     conf_exists = os.path.isfile(conf_path)
     if conf_exists:
-        content = __import__("pathlib").Path(conf_path).read_text()
+        content = Path(conf_path).read_text()
         has_determ = "inv_lc_deterministic" in content
         has_quorum = "inv_lc_quorum_tier" in content
         has_classified = "inv_lc_verify_classified" in content
@@ -78,16 +79,16 @@ def main():
                        conf_exists and has_determ and has_quorum and has_classified and has_replay)
 
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            [os.path.expanduser("~/.cargo/bin/cargo"), "test", "-p", "frankenengine-node", "--",
+             "connector::lease_coordinator"],
+            capture_output=True, text=True, timeout=120,
+            cwd=os.path.join(ROOT, "crates/franken-node")
+        )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
         rust_tests = int(match.group(1)) if match else 0
-        tests_pass = True
-        rust_tests = 999
+        tests_pass = result.returncode == 0 and rust_tests > 0
         all_pass &= check("LC-TESTS", "Rust unit tests pass", tests_pass,
                           f"{rust_tests} tests passed")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
@@ -96,7 +97,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-2vs4_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text()
+        content = Path(spec_path).read_text()
         has_invariants = "INV-LC" in content
         has_types = "LeaseCoordinatorService" in content and "QuorumConfig" in content
     else:

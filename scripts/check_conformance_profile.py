@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 """Verification script for bd-ck2h: Conformance profile matrix."""
 
 import json
@@ -32,7 +33,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/conformance_profile.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_matrix = "struct ProfileMatrix" in content
         has_eval = "struct ClaimEvaluation" in content
         has_profile = "enum Profile" in content
@@ -43,7 +44,7 @@ def main():
     all_pass &= check("CPM-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         errors = ["CPM_UNKNOWN_PROFILE", "CPM_MISSING_RESULT", "CPM_CAPABILITY_FAILED",
                   "CPM_CLAIM_BLOCKED", "CPM_INVALID_MATRIX"]
         found = [e for e in errors if e in content]
@@ -56,7 +57,7 @@ def main():
     report_valid = False
     if os.path.isfile(report_path):
         try:
-            data = json.loads(__import__("pathlib").Path(report_path).read_text())
+            data = json.loads(Path(report_path).read_text())
             report_valid = "profiles" in data and "sample_evaluation" in data
         except json.JSONDecodeError:
             pass
@@ -65,7 +66,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/profile_claim_gate.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text()
+        content = Path(integ_path).read_text()
         has_matrix = "inv_cpm_matrix" in content
         has_measured = "inv_cpm_measured" in content
         has_blocked = "inv_cpm_blocked" in content
@@ -76,16 +77,15 @@ def main():
                        integ_exists and has_matrix and has_measured and has_blocked and has_metadata)
 
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            [os.path.expanduser("~/.cargo/bin/cargo"), "test", "--", "connector::conformance_profile"],
+            capture_output=True, text=True, timeout=120,
+            cwd=os.path.join(ROOT, "crates/franken-node")
+        )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
         rust_tests = int(match.group(1)) if match else 0
-        tests_pass = True
-        rust_tests = 999
+        tests_pass = result.returncode == 0 and rust_tests > 0
         all_pass &= check("CPM-TESTS", "Rust unit tests pass", tests_pass,
                           f"{rust_tests} tests passed")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
@@ -94,7 +94,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-ck2h_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text()
+        content = Path(spec_path).read_text()
         has_invariants = "INV-CPM" in content
         has_types = "ProfileMatrix" in content and "ClaimEvaluation" in content
     else:

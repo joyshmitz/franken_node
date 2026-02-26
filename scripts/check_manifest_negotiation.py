@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 """Verification script for bd-17mb: Fail-closed manifest negotiation."""
 
 import json
@@ -33,7 +34,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/manifest_negotiation.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_semver = "struct SemVer" in content
         has_manifest = "struct ConnectorManifest" in content
         has_host = "struct HostCapabilities" in content
@@ -46,7 +47,7 @@ def main():
 
     # MN-SEMVER: Semantic ordering (not lexical)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_ord = "impl Ord for SemVer" in content
         has_cmp = "self.major" in content and ".cmp(" in content
         all_pass &= check("MN-SEMVER", "Semantic version ordering implemented", has_ord and has_cmp)
@@ -55,7 +56,7 @@ def main():
 
     # MN-ERRORS: All 4 error codes
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         errors = ["MANIFEST_VERSION_UNSUPPORTED", "MANIFEST_FEATURE_MISSING",
                   "MANIFEST_TRANSPORT_MISMATCH", "MANIFEST_INVALID"]
         found = [e for e in errors if e in content]
@@ -66,7 +67,7 @@ def main():
 
     # MN-TRANSPORT: Transport capability types
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         caps = ["Http1", "Http2", "Http3", "WebSocket", "Grpc"]
         found = [c for c in caps if c in content]
         all_pass &= check("MN-TRANSPORT", "All 5 transport capability types",
@@ -79,7 +80,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixture_path).read_text())
+            data = json.loads(Path(fixture_path).read_text())
             fixture_valid = "cases" in data and len(data["cases"]) >= 5
         except json.JSONDecodeError:
             pass
@@ -90,7 +91,7 @@ def main():
     trace_valid = False
     if os.path.isfile(trace_path):
         try:
-            data = json.loads(__import__("pathlib").Path(trace_path).read_text())
+            data = json.loads(Path(trace_path).read_text())
             trace_valid = "negotiations" in data and len(data["negotiations"]) >= 2
         except json.JSONDecodeError:
             pass
@@ -100,7 +101,7 @@ def main():
     conf_path = os.path.join(ROOT, "tests/conformance/manifest_negotiation_fail_closed.rs")
     conf_exists = os.path.isfile(conf_path)
     if conf_exists:
-        content = __import__("pathlib").Path(conf_path).read_text()
+        content = Path(conf_path).read_text()
         has_fail_closed = "fails_closed" in content
         has_semantic = "semantic" in content.lower()
         has_trace = "trace" in content
@@ -111,16 +112,16 @@ def main():
 
     # MN-TESTS: Rust unit tests pass
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            [os.path.expanduser("~/.cargo/bin/cargo"), "test", "-p", "frankenengine-node", "--",
+             "connector::manifest_negotiation"],
+            capture_output=True, text=True, timeout=120,
+            cwd=os.path.join(ROOT, "crates/franken-node")
+        )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
         rust_tests = int(match.group(1)) if match else 0
-        tests_pass = True
-        rust_tests = 999
+        tests_pass = result.returncode == 0 and rust_tests > 0
         all_pass &= check("MN-TESTS", "Rust unit tests pass", tests_pass,
                           f"{rust_tests} tests passed")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
@@ -130,7 +131,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-17mb_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text()
+        content = Path(spec_path).read_text()
         has_invariants = "INV-MANIFEST" in content
         has_outcome = "Outcome" in content
     else:

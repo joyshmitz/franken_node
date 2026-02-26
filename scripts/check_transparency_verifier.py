@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 """Verification script for bd-1z9s: Transparency-log inclusion proof checks."""
 
 import json
@@ -33,7 +34,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/supply_chain/transparency_verifier.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_root = "struct LogRoot" in content
         has_proof = "struct InclusionProof" in content
         has_policy = "struct TransparencyPolicy" in content
@@ -47,7 +48,7 @@ def main():
 
     # TL-MERKLE: Merkle path recomputation
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_recompute = "fn recompute_root" in content
         has_hash_pair = "fn hash_pair" in content
         all_pass &= check("TL-MERKLE", "Merkle path recomputation with hash_pair",
@@ -57,7 +58,7 @@ def main():
 
     # TL-ERRORS: All 4 error codes
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         errors = ["TLOG_PROOF_MISSING", "TLOG_ROOT_NOT_PINNED",
                   "TLOG_PATH_INVALID", "TLOG_LEAF_MISMATCH"]
         found = [e for e in errors if e in content]
@@ -71,7 +72,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixture_path).read_text())
+            data = json.loads(Path(fixture_path).read_text())
             fixture_valid = "cases" in data and len(data["cases"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -82,7 +83,7 @@ def main():
     receipts_valid = False
     if os.path.isfile(receipts_path):
         try:
-            data = json.loads(__import__("pathlib").Path(receipts_path).read_text())
+            data = json.loads(Path(receipts_path).read_text())
             receipts_valid = "receipts" in data and len(data["receipts"]) >= 2
         except json.JSONDecodeError:
             pass
@@ -92,7 +93,7 @@ def main():
     sec_path = os.path.join(ROOT, "tests/security/transparency_inclusion.rs")
     sec_exists = os.path.isfile(sec_path)
     if sec_exists:
-        content = __import__("pathlib").Path(sec_path).read_text()
+        content = Path(sec_path).read_text()
         has_install = "install" in content
         has_proof = "proof" in content
         has_pinned = "pinned" in content
@@ -103,16 +104,16 @@ def main():
 
     # TL-TESTS: Rust unit tests pass
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            [os.path.expanduser("~/.cargo/bin/cargo"), "test", "-p", "frankenengine-node", "--",
+             "supply_chain::transparency_verifier"],
+            capture_output=True, text=True, timeout=120,
+            cwd=os.path.join(ROOT, "crates/franken-node")
+        )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
         rust_tests = int(match.group(1)) if match else 0
-        tests_pass = True
-        rust_tests = 999
+        tests_pass = result.returncode == 0 and rust_tests > 0
         all_pass &= check("TL-TESTS", "Rust unit tests pass", tests_pass,
                           f"{rust_tests} tests passed")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
@@ -122,7 +123,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-1z9s_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text()
+        content = Path(spec_path).read_text()
         has_invariants = "INV-TLOG" in content
         has_failure = "ProofFailure" in content
     else:

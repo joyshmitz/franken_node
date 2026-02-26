@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 """Verification script for bd-8vby: Device profile registry and placement policy."""
 
 import json
@@ -33,7 +34,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/device_profile.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_profile = "struct DeviceProfile" in content
         has_constraint = "struct PlacementConstraint" in content
         has_policy = "struct PlacementPolicy" in content
@@ -48,7 +49,7 @@ def main():
 
     # DPR-ERRORS: All error codes present
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         errors = ["DPR_SCHEMA_INVALID", "DPR_STALE_PROFILE", "DPR_INVALID_CONSTRAINT", "DPR_NO_MATCH"]
         found = [e for e in errors if e in content]
         all_pass &= check("DPR-ERRORS", "All 4 error codes present",
@@ -61,7 +62,7 @@ def main():
     fixtures_valid = False
     if os.path.isfile(fixtures_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixtures_path).read_text())
+            data = json.loads(Path(fixtures_path).read_text())
             fixtures_valid = "profiles" in data and len(data["profiles"]) >= 3
         except json.JSONDecodeError:
             pass
@@ -71,7 +72,7 @@ def main():
     conf_path = os.path.join(ROOT, "tests/conformance/placement_policy_schema.rs")
     conf_exists = os.path.isfile(conf_path)
     if conf_exists:
-        content = __import__("pathlib").Path(conf_path).read_text()
+        content = Path(conf_path).read_text()
         has_schema = "inv_dpr_schema" in content
         has_freshness = "inv_dpr_freshness" in content
         has_deterministic = "inv_dpr_deterministic" in content
@@ -83,16 +84,15 @@ def main():
 
     # DPR-TESTS: Rust unit tests pass
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            [os.path.expanduser("~/.cargo/bin/cargo"), "test", "--", "connector::device_profile"],
+            capture_output=True, text=True, timeout=120,
+            cwd=os.path.join(ROOT, "crates/franken-node")
+        )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
         rust_tests = int(match.group(1)) if match else 0
-        tests_pass = True
-        rust_tests = 999
+        tests_pass = result.returncode == 0 and rust_tests > 0
         all_pass &= check("DPR-TESTS", "Rust unit tests pass", tests_pass,
                           f"{rust_tests} tests passed")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
@@ -102,7 +102,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-8vby_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text()
+        content = Path(spec_path).read_text()
         has_invariants = "INV-DPR" in content
         has_types = "DeviceProfileRegistry" in content and "PlacementPolicy" in content
     else:

@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """
 Connector Lifecycle FSM Verification (bd-2gh).
@@ -151,11 +152,10 @@ def check_rust_implementation() -> dict:
 def check_rust_tests_pass() -> dict:
     """LIFECYCLE-TESTS: Rust unit tests pass."""
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            [os.path.expanduser("~/.cargo/bin/cargo"), "test", "--", "connector::lifecycle"],
+            capture_output=True, text=True, timeout=120, cwd=str(ROOT),
+        )
         lines = result.stdout.strip().split("\n")
         summary = [l for l in lines if "test result:" in l]
         passed = result.returncode == 0

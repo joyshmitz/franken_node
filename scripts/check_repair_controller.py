@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 """Verification script for bd-91gg: Background repair controller."""
 
 import json
@@ -32,7 +33,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/repair_controller.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_config = "struct RepairConfig" in content
         has_item = "struct RepairItem" in content
         has_alloc = "struct RepairAllocation" in content
@@ -44,7 +45,7 @@ def main():
     all_pass &= check("BRC-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         errors = ["BRC_CAP_EXCEEDED", "BRC_INVALID_CONFIG", "BRC_NO_PENDING", "BRC_STARVATION"]
         found = [e for e in errors if e in content]
         all_pass &= check("BRC-ERRORS", "All 4 error codes present",
@@ -55,7 +56,7 @@ def main():
     csv_path = os.path.join(ROOT, "artifacts/section_10_13/bd-91gg/repair_cycle_telemetry.csv")
     csv_valid = False
     if os.path.isfile(csv_path):
-        content = __import__("pathlib").Path(csv_path).read_text()
+        content = Path(csv_path).read_text()
         lines = [l for l in content.strip().split("\n") if l.strip()]
         csv_valid = len(lines) >= 4
     all_pass &= check("BRC-TELEMETRY", "Repair cycle telemetry CSV", csv_valid)
@@ -63,7 +64,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/repair_fairness.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text()
+        content = Path(integ_path).read_text()
         has_bounded = "inv_brc_bounded" in content
         has_fairness = "inv_brc_fairness" in content
         has_audit = "inv_brc_auditable" in content
@@ -74,16 +75,15 @@ def main():
                        integ_exists and has_bounded and has_fairness and has_audit and has_det)
 
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            [os.path.expanduser("~/.cargo/bin/cargo"), "test", "--", "connector::repair_controller"],
+            capture_output=True, text=True, timeout=120,
+            cwd=os.path.join(ROOT, "crates/franken-node")
+        )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
         rust_tests = int(match.group(1)) if match else 0
-        tests_pass = True
-        rust_tests = 999
+        tests_pass = result.returncode == 0 and rust_tests > 0
         all_pass &= check("BRC-TESTS", "Rust unit tests pass", tests_pass,
                           f"{rust_tests} tests passed")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
@@ -92,7 +92,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-91gg_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text()
+        content = Path(spec_path).read_text()
         has_invariants = "INV-BRC" in content
         has_types = "BackgroundRepairController" in content and "RepairConfig" in content
     else:

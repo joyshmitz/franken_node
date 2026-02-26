@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 """Verification script for bd-2yc4: Crash-loop detector with automatic rollback."""
 
 import json
@@ -33,7 +34,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/runtime/crash_loop_detector.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_config = "struct CrashLoopConfig" in content
         has_event = "struct CrashEvent" in content
         has_pin = "struct KnownGoodPin" in content
@@ -48,7 +49,7 @@ def main():
 
     # Check error codes
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         errors = ["CLD_THRESHOLD_EXCEEDED", "CLD_NO_KNOWN_GOOD",
                   "CLD_PIN_UNTRUSTED", "CLD_COOLDOWN_ACTIVE"]
         found = [e for e in errors if e in content]
@@ -59,7 +60,7 @@ def main():
 
     # Check sliding window
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_window = "crashes_in_window" in content
         has_looping = "is_looping" in content
         has_cooldown = "in_cooldown" in content
@@ -73,7 +74,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixture_path).read_text())
+            data = json.loads(Path(fixture_path).read_text())
             fixture_valid = "cases" in data and len(data["cases"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -84,7 +85,7 @@ def main():
     bundle_valid = False
     if os.path.isfile(bundle_path):
         try:
-            data = json.loads(__import__("pathlib").Path(bundle_path).read_text())
+            data = json.loads(Path(bundle_path).read_text())
             bundle_valid = "incidents" in data and len(data["incidents"]) >= 2
         except json.JSONDecodeError:
             pass
@@ -94,7 +95,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/crash_loop_rollback.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text()
+        content = Path(integ_path).read_text()
         has_threshold = "inv_cld_threshold" in content
         has_rollback = "inv_cld_rollback" in content
         has_trust = "inv_cld_trust" in content
@@ -106,16 +107,16 @@ def main():
 
     # Run Rust unit tests
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            [os.path.expanduser("~/.cargo/bin/cargo"), "test", "-p", "frankenengine-node", "--",
+             "runtime::crash_loop_detector"],
+            capture_output=True, text=True, timeout=120,
+            cwd=os.path.join(ROOT, "crates/franken-node")
+        )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
         rust_tests = int(match.group(1)) if match else 0
-        tests_pass = True
-        rust_tests = 999
+        tests_pass = result.returncode == 0 and rust_tests > 0
         all_pass &= check("CLD-TESTS", "Rust unit tests pass", tests_pass,
                           f"{rust_tests} tests passed")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
@@ -125,7 +126,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-2yc4_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text()
+        content = Path(spec_path).read_text()
         has_invariants = "INV-CLD" in content
         has_types = "RollbackDecision" in content and "CrashLoopConfig" in content
     else:

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 """Verification script for bd-3n58: Domain-separated interface-hash verification."""
 
 import json
@@ -33,7 +34,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/security/interface_hash.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_hash = "struct InterfaceHash" in content
         has_telemetry = "struct AdmissionTelemetry" in content
         has_check = "struct AdmissionCheck" in content
@@ -46,7 +47,7 @@ def main():
 
     # IH-DOMAIN-SEP: Domain separation in hash computation
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_domain_hash = "domain.hash" in content or "domain" in content
         has_separator = '":"' in content or 'separator' in content.lower()
         all_pass &= check("IH-DOMAIN-SEP", "Domain separation in hash derivation",
@@ -56,7 +57,7 @@ def main():
 
     # IH-ERRORS: All 4 error codes
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         errors = ["IFACE_HASH_MISMATCH", "IFACE_DOMAIN_MISMATCH",
                   "IFACE_HASH_EXPIRED", "IFACE_HASH_MALFORMED"]
         found = [e for e in errors if e in content]
@@ -70,7 +71,7 @@ def main():
     fixture_valid = False
     if os.path.isfile(fixture_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixture_path).read_text())
+            data = json.loads(Path(fixture_path).read_text())
             fixture_valid = "cases" in data and len(data["cases"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -80,7 +81,7 @@ def main():
     csv_path = os.path.join(ROOT, "artifacts/section_10_13/bd-3n58/interface_hash_rejection_metrics.csv")
     csv_valid = False
     if os.path.isfile(csv_path):
-        content = __import__("pathlib").Path(csv_path).read_text()
+        content = Path(csv_path).read_text()
         csv_valid = ("rejection_code" in content and "IFACE_HASH_MISMATCH" in content
                      and "IFACE_DOMAIN_MISMATCH" in content)
     all_pass &= check("IH-METRICS", "Rejection metrics CSV with distribution", csv_valid)
@@ -89,7 +90,7 @@ def main():
     conf_path = os.path.join(ROOT, "tests/conformance/interface_hash_verification.rs")
     conf_exists = os.path.isfile(conf_path)
     if conf_exists:
-        content = __import__("pathlib").Path(conf_path).read_text()
+        content = Path(conf_path).read_text()
         has_domain = "domain_separation" in content
         has_admission = "blocks_admission" in content
         has_telemetry = "telemetry" in content
@@ -100,16 +101,15 @@ def main():
 
     # IH-TESTS: Rust unit tests pass
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            [os.path.expanduser("~/.cargo/bin/cargo"), "test", "-p", "frankenengine-node", "--", "security::interface_hash"],
+            capture_output=True, text=True, timeout=120,
+            cwd=os.path.join(ROOT, "crates/franken-node")
+        )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
         rust_tests = int(match.group(1)) if match else 0
-        tests_pass = True
-        rust_tests = 999
+        tests_pass = result.returncode == 0 and rust_tests > 0
         all_pass &= check("IH-TESTS", "Rust unit tests pass", tests_pass,
                           f"{rust_tests} tests passed")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
@@ -119,7 +119,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-3n58_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text()
+        content = Path(spec_path).read_text()
         has_invariants = "INV-HASH" in content
         has_rejection = "RejectionCode" in content
     else:

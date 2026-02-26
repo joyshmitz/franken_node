@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 """Verification script for bd-8uvb: Overlapping-lease conflict policy."""
 
 import json
@@ -33,7 +34,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/lease_conflict.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         has_policy = "struct ConflictPolicy" in content
         has_conflict = "struct LeaseConflict" in content
         has_resolution = "struct ConflictResolution" in content
@@ -48,7 +49,7 @@ def main():
 
     # OLC-ERRORS: All error codes present
     if impl_exists:
-        content = __import__("pathlib").Path(impl_path).read_text()
+        content = Path(impl_path).read_text()
         errors = ["OLC_DANGEROUS_HALT", "OLC_BOTH_ACTIVE", "OLC_NO_WINNER", "OLC_FORK_LOG_INCOMPLETE"]
         found = [e for e in errors if e in content]
         all_pass &= check("OLC-ERRORS", "All 4 error codes present",
@@ -61,7 +62,7 @@ def main():
     fixtures_valid = False
     if os.path.isfile(fixtures_path):
         try:
-            data = json.loads(__import__("pathlib").Path(fixtures_path).read_text())
+            data = json.loads(Path(fixtures_path).read_text())
             fixtures_valid = "scenarios" in data and len(data["scenarios"]) >= 4
         except json.JSONDecodeError:
             pass
@@ -71,7 +72,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/overlapping_lease_conflicts.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = __import__("pathlib").Path(integ_path).read_text()
+        content = Path(integ_path).read_text()
         has_deterministic = "inv_olc_deterministic" in content
         has_halt = "inv_olc_dangerous_halt" in content
         has_fork = "inv_olc_fork_log" in content
@@ -83,16 +84,15 @@ def main():
 
     # OLC-TESTS: Rust unit tests pass
     try:
-        class DummyResult:
-            returncode = 0
-            stdout = "test result: ok. 999 passed"
-            stderr = ""
-        result = DummyResult()
+        result = subprocess.run(
+            [os.path.expanduser("~/.cargo/bin/cargo"), "test", "--", "connector::lease_conflict"],
+            capture_output=True, text=True, timeout=120,
+            cwd=os.path.join(ROOT, "crates/franken-node")
+        )
         test_output = result.stdout + result.stderr
         match = re.search(r"test result: ok\. (\d+) passed", test_output)
         rust_tests = int(match.group(1)) if match else 0
-        tests_pass = True
-        rust_tests = 999
+        tests_pass = result.returncode == 0 and rust_tests > 0
         all_pass &= check("OLC-TESTS", "Rust unit tests pass", tests_pass,
                           f"{rust_tests} tests passed")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
@@ -102,7 +102,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-8uvb_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = __import__("pathlib").Path(spec_path).read_text()
+        content = Path(spec_path).read_text()
         has_invariants = "INV-OLC" in content
         has_types = "ConflictPolicy" in content and "LeaseConflict" in content
     else:
