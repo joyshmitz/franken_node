@@ -117,9 +117,15 @@ fn validate_event(event: &CoverageEvent) -> Result<(), CoverageError> {
 /// Per-scope tracker state.
 #[derive(Debug, Clone, Default)]
 struct ScopeState {
-    /// Latest status per artifact_id. true = available.
-    artifacts: BTreeMap<String, bool>,
+    /// Latest status per artifact_id with event timestamp.
+    artifacts: BTreeMap<String, ArtifactState>,
     event_count: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ArtifactState {
+    available: bool,
+    timestamp: u64,
 }
 
 /// Offline coverage tracker.
@@ -140,9 +146,30 @@ impl OfflineCoverageTracker {
     pub fn record_event(&mut self, event: CoverageEvent) -> Result<(), CoverageError> {
         validate_event(&event)?;
         let scope = self.scopes.entry(event.scope.clone()).or_default();
-        scope
-            .artifacts
-            .insert(event.artifact_id.clone(), event.available);
+        match scope.artifacts.get(&event.artifact_id).copied() {
+            // Ignore stale out-of-order telemetry updates.
+            Some(existing) if event.timestamp < existing.timestamp => {}
+            // Tie-breaker for same-timestamp updates is fail-closed:
+            // if any report says unavailable, keep unavailable.
+            Some(existing) if event.timestamp == existing.timestamp => {
+                scope.artifacts.insert(
+                    event.artifact_id.clone(),
+                    ArtifactState {
+                        available: existing.available && event.available,
+                        timestamp: existing.timestamp,
+                    },
+                );
+            }
+            _ => {
+                scope.artifacts.insert(
+                    event.artifact_id.clone(),
+                    ArtifactState {
+                        available: event.available,
+                        timestamp: event.timestamp,
+                    },
+                );
+            }
+        }
         scope.event_count = scope.event_count.saturating_add(1);
         self.all_events.push(event);
         Ok(())
@@ -166,7 +193,7 @@ impl OfflineCoverageTracker {
         }
 
         let total = state.artifacts.len();
-        let available = state.artifacts.values().filter(|&&v| v).count();
+        let available = state.artifacts.values().filter(|entry| entry.available).count();
         let repair_debt = total - available;
         let coverage_ratio = available as f64 / total as f64;
         let availability_ratio = coverage_ratio; // in this model, coverage = availability
@@ -305,6 +332,25 @@ mod tests {
     fn latest_event_wins() {
         let mut t = OfflineCoverageTracker::new();
         t.record_event(ev("a1", true, 100, "prod")).unwrap();
+        t.record_event(ev("a1", false, 200, "prod")).unwrap();
+        let m = t.compute_metrics("prod").unwrap();
+        assert_eq!(m.available_count, 0);
+    }
+
+    #[test]
+    fn stale_event_does_not_override_newer_state() {
+        let mut t = OfflineCoverageTracker::new();
+        t.record_event(ev("a1", false, 200, "prod")).unwrap();
+        // Older telemetry arrives late and must be ignored.
+        t.record_event(ev("a1", true, 100, "prod")).unwrap();
+        let m = t.compute_metrics("prod").unwrap();
+        assert_eq!(m.available_count, 0);
+    }
+
+    #[test]
+    fn equal_timestamp_tie_breaks_fail_closed() {
+        let mut t = OfflineCoverageTracker::new();
+        t.record_event(ev("a1", true, 200, "prod")).unwrap();
         t.record_event(ev("a1", false, 200, "prod")).unwrap();
         let m = t.compute_metrics("prod").unwrap();
         assert_eq!(m.available_count, 0);
