@@ -7,9 +7,9 @@
 
 use std::collections::BTreeMap;
 
+use crate::security::constant_time::ct_eq;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use crate::security::constant_time::ct_eq;
 
 // -- Event codes ---------------------------------------------------------------
 

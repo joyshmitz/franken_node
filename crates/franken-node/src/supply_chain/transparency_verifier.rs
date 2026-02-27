@@ -34,7 +34,7 @@ fn hash_pair(left: &str, right: &str) -> String {
 /// Compute the leaf hash for a piece of data.
 pub fn leaf_hash(data: &str) -> String {
     let mut h = Sha256::new();
-    h.update(b"leaf:");
+    h.update(b"transparency_verifier_leaf_v1:");
     h.update(data.as_bytes());
     let digest = h.finalize();
     format!(

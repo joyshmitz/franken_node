@@ -56,7 +56,10 @@ pub fn verify_hash(
 
     // Recompute and compare
     let computed = compute_hash(domain, data);
-    if !crate::security::constant_time::ct_eq(&computed.hash_hex.to_ascii_lowercase(), &expected.hash_hex.to_ascii_lowercase()) {
+    if !crate::security::constant_time::ct_eq(
+        &computed.hash_hex.to_ascii_lowercase(),
+        &expected.hash_hex.to_ascii_lowercase(),
+    ) {
         return Err(RejectionCode::HashMismatch);
     }
 
