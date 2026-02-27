@@ -187,6 +187,27 @@ pub struct GateEngine {
     pub transition_receipts: Vec<ModeTransitionReceipt>,
     signing_key: Vec<u8>,
     next_trace: u64,
+    trace_epoch: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TraceSlot {
+    epoch: u64,
+    sequence: u64,
+}
+
+impl TraceSlot {
+    fn trace_id(self) -> String {
+        format!("trace-{:016x}-{:016x}", self.epoch, self.sequence)
+    }
+
+    fn transition_id(self) -> String {
+        format!("txn-{:016x}-{:016x}", self.epoch, self.sequence)
+    }
+
+    fn receipt_id(self) -> String {
+        format!("rcpt-{:016x}-{:016x}", self.epoch, self.sequence)
+    }
 }
 
 impl GateEngine {
@@ -200,13 +221,29 @@ impl GateEngine {
             transition_receipts: Vec::new(),
             signing_key,
             next_trace: 1,
+            trace_epoch: 0,
         }
     }
 
+    fn allocate_trace_slot(&mut self) -> TraceSlot {
+        let slot = TraceSlot {
+            epoch: self.trace_epoch,
+            sequence: self.next_trace,
+        };
+
+        if self.next_trace == u64::MAX {
+            // Roll to the next epoch so IDs remain unique even at counter boundaries.
+            self.next_trace = 1;
+            self.trace_epoch = self.trace_epoch.wrapping_add(1);
+        } else {
+            self.next_trace += 1;
+        }
+
+        slot
+    }
+
     fn next_trace_id(&mut self) -> String {
-        let id = format!("trace-{:06}", self.next_trace);
-        self.next_trace += 1;
-        id
+        self.allocate_trace_slot().trace_id()
     }
 
     fn now_iso(&self) -> String {
@@ -370,7 +407,8 @@ impl GateEngine {
             true // de-escalation is auto-approved
         };
 
-        let trace_id = self.next_trace_id();
+        let slot = self.allocate_trace_slot();
+        let trace_id = slot.trace_id();
         let payload = format!(
             "transition:{}:{}->{}",
             req.scope_id,
@@ -399,7 +437,7 @@ impl GateEngine {
         };
 
         let receipt = ModeTransitionReceipt {
-            transition_id: format!("txn-{}", self.next_trace),
+            transition_id: slot.transition_id(),
             scope_id: req.scope_id.clone(),
             from_mode: req.from_mode,
             to_mode: req.to_mode,
@@ -427,8 +465,9 @@ impl GateEngine {
         description: &str,
         severity: &str,
     ) -> DivergenceReceipt {
-        let trace_id = self.next_trace_id();
-        let receipt_id = format!("rcpt-{}", self.next_trace);
+        let slot = self.allocate_trace_slot();
+        let trace_id = slot.trace_id();
+        let receipt_id = slot.receipt_id();
         let payload = format!("receipt:{}:{}:{}", scope_id, shim_id, description);
         let sig = self.sign(&payload);
 
@@ -666,6 +705,24 @@ mod tests {
     }
 
     #[test]
+    fn transition_id_uses_same_slot_as_trace_id() {
+        let mut engine = test_engine();
+        let receipt = engine
+            .request_transition(&ModeTransitionRequest {
+                scope_id: "tenant-1".into(),
+                from_mode: CompatMode::Balanced,
+                to_mode: CompatMode::Strict,
+                justification: "tightening policy with explicit rationale".into(),
+                requestor: "admin".into(),
+            })
+            .unwrap();
+        assert_eq!(
+            receipt.transition_id.replacen("txn-", "trace-", 1),
+            receipt.trace_id
+        );
+    }
+
+    #[test]
     fn test_divergence_receipt_issued() {
         let mut engine = test_engine();
         let receipt = engine.issue_divergence_receipt(
@@ -689,6 +746,32 @@ mod tests {
             "minor",
         );
         assert!(engine.verify_receipt_signature(&receipt));
+    }
+
+    #[test]
+    fn receipt_id_uses_same_slot_as_trace_id() {
+        let mut engine = test_engine();
+        let receipt = engine.issue_divergence_receipt("tenant-1", "shim-a", "div-a", "major");
+        assert_eq!(
+            receipt.receipt_id.replacen("rcpt-", "trace-", 1),
+            receipt.trace_id
+        );
+    }
+
+    #[test]
+    fn trace_slot_rollover_preserves_unique_ids() {
+        let mut engine = test_engine();
+        engine.trace_epoch = 9;
+        engine.next_trace = u64::MAX;
+
+        let first = engine.issue_divergence_receipt("tenant-1", "shim-a", "div-a", "major");
+        let second = engine.issue_divergence_receipt("tenant-1", "shim-b", "div-b", "major");
+
+        assert_ne!(first.receipt_id, second.receipt_id);
+        assert_eq!(first.trace_id, "trace-0000000000000009-ffffffffffffffff");
+        assert_eq!(second.trace_id, "trace-000000000000000a-0000000000000001");
+        assert_eq!(engine.trace_epoch, 10);
+        assert_eq!(engine.next_trace, 2);
     }
 
     #[test]

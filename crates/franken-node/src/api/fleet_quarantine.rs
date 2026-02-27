@@ -27,7 +27,6 @@ use super::middleware::{
     TraceContext,
 };
 use super::trust_card_routes::ApiResponse;
-use super::utf8_prefix;
 
 // ── Event Codes ───────────────────────────────────────────────────────────
 
@@ -405,6 +404,24 @@ pub struct FleetControlManager {
     events: Vec<FleetControlEvent>,
     /// Counter for generating operation IDs.
     next_op_id: u64,
+    /// Epoch used to keep operation IDs unique across counter rollover.
+    op_epoch: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct OperationSlot {
+    epoch: u64,
+    sequence: u64,
+}
+
+impl OperationSlot {
+    fn operation_id(self) -> String {
+        if self.epoch == 0 {
+            format!("fleet-op-{}", self.sequence)
+        } else {
+            format!("fleet-op-{:016x}-{:016x}", self.epoch, self.sequence)
+        }
+    }
 }
 
 impl FleetControlManager {
@@ -417,6 +434,7 @@ impl FleetControlManager {
             zone_status: BTreeMap::new(),
             events: Vec::new(),
             next_op_id: 1,
+            op_epoch: 0,
         }
     }
 
@@ -478,7 +496,7 @@ impl FleetControlManager {
                 activated: true,
                 pending_convergences: Vec::new(),
             });
-        zone.active_quarantines += 1;
+        zone.active_quarantines = zone.active_quarantines.saturating_add(1);
 
         // Build receipt (INV-FLEET-RECEIPT)
         let receipt = self.build_receipt(&op_id, &identity.principal, &scope.zone_id, &now);
@@ -542,7 +560,7 @@ impl FleetControlManager {
                 activated: true,
                 pending_convergences: Vec::new(),
             });
-        zone.active_revocations += 1;
+        zone.active_revocations = zone.active_revocations.saturating_add(1);
 
         let receipt = self.build_receipt(&op_id, &identity.principal, &scope.zone_id, &now);
 
@@ -722,10 +740,25 @@ impl FleetControlManager {
 
     // ── Internal helpers ──────────────────────────────────────────────────
 
+    fn allocate_operation_slot(&mut self) -> OperationSlot {
+        let slot = OperationSlot {
+            epoch: self.op_epoch,
+            sequence: self.next_op_id,
+        };
+
+        if self.next_op_id == u64::MAX {
+            // Roll to the next epoch so IDs stay unique at counter boundaries.
+            self.next_op_id = 1;
+            self.op_epoch = self.op_epoch.wrapping_add(1);
+        } else {
+            self.next_op_id += 1;
+        }
+
+        slot
+    }
+
     fn next_operation_id(&mut self) -> String {
-        let id = format!("fleet-op-{}", self.next_op_id);
-        self.next_op_id += 1;
-        id
+        self.allocate_operation_slot().operation_id()
     }
 
     fn build_receipt(
@@ -917,25 +950,14 @@ pub fn handle_release(
         });
     }
 
-    let incident_prefix = utf8_prefix(incident_id, 16);
-    let payload_hash =
-        receipt_payload_hash(format!("release:{incident_id}:{}", trace.trace_id).as_bytes());
-
-    let result = FleetActionResult {
-        operation_id: format!("fleet-op-release-{incident_prefix}"),
-        action_type: "release".to_string(),
-        success: true,
-        receipt: DecisionReceipt {
-            receipt_id: format!("rcpt-release-{incident_prefix}"),
-            issuer: identity.principal.clone(),
-            issued_at: chrono::Utc::now().to_rfc3339(),
-            zone_id: "pending-lookup".to_string(),
-            payload_hash,
-        },
-        convergence: None,
-        trace_id: trace.trace_id.clone(),
-        event_code: FLEET_RELEASED.to_string(),
-    };
+    let mut mgr = FleetControlManager::new();
+    mgr.activate();
+    let result = mgr
+        .release(incident_id, identity, trace)
+        .map_err(|e| ApiError::BadRequest {
+            detail: format!("{}: {e:?}", e.error_code()),
+            trace_id: trace.trace_id.clone(),
+        })?;
     Ok(ApiResponse {
         ok: true,
         data: result,
@@ -1597,7 +1619,7 @@ mod tests {
     }
 
     #[test]
-    fn handle_release_uses_utf8_safe_trace_prefix() {
+    fn handle_release_nonexistent_incident_returns_error() {
         let identity = admin_identity();
         let trace = TraceContext {
             trace_id: "🙂🙂🙂🙂🙂🙂🙂🙂🙂".to_string(),
@@ -1608,16 +1630,12 @@ mod tests {
             incident_id: "🔥incident-with-unicode🔥".to_string(),
         };
 
-        let result = handle_release(&identity, &trace, &request).expect("release");
-        let expected: String = request.incident_id.chars().take(16).collect();
-        assert_eq!(
-            result.data.operation_id,
-            format!("fleet-op-release-{expected}")
-        );
-        assert_eq!(
-            result.data.receipt.receipt_id,
-            format!("rcpt-release-{expected}")
-        );
+        let err = handle_release(&identity, &trace, &request).expect_err("nonexistent incident");
+        let detail = match err {
+            ApiError::BadRequest { detail, .. } => detail,
+            other => panic!("unexpected error: {other:?}"),
+        };
+        assert!(detail.contains(FLEET_ROLLBACK_FAILED));
     }
 
     #[test]
@@ -1769,6 +1787,46 @@ mod tests {
         mgr.release(&incidents[0], &admin_identity(), &test_trace())
             .expect("release");
         assert_eq!(mgr.active_incidents().len(), 1);
+    }
+
+    #[test]
+    fn operation_id_rollover_preserves_uniqueness() {
+        let mut mgr = FleetControlManager::new();
+        mgr.next_op_id = u64::MAX;
+
+        let first = mgr.next_operation_id();
+        let second = mgr.next_operation_id();
+
+        assert_ne!(first, second);
+        assert_eq!(first, "fleet-op-18446744073709551615");
+        assert_eq!(second, "fleet-op-0000000000000001-0000000000000001");
+        assert_eq!(mgr.op_epoch, 1);
+        assert_eq!(mgr.next_op_id, 2);
+    }
+
+    #[test]
+    fn quarantine_rollover_keeps_operation_incident_and_receipt_ids_unique() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+        mgr.next_op_id = u64::MAX;
+        let scope = test_quarantine_scope();
+
+        let first = mgr
+            .quarantine("ext-1", &scope, &admin_identity(), &test_trace())
+            .expect("first quarantine");
+        let second = mgr
+            .quarantine("ext-2", &scope, &admin_identity(), &test_trace())
+            .expect("second quarantine");
+
+        assert_ne!(first.operation_id, second.operation_id);
+        assert_ne!(first.receipt.receipt_id, second.receipt.receipt_id);
+
+        let incident_ids: std::collections::BTreeSet<_> = mgr
+            .active_incidents()
+            .iter()
+            .map(|i| i.incident_id.clone())
+            .collect();
+        assert_eq!(incident_ids.len(), 2);
     }
 
     // ── Hash determinism test ─────────────────────────────────────────────

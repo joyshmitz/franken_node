@@ -246,6 +246,9 @@ pub struct CompatGateService {
     events: Vec<CompatGateEvent>,
     predicates: Vec<PolicyPredicate>,
     trace_counter: u64,
+    trace_epoch: u64,
+    receipt_counter: u64,
+    receipt_epoch: u64,
 }
 
 impl CompatGateService {
@@ -257,16 +260,46 @@ impl CompatGateService {
             events: Vec::new(),
             predicates: Vec::new(),
             trace_counter: 0,
+            trace_epoch: 0,
+            receipt_counter: 0,
+            receipt_epoch: 0,
         }
     }
 
     fn next_trace_id(&mut self) -> String {
-        self.trace_counter += 1;
-        format!("trace-{:06}", self.trace_counter)
+        if self.trace_counter == u64::MAX {
+            self.trace_counter = 1;
+            self.trace_epoch = self.trace_epoch.wrapping_add(1);
+        } else {
+            self.trace_counter += 1;
+        }
+
+        if self.trace_epoch == 0 {
+            format!("trace-{:06}", self.trace_counter)
+        } else {
+            format!(
+                "trace-{:016x}-{:016x}",
+                self.trace_epoch, self.trace_counter
+            )
+        }
     }
 
     fn next_receipt_id(&mut self) -> String {
-        format!("rcpt-{:06}", self.receipts.len() + 1)
+        if self.receipt_counter == u64::MAX {
+            self.receipt_counter = 1;
+            self.receipt_epoch = self.receipt_epoch.wrapping_add(1);
+        } else {
+            self.receipt_counter += 1;
+        }
+
+        if self.receipt_epoch == 0 {
+            format!("rcpt-{:06}", self.receipt_counter)
+        } else {
+            format!(
+                "rcpt-{:016x}-{:016x}",
+                self.receipt_epoch, self.receipt_counter
+            )
+        }
     }
 
     /// Register a compatibility shim.
@@ -727,6 +760,59 @@ mod tests {
             policy_context: None,
         });
         assert!(!resp.trace_id.is_empty());
+    }
+
+    #[test]
+    fn trace_counter_rollover_preserves_unique_ids() {
+        let mut svc = make_service_with_scope();
+        svc.trace_counter = u64::MAX - 1;
+
+        let first = svc.next_trace_id();
+        let second = svc.next_trace_id();
+
+        assert_ne!(first, second);
+        assert_eq!(first, "trace-18446744073709551615");
+        assert_eq!(second, "trace-0000000000000001-0000000000000001");
+        assert_eq!(svc.trace_epoch, 1);
+        assert_eq!(svc.trace_counter, 1);
+    }
+
+    #[test]
+    fn receipt_counter_rollover_preserves_unique_ids() {
+        let mut svc = make_service_with_scope();
+        svc.receipt_counter = u64::MAX - 1;
+
+        let first = svc.next_receipt_id();
+        let second = svc.next_receipt_id();
+
+        assert_ne!(first, second);
+        assert_eq!(first, "rcpt-18446744073709551615");
+        assert_eq!(second, "rcpt-0000000000000001-0000000000000001");
+        assert_eq!(svc.receipt_epoch, 1);
+        assert_eq!(svc.receipt_counter, 1);
+    }
+
+    #[test]
+    fn gate_check_rollover_keeps_trace_and_receipt_ids_unique() {
+        let mut svc = make_service_with_scope();
+        svc.trace_counter = u64::MAX - 1;
+        svc.receipt_counter = u64::MAX - 1;
+
+        let first = svc.gate_check(&GateCheckRequest {
+            package_id: "pkg-1".into(),
+            requested_mode: CompatMode::Strict,
+            scope: "project-1".into(),
+            policy_context: None,
+        });
+        let second = svc.gate_check(&GateCheckRequest {
+            package_id: "pkg-1".into(),
+            requested_mode: CompatMode::Strict,
+            scope: "project-1".into(),
+            policy_context: None,
+        });
+
+        assert_ne!(first.trace_id, second.trace_id);
+        assert_ne!(first.receipt_id, second.receipt_id);
     }
 
     // ── Mode query ────────────────────────────────────────────────────────
