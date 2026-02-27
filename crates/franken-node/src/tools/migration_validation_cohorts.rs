@@ -312,7 +312,8 @@ impl MigrationValidationCohorts {
 
         let mut coverage: BTreeMap<String, usize> = BTreeMap::new();
         for c in self.cohorts.values() {
-            *coverage.entry(c.category.label().to_string()).or_default() += 1;
+            let count = coverage.entry(c.category.label().to_string()).or_default();
+            *count = count.saturating_add(1);
         }
 
         let hash_input = format!(

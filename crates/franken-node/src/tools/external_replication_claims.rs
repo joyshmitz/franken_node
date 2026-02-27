@@ -319,7 +319,8 @@ impl ExternalReplicationClaims {
         let pending = total - published;
         let mut by_cat: BTreeMap<String, usize> = BTreeMap::new();
         for c in self.claims.values() {
-            *by_cat.entry(c.category.label().to_string()).or_default() += 1;
+            let count = by_cat.entry(c.category.label().to_string()).or_default();
+            *count = count.saturating_add(1);
         }
         let hash_input = format!("{total}:{published}:{}", &self.schema_version);
         let content_hash = hex::encode(Sha256::digest(

@@ -396,17 +396,19 @@ impl RedTeamEvaluations {
     pub fn generate_catalog(&mut self, trace_id: &str) -> EvaluationCatalog {
         let mut by_type = BTreeMap::new();
         let mut by_severity = BTreeMap::new();
-        let mut total_findings = 0;
+        let mut total_findings: usize = 0;
 
         for eng in self.engagements.values() {
-            *by_type
+            let type_count = by_type
                 .entry(eng.eval_type.label().to_string())
-                .or_insert(0) += 1;
+                .or_insert(0usize);
+            *type_count = type_count.saturating_add(1);
             for f in &eng.findings {
-                *by_severity
+                let severity_count = by_severity
                     .entry(f.severity.label().to_string())
-                    .or_insert(0) += 1;
-                total_findings += 1;
+                    .or_insert(0usize);
+                *severity_count = severity_count.saturating_add(1);
+                total_findings = total_findings.saturating_add(1);
             }
         }
 

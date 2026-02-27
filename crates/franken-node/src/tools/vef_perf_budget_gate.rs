@@ -480,7 +480,7 @@ impl VefPerfBudgetGate {
 
             // Check sample count
             if m.sample_count < self.config.min_samples {
-                skipped_checks += 1;
+                skipped_checks = skipped_checks.saturating_add(1);
                 results.push(OperationVerdict {
                     operation: m.operation.label().to_string(),
                     mode: m.mode.label().to_string(),
@@ -584,7 +584,7 @@ impl VefPerfBudgetGate {
                             d
                         },
                     );
-                    passed_checks += 1;
+                    passed_checks = passed_checks.saturating_add(1);
                 }
                 VerdictStatus::Fail => {
                     self.emit_event(
@@ -602,14 +602,14 @@ impl VefPerfBudgetGate {
                             d
                         },
                     );
-                    failed_checks += 1;
+                    failed_checks = failed_checks.saturating_add(1);
                 }
                 VerdictStatus::Unstable => {
                     // Count as skipped for gate purposes — unstable ≠ fail
-                    skipped_checks += 1;
+                    skipped_checks = skipped_checks.saturating_add(1);
                 }
                 VerdictStatus::Skipped => {
-                    skipped_checks += 1;
+                    skipped_checks = skipped_checks.saturating_add(1);
                 }
             }
 

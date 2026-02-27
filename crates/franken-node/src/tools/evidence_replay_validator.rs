@@ -440,9 +440,15 @@ impl EvidenceReplayValidator {
         };
 
         match &result {
-            ReplayResult::Match => self.match_count += 1,
-            ReplayResult::Mismatch { .. } => self.mismatch_count += 1,
-            ReplayResult::Unresolvable { .. } => self.unresolvable_count += 1,
+            ReplayResult::Match => {
+                self.match_count = self.match_count.saturating_add(1);
+            }
+            ReplayResult::Mismatch { .. } => {
+                self.mismatch_count = self.mismatch_count.saturating_add(1);
+            }
+            ReplayResult::Unresolvable { .. } => {
+                self.unresolvable_count = self.unresolvable_count.saturating_add(1);
+            }
         }
         self.results
             .push((entry.decision_id.clone(), result.clone()));

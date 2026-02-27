@@ -332,7 +332,8 @@ impl PartnerLighthousePrograms {
     pub fn generate_funnel(&mut self, trace_id: &str) -> AdoptionFunnel {
         let mut by_tier: BTreeMap<String, usize> = BTreeMap::new();
         for p in self.partners.values() {
-            *by_tier.entry(p.tier.label().to_string()).or_default() += 1;
+            let count = by_tier.entry(p.tier.label().to_string()).or_default();
+            *count = count.saturating_add(1);
         }
         let total_p = self.partners.len();
         let total_d = self.deployments.len();

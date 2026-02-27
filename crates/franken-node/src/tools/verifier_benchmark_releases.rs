@@ -285,7 +285,8 @@ impl VerifierBenchmarkReleases {
             context: context.to_string(),
             timestamp: Utc::now().to_rfc3339(),
         });
-        let release = self.releases
+        let release = self
+            .releases
             .get_mut(release_id)
             .expect("validated: release existence checked via contains_key above");
         release.download_count = release.download_count.saturating_add(1);

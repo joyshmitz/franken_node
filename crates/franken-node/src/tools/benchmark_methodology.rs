@@ -414,12 +414,15 @@ impl BenchmarkMethodology {
         let mut by_status = BTreeMap::new();
 
         for pub_entry in self.publications.values() {
-            *by_topic
+            let topic_count = by_topic
                 .entry(pub_entry.topic.label().to_string())
-                .or_insert(0) += 1;
-            *by_status
+                .or_insert(0usize);
+            *topic_count = topic_count.saturating_add(1);
+
+            let status_count = by_status
                 .entry(pub_entry.status.label().to_string())
-                .or_insert(0) += 1;
+                .or_insert(0usize);
+            *status_count = status_count.saturating_add(1);
         }
 
         let hash_input = serde_json::json!({

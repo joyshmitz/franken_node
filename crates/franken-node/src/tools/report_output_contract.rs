@@ -232,13 +232,14 @@ impl ReportOutputContract {
 
     pub fn generate_catalog(&mut self, trace_id: &str) -> OutputCatalog {
         let mut by_type = BTreeMap::new();
-        let mut complete = 0;
+        let mut complete: usize = 0;
         for b in self.bundles.values() {
-            *by_type
+            let count = by_type
                 .entry(b.report_type.label().to_string())
-                .or_insert(0) += 1;
+                .or_insert(0usize);
+            *count = count.saturating_add(1);
             if b.is_complete {
-                complete += 1;
+                complete = complete.saturating_add(1);
             }
         }
 

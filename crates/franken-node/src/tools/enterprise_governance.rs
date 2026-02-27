@@ -345,22 +345,28 @@ impl EnterpriseGovernance {
 
         for (cat, entries) in &cat_data {
             let total = entries.len();
-            let mut compliant = 0;
-            let mut non_compliant = 0;
-            let mut partial = 0;
-            let mut not_assessed = 0;
+            let mut compliant: usize = 0;
+            let mut non_compliant: usize = 0;
+            let mut partial: usize = 0;
+            let mut not_assessed: usize = 0;
 
             for (rule_id, enforcement, rule_status) in entries {
                 match rule_status {
-                    ComplianceStatus::Compliant => compliant += 1,
+                    ComplianceStatus::Compliant => {
+                        compliant = compliant.saturating_add(1);
+                    }
                     ComplianceStatus::NonCompliant => {
-                        non_compliant += 1;
+                        non_compliant = non_compliant.saturating_add(1);
                         if *enforcement == EnforcementLevel::Mandatory {
                             blocked_rules.push(rule_id.clone());
                         }
                     }
-                    ComplianceStatus::PartiallyCompliant => partial += 1,
-                    ComplianceStatus::NotAssessed => not_assessed += 1,
+                    ComplianceStatus::PartiallyCompliant => {
+                        partial = partial.saturating_add(1);
+                    }
+                    ComplianceStatus::NotAssessed => {
+                        not_assessed = not_assessed.saturating_add(1);
+                    }
                 }
             }
 

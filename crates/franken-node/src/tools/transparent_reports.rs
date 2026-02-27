@@ -439,18 +439,21 @@ impl TransparentReports {
     pub fn generate_catalog(&mut self, trace_id: &str) -> ReportCatalog {
         let mut by_category = BTreeMap::new();
         let mut by_severity = BTreeMap::new();
-        let mut open_actions = 0;
+        let mut open_actions: usize = 0;
 
         for report in self.reports.values() {
-            *by_category
+            let category_count = by_category
                 .entry(report.category.label().to_string())
-                .or_insert(0) += 1;
-            *by_severity
+                .or_insert(0usize);
+            *category_count = category_count.saturating_add(1);
+
+            let severity_count = by_severity
                 .entry(report.severity.label().to_string())
-                .or_insert(0) += 1;
+                .or_insert(0usize);
+            *severity_count = severity_count.saturating_add(1);
             for action in &report.corrective_actions {
                 if action.status != ActionStatus::Verified {
-                    open_actions += 1;
+                    open_actions = open_actions.saturating_add(1);
                 }
             }
         }

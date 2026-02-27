@@ -332,7 +332,8 @@ impl MigrationSpeedFailureMetrics {
         let mut fail_data: BTreeMap<FailureType, usize> = BTreeMap::new();
         for r in &self.records {
             if let Some(ft) = &r.failure_type {
-                *fail_data.entry(*ft).or_default() += 1;
+                let count = fail_data.entry(*ft).or_default();
+                *count = count.saturating_add(1);
             }
         }
         let failure_stats: Vec<FailureStats> = fail_data

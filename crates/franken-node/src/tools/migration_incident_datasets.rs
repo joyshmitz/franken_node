@@ -319,10 +319,12 @@ impl ReproducibleDatasets {
         dataset_ids: &[String],
         trace_id: &str,
     ) -> Result<DatasetBundle, String> {
-        let mut total_records = 0;
+        let mut total_records: usize = 0;
         for id in dataset_ids {
             match self.datasets.get(id) {
-                Some(ds) => total_records += ds.record_count,
+                Some(ds) => {
+                    total_records = total_records.saturating_add(ds.record_count);
+                }
                 None => return Err(format!("Dataset {} not found", id)),
             }
         }
@@ -366,13 +368,14 @@ impl ReproducibleDatasets {
     /// Generate the full dataset catalog.
     pub fn generate_catalog(&mut self, trace_id: &str) -> DatasetCatalog {
         let mut by_type = BTreeMap::new();
-        let mut total_records = 0;
+        let mut total_records: usize = 0;
 
         for ds in self.datasets.values() {
-            *by_type
+            let count = by_type
                 .entry(ds.dataset_type.label().to_string())
-                .or_insert(0) += 1;
-            total_records += ds.record_count;
+                .or_insert(0usize);
+            *count = count.saturating_add(1);
+            total_records = total_records.saturating_add(ds.record_count);
         }
 
         let hash_input = serde_json::json!({
