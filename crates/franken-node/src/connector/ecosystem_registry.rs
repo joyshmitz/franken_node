@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use crate::security::constant_time::ct_eq;
 
 // -- Event codes ---------------------------------------------------------------
 
@@ -460,7 +461,7 @@ impl EcosystemRegistry {
                 )));
             }
             let computed = compute_audit_hash(entry);
-            if computed != entry.entry_hash {
+            if !ct_eq(&computed, &entry.entry_hash) {
                 return Err(RegistryError::AuthFailure(format!(
                     "audit entry {} hash mismatch: expected {}, got {}",
                     entry.sequence, computed, entry.entry_hash
@@ -565,6 +566,13 @@ mod tests {
             signature: "sig-placeholder".to_owned(),
             tags: vec!["test".to_owned()],
         }
+    }
+
+    fn tamper_same_length(hash: &str) -> String {
+        assert!(!hash.is_empty(), "hash cannot be empty");
+        let mut bytes = hash.as_bytes().to_vec();
+        bytes[0] = if bytes[0] == b'0' { b'1' } else { b'0' };
+        String::from_utf8(bytes).expect("hash should remain valid utf-8")
     }
 
     #[test]
@@ -743,6 +751,25 @@ mod tests {
         reg.register_extension(m1, &ts(1), "t").unwrap();
         reg.deprecate_extension("ext-1", &ts(2), "t").unwrap();
         reg.verify_audit_integrity().unwrap();
+    }
+
+    #[test]
+    fn test_audit_trail_integrity_detects_same_length_hash_tamper() {
+        let mut reg = EcosystemRegistry::new();
+        let m1 = make_metadata("ext-1", "pub-1", "key-1");
+        reg.register_extension(m1, &ts(1), "t").unwrap();
+        reg.deprecate_extension("ext-1", &ts(2), "t").unwrap();
+
+        let last = reg.audit_trail.last_mut().expect("audit entry");
+        last.entry_hash = tamper_same_length(&last.entry_hash);
+
+        match reg.verify_audit_integrity() {
+            Ok(()) => panic!("tampered audit hash should fail integrity verification"),
+            Err(RegistryError::AuthFailure(msg)) => {
+                assert!(msg.contains("hash mismatch"));
+            }
+            Err(other) => panic!("unexpected error variant: {other:?}"),
+        }
     }
 
     #[test]

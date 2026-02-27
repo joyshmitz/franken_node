@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::reputation::ReputationTier;
+use crate::security::constant_time::ct_eq;
 
 // ── Event codes ──────────────────────────────────────────────────────────────
 
@@ -657,7 +658,7 @@ impl CertificationRegistry {
                 return Err(CertificationError::AuditIntegrityViolation);
             }
             let computed = compute_entry_hash(entry);
-            if computed != entry.entry_hash {
+            if !ct_eq(&computed, &entry.entry_hash) {
                 return Err(CertificationError::AuditIntegrityViolation);
             }
             expected_prev = entry.entry_hash.clone();
@@ -749,6 +750,13 @@ mod tests {
             has_audit_attestation: false,
             audit_attestation: None,
         }
+    }
+
+    fn tamper_same_length(hash: &str) -> String {
+        assert!(!hash.is_empty(), "hash cannot be empty");
+        let mut bytes = hash.as_bytes().to_vec();
+        bytes[0] = if bytes[0] == b'0' { b'1' } else { b'0' };
+        String::from_utf8(bytes).expect("hash should remain valid utf-8")
     }
 
     #[test]
@@ -1067,6 +1075,34 @@ mod tests {
 
         reg.verify_audit_integrity().unwrap();
         assert_eq!(reg.audit_trail_len(), 2);
+    }
+
+    #[test]
+    fn test_audit_trail_integrity_detects_same_length_hash_tamper() {
+        let mut reg = CertificationRegistry::new();
+        let input = make_input(
+            "ext-1",
+            ProvenanceLevel::PublisherSigned,
+            ReputationTier::Provisional,
+            30.0,
+        );
+        reg.evaluate_and_register(&input, &ts(1));
+        reg.promote(
+            "ext-1",
+            "1.0.0",
+            CertificationLevel::Verified,
+            "ev-ref",
+            &ts(2),
+        )
+        .unwrap();
+
+        let last = reg.audit_trail.last_mut().expect("audit entry");
+        last.entry_hash = tamper_same_length(&last.entry_hash);
+
+        assert!(matches!(
+            reg.verify_audit_integrity(),
+            Err(CertificationError::AuditIntegrityViolation)
+        ));
     }
 
     #[test]

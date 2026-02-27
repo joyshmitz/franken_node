@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use crate::security::constant_time::ct_eq;
 
 // ── Event codes ──────────────────────────────────────────────────────────────
 
@@ -675,7 +676,7 @@ impl ReputationRegistry {
                 });
             }
             let computed = compute_entry_hash(entry);
-            if computed != entry.entry_hash {
+            if !ct_eq(&computed, &entry.entry_hash) {
                 return Err(ReputationError::AuditIntegrityViolation {
                     expected: computed,
                     actual: entry.entry_hash.clone(),
@@ -844,6 +845,13 @@ mod tests {
         }
     }
 
+    fn tamper_same_length(hash: &str) -> String {
+        assert!(!hash.is_empty(), "hash cannot be empty");
+        let mut bytes = hash.as_bytes().to_vec();
+        bytes[0] = if bytes[0] == b'0' { b'1' } else { b'0' };
+        String::from_utf8(bytes).expect("hash should remain valid utf-8")
+    }
+
     #[test]
     fn test_tier_from_score() {
         assert_eq!(ReputationTier::from_score(0.0), ReputationTier::Untrusted);
@@ -1010,6 +1018,22 @@ mod tests {
         // Verify chain integrity.
         reg.verify_audit_integrity().unwrap();
         assert!(reg.audit_trail_len() > 0);
+    }
+
+    #[test]
+    fn test_audit_trail_integrity_detects_same_length_hash_tamper() {
+        let mut reg = ReputationRegistry::new();
+        reg.register_publisher("pub-1", &ts(1));
+        let sig = make_signal("sig-1", "pub-1", SignalKind::CertificationAdherence);
+        reg.ingest_signal(&sig, &ts(2)).unwrap();
+
+        let last = reg.audit_trail.last_mut().expect("audit entry");
+        last.entry_hash = tamper_same_length(&last.entry_hash);
+
+        assert!(matches!(
+            reg.verify_audit_integrity(),
+            Err(ReputationError::AuditIntegrityViolation { .. })
+        ));
     }
 
     #[test]
