@@ -441,8 +441,7 @@ impl DurabilityController {
         match &mode {
             DurabilityMode::Quorum { min_acks } => {
                 let acked =
-                    u32::try_from(responses.iter().filter(|r| r.acked).count())
-                        .unwrap_or(u32::MAX);
+                    u32::try_from(responses.iter().filter(|r| r.acked).count()).unwrap_or(u32::MAX);
                 let total = u32::try_from(responses.len()).unwrap_or(u32::MAX);
                 let min_acks = *min_acks;
 

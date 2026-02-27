@@ -601,7 +601,9 @@ impl Supervisor {
     // monotonic clock; here we use restart_timestamps length as a proxy.
     fn computed_now_ms(&self) -> u64 {
         // Use a simple incrementing value to avoid non-determinism in tests.
-        (self.restart_timestamps.len() as u64 + 1) * 1000
+        (self.restart_timestamps.len() as u64)
+            .saturating_add(1)
+            .saturating_mul(1000)
     }
 }
 

@@ -414,7 +414,7 @@ impl ObligationTracker {
     /// Detects obligations that have remained in `Reserved` state longer than
     /// `leak_timeout_secs` and force-rolls them back.
     pub fn run_leak_scan(&mut self, now_ms: u64, trace_id: &str) -> LeakScanResult {
-        let timeout_ms = self.leak_timeout_secs * 1000;
+        let timeout_ms = self.leak_timeout_secs.saturating_mul(1000);
         let mut leaked_ids = Vec::new();
 
         // Collect leaked obligation keys

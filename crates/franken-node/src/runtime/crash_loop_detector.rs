@@ -172,8 +172,7 @@ impl CrashLoopDetector {
     /// Count crashes within the sliding window ending at `now`.
     pub fn crashes_in_window(&self, now: u64) -> u32 {
         let cutoff = now.saturating_sub(self.config.window_secs);
-        u32::try_from(self.crash_times.iter().filter(|&&t| t >= cutoff).count())
-            .unwrap_or(u32::MAX)
+        u32::try_from(self.crash_times.iter().filter(|&&t| t >= cutoff).count()).unwrap_or(u32::MAX)
     }
 
     /// Check if the crash-loop threshold is exceeded at time `now`.
