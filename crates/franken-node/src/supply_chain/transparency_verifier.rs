@@ -13,7 +13,8 @@ use crate::security::constant_time::ct_eq;
 // ── Hash helper ─────────────────────────────────────────────────────
 
 /// Compute a deterministic hash of two hex strings combined.
-/// In production this would use SHA-256; here we use SipHash.
+/// Uses full-width SHA-256 output (64 hex chars) to avoid weakened collision
+/// resistance from truncation.
 fn hash_pair(left: &str, right: &str) -> String {
     let mut h = Sha256::new();
     h.update(b"transparency_interior_v1:");
@@ -21,14 +22,7 @@ fn hash_pair(left: &str, right: &str) -> String {
     h.update(b"|");
     h.update(right.as_bytes());
     let digest = h.finalize();
-    format!(
-        "{:016x}",
-        u64::from_le_bytes(
-            digest[..8]
-                .try_into()
-                .expect("SHA-256 digest is 32 bytes, first 8 always valid")
-        )
-    )
+    format!("{:x}", digest)
 }
 
 /// Compute the leaf hash for a piece of data.
@@ -37,14 +31,7 @@ pub fn leaf_hash(data: &str) -> String {
     h.update(b"transparency_verifier_leaf_v1:");
     h.update(data.as_bytes());
     let digest = h.finalize();
-    format!(
-        "{:016x}",
-        u64::from_le_bytes(
-            digest[..8]
-                .try_into()
-                .expect("SHA-256 digest is 32 bytes, first 8 always valid")
-        )
-    )
+    format!("{:x}", digest)
 }
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -73,11 +60,11 @@ pub struct TransparencyPolicy {
 }
 
 impl TransparencyPolicy {
-    /// Check if a root hash is in the pinned set.
-    pub fn is_root_pinned(&self, root_hash: &str) -> bool {
+    /// Check if a `(tree_size, root_hash)` checkpoint is in the pinned set.
+    pub fn is_checkpoint_pinned(&self, tree_size: u64, root_hash: &str) -> bool {
         self.pinned_roots
             .iter()
-            .any(|r| ct_eq(&r.root_hash, root_hash))
+            .any(|r| r.tree_size == tree_size && ct_eq(&r.root_hash, root_hash))
     }
 }
 
@@ -189,6 +176,26 @@ pub fn verify_inclusion(
         }
     };
 
+    // Validate proof metadata bounds before any hash work.
+    if proof.tree_size == 0 || proof.leaf_index >= proof.tree_size {
+        return ProofReceipt {
+            connector_id: connector_id.into(),
+            artifact_id: artifact_id.into(),
+            verified: false,
+            log_root_matched: false,
+            proof_valid: false,
+            failure_reason: Some(ProofFailure::PathInvalid {
+                computed: format!(
+                    "leaf_index={}, tree_size={}",
+                    proof.leaf_index, proof.tree_size
+                ),
+                expected: "0 <= leaf_index < tree_size".into(),
+            }),
+            trace_id: trace_id.into(),
+            timestamp: timestamp.into(),
+        };
+    }
+
     // Check leaf hash matches artifact hash
     if !ct_eq(&proof.leaf_hash, artifact_hash) {
         return ProofReceipt {
@@ -210,7 +217,7 @@ pub fn verify_inclusion(
     let computed_root = recompute_root(proof);
 
     // Check if root is pinned
-    let root_pinned = policy.is_root_pinned(&computed_root);
+    let root_pinned = policy.is_checkpoint_pinned(proof.tree_size, &computed_root);
     if !root_pinned {
         return ProofReceipt {
             connector_id: connector_id.into(),
@@ -343,11 +350,11 @@ pub fn build_test_tree(leaves: &[&str]) -> (String, Vec<InclusionProof>) {
 mod tests {
     use super::*;
 
-    fn test_policy(root: &str) -> TransparencyPolicy {
+    fn test_policy(root: &str, tree_size: u64) -> TransparencyPolicy {
         TransparencyPolicy {
             required: true,
             pinned_roots: vec![LogRoot {
-                tree_size: 4,
+                tree_size,
                 root_hash: root.to_string(),
             }],
         }
@@ -373,6 +380,12 @@ mod tests {
     #[test]
     fn leaf_hash_different_data() {
         assert_ne!(leaf_hash("hello"), leaf_hash("world"));
+    }
+
+    #[test]
+    fn hashes_use_full_sha256_width() {
+        assert_eq!(leaf_hash("hello").len(), 64);
+        assert_eq!(hash_pair("a", "b").len(), 64);
     }
 
     #[test]
@@ -409,7 +422,7 @@ mod tests {
     #[test]
     fn valid_proof_verifies() {
         let (root, proofs) = build_test_tree(&["a", "b", "c", "d"]);
-        let policy = test_policy(&root);
+        let policy = test_policy(&root, proofs[0].tree_size);
         let receipt = verify_inclusion(
             &policy,
             Some(&proofs[0]),
@@ -448,7 +461,7 @@ mod tests {
     #[test]
     fn unpinned_root_rejected() {
         let (_, proofs) = build_test_tree(&["a", "b", "c", "d"]);
-        let policy = test_policy("wrong_root_hash");
+        let policy = test_policy("wrong_root_hash", proofs[0].tree_size);
         let receipt = verify_inclusion(
             &policy,
             Some(&proofs[0]),
@@ -468,7 +481,7 @@ mod tests {
     #[test]
     fn leaf_mismatch_rejected() {
         let (root, proofs) = build_test_tree(&["a", "b", "c", "d"]);
-        let policy = test_policy(&root);
+        let policy = test_policy(&root, proofs[0].tree_size);
         let receipt = verify_inclusion(
             &policy,
             Some(&proofs[0]),
@@ -488,7 +501,7 @@ mod tests {
     #[test]
     fn leaf_mismatch_same_length_rejected() {
         let (root, proofs) = build_test_tree(&["a", "b", "c", "d"]);
-        let policy = test_policy(&root);
+        let policy = test_policy(&root, proofs[0].tree_size);
         let tampered_hash = tamper_same_length_hash(&proofs[0].leaf_hash);
         let receipt = verify_inclusion(
             &policy,
@@ -509,7 +522,7 @@ mod tests {
     #[test]
     fn tampered_proof_fails() {
         let (root, proofs) = build_test_tree(&["a", "b", "c", "d"]);
-        let policy = test_policy(&root);
+        let policy = test_policy(&root, proofs[0].tree_size);
         let mut bad_proof = proofs[0].clone();
         if !bad_proof.audit_path.is_empty() {
             bad_proof.audit_path[0] = "tampered".into();
@@ -529,7 +542,7 @@ mod tests {
     #[test]
     fn deterministic_verification() {
         let (root, proofs) = build_test_tree(&["a", "b"]);
-        let policy = test_policy(&root);
+        let policy = test_policy(&root, proofs[0].tree_size);
         let r1 = verify_inclusion(
             &policy,
             Some(&proofs[0]),
@@ -555,7 +568,7 @@ mod tests {
     #[test]
     fn receipt_has_trace_id() {
         let (root, proofs) = build_test_tree(&["a", "b"]);
-        let policy = test_policy(&root);
+        let policy = test_policy(&root, proofs[0].tree_size);
         let receipt = verify_inclusion(
             &policy,
             Some(&proofs[0]),
@@ -566,6 +579,71 @@ mod tests {
             "ts",
         );
         assert_eq!(receipt.trace_id, "trace-xyz");
+    }
+
+    #[test]
+    fn checkpoint_size_mismatch_rejected() {
+        let (root, proofs) = build_test_tree(&["a", "b"]);
+        let policy = test_policy(&root, proofs[0].tree_size.saturating_add(1));
+        let receipt = verify_inclusion(
+            &policy,
+            Some(&proofs[0]),
+            &proofs[0].leaf_hash,
+            "conn-1",
+            "art-1",
+            "t8",
+            "ts",
+        );
+        assert!(!receipt.verified);
+        assert!(matches!(
+            receipt.failure_reason,
+            Some(ProofFailure::RootNotPinned { .. })
+        ));
+    }
+
+    #[test]
+    fn out_of_bounds_leaf_index_rejected() {
+        let (root, proofs) = build_test_tree(&["a", "b", "c", "d"]);
+        let policy = test_policy(&root, proofs[0].tree_size);
+        let mut bad_proof = proofs[0].clone();
+        bad_proof.leaf_index = bad_proof.tree_size;
+        let receipt = verify_inclusion(
+            &policy,
+            Some(&bad_proof),
+            &bad_proof.leaf_hash,
+            "conn-1",
+            "art-1",
+            "t9",
+            "ts",
+        );
+        assert!(!receipt.verified);
+        assert!(matches!(
+            receipt.failure_reason,
+            Some(ProofFailure::PathInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn zero_tree_size_rejected() {
+        let (root, proofs) = build_test_tree(&["a", "b", "c", "d"]);
+        let policy = test_policy(&root, proofs[0].tree_size);
+        let mut bad_proof = proofs[0].clone();
+        bad_proof.tree_size = 0;
+        bad_proof.leaf_index = 0;
+        let receipt = verify_inclusion(
+            &policy,
+            Some(&bad_proof),
+            &bad_proof.leaf_hash,
+            "conn-1",
+            "art-1",
+            "t10",
+            "ts",
+        );
+        assert!(!receipt.verified);
+        assert!(matches!(
+            receipt.failure_reason,
+            Some(ProofFailure::PathInvalid { .. })
+        ));
     }
 
     // === Serde ===

@@ -13,8 +13,7 @@ use std::fmt;
 
 /// Compute a domain-separated hash: H(domain || ":" || data).
 ///
-/// Uses SHA-256 and stores the first 16 hexadecimal characters for
-/// compatibility with existing fixtures.
+/// Uses full-width SHA-256 output to preserve collision resistance.
 pub fn compute_hash(domain: &str, data: &[u8]) -> InterfaceHash {
     let mut hasher = sha2::Sha256::new();
     // Domain separation: hash domain tag first, then separator, then data
@@ -24,12 +23,9 @@ pub fn compute_hash(domain: &str, data: &[u8]) -> InterfaceHash {
     sha2::Digest::update(&mut hasher, data);
     let hash_hex = format!("{:x}", sha2::Digest::finalize(hasher));
 
-    // For backwards compatibility with tests expecting a 16-char hex string, we take the first 16 chars.
-    let hash_hex_16 = hash_hex.chars().take(16).collect::<String>();
-
     InterfaceHash {
         domain: domain.to_string(),
-        hash_hex: hash_hex_16,
+        hash_hex,
         data_len: data.len(),
     }
 }
@@ -46,7 +42,7 @@ pub fn verify_hash(
     }
 
     // Validate hash format
-    if expected.hash_hex.len() != 16 || !expected.hash_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+    if expected.hash_hex.len() != 64 || !expected.hash_hex.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(RejectionCode::MalformedHash);
     }
 
@@ -261,7 +257,7 @@ mod tests {
     #[test]
     fn compute_hash_hex_format() {
         let h = compute_hash("test", b"data");
-        assert_eq!(h.hash_hex.len(), 16);
+        assert_eq!(h.hash_hex.len(), 64);
         assert!(h.hash_hex.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
