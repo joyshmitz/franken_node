@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
 
+use crate::security::constant_time::ct_eq;
+
 /// The state model type declared by each connector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -70,13 +72,13 @@ impl StateRoot {
     pub fn update_head(&mut self, new_head: serde_json::Value) {
         self.head = new_head;
         self.root_hash = compute_hash(&self.head);
-        self.version += 1;
+        self.version = self.version.saturating_add(1);
         self.last_modified = now_iso8601();
     }
 
     /// Verify that the stored root_hash matches the computed hash of head.
     pub fn verify_integrity(&self) -> bool {
-        self.root_hash == compute_hash(&self.head)
+        ct_eq(&self.root_hash, &compute_hash(&self.head))
     }
 }
 

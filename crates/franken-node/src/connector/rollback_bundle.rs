@@ -140,7 +140,8 @@ impl BundleComponent {
 
     /// Verify the component's data against its stored checksum.
     pub fn verify_checksum(&self) -> bool {
-        sha256_hex(&self.data) == self.checksum
+        let computed = sha256_hex(&self.data);
+        crate::security::constant_time::ct_eq(&computed, &self.checksum)
     }
 }
 
@@ -318,7 +319,7 @@ impl RollbackBundle {
     pub fn verify_integrity(&self) -> Result<(), RollbackBundleError> {
         // Verify manifest integrity hash
         let computed_hash = self.manifest.integrity_hash();
-        if computed_hash != self.integrity_hash {
+        if !crate::security::constant_time::ct_eq(&computed_hash, &self.integrity_hash) {
             return Err(RollbackBundleError::ManifestInvalid {
                 reason: format!(
                     "integrity hash mismatch: expected={}, actual={}",
@@ -346,7 +347,7 @@ impl RollbackBundle {
                     actual: sha256_hex(&component.data),
                 });
             }
-            if component.checksum != mc.checksum {
+            if !crate::security::constant_time::ct_eq(&component.checksum, &mc.checksum) {
                 return Err(RollbackBundleError::ChecksumMismatch {
                     component: mc.name.clone(),
                     expected: mc.checksum.clone(),
@@ -862,6 +863,13 @@ mod tests {
     }
 
     #[test]
+    fn test_bundle_component_tampered_checksum_length_mismatch() {
+        let mut c = BundleComponent::new("test", 1, b"data".to_vec());
+        c.checksum.pop();
+        assert!(!c.verify_checksum());
+    }
+
+    #[test]
     fn test_compatibility_proof_serde() {
         let proof = CompatibilityProof {
             rollback_from: "1.4.2".to_string(),
@@ -982,8 +990,19 @@ mod tests {
     #[test]
     fn test_bundle_integrity_tampered() {
         let (_store, mut bundle) = make_store_and_bundle();
-        bundle.integrity_hash = "bad_hash".to_string();
+        let mut tampered = bundle.integrity_hash.clone();
+        let replacement = if tampered.starts_with('a') { "b" } else { "a" };
+        tampered.replace_range(0..1, replacement);
+        bundle.integrity_hash = tampered;
         assert!(bundle.verify_integrity().is_err());
+    }
+
+    #[test]
+    fn test_bundle_integrity_tampered_manifest_checksum_length_mismatch() {
+        let (_store, mut bundle) = make_store_and_bundle();
+        bundle.manifest.components[0].checksum.pop();
+        let result = bundle.verify_integrity();
+        assert!(matches!(result, Err(RollbackBundleError::ChecksumMismatch { .. })));
     }
 
     #[test]
@@ -1010,7 +1029,7 @@ mod tests {
                 assert_eq!(expected, "1.4.2");
                 assert_eq!(actual, "2.0.0");
             }
-            _ => panic!("expected VersionMismatch"),
+            _ => assert!(false, "expected VersionMismatch"),
         }
     }
 

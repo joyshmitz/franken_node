@@ -17,6 +17,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::security::constant_time::ct_eq;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -396,7 +398,7 @@ impl VerifierEconomyRegistry {
         }
 
         let verifier_id = format!("ver-{:04}", self.next_verifier_id);
-        self.next_verifier_id += 1;
+        self.next_verifier_id = self.next_verifier_id.saturating_add(1);
 
         let verifier = Verifier {
             verifier_id: verifier_id.clone(),
@@ -490,7 +492,7 @@ impl VerifierEconomyRegistry {
             .submission_counts
             .entry(submission.verifier_id.clone())
             .or_insert(0);
-        *count += 1;
+        *count = count.saturating_add(1);
         if *count > self.max_submissions_per_window {
             self.emit(
                 VEP_006,
@@ -508,7 +510,10 @@ impl VerifierEconomyRegistry {
         // Check for duplicate submission
         if self.attestations.values().any(|a| {
             a.verifier_id == submission.verifier_id
-                && a.evidence.execution_trace_hash == submission.evidence.execution_trace_hash
+                && ct_eq(
+                    &a.evidence.execution_trace_hash,
+                    &submission.evidence.execution_trace_hash,
+                )
         }) {
             self.emit(
                 VEP_008,
@@ -524,7 +529,7 @@ impl VerifierEconomyRegistry {
         }
 
         let attestation_id = format!("att-{:04}", self.next_attestation_id);
-        self.next_attestation_id += 1;
+        self.next_attestation_id = self.next_attestation_id.saturating_add(1);
 
         let attestation = Attestation {
             attestation_id: attestation_id.clone(),
@@ -715,7 +720,7 @@ impl VerifierEconomyRegistry {
         att.state = AttestationState::Disputed;
 
         let dispute_id = format!("dsp-{:04}", self.next_dispute_id);
-        self.next_dispute_id += 1;
+        self.next_dispute_id = self.next_dispute_id.saturating_add(1);
 
         let dispute = Dispute {
             dispute_id: dispute_id.clone(),

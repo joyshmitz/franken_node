@@ -404,7 +404,7 @@ impl ScoreboardPipeline {
                 &contract.signer_id,
                 &self.config.signing_key,
             );
-            if contract.signature != expected_sig {
+            if !crate::security::constant_time::ct_eq(&contract.signature, &expected_sig) {
                 return ScoreboardUpdateResult::Rejected {
                     reason: ScoreboardRejectionReason::SignatureInvalid,
                     error_code: error_codes::ERR_SCOREBOARD_SIGNATURE_INVALID.to_string(),
@@ -759,7 +759,10 @@ mod tests {
             CompilationResult::Compiled { contract, .. } => contract,
             _ => panic!("expected compiled"),
         };
-        contract.signature = "tampered-sig".to_string();
+        let mut tampered = contract.signature.clone();
+        let replacement = if tampered.starts_with('a') { "b" } else { "a" };
+        tampered.replace_range(0..1, replacement);
+        contract.signature = tampered;
         let result = sb.publish("snap-3", &[contract]);
         assert!(matches!(
             result,

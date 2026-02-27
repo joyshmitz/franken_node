@@ -209,7 +209,7 @@ impl ComplianceEvidenceStore {
 
         // Tamper-evidence check: recompute hash and verify.
         let recomputed = Self::compute_content_hash(&evidence.content);
-        if recomputed != evidence.content_hash {
+        if !crate::security::constant_time::ct_eq(&recomputed, &evidence.content_hash) {
             self.events.push(ComplianceEvent {
                 event_code: ENE_008_COMPLIANCE_TAMPER_CHECK_FAIL.to_owned(),
                 content_hash: content_hash.to_owned(),
@@ -463,6 +463,52 @@ mod tests {
     }
 
     #[test]
+    fn test_retrieve_tampered_detected() {
+        let mut store = ComplianceEvidenceStore::new();
+        let hash = store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::MigrationSingularity,
+                "Tamper Test",
+                "payload-original",
+                None,
+                &[],
+                &ts(1),
+                "t",
+            )
+            .unwrap();
+
+        let entry = store.artifacts.get_mut(&hash).expect("stored evidence");
+        entry.content = "payload-tampered".to_string();
+
+        let result = store.retrieve_evidence(&hash, &ts(2), "t");
+        assert!(matches!(result, Err(ComplianceError::TamperDetected(_))));
+    }
+
+    #[test]
+    fn test_retrieve_tampered_hash_length_mismatch_detected() {
+        let mut store = ComplianceEvidenceStore::new();
+        let hash = store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::MigrationSingularity,
+                "Tamper Hash Length Test",
+                "payload-original",
+                None,
+                &[],
+                &ts(1),
+                "t",
+            )
+            .unwrap();
+
+        let entry = store.artifacts.get_mut(&hash).expect("stored evidence");
+        entry.content_hash.pop();
+
+        let result = store.retrieve_evidence(&hash, &ts(2), "t");
+        assert!(matches!(result, Err(ComplianceError::TamperDetected(_))));
+    }
+
+    #[test]
     fn test_tamper_evidence_verification_pass() {
         let mut store = ComplianceEvidenceStore::new();
         let hash = store
@@ -479,6 +525,28 @@ mod tests {
             .unwrap();
         let valid = store.verify_tamper_evidence(&hash, &ts(2), "t").unwrap();
         assert!(valid);
+    }
+
+    #[test]
+    fn test_tamper_evidence_verification_fail_on_hash_length_mismatch() {
+        let mut store = ComplianceEvidenceStore::new();
+        let hash = store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::TrustFabric,
+                "Evidence",
+                "content",
+                None,
+                &[],
+                &ts(1),
+                "t",
+            )
+            .unwrap();
+        let entry = store.artifacts.get_mut(&hash).expect("stored evidence");
+        entry.content_hash.pop();
+
+        let valid = store.verify_tamper_evidence(&hash, &ts(2), "t").unwrap();
+        assert!(!valid);
     }
 
     #[test]

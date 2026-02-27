@@ -377,7 +377,7 @@ pub fn validate_manifest(manifest: &CapsuleManifest) -> Result<(), VsdkError> {
 pub fn verify_capsule_signature(capsule: &ReplayCapsule) -> Result<(), VsdkError> {
     let payload = compute_signing_payload(capsule);
     let expected_sig = deterministic_hash(&payload);
-    if capsule.signature != expected_sig {
+    if !crate::security::constant_time::ct_eq(&capsule.signature, &expected_sig) {
         return Err(VsdkError::SignatureMismatch {
             expected: expected_sig,
             actual: capsule.signature.clone(),

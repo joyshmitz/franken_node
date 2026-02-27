@@ -425,7 +425,10 @@ impl ProofVerificationApi {
             hex::encode(hasher.finalize())
         };
 
-        if proof.attestation.payload_hash != expected_payload_hash {
+        if !crate::security::constant_time::ct_eq(
+            &proof.attestation.payload_hash,
+            &expected_payload_hash,
+        ) {
             return VerificationResult::InvalidSignature;
         }
 
@@ -438,7 +441,8 @@ impl ProofVerificationApi {
             hex::encode(hasher.finalize())
         };
 
-        if proof.attestation.signature != expected_signature {
+        if !crate::security::constant_time::ct_eq(&proof.attestation.signature, &expected_signature)
+        {
             return VerificationResult::InvalidSignature;
         }
 
@@ -850,7 +854,42 @@ mod tests {
             )
             .unwrap();
         let mut proof = result.proof.unwrap();
-        proof.attestation.signature = "forged".to_string();
+        let mut tampered = proof.attestation.signature.clone();
+        let replacement = if tampered.starts_with('a') { "b" } else { "a" };
+        tampered.replace_range(0..1, replacement);
+        proof.attestation.signature = tampered;
+
+        let api = verification_api();
+        let original_hashes: Vec<String> = frags.iter().map(|f| hex::encode(f.hash())).collect();
+
+        let mut hasher = Sha256::new();
+        hasher.update(b"proof_carrying_output_v1:");
+        hasher.update(&result.output_data);
+        let recomputed = hex::encode(hasher.finalize());
+
+        let v = api.verify(&proof, &original_hashes, &recomputed);
+        assert!(!v.is_valid());
+        assert_eq!(v.event_code(), REPAIR_PROOF_INVALID);
+    }
+
+    #[test]
+    fn test_verify_invalid_payload_hash() {
+        let mut dec = decoder();
+        let frags = test_fragments();
+        let result = dec
+            .decode(
+                "obj-001",
+                &frags,
+                &AlgorithmId::new("simple_concat"),
+                1000,
+                "t-1",
+            )
+            .unwrap();
+        let mut proof = result.proof.unwrap();
+        let mut tampered = proof.attestation.payload_hash.clone();
+        let replacement = if tampered.starts_with('a') { "b" } else { "a" };
+        tampered.replace_range(0..1, replacement);
+        proof.attestation.payload_hash = tampered;
 
         let api = verification_api();
         let original_hashes: Vec<String> = frags.iter().map(|f| hex::encode(f.hash())).collect();

@@ -541,7 +541,10 @@ fn validate_links(
             });
         }
 
-        if link.signed_payload_hash != attestation.output_hash {
+        if !crate::security::constant_time::ct_eq(
+            &link.signed_payload_hash,
+            &attestation.output_hash,
+        ) {
             issues.push(ChainIssue {
                 code: VerificationErrorCode::InvalidSignature,
                 link_role: Some(link.role),
@@ -555,7 +558,9 @@ fn validate_links(
 
         match expected_link_signature(attestation, link) {
             Ok(expected) => {
-                if link.signature.trim().is_empty() || link.signature != expected {
+                if link.signature.trim().is_empty()
+                    || !crate::security::constant_time::ct_eq(&link.signature, &expected)
+                {
                     issues.push(ChainIssue {
                         code: VerificationErrorCode::InvalidSignature,
                         link_role: Some(link.role),
@@ -921,7 +926,10 @@ mod tests {
     #[test]
     fn inv_pat_invalid_signature_identifies_broken_link() {
         let mut attestation = base_attestation();
-        attestation.links[1].signature = "tampered".to_string();
+        let mut tampered = attestation.links[1].signature.clone();
+        let replacement = if tampered.starts_with('a') { "b" } else { "a" };
+        tampered.replace_range(0..1, replacement);
+        attestation.links[1].signature = tampered;
 
         let policy = VerificationPolicy::production_default();
         let report = verify_attestation_chain(&attestation, &policy, 1_700_000_600, "trace-3");
@@ -930,6 +938,27 @@ mod tests {
         assert!(report.issues.iter().any(|issue| {
             issue.code == VerificationErrorCode::InvalidSignature
                 && issue.link_role == Some(ChainLinkRole::BuildSystem)
+        }));
+    }
+
+    #[test]
+    fn inv_pat_invalid_signed_payload_hash_detects_broken_link() {
+        let mut attestation = base_attestation();
+        let mut tampered = attestation.links[1].signed_payload_hash.clone();
+        let replacement = if tampered.starts_with('a') { "b" } else { "a" };
+        tampered.replace_range(0..1, replacement);
+        attestation.links[1].signed_payload_hash = tampered;
+
+        let policy = VerificationPolicy::production_default();
+        let report = verify_attestation_chain(&attestation, &policy, 1_700_000_600, "trace-3b");
+
+        assert!(!report.chain_valid);
+        assert!(report.issues.iter().any(|issue| {
+            issue.code == VerificationErrorCode::InvalidSignature
+                && issue.link_role == Some(ChainLinkRole::BuildSystem)
+                && issue
+                    .message
+                    .contains("signed payload hash does not match attestation output hash")
         }));
     }
 

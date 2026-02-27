@@ -234,7 +234,7 @@ impl EvidenceReplayGate {
         replayed_action: &str,
         timestamp: &str,
     ) -> ReplayResult {
-        self.total_replays += 1;
+        self.total_replays = self.total_replays.saturating_add(1);
 
         // Log replay initiation.
         self.replay_log.push(ReplayLogEntry {
@@ -248,8 +248,8 @@ impl EvidenceReplayGate {
 
         // Verify input hash integrity.
         let computed_hash = evidence.compute_input_hash();
-        if computed_hash != evidence.input_hash {
-            self.total_errors += 1;
+        if !crate::security::constant_time::ct_eq(&computed_hash, &evidence.input_hash) {
+            self.total_errors = self.total_errors.saturating_add(1);
             let result = ReplayResult {
                 decision_id: evidence.decision_id.clone(),
                 decision_type: evidence.decision_type,
@@ -278,7 +278,7 @@ impl EvidenceReplayGate {
 
         // Compare replayed action with original.
         let verdict = if replayed_action == evidence.chosen_action {
-            self.total_reproduced += 1;
+            self.total_reproduced = self.total_reproduced.saturating_add(1);
 
             self.replay_log.push(ReplayLogEntry {
                 event_code: RPL_002_REPRODUCED.to_owned(),
@@ -291,7 +291,7 @@ impl EvidenceReplayGate {
 
             ReplayVerdict::Reproduced
         } else {
-            self.total_diverged += 1;
+            self.total_diverged = self.total_diverged.saturating_add(1);
 
             let diff = format!(
                 "original={}, replayed={}",
@@ -475,8 +475,20 @@ mod tests {
     fn test_error_verdict_on_tampered_input() {
         let mut gate = EvidenceReplayGate::new();
         let mut ev = make_evidence("d-001", DecisionType::Quarantine, "quarantine");
-        // Tamper with input hash.
-        ev.input_hash = "tampered-hash".to_owned();
+        // Tamper with input hash while preserving length.
+        let mut tampered = ev.input_hash.clone();
+        let replacement = if tampered.starts_with('a') { "b" } else { "a" };
+        tampered.replace_range(0..1, replacement);
+        ev.input_hash = tampered;
+        let result = gate.replay_decision(&ev, "quarantine", "2026-01-15T01:00:00Z");
+        assert!(matches!(result.verdict, ReplayVerdict::Error { .. }));
+    }
+
+    #[test]
+    fn test_error_verdict_on_truncated_input_hash() {
+        let mut gate = EvidenceReplayGate::new();
+        let mut ev = make_evidence("d-001", DecisionType::Quarantine, "quarantine");
+        ev.input_hash.pop();
         let result = gate.replay_decision(&ev, "quarantine", "2026-01-15T01:00:00Z");
         assert!(matches!(result.verdict, ReplayVerdict::Error { .. }));
     }
@@ -517,7 +529,10 @@ mod tests {
     fn test_gate_fail_on_error() {
         let mut gate = EvidenceReplayGate::new();
         let mut ev = make_evidence("d-001", DecisionType::Fencing, "fence");
-        ev.input_hash = "bad-hash".to_owned();
+        let mut tampered = ev.input_hash.clone();
+        let replacement = if tampered.starts_with('a') { "b" } else { "a" };
+        tampered.replace_range(0..1, replacement);
+        ev.input_hash = tampered;
         gate.capture_evidence(ev);
 
         let result = gate.evaluate_gate("2026-01-15T01:00:00Z");

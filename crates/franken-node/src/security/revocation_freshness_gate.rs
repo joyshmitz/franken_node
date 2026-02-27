@@ -253,7 +253,7 @@ impl RevocationFreshnessGate {
 
         // Check signature
         let expected = (self.expected_signature_fn)(proof);
-        if proof.signature != expected {
+        if !crate::security::constant_time::ct_eq(&proof.signature, &expected) {
             return Err(FreshnessError::ProofTampered {
                 detail: "signature mismatch".into(),
             });
