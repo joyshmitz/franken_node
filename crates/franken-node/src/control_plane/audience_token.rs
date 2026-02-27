@@ -504,7 +504,7 @@ impl TokenValidator {
 
     /// Record a root token issuance.
     pub fn record_issuance(&mut self, token: &AudienceBoundToken, trace_id: &str, now_ms: u64) {
-        self.tokens_issued += 1;
+        self.tokens_issued = self.tokens_issued.saturating_add(1);
         self.seen_nonces.insert(token.nonce.clone());
         self.events.push(TokenEvent {
             event_code: ABT_001.to_string(),
@@ -529,7 +529,7 @@ impl TokenValidator {
         trace_id: &str,
         now_ms: u64,
     ) {
-        self.tokens_delegated += 1;
+        self.tokens_delegated = self.tokens_delegated.saturating_add(1);
         self.seen_nonces.insert(token.nonce.clone());
         self.events.push(TokenEvent {
             event_code: ABT_002.to_string(),
@@ -572,7 +572,7 @@ impl TokenValidator {
         // Check all tokens for expiry.
         for (i, token) in tokens.iter().enumerate() {
             if token.is_expired(now_ms) {
-                self.tokens_rejected += 1;
+                self.tokens_rejected = self.tokens_rejected.saturating_add(1);
                 let err = TokenError::token_expired(&token.token_id);
                 self.events.push(TokenEvent {
                     event_code: ABT_004.to_string(),
@@ -593,7 +593,7 @@ impl TokenValidator {
         // Check validity windows.
         for token in tokens.iter() {
             if !token.has_valid_window() {
-                self.tokens_rejected += 1;
+                self.tokens_rejected = self.tokens_rejected.saturating_add(1);
                 return Err(TokenError::new(
                     ERR_ABT_TOKEN_EXPIRED,
                     format!(
@@ -604,10 +604,19 @@ impl TokenValidator {
             }
         }
 
-        // Check nonce replay for all tokens in the chain.
+        // INV-ABT-REPLAY: check nonce replay.
+        // In multi-token chains the root token is allowed to appear in multiple
+        // delegation chains (different leaves), so its nonce is skipped during
+        // the check.  In single-token (root-only) chains the root IS checked.
+        // All delegated (non-root) nonces are always checked to block prefix
+        // replay attacks where an attacker strips the leaf.
+        let is_multi = tokens.len() > 1;
         for token in tokens.iter() {
+            if is_multi && token.parent_token_hash.is_none() {
+                continue; // root in multi-token chain — skip replay check
+            }
             if self.seen_nonces.contains(&token.nonce) {
-                self.tokens_rejected += 1;
+                self.tokens_rejected = self.tokens_rejected.saturating_add(1);
                 let err = TokenError::replay_detected(&token.nonce);
                 self.events.push(TokenEvent {
                     event_code: ABT_004.to_string(),
@@ -628,7 +637,7 @@ impl TokenValidator {
             match &tokens[i].parent_token_hash {
                 Some(h) if crate::security::constant_time::ct_eq(h, &parent_hash) => {}
                 _ => {
-                    self.tokens_rejected += 1;
+                    self.tokens_rejected = self.tokens_rejected.saturating_add(1);
                     return Err(TokenError::new(
                         ERR_ABT_ATTENUATION_VIOLATION,
                         format!(
@@ -642,14 +651,14 @@ impl TokenValidator {
 
         // INV-ABT-AUDIENCE: Check audience match on leaf token.
         let Some(leaf) = chain.leaf() else {
-            self.tokens_rejected += 1;
+            self.tokens_rejected = self.tokens_rejected.saturating_add(1);
             return Err(TokenError::new(
                 ERR_ABT_ATTENUATION_VIOLATION,
                 "token chain missing leaf token".to_string(),
             ));
         };
         if !leaf.audience_contains(requester_id) {
-            self.tokens_rejected += 1;
+            self.tokens_rejected = self.tokens_rejected.saturating_add(1);
             let err = TokenError::audience_mismatch(requester_id, &leaf.audience);
             self.events.push(TokenEvent {
                 event_code: ABT_004.to_string(),
@@ -666,11 +675,11 @@ impl TokenValidator {
             return Err(err);
         }
 
-        // All checks passed: record all nonces and emit success event.
+        // All checks passed: record all token nonces and emit success event.
         for token in tokens.iter() {
             self.seen_nonces.insert(token.nonce.clone());
         }
-        self.tokens_verified += 1;
+        self.tokens_verified = self.tokens_verified.saturating_add(1);
         self.events.push(TokenEvent {
             event_code: ABT_003.to_string(),
             token_id: leaf.token_id.as_str().to_string(),
