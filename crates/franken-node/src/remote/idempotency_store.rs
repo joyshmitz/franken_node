@@ -585,7 +585,7 @@ mod tests {
                 assert_eq!(outcome.result_data, b"result-ok");
             }
             other => {
-                assert!(false, "expected Duplicate, got {other:?}");
+                panic!("expected Duplicate, got {other:?}");
             }
         }
     }
@@ -610,7 +610,7 @@ mod tests {
                 assert_ne!(expected_hash, actual_hash);
             }
             other => {
-                assert!(false, "expected Conflict, got {other:?}");
+                panic!("expected Conflict, got {other:?}");
             }
         }
     }
@@ -645,7 +645,7 @@ mod tests {
                 assert!(!outcome.result_hash.is_empty());
             }
             other => {
-                assert!(false, "expected Duplicate, got {other:?}");
+                panic!("expected Duplicate, got {other:?}");
             }
         }
     }
@@ -680,8 +680,7 @@ mod tests {
                 assert_eq!(actual_hash, payload_hash);
             }
             other => {
-                assert!(
-                    false,
+                panic!(
                     "expected Conflict for corrupted complete entry, got {:?}",
                     other
                 );

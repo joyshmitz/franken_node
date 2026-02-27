@@ -524,7 +524,7 @@ mod tests {
                     EpochRejectionReason::FutureEpoch
                 );
             }
-            _ => assert!(false, "expected epoch rejection"),
+            _ => panic!("expected epoch rejection"),
         }
     }
 

@@ -667,7 +667,7 @@ mod tests {
             SupervisionAction::Restart { children } => {
                 assert_eq!(children, vec!["w1".to_string()]);
             }
-            _ => assert!(false, "expected Restart action"),
+            _ => panic!("expected Restart action"),
         }
         // w2 should still be running
         assert_eq!(sup.child_state("w2"), Some(ChildState::Running));
@@ -687,7 +687,7 @@ mod tests {
                 assert!(children.contains(&"b".to_string()));
                 assert!(children.contains(&"c".to_string()));
             }
-            _ => assert!(false, "expected Restart for all children"),
+            _ => panic!("expected Restart for all children"),
         }
     }
 
@@ -705,7 +705,7 @@ mod tests {
                 assert!(children.contains(&"c".to_string()));
                 assert!(!children.contains(&"a".to_string()));
             }
-            _ => assert!(false, "expected Restart for rest"),
+            _ => panic!("expected Restart for rest"),
         }
     }
 

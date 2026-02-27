@@ -64,6 +64,7 @@ pub mod error_codes {
     pub const ERR_NVO_NO_RUNTIMES: &str = "ERR_NVO_NO_RUNTIMES";
     pub const ERR_NVO_QUORUM_FAILED: &str = "ERR_NVO_QUORUM_FAILED";
     pub const ERR_NVO_RUNTIME_NOT_FOUND: &str = "ERR_NVO_RUNTIME_NOT_FOUND";
+    pub const ERR_NVO_CHECK_NOT_FOUND: &str = "ERR_NVO_CHECK_NOT_FOUND";
     pub const ERR_NVO_CHECK_ALREADY_RUNNING: &str = "ERR_NVO_CHECK_ALREADY_RUNNING";
     pub const ERR_NVO_DIVERGENCE_UNRESOLVED: &str = "ERR_NVO_DIVERGENCE_UNRESOLVED";
     pub const ERR_NVO_POLICY_MISSING: &str = "ERR_NVO_POLICY_MISSING";
@@ -574,7 +575,7 @@ impl RuntimeOracle {
             .voting_results
             .get(check_id)
             .ok_or_else(|| OracleError {
-                code: error_codes::ERR_NVO_RUNTIME_NOT_FOUND,
+                code: error_codes::ERR_NVO_CHECK_NOT_FOUND,
                 message: format!("no votes recorded for check '{check_id}'"),
             })?;
 
@@ -1127,7 +1128,7 @@ mod tests {
             } => {
                 assert!(blocking_divergence_ids.contains(&"div-crit".to_string()));
             }
-            _ => assert!(false, "expected BlockRelease"),
+            _ => panic!("expected BlockRelease"),
         }
     }
 
@@ -1145,7 +1146,7 @@ mod tests {
         let verdict = oracle.check_release_gate(0);
         match verdict {
             OracleVerdict::BlockRelease { .. } => {}
-            _ => assert!(false, "expected BlockRelease for High risk"),
+            _ => panic!("expected BlockRelease for High risk"),
         }
     }
 
@@ -1167,7 +1168,7 @@ mod tests {
             } => {
                 assert!(pending_divergence_ids.contains(&"div-low".to_string()));
             }
-            _ => assert!(false, "expected RequiresReceipt"),
+            _ => panic!("expected RequiresReceipt"),
         }
     }
 
@@ -1375,6 +1376,6 @@ mod tests {
     fn tally_unknown_check_error() {
         let mut oracle = RuntimeOracle::new("trace-035", 66);
         let err = oracle.tally_votes("nonexistent").unwrap_err();
-        assert_eq!(err.code, error_codes::ERR_NVO_RUNTIME_NOT_FOUND);
+        assert_eq!(err.code, error_codes::ERR_NVO_CHECK_NOT_FOUND);
     }
 }

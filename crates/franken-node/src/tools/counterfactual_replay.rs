@@ -965,7 +965,7 @@ mod tests {
                 assert_eq!(processed_steps, 1);
                 assert_eq!(partial_result.summary_statistics.total_decisions, 1);
             }
-            _ => assert!(false, "expected step limit error"),
+            _ => panic!("expected step limit error"),
         }
     }
 
@@ -993,7 +993,7 @@ mod tests {
             CounterfactualReplayError::WallClockExceeded { partial_result, .. } => {
                 assert_eq!(partial_result.summary_statistics.total_decisions, 0);
             }
-            _ => assert!(false, "expected wall clock error"),
+            _ => panic!("expected wall clock error"),
         }
     }
 

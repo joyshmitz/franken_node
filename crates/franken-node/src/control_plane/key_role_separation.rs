@@ -446,13 +446,12 @@ impl KeyRoleRegistry {
         }
 
         // Atomic: revoke old, bind new.
-        let old_binding = self
-            .active
-            .remove(old_key_id)
-            .ok_or_else(|| KeyRoleSeparationError::RotationFailed {
+        let old_binding = self.active.remove(old_key_id).ok_or_else(|| {
+            KeyRoleSeparationError::RotationFailed {
                 role,
                 reason: format!("old key {} vanished during rotation", old_key_id),
-            })?;
+            }
+        })?;
         self.revoked.push(old_binding);
 
         let new_binding = KeyRoleBinding {
