@@ -143,7 +143,7 @@ impl DeterministicClock {
 
     /// Advance the clock by one tick and return the new value.
     pub fn tick(&mut self) -> u64 {
-        self.tick += 1;
+        self.tick = self.tick.saturating_add(1);
         self.tick
     }
 }
@@ -560,7 +560,7 @@ impl ReplaySession {
                 total_frames: self.snapshot.frame_count,
             });
         }
-        self.cursor -= 1;
+        self.cursor = self.cursor.saturating_sub(1);
         self.events.push(event_codes::TTR_005.to_string());
         Ok(&self.snapshot.frames[self.cursor as usize])
     }

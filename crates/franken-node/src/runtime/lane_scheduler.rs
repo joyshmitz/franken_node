@@ -504,7 +504,7 @@ impl LaneScheduler {
 
         // INV-LANE-CAP-ENFORCE
         if counters.active_count >= config.concurrency_cap {
-            counters.queued_count += 1;
+            counters.queued_count = counters.queued_count.saturating_add(1);
             return Err(LaneSchedulerError::CapExceeded {
                 lane,
                 cap: config.concurrency_cap,
@@ -514,12 +514,12 @@ impl LaneScheduler {
 
         // A newly admitted task consumes one pending queue slot, if any.
         if counters.queued_count > 0 {
-            counters.queued_count -= 1;
+            counters.queued_count = counters.queued_count.saturating_sub(1);
         }
         self.task_counter = self.task_counter.saturating_add(1);
         let task_id = format!("task-{:08}", self.task_counter);
 
-        counters.active_count += 1;
+        counters.active_count = counters.active_count.saturating_add(1);
 
         let assignment = TaskAssignment {
             task_id: task_id.clone(),
@@ -567,7 +567,7 @@ impl LaneScheduler {
                 lane: assignment.lane.to_string(),
             })?;
         counters.active_count = counters.active_count.saturating_sub(1);
-        counters.completed_total += 1;
+        counters.completed_total = counters.completed_total.saturating_add(1);
         counters.last_completion_ms = Some(timestamp_ms);
 
         self.audit_log.push(LaneAuditRecord {
@@ -618,7 +618,7 @@ impl LaneScheduler {
             starved.push(err);
 
             if let Some(c) = self.counters.get_mut(lane.as_str()) {
-                c.starvation_events += 1;
+                c.starvation_events = c.starvation_events.saturating_add(1);
             }
 
             self.audit_log.push(LaneAuditRecord {

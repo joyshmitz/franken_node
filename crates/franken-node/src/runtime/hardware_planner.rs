@@ -856,7 +856,7 @@ impl HardwarePlanner {
 
         // Allocate slot
         if let Some(prof) = self.profiles.get_mut(&selected) {
-            prof.used_slots += 1;
+            prof.used_slots = prof.used_slots.saturating_add(1);
         }
 
         // HWP-004
@@ -1031,9 +1031,7 @@ impl HardwarePlanner {
                 profile_id: profile_id.to_string(),
             }
         })?;
-        if prof.used_slots > 0 {
-            prof.used_slots -= 1;
-        }
+        prof.used_slots = prof.used_slots.saturating_sub(1);
         Ok(())
     }
 

@@ -185,7 +185,7 @@ impl FenceState {
         expires_at: String,
         epoch: ControlEpoch,
     ) -> Lease {
-        self.current_seq += 1;
+        self.current_seq = self.current_seq.saturating_add(1);
         self.current_holder = Some(holder_id.clone());
         Lease {
             lease_seq: self.current_seq,
@@ -524,7 +524,7 @@ mod tests {
                     EpochRejectionReason::FutureEpoch
                 );
             }
-            _ => panic!("expected epoch rejection"),
+            _ => assert!(false, "expected epoch rejection"),
         }
     }
 

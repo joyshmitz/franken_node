@@ -260,7 +260,7 @@ impl HardeningAutoTrigger {
         match state_machine.escalate(target, timestamp_ms, trace_id) {
             Ok(_record) => {
                 // Record trigger event with causal pointers
-                self.trigger_counter += 1;
+                self.trigger_counter = self.trigger_counter.saturating_add(1);
                 let event = TriggerEvent {
                     trigger_id: format!("trig-{:04}", self.trigger_counter),
                     rejection_id: format!(

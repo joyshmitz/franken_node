@@ -441,9 +441,9 @@ impl ControlTransitionGate {
             format!("Transition request received for {}", tt),
         );
 
-        self.metrics.total_requests += 1;
+        self.metrics.total_requests = self.metrics.total_requests.saturating_add(1);
         if let Some(tm) = self.metrics.per_transition_type.get_mut(&tt) {
-            tm.total += 1;
+            tm.total = tm.total.saturating_add(1);
         }
 
         // Step 1: Check trust level (INV-CTL-EVIDENCE-REQUIRED precondition).
@@ -721,27 +721,27 @@ impl ControlTransitionGate {
         // INV-CTL-DENY-LOGGED: emit denial event.
         self.emit_event(event_code, request_id, tt, trace_id, message.clone());
 
-        self.metrics.denied_count += 1;
+        self.metrics.denied_count = self.metrics.denied_count.saturating_add(1);
         match error_code {
             error_codes::ERR_CTL_MISSING_EVIDENCE => {
-                self.metrics.denied_missing_evidence += 1;
+                self.metrics.denied_missing_evidence = self.metrics.denied_missing_evidence.saturating_add(1);
             }
             error_codes::ERR_CTL_EXPIRED_EVIDENCE => {
-                self.metrics.denied_expired_evidence += 1;
+                self.metrics.denied_expired_evidence = self.metrics.denied_expired_evidence.saturating_add(1);
             }
             error_codes::ERR_CTL_SCOPE_MISMATCH => {
-                self.metrics.denied_scope_mismatch += 1;
+                self.metrics.denied_scope_mismatch = self.metrics.denied_scope_mismatch.saturating_add(1);
             }
             error_codes::ERR_CTL_INVALID_HASH => {
-                self.metrics.denied_invalid_hash += 1;
+                self.metrics.denied_invalid_hash = self.metrics.denied_invalid_hash.saturating_add(1);
             }
             error_codes::ERR_CTL_INSUFFICIENT_TRUST => {
-                self.metrics.denied_insufficient_trust += 1;
+                self.metrics.denied_insufficient_trust = self.metrics.denied_insufficient_trust.saturating_add(1);
             }
             _ => {}
         }
         if let Some(tm) = self.metrics.per_transition_type.get_mut(&tt) {
-            tm.denied += 1;
+            tm.denied = tm.denied.saturating_add(1);
         }
 
         AuthorizationDecision::Denied {
@@ -774,9 +774,9 @@ impl ControlTransitionGate {
             ),
         );
 
-        self.metrics.authorized_count += 1;
+        self.metrics.authorized_count = self.metrics.authorized_count.saturating_add(1);
         if let Some(tm) = self.metrics.per_transition_type.get_mut(&tt) {
-            tm.authorized += 1;
+            tm.authorized = tm.authorized.saturating_add(1);
         }
 
         AuthorizationDecision::Authorized {
@@ -804,9 +804,9 @@ impl ControlTransitionGate {
             ),
         );
 
-        self.metrics.pending_count += 1;
+        self.metrics.pending_count = self.metrics.pending_count.saturating_add(1);
         if let Some(tm) = self.metrics.per_transition_type.get_mut(&tt) {
-            tm.pending += 1;
+            tm.pending = tm.pending.saturating_add(1);
         }
 
         AuthorizationDecision::PendingVerification {

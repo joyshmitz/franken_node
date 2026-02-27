@@ -586,7 +586,7 @@ impl RailRouter {
             }
         })?;
         p.rail = target_rail;
-        p.elevation_count += 1;
+        p.elevation_count = p.elevation_count.saturating_add(1);
         let updated = p.clone();
 
         // Emit ISOLATION_ELEVATION_COMPLETE

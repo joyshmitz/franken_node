@@ -742,7 +742,7 @@ impl ControlPlaneDivergenceGate {
                 response_mode: None,
             });
 
-        self.alert_counter += 1;
+        self.alert_counter = self.alert_counter.saturating_add(1);
         let alert = OperatorAlert {
             alert_id: format!("ALERT-{:04}", self.alert_counter),
             severity: "CRITICAL".to_string(),

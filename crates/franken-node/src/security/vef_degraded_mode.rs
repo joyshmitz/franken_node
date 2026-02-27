@@ -417,7 +417,7 @@ impl VefDegradedModeEngine {
         if self.mode != VefMode::Normal
             && let Some(ctx) = &mut self.context
         {
-            ctx.actions_affected += 1;
+            ctx.actions_affected = ctx.actions_affected.saturating_add(1);
         }
 
         VefActionDecision {

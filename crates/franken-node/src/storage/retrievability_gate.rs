@@ -449,13 +449,24 @@ impl RetrievabilityGate {
         segment_id: &SegmentId,
         expected_hash: &str,
     ) -> Result<EvictionPermit, RetrievabilityError> {
-        let proof = self.check_retrievability(
+        let proof = match self.check_retrievability(
             artifact_id,
             segment_id,
             StorageTier::L2Warm,
             StorageTier::L3Archive,
             expected_hash,
-        )?;
+        ) {
+            Ok(p) => p,
+            Err(err) => {
+                self.events.push(GateEvent {
+                    code: RG_EVICTION_BLOCKED.to_string(),
+                    artifact_id: artifact_id.0.clone(),
+                    segment_id: segment_id.0.clone(),
+                    detail: format!("Eviction blocked: {}", err.reason.error_code()),
+                });
+                return Err(err);
+            }
+        };
 
         self.events.push(GateEvent {
             code: RG_EVICTION_PERMITTED.to_string(),
@@ -532,13 +543,6 @@ impl RetrievabilityGate {
             artifact_id: artifact_id.0.clone(),
             segment_id: segment_id.0.clone(),
             detail: format!("Proof failed: {}", reason),
-        });
-
-        self.events.push(GateEvent {
-            code: RG_EVICTION_BLOCKED.to_string(),
-            artifact_id: artifact_id.0.clone(),
-            segment_id: segment_id.0.clone(),
-            detail: format!("Eviction blocked: {}", reason.error_code()),
         });
     }
 }

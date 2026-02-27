@@ -732,14 +732,20 @@ fn extract_bool(payload: &Value, key: &str) -> Option<bool> {
 }
 
 fn expected_loss_from_decision(decision: &str, risk: i64) -> u64 {
+    let risk_clamped = risk.clamp(0, 100);
+    let penalty = match decision {
+        "quarantine" => (100_i64.saturating_sub(risk_clamped)) / 2,
+        "observe" => risk_clamped / 4,
+        "allow" => risk_clamped / 2,
+        _ => 0,
+    };
     let base = match decision {
         "quarantine" => 8_i64,
         "observe" => 24_i64,
         "allow" => 58_i64,
         _ => 35_i64,
     };
-    u64::try_from(base.saturating_add((100_i64.saturating_sub(risk.clamp(0, 100))) / 2))
-        .unwrap_or(0)
+    u64::try_from(base.saturating_add(penalty)).unwrap_or(0)
 }
 
 fn classify_impact(delta: i64) -> ImpactEstimate {
@@ -959,7 +965,7 @@ mod tests {
                 assert_eq!(processed_steps, 1);
                 assert_eq!(partial_result.summary_statistics.total_decisions, 1);
             }
-            _ => panic!("expected step limit error"),
+            _ => assert!(false, "expected step limit error"),
         }
     }
 
@@ -987,7 +993,7 @@ mod tests {
             CounterfactualReplayError::WallClockExceeded { partial_result, .. } => {
                 assert_eq!(partial_result.summary_statistics.total_decisions, 0);
             }
-            _ => panic!("expected wall clock error"),
+            _ => assert!(false, "expected wall clock error"),
         }
     }
 

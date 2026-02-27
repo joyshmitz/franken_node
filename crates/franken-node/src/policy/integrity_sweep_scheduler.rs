@@ -299,7 +299,7 @@ impl IntegritySweepScheduler {
     /// [EVD-SWEEP-003] on hysteresis preventing de-escalation.
     pub fn update_trajectory(&mut self, evidence: &EvidenceTrajectory) -> &mut Self {
         self.epoch_id = evidence.epoch_id;
-        self.update_count += 1;
+        self.update_count = self.update_count.saturating_add(1);
 
         // [EVD-SWEEP-004]
         let _event = EVD_SWEEP_004;
@@ -319,7 +319,7 @@ impl IntegritySweepScheduler {
             let _event = EVD_SWEEP_002;
         } else if proposed_band < self.current_band {
             // De-escalation: requires hysteresis
-            self.hysteresis_counter += 1;
+            self.hysteresis_counter = self.hysteresis_counter.saturating_add(1);
 
             if self.config.hysteresis_threshold == 0
                 || self.hysteresis_counter >= self.config.hysteresis_threshold

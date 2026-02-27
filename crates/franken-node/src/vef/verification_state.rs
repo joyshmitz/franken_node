@@ -244,7 +244,7 @@ impl VerificationStateManager {
                 entity_id: req.entity_id.clone(),
             })?;
         state.current_risk_level = req.target_risk_level;
-        state.transition_count += 1;
+        state.transition_count = state.transition_count.saturating_add(1);
 
         self.audit_log.push(StateAuditEntry {
             event_code: VEF_STATE_TRANSITION_APPROVED.into(),

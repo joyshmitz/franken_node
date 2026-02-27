@@ -550,7 +550,7 @@ impl TraceBuilder {
             &format!("Step {seq} recorded"),
             timestamp_ns,
         ));
-        self.next_seq += 1;
+        self.next_seq = self.next_seq.saturating_add(1);
         seq
     }
 

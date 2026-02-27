@@ -132,17 +132,18 @@ impl AdmissionTelemetry {
         trace_id: &str,
         timestamp: &str,
     ) -> bool {
-        self.total_checks += 1;
+        self.total_checks = self.total_checks.saturating_add(1);
 
         let result = verify_hash(expected_hash, domain, data);
         let (admitted, rejection_code) = match result {
             Ok(()) => {
-                self.total_admitted += 1;
+                self.total_admitted = self.total_admitted.saturating_add(1);
                 (true, None)
             }
             Err(code) => {
-                self.total_rejected += 1;
-                *self.rejection_distribution.entry(code).or_insert(0) += 1;
+                self.total_rejected = self.total_rejected.saturating_add(1);
+                let counter = self.rejection_distribution.entry(code).or_insert(0);
+                *counter = counter.saturating_add(1);
                 (false, Some(code))
             }
         };

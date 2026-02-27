@@ -283,7 +283,7 @@ impl EvidenceLedger {
     fn evict_oldest(&mut self) {
         if let Some((evicted_id, evicted_entry, evicted_size)) = self.entries.pop_front() {
             self.current_bytes -= evicted_size;
-            self.total_evicted += 1;
+            self.total_evicted = self.total_evicted.saturating_add(1);
             eprintln!(
                 "{}: evicted entry={}, decision={}, epoch={}, freed_bytes={}",
                 event_codes::LEDGER_EVICTION,

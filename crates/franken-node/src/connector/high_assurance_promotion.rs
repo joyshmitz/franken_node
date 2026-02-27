@@ -316,7 +316,7 @@ impl HighAssuranceGate {
         proof_bundle: Option<&ProofBundle>,
     ) -> Result<(), PromotionDenialReason> {
         if self.mode == AssuranceMode::Standard {
-            self.approvals += 1;
+            self.approvals = self.approvals.saturating_add(1);
             return Ok(());
         }
 
@@ -324,7 +324,7 @@ impl HighAssuranceGate {
         let bundle = match proof_bundle {
             Some(b) => b,
             None => {
-                self.denials += 1;
+                self.denials = self.denials.saturating_add(1);
                 return Err(PromotionDenialReason::ProofBundleMissing {
                     artifact_id: artifact_id.into(),
                     object_class,
@@ -334,7 +334,7 @@ impl HighAssuranceGate {
 
         let requirement = proof_requirement_for(object_class);
         if !bundle.satisfies(requirement) {
-            self.denials += 1;
+            self.denials = self.denials.saturating_add(1);
             return Err(PromotionDenialReason::ProofBundleInsufficient {
                 artifact_id: artifact_id.into(),
                 object_class,
@@ -342,7 +342,7 @@ impl HighAssuranceGate {
             });
         }
 
-        self.approvals += 1;
+        self.approvals = self.approvals.saturating_add(1);
         Ok(())
     }
 
@@ -371,7 +371,7 @@ impl HighAssuranceGate {
         }
 
         self.mode = new_mode;
-        self.mode_changes += 1;
+        self.mode_changes = self.mode_changes.saturating_add(1);
         Ok(())
     }
 

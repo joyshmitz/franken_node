@@ -966,7 +966,7 @@ mod tests {
                 assert_eq!(expected, 1);
                 assert_eq!(actual, 5);
             }
-            _ => panic!("wrong error variant"),
+            _ => assert!(false, "wrong error variant"),
         }
     }
 
@@ -1215,7 +1215,7 @@ mod tests {
                     assert_eq!(cp.policy_hash, "c0");
                     assert_eq!(cp.sequence, 2);
                 }
-                _ => panic!("unexpected channel"),
+                _ => assert!(false, "unexpected channel"),
             }
         }
     }
@@ -1334,7 +1334,7 @@ mod tests {
                 ReleaseChannel::Stable => assert_eq!(cp.sequence, 147),
                 ReleaseChannel::Beta => assert_eq!(cp.sequence, 148),
                 ReleaseChannel::Canary => assert_eq!(cp.sequence, 149),
-                _ => panic!("unexpected"),
+                _ => assert!(false, "unexpected"),
             }
         }
     }

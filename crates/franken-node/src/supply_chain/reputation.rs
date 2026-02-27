@@ -486,7 +486,7 @@ impl ReputationRegistry {
         pub_record.score = new_score;
         pub_record.tier = new_tier;
         pub_record.last_computed_at = timestamp.to_owned();
-        pub_record.signal_count += 1;
+        pub_record.signal_count = pub_record.signal_count.saturating_add(1);
 
         self.ingested_signals.insert(signal.signal_id.clone(), true);
 
@@ -713,7 +713,7 @@ impl ReputationRegistry {
             .map_or(String::new(), |e| e.entry_hash.clone());
 
         let sequence = self.next_sequence;
-        self.next_sequence += 1;
+        self.next_sequence = self.next_sequence.saturating_add(1);
 
         let mut entry = AuditEntry {
             sequence,

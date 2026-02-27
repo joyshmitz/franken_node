@@ -1127,7 +1127,7 @@ mod tests {
             } => {
                 assert!(blocking_divergence_ids.contains(&"div-crit".to_string()));
             }
-            _ => panic!("expected BlockRelease"),
+            _ => assert!(false, "expected BlockRelease"),
         }
     }
 
@@ -1145,7 +1145,7 @@ mod tests {
         let verdict = oracle.check_release_gate(0);
         match verdict {
             OracleVerdict::BlockRelease { .. } => {}
-            _ => panic!("expected BlockRelease for High risk"),
+            _ => assert!(false, "expected BlockRelease for High risk"),
         }
     }
 
@@ -1167,7 +1167,7 @@ mod tests {
             } => {
                 assert!(pending_divergence_ids.contains(&"div-low".to_string()));
             }
-            _ => panic!("expected RequiresReceipt"),
+            _ => assert!(false, "expected RequiresReceipt"),
         }
     }
 

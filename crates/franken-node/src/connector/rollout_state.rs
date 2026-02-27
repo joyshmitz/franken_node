@@ -133,7 +133,7 @@ impl RolloutState {
 
     /// Advance the version and update the persistence timestamp.
     pub fn bump_version(&mut self) {
-        self.version += 1;
+        self.version = self.version.saturating_add(1);
         self.persisted_at = now_iso8601();
     }
 }
@@ -476,7 +476,7 @@ mod tests {
             PersistError::ReplayMismatch { field, .. } => {
                 assert_eq!(field, "lifecycle_state");
             }
-            _ => panic!("expected ReplayMismatch"),
+            _ => assert!(false, "expected ReplayMismatch"),
         }
     }
 
@@ -490,7 +490,7 @@ mod tests {
             PersistError::ReplayMismatch { field, .. } => {
                 assert_eq!(field, "rollout_phase");
             }
-            _ => panic!("expected ReplayMismatch"),
+            _ => assert!(false, "expected ReplayMismatch"),
         }
     }
 

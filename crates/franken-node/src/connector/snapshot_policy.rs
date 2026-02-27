@@ -129,7 +129,7 @@ impl SnapshotTracker {
 
     /// Record a state mutation of the given byte size.
     pub fn record_mutation(&mut self, bytes: u64) {
-        self.ops_since_snapshot += 1;
+        self.ops_since_snapshot = self.ops_since_snapshot.saturating_add(1);
         self.bytes_since_snapshot += bytes;
     }
 

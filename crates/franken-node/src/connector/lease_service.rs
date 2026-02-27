@@ -158,7 +158,7 @@ impl LeaseService {
         timestamp: &str,
     ) -> Lease {
         let lease_id = format!("lease-{}", self.next_id);
-        self.next_id += 1;
+        self.next_id = self.next_id.saturating_add(1);
 
         let lease = Lease {
             lease_id: lease_id.clone(),

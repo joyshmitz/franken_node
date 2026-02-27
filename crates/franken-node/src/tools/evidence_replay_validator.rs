@@ -312,7 +312,7 @@ impl EvidenceReplayValidator {
             entry.decision_kind.label()
         );
 
-        self.total_validations += 1;
+        self.total_validations = self.total_validations.saturating_add(1);
 
         // Check context validity
         if !context.is_valid() {
@@ -324,7 +324,7 @@ impl EvidenceReplayValidator {
                 event_codes::REPLAY_UNRESOLVABLE,
                 entry.decision_id
             );
-            self.unresolvable_count += 1;
+            self.unresolvable_count = self.unresolvable_count.saturating_add(1);
             self.results
                 .push((entry.decision_id.clone(), result.clone()));
             return result;
@@ -343,7 +343,7 @@ impl EvidenceReplayValidator {
                 event_codes::REPLAY_UNRESOLVABLE,
                 entry.decision_id
             );
-            self.unresolvable_count += 1;
+            self.unresolvable_count = self.unresolvable_count.saturating_add(1);
             self.results
                 .push((entry.decision_id.clone(), result.clone()));
             return result;

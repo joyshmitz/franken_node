@@ -474,7 +474,7 @@ impl CapabilityEnforcer {
             // Expire the token.
             self.state.insert(capability, EnforcementStatus::Blocked);
             self.tokens.remove(&capability);
-            self.metrics.opt_in_expired_total += 1;
+            self.metrics.opt_in_expired_total = self.metrics.opt_in_expired_total.saturating_add(1);
 
             self.log_event(
                 IBD_003_OPT_IN_EXPIRED,
@@ -489,15 +489,17 @@ impl CapabilityEnforcer {
                 Some(&token_id),
             );
 
-            *self.blocked_counts.entry(capability).or_insert(0) += 1;
+            let bc = self.blocked_counts.entry(capability).or_insert(0);
+            *bc = bc.saturating_add(1);
             return Err(EnforcementError::token_expired(capability, &token_id));
         }
 
         match self.state.get(&capability) {
             Some(EnforcementStatus::Enabled { .. }) => Ok(()),
             _ => {
-                self.metrics.blocked_total += 1;
-                *self.blocked_counts.entry(capability).or_insert(0) += 1;
+                self.metrics.blocked_total = self.metrics.blocked_total.saturating_add(1);
+                let bc = self.blocked_counts.entry(capability).or_insert(0);
+            *bc = bc.saturating_add(1);
 
                 self.log_event(
                     IBD_001_CAPABILITY_BLOCKED,
@@ -550,7 +552,7 @@ impl CapabilityEnforcer {
 
         // Check expiry.
         if token.is_expired(current_time_ms) {
-            self.metrics.opt_in_expired_total += 1;
+            self.metrics.opt_in_expired_total = self.metrics.opt_in_expired_total.saturating_add(1);
             self.log_event(
                 IBD_003_OPT_IN_EXPIRED,
                 capability,
@@ -577,8 +579,9 @@ impl CapabilityEnforcer {
             },
         );
         self.tokens.insert(capability, token);
-        self.metrics.opt_in_granted_total += 1;
-        *self.opted_in_counts.entry(capability).or_insert(0) += 1;
+        self.metrics.opt_in_granted_total = self.metrics.opt_in_granted_total.saturating_add(1);
+        let oc = self.opted_in_counts.entry(capability).or_insert(0);
+        *oc = oc.saturating_add(1);
 
         self.log_event(
             IBD_002_OPT_IN_GRANTED,
@@ -616,7 +619,8 @@ impl CapabilityEnforcer {
         actor: &str,
         current_time_ms: u64,
     ) -> Result<(), EnforcementError> {
-        self.metrics.silent_disable_detected_total += 1;
+        self.metrics.silent_disable_detected_total =
+            self.metrics.silent_disable_detected_total.saturating_add(1);
 
         self.log_event(
             IBD_004_SILENT_DISABLE_DETECTED,
@@ -647,7 +651,7 @@ impl CapabilityEnforcer {
         for (cap, token_id) in expired_caps {
             self.state.insert(cap, EnforcementStatus::Blocked);
             self.tokens.remove(&cap);
-            self.metrics.opt_in_expired_total += 1;
+            self.metrics.opt_in_expired_total = self.metrics.opt_in_expired_total.saturating_add(1);
 
             self.log_event(
                 IBD_003_OPT_IN_EXPIRED,
@@ -666,9 +670,9 @@ impl CapabilityEnforcer {
 
     /// Record a deployment observation for adoption tracking.
     pub fn record_deployment(&mut self, all_enforced: bool) {
-        self.metrics.deployments_total += 1;
+        self.metrics.deployments_total = self.metrics.deployments_total.saturating_add(1);
         if all_enforced {
-            self.metrics.deployments_enforced += 1;
+            self.metrics.deployments_enforced = self.metrics.deployments_enforced.saturating_add(1);
         }
     }
 

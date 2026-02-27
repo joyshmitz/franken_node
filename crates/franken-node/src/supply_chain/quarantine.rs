@@ -382,7 +382,7 @@ impl QuarantineRegistry {
         self.records.insert(order_id.clone(), record.clone());
         self.active_quarantines
             .insert(ext_id.clone(), order_id.clone());
-        self.total_quarantines += 1;
+        self.total_quarantines = self.total_quarantines.saturating_add(1);
 
         // Audit: QUARANTINE_INITIATED.
         self.append_audit(
@@ -719,7 +719,7 @@ impl QuarantineRegistry {
         record
             .state_history
             .push((QuarantineState::RecallCompleted, timestamp.to_owned()));
-        self.total_recalls += 1;
+        self.total_recalls = self.total_recalls.saturating_add(1);
 
         // Remove from active quarantines.
         self.active_quarantines.retain(|_, v| v != order_id);

@@ -557,7 +557,7 @@ impl ClaimCompiler {
             self.entries.insert(claim.claim_id.clone(), entry);
         }
 
-        self.sequence += 1;
+        self.sequence = self.sequence.saturating_add(1);
         self.emit(
             event_codes::CLMC_005,
             "*",

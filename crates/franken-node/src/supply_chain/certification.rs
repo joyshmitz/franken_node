@@ -691,7 +691,7 @@ impl CertificationRegistry {
             .map_or(String::new(), |e| e.entry_hash.clone());
 
         let sequence = self.next_sequence;
-        self.next_sequence += 1;
+        self.next_sequence = self.next_sequence.saturating_add(1);
 
         let mut entry = CertificationAuditEntry {
             sequence,

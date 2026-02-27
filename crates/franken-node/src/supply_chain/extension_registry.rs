@@ -480,7 +480,7 @@ impl SignedExtensionRegistry {
         ext.updated_at = Utc::now().to_rfc3339();
         let revoked_at = ext.updated_at.clone();
 
-        self.revocation_sequence += 1;
+        self.revocation_sequence = self.revocation_sequence.saturating_add(1);
         let record = RevocationRecord {
             extension_id: extension_id.to_string(),
             revoked_at,

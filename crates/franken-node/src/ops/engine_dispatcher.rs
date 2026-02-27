@@ -146,6 +146,7 @@ impl EngineDispatcher {
 
         if !status.success() {
             if let Some(code) = status.code() {
+                drop(_cleanup_guard);
                 std::process::exit(code);
             } else {
                 anyhow::bail!("franken_engine exited abnormally (terminated by signal)");

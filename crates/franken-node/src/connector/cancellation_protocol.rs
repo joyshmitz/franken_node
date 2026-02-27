@@ -263,7 +263,8 @@ impl ResourceTracker {
 
     /// Acquire a resource.
     pub fn acquire(&mut self, name: &str) {
-        *self.held.entry(name.to_string()).or_insert(0) += 1;
+        let counter = self.held.entry(name.to_string()).or_insert(0);
+        *counter = counter.saturating_add(1);
     }
 
     /// Release a resource.
@@ -458,7 +459,7 @@ impl CancellationProtocol {
 
     /// Register an in-flight child operation. INV-CAN-PROPAGATION.
     pub fn register_child(&mut self) {
-        self.inflight_children += 1;
+        self.inflight_children = self.inflight_children.saturating_add(1);
     }
 
     /// Mark a child operation as completed.

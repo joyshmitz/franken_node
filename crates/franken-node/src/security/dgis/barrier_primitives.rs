@@ -452,13 +452,13 @@ impl RolloutState {
     }
 
     pub fn record_success(&mut self) {
-        self.success_count += 1;
-        self.total_count += 1;
+        self.success_count = self.success_count.saturating_add(1);
+        self.total_count = self.total_count.saturating_add(1);
     }
 
     pub fn record_error(&mut self) {
-        self.error_count += 1;
-        self.total_count += 1;
+        self.error_count = self.error_count.saturating_add(1);
+        self.total_count = self.total_count.saturating_add(1);
     }
 }
 

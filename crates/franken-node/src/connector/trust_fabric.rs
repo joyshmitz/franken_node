@@ -205,14 +205,14 @@ impl TrustStateVector {
     /// Add a trust card (authorization).
     pub fn add_trust_card(&mut self, id: &str) {
         self.trust_cards.insert(id.into());
-        self.version += 1;
+        self.version = self.version.saturating_add(1);
         self.recompute_digest();
     }
 
     /// Add an extension authorization.
     pub fn add_extension(&mut self, id: &str) {
         self.extensions.insert(id.into());
-        self.version += 1;
+        self.version = self.version.saturating_add(1);
         self.recompute_digest();
     }
 
@@ -221,8 +221,8 @@ impl TrustStateVector {
         self.revocations.insert(id.into());
         self.trust_cards.remove(id);
         self.extensions.remove(id);
-        self.revocation_ver += 1;
-        self.version += 1;
+        self.revocation_ver = self.revocation_ver.saturating_add(1);
+        self.version = self.version.saturating_add(1);
         self.recompute_digest();
     }
 

@@ -990,7 +990,7 @@ mod tests {
                 assert_eq!(flag, "--unknown");
                 assert!(recovery_hint.contains("Valid flags"));
             }
-            _ => panic!("expected UnknownFlag error"),
+            _ => assert!(false, "expected UnknownFlag error"),
         }
     }
 

@@ -1002,15 +1002,15 @@ mod tests {
             &DetectionResult::GapDetected,
             None,
         );
-        match suggestion {
-            ReconciliationSuggestion::FillGap {
-                missing_start,
-                missing_end,
-            } => {
-                assert_eq!(missing_start, 4);
-                assert_eq!(missing_end, 10);
-            }
-            _ => panic!("Expected FillGap"),
+        if let ReconciliationSuggestion::FillGap {
+            missing_start,
+            missing_end,
+        } = suggestion
+        {
+            assert_eq!(missing_start, 4);
+            assert_eq!(missing_end, 10);
+        } else {
+            assert!(false, "Expected FillGap");
         }
     }
 
@@ -1020,11 +1020,10 @@ mod tests {
         let sv2 = make_sv(5, "fb", "p", "n2");
         let suggestion =
             DivergenceDetector::suggest_reconciliation(&sv1, &sv2, &DetectionResult::Forked, None);
-        match suggestion {
-            ReconciliationSuggestion::ResolveConflict { epoch, .. } => {
-                assert_eq!(epoch, 5);
-            }
-            _ => panic!("Expected ResolveConflict"),
+        if let ReconciliationSuggestion::ResolveConflict { epoch, .. } = suggestion {
+            assert_eq!(epoch, 5);
+        } else {
+            assert!(false, "Expected ResolveConflict");
         }
     }
 

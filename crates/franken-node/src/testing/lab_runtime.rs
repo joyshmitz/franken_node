@@ -376,7 +376,7 @@ impl TestClock {
                 delta: delay,
             })?;
         let id = self.next_timer_id;
-        self.next_timer_id += 1;
+        self.next_timer_id = self.next_timer_id.saturating_add(1);
         self.pending_timers
             .entry(fire_tick)
             .or_default()

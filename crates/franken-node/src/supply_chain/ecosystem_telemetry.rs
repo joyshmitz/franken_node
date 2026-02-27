@@ -354,7 +354,7 @@ impl TelemetryPipeline {
         }
 
         self.data_points.push(point);
-        self.ingested_count += 1;
+        self.ingested_count = self.ingested_count.saturating_add(1);
         true
     }
 

@@ -233,7 +233,7 @@ impl PartnerLighthousePrograms {
         );
         self.deployments.push(dep);
         if let Some(p) = self.partners.get_mut(&pid) {
-            p.deployment_count += 1;
+            p.deployment_count = p.deployment_count.saturating_add(1);
         }
         Ok(did)
     }
@@ -283,7 +283,7 @@ impl PartnerLighthousePrograms {
         if let Some(pid) = partner_id
             && let Some(p) = self.partners.get_mut(&pid)
         {
-            p.outcome_count += 1;
+            p.outcome_count = p.outcome_count.saturating_add(1);
         }
         Ok(oid)
     }

@@ -279,7 +279,7 @@ impl ObligationTracker {
         trace_id: &str,
     ) -> ObligationId {
         let id = ObligationId(format!("obl-{}", self.next_id));
-        self.next_id += 1;
+        self.next_id = self.next_id.saturating_add(1);
 
         let obligation = Obligation {
             id: id.clone(),

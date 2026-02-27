@@ -143,7 +143,7 @@ impl AdversaryNode {
         self.alpha += clamped;
         self.beta += 1.0 - clamped;
         self.risk_posterior = self.alpha / (self.alpha + self.beta);
-        self.evidence_count += 1;
+        self.evidence_count = self.evidence_count.saturating_add(1);
         self.last_updated = timestamp;
         (old_posterior, self.risk_posterior)
     }

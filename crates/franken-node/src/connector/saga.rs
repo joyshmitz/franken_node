@@ -209,7 +209,7 @@ impl SagaExecutor {
     /// Returns the saga ID. The saga starts in `Pending` state.
     pub fn create_saga(&mut self, steps: Vec<SagaStepDef>, trace_id: &str) -> String {
         let saga_id = format!("saga-{}", self.next_saga_id);
-        self.next_saga_id += 1;
+        self.next_saga_id = self.next_saga_id.saturating_add(1);
 
         let step_names: Vec<_> = steps.iter().map(|s| s.name.clone()).collect();
 
@@ -252,6 +252,10 @@ impl SagaExecutor {
         elapsed_ms: u64,
         trace_id: &str,
     ) -> Result<usize, String> {
+        if matches!(outcome, StepOutcome::Compensated) {
+            return Err("cannot pass Compensated as a forward step outcome".to_string());
+        }
+
         let saga = self
             .sagas
             .get_mut(saga_id)
@@ -292,7 +296,7 @@ impl SagaExecutor {
         };
 
         saga.records.push(record);
-        saga.completed_steps += 1;
+        saga.completed_steps = saga.completed_steps.saturating_add(1);
         saga.state = SagaState::Running;
 
         self.log(

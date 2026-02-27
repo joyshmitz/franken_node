@@ -460,7 +460,7 @@ impl ControlLaneScheduler {
             .counters
             .get_mut(lane.as_str())
             .expect("invariant: counters initialized for all ControlLane variants in new()");
-        counters.tasks_run += 1;
+        counters.tasks_run = counters.tasks_run.saturating_add(1);
         counters.consecutive_empty_ticks = 0;
 
         self.audit_log.push(ControlLaneAuditRecord {
@@ -484,7 +484,7 @@ impl ControlLaneScheduler {
         timestamp_ms: u64,
         trace_id: &str,
     ) -> Vec<ControlLanePolicyError> {
-        self.current_tick += 1;
+        self.current_tick = self.current_tick.saturating_add(1);
         let mut alerts = Vec::new();
 
         for lane in ControlLane::all() {
@@ -496,16 +496,16 @@ impl ControlLaneScheduler {
                 .expect("invariant: counters initialized for all ControlLane variants in new()");
 
             if tasks_run == 0 && counters.tasks_queued > 0 {
-                counters.consecutive_empty_ticks += 1;
+                counters.consecutive_empty_ticks = counters.consecutive_empty_ticks.saturating_add(1);
             } else {
                 counters.consecutive_empty_ticks = 0;
             }
-            counters.tasks_run += tasks_run;
+            counters.tasks_run = counters.tasks_run.saturating_add(tasks_run);
 
             if let Some(budget) = self.policy.budgets.get(&lane_key)
                 && counters.consecutive_empty_ticks >= budget.starvation_threshold_ticks
             {
-                counters.starvation_alerts += 1;
+                counters.starvation_alerts = counters.starvation_alerts.saturating_add(1);
                 alerts.push(ControlLanePolicyError::Starvation {
                     lane: *lane,
                     consecutive_ticks: counters.consecutive_empty_ticks,

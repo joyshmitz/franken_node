@@ -303,8 +303,9 @@ impl FrankensqliteAdapter {
         let tier = class.tier();
 
         self.store.insert((class, key.to_string()), value.to_vec());
-        *self.writes_by_tier.entry(tier).or_insert(0) += 1;
-        self.write_count += 1;
+        let tier_writes = self.writes_by_tier.entry(tier).or_insert(0);
+        *tier_writes = tier_writes.saturating_add(1);
+        self.write_count = self.write_count.saturating_add(1);
 
         if class == PersistenceClass::AuditLog {
             self.audit_log.push((key.to_string(), value.to_vec()));
@@ -329,7 +330,7 @@ impl FrankensqliteAdapter {
 
     /// Read a value by persistence class and key.
     pub fn read(&mut self, class: PersistenceClass, key: &str) -> ReadResult {
-        self.read_count += 1;
+        self.read_count = self.read_count.saturating_add(1);
         let tier = class.tier();
         let entry = self.store.get(&(class, key.to_string()));
         ReadResult {
@@ -349,7 +350,7 @@ impl FrankensqliteAdapter {
             "audit_log",
             format!("Replaying {} entries", self.audit_log.len()),
         );
-        self.replay_count += 1;
+        self.replay_count = self.replay_count.saturating_add(1);
 
         // Clone to avoid borrow conflict with self.emit_event.
         let log_snapshot: Vec<_> = self.audit_log.clone();
@@ -358,7 +359,7 @@ impl FrankensqliteAdapter {
             let stored = self.store.get(&(PersistenceClass::AuditLog, key.clone()));
             let matches = stored.is_some_and(|v| v == expected);
             if !matches {
-                self.replay_mismatches += 1;
+                self.replay_mismatches = self.replay_mismatches.saturating_add(1);
                 self.emit_event(
                     event_codes::FRANKENSQLITE_REPLAY_MISMATCH,
                     "audit_log",

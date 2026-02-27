@@ -286,7 +286,7 @@ impl IdempotencyDedupeStore {
         // Now process with mutable borrows (entry borrow is dropped).
         match action {
             Action::Expired => {
-                self.total_expired += 1;
+                self.total_expired = self.total_expired.saturating_add(1);
                 self.log(
                     event_codes::ID_ENTRY_EXPIRED,
                     trace_id,
@@ -298,7 +298,7 @@ impl IdempotencyDedupeStore {
                 // Fall through to insert as new
             }
             Action::CorruptComplete { expected_hash } => {
-                self.total_conflict += 1;
+                self.total_conflict = self.total_conflict.saturating_add(1);
                 self.log(
                     event_codes::ID_ENTRY_CONFLICT,
                     trace_id,
@@ -318,7 +318,7 @@ impl IdempotencyDedupeStore {
                 };
             }
             Action::Conflict { expected_hash } => {
-                self.total_conflict += 1;
+                self.total_conflict = self.total_conflict.saturating_add(1);
                 self.log(
                     event_codes::ID_ENTRY_CONFLICT,
                     trace_id,
@@ -337,7 +337,7 @@ impl IdempotencyDedupeStore {
                 };
             }
             Action::Duplicate(outcome) => {
-                self.total_duplicate += 1;
+                self.total_duplicate = self.total_duplicate.saturating_add(1);
                 self.log(
                     event_codes::ID_ENTRY_DUPLICATE,
                     trace_id,
@@ -365,7 +365,7 @@ impl IdempotencyDedupeStore {
             ttl_secs: self.ttl_secs,
         };
         self.entries.insert(key_hex.clone(), entry);
-        self.total_new += 1;
+        self.total_new = self.total_new.saturating_add(1);
         self.log(
             event_codes::ID_ENTRY_NEW,
             trace_id,
@@ -584,7 +584,9 @@ mod tests {
             DedupeResult::Duplicate(outcome) => {
                 assert_eq!(outcome.result_data, b"result-ok");
             }
-            other => panic!("expected Duplicate, got {other:?}"),
+            other => {
+                assert!(false, "expected Duplicate, got {other:?}");
+            }
         }
     }
 
@@ -607,7 +609,9 @@ mod tests {
             } => {
                 assert_ne!(expected_hash, actual_hash);
             }
-            other => panic!("expected Conflict, got {other:?}"),
+            other => {
+                assert!(false, "expected Conflict, got {other:?}");
+            }
         }
     }
 
@@ -640,7 +644,9 @@ mod tests {
                 assert_eq!(outcome.completed_at_secs, 1001);
                 assert!(!outcome.result_hash.is_empty());
             }
-            other => panic!("expected Duplicate, got {other:?}"),
+            other => {
+                assert!(false, "expected Duplicate, got {other:?}");
+            }
         }
     }
 
@@ -673,7 +679,13 @@ mod tests {
                 assert_eq!(expected_hash, payload_hash);
                 assert_eq!(actual_hash, payload_hash);
             }
-            other => panic!("expected Conflict for corrupted complete entry, got {other:?}"),
+            other => {
+                assert!(
+                    false,
+                    "expected Conflict for corrupted complete entry, got {:?}",
+                    other
+                );
+            }
         }
 
         let has_corrupt_conflict_audit = store.audit_log().iter().any(|record| {

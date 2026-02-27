@@ -502,7 +502,7 @@ impl LineageGraph {
         }
 
         if edge.edge_id.is_empty() {
-            self.edge_counter += 1;
+            self.edge_counter = self.edge_counter.saturating_add(1);
             edge.edge_id = format!("edge-{}", self.edge_counter);
         }
 
@@ -724,7 +724,7 @@ impl ExfiltrationSentinel {
 
             if boundary.is_violated_by(&edge.taint_set) {
                 // Raise an alert
-                self.alert_counter += 1;
+                self.alert_counter = self.alert_counter.saturating_add(1);
                 let alert_id = format!("alert-{}", self.alert_counter);
                 let _event_alert = EVENT_EXFIL_ALERT;
 
@@ -752,7 +752,7 @@ impl ExfiltrationSentinel {
                 graph.quarantine_edge(&edge.edge_id)?;
 
                 // Issue containment receipt
-                self.receipt_counter += 1;
+                self.receipt_counter = self.receipt_counter.saturating_add(1);
                 let receipt_id = format!("receipt-{}", self.receipt_counter);
                 let _event_receipt = EVENT_CONTAINMENT_RECEIPT;
 

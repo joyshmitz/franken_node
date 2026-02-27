@@ -248,7 +248,7 @@ impl EvictionSagaManager {
         }
 
         let saga_id = format!("saga-{}", self.next_saga_id);
-        self.next_saga_id += 1;
+        self.next_saga_id = self.next_saga_id.saturating_add(1);
 
         let mut saga = SagaInstance::new(&saga_id, artifact_id);
         saga.has_remote_cap = has_remote_cap;

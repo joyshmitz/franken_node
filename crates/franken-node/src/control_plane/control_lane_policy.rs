@@ -459,7 +459,8 @@ impl ControlLanePolicy {
             trace_id: trace_id.to_string(),
         });
 
-        *self.lane_run_counts.entry(lane).or_insert(0) += 1;
+        let run_count = self.lane_run_counts.entry(lane).or_insert(0);
+        *run_count = run_count.saturating_add(1);
 
         Ok(lane)
     }
@@ -474,7 +475,7 @@ impl ControlLanePolicy {
         total_slots: u32,
         trace_id: &str,
     ) -> LaneTickMetrics {
-        self.current_tick += 1;
+        self.current_tick = self.current_tick.saturating_add(1);
 
         // Allocate slots by budget
         let cancel_slots = (total_slots as u64 * CANCEL_LANE_BUDGET_PCT as u64 / 100) as u32;
@@ -501,7 +502,7 @@ impl ControlLanePolicy {
         ] {
             let counter = self.lane_consecutive_zero.entry(lane).or_insert(0);
             if starved {
-                *counter += 1;
+                *counter = counter.saturating_add(1);
                 let threshold = self
                     .budgets
                     .get(&lane)

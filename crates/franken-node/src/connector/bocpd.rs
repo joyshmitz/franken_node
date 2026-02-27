@@ -447,7 +447,7 @@ impl BocpdDetector {
 
     /// Process a new observation.
     pub fn observe(&mut self, x: f64, timestamp: u64) -> Option<RegimeShift> {
-        self.observation_count += 1;
+        self.observation_count = self.observation_count.saturating_add(1);
         self.events.push(BocpdEvent {
             code: EVT_OBSERVATION.to_string(),
             detail: format!("x={x:.4}"),
@@ -597,7 +597,7 @@ impl BocpdDetector {
         }
 
         // INV-BCP-MONOTONIC: run length increases within a regime.
-        self.current_run_length += 1;
+        self.current_run_length = self.current_run_length.saturating_add(1);
         None
     }
 

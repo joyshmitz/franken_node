@@ -186,7 +186,7 @@ impl BayesianDiagnostics {
             .entry(observation.candidate.clone())
             .or_insert_with(BetaState::new);
         state.update(observation.success);
-        self.total_observations += 1;
+        self.total_observations = self.total_observations.saturating_add(1);
         self.epoch_id = observation.epoch_id;
 
         // [EVD-BAYES-001] structured log point

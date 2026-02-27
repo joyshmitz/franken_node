@@ -732,6 +732,15 @@ impl StakingLedger {
         risk_tier: RiskTier,
         timestamp: u64,
     ) -> Result<StakeId, StakingError> {
+        // Reject empty publisher_id — would corrupt the account map.
+        if publisher_id.trim().is_empty() {
+            return Err(StakingError::InsufficientStake {
+                required: 0,
+                provided: 0,
+                code: ERR_STAKE_INSUFFICIENT,
+            });
+        }
+
         // INV-STAKE-MINIMUM: check minimum for risk tier
         if let Some(tier_policy) = self.engine.penalty_schedule.get_tier(&risk_tier)
             && amount < tier_policy.minimum_stake
@@ -744,7 +753,7 @@ impl StakingLedger {
         }
 
         let stake_id = StakeId(self.state.next_stake_id);
-        self.state.next_stake_id += 1;
+        self.state.next_stake_id = self.state.next_stake_id.saturating_add(1);
 
         let record = StakeRecord {
             id: stake_id,
@@ -890,7 +899,7 @@ impl StakingLedger {
             timestamp,
             penalty_hash,
         };
-        self.state.next_slash_id += 1;
+        self.state.next_slash_id = self.state.next_slash_id.saturating_add(1);
         self.state.slash_events.push(slash_event.clone());
 
         // INV-STAKE-AUDIT-COMPLETE
@@ -992,7 +1001,7 @@ impl StakingLedger {
             filed_at: current_time,
             resolved_at: None,
         };
-        self.state.next_appeal_id += 1;
+        self.state.next_appeal_id = self.state.next_appeal_id.saturating_add(1);
         self.state.appeals.push(appeal.clone());
 
         self.emit_audit(
@@ -1404,7 +1413,7 @@ impl StakingLedger {
             outcome: outcome.to_string(),
             invariants_checked,
         };
-        self.state.next_audit_id += 1;
+        self.state.next_audit_id = self.state.next_audit_id.saturating_add(1);
         self.state.audit_log.push(entry);
     }
 }

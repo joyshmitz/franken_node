@@ -86,8 +86,13 @@ impl LockstepHarness {
         // Run the cross-runtime check
         let check_id = format!("check-{}", uuid::Uuid::now_v7());
         // Simple heuristic: passing the source code as input payload for auditing
-        let input_payload = std::fs::read(app_path)
-            .map_err(|e| anyhow::anyhow!("Failed to read app payload for auditing: {}", e))?;
+        let input_payload = if app_path.is_file() {
+            std::fs::read(app_path).unwrap_or_default()
+        } else {
+            let pkg_path = app_path.join("package.json");
+            std::fs::read(pkg_path)
+                .unwrap_or_else(|_| app_path.to_string_lossy().as_bytes().to_vec())
+        };
 
         let check = oracle
             .run_cross_check(

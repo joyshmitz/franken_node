@@ -408,7 +408,7 @@ impl VoiScheduler {
         }
 
         if total_demand > self.config.storm_threshold * self.config.budget_units {
-            self.consecutive_storm_windows += 1;
+            self.consecutive_storm_windows = self.consecutive_storm_windows.saturating_add(1);
         } else {
             self.consecutive_storm_windows = 0;
         }

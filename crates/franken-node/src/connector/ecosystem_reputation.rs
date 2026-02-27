@@ -323,7 +323,7 @@ impl EcosystemReputationApi {
                 publisher_id.to_owned(),
             ));
         }
-        *counter += 1;
+        *counter = counter.saturating_add(1);
 
         let pub_record = self
             .publishers
@@ -345,7 +345,7 @@ impl EcosystemReputationApi {
         pub_record.score = new_score;
         pub_record.inputs = inputs;
         pub_record.last_computed_at = timestamp.to_owned();
-        pub_record.computation_count += 1;
+        pub_record.computation_count = pub_record.computation_count.saturating_add(1);
         pub_record.score_history.push(new_score);
 
         self.events.push(ReputationEvent {

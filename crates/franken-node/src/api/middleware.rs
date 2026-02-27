@@ -584,13 +584,14 @@ pub struct ServiceMetrics {
 
 impl ServiceMetrics {
     pub fn record_request(&mut self, log: &RequestLog) {
-        self.request_count += 1;
+        self.request_count = self.request_count.saturating_add(1);
         self.latencies
             .entry(log.endpoint_group.clone())
             .or_default()
             .record(log.latency_ms);
         if log.status >= 400 {
-            *self.error_counts.entry(log.event_code.clone()).or_insert(0) += 1;
+            let count = self.error_counts.entry(log.event_code.clone()).or_insert(0);
+            *count = count.saturating_add(1);
         }
     }
 }

@@ -375,7 +375,7 @@ impl VirtualTransportLayer {
             .filter(|l| l.active && !l.config.partition)
             .count();
         let partitioned_links = self.links.values().filter(|l| l.config.partition).count();
-        let delivered = self.total_messages - self.dropped_messages;
+        let delivered = self.total_messages.saturating_sub(self.dropped_messages);
         TransportStats {
             total_messages: self.total_messages,
             dropped_messages: self.dropped_messages,
@@ -490,8 +490,8 @@ impl VirtualTransportLayer {
         }
 
         let msg_id = self.next_message_id;
-        self.next_message_id += 1;
-        self.total_messages += 1;
+        self.next_message_id = self.next_message_id.saturating_add(1);
+        self.total_messages = self.total_messages.saturating_add(1);
 
         // Read config values before mutable borrow.
         let drop_prob;
@@ -510,7 +510,7 @@ impl VirtualTransportLayer {
         // Drop decision.
         let roll = self.rng.next_f64();
         if roll < drop_prob {
-            self.dropped_messages += 1;
+            self.dropped_messages = self.dropped_messages.saturating_add(1);
             self.event_log.push(TransportEvent::MessageDropped {
                 event_code: event_codes::VT_002.to_string(),
                 message_id: msg_id,
@@ -525,7 +525,7 @@ impl VirtualTransportLayer {
         // Corruption.
         if corrupt_bits > 0 && !msg_payload.is_empty() {
             let bits_flipped = self.apply_corruption(&mut msg_payload, corrupt_bits);
-            self.corrupted_messages += 1;
+            self.corrupted_messages = self.corrupted_messages.saturating_add(1);
             self.event_log.push(TransportEvent::MessageCorrupted {
                 event_code: event_codes::VT_004.to_string(),
                 message_id: msg_id,
@@ -561,7 +561,7 @@ impl VirtualTransportLayer {
             let insert_pos = window_start + (pos_raw % window_size);
 
             link.buffer.insert(insert_pos, msg);
-            self.reordered_messages += 1;
+            self.reordered_messages = self.reordered_messages.saturating_add(1);
             self.event_log.push(TransportEvent::MessageReordered {
                 event_code: event_codes::VT_003.to_string(),
                 message_id: msg_id,

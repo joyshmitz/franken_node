@@ -184,7 +184,7 @@ impl ControllerBoundaryChecker {
         match envelope.is_within_envelope(proposal) {
             Ok(()) => {
                 // EVD-BOUNDARY-001: check passed
-                self.checks_passed += 1;
+                self.checks_passed = self.checks_passed.saturating_add(1);
                 eprintln!(
                     "EVD-BOUNDARY-001: boundary check passed: proposal={}, controller={}, epoch={}",
                     proposal.proposal_id, proposal.controller_id, proposal.epoch_id
@@ -237,7 +237,7 @@ impl ControllerBoundaryChecker {
             epoch_id: proposal.epoch_id,
         };
         self.rejected_mutations.push(record);
-        self.checks_rejected += 1;
+        self.checks_rejected = self.checks_rejected.saturating_add(1);
         eprintln!(
             "EVD-BOUNDARY-003: audit trail write: invariant={}, controller={}, epoch={}",
             violation.violated_invariant, proposal.controller_id, proposal.epoch_id

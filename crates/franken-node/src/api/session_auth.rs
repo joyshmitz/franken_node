@@ -180,14 +180,14 @@ impl AuthenticatedSession {
     /// Advance send sequence and return the assigned number.
     pub fn next_send_seq(&mut self) -> u64 {
         let seq = self.send_seq;
-        self.send_seq += 1;
+        self.send_seq = self.send_seq.saturating_add(1);
         seq
     }
 
     /// Advance recv sequence and return the assigned number.
     pub fn next_recv_seq(&mut self) -> u64 {
         let seq = self.recv_seq;
-        self.recv_seq += 1;
+        self.recv_seq = self.recv_seq.saturating_add(1);
         seq
     }
 }

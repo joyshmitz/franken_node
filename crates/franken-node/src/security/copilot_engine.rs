@@ -422,7 +422,7 @@ impl ActionRecommendationEngine {
             event_code: COPILOT_RECOMMENDATION_SERVED.to_owned(),
         };
         self.audit_trail.push(audit);
-        self.total_served += 1;
+        self.total_served = self.total_served.saturating_add(1);
 
         response
     }

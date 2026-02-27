@@ -571,7 +571,7 @@ impl TrustGovernanceState {
         }
 
         let id = StakeId(self.next_stake_id);
-        self.next_stake_id += 1;
+        self.next_stake_id = self.next_stake_id.saturating_add(1);
 
         let record = StakeRecord {
             id,
@@ -738,7 +738,7 @@ impl TrustGovernanceState {
         }
 
         let appeal_id = self.next_appeal_id;
-        self.next_appeal_id += 1;
+        self.next_appeal_id = self.next_appeal_id.saturating_add(1);
 
         let appeal = AppealRecord {
             appeal_id,

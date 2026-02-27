@@ -308,7 +308,7 @@ impl ReportingPipeline {
         for input in claims_input {
             let evidence = self.verify_evidence(&input.evidence, now_secs)?;
             let claim_id = format!("CSR-CLAIM-{:03}", self.next_claim_id);
-            self.next_claim_id += 1;
+            self.next_claim_id = self.next_claim_id.saturating_add(1);
 
             let outcome = match evidence.freshness {
                 FreshnessStatus::Fresh => ClaimOutcome::Verified,

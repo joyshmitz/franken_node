@@ -332,7 +332,14 @@ impl KeyRoleRegistry {
                 });
             }
             // Re-binding to the same role is idempotent; return existing.
-            return Ok(self.active.get(key_id).expect("key verified present"));
+            let existing_role = existing.role;
+            if existing_role == role {
+                return self.active.get(key_id).ok_or_else(|| {
+                    KeyRoleSeparationError::KeyNotFound {
+                        key_id: key_id.to_string(),
+                    }
+                });
+            }
         }
 
         let binding = KeyRoleBinding {
@@ -348,10 +355,11 @@ impl KeyRoleRegistry {
         self.events
             .push(KeyRoleEvent::bound(key_id, role, authority, trace_id));
 
-        Ok(self
-            .active
+        self.active
             .get(key_id)
-            .expect("binding present after insert"))
+            .ok_or_else(|| KeyRoleSeparationError::KeyNotFound {
+                key_id: key_id.to_string(),
+            })
     }
 
     /// Look up a binding by key_id. Returns None if not found or revoked.
@@ -441,7 +449,10 @@ impl KeyRoleRegistry {
         let old_binding = self
             .active
             .remove(old_key_id)
-            .expect("old key verified present");
+            .ok_or_else(|| KeyRoleSeparationError::RotationFailed {
+                role,
+                reason: format!("old key {} vanished during rotation", old_key_id),
+            })?;
         self.revoked.push(old_binding);
 
         let new_binding = KeyRoleBinding {
@@ -458,10 +469,12 @@ impl KeyRoleRegistry {
             old_key_id, new_key_id, role, authority, trace_id,
         ));
 
-        Ok(self
-            .active
+        self.active
             .get(new_key_id)
-            .expect("binding present after insert"))
+            .ok_or_else(|| KeyRoleSeparationError::RotationFailed {
+                role,
+                reason: format!("new key {} vanished after insert", new_key_id),
+            })
     }
 
     /// Verify that a key is bound to the expected role.

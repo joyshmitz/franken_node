@@ -223,7 +223,7 @@ impl QuarantineController {
     /// Produce a signed evidence entry for a given event.
     fn sign_evidence(&mut self, event: &EvidenceEvent) -> Result<SignedEvidenceEntry, String> {
         let seq = self.next_sequence;
-        self.next_sequence += 1;
+        self.next_sequence = self.next_sequence.saturating_add(1);
 
         let canonical =
             serde_json::to_string(event).map_err(|e| format!("serialization error: {e}"))?;

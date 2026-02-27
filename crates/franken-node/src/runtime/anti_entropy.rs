@@ -334,7 +334,7 @@ impl AntiEntropyReconciler {
         remote: &TrustState,
         cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<ReconciliationResult, ReconciliationError> {
-        self.reconciliation_count += 1;
+        self.reconciliation_count = self.reconciliation_count.saturating_add(1);
         let trace_id = format!("ae-{}", self.reconciliation_count);
         let start = std::time::Instant::now();
 

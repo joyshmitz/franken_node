@@ -299,7 +299,7 @@ impl VirtualTransportFaultHarness {
         details: serde_json::Value,
     ) -> u64 {
         let id = self.next_fault_id;
-        self.next_fault_id += 1;
+        self.next_fault_id = self.next_fault_id.saturating_add(1);
         self.fault_log.push(FaultEvent {
             fault_id: id,
             fault_class: fault_class.to_string(),

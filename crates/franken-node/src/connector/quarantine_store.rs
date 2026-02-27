@@ -157,7 +157,7 @@ impl QuarantineStore {
         for id in expired_ids {
             if let Some(entry) = self.entries.remove(&id) {
                 self.total_bytes = self.total_bytes.saturating_sub(entry.size_bytes);
-                self.evictions_total += 1;
+                self.evictions_total = self.evictions_total.saturating_add(1);
                 evicted.push(EvictionRecord {
                     object_id: id,
                     reason: "ttl_expired".into(),
@@ -189,7 +189,7 @@ impl QuarantineStore {
             if let Some(id) = oldest_id {
                 if let Some(entry) = self.entries.remove(&id) {
                     self.total_bytes = self.total_bytes.saturating_sub(entry.size_bytes);
-                    self.evictions_total += 1;
+                    self.evictions_total = self.evictions_total.saturating_add(1);
                     evicted.push(EvictionRecord {
                         object_id: id,
                         reason: "quota_exceeded".into(),

@@ -373,7 +373,7 @@ impl ChallengeFlowController {
         }
 
         let challenge_id = ChallengeId::new(format!("ch-{}", self.next_id));
-        self.next_id += 1;
+        self.next_id = self.next_id.saturating_add(1);
 
         let challenge = Challenge {
             challenge_id: challenge_id.clone(),
@@ -388,7 +388,8 @@ impl ChallengeFlowController {
         };
 
         self.challenges.insert(challenge_id.clone(), challenge);
-        self.metrics.challenges_issued_total += 1;
+        self.metrics.challenges_issued_total =
+            self.metrics.challenges_issued_total.saturating_add(1);
 
         self.log_transition(
             &challenge_id,
@@ -508,8 +509,10 @@ impl ChallengeFlowController {
         let artifact_id = challenge.artifact_id.clone();
         let old_state = challenge.state;
         challenge.state = ChallengeState::Promoted;
-        self.metrics.challenges_resolved_total += 1;
-        self.metrics.challenges_promoted_total += 1;
+        self.metrics.challenges_resolved_total =
+            self.metrics.challenges_resolved_total.saturating_add(1);
+        self.metrics.challenges_promoted_total =
+            self.metrics.challenges_promoted_total.saturating_add(1);
 
         self.log_transition(
             challenge_id,
@@ -548,8 +551,10 @@ impl ChallengeFlowController {
         let artifact_id = challenge.artifact_id.clone();
         let old_state = challenge.state;
         challenge.state = ChallengeState::Denied;
-        self.metrics.challenges_resolved_total += 1;
-        self.metrics.challenges_denied_total += 1;
+        self.metrics.challenges_resolved_total =
+            self.metrics.challenges_resolved_total.saturating_add(1);
+        self.metrics.challenges_denied_total =
+            self.metrics.challenges_denied_total.saturating_add(1);
 
         self.log_transition(
             challenge_id,
@@ -582,9 +587,12 @@ impl ChallengeFlowController {
         for (cid, aid, old_state) in timed_out {
             if let Some(ch) = self.challenges.get_mut(&cid) {
                 ch.state = ChallengeState::Denied;
-                self.metrics.challenges_timed_out_total += 1;
-                self.metrics.challenges_resolved_total += 1;
-                self.metrics.challenges_denied_total += 1;
+                self.metrics.challenges_timed_out_total =
+                    self.metrics.challenges_timed_out_total.saturating_add(1);
+                self.metrics.challenges_resolved_total =
+                    self.metrics.challenges_resolved_total.saturating_add(1);
+                self.metrics.challenges_denied_total =
+                    self.metrics.challenges_denied_total.saturating_add(1);
 
                 self.log_transition(
                     &cid,

@@ -143,7 +143,7 @@ impl OfflineCoverageTracker {
         scope
             .artifacts
             .insert(event.artifact_id.clone(), event.available);
-        scope.event_count += 1;
+        scope.event_count = scope.event_count.saturating_add(1);
         self.all_events.push(event);
         Ok(())
     }

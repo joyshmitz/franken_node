@@ -310,7 +310,7 @@ impl ExpectedLossModel {
         observed_frequency: f64,
         effectiveness: f64,
     ) {
-        self.observation_count += 1;
+        self.observation_count = self.observation_count.saturating_add(1);
         let n = self.observation_count as f64;
         let w = self.prior_weight;
 

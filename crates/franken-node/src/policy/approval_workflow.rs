@@ -288,7 +288,7 @@ impl PolicyChangeEngine {
         };
 
         self.proposals.insert(proposal_id.clone(), record.clone());
-        self.total_proposals += 1;
+        self.total_proposals = self.total_proposals.saturating_add(1);
 
         self.append_audit(
             POLICY_CHANGE_PROPOSED,
@@ -478,7 +478,7 @@ impl PolicyChangeEngine {
 
         record.state = ProposalState::Applied;
         record.evidence_package = Some(evidence.clone());
-        self.total_activated += 1;
+        self.total_activated = self.total_activated.saturating_add(1);
 
         self.append_audit(
             POLICY_CHANGE_ACTIVATED,
@@ -547,7 +547,7 @@ impl PolicyChangeEngine {
             timestamp,
             &format!("Rolled back, replacement: {rollback_proposal_id}"),
         );
-        self.total_rollbacks += 1;
+        self.total_rollbacks = self.total_rollbacks.saturating_add(1);
 
         // Create the rollback proposal.
         let rollback = PolicyChangeProposal {
