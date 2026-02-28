@@ -175,8 +175,8 @@ class VerifierContractCheckerTests(unittest.TestCase):
             refreshed = json.loads(
                 snapshot_paths["verify_module_default"].read_text(encoding="utf-8")
             )
-            self.assertEqual(refreshed["exit_code"], 3)
-            self.assertEqual(refreshed["status"], "skipped")
+            self.assertEqual(refreshed["exit_code"], 0)
+            self.assertEqual(refreshed["status"], "pass")
 
     def test_breaking_without_major_bump_fails(self):
         with tempfile.TemporaryDirectory(prefix="bd3ex_breaking_", dir=ROOT) as tmpdir:

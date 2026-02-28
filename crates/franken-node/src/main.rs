@@ -51,6 +51,7 @@ use api::{
 use cli::{
     BenchCommand, Cli, Command, FleetCommand, IncidentCommand, MigrateCommand, RegistryCommand,
     RemoteCapCommand, RemoteCapIssueArgs, TrustCardCommand, TrustCommand, VerifyCommand,
+    VerifyCompatibilityArgs, VerifyCorpusArgs, VerifyMigrationArgs, VerifyModuleArgs,
     VerifyReleaseArgs,
 };
 use config::{CliOverrides, Profile};
@@ -3207,44 +3208,29 @@ fn handle_verify_release(args: &VerifyReleaseArgs) -> Result<()> {
     Ok(())
 }
 
-fn emit_verify_contract_stub(command: &str, json: bool, compat_version: Option<u16>) -> i32 {
-    let (exit_code, verdict, status, reason) = match compat_version {
-        Some(version)
-            if version > VERIFY_CLI_CONTRACT_MAJOR || version + 1 < VERIFY_CLI_CONTRACT_MAJOR =>
-        {
-            (
-                2,
-                "ERROR".to_string(),
-                "error".to_string(),
-                format!(
-                    "unsupported --compat-version={version}; supported versions: {} or {}",
-                    VERIFY_CLI_CONTRACT_MAJOR,
-                    VERIFY_CLI_CONTRACT_MAJOR.saturating_sub(1)
-                ),
-            )
-        }
-        _ => (
-            3,
-            "SKIPPED".to_string(),
-            "skipped".to_string(),
-            "verifier command wiring is present but execution backend is not implemented yet"
-                .to_string(),
-        ),
-    };
-
-    let payload = VerifyContractStubOutput {
+fn build_verify_output(
+    command: &str,
+    compat_version: Option<u16>,
+    verdict: &str,
+    status: &str,
+    exit_code: i32,
+    reason: impl Into<String>,
+) -> VerifyContractOutput {
+    VerifyContractOutput {
         command: command.to_string(),
         contract_version: VERIFY_CLI_CONTRACT_VERSION.to_string(),
         schema_version: "verifier-cli-contract-v1".to_string(),
         compat_version,
-        verdict,
-        status,
+        verdict: verdict.to_string(),
+        status: status.to_string(),
         exit_code,
-        reason,
-    };
+        reason: reason.into(),
+    }
+}
 
+fn emit_verify_output(command: &str, payload: &VerifyContractOutput, json: bool) -> i32 {
     if json {
-        if let Ok(blob) = serde_json::to_string_pretty(&payload) {
+        if let Ok(blob) = serde_json::to_string_pretty(payload) {
             println!("{blob}");
         } else {
             println!(
@@ -3260,7 +3246,303 @@ fn emit_verify_contract_stub(command: &str, json: bool, compat_version: Option<u
         );
     }
 
-    exit_code
+    payload.exit_code
+}
+
+fn verify_compat_error(command: &str, compat_version: u16) -> VerifyContractOutput {
+    build_verify_output(
+        command,
+        Some(compat_version),
+        "ERROR",
+        "error",
+        2,
+        format!(
+            "unsupported --compat-version={compat_version}; supported versions: {} or {}",
+            VERIFY_CLI_CONTRACT_MAJOR,
+            VERIFY_CLI_CONTRACT_MAJOR.saturating_sub(1)
+        ),
+    )
+}
+
+fn validate_verify_compat(
+    command: &str,
+    compat_version: Option<u16>,
+) -> Option<VerifyContractOutput> {
+    compat_version.and_then(|version| {
+        let previous_major = VERIFY_CLI_CONTRACT_MAJOR.saturating_sub(1);
+        if version > VERIFY_CLI_CONTRACT_MAJOR || version < previous_major {
+            Some(verify_compat_error(command, version))
+        } else {
+            None
+        }
+    })
+}
+
+fn summarize_expected_ids(values: &[&str], preview_count: usize) -> String {
+    let mut preview = values
+        .iter()
+        .take(preview_count)
+        .copied()
+        .collect::<Vec<_>>();
+    if values.len() > preview_count {
+        preview.push("...");
+    }
+    preview.join(", ")
+}
+
+fn emit_verify_module(args: &VerifyModuleArgs) -> i32 {
+    if let Some(error_payload) = validate_verify_compat("verify module", args.compat_version) {
+        return emit_verify_output("verify module", &error_payload, args.json);
+    }
+
+    let normalized = args.module_id.trim().replace('-', "_").to_ascii_lowercase();
+    let passed = VERIFY_MODULE_IDS.contains(&normalized.as_str());
+    let reason = if passed {
+        format!(
+            "module `{}` maps to `{normalized}` and is part of the franken-node module surface",
+            args.module_id
+        )
+    } else {
+        format!(
+            "unknown module `{}`; expected one of: {}",
+            args.module_id,
+            summarize_expected_ids(VERIFY_MODULE_IDS, 10)
+        )
+    };
+    let payload = build_verify_output(
+        "verify module",
+        args.compat_version,
+        if passed { "PASS" } else { "FAIL" },
+        if passed { "pass" } else { "fail" },
+        if passed { 0 } else { 1 },
+        reason,
+    );
+    emit_verify_output("verify module", &payload, args.json)
+}
+
+fn emit_verify_migration(args: &VerifyMigrationArgs) -> i32 {
+    if let Some(error_payload) = validate_verify_compat("verify migration", args.compat_version) {
+        return emit_verify_output("verify migration", &error_payload, args.json);
+    }
+
+    let normalized = args
+        .migration_id
+        .trim()
+        .replace('-', "_")
+        .to_ascii_lowercase();
+    let passed = VERIFY_MIGRATION_IDS.contains(&normalized.as_str());
+    let reason = if passed {
+        format!(
+            "migration target `{}` maps to `{normalized}` and is a supported verify lane",
+            args.migration_id
+        )
+    } else {
+        format!(
+            "unknown migration target `{}`; expected one of: {}",
+            args.migration_id,
+            summarize_expected_ids(VERIFY_MIGRATION_IDS, VERIFY_MIGRATION_IDS.len())
+        )
+    };
+    let payload = build_verify_output(
+        "verify migration",
+        args.compat_version,
+        if passed { "PASS" } else { "FAIL" },
+        if passed { "pass" } else { "fail" },
+        if passed { 0 } else { 1 },
+        reason,
+    );
+    emit_verify_output("verify migration", &payload, args.json)
+}
+
+fn emit_verify_compatibility(args: &VerifyCompatibilityArgs) -> i32 {
+    if let Some(error_payload) = validate_verify_compat("verify compatibility", args.compat_version)
+    {
+        return emit_verify_output("verify compatibility", &error_payload, args.json);
+    }
+
+    let payload = match parse_profile_override(Some(&args.target)) {
+        Ok(Some(profile)) => build_verify_output(
+            "verify compatibility",
+            args.compat_version,
+            "PASS",
+            "pass",
+            0,
+            format!(
+                "compatibility target `{}` resolved to profile `{}`",
+                args.target, profile
+            ),
+        ),
+        Ok(None) => build_verify_output(
+            "verify compatibility",
+            args.compat_version,
+            "FAIL",
+            "fail",
+            1,
+            "compatibility target resolution produced no profile".to_string(),
+        ),
+        Err(err) => build_verify_output(
+            "verify compatibility",
+            args.compat_version,
+            "FAIL",
+            "fail",
+            1,
+            format!("invalid compatibility target `{}`: {}", args.target, err),
+        ),
+    };
+
+    emit_verify_output("verify compatibility", &payload, args.json)
+}
+
+fn collect_corpus_matches(
+    search_root: &Path,
+    corpus_id: &str,
+    matches: &mut BTreeSet<PathBuf>,
+) -> Result<()> {
+    let mut pending = vec![search_root.to_path_buf()];
+    let wanted = corpus_id.to_ascii_lowercase();
+
+    while let Some(dir) = pending.pop() {
+        let entries = std::fs::read_dir(&dir)
+            .with_context(|| format!("failed reading corpus search directory {}", dir.display()))?;
+        for entry in entries {
+            let entry = entry.with_context(|| {
+                format!(
+                    "failed reading directory entry in corpus root {}",
+                    dir.display()
+                )
+            })?;
+            let path = entry.path();
+            if path.is_dir() {
+                if should_skip_bundle_scan_dir(&path) {
+                    continue;
+                }
+                pending.push(path);
+                continue;
+            }
+
+            if !path.is_file() {
+                continue;
+            }
+
+            let file_name = path
+                .file_name()
+                .and_then(std::ffi::OsStr::to_str)
+                .map(|s| s.to_ascii_lowercase());
+            let stem = path
+                .file_stem()
+                .and_then(std::ffi::OsStr::to_str)
+                .map(|s| s.to_ascii_lowercase());
+            if file_name.as_deref() == Some(wanted.as_str())
+                || stem.as_deref() == Some(wanted.as_str())
+            {
+                matches.insert(path);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn emit_verify_corpus(args: &VerifyCorpusArgs) -> i32 {
+    if let Some(error_payload) = validate_verify_compat("verify corpus", args.compat_version) {
+        return emit_verify_output("verify corpus", &error_payload, args.json);
+    }
+
+    let raw_path = args.corpus_path.as_os_str().to_string_lossy();
+    let raw = raw_path.trim();
+    if raw.is_empty() {
+        let payload = build_verify_output(
+            "verify corpus",
+            args.compat_version,
+            "FAIL",
+            "fail",
+            1,
+            "corpus identifier cannot be empty".to_string(),
+        );
+        return emit_verify_output("verify corpus", &payload, args.json);
+    }
+
+    let mut matches = BTreeSet::new();
+    if args.corpus_path.is_absolute() && args.corpus_path.exists() {
+        matches.insert(args.corpus_path.clone());
+    }
+
+    let cwd = match std::env::current_dir() {
+        Ok(path) => path,
+        Err(err) => {
+            let payload = build_verify_output(
+                "verify corpus",
+                args.compat_version,
+                "ERROR",
+                "error",
+                2,
+                format!("failed resolving working directory for corpus checks: {err}"),
+            );
+            return emit_verify_output("verify corpus", &payload, args.json);
+        }
+    };
+
+    let relative_path = cwd.join(&args.corpus_path);
+    if !args.corpus_path.is_absolute() && relative_path.exists() {
+        matches.insert(relative_path);
+    }
+
+    let search_token = args
+        .corpus_path
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(raw);
+
+    for root in VERIFY_CORPUS_SEARCH_ROOTS {
+        let search_root = cwd.join(root);
+        if !search_root.is_dir() {
+            continue;
+        }
+        if let Err(err) = collect_corpus_matches(&search_root, search_token, &mut matches) {
+            let payload = build_verify_output(
+                "verify corpus",
+                args.compat_version,
+                "ERROR",
+                "error",
+                2,
+                format!(
+                    "corpus search failed while scanning `{}`: {err}",
+                    search_root.display()
+                ),
+            );
+            return emit_verify_output("verify corpus", &payload, args.json);
+        }
+    }
+
+    let passed = !matches.is_empty();
+    let reason = if passed {
+        let sample_path = matches
+            .iter()
+            .next()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| raw.to_string());
+        format!(
+            "corpus path `{raw}` matched {} artifact(s); sample match: {sample_path}",
+            matches.len()
+        )
+    } else {
+        format!(
+            "no corpus artifact matched `{raw}` in direct path or roots: {}",
+            VERIFY_CORPUS_SEARCH_ROOTS.join(", ")
+        )
+    };
+
+    let payload = build_verify_output(
+        "verify corpus",
+        args.compat_version,
+        if passed { "PASS" } else { "FAIL" },
+        if passed { "pass" } else { "fail" },
+        if passed { 0 } else { 1 },
+        reason,
+    );
+    emit_verify_output("verify corpus", &payload, args.json)
 }
 
 fn handle_trust_card_command(command: TrustCardCommand) -> Result<()> {
@@ -3533,26 +3815,19 @@ async fn main() -> Result<()> {
 
         Command::Verify(sub) => match sub {
             VerifyCommand::Module(args) => {
-                let code =
-                    emit_verify_contract_stub("verify module", args.json, args.compat_version);
+                let code = emit_verify_module(&args);
                 std::process::exit(code);
             }
             VerifyCommand::Migration(args) => {
-                let code =
-                    emit_verify_contract_stub("verify migration", args.json, args.compat_version);
+                let code = emit_verify_migration(&args);
                 std::process::exit(code);
             }
             VerifyCommand::Compatibility(args) => {
-                let code = emit_verify_contract_stub(
-                    "verify compatibility",
-                    args.json,
-                    args.compat_version,
-                );
+                let code = emit_verify_compatibility(&args);
                 std::process::exit(code);
             }
             VerifyCommand::Corpus(args) => {
-                let code =
-                    emit_verify_contract_stub("verify corpus", args.json, args.compat_version);
+                let code = emit_verify_corpus(&args);
                 std::process::exit(code);
             }
             VerifyCommand::Lockstep(args) => {

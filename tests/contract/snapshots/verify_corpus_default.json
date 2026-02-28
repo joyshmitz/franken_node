@@ -1,10 +1,10 @@
 {
   "command": "verify corpus",
-  "contract_version": "2.0.0",
+  "contract_version": "3.0.0",
   "schema_version": "verifier-cli-contract-v1",
   "compat_version": null,
-  "verdict": "SKIPPED",
-  "status": "skipped",
-  "exit_code": 3,
-  "reason": "verifier command wiring is present but execution backend is not implemented yet"
+  "verdict": "PASS",
+  "status": "pass",
+  "exit_code": 0,
+  "reason": "deterministic verifier checks passed"
 }

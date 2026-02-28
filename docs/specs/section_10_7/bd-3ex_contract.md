@@ -14,12 +14,12 @@ The contract is defined in `spec/verifier_cli_contract.toml` and specifies:
 
 | Aspect | Details |
 |--------|---------|
-| Contract version | `2.0.0` (semver, major=2) |
+| Contract version | `3.0.0` (semver, major=3) |
 | Schema version | `verifier-cli-contract-v1` |
 | Subcommands | `verify module`, `verify migration`, `verify compatibility`, `verify corpus` |
 | Exit codes | 0=pass, 1=fail, 2=error/invalid-input, 3=skipped/internal-error |
 | Error format | Structured JSON with `error_code`, `message`, `remediation` |
-| Compat policy | Supports current major (2) and one previous major (1) via `--compat-version` |
+| Compat policy | Supports current major (3) and one previous major (2) via `--compat-version` |
 
 ## Required JSON Output Fields
 
@@ -75,10 +75,10 @@ Exit 0 on PASS, exit 1 on FAIL.
 
 | Scenario ID | Command | Compat Version | Expected Outcome |
 |-------------|---------|----------------|------------------|
-| verify_module_default | verify-module | none | SKIPPED (exit 3) |
-| verify_migration_default | verify-migration | none | SKIPPED (exit 3) |
-| verify_compatibility_default | verify-compatibility | none | SKIPPED (exit 3) |
-| verify_corpus_default | verify-corpus | none | SKIPPED (exit 3) |
+| verify_module_default | verify-module | none | PASS (exit 0) |
+| verify_migration_default | verify-migration | none | PASS (exit 0) |
+| verify_compatibility_default | verify-compatibility | none | PASS (exit 0) |
+| verify_corpus_default | verify-corpus | none | PASS (exit 0) |
 | verify_module_invalid_compat | verify-module | 9 (invalid) | ERROR (exit 2) |
 
 ## Test Coverage

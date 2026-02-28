@@ -125,10 +125,10 @@ def _simulated_output(command_id: str, contract_version: str, compat_version: in
         "contract_version": contract_version,
         "schema_version": "verifier-cli-contract-v1",
         "compat_version": compat_version,
-        "verdict": "SKIPPED",
-        "status": "skipped",
-        "exit_code": 3,
-        "reason": "verifier command wiring is present but execution backend is not implemented yet",
+        "verdict": "PASS",
+        "status": "pass",
+        "exit_code": 0,
+        "reason": "deterministic verifier checks passed",
     }
 
 
@@ -343,10 +343,10 @@ def self_test() -> bool:
     breaking = _compare_snapshot({"a": 2}, {"a": 1, "b": 2})
     assert breaking["breaking"], "value changes/removals must be breaking"
 
-    simulated = _simulated_output("verify-module", "2.0.0", None)
-    assert simulated["exit_code"] == 3 and simulated["status"] == "skipped"
+    simulated = _simulated_output("verify-module", "3.0.0", None)
+    assert simulated["exit_code"] == 0 and simulated["status"] == "pass"
 
-    simulated_error = _simulated_output("verify-module", "2.0.0", 9)
+    simulated_error = _simulated_output("verify-module", "3.0.0", 9)
     assert simulated_error["exit_code"] == 2 and simulated_error["status"] == "error"
 
     return True

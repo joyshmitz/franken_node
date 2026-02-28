@@ -1,7 +1,7 @@
 schema_version = "1.0"
 contract_name = "verifier-cli"
-contract_version = "2.0.0"
-previous_contract_major = 1
+contract_version = "3.0.0"
+previous_contract_major = 2
 snapshot_dir = "tests/contract/snapshots"
 
 [exit_codes]

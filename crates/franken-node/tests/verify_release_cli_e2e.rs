@@ -90,6 +90,77 @@ fn parse_json_stdout(output: &Output) -> serde_json::Value {
 }
 
 #[test]
+fn verify_module_passes_for_known_surface_module() {
+    let output = run_cli(&["verify", "module", "runtime", "--json"]);
+    assert!(
+        output.status.success(),
+        "verify module should pass for known module; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["command"], "verify module");
+    assert_eq!(payload["verdict"], "PASS");
+    assert_eq!(payload["status"], "pass");
+    assert_eq!(payload["exit_code"], 0);
+    assert_eq!(payload["contract_version"], "3.0.0");
+}
+
+#[test]
+fn verify_module_fails_for_unknown_module() {
+    let output = run_cli(&["verify", "module", "definitely-not-a-real-module", "--json"]);
+    assert!(
+        !output.status.success(),
+        "verify module should fail for unknown module"
+    );
+
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["command"], "verify module");
+    assert_eq!(payload["verdict"], "FAIL");
+    assert_eq!(payload["status"], "fail");
+    assert_eq!(payload["exit_code"], 1);
+}
+
+#[test]
+fn verify_compatibility_accepts_known_profile_targets() {
+    let output = run_cli(&["verify", "compatibility", "strict", "--json"]);
+    assert!(
+        output.status.success(),
+        "verify compatibility strict should pass; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["command"], "verify compatibility");
+    assert_eq!(payload["verdict"], "PASS");
+    assert_eq!(payload["exit_code"], 0);
+}
+
+#[test]
+fn verify_corpus_accepts_existing_artifact_path() {
+    let temp = TempDir::new().expect("temp dir");
+    let corpus_file = temp.path().join("sample-corpus.json");
+    std::fs::write(&corpus_file, b"{\"events\":[]}\n").expect("write corpus fixture");
+
+    let output = run_cli(&[
+        "verify",
+        "corpus",
+        corpus_file
+            .to_str()
+            .expect("corpus fixture path must be valid UTF-8"),
+        "--json",
+    ]);
+    assert!(
+        output.status.success(),
+        "verify corpus should pass for existing artifact path; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["command"], "verify corpus");
+    assert_eq!(payload["verdict"], "PASS");
+    assert_eq!(payload["exit_code"], 0);
+}
+
+#[test]
 fn verify_release_succeeds_with_hex_encoded_signatures_and_key_dir() {
     let temp = TempDir::new().expect("temp dir");
     let release_dir = temp.path().join("release");
