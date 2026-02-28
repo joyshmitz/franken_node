@@ -29,3 +29,55 @@ __pycache__/
 
 # bv (beads viewer) local config and caches
 .bv/
+
+# Agent coordination config
+.agent-mail.yaml
+
+# Remote compilation helper temp directories
+.rch_tmp/
+.rch_*/
+
+# UBS (Ultimate Bug Scanner) output
+ubs.json
+ubs_*.txt
+ubs_*.json
+ubs_*.sarif
+ubs_*.jsonl
+*_ubs.txt
+*_ubs.json
+*_ubs_*.txt
+main_ubs*.json
+main_ubs*.txt
+critical_ubs.txt
+rust_criticals.txt
+final_ubs*.txt
+text_ubs_output.txt
+clippy_out.txt
+fixer.txt
+
+# Debug/scratch audience token output
+audience_token*.json
+audience_token*.txt
+
+# One-off fix/parse scripts (agent-generated)
+fix_*.py
+mass_fix.py
+parse_ubs.py
+restore_tests.py
+test_remaining.py
+
+# Scratch test files at root
+/crdt_test.rs
+/test.rs
+/test_chrono.rs
+/test_panic.rs
+
+# Ephemeral output files
+/out.json
+/reproduction_report.json
+
+# Runtime SQLite databases
+storage.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
