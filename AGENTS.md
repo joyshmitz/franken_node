@@ -182,7 +182,7 @@ Every module includes inline `#[cfg(test)]` unit tests alongside the implementat
 - Edge cases (empty input, max values, boundary conditions)
 - Error conditions
 
-End-to-end tests live in `scripts/e2e_test.sh`.
+End-to-end tests live in `tests/e2e/*.sh` and `scripts/program_e2e_orchestrator.py`.
 
 ### Unit Tests
 
@@ -204,8 +204,11 @@ cargo test destructive_pattern_tests
 ### End-to-End Testing
 
 ```bash
-# Run the E2E test script
-./scripts/e2e_test.sh
+# Run shell E2E suites
+./tests/e2e/foundation_bootstrap_suite.sh
+
+# Or run the program-level E2E orchestrator
+python3 scripts/program_e2e_orchestrator.py --json
 
 # Or test manually
 echo '{"tool_name":"Bash","tool_input":{"command":"git reset --hard"}}' | cargo run --release
@@ -286,7 +289,7 @@ JSON Input → Parse → Quick Reject (memchr) → Normalize → Safe Patterns �
 | `Cargo.toml` | Dependencies and release optimizations |
 | `build.rs` | Build script for version metadata (vergen) |
 | `rust-toolchain.toml` | Nightly toolchain requirement |
-| `scripts/e2e_test.sh` | End-to-end test script (120 tests) |
+| `tests/e2e/*.sh` + `scripts/program_e2e_orchestrator.py` | End-to-end shell suites + program-level orchestrator |
 
 ### Output Style
 
@@ -327,7 +330,7 @@ destructive!(
 ```
 
 4. Add tests for all variants
-5. Run `cargo test` and `./scripts/e2e_test.sh`
+5. Run `cargo test` and `python3 scripts/program_e2e_orchestrator.py --json`
 
 ### Performance Requirements
 
@@ -705,7 +708,7 @@ Automated dependency updates configured in `.github/dependabot.yml`:
 #### E2E Test Failure
 1. Download `e2e-artifacts` artifact
 2. Check `e2e_output.json` for failing test details
-3. Run locally: `./scripts/e2e_test.sh --verbose`
+3. Run locally: `./tests/e2e/foundation_bootstrap_suite.sh` and `python3 scripts/program_e2e_orchestrator.py --json`
 4. The step summary shows the first failure with output
 
 #### Benchmark Regression
