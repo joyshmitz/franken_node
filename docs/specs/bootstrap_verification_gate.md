@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The foundation verification gate is the master gate for the BOOTSTRAP section.
+The foundation verification gate is the primary gate for the BOOTSTRAP section.
 It validates that all bootstrap beads are complete and verified before the
 bootstrap foundation can be declared stable. The gate aggregates evidence from
 every upstream bead, checks structural integrity of key deliverables, and

@@ -4,7 +4,7 @@
 
 ## Purpose
 
-This document codifies the 13 hard guardrails from Section 4 of the master plan.
+This document codifies the 13 hard guardrails from Section 4 of the canonical plan.
 Violating any constraint is a program-level failure. Each constraint has an automated
 enforcement mechanism (CI gate or review gate) and a structured violation event code.
 

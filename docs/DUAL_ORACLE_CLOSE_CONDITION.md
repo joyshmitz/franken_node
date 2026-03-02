@@ -73,4 +73,4 @@ No waivers are supported for the dual-oracle close condition. All three dimensio
 The gate is invoked:
 - Before any release candidate is promoted
 - As part of the section-wide verification gate for 10.N
-- During the final program completion check (PLAN 10.N → master graph)
+- During the final program completion check (PLAN 10.N → canonical graph)
