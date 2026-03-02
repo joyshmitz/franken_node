@@ -506,7 +506,7 @@ impl FleetControlManager {
             converged_nodes: 0,
             total_nodes: scope.affected_nodes,
             progress_pct: 0,
-            eta_seconds: Some(scope.affected_nodes * 2),
+            eta_seconds: Some(scope.affected_nodes.saturating_mul(2)),
             phase: ConvergencePhase::Propagating,
         };
 

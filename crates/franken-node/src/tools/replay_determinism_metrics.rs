@@ -29,6 +29,8 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
+use crate::security::constant_time::ct_eq;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -267,14 +269,14 @@ impl ReplayDeterminismMetrics {
             }),
         );
 
-        let output_match = original.output_hash == replay.output_hash;
+        let output_match = ct_eq(&original.output_hash, &replay.output_hash);
 
         let mut artifact_matches = BTreeMap::new();
         for (key, orig_hash) in &original.artifact_hashes {
             let matches = replay
                 .artifact_hashes
                 .get(key)
-                .map(|h| h == orig_hash)
+                .map(|h| ct_eq(h, orig_hash))
                 .unwrap_or(false);
             artifact_matches.insert(key.clone(), matches);
         }

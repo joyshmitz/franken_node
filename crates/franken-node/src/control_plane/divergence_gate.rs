@@ -299,7 +299,7 @@ impl OperatorAuthorization {
         );
         hasher.update(canonical.as_bytes());
         let expected = format!("{:x}", hasher.finalize());
-        if self.authorization_hash != expected {
+        if !constant_time_eq(&self.authorization_hash, &expected) {
             return false;
         }
 

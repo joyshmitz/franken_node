@@ -33,6 +33,8 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt;
 
+use crate::security::constant_time::ct_eq;
+
 // ---------------------------------------------------------------------------
 // Schema version
 // ---------------------------------------------------------------------------
@@ -818,8 +820,8 @@ impl ReplayEngine {
                 hex::encode(hasher.finalize())
             };
 
-            let output_match = original_output_digest == replayed_output_digest;
-            let effects_match = original_effects_digest == replayed_effects_digest;
+            let output_match = ct_eq(&original_output_digest, &replayed_output_digest);
+            let effects_match = ct_eq(&original_effects_digest, &replayed_effects_digest);
 
             if output_match && effects_match {
                 // TTR-005: step identical

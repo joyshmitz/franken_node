@@ -885,7 +885,7 @@ mod tests {
         det.evaluate(
             "conn-a",
             &events_a,
-            Some(&trusted_pin()),
+            Some(&trusted_pin_for("conn-a")),
             102,
             "tr-a",
             "ts-a",

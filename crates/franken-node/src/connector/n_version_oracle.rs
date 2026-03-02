@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+use crate::security::constant_time::ct_eq;
+
 // ── Schema version ─────────────────────────────────────────────────────
 
 pub const SCHEMA_VERSION: &str = "n-version-oracle-v1.0";
@@ -212,7 +214,7 @@ pub fn classify_divergence(
     // If all references agree and disagree with franken_engine → high risk.
     // If references themselves disagree → medium risk.
     // If digests match → would not be called, but treat as low.
-    if franken_digest == reference_digest {
+    if ct_eq(franken_digest, reference_digest) {
         return RiskTier::Low;
     }
     if reference_count <= 1 {

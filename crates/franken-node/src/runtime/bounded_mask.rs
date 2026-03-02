@@ -631,7 +631,7 @@ mod tests {
                 ..
             } => {
                 assert!(elapsed_ns > max_duration_ns);
-                assert!(elapsed <= Duration::from_micros(1_000));
+                assert!(elapsed <= Duration::from_millis(50));
             }
             other => panic!("unexpected error: {other:?}"),
         }

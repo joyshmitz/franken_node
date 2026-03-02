@@ -17,6 +17,7 @@ use sha2::{Digest, Sha256};
 use crate::remote::virtual_transport_faults::{
     self, CampaignResult, FaultClass, FaultConfig, VirtualTransportFaultHarness,
 };
+use crate::security::constant_time::ct_eq;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -674,11 +675,11 @@ impl TransportFaultGate {
             serde_json::json!({
                 "hash_1": r1.content_hash,
                 "hash_2": r2.content_hash,
-                "match": r1.content_hash == r2.content_hash,
+                "match": ct_eq(&r1.content_hash, &r2.content_hash),
             }),
         );
 
-        if r1.content_hash == r2.content_hash {
+        if ct_eq(&r1.content_hash, &r2.content_hash) {
             Ok(())
         } else {
             Err(TransportFaultGateError::SeedUnstable {
@@ -700,7 +701,11 @@ impl TransportFaultGate {
 
     /// Total test combinations: protocols x fault_modes x seeds.
     pub fn total_combinations(&self) -> usize {
-        self.config.protocols.len() * self.config.fault_modes.len() * self.config.seeds.len()
+        self.config
+            .protocols
+            .len()
+            .saturating_mul(self.config.fault_modes.len())
+            .saturating_mul(self.config.seeds.len())
     }
 
     /// Export the audit log as JSONL.

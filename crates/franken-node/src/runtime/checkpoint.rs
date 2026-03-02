@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::runtime::bounded_mask::{CancellationState, CapabilityContext, MaskError, bounded_mask};
+use crate::security::constant_time::ct_eq;
 
 /// Event code: checkpoint write persisted.
 pub const FN_CK_001_CHECKPOINT_SAVE: &str = "FN-CK-001";
@@ -483,9 +484,13 @@ fn verify_chain(
             record.previous_checkpoint_hash.as_deref(),
         );
 
-        let valid_state_hash = computed_state_hash == record.progress_state_hash;
-        let valid_id = computed_id == record.checkpoint_id;
-        let valid_prev = record.previous_checkpoint_hash == last_valid_id;
+        let valid_state_hash = ct_eq(&computed_state_hash, &record.progress_state_hash);
+        let valid_id = ct_eq(&computed_id, &record.checkpoint_id);
+        let valid_prev = match (&record.previous_checkpoint_hash, &last_valid_id) {
+            (Some(a), Some(b)) => ct_eq(a, b),
+            (None, None) => true,
+            _ => false,
+        };
 
         if valid_state_hash && valid_id && valid_prev {
             let meta = CheckpointMeta::from(record);

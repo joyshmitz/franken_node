@@ -387,7 +387,7 @@ impl ProofVerificationApi {
             .zip(original_fragment_hashes.iter())
             .enumerate()
         {
-            if proof_hash != original_hash {
+            if !crate::security::constant_time::ct_eq(proof_hash.as_str(), original_hash.as_str()) {
                 return VerificationResult::InvalidFragmentHash {
                     index: i,
                     expected: original_hash.clone(),
@@ -404,7 +404,7 @@ impl ProofVerificationApi {
         }
 
         // (c) Check output hash matches recomputed value
-        if proof.output_hash != recomputed_output_hash {
+        if !crate::security::constant_time::ct_eq(&proof.output_hash, recomputed_output_hash) {
             return VerificationResult::OutputHashMismatch {
                 expected: recomputed_output_hash.to_string(),
                 actual: proof.output_hash.clone(),
@@ -794,6 +794,14 @@ mod tests {
 
         let v = api.verify(&proof, &original_hashes, &proof.output_hash);
         assert!(!v.is_valid());
+        assert_eq!(
+            v,
+            VerificationResult::InvalidFragmentHash {
+                index: 0,
+                expected: "tampered_hash".to_string(),
+                actual: proof.input_fragment_hashes[0].clone(),
+            }
+        );
         assert_eq!(v.event_code(), REPAIR_PROOF_INVALID);
     }
 
@@ -838,6 +846,13 @@ mod tests {
         let original_hashes: Vec<String> = frags.iter().map(|f| hex::encode(f.hash())).collect();
         let v = api.verify(&proof, &original_hashes, "wrong_output_hash");
         assert!(!v.is_valid());
+        assert_eq!(
+            v,
+            VerificationResult::OutputHashMismatch {
+                expected: "wrong_output_hash".to_string(),
+                actual: proof.output_hash.clone(),
+            }
+        );
     }
 
     #[test]

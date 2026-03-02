@@ -7,6 +7,8 @@
 
 use sha2::{Digest, Sha256};
 
+use crate::security::constant_time::ct_eq_bytes;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -226,7 +228,7 @@ impl RollbackProof {
         if self.rollback_spec.is_empty() {
             return Err(OIError::RollbackFailed("empty rollback spec".into()));
         }
-        if self.pre_state_hash == self.post_state_hash {
+        if ct_eq_bytes(&self.pre_state_hash, &self.post_state_hash) {
             return Err(OIError::RollbackFailed(
                 "pre and post states identical".into(),
             ));

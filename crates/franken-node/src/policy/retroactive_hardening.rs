@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::hardening_state_machine::HardeningLevel;
+use crate::security::constant_time::{ct_eq, ct_eq_bytes};
 
 // ---------------------------------------------------------------------------
 // Event codes
@@ -428,7 +429,8 @@ impl RetroactiveHardeningPipeline {
 ///
 /// [EVD-RETROHARDEN-003] on verification pass.
 pub fn verify_identity_stable(before: &CanonicalObject, after: &CanonicalObject) -> bool {
-    let stable = before.object_id == after.object_id && before.content_hash == after.content_hash;
+    let stable = ct_eq(before.object_id.as_str(), after.object_id.as_str())
+        && ct_eq_bytes(&before.content_hash, &after.content_hash);
 
     if stable {
         let _event = EVD_RETROHARDEN_003;

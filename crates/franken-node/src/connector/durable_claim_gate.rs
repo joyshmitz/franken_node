@@ -282,7 +282,10 @@ impl DurableClaimGate {
                 ));
             };
 
-            if proof.claim_hash != claim.claim_hash {
+            if !crate::security::constant_time::ct_eq(
+                proof.claim_hash.as_str(),
+                claim.claim_hash.as_str(),
+            ) {
                 self.emit(
                     "PROOF_INVALID",
                     claim,
@@ -559,6 +562,22 @@ mod tests {
         let decision = gate.evaluate_claim(&base_claim(), &input, 10).unwrap();
         let reason = decision.denial_reason.unwrap();
         assert_eq!(reason.code(), "CLAIM_PROOF_INVALID");
+    }
+
+    #[test]
+    fn denial_reason_claim_hash_mismatch_detail() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut input = valid_input();
+        input.proofs[0].claim_hash = "forged".to_string();
+
+        let decision = gate.evaluate_claim(&base_claim(), &input, 10).unwrap();
+        assert_eq!(
+            decision.denial_reason,
+            Some(ClaimDenialReason::ProofInvalid {
+                proof_type: ProofType::MerkleInclusion,
+                detail: "claim_hash_mismatch".to_string(),
+            })
+        );
     }
 
     #[test]

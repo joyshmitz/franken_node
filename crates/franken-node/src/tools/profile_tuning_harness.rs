@@ -195,6 +195,7 @@ use sha2::{Digest, Sha256};
 /// Uses a deterministic keyed hash for portability (no external crypto dep).
 pub fn hmac_sign(payload: &str, key: &str) -> String {
     let mut hasher = Sha256::new();
+    hasher.update(b"profile_tuning_hmac_v1:");
     hasher.update(key.as_bytes());
     hasher.update(b"|");
     hasher.update(payload.as_bytes());
