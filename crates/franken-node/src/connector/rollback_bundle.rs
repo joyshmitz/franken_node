@@ -273,11 +273,28 @@ impl StateSnapshot {
                 self.policy_set, other.policy_set
             ));
         }
-        if self.config_checksums != other.config_checksums {
+        if !ct_eq_checksum_maps(&self.config_checksums, &other.config_checksums) {
             diffs.push("config_checksums: mismatch".to_string());
         }
         diffs
     }
+}
+
+fn ct_eq_checksum_maps(left: &BTreeMap<String, String>, right: &BTreeMap<String, String>) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+
+    let mut mismatch = 0u8;
+    for ((left_key, left_value), (right_key, right_value)) in left.iter().zip(right.iter()) {
+        mismatch |= u8::from(left_key != right_key);
+        mismatch |= u8::from(!crate::security::constant_time::ct_eq(
+            left_value,
+            right_value,
+        ));
+    }
+
+    mismatch == 0
 }
 
 /// Audit log entry for rollback operations.
@@ -614,7 +631,10 @@ impl BundleStore {
             // Config schema check
             health_results.push(HealthCheckResult {
                 kind: HealthCheckKind::ConfigSchema,
-                passed: post.config_checksums == pre_upgrade_snapshot.config_checksums,
+                passed: ct_eq_checksum_maps(
+                    &post.config_checksums,
+                    &pre_upgrade_snapshot.config_checksums,
+                ),
                 detail: "config checksums validated".to_string(),
             });
 
@@ -968,17 +988,36 @@ mod tests {
     }
 
     #[test]
+    fn test_state_snapshot_diff_config_checksum_mismatch() {
+        let s1 = make_snapshot("1.4.1");
+        let mut s2 = make_snapshot("1.4.1");
+        s2.config_checksums
+            .insert("main".to_string(), sha256_hex(b"config-data-v2"));
+        let diffs = s1.diff(&s2);
+        assert!(diffs.contains(&"config_checksums: mismatch".to_string()));
+    }
+
+    #[test]
+    fn test_ct_eq_checksum_maps_key_mismatch() {
+        let mut a = BTreeMap::new();
+        a.insert("main".to_string(), sha256_hex(b"config-data-v1"));
+
+        let mut b = BTreeMap::new();
+        b.insert("backup".to_string(), sha256_hex(b"config-data-v1"));
+
+        assert!(!ct_eq_checksum_maps(&a, &b));
+    }
+
+    #[test]
     fn test_create_bundle() {
         let (store, bundle) = make_store_and_bundle();
         assert_eq!(bundle.manifest.source_version, "1.4.2");
         assert_eq!(bundle.manifest.target_version, "1.4.1");
         assert_eq!(bundle.components.len(), 3);
         assert!(!bundle.integrity_hash.is_empty());
-        assert!(
-            store
-                .events()
-                .contains(&event_codes::RRB_001_BUNDLE_CREATED.to_string())
-        );
+        assert!(store
+            .events()
+            .contains(&event_codes::RRB_001_BUNDLE_CREATED.to_string()));
     }
 
     #[test]
@@ -1525,18 +1564,14 @@ mod tests {
     fn test_manifest_health_checks_populated() {
         let (_store, bundle) = make_store_and_bundle();
         assert_eq!(bundle.manifest.health_checks.len(), 4);
-        assert!(
-            bundle
-                .manifest
-                .health_checks
-                .contains(&"binary_version".to_string())
-        );
-        assert!(
-            bundle
-                .manifest
-                .health_checks
-                .contains(&"smoke_test".to_string())
-        );
+        assert!(bundle
+            .manifest
+            .health_checks
+            .contains(&"binary_version".to_string()));
+        assert!(bundle
+            .manifest
+            .health_checks
+            .contains(&"smoke_test".to_string()));
     }
 
     #[test]

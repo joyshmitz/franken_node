@@ -694,8 +694,8 @@ impl FleetControlManager {
         let receipt = self.build_receipt(&op_id, &identity.principal, "all", &now);
 
         let convergence = ConvergenceState {
-            converged_nodes: zone_count as u32,
-            total_nodes: zone_count as u32,
+            converged_nodes: u32::try_from(zone_count).unwrap_or(u32::MAX),
+            total_nodes: u32::try_from(zone_count).unwrap_or(u32::MAX),
             progress_pct: 100,
             eta_seconds: Some(0),
             phase: ConvergencePhase::Converged,

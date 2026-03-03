@@ -158,15 +158,15 @@ fn derive_evidence_requirements(
     let mut requirements = Vec::new();
 
     if projected.instability_score - baseline.instability_score
-        > thresholds.max_instability_delta_for_direct_admit
+        >= thresholds.max_instability_delta_for_direct_admit
     {
         requirements.push("bpet.calibration_report".to_string());
         requirements.push("bpet.drift_explainer".to_string());
     }
-    if projected.drift_score > thresholds.max_drift_score_for_direct_admit {
+    if projected.drift_score >= thresholds.max_drift_score_for_direct_admit {
         requirements.push("bpet.longitudinal_drift_trace".to_string());
     }
-    if projected.regime_shift_probability > thresholds.max_regime_shift_probability_for_direct_admit
+    if projected.regime_shift_probability >= thresholds.max_regime_shift_probability_for_direct_admit
     {
         requirements.push("bpet.regime_shift_counterfactuals".to_string());
         requirements.push("ops.signoff.two_person_rule".to_string());
@@ -323,9 +323,9 @@ pub fn evaluate_rollout_health(
         }
     };
 
-    let instability_violation = health.observed.instability_score > step.max_instability_score;
+    let instability_violation = health.observed.instability_score >= step.max_instability_score;
     let regime_violation =
-        health.observed.regime_shift_probability > step.max_regime_shift_probability;
+        health.observed.regime_shift_probability >= step.max_regime_shift_probability;
 
     if instability_violation || regime_violation {
         let reason = format!(

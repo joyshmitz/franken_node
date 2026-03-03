@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+use crate::security::constant_time::ct_eq;
+
 /// Schema version for compiled claims and scoreboard snapshots.
 pub const SCHEMA_VERSION: &str = "claim-compiler-v1.0";
 
@@ -604,7 +606,7 @@ impl ClaimCompiler {
         snapshot: &ScoreboardSnapshot,
     ) -> Result<bool, ClaimCompilerError> {
         let computed = compute_scoreboard_digest(&snapshot.entries);
-        if computed != snapshot.snapshot_digest {
+        if !ct_eq(&computed, &snapshot.snapshot_digest) {
             return Err(ClaimCompilerError::DigestMismatch {
                 expected: snapshot.snapshot_digest.clone(),
                 actual: computed,

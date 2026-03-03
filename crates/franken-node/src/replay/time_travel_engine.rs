@@ -466,7 +466,7 @@ impl WorkflowTrace {
 
         // INV-TTR-TRACE-COMPLETE: verify digest integrity
         let recomputed = Self::compute_digest(&self.steps);
-        if recomputed != self.trace_digest {
+        if !ct_eq(&recomputed, &self.trace_digest) {
             return Err(TimeTravelError::DigestMismatch {
                 trace_id: self.trace_id.clone(),
                 expected: self.trace_digest.clone(),

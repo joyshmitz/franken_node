@@ -503,7 +503,7 @@ impl MarkerStream {
                 self.markers[i - 1].marker_hash.clone()
             };
 
-            if marker.prev_hash != expected_prev {
+            if !crate::security::constant_time::ct_eq(&marker.prev_hash, &expected_prev) {
                 return Err(MarkerStreamError::HashChainBreak {
                     sequence: expected_seq,
                     expected: expected_prev,

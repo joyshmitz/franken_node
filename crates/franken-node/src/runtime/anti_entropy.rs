@@ -316,7 +316,7 @@ impl AntiEntropyReconciler {
             let (Some(local_rec), Some(remote_rec)) = (local.get(id), remote.get(id)) else {
                 continue;
             };
-            if local_rec.digest() != remote_rec.digest() {
+            if !crate::security::constant_time::ct_eq_bytes(&local_rec.digest(), &remote_rec.digest()) {
                 return Some(id.clone());
             }
         }

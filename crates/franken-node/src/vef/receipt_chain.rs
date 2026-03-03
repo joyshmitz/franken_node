@@ -321,7 +321,7 @@ impl ReceiptChain {
             } else {
                 entries[idx - 1].chain_hash.as_str()
             };
-            if entry.prev_chain_hash != expected_prev {
+            if !constant_time_eq(&entry.prev_chain_hash, expected_prev) {
                 return Err(ChainError::sequence(format!(
                     "prev chain hash mismatch at entry {}",
                     entry.index

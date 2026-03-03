@@ -576,7 +576,7 @@ pub fn rollback(mut state: PipelineState) -> Result<PipelineState, PipelineError
 pub fn is_idempotent(a: &PipelineState, b: &PipelineState) -> bool {
     a.current_stage == b.current_stage
         && a.cohort_id == b.cohort_id
-        && a.idempotency_key == b.idempotency_key
+        && crate::security::constant_time::ct_eq(&a.idempotency_key, &b.idempotency_key)
         && a.extensions == b.extensions
         && a.schema_version == b.schema_version
 }

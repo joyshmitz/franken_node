@@ -484,7 +484,7 @@ impl ProofBackend for HashAttestationBackend {
             )));
         }
         let expected = Self::expected_material(input, parameters)?;
-        if proof.proof_material != expected {
+        if !ct_eq_inline(&proof.proof_material, &expected) {
             return Err(ProofServiceError::verify_error(
                 "proof material mismatch for hash attestation backend",
             ));
@@ -572,7 +572,7 @@ impl ProofBackend for DoubleHashAttestationBackend {
             )));
         }
         let expected = Self::expected_material(input, parameters)?;
-        if proof.proof_material != expected {
+        if !ct_eq_inline(&proof.proof_material, &expected) {
             return Err(ProofServiceError::verify_error(
                 "proof material mismatch for double-hash backend",
             ));

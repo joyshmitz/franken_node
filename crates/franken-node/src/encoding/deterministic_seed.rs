@@ -18,6 +18,18 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt;
 
+/// Constant-time byte comparison (inline to avoid cross-crate path issues in test harnesses).
+fn ct_eq_bytes_inline(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut acc = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        acc |= x ^ y;
+    }
+    acc == 0
+}
+
 // ---------------------------------------------------------------------------
 // Domain tags
 // ---------------------------------------------------------------------------
@@ -306,7 +318,7 @@ impl DeterministicSeedDeriver {
         let _event = EVENT_SEED_DERIVED;
 
         let bump = if let Some(&(old_hash, old_version)) = self.last_config_hashes.get(domain) {
-            if old_hash != new_config_hash {
+            if !ct_eq_bytes_inline(&old_hash, &new_config_hash) {
                 // Config changed — compute old seed for the record
                 // We need to reconstruct what the old seed was. Since we only
                 // stored the config hash (not the full config), we record the
@@ -445,7 +457,7 @@ mod tests {
     fn test_content_hash() -> ContentHash {
         let mut h = [0u8; 32];
         for (i, b) in h.iter_mut().enumerate() {
-            *b = i as u8;
+            *b = u8::try_from(i).expect("test hash index must fit in u8");
         }
         ContentHash(h)
     }
@@ -897,7 +909,7 @@ mod tests {
     fn test_golden_vector_encoding_seq_v2() {
         let mut h = [0u8; 32];
         for (i, b) in h.iter_mut().enumerate() {
-            *b = i as u8;
+            *b = u8::try_from(i).expect("test hash index must fit in u8");
         }
         let ch = ContentHash(h);
         let cfg = ScheduleConfig::new(2)

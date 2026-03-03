@@ -210,7 +210,7 @@ impl SnapshotTracker {
         max_replay_ops: u64,
     ) -> Result<(), SnapshotError> {
         let distance = current_version.saturating_sub(self.last_snapshot_version);
-        if distance > max_replay_ops {
+        if distance >= max_replay_ops {
             return Err(SnapshotError::ReplayBoundExceeded {
                 replay_ops: distance,
                 max_replay_ops,

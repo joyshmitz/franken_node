@@ -49,8 +49,8 @@ fn admission_gate_rejects_high_risk_plan_with_structured_reasons() {
 fn progression_gate_rechecks_per_phase_and_allows_when_within_budget() {
     let thresholds = MigrationGateThresholds {
         max_cascade_risk_delta: 0.08,
-        max_new_fragility_findings: 1,
-        max_new_articulation_points: 1,
+        max_new_fragility_findings: 2,
+        max_new_articulation_points: 2,
     };
     let canary_projected = GraphHealthSnapshot {
         cascade_risk: 0.24,

@@ -187,7 +187,7 @@ pub fn detect_divergence(local: &StateRoot, canonical: &StateRoot) -> Divergence
         DivergenceType::Stale
     } else if local.version > canonical.version {
         DivergenceType::SplitBrain
-    } else if local.root_hash != canonical.root_hash {
+    } else if !ct_eq(&local.root_hash, &canonical.root_hash) {
         DivergenceType::HashMismatch
     } else {
         DivergenceType::None

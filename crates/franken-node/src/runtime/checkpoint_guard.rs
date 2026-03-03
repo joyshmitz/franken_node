@@ -156,9 +156,9 @@ impl CheckpointGuard {
             iteration_count.saturating_sub(self.last_checkpoint_iteration);
 
         let warn_by_iterations =
-            iterations_since_checkpoint > self.config.max_iterations_between_checkpoints;
+            iterations_since_checkpoint >= self.config.max_iterations_between_checkpoints;
         let warn_by_duration =
-            elapsed_since_checkpoint > self.config.max_duration_between_checkpoints();
+            elapsed_since_checkpoint >= self.config.max_duration_between_checkpoints();
 
         if warn_by_iterations || warn_by_duration {
             let missing = self.checkpoint_count == 0;

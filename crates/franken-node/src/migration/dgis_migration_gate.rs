@@ -123,7 +123,7 @@ fn evaluate_policy(
 ) -> Vec<RejectionReason> {
     let mut reasons = Vec::new();
 
-    if delta.cascade_risk_delta > thresholds.max_cascade_risk_delta {
+    if delta.cascade_risk_delta >= thresholds.max_cascade_risk_delta {
         reasons.push(RejectionReason {
             code: "DGIS-MIGRATE-RISK-DELTA".to_string(),
             detail: format!(
@@ -133,7 +133,7 @@ fn evaluate_policy(
         });
     }
 
-    if delta.new_fragility_findings > i64::from(thresholds.max_new_fragility_findings) {
+    if delta.new_fragility_findings >= i64::from(thresholds.max_new_fragility_findings) {
         reasons.push(RejectionReason {
             code: "DGIS-MIGRATE-FRAGILITY-DELTA".to_string(),
             detail: format!(

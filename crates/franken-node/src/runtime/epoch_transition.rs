@@ -265,7 +265,7 @@ impl ProductEpochCoordinator {
                 current_epoch: current,
             });
         }
-        if current.saturating_sub(observed_epoch) > self.max_epoch_lag {
+        if current.saturating_sub(observed_epoch) >= self.max_epoch_lag {
             self.events.push(EpochTransitionLogEvent {
                 event_code: STALE_EPOCH_REJECTED.to_string(),
                 epoch_current: current,
@@ -650,13 +650,15 @@ mod tests {
 
     #[test]
     fn replica_lag_guard_enforces_max_epoch_lag() {
-        let mut coordinator = ProductEpochCoordinator::new(20, 1, BarrierConfig::default());
+        let mut coordinator = ProductEpochCoordinator::new(20, 2, BarrierConfig::default());
+        // lag=1, max_epoch_lag=2 → 1 < 2 → OK
         coordinator
             .validate_replica_lag("svc-a", 19, "trace-lag-ok")
             .unwrap();
+        // lag=2, max_epoch_lag=2 → 2 >= 2 → fail-closed at boundary
         let err = coordinator
             .validate_replica_lag("svc-a", 18, "trace-lag-bad")
-            .expect_err("lag beyond max should fail");
+            .expect_err("lag at max should fail (fail-closed)");
         assert_eq!(err.code(), STALE_EPOCH_REJECTED);
     }
 

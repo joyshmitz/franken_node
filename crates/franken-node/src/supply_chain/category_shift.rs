@@ -608,7 +608,7 @@ impl ReportingPipeline {
         now_secs: u64,
     ) -> Result<ShiftEvidence, CategoryShiftError> {
         let age = now_secs.saturating_sub(input.generated_at_secs);
-        let freshness = if age <= self.config.freshness_window_secs {
+        let freshness = if age < self.config.freshness_window_secs {
             FreshnessStatus::Fresh
         } else {
             FreshnessStatus::Stale
@@ -1453,7 +1453,7 @@ mod tests {
     fn freshness_status_boundary() {
         let pipeline = ReportingPipeline::default();
         let now: u64 = 10_000_000;
-        // Exactly at boundary should be fresh
+        // Exactly at boundary should be stale (fail-closed)
         let content = r#"{"boundary":"test"}"#;
         let evidence = EvidenceInput {
             artifact_path: "test.json".to_string(),
@@ -1462,7 +1462,7 @@ mod tests {
             content: Some(content.to_string()),
         };
         let result = pipeline.verify_evidence(&evidence, now).unwrap();
-        assert_eq!(result.freshness, FreshnessStatus::Fresh);
+        assert_eq!(result.freshness, FreshnessStatus::Stale);
 
         // One second past boundary should be stale
         let evidence2 = EvidenceInput {

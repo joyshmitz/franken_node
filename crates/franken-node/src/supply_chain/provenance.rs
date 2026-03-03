@@ -487,13 +487,13 @@ fn validate_attestation_freshness(
     issues: &mut Vec<ChainIssue>,
 ) {
     let age = now_epoch.saturating_sub(attestation.build_timestamp_epoch);
-    if age <= policy.max_attestation_age_secs {
+    if age < policy.max_attestation_age_secs {
         return;
     }
 
     let within_cached_window = matches!(policy.mode, VerificationMode::CachedTrustWindow)
         && age
-            <= policy
+            < policy
                 .max_attestation_age_secs
                 .saturating_add(policy.cached_trust_window_secs);
 

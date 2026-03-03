@@ -53,7 +53,7 @@ pub struct ProofStatus {
 impl ProofStatus {
     pub fn is_fresh(&self, current_epoch: u64) -> bool {
         let age = current_epoch.saturating_sub(self.verified_at_epoch);
-        self.verified && age <= self.max_age_seconds
+        self.verified && age < self.max_age_seconds
     }
 }
 
