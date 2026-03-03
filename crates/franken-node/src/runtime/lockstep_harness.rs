@@ -178,13 +178,17 @@ impl LockstepHarness {
 
         let stdout_thread = thread::spawn(move || {
             let mut buf = Vec::new();
-            let _ = stdout_handle.read_to_end(&mut buf);
+            if let Err(e) = stdout_handle.read_to_end(&mut buf) {
+                eprintln!("lockstep_harness: stdout read error (partial data retained): {e}");
+            }
             buf
         });
 
         let stderr_thread = thread::spawn(move || {
             let mut buf = Vec::new();
-            let _ = stderr_handle.read_to_end(&mut buf);
+            if let Err(e) = stderr_handle.read_to_end(&mut buf) {
+                eprintln!("lockstep_harness: stderr read error (partial data retained): {e}");
+            }
             buf
         });
 

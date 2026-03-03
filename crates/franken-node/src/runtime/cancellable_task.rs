@@ -501,7 +501,7 @@ impl CancellationRuntime {
         Ok(self
             .tasks
             .get(task_id)
-            .expect("task existence verified: just inserted"))
+            .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?)
     }
 
     /// Register a child task under a parent.
@@ -524,7 +524,7 @@ impl CancellationRuntime {
         let parent = self
             .tasks
             .get_mut(parent_id)
-            .expect("task existence verified above");
+            .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: parent_id.to_string() })?;
         if parent
             .child_task_ids
             .iter()
@@ -562,7 +562,7 @@ impl CancellationRuntime {
             return Ok(self
                 .tasks
                 .get(task_id)
-                .expect("task existence verified above"));
+                .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?);
         }
 
         if phase == TaskPhase::Finalized {
@@ -582,7 +582,7 @@ impl CancellationRuntime {
         let entry = self
             .tasks
             .get_mut(task_id)
-            .expect("task existence verified above");
+            .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?;
         let from = phase;
         entry.phase = TaskPhase::CancelRequested;
         entry.cancel_requested_ms = Some(timestamp_ms);
@@ -622,7 +622,7 @@ impl CancellationRuntime {
         Ok(self
             .tasks
             .get(task_id)
-            .expect("task existence verified above"))
+            .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?)
     }
 
     /// Start the drain phase on a cancelled task.
@@ -653,7 +653,7 @@ impl CancellationRuntime {
         let entry = self
             .tasks
             .get_mut(task_id)
-            .expect("task existence verified above");
+            .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?;
         entry.phase = TaskPhase::Draining;
         entry.drain_started_ms = Some(timestamp_ms);
 
@@ -671,7 +671,7 @@ impl CancellationRuntime {
         Ok(self
             .tasks
             .get(task_id)
-            .expect("task existence verified above"))
+            .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?)
     }
 
     /// Complete the drain phase.
@@ -720,7 +720,7 @@ impl CancellationRuntime {
         let entry = self
             .tasks
             .get_mut(task_id)
-            .expect("task existence verified above");
+            .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?;
         entry.phase = TaskPhase::DrainComplete;
         entry.drain_completed_ms = Some(timestamp_ms);
         entry.drain_result = Some(effective_result);
@@ -750,7 +750,7 @@ impl CancellationRuntime {
         Ok(self
             .tasks
             .get(task_id)
-            .expect("task existence verified above"))
+            .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?)
     }
 
     /// Finalize a task after drain, producing a FinalizeRecord.
@@ -795,7 +795,7 @@ impl CancellationRuntime {
         let entry = self
             .tasks
             .get_mut(task_id)
-            .expect("task existence verified above");
+            .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?;
         entry.phase = TaskPhase::Finalizing;
         entry.finalize_started_ms = Some(timestamp_ms);
 
@@ -834,7 +834,7 @@ impl CancellationRuntime {
             let entry = self
                 .tasks
                 .get_mut(task_id)
-                .expect("task existence verified above");
+                .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?;
             entry.phase = TaskPhase::Finalized;
             entry.finalize_completed_ms = Some(timestamp_ms);
 
@@ -861,7 +861,7 @@ impl CancellationRuntime {
         let entry = self
             .tasks
             .get_mut(task_id)
-            .expect("task existence verified above");
+            .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?;
         entry.phase = TaskPhase::Finalized;
         entry.finalize_completed_ms = Some(timestamp_ms);
         entry.finalize_record = Some(record.clone());

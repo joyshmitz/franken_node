@@ -568,12 +568,11 @@ impl VefDegradedModeEngine {
                         self.context = None;
                     } else {
                         // Reset stabilization for potential further de-escalation
-                        let ctx = self.context.as_mut().expect(
-                            "invariant: context exists when mode != Normal (set to None only on Normal transition above)",
-                        );
-                        ctx.mode = next_down;
-                        ctx.stabilization_started_at_secs = None;
-                        ctx.stabilization_target = None;
+                        if let Some(ctx) = self.context.as_mut() {
+                            ctx.mode = next_down;
+                            ctx.stabilization_started_at_secs = None;
+                            ctx.stabilization_target = None;
+                        }
                     }
                 }
                 // else: still waiting for stabilization window
