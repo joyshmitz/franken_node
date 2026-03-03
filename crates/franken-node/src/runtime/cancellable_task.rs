@@ -498,10 +498,11 @@ impl CancellationRuntime {
         });
 
         self.tasks.insert(task_id.to_string(), entry);
-        Ok(self
-            .tasks
-            .get(task_id)
-            .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?)
+        self.tasks.get(task_id).ok_or_else(|| {
+            CancellableTaskError::TaskNotFound {
+                task_id: task_id.to_string(),
+            }
+        })
     }
 
     /// Register a child task under a parent.
@@ -559,10 +560,11 @@ impl CancellationRuntime {
 
         // Idempotent: absorb duplicate cancel on CancelRequested
         if phase == TaskPhase::CancelRequested {
-            return Ok(self
-                .tasks
-                .get(task_id)
-                .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?);
+            return self.tasks.get(task_id).ok_or_else(|| {
+                CancellableTaskError::TaskNotFound {
+                    task_id: task_id.to_string(),
+                }
+            });
         }
 
         if phase == TaskPhase::Finalized {
@@ -619,10 +621,11 @@ impl CancellationRuntime {
             }
         }
 
-        Ok(self
-            .tasks
-            .get(task_id)
-            .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?)
+        self.tasks.get(task_id).ok_or_else(|| {
+            CancellableTaskError::TaskNotFound {
+                task_id: task_id.to_string(),
+            }
+        })
     }
 
     /// Start the drain phase on a cancelled task.
@@ -668,10 +671,11 @@ impl CancellationRuntime {
             schema_version: SCHEMA_VERSION.to_string(),
         });
 
-        Ok(self
-            .tasks
-            .get(task_id)
-            .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?)
+        self.tasks.get(task_id).ok_or_else(|| {
+            CancellableTaskError::TaskNotFound {
+                task_id: task_id.to_string(),
+            }
+        })
     }
 
     /// Complete the drain phase.
@@ -747,10 +751,11 @@ impl CancellationRuntime {
             });
         }
 
-        Ok(self
-            .tasks
-            .get(task_id)
-            .ok_or_else(|| CancellableTaskError::TaskNotFound { task_id: task_id.to_string() })?)
+        self.tasks.get(task_id).ok_or_else(|| {
+            CancellableTaskError::TaskNotFound {
+                task_id: task_id.to_string(),
+            }
+        })
     }
 
     /// Finalize a task after drain, producing a FinalizeRecord.
