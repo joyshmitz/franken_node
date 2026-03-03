@@ -170,11 +170,19 @@ impl LockstepHarness {
         let mut stdout_handle = child
             .stdout
             .take()
-            .expect("invariant: stdout piped via Stdio::piped()");
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "runtime {runtime} stdout pipe unavailable despite Stdio::piped()"
+                )
+            })?;
         let mut stderr_handle = child
             .stderr
             .take()
-            .expect("invariant: stderr piped via Stdio::piped()");
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "runtime {runtime} stderr pipe unavailable despite Stdio::piped()"
+                )
+            })?;
 
         let stdout_thread = thread::spawn(move || {
             let mut buf = Vec::new();

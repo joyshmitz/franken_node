@@ -70,6 +70,10 @@ pub enum RollbackBundleError {
     /// ERR-RRB-VERSION-MISMATCH: Bundle targets a different version.
     #[serde(rename = "ERR-RRB-VERSION-MISMATCH")]
     VersionMismatch { expected: String, actual: String },
+
+    /// ERR-RRB-SERIALIZATION: Deterministic serialization failed unexpectedly.
+    #[serde(rename = "ERR-RRB-SERIALIZATION")]
+    SerializationFailure { context: String, reason: String },
 }
 
 impl fmt::Display for RollbackBundleError {
@@ -97,6 +101,9 @@ impl fmt::Display for RollbackBundleError {
                     "ERR-RRB-VERSION-MISMATCH: expected={expected}, actual={actual}"
                 )
             }
+            Self::SerializationFailure { context, reason } => {
+                write!(f, "ERR-RRB-SERIALIZATION: {context}: {reason}")
+            }
         }
     }
 }
@@ -111,6 +118,16 @@ pub fn sha256_hex(data: &[u8]) -> String {
     hasher.update(b"rollback_bundle_hash_v1:");
     hasher.update(data);
     format!("{:x}", hasher.finalize())
+}
+
+fn encode_canonical_json<T: Serialize>(
+    value: &T,
+    context: &'static str,
+) -> Result<Vec<u8>, RollbackBundleError> {
+    serde_json::to_vec(value).map_err(|err| RollbackBundleError::SerializationFailure {
+        context: context.to_string(),
+        reason: err.to_string(),
+    })
 }
 
 /// A single component within a rollback bundle.
@@ -221,13 +238,13 @@ pub struct ManifestComponent {
 
 impl RestoreManifest {
     /// Compute canonical bytes for hashing/signing.
-    pub fn canonical_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).expect("RestoreManifest contains only String/BTreeMap/u32 fields")
+    pub fn canonical_bytes(&self) -> Result<Vec<u8>, RollbackBundleError> {
+        encode_canonical_json(self, "restore_manifest")
     }
 
     /// Compute SHA-256 of the canonical manifest bytes.
-    pub fn integrity_hash(&self) -> String {
-        sha256_hex(&self.canonical_bytes())
+    pub fn integrity_hash(&self) -> Result<String, RollbackBundleError> {
+        Ok(sha256_hex(&self.canonical_bytes()?))
     }
 }
 
@@ -246,10 +263,8 @@ pub struct StateSnapshot {
 
 impl StateSnapshot {
     /// Compute a deterministic hash of this snapshot.
-    pub fn snapshot_hash(&self) -> String {
-        let data =
-            serde_json::to_vec(self).expect("StateSnapshot contains only String/BTreeMap fields");
-        sha256_hex(&data)
+    pub fn snapshot_hash(&self) -> Result<String, RollbackBundleError> {
+        Ok(sha256_hex(&encode_canonical_json(self, "state_snapshot")?))
     }
 
     /// Compare two snapshots and return the list of mismatched fields.
@@ -335,7 +350,7 @@ impl RollbackBundle {
     /// Verify the integrity of every component against the manifest.
     pub fn verify_integrity(&self) -> Result<(), RollbackBundleError> {
         // Verify manifest integrity hash
-        let computed_hash = self.manifest.integrity_hash();
+        let computed_hash = self.manifest.integrity_hash()?;
         if !crate::security::constant_time::ct_eq(&computed_hash, &self.integrity_hash) {
             return Err(RollbackBundleError::ManifestInvalid {
                 reason: format!(
@@ -471,7 +486,7 @@ impl BundleStore {
         target_version: &str,
         timestamp: &str,
         components: Vec<BundleComponent>,
-    ) -> RollbackBundle {
+    ) -> Result<RollbackBundle, RollbackBundleError> {
         let manifest_components: Vec<ManifestComponent> = components
             .iter()
             .map(|c| ManifestComponent {
@@ -499,7 +514,7 @@ impl BundleStore {
             },
         };
 
-        let integrity_hash = manifest.integrity_hash();
+        let integrity_hash = manifest.integrity_hash()?;
 
         let bundle = RollbackBundle {
             manifest,
@@ -524,10 +539,7 @@ impl BundleStore {
             detail: "rollback bundle generated successfully".to_string(),
         });
 
-        self.bundles
-            .get(target_version)
-            .expect("bundle just inserted above")
-            .clone()
+        Ok(bundle)
     }
 
     /// Apply a rollback bundle, or dry-run to preview actions.
@@ -841,7 +853,9 @@ mod tests {
     fn make_store_and_bundle() -> (BundleStore, RollbackBundle) {
         let mut store = BundleStore::new();
         let components = make_components();
-        let bundle = store.create_bundle("1.4.2", "1.4.1", "2026-02-20T12:00:00Z", components);
+        let bundle = store
+            .create_bundle("1.4.2", "1.4.1", "2026-02-20T12:00:00Z", components)
+            .expect("create rollback bundle fixture");
         (store, bundle)
     }
 
@@ -951,8 +965,8 @@ mod tests {
                 rollback_to: "1.4.1".to_string(),
             },
         };
-        let h1 = m1.integrity_hash();
-        let h2 = m1.integrity_hash();
+        let h1 = m1.integrity_hash().expect("manifest hash h1");
+        let h2 = m1.integrity_hash().expect("manifest hash h2");
         assert_eq!(h1, h2);
         assert_eq!(h1.len(), 64);
     }
@@ -961,14 +975,20 @@ mod tests {
     fn test_state_snapshot_hash_deterministic() {
         let s1 = make_snapshot("1.4.1");
         let s2 = make_snapshot("1.4.1");
-        assert_eq!(s1.snapshot_hash(), s2.snapshot_hash());
+        assert_eq!(
+            s1.snapshot_hash().expect("snapshot hash s1"),
+            s2.snapshot_hash().expect("snapshot hash s2")
+        );
     }
 
     #[test]
     fn test_state_snapshot_hash_changes_on_version() {
         let s1 = make_snapshot("1.4.1");
         let s2 = make_snapshot("1.4.2");
-        assert_ne!(s1.snapshot_hash(), s2.snapshot_hash());
+        assert_ne!(
+            s1.snapshot_hash().expect("snapshot hash s1"),
+            s2.snapshot_hash().expect("snapshot hash s2")
+        );
     }
 
     #[test]
@@ -1086,7 +1106,9 @@ mod tests {
             BundleComponent::new("second", 2, b"b".to_vec()),
         ];
         let mut store = BundleStore::new();
-        let bundle = store.create_bundle("1.4.2", "1.4.1", "2026-02-20T12:00:00Z", components);
+        let bundle = store
+            .create_bundle("1.4.2", "1.4.1", "2026-02-20T12:00:00Z", components)
+            .expect("create ordered-components bundle");
         let ordered = bundle.ordered_components();
         assert_eq!(ordered[0].name, "first");
         assert_eq!(ordered[1].name, "second");
@@ -1326,12 +1348,14 @@ mod tests {
         for i in 0..5 {
             let ver = format!("1.0.{i}");
             let components = vec![BundleComponent::new("ref", 1, ver.as_bytes().to_vec())];
-            store.create_bundle(
-                &format!("1.0.{}", i + 1),
-                &ver,
-                "2026-02-20T12:00:00Z",
-                components,
-            );
+            store
+                .create_bundle(
+                    &format!("1.0.{}", i + 1),
+                    &ver,
+                    "2026-02-20T12:00:00Z",
+                    components,
+                )
+                .expect("create prune test bundle");
         }
         assert_eq!(store.list_bundles().len(), 5);
         store.prune(3);
@@ -1459,7 +1483,10 @@ mod tests {
                 rollback_to: "1.4.1".to_string(),
             },
         };
-        assert_eq!(m.canonical_bytes(), m.canonical_bytes());
+        assert_eq!(
+            m.canonical_bytes().expect("canonical bytes lhs"),
+            m.canonical_bytes().expect("canonical bytes rhs")
+        );
     }
 
     #[test]
