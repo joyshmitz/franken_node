@@ -403,6 +403,12 @@ impl VefProofScheduler {
             .jobs
             .get_mut(job_id)
             .ok_or_else(|| SchedulerError::window(format!("unknown job_id {job_id}")))?;
+        if job.status != ProofJobStatus::Dispatched {
+            return Err(SchedulerError::internal(format!(
+                "cannot complete job {job_id}: current status is {:?}, expected Dispatched",
+                job.status
+            )));
+        }
         job.status = ProofJobStatus::Completed;
         job.completed_at_millis = Some(now_millis);
         self.events.push(SchedulerEvent {

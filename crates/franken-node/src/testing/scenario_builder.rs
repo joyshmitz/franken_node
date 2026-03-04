@@ -234,6 +234,8 @@ pub enum ScenarioBuilderError {
     DuplicateLink { link_id: String },
     /// Scenario name is empty.
     EmptyName,
+    /// Failed to parse JSON input.
+    JsonParse { message: String },
 }
 
 impl fmt::Display for ScenarioBuilderError {
@@ -274,6 +276,9 @@ impl fmt::Display for ScenarioBuilderError {
                 )
             }
             Self::EmptyName => write!(f, "{ERR_SB_EMPTY_NAME}: scenario name must not be empty"),
+            Self::JsonParse { message } => {
+                write!(f, "ERR_SB_JSON_PARSE: failed to parse scenario JSON: {message}")
+            }
         }
     }
 }
@@ -345,7 +350,9 @@ impl Scenario {
 
     /// Deserialize from JSON.
     pub fn from_json(s: &str) -> Result<Self, ScenarioBuilderError> {
-        serde_json::from_str(s).map_err(|_| ScenarioBuilderError::EmptyName)
+        serde_json::from_str(s).map_err(|e| ScenarioBuilderError::JsonParse {
+            message: e.to_string(),
+        })
     }
 }
 

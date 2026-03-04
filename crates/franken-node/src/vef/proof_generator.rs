@@ -469,6 +469,13 @@ impl ProofGenerator {
             ProofGeneratorError::internal(format!("unknown request_id {request_id}"))
         })?;
 
+        if status.status != ProofStatus::Pending {
+            return Err(ProofGeneratorError::internal(format!(
+                "cannot generate proof for request {request_id}: current status is {:?}, expected Pending",
+                status.status
+            )));
+        }
+
         // Transition to Generating
         status.status = ProofStatus::Generating;
         let trace_id = status.trace_id.clone();
