@@ -363,7 +363,7 @@ impl BenchmarkMethodology {
         let pub_entry = self
             .publications
             .get_mut(pub_id)
-            .expect("validated: publication checked via immutable get()");
+            .ok_or_else(|| format!("Publication {pub_id} not found"))?;
         pub_entry.status = new_status;
         pub_entry.updated_at = Utc::now().to_rfc3339();
 
@@ -402,7 +402,7 @@ impl BenchmarkMethodology {
 
         self.publications
             .get_mut(pub_id)
-            .expect("validated: publication existence checked via get() above")
+            .ok_or_else(|| format!("Publication {pub_id} not found"))?
             .citations
             .push(citation);
         Ok(())

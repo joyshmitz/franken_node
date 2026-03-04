@@ -368,7 +368,12 @@ impl PolicyCheckpointChain {
             ),
         });
 
-        Ok(self.checkpoints.last().expect("just pushed"))
+        self.checkpoints
+            .last()
+            .ok_or_else(|| CheckpointChainError::HashChainBreak {
+                index: self.checkpoints.len(),
+                reason: "checkpoint append invariant violated: chain empty after push".to_string(),
+            })
     }
 
     /// Append a pre-built checkpoint, enforcing sequence and parent-chain
@@ -453,7 +458,12 @@ impl PolicyCheckpointChain {
             detail: format!("checkpoint appended: seq={seq} epoch={epoch}"),
         });
 
-        Ok(self.checkpoints.last().expect("just pushed"))
+        self.checkpoints
+            .last()
+            .ok_or_else(|| CheckpointChainError::HashChainBreak {
+                index: self.checkpoints.len(),
+                reason: "checkpoint append invariant violated: chain empty after push".to_string(),
+            })
     }
 
     /// Verify the entire chain in O(n) time.

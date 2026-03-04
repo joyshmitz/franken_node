@@ -245,7 +245,7 @@ impl VefProofScheduler {
         let mut windows = Vec::new();
         let mut start = 0usize;
         while start < entries.len() {
-            let max_end = (start + self.policy.max_receipts_per_window - 1).min(entries.len() - 1);
+            let max_end = (start + self.policy.max_receipts_per_window.saturating_sub(1)).min(entries.len().saturating_sub(1));
             let global_start = entries[start].index;
             let global_max_end = entries[max_end].index;
 

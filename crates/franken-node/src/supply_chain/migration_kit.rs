@@ -344,10 +344,9 @@ impl MigrationKitEcosystem {
             serde_json::json!({"kit_id": kit_id}),
         );
 
-        Ok(self
-            .kits
+        self.kits
             .get(kit_id)
-            .ok_or_else(|| "Kit not found".to_string())?)
+            .ok_or_else(|| "Kit not found".to_string())
     }
 
     /// Start a migration step.

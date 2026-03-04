@@ -371,7 +371,7 @@ impl TransparentReports {
 
         self.reports
             .get_mut(report_id)
-            .expect("validated: report existence checked above")
+            .ok_or_else(|| format!("Report {report_id} not found"))?
             .corrective_actions
             .push(action);
         Ok(())
@@ -416,12 +416,12 @@ impl TransparentReports {
         let report_mut = self
             .reports
             .get_mut(report_id)
-            .expect("validated: report checked via immutable get()");
+            .ok_or_else(|| format!("Report {report_id} not found"))?;
         let action_mut = report_mut
             .corrective_actions
             .iter_mut()
             .find(|a| a.action_id == action_id)
-            .expect("validated: action checked via immutable find()");
+            .ok_or_else(|| format!("Action {action_id} not found"))?;
         action_mut.status = new_status;
 
         self.log(

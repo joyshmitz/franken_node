@@ -46,6 +46,7 @@ pub mod event_codes {
     pub const SER_ERR_INVALID_SIGNATURE: &str = "SER-ERR-001";
     pub const SER_ERR_MISSING_PROVENANCE: &str = "SER-ERR-002";
     pub const SER_ERR_ALREADY_REVOKED: &str = "SER-ERR-003";
+    pub const SER_ERR_NOT_FOUND: &str = "SER-ERR-004";
 }
 
 pub mod invariants {
@@ -369,10 +370,14 @@ impl SignedExtensionRegistry {
             Some(false) => {}
         }
 
-        let ext = self
-            .extensions
-            .get_mut(extension_id)
-            .expect("validated: extension existence checked via get() above");
+        let Some(ext) = self.extensions.get_mut(extension_id) else {
+            return RegistryResult {
+                success: false,
+                extension_id: Some(extension_id.to_string()),
+                error_code: Some(event_codes::SER_ERR_NOT_FOUND.to_string()),
+                detail: "Extension disappeared during version add".to_string(),
+            };
+        };
         ext.versions.push(version.clone());
         ext.updated_at = Utc::now().to_rfc3339();
 
@@ -472,10 +477,14 @@ impl SignedExtensionRegistry {
             Some(false) => {}
         }
 
-        let ext = self
-            .extensions
-            .get_mut(extension_id)
-            .expect("validated: extension existence checked via get() in revocation flow");
+        let Some(ext) = self.extensions.get_mut(extension_id) else {
+            return RegistryResult {
+                success: false,
+                extension_id: Some(extension_id.to_string()),
+                error_code: Some(event_codes::SER_ERR_NOT_FOUND.to_string()),
+                detail: "Extension disappeared during revocation".to_string(),
+            };
+        };
         ext.status = ExtensionStatus::Revoked;
         ext.updated_at = Utc::now().to_rfc3339();
         let revoked_at = ext.updated_at.clone();

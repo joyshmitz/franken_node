@@ -285,7 +285,7 @@ impl TrustAggregator {
 
         let n = sorted.len();
         let median = if n.is_multiple_of(2) {
-            (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+            (sorted[(n / 2).saturating_sub(1)] + sorted[n / 2]) / 2.0
         } else {
             sorted[n / 2]
         };

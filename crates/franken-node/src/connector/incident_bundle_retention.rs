@@ -636,10 +636,12 @@ impl IncidentBundleStore {
             });
         }
 
-        let removed = self
-            .bundles
-            .remove(bundle_id)
-            .expect("bundle verified present");
+        let removed =
+            self.bundles
+                .remove(bundle_id)
+                .ok_or_else(|| IncidentBundleError::NotFound {
+                    bundle_id: bundle_id.into(),
+                })?;
         self.total_bytes = self.total_bytes.saturating_sub(removed.size_bytes);
 
         self.decisions.push(RetentionDecision {
@@ -672,7 +674,7 @@ impl IncidentBundleStore {
         // The upstream retention_policy.rs handles ephemeral artifact cleanup.
 
         if !decisions.is_empty() {
-            self.decisions.push(RetentionDecision {
+            let cleanup_decision = RetentionDecision {
                 bundle_id: "".into(),
                 action: "cleanup".into(),
                 old_tier: None,
@@ -680,13 +682,9 @@ impl IncidentBundleStore {
                 reason: format!("{} tier transitions executed", decisions.len()),
                 timestamp: now,
                 event_code: event_codes::IBR_004.into(),
-            });
-            decisions.push(
-                self.decisions
-                    .last()
-                    .expect("decisions non-empty after push")
-                    .clone(),
-            );
+            };
+            self.decisions.push(cleanup_decision.clone());
+            decisions.push(cleanup_decision);
         }
 
         decisions

@@ -215,7 +215,7 @@ impl VerifierBenchmarkReleases {
         );
         self.releases
             .get_mut(release_id)
-            .expect("validated: release existence checked via contains_key() above")
+            .ok_or_else(|| format!("release not found: {release_id}"))?
             .artifacts
             .push(artifact);
         Ok(())
@@ -245,7 +245,7 @@ impl VerifierBenchmarkReleases {
         let rel = self
             .releases
             .get_mut(release_id)
-            .expect("validated: release checked via immutable get() above");
+            .ok_or_else(|| format!("release not found: {release_id}"))?;
         rel.status = ReleaseStatus::Published;
         self.log(
             event_codes::VBR_STATUS_CHANGED,
@@ -288,7 +288,7 @@ impl VerifierBenchmarkReleases {
         let release = self
             .releases
             .get_mut(release_id)
-            .expect("validated: release existence checked via contains_key above");
+            .ok_or_else(|| format!("release not found: {release_id}"))?;
         release.download_count = release.download_count.saturating_add(1);
         self.log(
             event_codes::VBR_DOWNLOAD_RECORDED,

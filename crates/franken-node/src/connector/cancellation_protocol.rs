@@ -272,7 +272,7 @@ impl ResourceTracker {
         if let Some(count) = self.held.get_mut(name)
             && *count > 0
         {
-            *count -= 1;
+            *count = count.saturating_sub(1);
             if *count == 0 {
                 self.held.remove(name);
             }

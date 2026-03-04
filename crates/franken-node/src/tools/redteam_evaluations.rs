@@ -327,7 +327,7 @@ impl RedTeamEvaluations {
 
         self.engagements
             .get_mut(engagement_id)
-            .expect("validated: engagement existence checked above")
+            .ok_or_else(|| format!("Engagement {engagement_id} not found"))?
             .findings
             .push(finding);
         Ok(())
@@ -373,12 +373,12 @@ impl RedTeamEvaluations {
         let engagement_mut = self
             .engagements
             .get_mut(engagement_id)
-            .expect("validated: engagement checked via immutable get()");
+            .ok_or_else(|| format!("Engagement {engagement_id} not found"))?;
         let finding_mut = engagement_mut
             .findings
             .iter_mut()
             .find(|f| f.finding_id == finding_id)
-            .expect("validated: finding checked via immutable find()");
+            .ok_or_else(|| format!("Finding {finding_id} not found"))?;
         finding_mut.remediation_status = new_status;
 
         self.log(

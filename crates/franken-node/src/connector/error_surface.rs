@@ -282,7 +282,7 @@ pub fn telemetry_error_dimensions(
     metric_name: &str,
     error: &ProductError,
 ) -> Result<BTreeMap<String, String>, NamespaceError> {
-    let _ = SchemaRegistry::validate_name(metric_name)?;
+    SchemaRegistry::validate_name(metric_name)?;
 
     let mut labels = BTreeMap::new();
     labels.insert("error.code".to_string(), error.canonical_code.clone());

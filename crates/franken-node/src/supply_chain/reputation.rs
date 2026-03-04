@@ -568,7 +568,7 @@ impl ReputationRegistry {
         let pub_record = self
             .publishers
             .get_mut(publisher_id)
-            .expect("publisher existence was verified");
+            .ok_or_else(|| ReputationError::PublisherNotFound(publisher_id.to_owned()))?;
         pub_record.score = new_score;
         pub_record.tier = new_tier;
         pub_record.last_computed_at = timestamp.to_owned();

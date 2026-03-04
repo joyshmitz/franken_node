@@ -438,7 +438,10 @@ impl QuarantineRegistry {
         let record = self
             .records
             .get_mut(order_id)
-            .expect("order existence verified above");
+            .ok_or_else(|| QuarantineError {
+                code: ERR_QUARANTINE_NOT_FOUND.to_owned(),
+                message: "Quarantine order disappeared during operation".to_string(),
+            })?;
         if record.state == QuarantineState::Initiated {
             record.state = QuarantineState::Propagated;
             record
@@ -480,7 +483,10 @@ impl QuarantineRegistry {
         let record = self
             .records
             .get_mut(order_id)
-            .expect("order existence verified above");
+            .ok_or_else(|| QuarantineError {
+                code: ERR_QUARANTINE_NOT_FOUND.to_owned(),
+                message: "Quarantine order disappeared during operation".to_string(),
+            })?;
         if record.state != QuarantineState::Enforced {
             record.state = QuarantineState::Enforced;
             record
@@ -527,7 +533,10 @@ impl QuarantineRegistry {
         let record = self
             .records
             .get_mut(order_id)
-            .expect("order existence verified above");
+            .ok_or_else(|| QuarantineError {
+                code: ERR_QUARANTINE_NOT_FOUND.to_owned(),
+                message: "Quarantine order disappeared during operation".to_string(),
+            })?;
         record.state = QuarantineState::Draining;
         record
             .state_history
@@ -576,7 +585,10 @@ impl QuarantineRegistry {
         let record = self
             .records
             .get_mut(order_id)
-            .expect("order existence verified above");
+            .ok_or_else(|| QuarantineError {
+                code: ERR_QUARANTINE_NOT_FOUND.to_owned(),
+                message: "Quarantine order disappeared during operation".to_string(),
+            })?;
         record.state = QuarantineState::Isolated;
         record
             .state_history
@@ -654,7 +666,10 @@ impl QuarantineRegistry {
         let record = self
             .records
             .get_mut(&quarantine_order_id)
-            .expect("order existence verified above");
+            .ok_or_else(|| QuarantineError {
+                code: ERR_QUARANTINE_NOT_FOUND.to_owned(),
+                message: "Quarantine order disappeared during operation".to_string(),
+            })?;
         record.state = QuarantineState::RecallTriggered;
         record
             .state_history
@@ -697,7 +712,10 @@ impl QuarantineRegistry {
         let record = self
             .records
             .get_mut(order_id)
-            .expect("order existence verified above");
+            .ok_or_else(|| QuarantineError {
+                code: ERR_QUARANTINE_NOT_FOUND.to_owned(),
+                message: "Quarantine order disappeared during operation".to_string(),
+            })?;
         record.recall_receipts.push(receipt);
 
         self.append_audit(
@@ -733,7 +751,10 @@ impl QuarantineRegistry {
         let record = self
             .records
             .get_mut(order_id)
-            .expect("order existence verified above");
+            .ok_or_else(|| QuarantineError {
+                code: ERR_QUARANTINE_NOT_FOUND.to_owned(),
+                message: "Quarantine order disappeared during operation".to_string(),
+            })?;
 
         record.state = QuarantineState::RecallCompleted;
         record
@@ -797,7 +818,10 @@ impl QuarantineRegistry {
         let record = self
             .records
             .get_mut(&order_id)
-            .expect("order existence verified above");
+            .ok_or_else(|| QuarantineError {
+                code: ERR_QUARANTINE_NOT_FOUND.to_owned(),
+                message: "Quarantine order disappeared during operation".to_string(),
+            })?;
         record.state = QuarantineState::Lifted;
         record
             .state_history

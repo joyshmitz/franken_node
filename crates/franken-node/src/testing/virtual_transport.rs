@@ -498,10 +498,11 @@ impl VirtualTransportLayer {
         let corrupt_bits;
         let reorder_depth;
         {
-            let link = self
-                .links
-                .get(&link_id)
-                .expect("validated: link checked via get().ok_or_else() above");
+            let link = self.links.get(&link_id).ok_or_else(|| {
+                VirtualTransportError::LinkNotFound {
+                    link_id: link_id.clone(),
+                }
+            })?;
             drop_prob = link.config.drop_probability;
             corrupt_bits = link.config.corrupt_bit_count;
             reorder_depth = link.config.reorder_depth;
@@ -544,10 +545,11 @@ impl VirtualTransportLayer {
         };
 
         // Enqueue with potential reordering.
-        let link = self
-            .links
-            .get_mut(&link_id)
-            .expect("validated: link checked via get().ok_or_else() above");
+        let link = self.links.get_mut(&link_id).ok_or_else(|| {
+            VirtualTransportError::LinkNotFound {
+                link_id: link_id.clone(),
+            }
+        })?;
 
         if reorder_depth > 0 && link.buffer.len() >= reorder_depth {
             // Insert at a deterministic position within the reorder window.

@@ -256,7 +256,7 @@ impl MigrationValidationCohorts {
             .runs
             .iter_mut()
             .find(|r| r.run_id == run_id)
-            .expect("validated: run checked via find() at function entry");
+            .ok_or_else(|| format!("run not found: {run_id}"))?;
         run.deterministic = det;
 
         self.log(
