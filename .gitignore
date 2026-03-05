@@ -30,6 +30,9 @@ __pycache__/
 # bv (beads viewer) local config and caches
 .bv/
 
+# Beads issue tracker history backups
+.beads/.br_history/
+
 # Agent coordination config
 .agent-mail.yaml
 
