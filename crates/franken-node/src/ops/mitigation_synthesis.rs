@@ -284,7 +284,7 @@ impl IncidentLab {
         let adjustment: i64 = policy_diff
             .values()
             .filter_map(|v| v.parse::<i64>().ok())
-            .sum::<i64>()
+            .fold(0i64, |a, b| a.saturating_add(b))
             .signum()
             * -5;
 

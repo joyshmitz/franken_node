@@ -803,15 +803,15 @@ pub fn summarize_output(output: &CounterfactualSimulationOutput) -> (usize, usiz
             let total = results
                 .iter()
                 .map(|r| r.summary_statistics.total_decisions)
-                .sum::<usize>();
+                .fold(0usize, |a, b| a.saturating_add(b));
             let changed = results
                 .iter()
                 .map(|r| r.summary_statistics.changed_decisions)
-                .sum::<usize>();
+                .fold(0usize, |a, b| a.saturating_add(b));
             let delta = results
                 .iter()
                 .map(|r| r.summary_statistics.severity_delta)
-                .sum::<i64>();
+                .fold(0i64, |a, b| a.saturating_add(b));
             (total, changed, delta)
         }
     }
