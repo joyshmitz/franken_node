@@ -322,7 +322,7 @@ pub fn compute_integrity_hash(bundle: &IncidentBundle) -> String {
     let digest = hasher.finalize();
     format!(
         "{:016x}",
-        u64::from_le_bytes(digest[..8].try_into().expect("SHA-256 digest is 32 bytes"))
+        u64::from_le_bytes(digest[..8].try_into().unwrap_or([0u8; 8]))
     )
 }
 

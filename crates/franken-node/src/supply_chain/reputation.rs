@@ -483,7 +483,7 @@ impl ReputationRegistry {
         let pub_record = self
             .publishers
             .get_mut(&signal.publisher_id)
-            .expect("publisher was just inserted");
+            .ok_or_else(|| ReputationError::PublisherNotFound(signal.publisher_id.clone()))?;
         pub_record.score = new_score;
         pub_record.tier = new_tier;
         pub_record.last_computed_at = timestamp.to_owned();

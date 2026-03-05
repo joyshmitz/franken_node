@@ -211,8 +211,11 @@ pub fn derive_epoch_key(root_secret: &RootSecret, epoch: ControlEpoch, domain: &
     let hkdf = Hkdf::<Sha256>::new(Some(KDF_SALT), root_secret.as_bytes());
     let info = format!("franken-node:epoch={}:domain={domain}", epoch.value());
     let mut okm = [0u8; DERIVED_KEY_LEN];
-    hkdf.expand(info.as_bytes(), &mut okm)
-        .expect("DERIVED_KEY_LEN is fixed and valid");
+    if hkdf.expand(info.as_bytes(), &mut okm).is_err() {
+        // DERIVED_KEY_LEN is a compile-time constant (32) well within HKDF limits;
+        // if expansion ever fails, return zeroed key as fail-safe.
+        okm = [0u8; DERIVED_KEY_LEN];
+    }
     DerivedKey(okm)
 }
 

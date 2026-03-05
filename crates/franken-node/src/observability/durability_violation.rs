@@ -370,7 +370,8 @@ impl DurabilityViolationDetector {
         }
 
         self.bundles.push(bundle);
-        self.bundles.last().expect("just pushed a bundle")
+        let idx = self.bundles.len().saturating_sub(1);
+        &self.bundles[idx]
     }
 
     /// Check if a durable operation is allowed.
@@ -462,7 +463,7 @@ pub fn generate_bundle(context: &ViolationContext) -> ViolationBundle {
         hasher.update(artifact.failure_reason.as_bytes());
     }
     let digest = hasher.finalize();
-    let hash = u64::from_le_bytes(digest[..8].try_into().expect("SHA-256 digest is 32 bytes"));
+    let hash = u64::from_le_bytes(digest[..8].try_into().unwrap_or([0u8; 8]));
     let bundle_id = BundleId::new(format!("VB-{hash:016x}"));
 
     ViolationBundle {

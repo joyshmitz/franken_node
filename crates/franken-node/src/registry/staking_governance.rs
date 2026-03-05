@@ -539,7 +539,9 @@ impl SlashingEngine {
         // Normalize to the effective policy value so amount and hash describe
         // the same penalty decision across nodes/config representations.
         let effective_bps = tier_policy.slash_fraction_bps.min(10_000);
-        let slash_amount = (stake_balance as u128 * effective_bps as u128 / 10000) as u64;
+        let slash_amount =
+            u64::try_from(stake_balance as u128 * effective_bps as u128 / 10000)
+                .unwrap_or(u64::MAX);
         let penalty_hash = compute_penalty_hash(evidence_hash, effective_bps, stake_balance);
 
         Ok((slash_amount, penalty_hash))

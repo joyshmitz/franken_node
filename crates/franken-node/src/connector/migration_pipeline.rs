@@ -788,7 +788,10 @@ pub fn compute_cohort_summary(state: &PipelineState) -> CohortSummary {
         .map(|r| r.per_extension_results.values().filter(|v| **v).count())
         .unwrap_or(0) as f64;
 
-    let total_duration: u64 = state.execution_traces.iter().map(|t| t.duration_ms).sum();
+    let total_duration: u64 = state
+        .execution_traces
+        .iter()
+        .fold(0u64, |acc, t| acc.saturating_add(t.duration_ms));
     let mean_time = if !state.execution_traces.is_empty() {
         total_duration / state.execution_traces.len() as u64
     } else {

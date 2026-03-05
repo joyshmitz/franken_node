@@ -326,7 +326,9 @@ impl RemoteBulkhead {
             if now_ms < front.expires_at_ms {
                 break;
             }
-            let expired = self.queue.pop_front().expect("front existed");
+            let Some(expired) = self.queue.pop_front() else {
+                break;
+            };
             self.log_event(
                 event_codes::RB_REQUEST_REJECTED,
                 now_ms,
@@ -482,8 +484,11 @@ impl RemoteBulkhead {
             });
         };
 
-        let queued = &self.queue[position];
-        if now_ms >= queued.expires_at_ms {
+        let (expires_at_ms, timeout_ms) = {
+            let queued = &self.queue[position];
+            (queued.expires_at_ms, queued.timeout_ms)
+        };
+        if now_ms >= expires_at_ms {
             return Err(BulkheadError::QueueTimeout {
                 request_id: request_id.to_string(),
             });
@@ -493,11 +498,17 @@ impl RemoteBulkhead {
             return Err(BulkheadError::Queued {
                 request_id: request_id.to_string(),
                 position: position + 1,
-                timeout_ms: queued.timeout_ms,
+                timeout_ms,
             });
         }
 
-        let _popped = self.queue.pop_front().expect("position 0 must exist");
+        let Some(_popped) = self.queue.pop_front() else {
+            return Err(BulkheadError::Queued {
+                request_id: request_id.to_string(),
+                position: 1,
+                timeout_ms,
+            });
+        };
         let permit = self.issue_permit(now_ms);
         self.log_event(
             event_codes::RB_PERMIT_ACQUIRED,

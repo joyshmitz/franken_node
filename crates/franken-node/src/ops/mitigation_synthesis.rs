@@ -324,12 +324,13 @@ impl IncidentLab {
             return Err(LabError::ReplayDiverged { sequence_number: 0 });
         }
 
-        let baseline_total_loss: i64 = baseline.iter().map(|d| d.expected_loss).sum();
+        let baseline_total_loss: i64 = baseline
+            .iter()
+            .fold(0i64, |acc, d| acc.saturating_add(d.expected_loss));
         let counterfactual_total_loss: i64 = candidate
             .counterfactual_decisions
             .iter()
-            .map(|d| d.expected_loss)
-            .sum();
+            .fold(0i64, |acc, d| acc.saturating_add(d.expected_loss));
 
         let decision_changes = baseline
             .iter()

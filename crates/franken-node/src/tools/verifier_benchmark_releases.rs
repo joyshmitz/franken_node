@@ -324,12 +324,16 @@ impl VerifierBenchmarkReleases {
             .values()
             .filter(|r| matches!(r.status, ReleaseStatus::Published))
             .count();
-        let total_dl: u64 = self.releases.values().map(|r| r.download_count).sum();
+        let total_dl: u64 = self
+            .releases
+            .values()
+            .fold(0u64, |acc, r| acc.saturating_add(r.download_count));
         let mut by_type: BTreeMap<String, u64> = BTreeMap::new();
         for r in self.releases.values() {
-            *by_type
+            let entry = by_type
                 .entry(r.release_type.label().to_string())
-                .or_default() += r.download_count;
+                .or_default();
+            *entry = entry.saturating_add(r.download_count);
         }
         let hash_input = format!("{total}:{published}:{total_dl}:{}", &self.schema_version);
         let content_hash = hex::encode(Sha256::digest(

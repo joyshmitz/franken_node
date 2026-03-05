@@ -129,11 +129,16 @@ impl VefDegradedModeConfig {
     /// Compute the halt-tier SLO from quarantine thresholds and multiplier.
     #[must_use]
     pub fn halt_slo(&self) -> ProofLagSlo {
+        let safe_mult = if self.halt_multiplier.is_finite() && self.halt_multiplier > 0.0 {
+            self.halt_multiplier
+        } else {
+            1.0
+        };
         ProofLagSlo {
-            max_proof_lag_secs: (self.quarantine_slo.max_proof_lag_secs as f64
-                * self.halt_multiplier) as u64,
-            max_backlog_depth: (self.quarantine_slo.max_backlog_depth as f64 * self.halt_multiplier)
-                as u64,
+            max_proof_lag_secs: (self.quarantine_slo.max_proof_lag_secs as f64 * safe_mult)
+                .min(u64::MAX as f64) as u64,
+            max_backlog_depth: (self.quarantine_slo.max_backlog_depth as f64 * safe_mult)
+                .min(u64::MAX as f64) as u64,
             max_error_rate: self.halt_error_rate,
         }
     }

@@ -135,7 +135,7 @@ pub fn select_coordinator(
         h.update(b"|");
         h.update(candidate.node_id.as_bytes());
         let digest = h.finalize();
-        let hash = u64::from_le_bytes(digest[..8].try_into().expect("SHA-256 digest is 32 bytes"));
+        let hash = u64::from_le_bytes(digest[..8].try_into().unwrap_or([0u8; 8]));
         // Multiply by weight to favor higher-weighted candidates
         let score = hash.wrapping_mul(candidate.weight.max(1));
         if best_node.is_empty() || score > best_score {
@@ -196,7 +196,7 @@ pub fn verify_quorum(
         let digest = h.finalize();
         let expected_sig = format!(
             "{:016x}",
-            u64::from_le_bytes(digest[..8].try_into().expect("SHA-256 digest is 32 bytes"))
+            u64::from_le_bytes(digest[..8].try_into().unwrap_or([0u8; 8]))
         );
 
         if crate::security::constant_time::ct_eq(&sig.signature, &expected_sig) {
@@ -242,7 +242,7 @@ pub fn compute_test_signature(signer_id: &str, content_hash: &str) -> String {
     let digest = h.finalize();
     format!(
         "{:016x}",
-        u64::from_le_bytes(digest[..8].try_into().expect("SHA-256 digest is 32 bytes"))
+        u64::from_le_bytes(digest[..8].try_into().unwrap_or([0u8; 8]))
     )
 }
 
