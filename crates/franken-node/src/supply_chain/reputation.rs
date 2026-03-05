@@ -737,7 +737,7 @@ fn compute_entry_hash(entry: &AuditEntry) -> String {
         entry.prev_hash,
         entry.timestamp,
         entry.publisher_id,
-        serde_json::to_string(&entry.event).unwrap_or_default()
+        serde_json::to_string(&entry.event).unwrap_or_else(|e| format!("__serde_err:{e}"))
     );
     let digest = Sha256::digest([b"reputation_hash_v1:" as &[u8], payload.as_bytes()].concat());
     format!("sha256:{}", hex::encode(digest))

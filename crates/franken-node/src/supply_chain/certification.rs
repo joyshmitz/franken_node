@@ -714,7 +714,7 @@ fn compute_entry_hash(entry: &CertificationAuditEntry) -> String {
         entry.prev_hash,
         entry.timestamp,
         entry.extension_id,
-        serde_json::to_string(&entry.event).unwrap_or_default()
+        serde_json::to_string(&entry.event).unwrap_or_else(|e| format!("__serde_err:{e}"))
     );
     let digest = Sha256::digest([b"certification_hash_v1:" as &[u8], payload.as_bytes()].concat());
     format!("sha256:{}", hex::encode(digest))

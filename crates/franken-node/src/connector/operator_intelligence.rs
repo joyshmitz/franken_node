@@ -467,7 +467,7 @@ impl RecommendationEngine {
                 action: action.clone(),
                 expected_loss: action_loss,
                 confidence,
-                priority: (i + 1) as u32,
+                priority: u32::try_from(i + 1).unwrap_or(u32::MAX),
                 prerequisites: prereqs.clone(),
                 estimated_time_ms: *time_ms,
                 degraded_warning,
@@ -503,7 +503,7 @@ impl RecommendationEngine {
 
         // Re-assign priority after sort.
         for (i, rec) in recommendations.iter_mut().enumerate() {
-            rec.priority = (i + 1) as u32;
+            rec.priority = u32::try_from(i + 1).unwrap_or(u32::MAX);
         }
 
         // Truncate to max.

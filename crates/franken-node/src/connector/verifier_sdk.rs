@@ -514,7 +514,7 @@ pub fn verify_migration_artifact(
         Verdict::Fail
     };
     let confidence = if all_pass { 1.0 } else { 0.0 };
-    let canonical = serde_json::to_string(artifact).unwrap_or_default();
+    let canonical = serde_json::to_string(artifact).unwrap_or_else(|e| format!("__serde_err:{e}"));
     let binding_hash = deterministic_hash(&canonical);
     let signature = deterministic_hash(&format!("{verifier_identity}|{binding_hash}"));
 

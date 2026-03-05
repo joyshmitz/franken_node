@@ -234,7 +234,7 @@ impl SafeExtensionOnboarding {
         if session_steps.is_empty() {
             return None;
         }
-        Some(session_steps.iter().map(|s| s.duration_seconds).sum())
+        Some(session_steps.iter().map(|s| s.duration_seconds).fold(0u64, |a, b| a.saturating_add(b)))
     }
 
     /// Generate onboarding health report.
@@ -266,7 +266,7 @@ impl SafeExtensionOnboarding {
             .filter_map(|sid| self.session_ttfe(sid))
             .collect();
         let mean_ttfe = if !ttfes.is_empty() {
-            ttfes.iter().sum::<u64>() as f64 / ttfes.len() as f64
+            ttfes.iter().fold(0u64, |a, b| a.saturating_add(*b)) as f64 / ttfes.len() as f64
         } else {
             0.0
         };

@@ -142,7 +142,7 @@ pub struct MigrationRecord {
 
 impl MigrationRecord {
     pub fn total_from_phases(&self) -> u64 {
-        self.phase_durations.iter().map(|p| p.duration_ms).sum()
+        self.phase_durations.iter().map(|p| p.duration_ms).fold(0u64, |a, b| a.saturating_add(b))
     }
 }
 
@@ -286,7 +286,7 @@ impl MigrationSpeedFailureMetrics {
             self.records
                 .iter()
                 .map(|r| r.total_duration_ms)
-                .sum::<u64>() as f64
+                .fold(0u64, |a, b| a.saturating_add(b)) as f64
                 / total as f64
         } else {
             0.0
@@ -313,7 +313,7 @@ impl MigrationSpeedFailureMetrics {
             if n == 0 {
                 continue;
             }
-            let avg = durations.iter().sum::<u64>() as f64 / n as f64;
+            let avg = durations.iter().fold(0u64, |a, b| a.saturating_add(*b)) as f64 / n as f64;
             durations.sort();
             let p90_idx = ((n as f64) * 0.9).ceil() as usize;
             let p90 = durations[p90_idx.min(n).saturating_sub(1).max(0)];

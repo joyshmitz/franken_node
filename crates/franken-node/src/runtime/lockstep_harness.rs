@@ -221,8 +221,8 @@ impl LockstepHarness {
             thread::sleep(Duration::from_millis(50));
         };
 
-        let stdout_bytes = stdout_thread.join().unwrap_or_default();
-        let stderr_bytes = stderr_thread.join().unwrap_or_default();
+        let stdout_bytes = stdout_thread.join().unwrap_or_else(|_| b"__thread_panic:stdout".to_vec());
+        let stderr_bytes = stderr_thread.join().unwrap_or_else(|_| b"__thread_panic:stderr".to_vec());
 
         let mut combined_output = Vec::new();
         combined_output.extend_from_slice(&stdout_bytes);

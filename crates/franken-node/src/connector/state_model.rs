@@ -214,7 +214,7 @@ pub fn reconcile_action(check: &DivergenceCheck) -> ReconcileAction {
 
 /// Compute a SHA-256 hash of a JSON value.
 fn compute_hash(value: &serde_json::Value) -> String {
-    let canonical = serde_json::to_string(value).unwrap_or_default();
+    let canonical = serde_json::to_string(value).unwrap_or_else(|e| format!("__serde_err:{e}"));
     let mut hasher = Sha256::new();
     hasher.update(b"state_model_hash_v1:");
     hasher.update(canonical.as_bytes());
