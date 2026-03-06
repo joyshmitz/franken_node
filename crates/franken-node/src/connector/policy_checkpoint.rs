@@ -668,7 +668,7 @@ fn now_unix_secs() -> u64 {
 /// Compute SHA-256 hex digest of arbitrary data.
 pub fn sha256_hex(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(b"policy_checkpoint_hash_v1:");
+    hasher.update(b"policy_checkpoint_generic_v1:");
     hasher.update(data);
     hex::encode(hasher.finalize())
 }

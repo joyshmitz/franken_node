@@ -317,7 +317,7 @@ impl EnforcementAuditEntry {
     /// Compute the hash of this entry for chain integrity.
     pub fn hash(&self) -> String {
         let mut hasher = Sha256::new();
-        hasher.update(b"impossible_default_hash_v1:");
+        hasher.update(b"impossible_default_audit_hash_v1:");
         hasher.update(self.event_code.as_bytes());
         hasher.update(b"|");
         hasher.update(self.capability.label().as_bytes());

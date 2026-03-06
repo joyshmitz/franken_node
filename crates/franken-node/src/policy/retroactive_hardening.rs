@@ -146,7 +146,7 @@ impl CanonicalObject {
     pub fn new(id: impl Into<String>, content: Vec<u8>, creation_level: HardeningLevel) -> Self {
         let content_hash = {
             let mut hasher = Sha256::new();
-            hasher.update(b"retroactive_hardening_hash_v1:");
+            hasher.update(b"retroactive_hardening_content_v1:");
             hasher.update(&content);
             let result = hasher.finalize();
             let mut hash = [0u8; 32];
