@@ -566,7 +566,19 @@ impl CapabilityGuard {
     ///
     /// # INV-CAP-PROFILE-VERSIONED
     /// If a profile already exists for this subsystem, a ProfileChange is detected.
-    pub fn register_profile(&mut self, profile: CapabilityProfile) -> Option<ProfileChange> {
+    pub fn register_profile(
+        &mut self,
+        profile: CapabilityProfile,
+    ) -> Result<Option<ProfileChange>, CapabilityGuardError> {
+        if let Some(err) = profile.validate().into_iter().next() {
+            self.emit_event(CapabilityGuardEvent {
+                event_code: event_codes::CAP_002.to_string(),
+                subsystem: profile.subsystem.clone(),
+                detail: format!("rejected invalid capability profile: {err}"),
+            });
+            return Err(err);
+        }
+
         let change = if let Some(existing) = self.profiles.get(&profile.subsystem) {
             let change = ProfileChange::detect(existing, &profile);
             if let Some(ref c) = change {
@@ -595,7 +607,7 @@ impl CapabilityGuard {
         });
 
         self.profiles.insert(profile.subsystem.clone(), profile);
-        change
+        Ok(change)
     }
 
     /// Check whether a subsystem is allowed to use a capability.
@@ -757,7 +769,9 @@ impl CapabilityGuard {
     pub fn with_default_profiles() -> Self {
         let mut guard = Self::new();
         for profile in default_profiles() {
-            guard.register_profile(profile);
+            guard
+                .register_profile(profile)
+                .expect("default capability profiles must be valid");
         }
         guard
     }
@@ -1147,7 +1161,7 @@ mod tests {
         let mut guard = CapabilityGuard::new();
         let mut profile = CapabilityProfile::new("test_sub", "1.0.0", RiskLevel::Low);
         profile.add_capability("cap:fs:read", "read");
-        let change = guard.register_profile(profile);
+        let change = guard.register_profile(profile).unwrap();
         assert!(change.is_none()); // first registration, no change
         assert_eq!(guard.profile_count(), 1);
     }
@@ -1157,14 +1171,29 @@ mod tests {
         let mut guard = CapabilityGuard::new();
         let mut p1 = CapabilityProfile::new("sub", "1.0.0", RiskLevel::Low);
         p1.add_capability("cap:fs:read", "read");
-        guard.register_profile(p1);
+        guard.register_profile(p1).unwrap();
         let mut p2 = CapabilityProfile::new("sub", "1.1.0", RiskLevel::Low);
         p2.add_capability("cap:fs:read", "read");
         p2.add_capability("cap:fs:write", "write");
-        let change = guard.register_profile(p2);
+        let change = guard.register_profile(p2).unwrap();
         assert!(change.is_some());
         let c = change.unwrap();
         assert!(c.added.contains(&"cap:fs:write".to_string()));
+    }
+
+    #[test]
+    fn test_guard_register_profile_rejects_invalid_capability() {
+        let mut guard = CapabilityGuard::new();
+        let mut profile = CapabilityProfile::new("bad_sub", "1.0.0", RiskLevel::Low);
+        profile.add_capability("cap:made:up", "not part of the taxonomy");
+
+        let err = guard.register_profile(profile).unwrap_err();
+        assert_eq!(err.code(), error_codes::ERR_CAP_UNDECLARED);
+        assert_eq!(guard.profile_count(), 0);
+        assert!(guard.events().iter().any(|event| {
+            event.event_code == event_codes::CAP_002
+                && event.detail.contains("rejected invalid capability profile")
+        }));
     }
 
     #[test]
@@ -1172,7 +1201,7 @@ mod tests {
         let mut guard = CapabilityGuard::new();
         let mut profile = CapabilityProfile::new("trust_fabric", "1.0.0", RiskLevel::High);
         profile.add_capability("cap:trust:read", "read trust");
-        guard.register_profile(profile);
+        guard.register_profile(profile).unwrap();
 
         let result =
             guard.check_capability("trust_fabric", "cap:trust:read", "2026-02-21T00:00:00Z");
@@ -1186,7 +1215,7 @@ mod tests {
         let mut guard = CapabilityGuard::new();
         let mut profile = CapabilityProfile::new("trust_fabric", "1.0.0", RiskLevel::High);
         profile.add_capability("cap:trust:read", "read trust");
-        guard.register_profile(profile);
+        guard.register_profile(profile).unwrap();
 
         // INV-CAP-DENY-DEFAULT: cap:trust:write not in profile => denied
         let result =
@@ -1213,7 +1242,7 @@ mod tests {
         let mut profile = CapabilityProfile::new("epoch_guard", "1.0.0", RiskLevel::Critical);
         profile.add_capability("cap:crypto:sign", "sign");
         profile.add_capability("cap:crypto:verify", "verify");
-        guard.register_profile(profile);
+        guard.register_profile(profile).unwrap();
 
         let report = guard.check_all(
             "epoch_guard",
@@ -1230,7 +1259,7 @@ mod tests {
         let mut guard = CapabilityGuard::new();
         let mut profile = CapabilityProfile::new("epoch_guard", "1.0.0", RiskLevel::Critical);
         profile.add_capability("cap:crypto:sign", "sign");
-        guard.register_profile(profile);
+        guard.register_profile(profile).unwrap();
 
         let report = guard.check_all(
             "epoch_guard",
@@ -1247,7 +1276,7 @@ mod tests {
         let mut guard = CapabilityGuard::new();
         let mut profile = CapabilityProfile::new("sub", "1.0.0", RiskLevel::Low);
         profile.add_capability("cap:fs:read", "read");
-        guard.register_profile(profile);
+        guard.register_profile(profile).unwrap();
 
         // 3 checks => 3 audit entries
         let _ = guard.check_capability("sub", "cap:fs:read", "t1");
@@ -1261,7 +1290,7 @@ mod tests {
         let mut guard = CapabilityGuard::new();
         let mut profile = CapabilityProfile::new("sub", "1.0.0", RiskLevel::Low);
         profile.add_capability("cap:fs:read", "read");
-        guard.register_profile(profile);
+        guard.register_profile(profile).unwrap();
 
         for i in 0..(MAX_AUDIT_TRAIL_ENTRIES + 2) {
             guard
@@ -1282,8 +1311,8 @@ mod tests {
         let mut guard = CapabilityGuard::new();
         let p1 = CapabilityProfile::new("sub_a", "1.0.0", RiskLevel::Low);
         let p2 = CapabilityProfile::new("sub_b", "1.0.0", RiskLevel::Low);
-        guard.register_profile(p1);
-        guard.register_profile(p2);
+        guard.register_profile(p1).unwrap();
+        guard.register_profile(p2).unwrap();
         // No checks performed => both have audit gaps
         let gaps = guard.detect_audit_gaps();
         assert_eq!(gaps.len(), 2);
