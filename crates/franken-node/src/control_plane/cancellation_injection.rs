@@ -534,7 +534,7 @@ impl CancellationInjectionFramework {
 
     /// Total number of (workflow, await_point) pairs.
     pub fn total_test_cases(&self) -> usize {
-        self.workflows.values().map(|w| w.await_points.len()).sum()
+        self.workflows.values().fold(0usize, |acc, w| acc.saturating_add(w.await_points.len()))
     }
 
     /// Run a single cancellation test case.

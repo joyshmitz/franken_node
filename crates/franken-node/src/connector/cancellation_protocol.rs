@@ -288,7 +288,7 @@ impl ResourceTracker {
 
     /// Number of held resources.
     pub fn held_count(&self) -> usize {
-        self.held.values().sum()
+        self.held.values().fold(0usize, |acc, v| acc.saturating_add(*v))
     }
 
     /// Release all resources, returning the count released.

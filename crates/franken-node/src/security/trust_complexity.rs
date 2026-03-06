@@ -440,8 +440,7 @@ impl TrustComplexityGate {
         let total_depth: u64 = self
             .decisions
             .iter()
-            .map(|d| u64::from(d.context.chain_depth))
-            .sum();
+            .fold(0u64, |acc, d| acc.saturating_add(u64::from(d.context.chain_depth)));
         let avg_chain_depth = if total > 0 {
             total_depth as f64 / total as f64
         } else {

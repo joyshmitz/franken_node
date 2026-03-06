@@ -262,7 +262,7 @@ impl RevocationRegistry {
 
     /// Total revocations across all zones.
     pub fn total_revocations(&self) -> usize {
-        self.revoked.values().map(|v| v.len()).sum()
+        self.revoked.values().fold(0usize, |acc, v| acc.saturating_add(v.len()))
     }
 }
 
