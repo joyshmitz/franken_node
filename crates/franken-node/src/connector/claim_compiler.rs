@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+const MAX_EVENTS: usize = 4096;
+
 use crate::security::constant_time::ct_eq;
 
 /// Schema version for compiled claims and scoreboard snapshots.
@@ -622,6 +624,10 @@ impl ClaimCompiler {
             detail: detail.to_string(),
             trace_id: trace_id.to_string(),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 }
 

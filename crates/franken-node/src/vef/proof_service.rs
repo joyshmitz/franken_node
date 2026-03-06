@@ -12,6 +12,8 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+const MAX_EVENTS: usize = 4096;
+
 /// Constant-time string comparison (inline to avoid cross-crate path issues in test harnesses).
 fn ct_eq_inline(a: &str, b: &str) -> bool {
     let (a, b) = (a.as_bytes(), b.as_bytes());
@@ -633,13 +635,17 @@ impl VefProofService {
         &self.events
     }
 
+    fn emit_event(&mut self, event: ProofServiceEvent) {
+        push_bounded(&mut self.events, event, MAX_EVENTS);
+    }
+
     pub fn generate_proof(
         &mut self,
         input: &ProofInputEnvelope,
         backend_override: Option<ProofBackendId>,
         now_millis: u64,
     ) -> Result<ProofOutputEnvelope, ProofServiceError> {
-        self.events.push(ProofServiceEvent {
+        self.emit_event(ProofServiceEvent {
             event_code: event_codes::VEF_PROOF_001_REQUEST_RECEIVED.to_string(),
             trace_id: input.trace_id.clone(),
             detail: format!(
@@ -651,7 +657,7 @@ impl VefProofService {
         input.validate()?;
         let backend_id = self.resolve_backend(backend_override)?;
 
-        self.events.push(ProofServiceEvent {
+        self.emit_event(ProofServiceEvent {
             event_code: event_codes::VEF_PROOF_002_BACKEND_SELECTED.to_string(),
             trace_id: input.trace_id.clone(),
             detail: format!("backend={}", backend_id.as_str()),
@@ -686,7 +692,7 @@ impl VefProofService {
         proof.validate_against(input)?;
         self.run_backend_verify(backend_id, input, &proof, params)?;
 
-        self.events.push(ProofServiceEvent {
+        self.emit_event(ProofServiceEvent {
             event_code: event_codes::VEF_PROOF_003_PROOF_GENERATED.to_string(),
             trace_id: input.trace_id.clone(),
             detail: format!(
@@ -777,6 +783,14 @@ impl VefProofService {
                 DoubleHashAttestationBackend.verify(input, proof, parameters)
             }
         }
+    }
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
     }
 }
 

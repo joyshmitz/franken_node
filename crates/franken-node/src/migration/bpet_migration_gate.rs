@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+const MAX_EVENTS: usize = 4096;
+
 /// Stable event codes for BPET migration stability gates.
 pub mod event_codes {
     pub const BASELINE_CAPTURED: &str = "BPET-MIGRATE-001";
@@ -224,6 +226,10 @@ pub fn evaluate_admission(
             baseline.instability_score, baseline.drift_score, baseline.regime_shift_probability
         ),
     )];
+    if events.len() > MAX_EVENTS {
+        let overflow = events.len() - MAX_EVENTS;
+        events.drain(0..overflow);
+    }
 
     let needs_evidence = delta.instability_delta
         > thresholds.max_instability_delta_for_direct_admit
@@ -242,6 +248,10 @@ pub fn evaluate_admission(
             trace_id,
             "admission accepted without additional constraints".to_string(),
         ));
+        if events.len() > MAX_EVENTS {
+            let overflow = events.len() - MAX_EVENTS;
+            events.drain(0..overflow);
+        }
         return AdmissionDecision {
             verdict: GateVerdict::Allow,
             baseline,
@@ -262,6 +272,10 @@ pub fn evaluate_admission(
             trace_id,
             "trajectory risk exceeds direct-admit limits; staged rollout required".to_string(),
         ));
+        if events.len() > MAX_EVENTS {
+            let overflow = events.len() - MAX_EVENTS;
+            events.drain(0..overflow);
+        }
         events.push(gate_event(
             event_codes::FALLBACK_PLAN_GENERATED,
             "info",
@@ -271,6 +285,10 @@ pub fn evaluate_admission(
                 rollout.fallback.rollback_to_version
             ),
         ));
+        if events.len() > MAX_EVENTS {
+            let overflow = events.len() - MAX_EVENTS;
+            events.drain(0..overflow);
+        }
         return AdmissionDecision {
             verdict: GateVerdict::StagedRolloutRequired,
             baseline,
@@ -295,6 +313,10 @@ pub fn evaluate_admission(
             evidence.len()
         ),
     ));
+    if events.len() > MAX_EVENTS {
+        let overflow = events.len() - MAX_EVENTS;
+        events.drain(0..overflow);
+    }
     AdmissionDecision {
         verdict: GateVerdict::RequireAdditionalEvidence,
         baseline,

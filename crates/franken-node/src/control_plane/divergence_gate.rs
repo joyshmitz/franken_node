@@ -391,6 +391,17 @@ pub struct RecoveryResult {
 // ControlPlaneDivergenceGate
 // ---------------------------------------------------------------------------
 
+/// Maximum events before oldest-first eviction.
+const MAX_EVENTS: usize = 4096;
+/// Maximum audit log entries before oldest-first eviction.
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+/// Maximum blocked mutations before oldest-first eviction.
+const MAX_BLOCKED_MUTATIONS: usize = 4096;
+/// Maximum quarantined partitions before oldest-first eviction.
+const MAX_QUARANTINED_PARTITIONS: usize = 4096;
+/// Maximum alerts before oldest-first eviction.
+const MAX_ALERTS: usize = 4096;
+
 /// Product-level gate that blocks control-plane mutations when divergence is detected.
 ///
 /// Wraps `DivergenceDetector` and `MarkerProofVerifier` from the low-level
@@ -501,6 +512,7 @@ impl ControlPlaneDivergenceGate {
             DetectionResult::Converged => {
                 self.events
                     .push(event_codes::DG_005_FRESHNESS_VERIFIED.to_string());
+                self.enforce_events_cap();
                 self.emit_audit(
                     timestamp,
                     event_codes::DG_005_FRESHNESS_VERIFIED,
@@ -561,6 +573,7 @@ impl ControlPlaneDivergenceGate {
 
         self.events
             .push(event_codes::DG_001_DIVERGENCE_DETECTED.to_string());
+        self.enforce_events_cap();
         self.emit_audit(
             timestamp,
             event_codes::DG_001_DIVERGENCE_DETECTED,
@@ -595,6 +608,7 @@ impl ControlPlaneDivergenceGate {
             };
             self.events
                 .push(event_codes::DG_005_FRESHNESS_VERIFIED.to_string());
+            self.enforce_events_cap();
             return Ok(result);
         }
 
@@ -610,8 +624,13 @@ impl ControlPlaneDivergenceGate {
             event_code: event_codes::DG_002_MUTATION_BLOCKED.to_string(),
         };
         self.blocked_mutations.push(result.clone());
+        if self.blocked_mutations.len() > MAX_BLOCKED_MUTATIONS {
+            let overflow = self.blocked_mutations.len() - MAX_BLOCKED_MUTATIONS;
+            self.blocked_mutations.drain(0..overflow);
+        }
         self.events
             .push(event_codes::DG_002_MUTATION_BLOCKED.to_string());
+        self.enforce_events_cap();
         self.emit_audit(
             timestamp,
             event_codes::DG_002_MUTATION_BLOCKED,
@@ -650,6 +669,7 @@ impl ControlPlaneDivergenceGate {
         }
         self.events
             .push(event_codes::DG_003_RESPONSE_ACTIVATED.to_string());
+        self.enforce_events_cap();
         self.emit_audit(
             timestamp,
             event_codes::DG_003_RESPONSE_ACTIVATED,
@@ -691,6 +711,10 @@ impl ControlPlaneDivergenceGate {
         };
 
         self.quarantined_partitions.push(partition.clone());
+        if self.quarantined_partitions.len() > MAX_QUARANTINED_PARTITIONS {
+            let overflow = self.quarantined_partitions.len() - MAX_QUARANTINED_PARTITIONS;
+            self.quarantined_partitions.drain(0..overflow);
+        }
         self.state = GateState::Quarantined;
         if let Some(ref mut ad) = self.active_divergence {
             ad.response_mode = Some(ResponseMode::Quarantine.label().to_string());
@@ -700,6 +724,7 @@ impl ControlPlaneDivergenceGate {
             .push(event_codes::DG_006_PARTITION_QUARANTINED.to_string());
         self.events
             .push(event_codes::DG_003_RESPONSE_ACTIVATED.to_string());
+        self.enforce_events_cap();
         self.emit_audit(
             timestamp,
             event_codes::DG_006_PARTITION_QUARANTINED,
@@ -757,6 +782,10 @@ impl ControlPlaneDivergenceGate {
         };
 
         self.alerts.push(alert.clone());
+        if self.alerts.len() > MAX_ALERTS {
+            let overflow = self.alerts.len() - MAX_ALERTS;
+            self.alerts.drain(0..overflow);
+        }
         self.state = GateState::Alerted;
         if let Some(ref mut ad) = self.active_divergence {
             ad.response_mode = Some(ResponseMode::Alert.label().to_string());
@@ -766,6 +795,7 @@ impl ControlPlaneDivergenceGate {
             .push(event_codes::DG_007_OPERATOR_ALERTED.to_string());
         self.events
             .push(event_codes::DG_003_RESPONSE_ACTIVATED.to_string());
+        self.enforce_events_cap();
         self.emit_audit(
             timestamp,
             event_codes::DG_007_OPERATOR_ALERTED,
@@ -841,6 +871,7 @@ impl ControlPlaneDivergenceGate {
 
         self.events
             .push(event_codes::DG_004_RECOVERY_COMPLETED.to_string());
+        self.enforce_events_cap();
         self.emit_audit(
             timestamp,
             event_codes::DG_004_RECOVERY_COMPLETED,
@@ -869,6 +900,7 @@ impl ControlPlaneDivergenceGate {
             Ok(()) => {
                 self.events
                     .push(event_codes::DG_008_MARKER_PROOF_VERIFIED.to_string());
+                self.enforce_events_cap();
                 self.emit_audit(
                     timestamp,
                     event_codes::DG_008_MARKER_PROOF_VERIFIED,
@@ -888,6 +920,13 @@ impl ControlPlaneDivergenceGate {
     // Internal helpers
     // -----------------------------------------------------------------------
 
+    fn enforce_events_cap(&mut self) {
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
+    }
+
     fn emit_audit(
         &mut self,
         timestamp: u64,
@@ -905,6 +944,10 @@ impl ControlPlaneDivergenceGate {
             node_id: self.node_id.clone(),
             epoch_id,
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 

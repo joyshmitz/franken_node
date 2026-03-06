@@ -48,6 +48,12 @@ use event_codes::*;
 // Invariant constants
 // ---------------------------------------------------------------------------
 
+/// Maximum number of events before oldest-first eviction.
+const MAX_EVENTS: usize = 4096;
+
+/// Maximum number of receipts before oldest-first eviction.
+const MAX_RECEIPTS: usize = 4096;
+
 pub const INV_PCG_VISIBLE: &str = "INV-PCG-VISIBLE";
 pub const INV_PCG_AUDITABLE: &str = "INV-PCG-AUDITABLE";
 pub const INV_PCG_RECEIPT: &str = "INV-PCG-RECEIPT";
@@ -391,6 +397,10 @@ impl CompatGateService {
             signature: format!("sig-{}", receipt_id),
             payload_hash: format!("hash-{}", receipt_id),
         });
+        if self.receipts.len() > MAX_RECEIPTS {
+            let overflow = self.receipts.len() - MAX_RECEIPTS;
+            self.receipts.drain(0..overflow);
+        }
 
         GateCheckResponse {
             decision,
@@ -454,6 +464,10 @@ impl CompatGateService {
                 signature: format!("sig-{}", receipt_id),
                 payload_hash: format!("hash-{}", receipt_id),
             });
+            if self.receipts.len() > MAX_RECEIPTS {
+                let overflow = self.receipts.len() - MAX_RECEIPTS;
+                self.receipts.drain(0..overflow);
+            }
         }
 
         ModeTransitionResponse {
@@ -487,6 +501,10 @@ impl CompatGateService {
         );
 
         self.receipts.push(receipt.clone());
+        if self.receipts.len() > MAX_RECEIPTS {
+            let overflow = self.receipts.len() - MAX_RECEIPTS;
+            self.receipts.drain(0..overflow);
+        }
         receipt
     }
 
@@ -582,6 +600,10 @@ impl CompatGateService {
             scope: scope.to_string(),
             detail: detail.to_string(),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 }
 

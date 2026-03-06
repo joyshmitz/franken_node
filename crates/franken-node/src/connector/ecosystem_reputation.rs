@@ -12,6 +12,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+const MAX_EVENTS: usize = 4096;
+
 // -- Event codes ---------------------------------------------------------------
 
 pub const ENE_003_REPUTATION_COMPUTED: &str = "ENE-003";
@@ -348,20 +350,20 @@ impl EcosystemReputationApi {
         pub_record.computation_count = pub_record.computation_count.saturating_add(1);
         pub_record.score_history.push(new_score);
 
-        self.events.push(ReputationEvent {
+        push_bounded(&mut self.events, ReputationEvent {
             event_code: ENE_003_REPUTATION_COMPUTED.to_owned(),
             publisher_id: publisher_id.to_owned(),
             detail: format!("score={new_score:.4}, delta={delta:.4}"),
             timestamp: timestamp.to_owned(),
-        });
+        }, MAX_EVENTS);
 
         if anomalous {
-            self.events.push(ReputationEvent {
+            push_bounded(&mut self.events, ReputationEvent {
                 event_code: ENE_004_REPUTATION_ANOMALY.to_owned(),
                 publisher_id: publisher_id.to_owned(),
                 detail: format!("anomalous delta {delta:.4} detected"),
                 timestamp: timestamp.to_owned(),
-            });
+            }, MAX_EVENTS);
         }
 
         Ok(new_score)
@@ -457,6 +459,16 @@ impl EcosystemReputationApi {
     #[must_use]
     pub fn anomaly_config(&self) -> &AnomalyConfig {
         &self.anomaly_config
+    }
+}
+
+// -- Bounded push helper -------------------------------------------------------
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
     }
 }
 

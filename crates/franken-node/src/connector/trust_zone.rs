@@ -7,6 +7,8 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -277,6 +279,10 @@ impl ZoneSegmentationEngine {
             zone_id: zone_id.clone(),
             detail: format!("Zone registered: {zone_id}"),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
         Ok(())
     }
 
@@ -302,6 +308,10 @@ impl ZoneSegmentationEngine {
             zone_id: zone_id.clone(),
             detail: format!("Tenant {tenant_id} bound to zone {zone_id}"),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
         Ok(())
     }
 

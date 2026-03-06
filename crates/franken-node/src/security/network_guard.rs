@@ -1,4 +1,5 @@
 //! Network Guard egress layer with HTTP+TCP policy enforcement.
+//! bd-1xbr: Bounded audit_log capacity with oldest-first eviction.
 //!
 //! All connector egress traverses this guard. Decisions are made
 //! based on ordered rules, with a default-deny fallback. Every
@@ -8,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::security::remote_cap::{CapabilityGate, RemoteCap, RemoteOperation};
+
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
 
 /// Network protocol for egress rules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -185,7 +188,7 @@ impl NetworkGuard {
                 rule_matched: None,
                 trace_id: trace_id.to_string(),
             };
-            self.audit_log.push(event);
+            push_bounded(&mut self.audit_log, event, MAX_AUDIT_LOG_ENTRIES);
             return Err(GuardError::RemoteCapDenied {
                 code: err.code().to_string(),
                 compatibility_code: err.compatibility_code().map(ToString::to_string),
@@ -206,7 +209,7 @@ impl NetworkGuard {
             trace_id: trace_id.to_string(),
         };
 
-        self.audit_log.push(event);
+        push_bounded(&mut self.audit_log, event, MAX_AUDIT_LOG_ENTRIES);
 
         if action == Action::Deny {
             return Err(GuardError::EgressDenied {
@@ -278,6 +281,14 @@ impl fmt::Display for GuardError {
 }
 
 impl std::error::Error for GuardError {}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
+    }
+}
 
 #[cfg(test)]
 mod tests {

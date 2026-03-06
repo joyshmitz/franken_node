@@ -49,6 +49,8 @@ pub const MIN_CASE_STUDIES: usize = 3;
 pub const MIN_SECURITY_IMPROVEMENT_CASE_STUDIES: usize = 2;
 pub const MIN_INDUSTRY_SUBMISSIONS: usize = 1;
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 /// Pre/post security and operational metrics used for case-study quantification.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct KeyMetrics {
@@ -401,6 +403,10 @@ impl SecurityOpsCaseStudyRegistry {
             trace_id: trace_id.to_string(),
             timestamp: Utc::now().to_rfc3339(),
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 

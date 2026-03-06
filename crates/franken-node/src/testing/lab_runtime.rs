@@ -22,6 +22,9 @@ pub const SCHEMA_VERSION: &str = "lab-v1.0";
 // Event codes
 // ---------------------------------------------------------------------------
 
+/// Maximum number of events before oldest-first eviction.
+const MAX_EVENTS: usize = 4096;
+
 /// Lab runtime initialized with seed and config.
 pub const EVT_LAB_INITIALIZED: &str = "FN-LB-001";
 /// A scenario execution has started.
@@ -694,6 +697,10 @@ impl LabRuntime {
             event_code: EVT_TEST_CLOCK_ADVANCED.to_string(),
             payload: format!("delta={delta}, now={}", self.test_clock.current_tick),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
         Ok(fired)
     }
 
@@ -869,6 +876,10 @@ impl LabRuntime {
             event_code: code.to_string(),
             payload,
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 }
 

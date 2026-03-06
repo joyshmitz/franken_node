@@ -9,6 +9,8 @@
 use std::collections::VecDeque;
 use std::f64::consts::PI;
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -448,7 +450,7 @@ impl BocpdDetector {
     /// Process a new observation.
     pub fn observe(&mut self, x: f64, timestamp: u64) -> Option<RegimeShift> {
         self.observation_count = self.observation_count.saturating_add(1);
-        self.events.push(BocpdEvent {
+        self.emit_event(BocpdEvent {
             code: EVT_OBSERVATION.to_string(),
             detail: format!("x={x:.4}"),
         });
@@ -553,7 +555,7 @@ impl BocpdDetector {
         // Step 5: Check for changepoint.
         let cp_prob = self.run_length_probs[0];
         if cp_prob >= self.config.changepoint_threshold {
-            self.events.push(BocpdEvent {
+            self.emit_event(BocpdEvent {
                 code: EVT_CHANGEPOINT_CANDIDATE.to_string(),
                 detail: format!("prob={cp_prob:.4}"),
             });
@@ -573,7 +575,7 @@ impl BocpdDetector {
                     old_regime_mean: old_mean,
                     new_regime_mean: x,
                 };
-                self.events.push(BocpdEvent {
+                self.emit_event(BocpdEvent {
                     code: EVT_REGIME_SHIFT.to_string(),
                     detail: format!("confidence={:.4}", shift.confidence),
                 });
@@ -586,7 +588,7 @@ impl BocpdDetector {
                 self.current_run_length = 0;
                 return Some(shift);
             } else {
-                self.events.push(BocpdEvent {
+                self.emit_event(BocpdEvent {
                     code: EVT_FALSE_POSITIVE_SUPPRESSED.to_string(),
                     detail: format!(
                         "run_length={} < min={}",
@@ -640,6 +642,10 @@ impl BocpdDetector {
     pub fn stream_name(&self) -> &str {
         &self.stream_name
     }
+
+    fn emit_event(&mut self, event: BocpdEvent) {
+        push_bounded(&mut self.events, event, MAX_EVENTS);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -682,6 +688,14 @@ impl MultiStreamCorrelator {
     /// Get count of recent shifts in window.
     pub fn recent_count(&self) -> usize {
         self.recent_shifts.len()
+    }
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
     }
 }
 

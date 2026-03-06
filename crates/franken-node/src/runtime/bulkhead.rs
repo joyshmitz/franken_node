@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
+const MAX_EVENTS: usize = 4096;
+
 pub mod event_codes {
     pub const BULKHEAD_PERMIT_ACQUIRED: &str = "BULKHEAD_PERMIT_ACQUIRED";
     pub const BULKHEAD_PERMIT_RELEASED: &str = "BULKHEAD_PERMIT_RELEASED";
@@ -167,6 +169,14 @@ impl GlobalBulkhead {
         &self.events
     }
 
+    fn emit_event(&mut self, event: BulkheadEvent) {
+        self.events.push(event);
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
+    }
+
     pub fn try_acquire(
         &mut self,
         operation_id: &str,
@@ -174,7 +184,7 @@ impl GlobalBulkhead {
     ) -> Result<BulkheadPermit, BulkheadError> {
         if self.in_flight >= self.max_in_flight {
             self.rejection_count = self.rejection_count.saturating_add(1);
-            self.events.push(BulkheadEvent {
+            self.emit_event(BulkheadEvent {
                 event_code: event_codes::BULKHEAD_OVERLOAD.to_string(),
                 operation_id: operation_id.to_string(),
                 now_ms,
@@ -198,7 +208,7 @@ impl GlobalBulkhead {
             .insert(permit_id.clone(), operation_id.to_string());
         self.in_flight = self.in_flight.saturating_add(1);
 
-        self.events.push(BulkheadEvent {
+        self.emit_event(BulkheadEvent {
             event_code: event_codes::BULKHEAD_PERMIT_ACQUIRED.to_string(),
             operation_id: operation_id.to_string(),
             now_ms,
@@ -235,7 +245,7 @@ impl GlobalBulkhead {
         self.active_permits.remove(permit_id);
 
         self.in_flight = self.in_flight.saturating_sub(1);
-        self.events.push(BulkheadEvent {
+        self.emit_event(BulkheadEvent {
             event_code: event_codes::BULKHEAD_PERMIT_RELEASED.to_string(),
             operation_id: operation_id.to_string(),
             now_ms,
@@ -266,7 +276,7 @@ impl GlobalBulkhead {
         self.max_in_flight = new_max_in_flight;
         self.retry_after_ms = new_retry_after_ms;
 
-        self.events.push(BulkheadEvent {
+        self.emit_event(BulkheadEvent {
             event_code: event_codes::BULKHEAD_CONFIG_RELOAD.to_string(),
             operation_id: "config-reload".to_string(),
             now_ms,

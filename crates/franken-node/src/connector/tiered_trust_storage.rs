@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -626,6 +628,10 @@ impl TieredTrustStorage {
             artifact_id: artifact_id.map(|id| id.0.clone()),
             detail,
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 
     /// All events emitted since creation.

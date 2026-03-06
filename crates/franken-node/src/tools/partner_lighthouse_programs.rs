@@ -28,6 +28,8 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 pub mod event_codes {
     pub const PLP_PARTNER_ENROLLED: &str = "PLP-001";
     pub const PLP_DEPLOYMENT_CREATED: &str = "PLP-002";
@@ -414,6 +416,10 @@ impl PartnerLighthousePrograms {
             trace_id: trace_id.to_string(),
             details,
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 

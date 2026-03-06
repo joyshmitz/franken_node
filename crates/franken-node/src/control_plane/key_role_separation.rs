@@ -277,6 +277,11 @@ impl KeyRoleEvent {
 
 /// Registry that stores active key-role bindings and revoked keys.
 ///
+/// Maximum revoked bindings before oldest-first eviction.
+const MAX_REVOKED_ENTRIES: usize = 4096;
+/// Maximum events before oldest-first eviction.
+const MAX_KEY_ROLE_EVENTS: usize = 4096;
+
 /// Enforces:
 /// - INV-KRS-ROLE-EXCLUSIVITY: a key_id is bound to at most one role.
 /// - INV-KRS-ONE-ACTIVE: lookup_by_role returns current active bindings.
@@ -301,6 +306,22 @@ impl KeyRoleRegistry {
         }
     }
 
+    fn push_event(&mut self, event: KeyRoleEvent) {
+        self.events.push(event);
+        if self.events.len() > MAX_KEY_ROLE_EVENTS {
+            let overflow = self.events.len() - MAX_KEY_ROLE_EVENTS;
+            self.events.drain(0..overflow);
+        }
+    }
+
+    fn push_revoked(&mut self, binding: KeyRoleBinding) {
+        self.revoked.push(binding);
+        if self.revoked.len() > MAX_REVOKED_ENTRIES {
+            let overflow = self.revoked.len() - MAX_REVOKED_ENTRIES;
+            self.revoked.drain(0..overflow);
+        }
+    }
+
     /// Bind a key to a role.
     ///
     /// INV-KRS-ROLE-EXCLUSIVITY: if the key_id is already bound to a
@@ -319,7 +340,7 @@ impl KeyRoleRegistry {
         // Check INV-KRS-ROLE-EXCLUSIVITY: same key cannot serve two roles.
         if let Some(existing) = self.active.get(key_id) {
             if existing.role != role {
-                self.events.push(KeyRoleEvent::violation(
+                self.push_event(KeyRoleEvent::violation(
                     key_id,
                     role,
                     existing.role,
@@ -352,8 +373,7 @@ impl KeyRoleRegistry {
         };
 
         self.active.insert(key_id.to_string(), binding);
-        self.events
-            .push(KeyRoleEvent::bound(key_id, role, authority, trace_id));
+        self.push_event(KeyRoleEvent::bound(key_id, role, authority, trace_id));
 
         self.active
             .get(key_id)
@@ -388,13 +408,13 @@ impl KeyRoleRegistry {
                     key_id: key_id.to_string(),
                 })?;
 
-        self.events.push(KeyRoleEvent::revoked(
+        self.push_event(KeyRoleEvent::revoked(
             key_id,
             binding.role,
             authority,
             trace_id,
         ));
-        self.revoked.push(binding.clone());
+        self.push_revoked(binding.clone());
         Ok(binding)
     }
 
@@ -452,7 +472,7 @@ impl KeyRoleRegistry {
                 reason: format!("old key {} vanished during rotation", old_key_id),
             }
         })?;
-        self.revoked.push(old_binding);
+        self.push_revoked(old_binding);
 
         let new_binding = KeyRoleBinding {
             key_id: new_key_id.to_string(),
@@ -464,7 +484,7 @@ impl KeyRoleRegistry {
         };
         self.active.insert(new_key_id.to_string(), new_binding);
 
-        self.events.push(KeyRoleEvent::rotated(
+        self.push_event(KeyRoleEvent::rotated(
             old_key_id, new_key_id, role, authority, trace_id,
         ));
 
@@ -494,7 +514,7 @@ impl KeyRoleRegistry {
                 })?;
 
         if binding.role != expected_role {
-            self.events.push(KeyRoleEvent::violation(
+            self.push_event(KeyRoleEvent::violation(
                 key_id,
                 expected_role,
                 binding.role,

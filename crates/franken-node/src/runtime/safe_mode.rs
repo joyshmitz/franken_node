@@ -60,6 +60,12 @@ pub const INV_SMO_FLAGPARSE: &str = "INV-SMO-FLAGPARSE";
 /// INV-SMO-RECOVERY
 pub const INV_SMO_RECOVERY: &str = "INV-SMO-RECOVERY";
 
+/// Maximum number of events retained in a `SafeModeController`.
+const MAX_EVENTS: usize = 4096;
+
+/// Maximum number of audit-log entries retained in a `SafeModeController`.
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -555,6 +561,14 @@ impl SafeModeController {
         Self::new(SafeModeConfig::default())
     }
 
+    fn emit_event(&mut self, event: SafeModeEvent) {
+        push_bounded(&mut self.events, event, MAX_EVENTS);
+    }
+
+    fn emit_audit(&mut self, entry: SafeModeAuditEntry) {
+        push_bounded(&mut self.audit_log, entry, MAX_AUDIT_LOG_ENTRIES);
+    }
+
     /// Enter safe mode with the given reason and timestamp.
     ///
     /// INV-SMO-DETERMINISTIC: The resulting state is a pure function of the inputs.
@@ -590,15 +604,16 @@ impl SafeModeController {
         self.entry_receipt = Some(receipt);
 
         // Emit SMO-001 activation event.
-        self.events.push(SafeModeEvent {
+        self.emit_event(SafeModeEvent {
             code: SMO_001_SAFE_MODE_ACTIVATED.to_string(),
             message: format!("Safe mode activated: {reason}"),
             severity: EventSeverity::Info,
         });
 
         // Emit SMO-002 for each restricted capability.
-        for cap in &self.restricted_capabilities {
-            self.events.push(SafeModeEvent {
+        let caps: Vec<Capability> = self.restricted_capabilities.iter().cloned().collect();
+        for cap in &caps {
+            self.emit_event(SafeModeEvent {
                 code: SMO_002_CAPABILITY_RESTRICTED.to_string(),
                 message: format!("Capability restricted: {cap}"),
                 severity: EventSeverity::Warn,
@@ -606,7 +621,7 @@ impl SafeModeController {
         }
 
         // Log audit entry.
-        self.audit_log.push(SafeModeAuditEntry {
+        self.emit_audit(SafeModeAuditEntry {
             timestamp: timestamp.to_string(),
             action: SafeModeAction::Enter,
             reason: Some(reason),
@@ -618,7 +633,7 @@ impl SafeModeController {
     /// Enter degraded state (automatic trigger).
     pub fn enter_degraded_state(&mut self, reason: SafeModeEntryReason, timestamp: &str) {
         // Emit SMO-004 for degraded state.
-        self.events.push(SafeModeEvent {
+        self.emit_event(SafeModeEvent {
             code: SMO_004_DEGRADED_STATE_ENTERED.to_string(),
             message: format!("Degraded state entered: {reason}"),
             severity: EventSeverity::Warn,
@@ -639,7 +654,7 @@ impl SafeModeController {
     ) -> Result<(), SafeModeError> {
         if !verification.all_passed() {
             let failed = verification.failed_checks();
-            self.audit_log.push(SafeModeAuditEntry {
+            self.emit_audit(SafeModeAuditEntry {
                 timestamp: timestamp.to_string(),
                 action: SafeModeAction::ExitDenied,
                 reason: self.entry_reason.clone(),
@@ -655,17 +670,18 @@ impl SafeModeController {
 
         self.active = false;
         self.restricted_capabilities.clear();
+        let exit_reason = self.entry_reason.take();
 
-        self.audit_log.push(SafeModeAuditEntry {
+        self.emit_audit(SafeModeAuditEntry {
             timestamp: timestamp.to_string(),
             action: SafeModeAction::Exit,
-            reason: self.entry_reason.take(),
+            reason: exit_reason,
             operator_id: Some(operator_id.to_string()),
             details: "Safe mode exited".to_string(),
         });
 
         // Emit SMO-001 for the exit transition.
-        self.events.push(SafeModeEvent {
+        self.emit_event(SafeModeEvent {
             code: SMO_001_SAFE_MODE_ACTIVATED.to_string(),
             message: "Safe mode deactivated".to_string(),
             severity: EventSeverity::Info,
@@ -904,6 +920,14 @@ impl SafeModeController {
 fn parse_duration_between(_start: &str, _end: &str) -> Option<u64> {
     // Simplified placeholder -- real implementation would parse ISO 8601.
     Some(0)
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
+    }
 }
 
 // ---------------------------------------------------------------------------

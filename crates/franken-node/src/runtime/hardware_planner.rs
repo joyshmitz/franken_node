@@ -25,7 +25,7 @@
 //! - INV-HWP-AUDIT-COMPLETE: all decisions recorded with stable event codes
 
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 /// Schema version for hardware planner records.
@@ -33,6 +33,9 @@ pub const SCHEMA_VERSION: &str = "hwp-v1.0";
 
 /// Maximum valid risk level (inclusive).
 pub const MAX_RISK_LEVEL: u32 = 100;
+
+/// Maximum number of audit-log entries retained (ring-buffer style).
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
 
 // ---------------------------------------------------------------------------
 // Invariant constants
@@ -590,22 +593,25 @@ impl HardwarePlanner {
         trace_id: &str,
     ) -> Result<&HardwareProfile, HardwarePlannerError> {
         let pid = profile.profile_id.clone();
-        match self.profiles.entry(pid.clone()) {
-            Entry::Occupied(_) => Err(HardwarePlannerError::DuplicateProfile { profile_id: pid }),
-            Entry::Vacant(entry) => {
-                self.audit_log.push(PlannerAuditEvent {
-                    event_code: event_codes::HWP_001.to_string(),
-                    workload_id: String::new(),
-                    profile_id: Some(pid.clone()),
-                    timestamp_ms,
-                    trace_id: trace_id.to_string(),
-                    detail: format!("hardware profile registered: {}", pid),
-                    schema_version: SCHEMA_VERSION.to_string(),
-                });
-
-                Ok(entry.insert(profile))
-            }
+        if self.profiles.contains_key(&pid) {
+            return Err(HardwarePlannerError::DuplicateProfile { profile_id: pid });
         }
+
+        self.profiles.insert(pid.clone(), profile);
+        self.emit_audit(PlannerAuditEvent {
+            event_code: event_codes::HWP_001.to_string(),
+            workload_id: String::new(),
+            profile_id: Some(pid.clone()),
+            timestamp_ms,
+            trace_id: trace_id.to_string(),
+            detail: format!("hardware profile registered: {}", pid),
+            schema_version: SCHEMA_VERSION.to_string(),
+        });
+
+        Ok(self
+            .profiles
+            .get(&pid)
+            .expect("registered hardware profile must be retrievable"))
     }
 
     /// Register a placement policy.
@@ -617,22 +623,25 @@ impl HardwarePlanner {
         trace_id: &str,
     ) -> Result<&PlacementPolicy, HardwarePlannerError> {
         let pid = policy.policy_id.clone();
-        match self.policies.entry(pid.clone()) {
-            Entry::Occupied(_) => Err(HardwarePlannerError::DuplicatePolicy { policy_id: pid }),
-            Entry::Vacant(entry) => {
-                self.audit_log.push(PlannerAuditEvent {
-                    event_code: event_codes::HWP_002.to_string(),
-                    workload_id: String::new(),
-                    profile_id: None,
-                    timestamp_ms,
-                    trace_id: trace_id.to_string(),
-                    detail: format!("placement policy registered: {}", pid),
-                    schema_version: SCHEMA_VERSION.to_string(),
-                });
-
-                Ok(entry.insert(policy))
-            }
+        if self.policies.contains_key(&pid) {
+            return Err(HardwarePlannerError::DuplicatePolicy { policy_id: pid });
         }
+
+        self.policies.insert(pid.clone(), policy);
+        self.emit_audit(PlannerAuditEvent {
+            event_code: event_codes::HWP_002.to_string(),
+            workload_id: String::new(),
+            profile_id: None,
+            timestamp_ms,
+            trace_id: trace_id.to_string(),
+            detail: format!("placement policy registered: {}", pid),
+            schema_version: SCHEMA_VERSION.to_string(),
+        });
+
+        Ok(self
+            .policies
+            .get(&pid)
+            .expect("registered placement policy must be retrievable"))
     }
 
     /// Request placement for a workload.
@@ -652,7 +661,7 @@ impl HardwarePlanner {
         }
 
         // Emit HWP-003
-        self.audit_log.push(PlannerAuditEvent {
+        self.emit_audit(PlannerAuditEvent {
             event_code: event_codes::HWP_003.to_string(),
             workload_id: request.workload_id.clone(),
             profile_id: None,
@@ -725,7 +734,7 @@ impl HardwarePlanner {
 
         if capable.is_empty() {
             // HWP-005
-            self.audit_log.push(PlannerAuditEvent {
+            self.emit_audit(PlannerAuditEvent {
                 event_code: event_codes::HWP_005.to_string(),
                 workload_id: request.workload_id.clone(),
                 profile_id: None,
@@ -773,7 +782,7 @@ impl HardwarePlanner {
 
         if risk_ok.is_empty() {
             // HWP-006
-            self.audit_log.push(PlannerAuditEvent {
+            self.emit_audit(PlannerAuditEvent {
                 event_code: event_codes::HWP_006.to_string(),
                 workload_id: request.workload_id.clone(),
                 profile_id: None,
@@ -807,7 +816,7 @@ impl HardwarePlanner {
 
         if with_capacity.is_empty() {
             // HWP-007
-            self.audit_log.push(PlannerAuditEvent {
+            self.emit_audit(PlannerAuditEvent {
                 event_code: event_codes::HWP_007.to_string(),
                 workload_id: request.workload_id.clone(),
                 profile_id: None,
@@ -850,7 +859,7 @@ impl HardwarePlanner {
         }
 
         // HWP-004
-        self.audit_log.push(PlannerAuditEvent {
+        self.emit_audit(PlannerAuditEvent {
             event_code: event_codes::HWP_004.to_string(),
             workload_id: request.workload_id.clone(),
             profile_id: Some(selected.clone()),
@@ -890,7 +899,7 @@ impl HardwarePlanner {
             | Err(HardwarePlannerError::CapacityExhausted { .. })
             | Err(HardwarePlannerError::FallbackExhausted { .. }) => {
                 // HWP-008: fallback attempted
-                self.audit_log.push(PlannerAuditEvent {
+                self.emit_audit(PlannerAuditEvent {
                     event_code: event_codes::HWP_008.to_string(),
                     workload_id: request.workload_id.clone(),
                     profile_id: None,
@@ -919,7 +928,7 @@ impl HardwarePlanner {
                         ));
 
                         // HWP-009
-                        self.audit_log.push(PlannerAuditEvent {
+                        self.emit_audit(PlannerAuditEvent {
                             event_code: event_codes::HWP_009.to_string(),
                             workload_id: request.workload_id.clone(),
                             profile_id: decision.target_profile_id.clone(),
@@ -937,7 +946,7 @@ impl HardwarePlanner {
                     }
                     Err(e) => {
                         // HWP-010
-                        self.audit_log.push(PlannerAuditEvent {
+                        self.emit_audit(PlannerAuditEvent {
                             event_code: event_codes::HWP_010.to_string(),
                             workload_id: request.workload_id.clone(),
                             profile_id: None,
@@ -1000,7 +1009,7 @@ impl HardwarePlanner {
             schema_version: SCHEMA_VERSION.to_string(),
         };
 
-        self.audit_log.push(PlannerAuditEvent {
+        self.emit_audit(PlannerAuditEvent {
             event_code: event_codes::HWP_011.to_string(),
             workload_id: workload_id.to_string(),
             profile_id: Some(target_profile_id.to_string()),
@@ -1117,9 +1126,14 @@ impl HardwarePlanner {
         best
     }
 
+    /// Push an audit event into the bounded audit log.
+    fn emit_audit(&mut self, event: PlannerAuditEvent) {
+        push_bounded(&mut self.audit_log, event, MAX_AUDIT_LOG_ENTRIES);
+    }
+
     /// Emit an HWP-012 evidence-recorded event.
     fn emit_evidence_event(&mut self, workload_id: &str, timestamp_ms: u64, trace_id: &str) {
-        self.audit_log.push(PlannerAuditEvent {
+        self.emit_audit(PlannerAuditEvent {
             event_code: event_codes::HWP_012.to_string(),
             workload_id: workload_id.to_string(),
             profile_id: None,
@@ -1137,6 +1151,14 @@ impl Default for HardwarePlanner {
         approved.insert("franken_engine".to_string());
         approved.insert("asupersync".to_string());
         Self::new(approved)
+    }
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
     }
 }
 

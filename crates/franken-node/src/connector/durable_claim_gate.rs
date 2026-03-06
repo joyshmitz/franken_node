@@ -9,6 +9,8 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+const MAX_EVENTS: usize = 4096;
+
 /// Proof families supported by the durable claim gate.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -422,6 +424,10 @@ impl DurableClaimGate {
             trace_id: claim.trace_id.clone(),
             epoch: claim.epoch,
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 }
 

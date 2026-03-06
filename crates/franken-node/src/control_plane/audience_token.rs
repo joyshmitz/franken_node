@@ -473,6 +473,9 @@ impl TokenChain {
 // TokenValidator
 // ---------------------------------------------------------------------------
 
+/// Maximum events before oldest-first eviction.
+const MAX_EVENTS: usize = 4096;
+
 /// Validates audience-bound token chains, enforcing expiry, replay detection,
 /// and audience matching.
 pub struct TokenValidator {
@@ -502,6 +505,13 @@ impl TokenValidator {
         }
     }
 
+    fn enforce_events_cap(&mut self) {
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
+    }
+
     /// Record a root token issuance.
     pub fn record_issuance(&mut self, token: &AudienceBoundToken, trace_id: &str, now_ms: u64) {
         self.tokens_issued = self.tokens_issued.saturating_add(1);
@@ -519,6 +529,7 @@ impl TokenValidator {
             ),
             timestamp_ms: now_ms,
         });
+        self.enforce_events_cap();
     }
 
     /// Record a delegation event.
@@ -543,6 +554,7 @@ impl TokenValidator {
             ),
             timestamp_ms: now_ms,
         });
+        self.enforce_events_cap();
     }
 
     /// Verify a full token chain against a requester identity.
@@ -586,6 +598,7 @@ impl TokenValidator {
                     ),
                     timestamp_ms: now_ms,
                 });
+                self.enforce_events_cap();
                 return Err(err);
             }
         }
@@ -627,6 +640,7 @@ impl TokenValidator {
                     detail: format!("Nonce '{}' replay detected", token.nonce),
                     timestamp_ms: now_ms,
                 });
+                self.enforce_events_cap();
                 return Err(err);
             }
         }
@@ -672,6 +686,7 @@ impl TokenValidator {
                 ),
                 timestamp_ms: now_ms,
             });
+            self.enforce_events_cap();
             return Err(err);
         }
 
@@ -692,6 +707,7 @@ impl TokenValidator {
             ),
             timestamp_ms: now_ms,
         });
+        self.enforce_events_cap();
 
         Ok(())
     }

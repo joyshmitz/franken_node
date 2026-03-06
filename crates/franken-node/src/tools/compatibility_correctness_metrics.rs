@@ -58,6 +58,8 @@ pub mod invariants {
 
 pub const METRIC_VERSION: &str = "ccm-v1.0";
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // API families and risk bands
 // ---------------------------------------------------------------------------
@@ -472,6 +474,10 @@ impl CompatibilityCorrectnessMetrics {
             trace_id: trace_id.to_string(),
             details,
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 

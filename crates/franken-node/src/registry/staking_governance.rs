@@ -28,6 +28,19 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 // ---------------------------------------------------------------------------
+// Capacity limits
+// ---------------------------------------------------------------------------
+
+/// Maximum number of audit log entries retained.
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+/// Maximum slash events before oldest-first eviction.
+const MAX_SLASH_EVENTS: usize = 4096;
+/// Maximum appeal records before oldest-first eviction.
+const MAX_APPEAL_RECORDS: usize = 4096;
+/// Maximum slash history entries per account.
+const MAX_SLASH_HISTORY_PER_ACCOUNT: usize = 1024;
+
+// ---------------------------------------------------------------------------
 // Schema version
 // ---------------------------------------------------------------------------
 
@@ -885,6 +898,10 @@ impl StakingLedger {
                 evidence_hash: evidence_hash.clone(),
                 timestamp,
             });
+            if account.slash_history.len() > MAX_SLASH_HISTORY_PER_ACCOUNT {
+                let overflow = account.slash_history.len() - MAX_SLASH_HISTORY_PER_ACCOUNT;
+                account.slash_history.drain(0..overflow);
+            }
 
             // Apply cooldown
             if let Some(cooldown) = self.engine.cooldown_secs(&record.risk_tier) {
@@ -906,6 +923,10 @@ impl StakingLedger {
         };
         self.state.next_slash_id = self.state.next_slash_id.saturating_add(1);
         self.state.slash_events.push(slash_event.clone());
+        if self.state.slash_events.len() > MAX_SLASH_EVENTS {
+            let overflow = self.state.slash_events.len() - MAX_SLASH_EVENTS;
+            self.state.slash_events.drain(0..overflow);
+        }
 
         // INV-STAKE-AUDIT-COMPLETE
         self.emit_audit(
@@ -1011,6 +1032,10 @@ impl StakingLedger {
         };
         self.state.next_appeal_id = self.state.next_appeal_id.saturating_add(1);
         self.state.appeals.push(appeal.clone());
+        if self.state.appeals.len() > MAX_APPEAL_RECORDS {
+            let overflow = self.state.appeals.len() - MAX_APPEAL_RECORDS;
+            self.state.appeals.drain(0..overflow);
+        }
 
         self.emit_audit(
             STAKE_003,
@@ -1429,6 +1454,10 @@ impl StakingLedger {
         };
         self.state.next_audit_id = self.state.next_audit_id.saturating_add(1);
         self.state.audit_log.push(entry);
+        if self.state.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.state.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.state.audit_log.drain(0..overflow);
+        }
     }
 }
 

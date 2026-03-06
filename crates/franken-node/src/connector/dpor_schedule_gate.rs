@@ -20,6 +20,8 @@
 //! - INV-DSG-DETERMINISTIC: same scenarios always produce same exploration order
 //! - INV-DSG-SAFETY: safety properties checked at every explored state
 
+const MAX_EVENTS: usize = 4096;
+
 use crate::control_plane::dpor_exploration::{
     CounterexampleStep, DporExplorer, ExplorationBudget, ExplorationResult, Operation,
     ProtocolModel, ProtocolModelId, SafetyProperty,
@@ -597,8 +599,7 @@ impl DporScheduleGate {
             registered_scenarios: Vec::new(),
             events: Vec::new(),
         };
-        gate.events
-            .push(GateEvent::new(event_codes::DSG_001, "gate initialized"));
+        gate.emit(GateEvent::new(event_codes::DSG_001, "gate initialized"));
         Ok(gate)
     }
 
@@ -630,7 +631,7 @@ impl DporScheduleGate {
                 .register_model(model)
                 .map_err(|e| DporScheduleGateError::RegistrationFailed(e.to_string()))?;
             self.registered_scenarios.push(name.to_string());
-            self.events.push(GateEvent::new(
+            self.emit(GateEvent::new(
                 event_codes::DSG_002,
                 &format!("registered scenario: {}", name),
             ));
@@ -655,7 +656,7 @@ impl DporScheduleGate {
             .register_model(model)
             .map_err(|e| DporScheduleGateError::RegistrationFailed(e.to_string()))?;
         self.registered_scenarios.push(name.to_string());
-        self.events.push(GateEvent::new(
+        self.emit(GateEvent::new(
             event_codes::DSG_002,
             &format!("registered scenario: {}", name),
         ));
@@ -686,7 +687,7 @@ impl DporScheduleGate {
         // Resolve the model name: ProtocolModelId::Custom display is "custom:<name>"
         let model_key = format!("custom:{}", scenario_name);
 
-        self.events.push(GateEvent::new(
+        self.emit(GateEvent::new(
             event_codes::DSG_003,
             &format!("exploring scenario: {}", scenario_name),
         ));
@@ -698,14 +699,14 @@ impl DporScheduleGate {
             .map_err(|e| DporScheduleGateError::ExplorationFailed(e.to_string()))?;
 
         if result.budget_exceeded {
-            self.events.push(GateEvent::new(
+            self.emit(GateEvent::new(
                 event_codes::DSG_008,
                 &format!("budget exceeded for scenario: {}", scenario_name),
             ));
         }
 
         if !result.violations.is_empty() {
-            self.events.push(GateEvent::new(
+            self.emit(GateEvent::new(
                 event_codes::DSG_005,
                 &format!(
                     "violations found in {}: {}",
@@ -715,7 +716,7 @@ impl DporScheduleGate {
             ));
         }
 
-        self.events.push(GateEvent::new(
+        self.emit(GateEvent::new(
             event_codes::DSG_004,
             &format!(
                 "completed {}: explored={}, violations={}",
@@ -739,7 +740,7 @@ impl DporScheduleGate {
             return Err(DporScheduleGateError::NoScenarios);
         }
 
-        self.events.push(GateEvent::new(
+        self.emit(GateEvent::new(
             event_codes::DSG_006,
             &format!(
                 "full gate run: {} scenarios",
@@ -768,7 +769,7 @@ impl DporScheduleGate {
             "FAIL".to_string()
         };
 
-        self.events.push(GateEvent::new(
+        self.emit(GateEvent::new(
             event_codes::DSG_007,
             &format!(
                 "full gate complete: schedules={}, violations={}, verdict={}",
@@ -796,7 +797,7 @@ impl DporScheduleGate {
             return Err(DporScheduleGateError::NoScenarios);
         }
 
-        self.events.push(GateEvent::new(
+        self.emit(GateEvent::new(
             event_codes::DSG_006,
             &format!(
                 "full gate run (custom checker): {} scenarios",
@@ -822,7 +823,7 @@ impl DporScheduleGate {
             "FAIL".to_string()
         };
 
-        self.events.push(GateEvent::new(
+        self.emit(GateEvent::new(
             event_codes::DSG_007,
             &format!(
                 "full gate complete: schedules={}, violations={}, verdict={}",
@@ -844,6 +845,14 @@ impl DporScheduleGate {
     /// Access the underlying explorer (for audit log inspection, etc.)
     pub fn explorer(&self) -> &DporExplorer {
         &self.explorer
+    }
+
+    fn emit(&mut self, event: GateEvent) {
+        self.events.push(event);
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 }
 

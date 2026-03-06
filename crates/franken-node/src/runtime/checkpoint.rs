@@ -14,6 +14,9 @@ use sha2::{Digest, Sha256};
 use crate::runtime::bounded_mask::{CancellationState, CapabilityContext, MaskError, bounded_mask};
 use crate::security::constant_time::ct_eq;
 
+/// Maximum number of events retained in a decision stream before oldest entries are drained.
+const MAX_EVENTS: usize = 4096;
+
 /// Event code: checkpoint write persisted.
 pub const FN_CK_001_CHECKPOINT_SAVE: &str = "FN-CK-001";
 /// Event code: checkpoint restore/read performed.
@@ -411,6 +414,10 @@ impl<B: CheckpointBackend> CheckpointContract for CheckpointWriter<B> {
             contract_status: contract_status.to_string(),
             wall_clock_time: now_unix_secs(),
         });
+        if self.decision_stream.len() > MAX_EVENTS {
+            let overflow = self.decision_stream.len() - MAX_EVENTS;
+            self.decision_stream.drain(0..overflow);
+        }
 
         self.decision_stream.push(CheckpointEvent {
             event_code: FN_CK_008_DECISION_STREAM_APPEND.to_string(),
@@ -425,6 +432,10 @@ impl<B: CheckpointBackend> CheckpointContract for CheckpointWriter<B> {
             contract_status: "appended".to_string(),
             wall_clock_time: now_unix_secs(),
         });
+        if self.decision_stream.len() > MAX_EVENTS {
+            let overflow = self.decision_stream.len() - MAX_EVENTS;
+            self.decision_stream.drain(0..overflow);
+        }
 
         Ok(checkpoint_id)
     }

@@ -245,6 +245,9 @@ impl fmt::Display for PerfBudgetError {
 // PerformanceBudgetGuard
 // ---------------------------------------------------------------------------
 
+/// Maximum events before oldest-first eviction.
+const MAX_EVENTS: usize = 4096;
+
 /// Guard that enforces performance budgets on control-plane hot paths.
 pub struct PerformanceBudgetGuard {
     policy: BudgetPolicy,
@@ -431,6 +434,10 @@ impl PerformanceBudgetGuard {
             detail: detail.to_string(),
             trace_id: self.trace_id.clone(),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 
     fn parse_hot_path(&self, label: &str) -> HotPath {
@@ -680,6 +687,10 @@ impl TimingCollector {
             detail: detail.to_string(),
             trace_id: self.trace_id.clone(),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 }
 

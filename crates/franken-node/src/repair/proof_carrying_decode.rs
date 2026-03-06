@@ -26,6 +26,7 @@ pub const REPAIR_PROOF_EMITTED: &str = "REPAIR_PROOF_EMITTED";
 pub const REPAIR_PROOF_VERIFIED: &str = "REPAIR_PROOF_VERIFIED";
 pub const REPAIR_PROOF_MISSING: &str = "REPAIR_PROOF_MISSING";
 pub const REPAIR_PROOF_INVALID: &str = "REPAIR_PROOF_INVALID";
+pub const DEFAULT_MAX_AUDIT_LOG_ENTRIES: usize = 4_096;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -206,10 +207,25 @@ pub struct ProofCarryingDecoder {
     signing_secret: String,
     registered_algorithms: Vec<AlgorithmId>,
     audit_log: Vec<ProofAuditEvent>,
+    max_audit_log_entries: usize,
 }
 
 impl ProofCarryingDecoder {
     pub fn new(mode: ProofMode, signer_id: &str, signing_secret: &str) -> Self {
+        Self::with_audit_log_capacity(
+            mode,
+            signer_id,
+            signing_secret,
+            DEFAULT_MAX_AUDIT_LOG_ENTRIES,
+        )
+    }
+
+    pub fn with_audit_log_capacity(
+        mode: ProofMode,
+        signer_id: &str,
+        signing_secret: &str,
+        max_audit_log_entries: usize,
+    ) -> Self {
         Self {
             mode,
             signer_id: signer_id.to_string(),
@@ -220,6 +236,7 @@ impl ProofCarryingDecoder {
                 AlgorithmId::new("simple_concat"),
             ],
             audit_log: Vec::new(),
+            max_audit_log_entries: max_audit_log_entries.max(1),
         }
     }
 
@@ -243,6 +260,18 @@ impl ProofCarryingDecoder {
 
     pub fn audit_log(&self) -> &[ProofAuditEvent] {
         &self.audit_log
+    }
+
+    pub fn audit_log_capacity(&self) -> usize {
+        self.max_audit_log_entries
+    }
+
+    fn push_audit_event(&mut self, event: ProofAuditEvent) {
+        self.audit_log.push(event);
+        if self.audit_log.len() > self.max_audit_log_entries {
+            let overflow = self.audit_log.len() - self.max_audit_log_entries;
+            self.audit_log.drain(0..overflow);
+        }
     }
 
     /// Decode/reconstruct an object from fragments.
@@ -330,7 +359,7 @@ impl ProofCarryingDecoder {
         };
 
         // [REPAIR_PROOF_EMITTED]
-        self.audit_log.push(ProofAuditEvent {
+        self.push_audit_event(ProofAuditEvent {
             event_code: REPAIR_PROOF_EMITTED.to_string(),
             object_id: object_id.to_string(),
             fragment_count: fragments.len(),
@@ -714,6 +743,43 @@ mod tests {
     fn test_mode_advisory() {
         let dec = ProofCarryingDecoder::new(ProofMode::Advisory, "s", "k");
         assert_eq!(dec.mode(), ProofMode::Advisory);
+    }
+
+    #[test]
+    fn test_decoder_default_audit_log_capacity() {
+        let dec = decoder();
+        assert_eq!(dec.audit_log_capacity(), DEFAULT_MAX_AUDIT_LOG_ENTRIES);
+    }
+
+    #[test]
+    fn test_decoder_audit_log_capacity_clamps_to_one() {
+        let mut dec = ProofCarryingDecoder::with_audit_log_capacity(
+            ProofMode::Mandatory,
+            "test-signer",
+            "test-secret",
+            0,
+        );
+        let frags = test_fragments();
+        dec.decode(
+            "obj-001",
+            &frags,
+            &AlgorithmId::new("simple_concat"),
+            1000,
+            "t-1",
+        )
+        .unwrap();
+        dec.decode(
+            "obj-002",
+            &frags,
+            &AlgorithmId::new("simple_concat"),
+            1001,
+            "t-2",
+        )
+        .unwrap();
+
+        assert_eq!(dec.audit_log_capacity(), 1);
+        assert_eq!(dec.audit_log().len(), 1);
+        assert_eq!(dec.audit_log()[0].object_id, "obj-002");
     }
 
     #[test]
@@ -1101,6 +1167,49 @@ mod tests {
         )
         .unwrap();
         assert_eq!(dec.audit_log().len(), 2);
+    }
+
+    #[test]
+    fn test_audit_log_capacity_enforces_oldest_first_eviction() {
+        let mut dec = ProofCarryingDecoder::with_audit_log_capacity(
+            ProofMode::Mandatory,
+            "test-signer",
+            "test-secret",
+            2,
+        );
+        let frags = test_fragments();
+        dec.decode(
+            "obj-001",
+            &frags,
+            &AlgorithmId::new("simple_concat"),
+            1000,
+            "t-1",
+        )
+        .unwrap();
+        dec.decode(
+            "obj-002",
+            &frags,
+            &AlgorithmId::new("simple_concat"),
+            1001,
+            "t-2",
+        )
+        .unwrap();
+        dec.decode(
+            "obj-003",
+            &frags,
+            &AlgorithmId::new("simple_concat"),
+            1002,
+            "t-3",
+        )
+        .unwrap();
+
+        assert_eq!(dec.audit_log().len(), 2);
+        let object_ids: Vec<&str> = dec
+            .audit_log()
+            .iter()
+            .map(|event| event.object_id.as_str())
+            .collect();
+        assert_eq!(object_ids, vec!["obj-002", "obj-003"]);
     }
 
     // ── Single fragment test ──

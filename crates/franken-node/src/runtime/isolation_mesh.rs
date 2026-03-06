@@ -21,6 +21,8 @@ use std::fmt;
 /// Schema version for isolation mesh reports.
 pub const SCHEMA_VERSION: &str = "isolation-mesh-v1.0";
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -754,6 +756,10 @@ impl IsolationMesh {
             now_ms,
             detail,
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 }
 

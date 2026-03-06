@@ -56,6 +56,7 @@ pub mod invariants {
 
 pub const SCHEMA_VERSION: &str = "mvc-v1.0";
 pub const MIN_DETERMINISM_RATE: f64 = 0.99;
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
 
 /// Cohort category for project grouping.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -391,6 +392,10 @@ impl MigrationValidationCohorts {
             trace_id: trace_id.to_string(),
             details,
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 

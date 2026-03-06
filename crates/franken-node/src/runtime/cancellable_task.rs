@@ -1,4 +1,5 @@
 //! bd-7om: Canonical cancel -> drain -> finalize protocol contracts for product services.
+//! bd-1xbr: Bounded audit_log capacity with oldest-first eviction.
 //!
 //! Provides a `CancellableTask` trait and `CancellationRuntime` that manage the
 //! cancel-drain-finalize lifecycle for all long-running product operations. This
@@ -32,6 +33,8 @@ pub const DEFAULT_DRAIN_TIMEOUT_MS: u64 = 30_000;
 
 /// Minimum drain timeout in milliseconds.
 pub const MIN_DRAIN_TIMEOUT_MS: u64 = 500;
+
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
 
 // ---------------------------------------------------------------------------
 // Invariant constants
@@ -439,6 +442,10 @@ impl CancellationRuntime {
         }
     }
 
+    fn emit_audit(&mut self, event: CancellableTaskAuditEvent) {
+        push_bounded(&mut self.audit_log, event, MAX_AUDIT_LOG_ENTRIES);
+    }
+
     /// Register a new cancellable task.
     /// Emits FN-CX-001.
     pub fn register_task(
@@ -486,7 +493,7 @@ impl CancellationRuntime {
             trace_id: trace_id.to_string(),
         };
 
-        self.audit_log.push(CancellableTaskAuditEvent {
+        self.emit_audit(CancellableTaskAuditEvent {
             event_code: event_codes::FN_CX_001.to_string(),
             task_id: task_id.to_string(),
             from_phase: TaskPhase::Running,
@@ -594,7 +601,7 @@ impl CancellationRuntime {
         entry.phase = TaskPhase::CancelRequested;
         entry.cancel_requested_ms = Some(timestamp_ms);
 
-        self.audit_log.push(CancellableTaskAuditEvent {
+        self.emit_audit(CancellableTaskAuditEvent {
             event_code: event_codes::FN_CX_002.to_string(),
             task_id: task_id.to_string(),
             from_phase: from,
@@ -613,7 +620,7 @@ impl CancellationRuntime {
                 child.phase = TaskPhase::CancelRequested;
                 child.cancel_requested_ms = Some(timestamp_ms);
 
-                self.audit_log.push(CancellableTaskAuditEvent {
+                self.emit_audit(CancellableTaskAuditEvent {
                     event_code: event_codes::FN_CX_009.to_string(),
                     task_id: child_id.clone(),
                     from_phase: TaskPhase::Running,
@@ -667,7 +674,7 @@ impl CancellationRuntime {
         entry.phase = TaskPhase::Draining;
         entry.drain_started_ms = Some(timestamp_ms);
 
-        self.audit_log.push(CancellableTaskAuditEvent {
+        self.emit_audit(CancellableTaskAuditEvent {
             event_code: event_codes::FN_CX_003.to_string(),
             task_id: task_id.to_string(),
             from_phase: from,
@@ -738,7 +745,7 @@ impl CancellationRuntime {
         entry.drain_completed_ms = Some(timestamp_ms);
         entry.drain_result = Some(effective_result);
 
-        self.audit_log.push(CancellableTaskAuditEvent {
+        self.emit_audit(CancellableTaskAuditEvent {
             event_code: event_code.to_string(),
             task_id: task_id.to_string(),
             from_phase: from,
@@ -815,7 +822,7 @@ impl CancellationRuntime {
         entry.phase = TaskPhase::Finalizing;
         entry.finalize_started_ms = Some(timestamp_ms);
 
-        self.audit_log.push(CancellableTaskAuditEvent {
+        self.emit_audit(CancellableTaskAuditEvent {
             event_code: event_codes::FN_CX_006.to_string(),
             task_id: task_id.to_string(),
             from_phase: from,
@@ -835,7 +842,7 @@ impl CancellationRuntime {
                 .map(|o| o.obligation_id.clone())
                 .collect();
 
-            self.audit_log.push(CancellableTaskAuditEvent {
+            self.emit_audit(CancellableTaskAuditEvent {
                 event_code: event_codes::FN_CX_010.to_string(),
                 task_id: task_id.to_string(),
                 from_phase: TaskPhase::Finalizing,
@@ -886,7 +893,7 @@ impl CancellationRuntime {
         entry.finalize_completed_ms = Some(timestamp_ms);
         entry.finalize_record = Some(record.clone());
 
-        self.audit_log.push(CancellableTaskAuditEvent {
+        self.emit_audit(CancellableTaskAuditEvent {
             event_code: event_codes::FN_CX_007.to_string(),
             task_id: task_id.to_string(),
             from_phase: TaskPhase::Finalizing,
@@ -898,7 +905,7 @@ impl CancellationRuntime {
         });
 
         // INV-CXT-LANE-RELEASE
-        self.audit_log.push(CancellableTaskAuditEvent {
+        self.emit_audit(CancellableTaskAuditEvent {
             event_code: event_codes::FN_CX_008.to_string(),
             task_id: task_id.to_string(),
             from_phase: TaskPhase::Finalized,
@@ -965,6 +972,14 @@ impl Default for CancellationRuntime {
 }
 
 // ===========================================================================
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
+    }
+}
+
 // Tests
 // ===========================================================================
 

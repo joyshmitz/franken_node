@@ -7,6 +7,8 @@ use std::collections::BTreeMap;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 // ── Schema ──────────────────────────────────────────────────────────
 pub const SCHEMA_VERSION: &str = "verification-state-v1.0";
 
@@ -163,6 +165,10 @@ impl VerificationStateManager {
         }
     }
 
+    fn emit_audit(&mut self, entry: StateAuditEntry) {
+        push_bounded(&mut self.audit_log, entry, MAX_AUDIT_LOG_ENTRIES);
+    }
+
     pub fn register_entity(&mut self, entity_id: &str) {
         self.states.insert(
             entity_id.into(),
@@ -194,7 +200,7 @@ impl VerificationStateManager {
         &mut self,
         req: &TransitionRequest,
     ) -> Result<TransitionResult, VefStateError> {
-        self.audit_log.push(StateAuditEntry {
+        self.emit_audit(StateAuditEntry {
             event_code: VEF_STATE_TRANSITION_REQUESTED.into(),
             entity_id: req.entity_id.clone(),
             detail: format!("target={:?}", req.target_risk_level),
@@ -211,7 +217,7 @@ impl VerificationStateManager {
         if req.target_risk_level > state.current_risk_level {
             match &state.proof {
                 None => {
-                    self.audit_log.push(StateAuditEntry {
+                    self.emit_audit(StateAuditEntry {
                         event_code: VEF_STATE_TRANSITION_BLOCKED.into(),
                         entity_id: req.entity_id.clone(),
                         detail: ERR_VEF_STATE_NO_PROOF.into(),
@@ -222,7 +228,7 @@ impl VerificationStateManager {
                 }
                 Some(proof) if !proof.is_fresh(req.requested_at_epoch) => {
                     let age = req.requested_at_epoch.saturating_sub(proof.verified_at_epoch);
-                    self.audit_log.push(StateAuditEntry {
+                    self.emit_audit(StateAuditEntry {
                         event_code: VEF_STATE_TRANSITION_BLOCKED.into(),
                         entity_id: req.entity_id.clone(),
                         detail: ERR_VEF_STATE_STALE_PROOF.into(),
@@ -246,7 +252,7 @@ impl VerificationStateManager {
         state.current_risk_level = req.target_risk_level;
         state.transition_count = state.transition_count.saturating_add(1);
 
-        self.audit_log.push(StateAuditEntry {
+        self.emit_audit(StateAuditEntry {
             event_code: VEF_STATE_TRANSITION_APPROVED.into(),
             entity_id: req.entity_id.clone(),
             detail: format!("now={:?}", req.target_risk_level),
@@ -268,7 +274,7 @@ impl VerificationStateManager {
 
         // Risk level check
         if req.required_risk_level > state.current_risk_level {
-            self.audit_log.push(StateAuditEntry {
+            self.emit_audit(StateAuditEntry {
                 event_code: VEF_STATE_ACTION_DENIED.into(),
                 entity_id: req.entity_id.clone(),
                 detail: format!(
@@ -288,7 +294,7 @@ impl VerificationStateManager {
         if req.required_risk_level >= RiskLevel::High {
             match &state.proof {
                 None => {
-                    self.audit_log.push(StateAuditEntry {
+                    self.emit_audit(StateAuditEntry {
                         event_code: VEF_STATE_ACTION_DENIED.into(),
                         entity_id: req.entity_id.clone(),
                         detail: "no proof for high-risk action".into(),
@@ -308,7 +314,7 @@ impl VerificationStateManager {
             }
         }
 
-        self.audit_log.push(StateAuditEntry {
+        self.emit_audit(StateAuditEntry {
             event_code: VEF_STATE_ACTION_AUTHORIZED.into(),
             entity_id: req.entity_id.clone(),
             detail: req.action.clone(),
@@ -329,6 +335,14 @@ impl VerificationStateManager {
 impl Default for VerificationStateManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
     }
 }
 

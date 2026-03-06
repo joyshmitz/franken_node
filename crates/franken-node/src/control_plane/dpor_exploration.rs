@@ -391,6 +391,11 @@ impl fmt::Display for DporError {
     }
 }
 
+/// Maximum audit log entries before oldest-first eviction.
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+/// Maximum exploration results before oldest-first eviction.
+const MAX_RESULTS: usize = 4096;
+
 /// The DPOR schedule exploration framework.
 pub struct DporExplorer {
     models: BTreeMap<String, ProtocolModel>,
@@ -451,6 +456,10 @@ impl DporExplorer {
             timestamp_ms: 0,
             schema_version: SCHEMA_VERSION.to_string(),
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
 
         // Generate valid linearizations respecting dependencies
         let schedules = self.generate_linearizations(model);
@@ -519,8 +528,16 @@ impl DporExplorer {
             timestamp_ms: 0,
             schema_version: SCHEMA_VERSION.to_string(),
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
 
         self.results.push(result.clone());
+        if self.results.len() > MAX_RESULTS {
+            let overflow = self.results.len() - MAX_RESULTS;
+            self.results.drain(0..overflow);
+        }
         Ok(result)
     }
 

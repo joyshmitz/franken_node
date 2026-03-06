@@ -24,6 +24,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -598,6 +600,10 @@ impl ZoneSegmentationEngine {
             detail: detail.to_string(),
             trace_id: format!("trace-{}", self.events.len()),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 
     // -- Report / gate pass -------------------------------------------------

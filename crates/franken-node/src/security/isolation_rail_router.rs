@@ -42,6 +42,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -489,6 +491,7 @@ impl RailRouter {
             rail: Some(target_rail),
             target_rail: None,
         });
+        self.trim_events();
 
         Ok(placement)
     }
@@ -553,6 +556,7 @@ impl RailRouter {
             rail: Some(current_rail),
             target_rail: Some(target_rail),
         });
+        self.trim_events();
 
         // INV-ISOLATION-POLICY-CONTINUITY: verify all current rules are
         // preserved in the target rail policy.
@@ -572,6 +576,7 @@ impl RailRouter {
             rail: Some(current_rail),
             target_rail: Some(target_rail),
         });
+        self.trim_events();
 
         // Mesh partition check.
         if self.config.partition_check_enabled {
@@ -597,6 +602,7 @@ impl RailRouter {
             rail: Some(target_rail),
             target_rail: None,
         });
+        self.trim_events();
 
         Ok(updated)
     }
@@ -631,6 +637,7 @@ impl RailRouter {
             rail: Some(placement.rail),
             target_rail: None,
         });
+        self.trim_events();
 
         // INV-ISOLATION-BUDGET-BOUND
         if placement.budget_exceeded() {
@@ -671,6 +678,13 @@ impl RailRouter {
     /// Get the current placement for a workload.
     pub fn get_placement(&self, workload_id: &str) -> Option<&Placement> {
         self.placements.get(workload_id)
+    }
+
+    fn trim_events(&mut self) {
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 
     /// Generate a mesh profile report (used by the check script).

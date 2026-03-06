@@ -56,6 +56,8 @@ pub mod invariants {
     pub const INV_BSV_GATED: &str = "INV-BSV-GATED";
 }
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Semantic version
 // ---------------------------------------------------------------------------
@@ -615,6 +617,10 @@ impl BenchmarkVersioning {
             trace_id: trace_id.to_string(),
             details,
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 

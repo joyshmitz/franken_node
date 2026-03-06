@@ -7,6 +7,9 @@ use std::collections::BTreeMap;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+// ── Capacity limits ─────────────────────────────────────────────────
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 // ── Schema ──────────────────────────────────────────────────────────
 pub const SCHEMA_VERSION: &str = "evidence-capsule-v1.0";
 
@@ -273,6 +276,10 @@ impl VerifierRegistry {
             "{}: capsule={} target={}",
             EVIDENCE_CAPSULE_EXPORTED, capsule.capsule_id, target
         ));
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
 
         Ok(ExportManifest {
             capsule_id: capsule.capsule_id.clone(),

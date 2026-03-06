@@ -10,6 +10,8 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
+const MAX_EVENTS: usize = 4096;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -710,6 +712,10 @@ fn classify_events(report: &ChainValidityReport) -> Vec<ProvenanceEventCode> {
 fn push_unique_event(events: &mut Vec<ProvenanceEventCode>, event: ProvenanceEventCode) {
     if !events.contains(&event) {
         events.push(event);
+        if events.len() > MAX_EVENTS {
+            let overflow = events.len() - MAX_EVENTS;
+            events.drain(0..overflow);
+        }
     }
 }
 

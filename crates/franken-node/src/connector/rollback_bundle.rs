@@ -12,6 +12,8 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt;
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -529,7 +531,7 @@ impl BundleStore {
         self.events
             .push(event_codes::RRB_001_BUNDLE_CREATED.to_string());
 
-        self.audit_log.push(RollbackAuditEntry {
+        self.emit_audit(RollbackAuditEntry {
             timestamp: timestamp.to_string(),
             event_code: event_codes::RRB_001_BUNDLE_CREATED.to_string(),
             bundle_hash: integrity_hash,
@@ -560,7 +562,7 @@ impl BundleStore {
         if let Err(e) = bundle.verify_integrity() {
             self.events
                 .push(event_codes::RRB_004_ROLLBACK_FAILED.to_string());
-            self.audit_log.push(RollbackAuditEntry {
+            self.emit_audit(RollbackAuditEntry {
                 timestamp: timestamp.to_string(),
                 event_code: event_codes::RRB_004_ROLLBACK_FAILED.to_string(),
                 bundle_hash: bundle.integrity_hash.clone(),
@@ -687,7 +689,7 @@ impl BundleStore {
         if all_health_pass {
             self.events
                 .push(event_codes::RRB_003_ROLLBACK_COMPLETED.to_string());
-            self.audit_log.push(RollbackAuditEntry {
+            self.emit_audit(RollbackAuditEntry {
                 timestamp: timestamp.to_string(),
                 event_code: event_codes::RRB_003_ROLLBACK_COMPLETED.to_string(),
                 bundle_hash: bundle.integrity_hash.clone(),
@@ -707,7 +709,7 @@ impl BundleStore {
             }
             self.events
                 .push(event_codes::RRB_004_ROLLBACK_FAILED.to_string());
-            self.audit_log.push(RollbackAuditEntry {
+            self.emit_audit(RollbackAuditEntry {
                 timestamp: timestamp.to_string(),
                 event_code: event_codes::RRB_004_ROLLBACK_FAILED.to_string(),
                 bundle_hash: bundle.integrity_hash.clone(),
@@ -754,6 +756,10 @@ impl BundleStore {
                 break;
             }
         }
+    }
+
+    fn emit_audit(&mut self, entry: RollbackAuditEntry) {
+        push_bounded(&mut self.audit_log, entry, MAX_AUDIT_LOG_ENTRIES);
     }
 }
 
@@ -820,6 +826,14 @@ impl RollbackResult {
     /// Convert to structured JSON report.
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
+    }
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
     }
 }
 

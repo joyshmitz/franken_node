@@ -282,6 +282,9 @@ struct DegradedContext {
     stabilization_target: Option<VefMode>,
 }
 
+/// Maximum audit log entries before oldest-first eviction.
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 /// The VEF degraded-mode policy engine.
 ///
 /// INV-VEF-DM-DETERMINISTIC: identical metric sequences produce identical
@@ -302,6 +305,14 @@ impl VefDegradedModeEngine {
             mode: VefMode::Normal,
             context: None,
             audit_log: Vec::new(),
+        }
+    }
+
+    fn push_audit_event(&mut self, event: VefDegradedModeEvent) {
+        self.audit_log.push(event);
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
         }
     }
 
@@ -445,19 +456,18 @@ impl VefDegradedModeEngine {
             self.find_breach_details(target, metrics);
 
         // Emit SLO breach event
-        self.audit_log
-            .push(VefDegradedModeEvent::SloBreach(VefSloBreachEvent {
-                event_code: VEF_DEGRADE_002.to_string(),
-                timestamp_secs: now_secs,
-                metric_name: triggering_metric.to_string(),
-                observed_value: metric_value,
-                threshold: slo_threshold,
-                tier: target,
-                correlation_id: correlation_id.to_string(),
-            }));
+        self.push_audit_event(VefDegradedModeEvent::SloBreach(VefSloBreachEvent {
+            event_code: VEF_DEGRADE_002.to_string(),
+            timestamp_secs: now_secs,
+            metric_name: triggering_metric.to_string(),
+            observed_value: metric_value,
+            threshold: slo_threshold,
+            tier: target,
+            correlation_id: correlation_id.to_string(),
+        }));
 
         // Emit mode transition event
-        self.audit_log.push(VefDegradedModeEvent::ModeTransition(
+        self.push_audit_event(VefDegradedModeEvent::ModeTransition(
             VefModeTransitionEvent {
                 event_code: VEF_DEGRADE_001.to_string(),
                 timestamp_secs: now_secs,
@@ -516,7 +526,7 @@ impl VefDegradedModeEngine {
                 // Start stabilization window
                 ctx.stabilization_started_at_secs = Some(now_secs);
                 ctx.stabilization_target = Some(next_down);
-                self.audit_log.push(VefDegradedModeEvent::RecoveryInitiated(
+                self.push_audit_event(VefDegradedModeEvent::RecoveryInitiated(
                     VefRecoveryInitiatedEvent {
                         event_code: VEF_DEGRADE_003.to_string(),
                         timestamp_secs: now_secs,
@@ -532,7 +542,7 @@ impl VefDegradedModeEngine {
                     let duration = now_secs.saturating_sub(ctx.entered_at_secs);
                     let actions_affected = ctx.actions_affected;
 
-                    self.audit_log.push(VefDegradedModeEvent::RecoveryComplete(
+                    self.push_audit_event(VefDegradedModeEvent::RecoveryComplete(
                         VefRecoveryReceipt {
                             event_code: VEF_DEGRADE_004.to_string(),
                             timestamp_secs: now_secs,
@@ -555,7 +565,7 @@ impl VefDegradedModeEngine {
                         0.0_f64,
                         self.config.stabilization_window_secs as f64,
                     );
-                    self.audit_log.push(VefDegradedModeEvent::ModeTransition(
+                    self.push_audit_event(VefDegradedModeEvent::ModeTransition(
                         VefModeTransitionEvent {
                             event_code: VEF_DEGRADE_001.to_string(),
                             timestamp_secs: now_secs,

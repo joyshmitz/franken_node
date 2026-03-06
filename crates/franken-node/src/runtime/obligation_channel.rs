@@ -22,6 +22,8 @@ use serde::{Deserialize, Serialize};
 /// Schema version for the obligation channel protocol.
 pub const SCHEMA_VERSION: &str = "och-v1.0";
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 /// Default deadline in milliseconds for channel obligations.
 pub const DEFAULT_DEADLINE_MS: u64 = 30_000;
 
@@ -248,6 +250,14 @@ pub struct ObligationChannel<T: Clone + Serialize> {
 }
 
 impl<T: Clone + Serialize> ObligationChannel<T> {
+    fn emit_audit(&mut self, record: ChannelAuditRecord) {
+        self.audit_log.push(record);
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
+    }
+
     /// Create a new channel with defaults.
     #[must_use]
     pub fn new(channel_id: &str) -> Self {
@@ -286,7 +296,7 @@ impl<T: Clone + Serialize> ObligationChannel<T> {
             schema_version: SCHEMA_VERSION.to_string(),
         };
 
-        self.audit_log.push(ChannelAuditRecord {
+        self.emit_audit(ChannelAuditRecord {
             event_code: event_codes::FN_OB_001.to_string(),
             obligation_id: obligation_id.clone(),
             status: "Created".to_string(),
@@ -295,7 +305,7 @@ impl<T: Clone + Serialize> ObligationChannel<T> {
             detail: "obligation created and queued".to_string(),
         });
 
-        self.audit_log.push(ChannelAuditRecord {
+        self.emit_audit(ChannelAuditRecord {
             event_code: event_codes::FN_OB_002.to_string(),
             obligation_id: obligation_id.clone(),
             status: "Created".to_string(),
@@ -340,7 +350,7 @@ impl<T: Clone + Serialize> ObligationChannel<T> {
         entry.0.status = ObligationStatus::Fulfilled;
         entry.0.resolved_at_ms = Some(now_ms);
 
-        self.audit_log.push(ChannelAuditRecord {
+        self.emit_audit(ChannelAuditRecord {
             event_code: event_codes::FN_OB_003.to_string(),
             obligation_id: obligation_id.to_string(),
             status: "Fulfilled".to_string(),
@@ -384,7 +394,7 @@ impl<T: Clone + Serialize> ObligationChannel<T> {
         entry.0.status = ObligationStatus::Rejected;
         entry.0.resolved_at_ms = Some(now_ms);
 
-        self.audit_log.push(ChannelAuditRecord {
+        self.emit_audit(ChannelAuditRecord {
             event_code: event_codes::FN_OB_004.to_string(),
             obligation_id: obligation_id.to_string(),
             status: "Rejected".to_string(),
@@ -416,7 +426,7 @@ impl<T: Clone + Serialize> ObligationChannel<T> {
         entry.0.status = ObligationStatus::Cancelled;
         entry.0.resolved_at_ms = Some(now_ms);
 
-        self.audit_log.push(ChannelAuditRecord {
+        self.emit_audit(ChannelAuditRecord {
             event_code: event_codes::FN_OB_006.to_string(),
             obligation_id: obligation_id.to_string(),
             status: "Cancelled".to_string(),
@@ -440,7 +450,7 @@ impl<T: Clone + Serialize> ObligationChannel<T> {
         }
 
         for id in &timed_out {
-            self.audit_log.push(ChannelAuditRecord {
+            self.emit_audit(ChannelAuditRecord {
                 event_code: event_codes::FN_OB_005.to_string(),
                 obligation_id: id.clone(),
                 status: "TimedOut".to_string(),
@@ -497,6 +507,14 @@ pub struct ObligationLedger {
 }
 
 impl ObligationLedger {
+    fn emit_audit(&mut self, record: ChannelAuditRecord) {
+        self.audit_log.push(record);
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
+    }
+
     /// Create an empty ledger.
     #[must_use]
     pub fn new() -> Self {
@@ -509,7 +527,7 @@ impl ObligationLedger {
     /// Record an obligation in the ledger. INV-OCH-TRACKED
     pub fn record(&mut self, obligation: ChannelObligation) {
         let id = obligation.obligation_id.clone();
-        self.audit_log.push(ChannelAuditRecord {
+        self.emit_audit(ChannelAuditRecord {
             event_code: event_codes::FN_OB_001.to_string(),
             obligation_id: id.clone(),
             status: obligation.status.to_string(),
@@ -536,7 +554,7 @@ impl ObligationLedger {
         obligation.status = status;
         obligation.resolved_at_ms = Some(now_ms);
 
-        self.audit_log.push(ChannelAuditRecord {
+        self.emit_audit(ChannelAuditRecord {
             event_code: event_codes::FN_OB_003.to_string(),
             obligation_id: obligation_id.to_string(),
             status: status.to_string(),
@@ -646,6 +664,14 @@ pub struct TwoPhaseFlow {
 }
 
 impl TwoPhaseFlow {
+    fn emit_flow_audit(&mut self, record: ChannelAuditRecord) {
+        self.flow_audit_log.push(record);
+        if self.flow_audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.flow_audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.flow_audit_log.drain(0..overflow);
+        }
+    }
+
     /// Create a new two-phase flow.
     #[must_use]
     pub fn new(flow_id: &str) -> Self {
@@ -671,7 +697,7 @@ impl TwoPhaseFlow {
     ///
     /// Verifies all obligations are in Created state and marks the flow as prepared.
     pub fn prepare(&mut self, now_ms: u64, trace_id: &str) -> PrepareResult {
-        self.flow_audit_log.push(ChannelAuditRecord {
+        self.emit_flow_audit(ChannelAuditRecord {
             event_code: event_codes::FN_OB_007.to_string(),
             obligation_id: String::new(),
             status: "Preparing".to_string(),
@@ -726,7 +752,7 @@ impl TwoPhaseFlow {
 
         self.prepared = true;
 
-        self.flow_audit_log.push(ChannelAuditRecord {
+        self.emit_flow_audit(ChannelAuditRecord {
             event_code: event_codes::FN_OB_008.to_string(),
             obligation_id: String::new(),
             status: "Prepared".to_string(),
@@ -794,7 +820,7 @@ impl TwoPhaseFlow {
 
         self.committed = true;
 
-        self.flow_audit_log.push(ChannelAuditRecord {
+        self.emit_flow_audit(ChannelAuditRecord {
             event_code: event_codes::FN_OB_009.to_string(),
             obligation_id: String::new(),
             status: "Committed".to_string(),
@@ -833,7 +859,7 @@ impl TwoPhaseFlow {
                     self.ledger
                         .update_status(id, ObligationStatus::Cancelled, now_ms, trace_id)
             {
-                self.flow_audit_log.push(ChannelAuditRecord {
+                self.emit_flow_audit(ChannelAuditRecord {
                     event_code: event_codes::FN_OB_010.to_string(),
                     obligation_id: id.clone(),
                     status: "RollbackCancelFailed".to_string(),
@@ -846,7 +872,7 @@ impl TwoPhaseFlow {
 
         self.rolled_back = true;
 
-        self.flow_audit_log.push(ChannelAuditRecord {
+        self.emit_flow_audit(ChannelAuditRecord {
             event_code: event_codes::FN_OB_010.to_string(),
             obligation_id: String::new(),
             status: "RolledBack".to_string(),

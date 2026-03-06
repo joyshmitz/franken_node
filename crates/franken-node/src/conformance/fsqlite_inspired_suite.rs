@@ -274,6 +274,13 @@ impl fmt::Display for ConformanceError {
     }
 }
 
+/// Maximum fixtures before oldest-first eviction.
+const MAX_CONFORMANCE_FIXTURES: usize = 4096;
+/// Maximum test results before oldest-first eviction.
+const MAX_CONFORMANCE_RESULTS: usize = 4096;
+/// Maximum audit log entries before oldest-first eviction.
+const MAX_CONFORMANCE_AUDIT_LOG: usize = 4096;
+
 /// The conformance suite runner.
 pub struct ConformanceSuiteRunner {
     fixtures: Vec<ConformanceFixture>,
@@ -293,6 +300,30 @@ impl ConformanceSuiteRunner {
         }
     }
 
+    fn push_fixture(&mut self, fixture: ConformanceFixture) {
+        self.fixtures.push(fixture);
+        if self.fixtures.len() > MAX_CONFORMANCE_FIXTURES {
+            let overflow = self.fixtures.len() - MAX_CONFORMANCE_FIXTURES;
+            self.fixtures.drain(0..overflow);
+        }
+    }
+
+    fn push_result(&mut self, record: ConformanceTestRecord) {
+        self.results.push(record);
+        if self.results.len() > MAX_CONFORMANCE_RESULTS {
+            let overflow = self.results.len() - MAX_CONFORMANCE_RESULTS;
+            self.results.drain(0..overflow);
+        }
+    }
+
+    fn push_audit(&mut self, record: ConformanceAuditRecord) {
+        self.audit_log.push(record);
+        if self.audit_log.len() > MAX_CONFORMANCE_AUDIT_LOG {
+            let overflow = self.audit_log.len() - MAX_CONFORMANCE_AUDIT_LOG;
+            self.audit_log.drain(0..overflow);
+        }
+    }
+
     /// Register a fixture. Returns error if ID already registered.
     /// INV-CONF-STABLE-IDS
     pub fn register_fixture(
@@ -304,7 +335,7 @@ impl ConformanceSuiteRunner {
             return Err(ConformanceError::DuplicateId { id: id_str });
         }
         self.id_registry.insert(id_str, true);
-        self.fixtures.push(fixture);
+        self.push_fixture(fixture);
         Ok(())
     }
 
@@ -327,7 +358,7 @@ impl ConformanceSuiteRunner {
 
     /// Record a test result.
     pub fn record_result(&mut self, record: ConformanceTestRecord) {
-        self.results.push(record);
+        self.push_result(record);
     }
 
     /// Run all registered fixtures using the provided test function.
@@ -335,7 +366,7 @@ impl ConformanceSuiteRunner {
     where
         F: Fn(&ConformanceFixture) -> ConformanceTestResult,
     {
-        self.audit_log.push(ConformanceAuditRecord {
+        self.push_audit(ConformanceAuditRecord {
             event_code: event_codes::CONFORMANCE_SUITE_START.to_string(),
             conformance_id: String::new(),
             domain: String::new(),
@@ -368,7 +399,7 @@ impl ConformanceSuiteRunner {
                 event_codes::CONFORMANCE_TEST_FAIL
             };
 
-            self.audit_log.push(ConformanceAuditRecord {
+            self.push_audit(ConformanceAuditRecord {
                 event_code: event_code.to_string(),
                 conformance_id: fixture.conformance_id.to_string(),
                 domain: fixture.domain.to_string(),
@@ -378,7 +409,7 @@ impl ConformanceSuiteRunner {
                 schema_version: SCHEMA_VERSION.to_string(),
             });
 
-            self.results.push(ConformanceTestRecord {
+            self.push_result(ConformanceTestRecord {
                 conformance_id: fixture.conformance_id.clone(),
                 domain: fixture.domain,
                 description: fixture.description.clone(),
@@ -389,7 +420,7 @@ impl ConformanceSuiteRunner {
 
         let release_eligible = fail_count == 0;
 
-        self.audit_log.push(ConformanceAuditRecord {
+        self.push_audit(ConformanceAuditRecord {
             event_code: event_codes::CONFORMANCE_SUITE_COMPLETE.to_string(),
             conformance_id: String::new(),
             domain: String::new(),

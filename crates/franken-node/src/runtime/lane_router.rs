@@ -29,6 +29,7 @@ pub mod error_codes {
 
 const MAX_OPERATION_ID_LEN: usize = 256;
 const MAX_QUEUE_WAIT_SAMPLES: usize = 1024;
+const MAX_EVENTS: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ProductLane {
@@ -410,6 +411,10 @@ impl LaneRouter {
         &self.events
     }
 
+    fn emit_event(&mut self, event: LaneEvent) {
+        push_bounded(&mut self.events, event, MAX_EVENTS);
+    }
+
     #[must_use]
     pub fn unknown_lane_default_count(&self) -> u64 {
         self.unknown_lane_default_count
@@ -545,7 +550,7 @@ impl LaneRouter {
         }
 
         if let Some(detail) = saturated_detail {
-            self.events.push(LaneEvent {
+            self.emit_event(LaneEvent {
                 event_code: event_codes::LANE_SATURATED.to_string(),
                 operation_id: operation_id.to_string(),
                 lane_name: lane.as_str().to_string(),
@@ -593,7 +598,7 @@ impl LaneRouter {
             },
         );
 
-        self.events.push(LaneEvent {
+        self.emit_event(LaneEvent {
             event_code: event_codes::LANE_ASSIGNED.to_string(),
             operation_id: operation_id.to_string(),
             lane_name: lane.as_str().to_string(),
@@ -657,7 +662,7 @@ impl LaneRouter {
                 .or_insert_with(|| LaneState::new(*lane));
         }
 
-        self.events.push(LaneEvent {
+        self.emit_event(LaneEvent {
             event_code: event_codes::LANE_CONFIG_RELOAD.to_string(),
             operation_id: "config-reload".to_string(),
             lane_name: "all".to_string(),
@@ -708,7 +713,7 @@ impl LaneRouter {
                     return lane;
                 }
                 self.unknown_lane_default_count = self.unknown_lane_default_count.saturating_add(1);
-                self.events.push(LaneEvent {
+                self.emit_event(LaneEvent {
                     event_code: event_codes::LANE_DEFAULTED_BACKGROUND.to_string(),
                     operation_id: operation_id.to_string(),
                     lane_name: ProductLane::Background.as_str().to_string(),
@@ -720,7 +725,7 @@ impl LaneRouter {
                 return ProductLane::Background;
             }
             self.unknown_lane_default_count = self.unknown_lane_default_count.saturating_add(1);
-            self.events.push(LaneEvent {
+            self.emit_event(LaneEvent {
                 event_code: event_codes::LANE_DEFAULTED_BACKGROUND.to_string(),
                 operation_id: operation_id.to_string(),
                 lane_name: ProductLane::Background.as_str().to_string(),
@@ -746,7 +751,7 @@ impl LaneRouter {
         }
 
         self.unknown_lane_default_count = self.unknown_lane_default_count.saturating_add(1);
-        self.events.push(LaneEvent {
+        self.emit_event(LaneEvent {
             event_code: event_codes::LANE_DEFAULTED_BACKGROUND.to_string(),
             operation_id: operation_id.to_string(),
             lane_name: ProductLane::Background.as_str().to_string(),
@@ -786,7 +791,7 @@ impl LaneRouter {
                     let lane_state = self.lane_state_mut(lane)?;
                     lane_state.metrics.rejected = lane_state.metrics.rejected.saturating_add(1);
                 }
-                self.events.push(LaneEvent {
+                self.emit_event(LaneEvent {
                     event_code: event_codes::BULKHEAD_OVERLOAD.to_string(),
                     operation_id: operation_id.to_string(),
                     lane_name: lane.as_str().to_string(),
@@ -920,7 +925,7 @@ impl LaneRouter {
                     },
                 );
 
-                self.events.push(LaneEvent {
+                self.emit_event(LaneEvent {
                     event_code: event_codes::LANE_ASSIGNED.to_string(),
                     operation_id: queued_operation_id,
                     lane_name: lane.as_str().to_string(),
@@ -961,6 +966,14 @@ fn map_bulkhead_err(err: BulkheadError) -> LaneRouterError {
             ),
         },
         BulkheadError::InvalidConfig { detail } => LaneRouterError::InvalidConfig { detail },
+    }
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
     }
 }
 

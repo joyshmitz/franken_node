@@ -29,6 +29,9 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+const MAX_REPORTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -567,6 +570,10 @@ impl MigrationKitEcosystem {
         );
 
         self.reports.push(report.clone());
+        if self.reports.len() > MAX_REPORTS {
+            let overflow = self.reports.len() - MAX_REPORTS;
+            self.reports.drain(0..overflow);
+        }
         Ok(report)
     }
 
@@ -599,6 +606,10 @@ impl MigrationKitEcosystem {
             trace_id: trace_id.to_string(),
             details,
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 //! bd-26mk: Security staking and slashing framework for publisher trust governance.
+//! bd-1xbr: Bounded audit_log capacity with oldest-first eviction.
 //!
 //! High-risk capabilities enforce stake policy gates; validated malicious behaviour
 //! triggers a deterministic slashing workflow with appeal/audit trail artifacts.
@@ -459,6 +460,8 @@ impl fmt::Display for StakingError {
 // TrustGovernanceState
 // ---------------------------------------------------------------------------
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 /// Top-level state holding all stakes, slash events, appeals, and audit trail.
 ///
 /// Uses `BTreeMap` for deterministic ordering throughout.
@@ -530,7 +533,7 @@ impl TrustGovernanceState {
         outcome: &str,
     ) {
         // INV-STAKE-AUDIT-COMPLETE: every state transition produces an audit entry
-        self.audit_log.push(StakingAuditEntry {
+        let entry = StakingAuditEntry {
             event_code: event_code.to_string(),
             timestamp: self.current_time,
             publisher: publisher.to_string(),
@@ -538,7 +541,8 @@ impl TrustGovernanceState {
             description: description.to_string(),
             evidence_hash: evidence_hash.to_string(),
             outcome: outcome.to_string(),
-        });
+        };
+        push_bounded(&mut self.audit_log, entry, MAX_AUDIT_LOG_ENTRIES);
     }
 
     // -- deposit_stake ------------------------------------------------------
@@ -1077,6 +1081,14 @@ pub mod invariants {
     pub const INV_STAKE_AUDIT_COMPLETE: &str = "INV-STAKE-AUDIT-COMPLETE";
     pub const INV_STAKE_NO_DOUBLE_SLASH: &str = "INV-STAKE-NO-DOUBLE-SLASH";
     pub const INV_STAKE_WITHDRAWAL_SAFE: &str = "INV-STAKE-WITHDRAWAL-SAFE";
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
+    }
 }
 
 // ===========================================================================

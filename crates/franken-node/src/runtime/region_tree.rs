@@ -31,6 +31,9 @@ use std::fmt;
 // Schema version
 // ---------------------------------------------------------------------------
 
+/// Maximum number of events before oldest-first eviction.
+const MAX_EVENT_LOG_ENTRIES: usize = 4096;
+
 /// Schema version for region tree exports.
 pub const SCHEMA_VERSION: &str = "region-v1.0";
 
@@ -350,6 +353,7 @@ impl RegionTree {
             timestamp_ms,
         };
         self.event_log.push(event.clone());
+        self.enforce_event_log_capacity();
         Ok(event)
     }
 
@@ -404,6 +408,7 @@ impl RegionTree {
             timestamp_ms,
         };
         self.event_log.push(open_event);
+        self.enforce_event_log_capacity();
 
         // Emit REG-007 for the parent
         let attach_event = RegionEvent {
@@ -416,6 +421,7 @@ impl RegionTree {
             timestamp_ms,
         };
         self.event_log.push(attach_event.clone());
+        self.enforce_event_log_capacity();
         Ok(attach_event)
     }
 
@@ -452,6 +458,7 @@ impl RegionTree {
             timestamp_ms,
         };
         self.event_log.push(event.clone());
+        self.enforce_event_log_capacity();
         Ok(event)
     }
 
@@ -481,6 +488,7 @@ impl RegionTree {
             timestamp_ms,
         };
         self.event_log.push(event.clone());
+        self.enforce_event_log_capacity();
         Ok(event)
     }
 
@@ -555,6 +563,7 @@ impl RegionTree {
             timestamp_ms,
         };
         self.event_log.push(drain_start_event.clone());
+        self.enforce_event_log_capacity();
         all_events.push(drain_start_event);
 
         // Step 4: Simulate drain — in a real system this would await task completion.
@@ -582,6 +591,7 @@ impl RegionTree {
                 timestamp_ms: timestamp_ms + drain_budget_ms,
             };
             self.event_log.push(force_event.clone());
+            self.enforce_event_log_capacity();
             all_events.push(force_event);
 
             // Clear tasks
@@ -608,6 +618,7 @@ impl RegionTree {
             },
         };
         self.event_log.push(drain_done_event.clone());
+        self.enforce_event_log_capacity();
         all_events.push(drain_done_event);
 
         // Step 6: Mark closed
@@ -634,6 +645,7 @@ impl RegionTree {
             },
         };
         self.event_log.push(close_event.clone());
+        self.enforce_event_log_capacity();
         all_events.push(close_event);
 
         Ok(all_events)
@@ -671,6 +683,7 @@ impl RegionTree {
             timestamp_ms,
         };
         self.event_log.push(event.clone());
+        self.enforce_event_log_capacity();
         Ok(event)
     }
 
@@ -733,6 +746,14 @@ impl RegionTree {
             });
         }
         Ok(RegionHandle::new(region_id.clone()))
+    }
+
+    /// Enforce event log capacity after each push.
+    fn enforce_event_log_capacity(&mut self) {
+        if self.event_log.len() > MAX_EVENT_LOG_ENTRIES {
+            let overflow = self.event_log.len() - MAX_EVENT_LOG_ENTRIES;
+            self.event_log.drain(0..overflow);
+        }
     }
 
     /// Set drain budget for a specific region.

@@ -22,6 +22,9 @@ use crate::security::constant_time::ct_eq;
 // Event codes (structured logging)
 // ---------------------------------------------------------------------------
 
+/// Maximum number of audit log entries before oldest-first eviction.
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 /// Stable event codes for DGIS barrier enforcement.
 pub mod event_codes {
     pub const BARRIER_APPLIED: &str = "DGIS-BARRIER-001";
@@ -531,6 +534,7 @@ impl BarrierEngine {
             .push(barrier_id);
 
         self.audit_log.push(receipt.clone());
+        self.enforce_audit_log_capacity();
         Ok(receipt)
     }
 
@@ -558,6 +562,7 @@ impl BarrierEngine {
         }
         self.rollout_states.remove(barrier_id);
         self.audit_log.push(receipt.clone());
+        self.enforce_audit_log_capacity();
         Ok(receipt)
     }
 
@@ -588,6 +593,7 @@ impl BarrierEngine {
         .with_override(justification);
 
         self.audit_log.push(receipt.clone());
+        self.enforce_audit_log_capacity();
         Ok(receipt)
     }
 
@@ -623,6 +629,7 @@ impl BarrierEngine {
                         }),
                     );
                     self.audit_log.push(receipt);
+                    self.enforce_audit_log_capacity();
                     return Err(BarrierError::SandboxEscalation(format!(
                         "node {node_id} requires at least {}, currently at {current_tier}",
                         cfg.min_tier
@@ -645,6 +652,7 @@ impl BarrierEngine {
                         }),
                     );
                     self.audit_log.push(receipt);
+                    self.enforce_audit_log_capacity();
                     return Err(BarrierError::SandboxEscalation(format!(
                         "capability '{requested_capability}' denied on node {node_id}"
                     )));
@@ -664,6 +672,7 @@ impl BarrierEngine {
             }),
         );
         self.audit_log.push(receipt.clone());
+        self.enforce_audit_log_capacity();
         Ok(receipt)
     }
 
@@ -703,6 +712,7 @@ impl BarrierEngine {
                         }),
                     );
                     self.audit_log.push(receipt);
+                    self.enforce_audit_log_capacity();
                     return Err(BarrierError::FirewallViolation {
                         capability: capability.to_string(),
                         boundary: target_boundary.to_string(),
@@ -722,6 +732,7 @@ impl BarrierEngine {
             }),
         );
         self.audit_log.push(receipt.clone());
+        self.enforce_audit_log_capacity();
         Ok(receipt)
     }
 
@@ -755,6 +766,7 @@ impl BarrierEngine {
                     }),
                 );
                 self.audit_log.push(receipt);
+                self.enforce_audit_log_capacity();
                 return Err(BarrierError::ForkPinVerification(format!(
                     "digest mismatch for node {node_id}: expected {}, got {artifact_digest}",
                     cfg.expected_digest
@@ -772,6 +784,7 @@ impl BarrierEngine {
             }),
         );
         self.audit_log.push(receipt.clone());
+        self.enforce_audit_log_capacity();
         Ok(receipt)
     }
 
@@ -809,6 +822,7 @@ impl BarrierEngine {
                 }),
             );
             self.audit_log.push(receipt);
+            self.enforce_audit_log_capacity();
             return Err(BarrierError::RolloutFenceBlocked {
                 phase: format!("{}", state.current_phase),
                 reason: format!(
@@ -829,6 +843,7 @@ impl BarrierEngine {
             }),
         );
         self.audit_log.push(receipt.clone());
+        self.enforce_audit_log_capacity();
         Ok(receipt)
     }
 
@@ -876,6 +891,7 @@ impl BarrierEngine {
             }),
         );
         self.audit_log.push(receipt.clone());
+        self.enforce_audit_log_capacity();
         Ok(receipt)
     }
 
@@ -914,6 +930,7 @@ impl BarrierEngine {
             }),
         );
         self.audit_log.push(receipt.clone());
+        self.enforce_audit_log_capacity();
         Ok(receipt)
     }
 
@@ -980,6 +997,13 @@ impl BarrierEngine {
     // -----------------------------------------------------------------------
     // Internal helpers
     // -----------------------------------------------------------------------
+
+    fn enforce_audit_log_capacity(&mut self) {
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
+    }
 
     fn get_node_barrier_ids(&self, node_id: &str) -> Vec<String> {
         self.node_barriers.get(node_id).cloned().unwrap_or_default()

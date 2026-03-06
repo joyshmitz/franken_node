@@ -54,6 +54,7 @@ pub mod invariants {
 pub const SCHEMA_VERSION: &str = "rga-v1.0";
 pub const MIN_TRUST_SCORE: f64 = 0.6;
 pub const DECAY_FACTOR: f64 = 0.95;
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
 
 /// Node type in the reputation graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -393,6 +394,10 @@ impl ReputationGraphApis {
             trace_id: trace_id.to_string(),
             details,
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 

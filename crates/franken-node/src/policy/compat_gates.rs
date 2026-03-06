@@ -526,6 +526,11 @@ impl std::error::Error for CompatGateError {}
 
 // ── Gate Evaluator ───────────────────────────────────────────────────────────
 
+/// Maximum audit log entries before oldest-first eviction.
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+/// Maximum receipts before oldest-first eviction.
+const MAX_RECEIPTS: usize = 4096;
+
 /// The compatibility gate evaluator. Central entry point for gate checks,
 /// mode queries, and shim registry queries.
 #[derive(Debug, Clone)]
@@ -599,6 +604,10 @@ impl CompatGateEvaluator {
 
         self.scopes.insert(scope_id.to_string(), scope_config);
         self.receipts.push(receipt.clone());
+        if self.receipts.len() > MAX_RECEIPTS {
+            let overflow = self.receipts.len() - MAX_RECEIPTS;
+            self.receipts.drain(0..overflow);
+        }
         Ok(receipt)
     }
 
@@ -715,6 +724,10 @@ impl CompatGateEvaluator {
         };
 
         self.audit_log.push(result.clone());
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
         Ok(result)
     }
 

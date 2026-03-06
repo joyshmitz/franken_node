@@ -28,6 +28,12 @@ pub const RG_EVICTION_BLOCKED: &str = "RG_EVICTION_BLOCKED";
 pub const RG_EVICTION_PERMITTED: &str = "RG_EVICTION_PERMITTED";
 pub const RG_GATE_INITIALIZED: &str = "RG_GATE_INITIALIZED";
 
+/// Maximum number of events before oldest-first eviction.
+const MAX_EVENTS: usize = 4096;
+
+/// Maximum number of proof receipts before oldest-first eviction.
+const MAX_RECEIPTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Error codes
 // ---------------------------------------------------------------------------
@@ -252,6 +258,7 @@ impl RetrievabilityGate {
                 gate.config.max_latency_ms, gate.config.require_hash_match
             ),
         });
+        // No overflow check needed here — this is the first event in a new gate.
         gate
     }
 
@@ -421,6 +428,10 @@ impl RetrievabilityGate {
             passed: true,
             failure_reason: None,
         });
+        if self.receipts.len() > MAX_RECEIPTS {
+            let overflow = self.receipts.len() - MAX_RECEIPTS;
+            self.receipts.drain(0..overflow);
+        }
 
         self.events.push(GateEvent {
             code: RG_PROOF_PASSED.to_string(),
@@ -434,6 +445,10 @@ impl RetrievabilityGate {
                 &expected_hash[..8.min(expected_hash.len())]
             ),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
 
         Ok(proof)
     }
@@ -466,6 +481,10 @@ impl RetrievabilityGate {
                     segment_id: segment_id.0.clone(),
                     detail: format!("Eviction blocked: {}", err.reason.error_code()),
                 });
+                if self.events.len() > MAX_EVENTS {
+                    let overflow = self.events.len() - MAX_EVENTS;
+                    self.events.drain(0..overflow);
+                }
                 return Err(err);
             }
         };
@@ -479,6 +498,10 @@ impl RetrievabilityGate {
                 proof.proof_timestamp
             ),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
 
         Ok(EvictionPermit {
             proof,
@@ -539,6 +562,10 @@ impl RetrievabilityGate {
             passed: false,
             failure_reason: Some(reason.to_string()),
         });
+        if self.receipts.len() > MAX_RECEIPTS {
+            let overflow = self.receipts.len() - MAX_RECEIPTS;
+            self.receipts.drain(0..overflow);
+        }
 
         self.events.push(GateEvent {
             code: RG_PROOF_FAILED.to_string(),
@@ -546,6 +573,10 @@ impl RetrievabilityGate {
             segment_id: segment_id.0.clone(),
             detail: format!("Proof failed: {}", reason),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 }
 

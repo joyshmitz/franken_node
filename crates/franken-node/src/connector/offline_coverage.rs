@@ -128,6 +128,9 @@ struct ArtifactState {
     timestamp: u64,
 }
 
+/// Maximum events before oldest-first eviction.
+const MAX_EVENTS: usize = 4096;
+
 /// Offline coverage tracker.
 #[derive(Default)]
 pub struct OfflineCoverageTracker {
@@ -172,6 +175,10 @@ impl OfflineCoverageTracker {
         }
         scope.event_count = scope.event_count.saturating_add(1);
         self.all_events.push(event);
+        if self.all_events.len() > MAX_EVENTS {
+            let overflow = self.all_events.len() - MAX_EVENTS;
+            self.all_events.drain(0..overflow);
+        }
         Ok(())
     }
 

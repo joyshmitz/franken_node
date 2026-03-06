@@ -28,6 +28,8 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt;
 
+const MAX_EVENTS: usize = 4096;
+
 // ── Schema version ──────────────────────────────────────────────────────────
 
 /// Schema version for the VEF SDK integration format.
@@ -397,6 +399,10 @@ impl VefCapsuleEmbed {
         &self.events
     }
 
+    fn emit_event(&mut self, event: VsiEvent) {
+        push_bounded(&mut self.events, event, MAX_EVENTS);
+    }
+
     /// Embed a VEF proof into a replay capsule payload.
     ///
     /// # Errors
@@ -431,7 +437,7 @@ impl VefCapsuleEmbed {
             created_at_millis: now_millis,
         };
 
-        self.events.push(VsiEvent {
+        self.emit_event(VsiEvent {
             event_code: event_codes::VSI_001_PROOF_EMBEDDED.to_string(),
             trace_id: trace_id.to_string(),
             detail: format!(
@@ -456,7 +462,7 @@ impl VefCapsuleEmbed {
         let expected = compute_binding_hash(&embedding.proof_ref, capsule_payload)?;
         let valid = crate::security::constant_time::ct_eq(&expected, &embedding.binding_hash);
 
-        self.events.push(VsiEvent {
+        self.emit_event(VsiEvent {
             event_code: event_codes::VSI_005_EMBED_VALIDATED.to_string(),
             trace_id: trace_id.to_string(),
             detail: format!(
@@ -511,6 +517,10 @@ impl ExternalVerificationEndpoint {
 
     pub fn events(&self) -> &[VsiEvent] {
         &self.events
+    }
+
+    fn emit_event(&mut self, event: VsiEvent) {
+        push_bounded(&mut self.events, event, MAX_EVENTS);
     }
 
     pub fn store(&self) -> &BTreeMap<String, EvidenceRecord> {
@@ -568,7 +578,7 @@ impl ExternalVerificationEndpoint {
 
         self.next_seq = self.next_seq.saturating_add(1);
 
-        self.events.push(VsiEvent {
+        self.emit_event(VsiEvent {
             event_code: event_codes::VSI_002_EVIDENCE_SUBMITTED.to_string(),
             trace_id: submission.trace_id.clone(),
             detail: format!(
@@ -609,7 +619,7 @@ impl ExternalVerificationEndpoint {
 
         results.truncate(query.limit);
 
-        self.events.push(VsiEvent {
+        self.emit_event(VsiEvent {
             event_code: event_codes::VSI_003_EVIDENCE_QUERIED.to_string(),
             trace_id: trace_id.to_string(),
             detail: format!("matched={} limit={}", results.len(), query.limit),
@@ -628,7 +638,7 @@ impl ExternalVerificationEndpoint {
             .cloned()
             .collect();
 
-        self.events.push(VsiEvent {
+        self.emit_event(VsiEvent {
             event_code: event_codes::VSI_006_EVIDENCE_EXPORTED.to_string(),
             trace_id: trace_id.to_string(),
             detail: format!("exported={} records", records.len()),
@@ -655,7 +665,7 @@ impl ExternalVerificationEndpoint {
         })?;
         record.status = new_status;
 
-        self.events.push(VsiEvent {
+        self.emit_event(VsiEvent {
             event_code: event_codes::VSI_002_EVIDENCE_SUBMITTED.to_string(),
             trace_id: trace_id.to_string(),
             detail: format!("submission={submission_id} status_updated={new_status:?}"),
@@ -668,6 +678,14 @@ impl ExternalVerificationEndpoint {
 impl Default for ExternalVerificationEndpoint {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
     }
 }
 

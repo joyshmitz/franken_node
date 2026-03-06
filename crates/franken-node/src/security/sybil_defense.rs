@@ -21,6 +21,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -573,6 +575,10 @@ impl SybilDetector {
                 detail: format!("Detected {} suspected Sybil identities", sybil_ids.len()),
                 timestamp_ms,
             });
+            if self.events.len() > MAX_EVENTS {
+                let overflow = self.events.len() - MAX_EVENTS;
+                self.events.drain(0..overflow);
+            }
         }
 
         sybil_ids
@@ -735,6 +741,11 @@ impl SybilDefensePipeline {
                 detail: format!("{} Sybil identities attenuated", sybil_ids.len()),
                 timestamp_ms,
             });
+        }
+
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
         }
 
         Ok(result)

@@ -11,6 +11,9 @@ use crate::security::constant_time::ct_eq;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+const MAX_EVENTS: usize = 4096;
+
 // -- Event codes ---------------------------------------------------------------
 
 pub const ENE_001_REGISTRY_MUTATION: &str = "ENE-001";
@@ -506,6 +509,10 @@ impl EcosystemRegistry {
         };
         entry.entry_hash = compute_audit_hash(&entry);
         self.audit_trail.push(entry);
+        if self.audit_trail.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_trail.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_trail.drain(0..overflow);
+        }
     }
 
     fn emit_event(
@@ -523,6 +530,10 @@ impl EcosystemRegistry {
             timestamp: timestamp.to_owned(),
             trace_id: trace_id.to_owned(),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 }
 

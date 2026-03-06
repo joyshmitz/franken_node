@@ -17,6 +17,8 @@ use std::collections::BTreeMap;
 
 use super::trust_object_id::DomainPrefix;
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -353,7 +355,7 @@ impl CanonicalSerializer {
 
         // INV-CAN-NO-FLOAT: reject payloads containing float indicators
         if contains_float_marker(payload) {
-            self.events.push(SerializerEvent {
+            push_bounded(&mut self.events, SerializerEvent {
                 event_code: event_codes::CAN_REJECT.to_string(),
                 object_type: object_type.label().to_string(),
                 domain_tag: format!("{:02x}{:02x}", schema.domain_tag[0], schema.domain_tag[1]),
@@ -361,7 +363,7 @@ impl CanonicalSerializer {
                 content_hash_prefix: "rejected".to_string(),
                 trace_id: trace_id.to_string(),
                 detail: "floating-point value detected".to_string(),
-            });
+            }, MAX_EVENTS);
             return Err(SerializerError::FloatingPointRejected {
                 object_type: object_type.label().to_string(),
                 field: "payload".to_string(),
@@ -372,7 +374,7 @@ impl CanonicalSerializer {
         let canonical = canonical_encode(payload)?;
 
         let hash_prefix = content_hash_prefix(&canonical);
-        self.events.push(SerializerEvent {
+        push_bounded(&mut self.events, SerializerEvent {
             event_code: event_codes::CAN_SERIALIZE.to_string(),
             object_type: object_type.label().to_string(),
             domain_tag: format!("{:02x}{:02x}", schema.domain_tag[0], schema.domain_tag[1]),
@@ -384,7 +386,7 @@ impl CanonicalSerializer {
                 object_type.label(),
                 canonical.len()
             ),
-        });
+        }, MAX_EVENTS);
 
         Ok(canonical)
     }
@@ -455,7 +457,7 @@ impl CanonicalSerializer {
 
         let preimage = SignaturePreimage::build(version, domain_tag, canonical);
 
-        self.events.push(SerializerEvent {
+        push_bounded(&mut self.events, SerializerEvent {
             event_code: event_codes::CAN_PREIMAGE_CONSTRUCT.to_string(),
             object_type: object_type.label().to_string(),
             domain_tag: format!("{:02x}{:02x}", domain_tag[0], domain_tag[1]),
@@ -466,7 +468,7 @@ impl CanonicalSerializer {
                 "preimage constructed: version={version} len={}",
                 preimage.byte_len()
             ),
-        });
+        }, MAX_EVENTS);
 
         Ok(preimage)
     }
@@ -620,6 +622,18 @@ pub fn demo_canonical_serialization() -> Vec<SerializerEvent> {
     }
 
     serializer.events().to_vec()
+}
+
+// ---------------------------------------------------------------------------
+// Bounded push helper
+// ---------------------------------------------------------------------------
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
+    }
 }
 
 // ---------------------------------------------------------------------------

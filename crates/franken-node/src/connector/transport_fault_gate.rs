@@ -21,6 +21,8 @@ use crate::security::constant_time::ct_eq;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 pub const SCHEMA_VERSION: &str = "tfg-v1.0";
 pub const BEAD_ID: &str = "bd-3u6o";
 pub const SECTION: &str = "10.15";
@@ -408,6 +410,10 @@ impl TransportFaultGate {
             seed,
             detail,
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 
     /// Simulate a single protocol under a specific fault mode and seed.

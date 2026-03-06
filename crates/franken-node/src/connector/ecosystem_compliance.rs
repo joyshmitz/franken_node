@@ -14,6 +14,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+const MAX_EVENTS: usize = 4096;
+
 // -- Event codes ---------------------------------------------------------------
 
 pub const ENE_005_COMPLIANCE_EVIDENCE_STORED: &str = "ENE-005";
@@ -136,6 +138,10 @@ impl ComplianceEvidenceStore {
         }
     }
 
+    fn emit_event(&mut self, event: ComplianceEvent) {
+        push_bounded(&mut self.events, event, MAX_EVENTS);
+    }
+
     /// Compute the content-addressed hash for a piece of content.
     #[must_use]
     pub fn compute_content_hash(content: &str) -> String {
@@ -184,7 +190,7 @@ impl ComplianceEvidenceStore {
 
         self.artifacts.insert(content_hash.clone(), evidence);
 
-        self.events.push(ComplianceEvent {
+        self.emit_event(ComplianceEvent {
             event_code: ENE_005_COMPLIANCE_EVIDENCE_STORED.to_owned(),
             content_hash: content_hash.clone(),
             detail: format!("stored evidence '{}' from {}", title, publisher_id),
@@ -201,16 +207,17 @@ impl ComplianceEvidenceStore {
         content_hash: &str,
         timestamp: &str,
         trace_id: &str,
-    ) -> Result<&ComplianceEvidence, ComplianceError> {
+    ) -> Result<ComplianceEvidence, ComplianceError> {
         let evidence = self
             .artifacts
             .get(content_hash)
+            .cloned()
             .ok_or_else(|| ComplianceError::NotFound(content_hash.to_owned()))?;
 
         // Tamper-evidence check: recompute hash and verify.
         let recomputed = Self::compute_content_hash(&evidence.content);
         if !crate::security::constant_time::ct_eq(&recomputed, &evidence.content_hash) {
-            self.events.push(ComplianceEvent {
+            self.emit_event(ComplianceEvent {
                 event_code: ENE_008_COMPLIANCE_TAMPER_CHECK_FAIL.to_owned(),
                 content_hash: content_hash.to_owned(),
                 detail: format!(
@@ -223,7 +230,7 @@ impl ComplianceEvidenceStore {
             return Err(ComplianceError::TamperDetected(content_hash.to_owned()));
         }
 
-        self.events.push(ComplianceEvent {
+        self.emit_event(ComplianceEvent {
             event_code: ENE_007_COMPLIANCE_TAMPER_CHECK_PASS.to_owned(),
             content_hash: content_hash.to_owned(),
             detail: "tamper check passed".to_owned(),
@@ -231,7 +238,7 @@ impl ComplianceEvidenceStore {
             trace_id: trace_id.to_owned(),
         });
 
-        self.events.push(ComplianceEvent {
+        self.emit_event(ComplianceEvent {
             event_code: ENE_006_COMPLIANCE_EVIDENCE_RETRIEVED.to_owned(),
             content_hash: content_hash.to_owned(),
             detail: format!("retrieved evidence '{}'", evidence.title),
@@ -263,7 +270,7 @@ impl ComplianceEvidenceStore {
             ENE_008_COMPLIANCE_TAMPER_CHECK_FAIL
         };
 
-        self.events.push(ComplianceEvent {
+        self.emit_event(ComplianceEvent {
             event_code: event_code.to_owned(),
             content_hash: content_hash.to_owned(),
             detail: format!(
@@ -353,6 +360,14 @@ impl ComplianceEvidenceStore {
     /// Take all pending events (drains the buffer).
     pub fn take_events(&mut self) -> Vec<ComplianceEvent> {
         std::mem::take(&mut self.events)
+    }
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
     }
 }
 

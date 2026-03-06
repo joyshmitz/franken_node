@@ -15,6 +15,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -409,6 +411,10 @@ impl ControlEvidenceEmitter {
             decision_type: decision_type.label().to_string(),
             detail,
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 }
 

@@ -16,6 +16,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+const MAX_EVENTS: usize = 4096;
+
 use crate::connector::control_evidence::{ControlEvidenceEntry, DecisionKind, DecisionType};
 use crate::observability::evidence_ledger::{DecisionKind as LedgerDecisionKind, EvidenceEntry};
 use crate::tools::evidence_replay_validator::{
@@ -482,6 +484,10 @@ impl ControlReplayGate {
             detail,
             trace_id: trace_id.to_string(),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 }
 

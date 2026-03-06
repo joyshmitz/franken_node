@@ -13,6 +13,9 @@ use uuid::Uuid;
 // Event codes
 // ---------------------------------------------------------------------------
 
+/// Maximum number of audit log entries before oldest-first eviction.
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 pub mod event_codes {
     pub const BPET_RISK_PRICED: &str = "BPET-ECON-001";
     pub const BPET_ROI_COMPUTED: &str = "BPET-ECON-002";
@@ -659,6 +662,10 @@ impl BpetEconomicEngine {
 
     fn log(&mut self, record: BpetAuditRecord) {
         self.audit_log.push(record);
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 

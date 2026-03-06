@@ -317,6 +317,10 @@ impl CancelInjectionMatrix {
         }
 
         self.entries.push(entry);
+        if self.entries.len() > MAX_MATRIX_ENTRIES {
+            let overflow = self.entries.len() - MAX_MATRIX_ENTRIES;
+            self.entries.drain(0..overflow);
+        }
     }
 
     /// Check if the matrix meets minimum coverage.
@@ -494,6 +498,11 @@ pub struct WorkflowRegistration {
     pub description: String,
 }
 
+/// Maximum audit log entries before oldest-first eviction.
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+/// Maximum cancel matrix entries before oldest-first eviction.
+const MAX_MATRIX_ENTRIES: usize = 4096;
+
 /// The cancellation injection framework.
 ///
 /// Manages workflow registration, test execution, and result collection.
@@ -648,6 +657,10 @@ impl CancellationInjectionFramework {
             timestamp_ms: 0,
             schema_version: SCHEMA_VERSION.to_string(),
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 
     /// Get the current matrix report.

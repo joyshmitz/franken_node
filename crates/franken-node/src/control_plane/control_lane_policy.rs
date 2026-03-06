@@ -44,6 +44,18 @@ pub const DEFAULT_STARVATION_THRESHOLD_TICKS: u32 = 3;
 /// Cancel lane maximum starvation tolerance (ticks).
 pub const CANCEL_MAX_STARVE_TICKS: u32 = 1;
 
+/// Default maximum entries retained in tick history.
+pub const DEFAULT_MAX_TICK_HISTORY_ENTRIES: usize = 4096;
+
+/// Default maximum starvation events retained.
+pub const DEFAULT_MAX_STARVATION_EVENTS: usize = 4096;
+
+/// Default maximum preemption events retained.
+pub const DEFAULT_MAX_PREEMPTION_EVENTS: usize = 4096;
+
+/// Default maximum audit-log entries retained.
+pub const DEFAULT_MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 // ---- Event codes ----
 
 pub mod event_codes {
@@ -315,11 +327,30 @@ pub struct ControlLanePolicy {
     starvation_events: Vec<StarvationEvent>,
     preemption_events: Vec<PreemptionEvent>,
     audit_log: Vec<LanePolicyAuditRecord>,
+    max_tick_history_entries: usize,
+    max_starvation_events: usize,
+    max_preemption_events: usize,
+    max_audit_log_entries: usize,
 }
 
 impl ControlLanePolicy {
     /// Create a new policy engine with canonical assignments and budgets.
     pub fn new() -> Self {
+        Self::with_history_capacities(
+            DEFAULT_MAX_TICK_HISTORY_ENTRIES,
+            DEFAULT_MAX_STARVATION_EVENTS,
+            DEFAULT_MAX_PREEMPTION_EVENTS,
+            DEFAULT_MAX_AUDIT_LOG_ENTRIES,
+        )
+    }
+
+    /// Create a new policy engine with explicit bounded-history capacities.
+    pub fn with_history_capacities(
+        max_tick_history_entries: usize,
+        max_starvation_events: usize,
+        max_preemption_events: usize,
+        max_audit_log_entries: usize,
+    ) -> Self {
         let mut assignments = BTreeMap::new();
         let mut budgets = BTreeMap::new();
 
@@ -368,6 +399,10 @@ impl ControlLanePolicy {
             starvation_events: Vec::new(),
             preemption_events: Vec::new(),
             audit_log: Vec::new(),
+            max_tick_history_entries: max_tick_history_entries.max(1),
+            max_starvation_events: max_starvation_events.max(1),
+            max_preemption_events: max_preemption_events.max(1),
+            max_audit_log_entries: max_audit_log_entries.max(1),
         }
     }
 
@@ -450,14 +485,18 @@ impl ControlLanePolicy {
         })?;
         let lane = assignment.lane;
 
-        self.audit_log.push(LanePolicyAuditRecord {
-            timestamp_ms,
-            event_code: event_codes::LAN_001.to_string(),
-            task_class: tc.as_str().to_string(),
-            lane: lane.as_str().to_string(),
-            budget_remaining_ms: assignment.timeout_ms.unwrap_or(0),
-            trace_id: trace_id.to_string(),
-        });
+        Self::push_bounded(
+            &mut self.audit_log,
+            LanePolicyAuditRecord {
+                timestamp_ms,
+                event_code: event_codes::LAN_001.to_string(),
+                task_class: tc.as_str().to_string(),
+                lane: lane.as_str().to_string(),
+                budget_remaining_ms: assignment.timeout_ms.unwrap_or(0),
+                trace_id: trace_id.to_string(),
+            },
+            self.max_audit_log_entries,
+        );
 
         let run_count = self.lane_run_counts.entry(lane).or_insert(0);
         *run_count = run_count.saturating_add(1);
@@ -511,26 +550,34 @@ impl ControlLanePolicy {
                     .map(|b| b.max_starve_ticks)
                     .unwrap_or(DEFAULT_STARVATION_THRESHOLD_TICKS);
                 if *counter >= threshold {
-                    self.starvation_events.push(StarvationEvent {
-                        lane,
-                        consecutive_zero_ticks: *counter,
-                        threshold,
-                        event_code: event_codes::LAN_003.to_string(),
-                        trace_id: trace_id.to_string(),
-                    });
+                    Self::push_bounded(
+                        &mut self.starvation_events,
+                        StarvationEvent {
+                            lane,
+                            consecutive_zero_ticks: *counter,
+                            threshold,
+                            event_code: event_codes::LAN_003.to_string(),
+                            trace_id: trace_id.to_string(),
+                        },
+                        self.max_starvation_events,
+                    );
                 }
             } else if *counter > 0 {
-                self.starvation_events.push(StarvationEvent {
-                    lane,
-                    consecutive_zero_ticks: *counter,
-                    threshold: self
-                        .budgets
-                        .get(&lane)
-                        .map(|b| b.max_starve_ticks)
-                        .unwrap_or(DEFAULT_STARVATION_THRESHOLD_TICKS),
-                    event_code: event_codes::LAN_004.to_string(),
-                    trace_id: trace_id.to_string(),
-                });
+                Self::push_bounded(
+                    &mut self.starvation_events,
+                    StarvationEvent {
+                        lane,
+                        consecutive_zero_ticks: *counter,
+                        threshold: self
+                            .budgets
+                            .get(&lane)
+                            .map(|b| b.max_starve_ticks)
+                            .unwrap_or(DEFAULT_STARVATION_THRESHOLD_TICKS),
+                        event_code: event_codes::LAN_004.to_string(),
+                        trace_id: trace_id.to_string(),
+                    },
+                    self.max_starvation_events,
+                );
                 *counter = 0;
             }
         }
@@ -545,7 +592,11 @@ impl ControlLanePolicy {
             ready_lane_starved: ready_starved,
         };
 
-        self.tick_history.push(metrics.clone());
+        Self::push_bounded(
+            &mut self.tick_history,
+            metrics.clone(),
+            self.max_tick_history_entries,
+        );
         metrics
     }
 
@@ -564,7 +615,11 @@ impl ControlLanePolicy {
             event_code: event_codes::LAN_005.to_string(),
             trace_id: trace_id.to_string(),
         };
-        self.preemption_events.push(event.clone());
+        Self::push_bounded(
+            &mut self.preemption_events,
+            event.clone(),
+            self.max_preemption_events,
+        );
         event
     }
 
@@ -582,6 +637,11 @@ impl ControlLanePolicy {
         &self.tick_history
     }
 
+    /// Get the configured tick-history capacity.
+    pub fn tick_history_capacity(&self) -> usize {
+        self.max_tick_history_entries
+    }
+
     /// Export tick history as CSV string.
     pub fn export_csv(&self) -> String {
         let mut lines = vec![LaneTickMetrics::csv_header().to_string()];
@@ -596,14 +656,29 @@ impl ControlLanePolicy {
         &self.starvation_events
     }
 
+    /// Get the configured starvation-event capacity.
+    pub fn starvation_event_capacity(&self) -> usize {
+        self.max_starvation_events
+    }
+
     /// Get preemption events.
     pub fn preemption_events(&self) -> &[PreemptionEvent] {
         &self.preemption_events
     }
 
+    /// Get the configured preemption-event capacity.
+    pub fn preemption_event_capacity(&self) -> usize {
+        self.max_preemption_events
+    }
+
     /// Get the audit log.
     pub fn audit_log(&self) -> &[LanePolicyAuditRecord] {
         &self.audit_log
+    }
+
+    /// Get the configured audit-log capacity.
+    pub fn audit_log_capacity(&self) -> usize {
+        self.max_audit_log_entries
     }
 
     /// Export audit log as JSONL.
@@ -635,6 +710,14 @@ impl ControlLanePolicy {
     /// Scheduling priority comparison: returns true if lane_a should schedule before lane_b.
     pub fn has_priority(lane_a: ControlLane, lane_b: ControlLane) -> bool {
         lane_a.priority() < lane_b.priority()
+    }
+
+    fn push_bounded<T>(entries: &mut Vec<T>, value: T, max_entries: usize) {
+        if entries.len() >= max_entries {
+            let overflow = entries.len() + 1 - max_entries;
+            entries.drain(0..overflow);
+        }
+        entries.push(value);
     }
 }
 
@@ -669,6 +752,20 @@ impl ControlLanePolicySnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_policy_with_capacities(
+        max_tick_history_entries: usize,
+        max_starvation_events: usize,
+        max_preemption_events: usize,
+        max_audit_log_entries: usize,
+    ) -> ControlLanePolicy {
+        ControlLanePolicy::with_history_capacities(
+            max_tick_history_entries,
+            max_starvation_events,
+            max_preemption_events,
+            max_audit_log_entries,
+        )
+    }
 
     #[test]
     fn test_all_task_classes_assigned() {
@@ -867,6 +964,85 @@ mod tests {
         assert_eq!(event.task_id, "task-42");
         assert_eq!(event.event_code, event_codes::LAN_005);
         assert_eq!(policy.preemption_events().len(), 1);
+    }
+
+    #[test]
+    fn test_history_capacities_clamp_to_one() {
+        let policy = make_policy_with_capacities(0, 0, 0, 0);
+        assert_eq!(policy.tick_history_capacity(), 1);
+        assert_eq!(policy.starvation_event_capacity(), 1);
+        assert_eq!(policy.preemption_event_capacity(), 1);
+        assert_eq!(policy.audit_log_capacity(), 1);
+    }
+
+    #[test]
+    fn test_tick_history_capacity_enforces_oldest_first_eviction() {
+        let mut policy = make_policy_with_capacities(2, 8, 8, 8);
+        policy.tick(1, 1, 1, 5, "trace-tick-1");
+        policy.tick(1, 1, 1, 5, "trace-tick-2");
+        policy.tick(1, 1, 1, 5, "trace-tick-3");
+
+        let ticks: Vec<u64> = policy.tick_history().iter().map(|m| m.tick).collect();
+        assert_eq!(ticks, vec![2, 3]);
+    }
+
+    #[test]
+    fn test_starvation_event_capacity_enforces_oldest_first_eviction() {
+        let mut policy = make_policy_with_capacities(8, 2, 8, 8);
+        policy.tick(0, 1, 0, 0, "trace-starve-1");
+        policy.tick(0, 1, 0, 0, "trace-starve-2");
+        policy.tick(0, 1, 0, 0, "trace-starve-3");
+        policy.tick(0, 1, 0, 0, "trace-starve-4");
+        policy.tick(0, 1, 0, 10, "trace-starve-resolve");
+
+        let trace_ids: Vec<&str> = policy
+            .starvation_events()
+            .iter()
+            .map(|event| event.trace_id.as_str())
+            .collect();
+        assert_eq!(trace_ids, vec!["trace-starve-4", "trace-starve-resolve"]);
+    }
+
+    #[test]
+    fn test_preemption_and_audit_capacities_enforce_oldest_first_eviction() {
+        let mut policy = make_policy_with_capacities(8, 8, 2, 2);
+        policy.preempt_task("task-1", ControlLane::Ready, 100, "trace-preempt-1");
+        policy.preempt_task("task-2", ControlLane::Ready, 90, "trace-preempt-2");
+        policy.preempt_task("task-3", ControlLane::Ready, 80, "trace-preempt-3");
+
+        let preempted_tasks: Vec<&str> = policy
+            .preemption_events()
+            .iter()
+            .map(|event| event.task_id.as_str())
+            .collect();
+        assert_eq!(preempted_tasks, vec!["task-2", "task-3"]);
+
+        policy
+            .assign_task(ControlTaskClass::HealthCheck, "task-a", "trace-audit-1", 10)
+            .unwrap();
+        policy
+            .assign_task(
+                ControlTaskClass::LeaseRenewal,
+                "task-b",
+                "trace-audit-2",
+                20,
+            )
+            .unwrap();
+        policy
+            .assign_task(
+                ControlTaskClass::ForkDetection,
+                "task-c",
+                "trace-audit-3",
+                30,
+            )
+            .unwrap();
+
+        let audit_trace_ids: Vec<&str> = policy
+            .audit_log()
+            .iter()
+            .map(|record| record.trace_id.as_str())
+            .collect();
+        assert_eq!(audit_trace_ids, vec!["trace-audit-2", "trace-audit-3"]);
     }
 
     #[test]

@@ -5,6 +5,8 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+const MAX_EVENTS: usize = 4096;
+
 use crate::runtime::checkpoint::{
     CHECKPOINT_CONTRACT_VIOLATION, CHECKPOINT_MISSING, CHECKPOINT_SAVE, CHECKPOINT_WARNING,
     FN_CK_001_CHECKPOINT_SAVE, FN_CK_006_CONTRACT_WARNING, FN_CK_007_CONTRACT_VIOLATION,
@@ -128,13 +130,17 @@ impl CheckpointGuard {
         &self.events
     }
 
+    fn emit_event(&mut self, event: CheckpointGuardEvent) {
+        push_bounded(&mut self.events, event, MAX_EVENTS);
+    }
+
     /// Record that a checkpoint was written at the given iteration.
     pub fn checkpoint(&mut self, iteration_count: u64) {
         self.last_checkpoint_iteration = iteration_count;
         self.last_checkpoint_at = Instant::now();
         self.checkpoint_count = self.checkpoint_count.saturating_add(1);
 
-        self.events.push(CheckpointGuardEvent {
+        self.emit_event(CheckpointGuardEvent {
             event_code: FN_CK_001_CHECKPOINT_SAVE.to_string(),
             event_name: CHECKPOINT_SAVE.to_string(),
             orchestration_id: self.orchestration_id.clone(),
@@ -162,7 +168,7 @@ impl CheckpointGuard {
 
         if warn_by_iterations || warn_by_duration {
             let missing = self.checkpoint_count == 0;
-            self.events.push(CheckpointGuardEvent {
+            self.emit_event(CheckpointGuardEvent {
                 event_code: FN_CK_006_CONTRACT_WARNING.to_string(),
                 event_name: if missing {
                     CHECKPOINT_MISSING
@@ -192,7 +198,7 @@ impl CheckpointGuard {
             let violate_by_duration = elapsed_since_checkpoint_ms >= strict_duration_ms;
 
             if violate_by_iterations || violate_by_duration {
-                self.events.push(CheckpointGuardEvent {
+                self.emit_event(CheckpointGuardEvent {
                     event_code: FN_CK_007_CONTRACT_VIOLATION.to_string(),
                     event_name: CHECKPOINT_CONTRACT_VIOLATION.to_string(),
                     orchestration_id: self.orchestration_id.clone(),
@@ -226,6 +232,14 @@ fn duration_ms(duration: Duration) -> u64 {
 
 fn elapsed_ms(started: Instant) -> u64 {
     duration_ms(started.elapsed())
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
+    }
 }
 
 #[cfg(test)]

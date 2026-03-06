@@ -19,6 +19,8 @@ use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -817,6 +819,10 @@ impl BenchmarkSuite {
             scenario: scenario.map(String::from),
             detail: detail.to_string(),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 }
 

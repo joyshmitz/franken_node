@@ -1,4 +1,5 @@
 //! bd-3vm: Ambient-authority audit gate for product security-critical modules.
+//! bd-1xbr: Bounded events capacity with oldest-first eviction.
 //!
 //! Detects and rejects ambient authority usage in security-critical product
 //! modules. Enforces Architecture Invariant #10: "no ambient authority."
@@ -23,6 +24,16 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+
+const MAX_EVENTS: usize = 4096;
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Event codes
@@ -512,6 +523,10 @@ impl AuthorityAuditGuard {
         }
     }
 
+    fn emit_event(&mut self, event: AuditEvent) {
+        push_bounded(&mut self.events, event, MAX_EVENTS);
+    }
+
     /// Create a guard with the default product inventory.
     pub fn with_default_inventory(strict_mode: bool) -> Self {
         Self::new(SecurityCriticalInventory::default_inventory(), strict_mode)
@@ -527,7 +542,7 @@ impl AuthorityAuditGuard {
         module_path: &str,
         context: &CapabilityContext,
     ) -> Result<(), AmbientAuthorityViolation> {
-        self.events.push(AuditEvent {
+        self.emit_event(AuditEvent {
             event_code: event_codes::FN_AA_001.to_string(),
             module_path: module_path.to_string(),
             detail: format!("audit started for module {module_path}"),
@@ -538,7 +553,7 @@ impl AuthorityAuditGuard {
             Some(m) => m.clone(),
             None => {
                 // Module not in inventory; no restrictions apply.
-                self.events.push(AuditEvent {
+                self.emit_event(AuditEvent {
                     event_code: event_codes::FN_AA_002.to_string(),
                     module_path: module_path.to_string(),
                     detail: "module not in security-critical inventory; no restrictions"
@@ -557,13 +572,13 @@ impl AuthorityAuditGuard {
             .collect();
 
         if missing.is_empty() {
-            self.events.push(AuditEvent {
+            self.emit_event(AuditEvent {
                 event_code: event_codes::FN_AA_004.to_string(),
                 module_path: module_path.to_string(),
                 detail: format!("all required capabilities present for {module_path}"),
                 trace_id: context.trace_id.clone(),
             });
-            self.events.push(AuditEvent {
+            self.emit_event(AuditEvent {
                 event_code: event_codes::FN_AA_008.to_string(),
                 module_path: module_path.to_string(),
                 detail: "guard enforcement: ALLOW".to_string(),
@@ -578,7 +593,7 @@ impl AuthorityAuditGuard {
                 location: None,
                 error_code: error_codes::ERR_AA_MISSING_CAPABILITY.to_string(),
             };
-            self.events.push(AuditEvent {
+            self.emit_event(AuditEvent {
                 event_code: event_codes::FN_AA_003.to_string(),
                 module_path: module_path.to_string(),
                 detail: format!(
@@ -587,7 +602,7 @@ impl AuthorityAuditGuard {
                 ),
                 trace_id: context.trace_id.clone(),
             });
-            self.events.push(AuditEvent {
+            self.emit_event(AuditEvent {
                 event_code: event_codes::FN_AA_008.to_string(),
                 module_path: module_path.to_string(),
                 detail: if self.strict_mode {
@@ -632,7 +647,7 @@ impl AuthorityAuditGuard {
         let passed = module_results.values().filter(|r| r.passed).count();
         let failed = total - passed;
 
-        self.events.push(AuditEvent {
+        self.emit_event(AuditEvent {
             event_code: event_codes::FN_AA_006.to_string(),
             module_path: "".to_string(),
             detail: format!("audit report generated: {passed}/{total} passed"),

@@ -8,6 +8,8 @@
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -345,21 +347,21 @@ impl TrustFabricNode {
     /// INV-TFC-DEGRADED-DENY: rejected in degraded mode.
     pub fn add_trust_card(&mut self, id: &str) -> Result<(), TrustFabricError> {
         if self.degraded_mode {
-            self.events.push(TrustFabricEvent {
+            push_bounded(&mut self.events, TrustFabricEvent {
                 code: EVT_STATE_UPDATED.to_string(),
                 detail: format!("REJECTED trust card {id} (degraded mode)"),
                 node_id: self.node_id.clone(),
-            });
+            }, MAX_EVENTS);
             return Err(TrustFabricError::DegradedReject(format!(
                 "trust card {id} rejected in degraded mode"
             )));
         }
         self.state.add_trust_card(id);
-        self.events.push(TrustFabricEvent {
+        push_bounded(&mut self.events, TrustFabricEvent {
             code: EVT_STATE_UPDATED.to_string(),
             detail: format!("added trust card {id}"),
             node_id: self.node_id.clone(),
-        });
+        }, MAX_EVENTS);
         Ok(())
     }
 
@@ -372,11 +374,11 @@ impl TrustFabricNode {
             )));
         }
         self.state.add_extension(id);
-        self.events.push(TrustFabricEvent {
+        push_bounded(&mut self.events, TrustFabricEvent {
             code: EVT_STATE_UPDATED.to_string(),
             detail: format!("added extension {id}"),
             node_id: self.node_id.clone(),
-        });
+        }, MAX_EVENTS);
         Ok(())
     }
 
@@ -384,11 +386,11 @@ impl TrustFabricNode {
     /// INV-TFC-REVOKE-FIRST: revocations always accepted, even in degraded mode.
     pub fn apply_revocation(&mut self, id: &str) {
         self.state.apply_revocation(id);
-        self.events.push(TrustFabricEvent {
+        push_bounded(&mut self.events, TrustFabricEvent {
             code: EVT_REVOCATION_APPLIED.to_string(),
             detail: format!("revoked {id}"),
             node_id: self.node_id.clone(),
-        });
+        }, MAX_EVENTS);
     }
 
     /// Compare digests with another node.
@@ -419,25 +421,25 @@ impl TrustFabricNode {
             });
         }
 
-        self.events.push(TrustFabricEvent {
+        push_bounded(&mut self.events, TrustFabricEvent {
             code: EVT_DIGEST_MISMATCH.to_string(),
             detail: format!(
                 "local v{} != remote v{}",
                 self.state.version, remote.version
             ),
             node_id: self.node_id.clone(),
-        });
+        }, MAX_EVENTS);
 
         let delta = remote.delta_from(&self.state);
 
         // INV-TFC-REVOKE-FIRST: apply revocations first.
         for rev in &delta.new_revocations {
             self.state.apply_revocation(rev);
-            self.events.push(TrustFabricEvent {
+            push_bounded(&mut self.events, TrustFabricEvent {
                 code: EVT_REVOCATION_APPLIED.to_string(),
                 detail: format!("revoked {rev} (from gossip)"),
                 node_id: self.node_id.clone(),
-            });
+            }, MAX_EVENTS);
         }
 
         // Then apply authorizations (only if not in degraded mode).
@@ -454,11 +456,11 @@ impl TrustFabricNode {
             }
         }
 
-        self.events.push(TrustFabricEvent {
+        push_bounded(&mut self.events, TrustFabricEvent {
             code: EVT_STATE_UPDATED.to_string(),
             detail: format!("merged delta: {} items", delta.size()),
             node_id: self.node_id.clone(),
-        });
+        }, MAX_EVENTS);
 
         Ok(delta)
     }
@@ -470,38 +472,38 @@ impl TrustFabricNode {
         if lag >= self.config.convergence_lag_threshold && !self.degraded_mode {
             self.degraded_mode = true;
             self.degraded_since = Some(now_ts);
-            self.events.push(TrustFabricEvent {
+            push_bounded(&mut self.events, TrustFabricEvent {
                 code: EVT_DEGRADED_ENTERED.to_string(),
                 detail: format!(
                     "lag={lag}s >= threshold={}s",
                     self.config.convergence_lag_threshold
                 ),
                 node_id: self.node_id.clone(),
-            });
+            }, MAX_EVENTS);
         }
 
         if lag < self.config.convergence_lag_threshold && self.degraded_mode {
             self.degraded_mode = false;
             self.degraded_since = None;
-            self.events.push(TrustFabricEvent {
+            push_bounded(&mut self.events, TrustFabricEvent {
                 code: EVT_DEGRADED_EXITED.to_string(),
                 detail: "convergence restored".to_string(),
                 node_id: self.node_id.clone(),
-            });
+            }, MAX_EVENTS);
         }
 
         // Check escalation timeout.
         if let Some(since) = self.degraded_since {
             let degraded_duration = now_ts.saturating_sub(since);
             if degraded_duration >= self.config.max_degraded_secs {
-                self.events.push(TrustFabricEvent {
+                push_bounded(&mut self.events, TrustFabricEvent {
                     code: EVT_CONVERGENCE_LAG.to_string(),
                     detail: format!(
                         "escalation: degraded for {degraded_duration}s > max {}s",
                         self.config.max_degraded_secs
                     ),
                     node_id: self.node_id.clone(),
-                });
+                }, MAX_EVENTS);
             }
         }
     }
@@ -512,11 +514,11 @@ impl TrustFabricNode {
         if self.degraded_mode {
             self.degraded_mode = false;
             self.degraded_since = None;
-            self.events.push(TrustFabricEvent {
+            push_bounded(&mut self.events, TrustFabricEvent {
                 code: EVT_DEGRADED_EXITED.to_string(),
                 detail: "convergence confirmed".to_string(),
                 node_id: self.node_id.clone(),
-            });
+            }, MAX_EVENTS);
         }
     }
 
@@ -541,11 +543,11 @@ impl TrustFabricNode {
             }
         }
 
-        self.events.push(TrustFabricEvent {
+        push_bounded(&mut self.events, TrustFabricEvent {
             code: EVT_ANTI_ENTROPY_SWEEP.to_string(),
             detail: format!("swept {} items", delta.size()),
             node_id: self.node_id.clone(),
-        });
+        }, MAX_EVENTS);
 
         delta
     }
@@ -554,11 +556,11 @@ impl TrustFabricNode {
     pub fn partition_heal(&mut self, remote: &TrustStateVector, now_ts: u64) -> TrustStateDelta {
         let delta = self.anti_entropy_sweep(remote);
         self.confirm_convergence(now_ts);
-        self.events.push(TrustFabricEvent {
+        push_bounded(&mut self.events, TrustFabricEvent {
             code: EVT_PARTITION_HEALED.to_string(),
             detail: format!("healed with {} delta items", delta.size()),
             node_id: self.node_id.clone(),
-        });
+        }, MAX_EVENTS);
         delta
     }
 
@@ -621,11 +623,11 @@ impl TrustFabricFleet {
             if let Some(node) = self.nodes.get_mut(&node_ids[i])
                 && let Err(e) = node.receive_gossip(&peer_state)
             {
-                node.events.push(TrustFabricEvent {
+                push_bounded(&mut node.events, TrustFabricEvent {
                     code: "EVT_GOSSIP_FAILED".to_string(),
                     detail: format!("gossip from {} failed: {}", node_ids[peer_idx], e),
                     node_id: node.node_id.clone(),
-                });
+                }, MAX_EVENTS);
             }
         }
     }
@@ -638,6 +640,18 @@ impl TrustFabricFleet {
     /// Get mutable node by ID.
     pub fn get_node_mut(&mut self, id: &str) -> Option<&mut TrustFabricNode> {
         self.nodes.get_mut(id)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bounded push helper
+// ---------------------------------------------------------------------------
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
     }
 }
 

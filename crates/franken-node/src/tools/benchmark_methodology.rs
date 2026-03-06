@@ -59,6 +59,8 @@ pub mod invariants {
 
 pub const PUB_VERSION: &str = "bmp-v1.0";
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Publication status
 // ---------------------------------------------------------------------------
@@ -490,6 +492,10 @@ impl BenchmarkMethodology {
             trace_id: trace_id.to_string(),
             details,
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 

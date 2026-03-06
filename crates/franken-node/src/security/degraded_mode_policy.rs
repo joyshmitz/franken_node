@@ -10,6 +10,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 pub const DEGRADED_MODE_ENTERED: &str = "DEGRADED_MODE_ENTERED";
 pub const DEGRADED_MODE_EXITED: &str = "DEGRADED_MODE_EXITED";
 pub const DEGRADED_MODE_SUSPENDED: &str = "DEGRADED_MODE_SUSPENDED";
@@ -386,6 +388,7 @@ impl DegradedModePolicyEngine {
                     trace_id: trace_id.clone(),
                 },
             ));
+        self.trim_audit_log();
 
         self.state = DegradedModeState::Degraded;
         self.context = Some(DegradedContext {
@@ -440,6 +443,7 @@ impl DegradedModePolicyEngine {
                         trace_id: trace_id.to_string(),
                     },
                 ));
+            self.trim_audit_log();
         }
 
         ActionDecision {
@@ -489,6 +493,7 @@ impl DegradedModePolicyEngine {
                     .insert(spec.event_code.clone(), now_secs);
             }
         }
+        self.trim_audit_log();
     }
 
     pub fn maybe_escalate_to_suspended(&mut self, now_secs: u64, trace_id: &str) {
@@ -518,6 +523,7 @@ impl DegradedModePolicyEngine {
                     trace_id: trace_id.to_string(),
                 },
             ));
+        self.trim_audit_log();
     }
 
     pub fn observe_recovery(&mut self, status: &RecoveryStatus, now_secs: u64, trace_id: &str) {
@@ -545,6 +551,7 @@ impl DegradedModePolicyEngine {
                         trace_id: trace_id.to_string(),
                     },
                 ));
+            self.trim_audit_log();
             return;
         }
 
@@ -563,6 +570,7 @@ impl DegradedModePolicyEngine {
                     trace_id: trace_id.to_string(),
                 },
             ));
+        self.trim_audit_log();
         self.state = DegradedModeState::Normal;
         self.context = None;
         self.mandatory_event_last_emitted.clear();
@@ -580,6 +588,13 @@ impl DegradedModePolicyEngine {
         for spec in &self.policy.mandatory_audit_events {
             self.mandatory_event_last_emitted
                 .insert(spec.event_code.clone(), now_secs);
+        }
+    }
+
+    fn trim_audit_log(&mut self) {
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
         }
     }
 

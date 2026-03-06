@@ -55,6 +55,7 @@ pub mod invariants {
 pub const SCHEMA_VERSION: &str = "seo-v1.0";
 pub const MAX_FRICTION_SCORE: f64 = 3.0;
 pub const TARGET_TTFE_SECONDS: u64 = 300;
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
 
 /// Onboarding phase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -403,6 +404,10 @@ impl SafeExtensionOnboarding {
             trace_id: Uuid::now_v7().to_string(),
             timestamp: Utc::now().to_rfc3339(),
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 

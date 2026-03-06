@@ -1,4 +1,5 @@
 //! SSRF-deny default policy template (bd-1nk5).
+//! bd-1xbr: Bounded audit_log capacity with oldest-first eviction.
 //!
 //! Blocks localhost, private CIDRs, link-local, cloud metadata, and
 //! tailnet ranges by default. Explicit allowlist exceptions require a
@@ -8,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use super::network_guard::{Action, EgressPolicy, EgressRule, Protocol};
+
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
 
 // ── CIDR range ──────────────────────────────────────────────────────
 
@@ -431,7 +434,7 @@ impl SsrfPolicyTemplate {
         trace_id: &str,
         timestamp: &str,
     ) {
-        self.audit_log.push(SsrfAuditRecord {
+        let entry = SsrfAuditRecord {
             connector_id: self.connector_id.clone(),
             timestamp: timestamp.to_string(),
             host: host.to_string(),
@@ -440,7 +443,8 @@ impl SsrfPolicyTemplate {
             cidr_matched: cidr.map(|s| s.to_string()),
             allowlisted,
             trace_id: trace_id.to_string(),
-        });
+        };
+        push_bounded(&mut self.audit_log, entry, MAX_AUDIT_LOG_ENTRIES);
     }
 }
 
@@ -479,6 +483,14 @@ impl fmt::Display for SsrfError {
 }
 
 impl std::error::Error for SsrfError {}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
+    }
+}
 
 // ── Tests ───────────────────────────────────────────────────────────
 

@@ -12,6 +12,9 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+/// Maximum number of events retained in a bounded-mask event buffer before oldest entries are drained.
+const MAX_EVENTS: usize = 4096;
+
 /// Compile-time budget threshold for mask duration warnings (1 microsecond).
 pub const MAX_MASK_DURATION_NS: u64 = 1_000;
 
@@ -535,6 +538,10 @@ fn emit_event(
         completed_within_bound: outcome.completed_within_bound,
         deferred_cancel_pending: outcome.deferred_cancel_pending,
     });
+    if events.len() > MAX_EVENTS {
+        let overflow = events.len() - MAX_EVENTS;
+        events.drain(0..overflow);
+    }
 }
 
 fn saturating_u64(value: u128) -> u64 {

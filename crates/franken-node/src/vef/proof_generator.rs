@@ -23,6 +23,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
+const MAX_EVENTS: usize = 4096;
+
 /// Schema version for proof generator output format.
 pub const PROOF_GENERATOR_SCHEMA_VERSION: &str = "vef-proof-generator-v1";
 
@@ -370,7 +372,7 @@ impl ProofGenerator {
             next_request_seq: 0,
             events: Vec::new(),
         };
-        generator.events.push(ProofGeneratorEvent {
+        generator.emit_event(ProofGeneratorEvent {
             event_code: event_codes::PGN_005_BACKEND_REGISTERED.to_string(),
             trace_id: "init".to_string(),
             detail: format!("backend={backend_name} registered"),
@@ -391,6 +393,10 @@ impl ProofGenerator {
     /// Get all events emitted by this generator.
     pub fn events(&self) -> &[ProofGeneratorEvent] {
         &self.events
+    }
+
+    fn emit_event(&mut self, event: ProofGeneratorEvent) {
+        push_bounded(&mut self.events, event, MAX_EVENTS);
     }
 
     /// Submit a proof generation request for a given window and entries.
@@ -448,7 +454,7 @@ impl ProofGenerator {
         };
         self.requests.insert(request_id.clone(), status);
 
-        self.events.push(ProofGeneratorEvent {
+        self.emit_event(ProofGeneratorEvent {
             event_code: event_codes::PGN_001_REQUEST_RECEIVED.to_string(),
             trace_id: trace_id.to_string(),
             detail: format!("request={request_id} window={}", window.window_id),
@@ -480,7 +486,7 @@ impl ProofGenerator {
         status.status = ProofStatus::Generating;
         let trace_id = status.trace_id.clone();
 
-        self.events.push(ProofGeneratorEvent {
+        self.emit_event(ProofGeneratorEvent {
             event_code: event_codes::PGN_002_GENERATION_STARTED.to_string(),
             trace_id: trace_id.clone(),
             detail: format!("request={request_id} generation started"),
@@ -508,7 +514,7 @@ impl ProofGenerator {
                 status.proof = Some(proof.clone());
                 status.completed_at_millis = Some(now_millis);
 
-                self.events.push(ProofGeneratorEvent {
+                self.emit_event(ProofGeneratorEvent {
                     event_code: event_codes::PGN_003_GENERATION_COMPLETE.to_string(),
                     trace_id: trace_id.clone(),
                     detail: format!(
@@ -529,7 +535,7 @@ impl ProofGenerator {
                 status.error = Some(err.clone());
                 status.completed_at_millis = Some(now_millis);
 
-                self.events.push(ProofGeneratorEvent {
+                self.emit_event(ProofGeneratorEvent {
                     event_code: event_codes::PGN_004_GENERATION_FAILED.to_string(),
                     trace_id,
                     detail: format!("request={request_id} error={err}"),
@@ -548,7 +554,7 @@ impl ProofGenerator {
         trace_id: &str,
     ) -> Result<bool, ProofGeneratorError> {
         let valid = self.backend.verify(proof, entries)?;
-        self.events.push(ProofGeneratorEvent {
+        self.emit_event(ProofGeneratorEvent {
             event_code: event_codes::PGN_006_PROOF_VERIFIED.to_string(),
             trace_id: trace_id.to_string(),
             detail: format!(
@@ -576,7 +582,7 @@ impl ProofGenerator {
                     )));
                     status.completed_at_millis = Some(now_millis);
                     timed_out.push(status.request_id.clone());
-                    self.events.push(ProofGeneratorEvent {
+                    self.emit_event(ProofGeneratorEvent {
                         event_code: event_codes::PGN_004_GENERATION_FAILED.to_string(),
                         trace_id: status.trace_id.clone(),
                         detail: format!("request={} timed out", status.request_id),
@@ -611,7 +617,7 @@ impl ProofGenerator {
     pub fn swap_backend(&mut self, new_backend: Arc<dyn ProofBackend>, trace_id: &str) {
         let new_name = new_backend.backend_name().to_string();
         self.backend = new_backend;
-        self.events.push(ProofGeneratorEvent {
+        self.emit_event(ProofGeneratorEvent {
             event_code: event_codes::PGN_005_BACKEND_REGISTERED.to_string(),
             trace_id: trace_id.to_string(),
             detail: format!("backend swapped to {new_name}"),
@@ -663,6 +669,14 @@ impl Clone for ConcurrentProofGenerator {
         Self {
             inner: Arc::clone(&self.inner),
         }
+    }
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
     }
 }
 

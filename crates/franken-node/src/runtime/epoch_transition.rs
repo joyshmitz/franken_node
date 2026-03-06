@@ -18,6 +18,8 @@ use crate::control_plane::transition_abort::{
     ParticipantAbortState, TransitionAbortManager, TransitionAbortReason,
 };
 
+const MAX_EVENTS: usize = 4096;
+
 pub const EPOCH_PROPOSED: &str = "EPOCH_PROPOSED";
 pub const EPOCH_DRAIN_REQUESTED: &str = "EPOCH_DRAIN_REQUESTED";
 pub const EPOCH_DRAIN_CONFIRMED: &str = "EPOCH_DRAIN_CONFIRMED";
@@ -218,7 +220,7 @@ impl ProductEpochCoordinator {
     ) -> Result<(), EpochTransitionError> {
         let current = self.current_epoch();
         if presented_epoch < current {
-            self.events.push(EpochTransitionLogEvent {
+            self.emit_event(EpochTransitionLogEvent {
                 event_code: STALE_EPOCH_REJECTED.to_string(),
                 epoch_current: current,
                 epoch_artifact: Some(presented_epoch),
@@ -234,7 +236,7 @@ impl ProductEpochCoordinator {
             });
         }
         if presented_epoch > current {
-            self.events.push(EpochTransitionLogEvent {
+            self.emit_event(EpochTransitionLogEvent {
                 event_code: FUTURE_EPOCH_REJECTED.to_string(),
                 epoch_current: current,
                 epoch_artifact: Some(presented_epoch),
@@ -266,7 +268,7 @@ impl ProductEpochCoordinator {
             });
         }
         if current.saturating_sub(observed_epoch) >= self.max_epoch_lag {
-            self.events.push(EpochTransitionLogEvent {
+            self.emit_event(EpochTransitionLogEvent {
                 event_code: STALE_EPOCH_REJECTED.to_string(),
                 epoch_current: current,
                 epoch_artifact: Some(observed_epoch),
@@ -296,6 +298,7 @@ impl ProductEpochCoordinator {
         let instance = self
             .barrier
             .propose(current, target, timestamp_ms, trace_id)?;
+        let participants: Vec<String> = instance.participants.iter().cloned().collect();
         let proposal = EpochTransitionProposal {
             transition_id: instance.barrier_id.clone(),
             pre_epoch: current,
@@ -309,7 +312,7 @@ impl ProductEpochCoordinator {
             reason: reason.to_string(),
             started_at_ms: timestamp_ms,
         });
-        self.events.push(EpochTransitionLogEvent {
+        self.emit_event(EpochTransitionLogEvent {
             event_code: EPOCH_PROPOSED.to_string(),
             epoch_current: current,
             epoch_artifact: Some(target),
@@ -319,8 +322,8 @@ impl ProductEpochCoordinator {
             quiescence_status: Some("proposed".to_string()),
             trace_id: trace_id.to_string(),
         });
-        for participant in instance.participants.iter().cloned() {
-            self.events.push(EpochTransitionLogEvent {
+        for participant in participants {
+            self.emit_event(EpochTransitionLogEvent {
                 event_code: EPOCH_DRAIN_REQUESTED.to_string(),
                 epoch_current: current,
                 epoch_artifact: Some(target),
@@ -349,7 +352,7 @@ impl ProductEpochCoordinator {
             elapsed_ms,
             trace_id: trace_id.to_string(),
         })?;
-        self.events.push(EpochTransitionLogEvent {
+        self.emit_event(EpochTransitionLogEvent {
             event_code: EPOCH_DRAIN_CONFIRMED.to_string(),
             epoch_current: barrier.current_epoch,
             epoch_artifact: Some(barrier.target_epoch),
@@ -388,7 +391,7 @@ impl ProductEpochCoordinator {
                 actual: actual_epoch,
             });
         }
-        self.events.push(EpochTransitionLogEvent {
+        self.emit_event(EpochTransitionLogEvent {
             event_code: EPOCH_ADVANCED.to_string(),
             epoch_current: actual_epoch,
             epoch_artifact: Some(actual_epoch),
@@ -493,7 +496,7 @@ impl ProductEpochCoordinator {
             timestamp_ms,
             trace_id,
         );
-        self.events.push(EpochTransitionLogEvent {
+        self.emit_event(EpochTransitionLogEvent {
             event_code: EPOCH_TRANSITION_ABORTED.to_string(),
             epoch_current: snapshot.current_epoch,
             epoch_artifact: Some(snapshot.target_epoch),
@@ -522,6 +525,10 @@ impl ProductEpochCoordinator {
             .active_barrier()
             .cloned()
             .ok_or(EpochTransitionError::NoActiveTransition)
+    }
+
+    fn emit_event(&mut self, event: EpochTransitionLogEvent) {
+        push_bounded(&mut self.events, event, MAX_EVENTS);
     }
 }
 
@@ -561,6 +568,14 @@ fn manifest_hash_for_transition(
     let digest =
         Sha256::digest([b"epoch_transition_hash_v1:" as &[u8], canonical.as_bytes()].concat());
     format!("{digest:x}")
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
+    }
 }
 
 #[cfg(test)]

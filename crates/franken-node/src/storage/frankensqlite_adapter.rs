@@ -43,6 +43,12 @@ pub mod event_codes {
 // Invariant constants
 // ---------------------------------------------------------------------------
 
+/// Maximum number of events before oldest-first eviction.
+const MAX_EVENTS: usize = 4096;
+
+/// Maximum number of audit log entries before oldest-first eviction.
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 pub const INV_FSA_TIER1_DURABLE: &str = "INV-FSA-TIER1-DURABLE";
 pub const INV_FSA_REPLAY_DETERMINISTIC: &str = "INV-FSA-REPLAY-DETERMINISTIC";
 pub const INV_FSA_CONCURRENT_SAFE: &str = "INV-FSA-CONCURRENT-SAFE";
@@ -309,6 +315,10 @@ impl FrankensqliteAdapter {
 
         if class == PersistenceClass::AuditLog {
             self.audit_log.push((key.to_string(), value.to_vec()));
+            if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+                let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+                self.audit_log.drain(0..overflow);
+            }
         }
 
         let latency = start.elapsed().as_micros() as u64;
@@ -470,6 +480,10 @@ impl FrankensqliteAdapter {
             persistence_class: class.to_string(),
             detail,
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 }
 

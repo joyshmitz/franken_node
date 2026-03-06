@@ -13,6 +13,8 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 fn constant_time_eq(a: &str, b: &str) -> bool {
     crate::security::constant_time::ct_eq(a, b)
 }
@@ -448,6 +450,7 @@ impl CapabilityGate {
                 true,
                 None,
             ));
+            self.trim_audit_log();
         }
     }
 
@@ -472,6 +475,7 @@ impl CapabilityGate {
             None,
         );
         self.audit_log.push(event.clone());
+        self.trim_audit_log();
         event
     }
 
@@ -530,6 +534,7 @@ impl CapabilityGate {
                 false,
                 Some(err.code().to_string()),
             ));
+            self.trim_audit_log();
             return Err(err);
         }
 
@@ -547,6 +552,7 @@ impl CapabilityGate {
                 false,
                 Some(err.code().to_string()),
             ));
+            self.trim_audit_log();
             return Err(err);
         };
 
@@ -566,6 +572,7 @@ impl CapabilityGate {
                 false,
                 Some(err.code().to_string()),
             ));
+            self.trim_audit_log();
             return Err(err);
         }
 
@@ -592,6 +599,7 @@ impl CapabilityGate {
                 false,
                 Some(err.code().to_string()),
             ));
+            self.trim_audit_log();
             return Err(err);
         }
 
@@ -614,6 +622,7 @@ impl CapabilityGate {
                 false,
                 Some(err.code().to_string()),
             ));
+            self.trim_audit_log();
             return Err(err);
         }
 
@@ -634,6 +643,7 @@ impl CapabilityGate {
                 false,
                 Some(err.code().to_string()),
             ));
+            self.trim_audit_log();
             return Err(err);
         }
 
@@ -653,6 +663,7 @@ impl CapabilityGate {
                 false,
                 Some(err.code().to_string()),
             ));
+            self.trim_audit_log();
             return Err(err);
         }
 
@@ -677,12 +688,20 @@ impl CapabilityGate {
             true,
             None,
         ));
+        self.trim_audit_log();
         Ok(())
     }
 
     #[must_use]
     pub fn audit_log(&self) -> &[RemoteCapAuditEvent] {
         &self.audit_log
+    }
+
+    fn trim_audit_log(&mut self) {
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 

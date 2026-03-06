@@ -241,6 +241,9 @@ pub fn default_tuning(class: &ObjectClass) -> Option<ClassTuning> {
 // ObjectClassTuningEngine
 // ---------------------------------------------------------------------------
 
+/// Maximum events before oldest-first eviction.
+const MAX_EVENTS: usize = 4096;
+
 /// Policy engine that resolves per-class tuning with override support.
 pub struct ObjectClassTuningEngine {
     overrides: BTreeMap<ObjectClass, ClassTuning>,
@@ -262,6 +265,10 @@ impl ObjectClassTuningEngine {
             class_id: String::new(),
             detail: "Policy engine initialized with benchmark defaults".to_string(),
         });
+        if engine.events.len() > MAX_EVENTS {
+            let overflow = engine.events.len() - MAX_EVENTS;
+            engine.events.drain(0..overflow);
+        }
         engine
     }
 
@@ -286,6 +293,10 @@ impl ObjectClassTuningEngine {
                 class_id: class.label().to_string(),
                 detail: format!("Override rejected: {}", e),
             });
+            if self.events.len() > MAX_EVENTS {
+                let overflow = self.events.len() - MAX_EVENTS;
+                self.events.drain(0..overflow);
+            }
             return Err(e);
         }
 
@@ -319,6 +330,10 @@ impl ObjectClassTuningEngine {
             class_id: class.label().to_string(),
             detail: format!("before=[{}], after=[{}]", before_desc, after_desc),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
 
         Ok(())
     }
@@ -350,6 +365,10 @@ impl ObjectClassTuningEngine {
             class_id: String::new(),
             detail: format!("Loaded {} benchmark measurements", measurements.len()),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 
     /// Export policy report as CSV rows.

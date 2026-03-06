@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+const MAX_EVENTS: usize = 4096;
+
 /// Stable event codes for gate telemetry.
 pub mod event_codes {
     pub const BASELINE_CAPTURED: &str = "DGIS-MIGRATE-001";
@@ -265,6 +267,10 @@ fn evaluate(
             baseline.cascade_risk, baseline.fragility_findings, baseline.articulation_points
         ),
     )];
+    if events.len() > MAX_EVENTS {
+        let overflow = events.len() - MAX_EVENTS;
+        events.drain(0..overflow);
+    }
 
     match verdict {
         GateVerdict::Allow => {
@@ -279,6 +285,10 @@ fn evaluate(
                 trace_id,
                 format!("phase={phase}: migration gate passed"),
             ));
+            if events.len() > MAX_EVENTS {
+                let overflow = events.len() - MAX_EVENTS;
+                events.drain(0..overflow);
+            }
         }
         GateVerdict::Block | GateVerdict::ReplanRequired => {
             let event_code = if phase == "admission" {
@@ -295,6 +305,10 @@ fn evaluate(
                     rejection_reasons.len()
                 ),
             ));
+            if events.len() > MAX_EVENTS {
+                let overflow = events.len() - MAX_EVENTS;
+                events.drain(0..overflow);
+            }
             for suggestion in &replan_suggestions {
                 events.push(gate_event(
                     event_codes::REPLAN_SUGGESTED,
@@ -302,6 +316,10 @@ fn evaluate(
                     trace_id,
                     format!("phase={phase}: suggested path={}", suggestion.path_id),
                 ));
+                if events.len() > MAX_EVENTS {
+                    let overflow = events.len() - MAX_EVENTS;
+                    events.drain(0..overflow);
+                }
             }
         }
     }

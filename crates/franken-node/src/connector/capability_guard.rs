@@ -34,6 +34,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -547,11 +549,11 @@ impl CapabilityGuard {
             audit_trail: Vec::new(),
             events: Vec::new(),
         };
-        guard.events.push(CapabilityGuardEvent {
+        push_bounded(&mut guard.events, CapabilityGuardEvent {
             event_code: event_codes::CAP_006.to_string(),
             subsystem: String::new(),
             detail: "capability guard initialized".to_string(),
-        });
+        }, MAX_EVENTS);
         guard
     }
 
@@ -563,7 +565,7 @@ impl CapabilityGuard {
         let change = if let Some(existing) = self.profiles.get(&profile.subsystem) {
             let change = ProfileChange::detect(existing, &profile);
             if let Some(ref c) = change {
-                self.events.push(CapabilityGuardEvent {
+                self.emit_event(CapabilityGuardEvent {
                     event_code: event_codes::CAP_003.to_string(),
                     subsystem: profile.subsystem.clone(),
                     detail: format!(
@@ -577,7 +579,7 @@ impl CapabilityGuard {
             None
         };
 
-        self.events.push(CapabilityGuardEvent {
+        self.emit_event(CapabilityGuardEvent {
             event_code: event_codes::CAP_005.to_string(),
             subsystem: profile.subsystem.clone(),
             detail: format!(
@@ -616,7 +618,7 @@ impl CapabilityGuard {
                     detail: format!("no profile registered for subsystem {subsystem}"),
                 };
                 self.audit_trail.push(entry);
-                self.events.push(CapabilityGuardEvent {
+                self.emit_event(CapabilityGuardEvent {
                     event_code: event_codes::CAP_002.to_string(),
                     subsystem: subsystem.to_string(),
                     detail: format!("denied {capability}: profile missing"),
@@ -637,12 +639,12 @@ impl CapabilityGuard {
                 detail: format!("capability {capability} granted to {subsystem}"),
             };
             self.audit_trail.push(entry);
-            self.events.push(CapabilityGuardEvent {
+            self.emit_event(CapabilityGuardEvent {
                 event_code: event_codes::CAP_001.to_string(),
                 subsystem: subsystem.to_string(),
                 detail: format!("granted {capability}"),
             });
-            self.events.push(CapabilityGuardEvent {
+            self.emit_event(CapabilityGuardEvent {
                 event_code: event_codes::CAP_008.to_string(),
                 subsystem: subsystem.to_string(),
                 detail: format!("narrowing enforced: {capability} within profile"),
@@ -659,7 +661,7 @@ impl CapabilityGuard {
                 detail: format!("capability {capability} not declared in profile for {subsystem}"),
             };
             self.audit_trail.push(entry);
-            self.events.push(CapabilityGuardEvent {
+            self.emit_event(CapabilityGuardEvent {
                 event_code: event_codes::CAP_002.to_string(),
                 subsystem: subsystem.to_string(),
                 detail: format!("denied {capability}: not in profile"),
@@ -688,7 +690,7 @@ impl CapabilityGuard {
                 Err(e) => denied.push((cap.to_string(), e)),
             }
         }
-        self.events.push(CapabilityGuardEvent {
+        self.emit_event(CapabilityGuardEvent {
             event_code: event_codes::CAP_007.to_string(),
             subsystem: subsystem.to_string(),
             detail: format!(
@@ -731,13 +733,14 @@ impl CapabilityGuard {
             .iter()
             .map(|e| e.subsystem.clone())
             .collect();
+        let subsystems: Vec<String> = self.profiles.keys().cloned().collect();
         let mut gaps = Vec::new();
-        for subsystem in self.profiles.keys() {
+        for subsystem in subsystems {
             if !audited.contains(subsystem) {
                 gaps.push(subsystem.clone());
-                self.events.push(CapabilityGuardEvent {
+                self.emit_event(CapabilityGuardEvent {
                     event_code: event_codes::CAP_004.to_string(),
-                    subsystem: subsystem.clone(),
+                    subsystem,
                     detail: "audit gap: no capability checks recorded".to_string(),
                 });
             }
@@ -752,6 +755,10 @@ impl CapabilityGuard {
             guard.register_profile(profile);
         }
         guard
+    }
+
+    fn emit_event(&mut self, event: CapabilityGuardEvent) {
+        push_bounded(&mut self.events, event, MAX_EVENTS);
     }
 }
 
@@ -855,6 +862,14 @@ pub fn default_profiles() -> Vec<CapabilityProfile> {
     profiles.push(ng);
 
     profiles
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
+    }
 }
 
 // ---------------------------------------------------------------------------

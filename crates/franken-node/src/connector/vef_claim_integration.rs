@@ -8,6 +8,8 @@
 
 use sha2::{Digest, Sha256};
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -273,7 +275,7 @@ impl VefClaimIntegration {
         claim: &ClaimRequirement,
         metrics: &VefMetrics,
     ) -> ClaimGateResult {
-        self.events.push(VefClaimEvent {
+        self.emit_event(VefClaimEvent {
             code: EVT_CLAIM_CHECK_INITIATED.to_string(),
             detail: format!("claim={}", claim.claim_id),
         });
@@ -289,7 +291,7 @@ impl VefClaimIntegration {
         for class in &claim.required_action_classes {
             if !metrics.covered_classes.contains(class) {
                 gaps.push(class.clone());
-                self.events.push(VefClaimEvent {
+                self.emit_event(VefClaimEvent {
                     code: EVT_COVERAGE_GAP_DETECTED.to_string(),
                     detail: format!("claim={}, gap={}", claim.claim_id, class),
                 });
@@ -320,12 +322,12 @@ impl VefClaimIntegration {
         };
 
         if passed {
-            self.events.push(VefClaimEvent {
+            self.emit_event(VefClaimEvent {
                 code: EVT_CLAIM_PASSED.to_string(),
                 detail: format!("claim={}", claim.claim_id),
             });
         } else {
-            self.events.push(VefClaimEvent {
+            self.emit_event(VefClaimEvent {
                 code: EVT_CLAIM_BLOCKED.to_string(),
                 detail: format!("claim={}: {}", claim.claim_id, reason),
             });
@@ -356,7 +358,7 @@ impl VefClaimIntegration {
         let signed_digest = ScoreboardEntry::compute_digest(metrics, &evidence_links);
 
         for link in &evidence_links {
-            self.events.push(VefClaimEvent {
+            self.emit_event(VefClaimEvent {
                 code: EVT_SCOREBOARD_EVIDENCE_LINKED.to_string(),
                 detail: format!("proof={}, class={}", link.proof_id, link.action_class),
             });
@@ -369,7 +371,7 @@ impl VefClaimIntegration {
             signed_digest,
         };
 
-        self.events.push(VefClaimEvent {
+        self.emit_event(VefClaimEvent {
             code: EVT_SCOREBOARD_UPDATED.to_string(),
             detail: format!(
                 "coverage={:.2}, validity={:.2}, proofs={}",
@@ -396,7 +398,7 @@ impl VefClaimIntegration {
     pub fn detect_gaps(&mut self, metrics: &VefMetrics) -> Vec<String> {
         let gaps = metrics.gap_classes.clone();
         for gap in &gaps {
-            self.events.push(VefClaimEvent {
+            self.emit_event(VefClaimEvent {
                 code: EVT_COVERAGE_GAP_DETECTED.to_string(),
                 detail: format!("gap detected: {}", gap),
             });
@@ -422,6 +424,18 @@ impl VefClaimIntegration {
     /// Get config.
     pub fn config(&self) -> &VefClaimConfig {
         &self.config
+    }
+
+    fn emit_event(&mut self, event: VefClaimEvent) {
+        push_bounded(&mut self.events, event, MAX_EVENTS);
+    }
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
     }
 }
 

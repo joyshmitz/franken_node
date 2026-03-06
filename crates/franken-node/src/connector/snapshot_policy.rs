@@ -9,6 +9,8 @@ use std::fmt;
 
 use crate::security::constant_time::ct_eq;
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 /// Snapshot trigger policy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SnapshotPolicy {
@@ -238,6 +240,10 @@ impl SnapshotTracker {
 
         self.policy = new_policy;
         self.audit_log.push(audit.clone());
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
         Ok(audit)
     }
 }

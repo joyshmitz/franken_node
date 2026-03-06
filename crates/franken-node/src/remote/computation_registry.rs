@@ -18,6 +18,9 @@ pub const CR_LOOKUP_MALFORMED: &str = "CR_LOOKUP_MALFORMED";
 pub const CR_VERSION_UPGRADED: &str = "CR_VERSION_UPGRADED";
 pub const CR_DISPATCH_GATED: &str = "CR_DISPATCH_GATED";
 
+/// Maximum number of audit events before oldest-first eviction.
+const MAX_AUDIT_EVENTS: usize = 4096;
+
 // Stable error codes required by the contract.
 pub const ERR_UNKNOWN_COMPUTATION: &str = "ERR_UNKNOWN_COMPUTATION";
 pub const ERR_MALFORMED_COMPUTATION_NAME: &str = "ERR_MALFORMED_COMPUTATION_NAME";
@@ -373,6 +376,10 @@ impl ComputationRegistry {
             computation_name,
             detail,
         });
+        if self.audit_events.len() > MAX_AUDIT_EVENTS {
+            let overflow = self.audit_events.len() - MAX_AUDIT_EVENTS;
+            self.audit_events.drain(0..overflow);
+        }
     }
 }
 

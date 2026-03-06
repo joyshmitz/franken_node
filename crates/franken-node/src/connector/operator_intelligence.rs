@@ -9,6 +9,9 @@ use sha2::{Digest, Sha256};
 
 use crate::security::constant_time::ct_eq_bytes;
 
+const MAX_AUDIT_TRAIL_ENTRIES: usize = 4096;
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -403,10 +406,10 @@ impl RecommendationEngine {
         }
         if !self.degraded {
             self.degraded = true;
-            self.events.push(OIEvent {
+            push_bounded(&mut self.events, OIEvent {
                 code: EVT_DEGRADED_MODE_ENTERED.to_string(),
                 detail: format!("source unavailable: {source}"),
-            });
+            }, MAX_EVENTS);
         }
     }
 
@@ -451,10 +454,10 @@ impl RecommendationEngine {
                     self.missing_sources
                 );
                 degraded_warning = Some(warning.clone());
-                self.events.push(OIEvent {
+                push_bounded(&mut self.events, OIEvent {
                     code: EVT_DEGRADED_MODE_WARNING.to_string(),
                     detail: warning,
-                });
+                }, MAX_EVENTS);
             }
 
             // Skip recommendations below confidence threshold.
@@ -473,23 +476,23 @@ impl RecommendationEngine {
                 degraded_warning,
             };
 
-            self.events.push(OIEvent {
+            push_bounded(&mut self.events, OIEvent {
                 code: EVT_RECOMMENDATION_GENERATED.to_string(),
                 detail: format!(
                     "id={}, loss={:.2}, confidence={:.2}",
                     rec.id, rec.expected_loss, rec.confidence
                 ),
-            });
+            }, MAX_EVENTS);
 
             // INV-OIR-AUDIT: record in audit trail.
-            self.audit_trail.push(AuditEntry {
+            push_bounded(&mut self.audit_trail, AuditEntry {
                 timestamp,
                 recommendation_id: rec.id.clone(),
                 action: rec.action.clone(),
                 accepted: false, // Not yet accepted.
                 expected_loss: rec.expected_loss,
                 context_fingerprint: context_fp,
-            });
+            }, MAX_AUDIT_TRAIL_ENTRIES);
 
             recommendations.push(rec);
         }
@@ -554,20 +557,20 @@ impl RecommendationEngine {
         entry.accepted = true;
         entry.timestamp = timestamp;
 
-        self.events.push(OIEvent {
+        push_bounded(&mut self.events, OIEvent {
             code: EVT_RECOMMENDATION_ACCEPTED.to_string(),
             detail: format!("id={}, cumulative_loss={:.2}", rec.id, self.cumulative_loss),
-        });
+        }, MAX_EVENTS);
 
         Ok(())
     }
 
     /// Reject a recommendation.
     pub fn reject_recommendation(&mut self, rec: &Recommendation) {
-        self.events.push(OIEvent {
+        push_bounded(&mut self.events, OIEvent {
             code: EVT_RECOMMENDATION_REJECTED.to_string(),
             detail: format!("id={}", rec.id),
-        });
+        }, MAX_EVENTS);
     }
 
     /// Execute an accepted recommendation and produce rollback proof.
@@ -586,14 +589,14 @@ impl RecommendationEngine {
 
         rollback_proof.verify()?;
 
-        self.events.push(OIEvent {
+        push_bounded(&mut self.events, OIEvent {
             code: EVT_ACTION_EXECUTED.to_string(),
             detail: format!("id={}", rec.id),
-        });
-        self.events.push(OIEvent {
+        }, MAX_EVENTS);
+        push_bounded(&mut self.events, OIEvent {
             code: EVT_ROLLBACK_PROOF_CREATED.to_string(),
             detail: format!("id={}", rec.id),
-        });
+        }, MAX_EVENTS);
 
         let context_fp = [0u8; 32]; // Simplified: would use actual context fingerprint.
         let replay = ReplayArtifact {
@@ -604,10 +607,10 @@ impl RecommendationEngine {
             rollback_proof: Some(rollback_proof.clone()),
         };
 
-        self.events.push(OIEvent {
+        push_bounded(&mut self.events, OIEvent {
             code: EVT_REPLAY_ARTIFACT_CREATED.to_string(),
             detail: format!("id={}", rec.id),
-        });
+        }, MAX_EVENTS);
 
         Ok((rollback_proof, replay))
     }
@@ -615,17 +618,17 @@ impl RecommendationEngine {
     /// Execute rollback using a proof.
     pub fn execute_rollback(&mut self, proof: &RollbackProof) -> Result<(), OIError> {
         proof.verify()?;
-        self.events.push(OIEvent {
+        push_bounded(&mut self.events, OIEvent {
             code: EVT_ROLLBACK_PROOF_VERIFIED.to_string(),
             detail: "rollback proof verified".into(),
-        });
-        self.events.push(OIEvent {
+        }, MAX_EVENTS);
+        push_bounded(&mut self.events, OIEvent {
             code: EVT_ROLLBACK_EXECUTED.to_string(),
             detail: format!(
                 "restored to pre-state hash {:?}",
                 &proof.pre_state_hash[..proof.pre_state_hash.len().min(4)]
             ),
-        });
+        }, MAX_EVENTS);
         Ok(())
     }
 
@@ -647,6 +650,18 @@ impl RecommendationEngine {
     /// Get config.
     pub fn config(&self) -> &RecommendationConfig {
         &self.config
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bounded push helper
+// ---------------------------------------------------------------------------
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
     }
 }
 

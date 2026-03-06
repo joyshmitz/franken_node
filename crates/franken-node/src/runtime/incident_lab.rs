@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+/// Maximum number of events retained before oldest entries are drained.
+const MAX_EVENTS: usize = 4096;
+
 /// Report schema version.
 pub const SCHEMA_VERSION: &str = "incident-lab-v1.0";
 

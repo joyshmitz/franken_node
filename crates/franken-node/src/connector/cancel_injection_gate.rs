@@ -20,6 +20,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 use crate::control_plane::cancellation_injection::{
     AwaitPoint, CancelTestOutcome, CancellationInjectionFramework, ResourceSnapshot, StateSnapshot,
     WorkflowId, WorkflowRegistration,
@@ -195,6 +197,10 @@ impl CancelInjectionGate {
             trace_id: trace_id.to_string(),
             schema_version: SCHEMA_VERSION.to_string(),
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 
     /// Register the default set of control-plane workflows.
@@ -496,6 +502,10 @@ impl CancelInjectionGate {
             trace_id: trace_id.to_string(),
             schema_version: SCHEMA_VERSION.to_string(),
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
 
         let report = CancelInjectionGateReport {
             gate_id: "bd-3tpg".to_string(),

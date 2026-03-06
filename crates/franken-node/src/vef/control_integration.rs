@@ -21,6 +21,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
+const MAX_EVENTS: usize = 4096;
+
 // ── Schema version ──────────────────────────────────────────────────────────
 
 /// Schema version for the VEF control-integration evidence format.
@@ -699,14 +701,14 @@ impl ControlTransitionGate {
         trace_id: &str,
         detail: String,
     ) {
-        self.events.push(GateEvent {
+        push_bounded(&mut self.events, GateEvent {
             event_code: event_code.to_string(),
             request_id: request_id.to_string(),
             transition_type,
             trace_id: trace_id.to_string(),
             detail,
             timestamp_millis: self.now_millis,
-        });
+        }, MAX_EVENTS);
     }
 
     fn deny(
@@ -816,6 +818,14 @@ impl ControlTransitionGate {
                 tt
             ),
         }
+    }
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
     }
 }
 

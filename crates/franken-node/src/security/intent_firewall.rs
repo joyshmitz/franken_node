@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 // ── Schema version ──────────────────────────────────────────────────
 
 /// Schema version for the intent firewall module.
@@ -860,6 +862,10 @@ impl EffectsFirewall {
             detail: detail.to_string(),
             timestamp: timestamp.to_string(),
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 
     /// Return the audit log.

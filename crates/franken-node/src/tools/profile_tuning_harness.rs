@@ -191,6 +191,8 @@ pub enum HarnessOutcome {
 
 use sha2::{Digest, Sha256};
 
+const MAX_EVENTS: usize = 4096;
+
 /// Compute HMAC-SHA256-like signature using the given key.
 /// Uses a deterministic keyed hash for portability (no external crypto dep).
 pub fn hmac_sign(payload: &str, key: &str) -> String {
@@ -477,6 +479,10 @@ impl ProfileTuningHarness {
             code: code.to_string(),
             detail,
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 }
 

@@ -27,6 +27,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Schema version
 // ---------------------------------------------------------------------------
@@ -342,12 +344,20 @@ impl DemoGateRunner {
             detail: format!("Starting gate for {}", result.program.display_name()),
             timestamp: chrono::Utc::now().to_rfc3339(),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
         self.events.push(DemoEvent {
             code: event_code.to_string(),
             program: Some(result.program),
             detail: result.detail.clone(),
             timestamp: chrono::Utc::now().to_rfc3339(),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
         self.results.push(result.clone());
         result
     }
@@ -393,6 +403,10 @@ impl DemoGateRunner {
             detail: format!("Manifest fingerprint: {}", manifest.manifest_fingerprint),
             timestamp: chrono::Utc::now().to_rfc3339(),
         });
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
 
         manifest
     }

@@ -27,6 +27,8 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 pub mod event_codes {
     pub const ROC_BUNDLE_CREATED: &str = "ROC-001";
     pub const ROC_ARTIFACT_ADDED: &str = "ROC-002";
@@ -288,6 +290,10 @@ impl ReportOutputContract {
             trace_id: trace_id.to_string(),
             details,
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 

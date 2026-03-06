@@ -53,6 +53,7 @@ pub const ADV_006_NODE_REMOVED: &str = "ADV-006";
 pub const ADV_007_REPLAY_COMPLETED: &str = "ADV-007";
 /// ADV-008: Signed evidence entry appended to log.
 pub const ADV_008_SIGNED_EVIDENCE: &str = "ADV-008";
+pub const DEFAULT_MAX_LOG_ENTRIES: usize = 4_096;
 
 // ---------------------------------------------------------------------------
 // Invariant tags
@@ -271,16 +272,22 @@ pub struct AdversaryGraph {
     edges: Vec<TrustEdge>,
     thresholds: PolicyThreshold,
     log: Vec<AdversaryLogEntry>,
+    max_log_entries: usize,
 }
 
 impl AdversaryGraph {
     /// Create a new empty adversary graph with the given thresholds.
     pub fn new(thresholds: PolicyThreshold) -> Self {
+        Self::with_log_capacity(thresholds, DEFAULT_MAX_LOG_ENTRIES)
+    }
+
+    pub fn with_log_capacity(thresholds: PolicyThreshold, max_log_entries: usize) -> Self {
         Self {
             nodes: BTreeMap::new(),
             edges: Vec::new(),
             thresholds,
             log: Vec::new(),
+            max_log_entries: max_log_entries.max(1),
         }
     }
 
@@ -314,6 +321,18 @@ impl AdversaryGraph {
         &self.log
     }
 
+    pub fn log_capacity(&self) -> usize {
+        self.max_log_entries
+    }
+
+    fn push_log_entry(&mut self, entry: AdversaryLogEntry) {
+        self.log.push(entry);
+        if self.log.len() > self.max_log_entries {
+            let overflow = self.log.len() - self.max_log_entries;
+            self.log.drain(0..overflow);
+        }
+    }
+
     /// Add a node to the graph. Returns an error string if a node with the
     /// same ID already exists.
     pub fn add_node(
@@ -328,7 +347,7 @@ impl AdversaryGraph {
         }
         let node = AdversaryNode::new(id.clone(), entity_type, timestamp);
         self.nodes.insert(id.clone(), node);
-        self.log.push(AdversaryLogEntry {
+        self.push_log_entry(AdversaryLogEntry {
             trace_id: trace_id.to_string(),
             event_code: ADV_001_NODE_ADDED.to_string(),
             entity_id: id,
@@ -366,7 +385,7 @@ impl AdversaryGraph {
             relationship: relationship.clone(),
             created_at: timestamp,
         });
-        self.log.push(AdversaryLogEntry {
+        self.push_log_entry(AdversaryLogEntry {
             trace_id: trace_id.to_string(),
             event_code: ADV_002_EDGE_ADDED.to_string(),
             entity_id: format!("{from}->{to}"),
@@ -398,7 +417,7 @@ impl AdversaryGraph {
         let (old_posterior, new_posterior) =
             node.ingest_evidence(event.adverse_weight, event.timestamp);
 
-        self.log.push(AdversaryLogEntry {
+        self.push_log_entry(AdversaryLogEntry {
             trace_id: event.trace_id.clone(),
             event_code: ADV_003_EVIDENCE_INGESTED.to_string(),
             entity_id: event.entity_id.clone(),
@@ -415,7 +434,7 @@ impl AdversaryGraph {
         let new_action = action_for_risk(new_posterior, &self.thresholds);
 
         if new_action != old_action {
-            self.log.push(AdversaryLogEntry {
+            self.push_log_entry(AdversaryLogEntry {
                 trace_id: event.trace_id.clone(),
                 event_code: ADV_004_THRESHOLD_CROSSED.to_string(),
                 entity_id: event.entity_id.clone(),
@@ -447,7 +466,7 @@ impl AdversaryGraph {
             .iter()
             .map(|(id, node)| (id.clone(), node.risk_posterior))
             .collect();
-        self.log.push(AdversaryLogEntry {
+        self.push_log_entry(AdversaryLogEntry {
             trace_id: trace_id.to_string(),
             event_code: ADV_007_REPLAY_COMPLETED.to_string(),
             entity_id: "graph".to_string(),
@@ -489,6 +508,25 @@ mod tests {
         assert!(node.risk_posterior > 0.0);
         assert!(node.risk_posterior < 1.0);
         assert!((node.risk_posterior - 0.1).abs() < 1e-9);
+    }
+
+    #[test]
+    fn default_log_capacity_is_bounded() {
+        let g = make_graph();
+        assert_eq!(g.log_capacity(), DEFAULT_MAX_LOG_ENTRIES);
+    }
+
+    #[test]
+    fn log_capacity_clamps_to_one() {
+        let mut g = AdversaryGraph::with_log_capacity(PolicyThreshold::default(), 0);
+        g.add_node("n1".into(), EntityType::Publisher, 1, "t1")
+            .unwrap();
+        g.add_node("n2".into(), EntityType::Publisher, 2, "t2")
+            .unwrap();
+
+        assert_eq!(g.log_capacity(), 1);
+        assert_eq!(g.log_entries().len(), 1);
+        assert_eq!(g.log_entries()[0].entity_id, "n2");
     }
 
     #[test]
@@ -700,6 +738,25 @@ mod tests {
             .filter(|e| e.event_code == ADV_007_REPLAY_COMPLETED)
             .collect();
         assert_eq!(replay_logs.len(), 1);
+    }
+
+    #[test]
+    fn log_capacity_enforces_oldest_first_eviction() {
+        let mut g = AdversaryGraph::with_log_capacity(PolicyThreshold::default(), 2);
+        g.add_node("n1".into(), EntityType::Publisher, 1, "t1")
+            .unwrap();
+        g.add_node("n2".into(), EntityType::Extension, 2, "t2")
+            .unwrap();
+        g.add_node("n3".into(), EntityType::Dependency, 3, "t3")
+            .unwrap();
+
+        assert_eq!(g.log_entries().len(), 2);
+        let entity_ids: Vec<&str> = g
+            .log_entries()
+            .iter()
+            .map(|entry| entry.entity_id.as_str())
+            .collect();
+        assert_eq!(entity_ids, vec!["n2", "n3"]);
     }
 
     #[test]

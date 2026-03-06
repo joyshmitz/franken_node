@@ -54,6 +54,7 @@ pub mod invariants {
 
 pub const METRIC_VERSION: &str = "msf-v1.0";
 pub const MAX_FAILURE_RATE: f64 = 0.05;
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
 
 /// Migration phase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -434,6 +435,10 @@ impl MigrationSpeedFailureMetrics {
             trace_id: trace_id.to_string(),
             details,
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 

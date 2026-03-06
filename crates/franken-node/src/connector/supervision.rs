@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Schema version
 // ---------------------------------------------------------------------------
@@ -379,7 +381,7 @@ impl Supervisor {
                 start_order: order,
             },
         );
-        self.events.push(SupervisionEvent::ChildStarted { name });
+        push_bounded(&mut self.events, SupervisionEvent::ChildStarted { name }, MAX_EVENTS);
         Ok(())
     }
 
@@ -416,10 +418,10 @@ impl Supervisor {
             record.state = ChildState::Failed;
         }
 
-        self.events.push(SupervisionEvent::ChildFailed {
+        push_bounded(&mut self.events, SupervisionEvent::ChildFailed {
             name: child_name.to_string(),
             reason: "child process terminated".to_string(),
-        });
+        }, MAX_EVENTS);
 
         // Check if the child is Temporary -- ignore its failure.
         let restart_type = self.children[child_name].spec.restart_type;
@@ -435,18 +437,18 @@ impl Supervisor {
         // INV-SUP-BUDGET-BOUND: check budget.
         let restart_count = u32::try_from(self.restart_timestamps.len()).unwrap_or(u32::MAX);
         if restart_count >= self.max_restarts {
-            self.events.push(SupervisionEvent::BudgetExhausted {
+            push_bounded(&mut self.events, SupervisionEvent::BudgetExhausted {
                 restart_count,
                 max_restarts: self.max_restarts,
-            });
+            }, MAX_EVENTS);
 
             // INV-SUP-ESCALATION-BOUNDED: check escalation depth.
             self.escalation_depth = self.escalation_depth.saturating_add(1);
             if self.escalation_depth > self.max_escalation_depth {
-                self.events.push(SupervisionEvent::Escalation {
+                push_bounded(&mut self.events, SupervisionEvent::Escalation {
                     depth: self.escalation_depth,
                     max_depth: self.max_escalation_depth,
-                });
+                }, MAX_EVENTS);
                 return Ok(SupervisionAction::Shutdown {
                     reason: format!(
                         "escalation depth {} exceeds max {}",
@@ -497,8 +499,7 @@ impl Supervisor {
             if let Some(record) = self.children.get_mut(name) {
                 record.state = ChildState::Running;
             }
-            self.events
-                .push(SupervisionEvent::ChildRestarted { name: name.clone() });
+            push_bounded(&mut self.events, SupervisionEvent::ChildRestarted { name: name.clone() }, MAX_EVENTS);
         }
 
         Ok(SupervisionAction::Restart {
@@ -511,8 +512,7 @@ impl Supervisor {
     /// Enforces `INV-SUP-SHUTDOWN-ORDER` and `INV-SUP-TIMEOUT-ENFORCED`.
     pub fn shutdown(&mut self) -> ShutdownReport {
         let child_count = u32::try_from(self.children.len()).unwrap_or(u32::MAX);
-        self.events
-            .push(SupervisionEvent::ShutdownStarted { child_count });
+        push_bounded(&mut self.events, SupervisionEvent::ShutdownStarted { child_count }, MAX_EVENTS);
 
         // INV-SUP-SHUTDOWN-ORDER: sort children by start_order descending.
         let keys: Vec<String> = self.children.keys().cloned().collect();
@@ -552,9 +552,9 @@ impl Supervisor {
             duration_ms: 0, // synchronous model; real impl would measure
         };
 
-        self.events.push(SupervisionEvent::ShutdownComplete {
+        push_bounded(&mut self.events, SupervisionEvent::ShutdownComplete {
             report: report.clone(),
-        });
+        }, MAX_EVENTS);
 
         report
     }
@@ -604,6 +604,18 @@ impl Supervisor {
         (self.restart_timestamps.len() as u64)
             .saturating_add(1)
             .saturating_mul(1000)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bounded push helper
+// ---------------------------------------------------------------------------
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
     }
 }
 

@@ -387,6 +387,9 @@ impl std::fmt::Display for SessionError {
 ///
 /// # INV-SCC-TERMINATED
 /// Once terminated, a session rejects all further messages.
+/// Maximum session events before oldest-first eviction.
+const MAX_SESSION_EVENTS: usize = 4096;
+
 pub struct SessionManager {
     config: SessionConfig,
     sessions: BTreeMap<String, AuthenticatedSession>,
@@ -409,6 +412,14 @@ impl SessionManager {
     /// Create with default config.
     pub fn default_manager() -> Self {
         Self::new(SessionConfig::default())
+    }
+
+    fn push_event(&mut self, event: SessionEvent) {
+        self.events.push(event);
+        if self.events.len() > MAX_SESSION_EVENTS {
+            let overflow = self.events.len() - MAX_SESSION_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 
     /// Current number of active/establishing sessions.
@@ -475,7 +486,7 @@ impl SessionManager {
 
         self.sessions.insert(session_id.clone(), session);
 
-        self.events.push(SessionEvent {
+        self.push_event(SessionEvent {
             event_code: event_codes::SCC_SESSION_ESTABLISHED.to_string(),
             session_id: session_id.clone(),
             trace_id,
@@ -516,7 +527,7 @@ impl SessionManager {
 
         // INV-SCC-TERMINATED: terminated sessions reject all messages
         if session.state == SessionState::Terminated {
-            self.events.push(SessionEvent {
+            self.push_event(SessionEvent {
                 event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
                 session_id: session_id.to_string(),
                 trace_id: trace_id.to_string(),
@@ -529,7 +540,7 @@ impl SessionManager {
         }
 
         if session.state == SessionState::Terminating {
-            self.events.push(SessionEvent {
+            self.push_event(SessionEvent {
                 event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
                 session_id: session_id.to_string(),
                 trace_id: trace_id.to_string(),
@@ -542,7 +553,7 @@ impl SessionManager {
         }
 
         if !session.state.is_active() {
-            self.events.push(SessionEvent {
+            self.push_event(SessionEvent {
                 event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
                 session_id: session_id.to_string(),
                 trace_id: trace_id.to_string(),
@@ -563,7 +574,7 @@ impl SessionManager {
         if self.config.replay_window == 0 {
             // Strict monotonicity: sequence must equal expected
             if sequence != expected_seq {
-                self.events.push(SessionEvent {
+                self.push_event(SessionEvent {
                     event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
                     session_id: session_id.to_string(),
                     trace_id: trace_id.to_string(),
@@ -583,7 +594,7 @@ impl SessionManager {
             let floor = expected_seq.saturating_sub(self.config.replay_window);
 
             if sequence < floor {
-                self.events.push(SessionEvent {
+                self.push_event(SessionEvent {
                     event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
                     session_id: session_id.to_string(),
                     trace_id: trace_id.to_string(),
@@ -602,7 +613,7 @@ impl SessionManager {
             let window = self.replay_windows.entry(replay_key).or_default();
 
             if window.contains(&sequence) {
-                self.events.push(SessionEvent {
+                self.push_event(SessionEvent {
                     event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
                     session_id: session_id.to_string(),
                     trace_id: trace_id.to_string(),
@@ -650,7 +661,7 @@ impl SessionManager {
             signature: signature.to_string(),
         };
 
-        self.events.push(SessionEvent {
+        self.push_event(SessionEvent {
             event_code: event_codes::SCC_MESSAGE_ACCEPTED.to_string(),
             session_id: session_id.to_string(),
             trace_id: trace_id.to_string(),
@@ -684,7 +695,7 @@ impl SessionManager {
         // Clean up replay windows
         self.replay_windows.retain(|key, _| key.0 != session_id);
 
-        self.events.push(SessionEvent {
+        self.push_event(SessionEvent {
             event_code: event_codes::SCC_SESSION_TERMINATED.to_string(),
             session_id: session_id.to_string(),
             trace_id: trace_id.to_string(),

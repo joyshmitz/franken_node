@@ -26,6 +26,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -356,7 +358,7 @@ impl PolicyCheckpointChain {
         self.head_hash = Some(checkpoint_hash);
         self.next_seq = sequence.saturating_add(1);
 
-        self.events.push(CheckpointChainEvent {
+        push_bounded(&mut self.events, CheckpointChainEvent {
             event_code: event_codes::PCK_001_CHECKPOINT_CREATED.to_string(),
             event_name: event_names::CHECKPOINT_CREATED.to_string(),
             trace_id: trace_id.to_string(),
@@ -366,7 +368,7 @@ impl PolicyCheckpointChain {
             detail: format!(
                 "checkpoint created: seq={sequence} epoch={epoch_id} channel={channel}"
             ),
-        });
+        }, MAX_EVENTS);
 
         self.checkpoints
             .last()
@@ -396,7 +398,7 @@ impl PolicyCheckpointChain {
     ) -> Result<&PolicyCheckpoint, CheckpointChainError> {
         // INV-PCK-MONOTONIC
         if checkpoint.sequence != self.next_seq {
-            self.events.push(CheckpointChainEvent {
+            push_bounded(&mut self.events, CheckpointChainEvent {
                 event_code: event_codes::PCK_003_CHECKPOINT_REJECTED.to_string(),
                 event_name: event_names::CHECKPOINT_REJECTED.to_string(),
                 trace_id: trace_id.to_string(),
@@ -407,7 +409,7 @@ impl PolicyCheckpointChain {
                     "CHECKPOINT_SEQ_VIOLATION: expected={}, actual={}",
                     self.next_seq, checkpoint.sequence
                 ),
-            });
+            }, MAX_EVENTS);
             return Err(CheckpointChainError::SequenceViolation {
                 expected: self.next_seq,
                 actual: checkpoint.sequence,
@@ -421,7 +423,7 @@ impl PolicyCheckpointChain {
             _ => false,
         };
         if !parent_match {
-            self.events.push(CheckpointChainEvent {
+            push_bounded(&mut self.events, CheckpointChainEvent {
                 event_code: event_codes::PCK_003_CHECKPOINT_REJECTED.to_string(),
                 event_name: event_names::CHECKPOINT_REJECTED.to_string(),
                 trace_id: trace_id.to_string(),
@@ -432,7 +434,7 @@ impl PolicyCheckpointChain {
                     "CHECKPOINT_PARENT_MISMATCH: expected={:?}, actual={:?}",
                     self.head_hash, checkpoint.parent_hash
                 ),
-            });
+            }, MAX_EVENTS);
             return Err(CheckpointChainError::ParentMismatch {
                 expected: self.head_hash.clone(),
                 actual: checkpoint.parent_hash,
@@ -448,7 +450,7 @@ impl PolicyCheckpointChain {
         self.head_hash = Some(hash);
         self.next_seq = seq.saturating_add(1);
 
-        self.events.push(CheckpointChainEvent {
+        push_bounded(&mut self.events, CheckpointChainEvent {
             event_code: event_codes::PCK_001_CHECKPOINT_CREATED.to_string(),
             event_name: event_names::CHECKPOINT_CREATED.to_string(),
             trace_id: trace_id.to_string(),
@@ -456,7 +458,7 @@ impl PolicyCheckpointChain {
             sequence: seq,
             channel: channel_label,
             detail: format!("checkpoint appended: seq={seq} epoch={epoch}"),
-        });
+        }, MAX_EVENTS);
 
         self.checkpoints
             .last()
@@ -669,6 +671,18 @@ pub fn sha256_hex(data: &[u8]) -> String {
     hasher.update(b"policy_checkpoint_hash_v1:");
     hasher.update(data);
     hex::encode(hasher.finalize())
+}
+
+// ---------------------------------------------------------------------------
+// Bounded push helper
+// ---------------------------------------------------------------------------
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
+    }
 }
 
 // ---------------------------------------------------------------------------

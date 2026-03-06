@@ -8,6 +8,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+const MAX_ENTRIES: usize = 4096;
+const MAX_EVENTS: usize = 4096;
+
 use crate::security::revocation_freshness::{
     FreshnessCheck, FreshnessPolicy, SafetyTier, evaluate_freshness,
 };
@@ -529,6 +532,10 @@ impl RevocationIntegrationEngine {
             timestamp_epoch: now_epoch,
             trace_id: decision.trace_id.clone(),
         });
+        if self.evidence_ledger.len() > MAX_ENTRIES {
+            let overflow = self.evidence_ledger.len() - MAX_ENTRIES;
+            self.evidence_ledger.drain(0..overflow);
+        }
 
         self.push_event(RevocationEventRecord {
             event: decision.event,
@@ -542,6 +549,10 @@ impl RevocationIntegrationEngine {
 
     fn push_event(&mut self, event: RevocationEventRecord) {
         self.events.push(event);
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
     }
 }
 

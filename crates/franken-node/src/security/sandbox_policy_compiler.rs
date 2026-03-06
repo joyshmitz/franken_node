@@ -1,4 +1,5 @@
 //! Sandbox profile system with policy compiler.
+//! bd-1xbr: Bounded audit_log capacity with oldest-first eviction.
 //!
 //! Four tiers: strict, strict_plus, moderate, permissive. The policy
 //! compiler translates a profile into enforceable capability grants.
@@ -6,6 +7,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
 
 /// Sandbox profile tiers, ordered from most to least restrictive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -246,7 +249,7 @@ impl ProfileTracker {
 
         self.current_profile = new_profile;
         self.compiled_policy = compile_policy(new_profile);
-        self.audit_log.push(audit.clone());
+        push_bounded(&mut self.audit_log, audit.clone(), MAX_AUDIT_LOG_ENTRIES);
         Ok(audit)
     }
 
@@ -311,6 +314,14 @@ impl fmt::Display for SandboxError {
 }
 
 impl std::error::Error for SandboxError {}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
+    }
+}
 
 #[cfg(test)]
 mod tests {

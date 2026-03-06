@@ -99,6 +99,8 @@ pub fn validate_schema(event: &DegradedModeEvent) -> Result<(), AuditError> {
     Ok(())
 }
 
+const MAX_EVENTS: usize = 4096;
+
 /// Append-only audit log for degraded-mode events.
 ///
 /// INV-DM-IMMUTABLE: events cannot be modified or deleted.
@@ -119,6 +121,10 @@ impl DegradedModeAuditLog {
     pub fn emit(&mut self, event: DegradedModeEvent) -> Result<(), AuditError> {
         validate_schema(&event)?;
         self.events.push(event);
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
         Ok(())
     }
 

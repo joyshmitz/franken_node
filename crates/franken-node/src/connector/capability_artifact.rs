@@ -39,6 +39,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Schema version
 // ---------------------------------------------------------------------------
@@ -492,7 +494,7 @@ impl AdmissionGate {
         let aid = &artifact.identity.artifact_id;
 
         // Log submission
-        self.audit_log.push(AuditEntry {
+        self.push_audit(AuditEntry {
             event_code: event_codes::CART_001.to_string(),
             artifact_id: aid.clone(),
             timestamp: timestamp.to_string(),
@@ -526,7 +528,7 @@ impl AdmissionGate {
                 timestamp,
                 &format!("unknown schema version: {}", envelope.schema_version),
             );
-            self.audit_log.push(AuditEntry {
+            self.push_audit(AuditEntry {
                 event_code: event_codes::CART_010.to_string(),
                 artifact_id: aid.clone(),
                 timestamp: timestamp.to_string(),
@@ -540,7 +542,7 @@ impl AdmissionGate {
         }
 
         // Log schema validation success
-        self.audit_log.push(AuditEntry {
+        self.push_audit(AuditEntry {
             event_code: event_codes::CART_010.to_string(),
             artifact_id: aid.clone(),
             timestamp: timestamp.to_string(),
@@ -551,7 +553,7 @@ impl AdmissionGate {
         // INV-CART-FAIL-CLOSED: envelope must declare at least one capability
         if envelope.requirements.is_empty() {
             self.log_rejection(aid, timestamp, "envelope declares zero capabilities");
-            self.audit_log.push(AuditEntry {
+            self.push_audit(AuditEntry {
                 event_code: event_codes::CART_005.to_string(),
                 artifact_id: aid.clone(),
                 timestamp: timestamp.to_string(),
@@ -573,7 +575,7 @@ impl AdmissionGate {
                 timestamp,
                 &format!("over-scoped capabilities: {:?}", out_of_scope),
             );
-            self.audit_log.push(AuditEntry {
+            self.push_audit(AuditEntry {
                 event_code: event_codes::CART_005.to_string(),
                 artifact_id: aid.clone(),
                 timestamp: timestamp.to_string(),
@@ -589,7 +591,7 @@ impl AdmissionGate {
         // INV-CART-DIGEST-BOUND: verify digest
         if !envelope.verify_digest(&artifact.identity) {
             self.log_rejection(aid, timestamp, "envelope digest does not match identity");
-            self.audit_log.push(AuditEntry {
+            self.push_audit(AuditEntry {
                 event_code: event_codes::CART_009.to_string(),
                 artifact_id: aid.clone(),
                 timestamp: timestamp.to_string(),
@@ -602,7 +604,7 @@ impl AdmissionGate {
         }
 
         // Digest verified
-        self.audit_log.push(AuditEntry {
+        self.push_audit(AuditEntry {
             event_code: event_codes::CART_008.to_string(),
             artifact_id: aid.clone(),
             timestamp: timestamp.to_string(),
@@ -611,7 +613,7 @@ impl AdmissionGate {
         });
 
         // Envelope validated
-        self.audit_log.push(AuditEntry {
+        self.push_audit(AuditEntry {
             event_code: event_codes::CART_004.to_string(),
             artifact_id: aid.clone(),
             timestamp: timestamp.to_string(),
@@ -624,7 +626,7 @@ impl AdmissionGate {
 
         // Admit
         self.admitted.insert(aid.clone(), artifact.clone());
-        self.audit_log.push(AuditEntry {
+        self.push_audit(AuditEntry {
             event_code: event_codes::CART_002.to_string(),
             artifact_id: aid.clone(),
             timestamp: timestamp.to_string(),
@@ -658,13 +660,21 @@ impl AdmissionGate {
 
     /// Log a rejection event.
     fn log_rejection(&mut self, artifact_id: &str, timestamp: &str, detail: &str) {
-        self.audit_log.push(AuditEntry {
+        self.push_audit(AuditEntry {
             event_code: event_codes::CART_003.to_string(),
             artifact_id: artifact_id.to_string(),
             timestamp: timestamp.to_string(),
             outcome: "rejected".to_string(),
             detail: detail.to_string(),
         });
+    }
+
+    fn push_audit(&mut self, entry: AuditEntry) {
+        self.audit_log.push(entry);
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 
@@ -724,7 +734,7 @@ impl EnvelopeEnforcer {
 
         // Check if revoked
         if self.revoked_capabilities.contains(capability) {
-            self.enforcement_log.push(AuditEntry {
+            self.push_enforcement_audit(AuditEntry {
                 event_code: event_codes::CART_007.to_string(),
                 artifact_id: self.artifact_id.clone(),
                 timestamp: timestamp.to_string(),
@@ -742,7 +752,7 @@ impl EnvelopeEnforcer {
 
         // Check if declared in envelope
         if !self.admitted_capabilities.contains(capability) {
-            self.enforcement_log.push(AuditEntry {
+            self.push_enforcement_audit(AuditEntry {
                 event_code: event_codes::CART_007.to_string(),
                 artifact_id: self.artifact_id.clone(),
                 timestamp: timestamp.to_string(),
@@ -759,7 +769,7 @@ impl EnvelopeEnforcer {
         }
 
         // Enforcement passed
-        self.enforcement_log.push(AuditEntry {
+        self.push_enforcement_audit(AuditEntry {
             event_code: event_codes::CART_006.to_string(),
             artifact_id: self.artifact_id.clone(),
             timestamp: timestamp.to_string(),
@@ -778,6 +788,14 @@ impl EnvelopeEnforcer {
     /// Return enforcement audit log.
     pub fn enforcement_log(&self) -> &[AuditEntry] {
         &self.enforcement_log
+    }
+
+    fn push_enforcement_audit(&mut self, entry: AuditEntry) {
+        self.enforcement_log.push(entry);
+        if self.enforcement_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.enforcement_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.enforcement_log.drain(0..overflow);
+        }
     }
 
     /// Check for drift: any used capability not in admitted set, or any

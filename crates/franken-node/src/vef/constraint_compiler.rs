@@ -22,6 +22,11 @@ use sha2::{Digest, Sha256};
 
 use crate::security::constant_time::ct_eq;
 
+// ── Capacity limits ─────────────────────────────────────────────────────────
+
+/// Maximum number of compile events retained per compilation.
+const MAX_EVENTS: usize = 4096;
+
 // ── Schema version ──────────────────────────────────────────────────────────
 
 /// Schema version for the VEF constraint compiler output format.
@@ -370,6 +375,10 @@ impl ConstraintCompiler {
                 policy.policy_id, policy.version
             ),
         });
+        if events.len() > MAX_EVENTS {
+            let overflow = events.len() - MAX_EVENTS;
+            events.drain(0..overflow);
+        }
 
         // Validate: empty policy
         if policy.rules.is_empty() {
@@ -473,6 +482,10 @@ impl ConstraintCompiler {
                         ac.as_str()
                     ),
                 });
+                if events.len() > MAX_EVENTS {
+                    let overflow = events.len() - MAX_EVENTS;
+                    events.drain(0..overflow);
+                }
             }
         }
 
@@ -498,6 +511,10 @@ impl ConstraintCompiler {
                 predicate_set.coverage.len()
             ),
         });
+        if events.len() > MAX_EVENTS {
+            let overflow = events.len() - MAX_EVENTS;
+            events.drain(0..overflow);
+        }
 
         CompileResult {
             success: true,

@@ -32,6 +32,8 @@ use std::fmt;
 /// Schema version for time-travel runtime serialization.
 pub const SCHEMA_VERSION: &str = "ttr-v1.0";
 
+const MAX_EVENTS: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -427,6 +429,14 @@ pub struct CaptureSession {
 }
 
 impl CaptureSession {
+    fn emit_event(&mut self, event: String) {
+        self.events.push(event);
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
+    }
+
     /// Start a new capture session.
     pub fn start(snapshot_id: impl Into<String>, seed: u64) -> Self {
         let mut session = Self {
@@ -436,7 +446,7 @@ impl CaptureSession {
             frames: Vec::new(),
             events: Vec::new(),
         };
-        session.events.push(event_codes::TTR_001.to_string());
+        session.emit_event(event_codes::TTR_001.to_string());
         session
     }
 
@@ -460,7 +470,7 @@ impl CaptureSession {
             event_code: event_codes::TTR_002.to_string(),
         };
         self.frames.push(frame);
-        self.events.push(event_codes::TTR_002.to_string());
+        self.emit_event(event_codes::TTR_002.to_string());
         self.frames
             .last()
             .ok_or_else(|| TimeTravelError::SnapshotCorrupt {
@@ -485,7 +495,7 @@ impl CaptureSession {
 
     /// Finalize the capture session into a [`WorkflowSnapshot`].
     pub fn finalize(mut self) -> WorkflowSnapshot {
-        self.events.push(event_codes::TTR_009.to_string());
+        self.emit_event(event_codes::TTR_009.to_string());
         let integrity_digest = WorkflowSnapshot::compute_integrity_digest(&self.frames);
         WorkflowSnapshot {
             schema_version: SCHEMA_VERSION.to_string(),
@@ -516,6 +526,14 @@ pub struct ReplaySession {
 }
 
 impl ReplaySession {
+    fn emit_event(&mut self, event: String) {
+        self.events.push(event);
+        if self.events.len() > MAX_EVENTS {
+            let overflow = self.events.len() - MAX_EVENTS;
+            self.events.drain(0..overflow);
+        }
+    }
+
     /// Start a replay session from a snapshot.
     ///
     /// INV-TTR-DETERMINISTIC: the replay seed must match the capture seed.
@@ -589,7 +607,7 @@ impl ReplaySession {
             });
         }
         self.cursor = next;
-        self.events.push(event_codes::TTR_004.to_string());
+        self.emit_event(event_codes::TTR_004.to_string());
         Ok(&self.snapshot.frames[self.cursor as usize])
     }
 
@@ -604,7 +622,7 @@ impl ReplaySession {
             });
         }
         self.cursor = self.cursor.saturating_sub(1);
-        self.events.push(event_codes::TTR_005.to_string());
+        self.emit_event(event_codes::TTR_005.to_string());
         Ok(&self.snapshot.frames[self.cursor as usize])
     }
 
@@ -617,9 +635,9 @@ impl ReplaySession {
             });
         }
         if frame_index > self.cursor {
-            self.events.push(event_codes::TTR_004.to_string());
+            self.emit_event(event_codes::TTR_004.to_string());
         } else if frame_index < self.cursor {
-            self.events.push(event_codes::TTR_005.to_string());
+            self.emit_event(event_codes::TTR_005.to_string());
         }
         self.cursor = frame_index;
         Ok(&self.snapshot.frames[self.cursor as usize])
@@ -646,7 +664,7 @@ impl ReplaySession {
                 ),
                 event_code: event_codes::TTR_006.to_string(),
             };
-            self.events.push(event_codes::TTR_006.to_string());
+            self.emit_event(event_codes::TTR_006.to_string());
             return Err(TimeTravelError::Divergence { explanation });
         }
         Ok(())
@@ -659,7 +677,7 @@ impl ReplaySession {
 
     /// Complete the replay session.
     pub fn complete(mut self) -> Vec<String> {
-        self.events.push(event_codes::TTR_010.to_string());
+        self.emit_event(event_codes::TTR_010.to_string());
         self.events
     }
 }

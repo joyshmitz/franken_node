@@ -1,4 +1,5 @@
 //! bd-1o4v: Proof-verification gate API for control-plane trust decisions.
+//! bd-1xbr: Bounded events capacity with oldest-first eviction.
 //!
 //! This module implements a verification gate that accepts compliance proofs,
 //! validates them against policy predicates, and emits deterministic trust
@@ -13,6 +14,9 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+const MAX_EVENTS: usize = 4096;
+const MAX_REPORTS: usize = 2048;
 
 use crate::security::constant_time::ct_eq;
 use std::collections::BTreeMap;
@@ -289,6 +293,10 @@ impl ProofVerifier {
         &self.events
     }
 
+    fn emit_event(&mut self, event: VerifierEvent) {
+        push_bounded(&mut self.events, event, MAX_EVENTS);
+    }
+
     /// Validate a compliance proof against a policy predicate.
     /// Returns a list of `PredicateEvidence` entries and an overall `TrustDecision`.
     pub fn validate_proof(
@@ -481,21 +489,21 @@ impl ProofVerifier {
         // Determine final decision
         let decision = if !deny_reasons.is_empty() {
             let reason = deny_reasons.join("; ");
-            self.events.push(VerifierEvent {
+            self.emit_event(VerifierEvent {
                 event_code: event_codes::PVF_004_DENY_LOGGED.to_string(),
                 trace_id: trace_id.to_string(),
                 detail: format!("proof={} DENY: {}", proof.proof_id, reason),
             });
             TrustDecision::Deny(reason)
         } else if !all_satisfied && degrade_level > 0 {
-            self.events.push(VerifierEvent {
+            self.emit_event(VerifierEvent {
                 event_code: event_codes::PVF_005_DEGRADE_LOGGED.to_string(),
                 trace_id: trace_id.to_string(),
                 detail: format!("proof={} DEGRADE level={}", proof.proof_id, degrade_level),
             });
             TrustDecision::Degrade(degrade_level)
         } else if all_satisfied {
-            self.events.push(VerifierEvent {
+            self.emit_event(VerifierEvent {
                 event_code: event_codes::PVF_002_PROOF_VALIDATED.to_string(),
                 trace_id: trace_id.to_string(),
                 detail: format!("proof={} validated successfully", proof.proof_id),
@@ -503,7 +511,7 @@ impl ProofVerifier {
             TrustDecision::Allow
         } else {
             // Fallback: unsatisfied checks with no explicit deny reason -> degrade(1)
-            self.events.push(VerifierEvent {
+            self.emit_event(VerifierEvent {
                 event_code: event_codes::PVF_005_DEGRADE_LOGGED.to_string(),
                 trace_id: trace_id.to_string(),
                 detail: format!(
@@ -549,6 +557,10 @@ impl VerificationGate {
         &self.reports
     }
 
+    fn emit_event(&mut self, event: VerifierEvent) {
+        push_bounded(&mut self.events, event, MAX_EVENTS);
+    }
+
     pub fn events(&self) -> &[VerifierEvent] {
         &self.events
     }
@@ -576,7 +588,7 @@ impl VerificationGate {
         let trace_id = &request.trace_id;
 
         // Emit request-received event
-        self.events.push(VerifierEvent {
+        self.emit_event(VerifierEvent {
             event_code: event_codes::PVF_001_REQUEST_RECEIVED.to_string(),
             trace_id: trace_id.clone(),
             detail: format!(
@@ -588,7 +600,7 @@ impl VerificationGate {
         // Format validation
         if request.proof.proof_id.is_empty() {
             let err = VerifierError::invalid_format("proof_id is empty");
-            self.events.push(VerifierEvent {
+            self.emit_event(VerifierEvent {
                 event_code: event_codes::PVF_004_DENY_LOGGED.to_string(),
                 trace_id: trace_id.clone(),
                 detail: format!("request={} DENY: {}", request.request_id, err.message),
@@ -597,7 +609,7 @@ impl VerificationGate {
         }
         if request.proof.proof_hash.is_empty() {
             let err = VerifierError::invalid_format("proof_hash is empty");
-            self.events.push(VerifierEvent {
+            self.emit_event(VerifierEvent {
                 event_code: event_codes::PVF_004_DENY_LOGGED.to_string(),
                 trace_id: trace_id.clone(),
                 detail: format!("request={} DENY: {}", request.request_id, err.message),
@@ -613,7 +625,7 @@ impl VerificationGate {
                     "no predicate for action_class '{}'",
                     request.proof.action_class
                 ));
-                self.events.push(VerifierEvent {
+                self.emit_event(VerifierEvent {
                     event_code: event_codes::PVF_004_DENY_LOGGED.to_string(),
                     trace_id: trace_id.clone(),
                     detail: format!("request={} DENY: {}", request.request_id, err.message),
@@ -628,7 +640,7 @@ impl VerificationGate {
             verifier.validate_proof(&request.proof, &predicate, request.now_millis, trace_id)?;
 
         // Emit decision event
-        self.events.push(VerifierEvent {
+        self.emit_event(VerifierEvent {
             event_code: event_codes::PVF_003_DECISION_EMITTED.to_string(),
             trace_id: trace_id.clone(),
             detail: format!(
@@ -663,7 +675,7 @@ impl VerificationGate {
         };
 
         // Emit report-finalized event
-        self.events.push(VerifierEvent {
+        self.emit_event(VerifierEvent {
             event_code: event_codes::PVF_006_REPORT_FINALIZED.to_string(),
             trace_id: trace_id.clone(),
             detail: format!(
@@ -672,7 +684,7 @@ impl VerificationGate {
             ),
         });
 
-        self.reports.push(report.clone());
+        push_bounded(&mut self.reports, report.clone(), MAX_REPORTS);
         self.next_report_seq = self
             .next_report_seq
             .checked_add(1)
@@ -766,6 +778,14 @@ fn compute_report_digest(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
+    }
+}
+
 // Tests
 // ════════════════════════════════════════════════════════════════════════════
 
