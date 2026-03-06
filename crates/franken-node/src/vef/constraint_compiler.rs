@@ -570,10 +570,8 @@ impl ConstraintCompiler {
     /// Compute SHA-256 hash of the canonical policy serialization.
     /// Uses BTreeMap-based serde_json for deterministic output. INV-VEF-DETERMINISTIC
     fn compute_policy_hash(&self, policy: &PolicyDefinition) -> String {
-        let canonical = match serde_json::to_string(policy) {
-            Ok(s) => s,
-            Err(_) => return "SERIALIZATION_FAILED".to_string(),
-        };
+        let canonical = serde_json::to_string(policy)
+            .unwrap_or_else(|e| format!("__serde_err:{e}"));
         self.sha256_hex(&canonical)
     }
 
