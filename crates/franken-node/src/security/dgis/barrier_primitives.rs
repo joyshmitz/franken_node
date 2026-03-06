@@ -612,7 +612,7 @@ impl BarrierEngine {
         let barrier_ids = self.get_node_barrier_ids(node_id);
 
         for barrier_id in &barrier_ids {
-            if let Some(barrier) = self.barriers.get(barrier_id)
+            if let Some(barrier) = self.barriers.get(barrier_id).cloned()
                 && let BarrierConfig::SandboxEscalation(ref cfg) = barrier.config
             {
                 // Enforce minimum tier
@@ -750,7 +750,7 @@ impl BarrierEngine {
         let barrier_ids = self.get_node_barrier_ids(node_id);
 
         for barrier_id in &barrier_ids {
-            if let Some(barrier) = self.barriers.get(barrier_id)
+            if let Some(barrier) = self.barriers.get(barrier_id).cloned()
                 && let BarrierConfig::VerifiedForkPin(ref cfg) = barrier.config
                 && !ct_eq(&cfg.expected_digest, artifact_digest)
             {
@@ -808,6 +808,7 @@ impl BarrierEngine {
         let state = self
             .rollout_states
             .get(barrier_id)
+            .cloned()
             .ok_or_else(|| BarrierError::NotFound(format!("rollout state for {barrier_id}")))?;
 
         if state.current_phase.ordinal() < required_phase.ordinal() {

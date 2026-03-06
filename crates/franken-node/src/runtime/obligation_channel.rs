@@ -852,12 +852,13 @@ impl TwoPhaseFlow {
 
     /// Internal rollback helper.
     fn do_rollback(&mut self, now_ms: u64, trace_id: &str) {
-        for id in &self.obligation_ids {
-            if let Some(o) = self.ledger.get(id)
+        let obligation_ids = self.obligation_ids.clone();
+        for id in obligation_ids {
+            if let Some(o) = self.ledger.get(&id)
                 && !o.status.is_terminal()
                 && let Err(e) =
                     self.ledger
-                        .update_status(id, ObligationStatus::Cancelled, now_ms, trace_id)
+                        .update_status(&id, ObligationStatus::Cancelled, now_ms, trace_id)
             {
                 self.emit_flow_audit(ChannelAuditRecord {
                     event_code: event_codes::FN_OB_010.to_string(),

@@ -382,8 +382,9 @@ impl ConformanceSuiteRunner {
 
         let mut pass_count = 0_usize;
         let mut fail_count = 0_usize;
+        let fixtures = self.fixtures.clone();
 
-        for fixture in &self.fixtures {
+        for fixture in &fixtures {
             let result = test_fn(fixture);
             let passed = matches!(result, ConformanceTestResult::Pass);
 

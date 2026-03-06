@@ -338,22 +338,21 @@ impl KeyRoleRegistry {
         trace_id: &str,
     ) -> Result<&KeyRoleBinding, KeyRoleSeparationError> {
         // Check INV-KRS-ROLE-EXCLUSIVITY: same key cannot serve two roles.
-        if let Some(existing) = self.active.get(key_id) {
-            if existing.role != role {
+        if let Some(existing_role) = self.active.get(key_id).map(|binding| binding.role) {
+            if existing_role != role {
                 self.push_event(KeyRoleEvent::violation(
                     key_id,
                     role,
-                    existing.role,
+                    existing_role,
                     trace_id,
                 ));
                 return Err(KeyRoleSeparationError::RoleSeparationViolation {
                     key_id: key_id.to_string(),
-                    existing_role: existing.role,
+                    existing_role,
                     attempted_role: role,
                 });
             }
             // Re-binding to the same role is idempotent; return existing.
-            let existing_role = existing.role;
             if existing_role == role {
                 return self.active.get(key_id).ok_or_else(|| {
                     KeyRoleSeparationError::KeyNotFound {
@@ -506,28 +505,33 @@ impl KeyRoleRegistry {
         expected_role: KeyRole,
         trace_id: &str,
     ) -> Result<&KeyRoleBinding, KeyRoleSeparationError> {
-        let binding =
+        let actual_role =
             self.active
                 .get(key_id)
+                .map(|binding| binding.role)
                 .ok_or_else(|| KeyRoleSeparationError::KeyNotFound {
                     key_id: key_id.to_string(),
                 })?;
 
-        if binding.role != expected_role {
+        if actual_role != expected_role {
             self.push_event(KeyRoleEvent::violation(
                 key_id,
                 expected_role,
-                binding.role,
+                actual_role,
                 trace_id,
             ));
             return Err(KeyRoleSeparationError::KeyRoleMismatch {
                 key_id: key_id.to_string(),
                 expected_role,
-                actual_role: binding.role,
+                actual_role,
             });
         }
 
-        Ok(binding)
+        self.active
+            .get(key_id)
+            .ok_or_else(|| KeyRoleSeparationError::KeyNotFound {
+                key_id: key_id.to_string(),
+            })
     }
 
     /// Number of active bindings.

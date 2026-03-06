@@ -616,31 +616,38 @@ impl RailRouter {
         workload_id: &str,
         consumed_us: u64,
     ) -> Result<Placement, RailRouterError> {
-        let placement = self.placements.get_mut(workload_id).ok_or_else(|| {
-            RailRouterError::WorkloadRejected {
-                workload_id: workload_id.to_string(),
-                reason: "workload not found".to_string(),
-            }
-        })?;
+        let (placement, budget_exceeded, detail) = {
+            let placement = self.placements.get_mut(workload_id).ok_or_else(|| {
+                RailRouterError::WorkloadRejected {
+                    workload_id: workload_id.to_string(),
+                    reason: "workload not found".to_string(),
+                }
+            })?;
 
-        placement.latency_consumed_us = placement.latency_consumed_us.saturating_add(consumed_us);
+            placement.latency_consumed_us =
+                placement.latency_consumed_us.saturating_add(consumed_us);
 
-        self.events.push(RailEvent {
-            event_code: ISOLATION_BUDGET_CHECK.to_string(),
-            workload_id: workload_id.to_string(),
-            detail: format!(
+            let detail = format!(
                 "consumed={}us budget={}us remaining={}us",
                 placement.latency_consumed_us,
                 placement.latency_budget_us,
                 placement.remaining_budget_us()
-            ),
+            );
+            let budget_exceeded = placement.budget_exceeded();
+            (placement.clone(), budget_exceeded, detail)
+        };
+
+        self.events.push(RailEvent {
+            event_code: ISOLATION_BUDGET_CHECK.to_string(),
+            workload_id: workload_id.to_string(),
+            detail,
             rail: Some(placement.rail),
             target_rail: None,
         });
         self.trim_events();
 
         // INV-ISOLATION-BUDGET-BOUND
-        if placement.budget_exceeded() {
+        if budget_exceeded {
             return Err(RailRouterError::BudgetExceeded {
                 workload_id: workload_id.to_string(),
                 budget_us: placement.latency_budget_us,

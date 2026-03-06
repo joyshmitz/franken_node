@@ -736,7 +736,7 @@ impl CapabilityGuard {
         let subsystems: Vec<String> = self.profiles.keys().cloned().collect();
         let mut gaps = Vec::new();
         for subsystem in subsystems {
-            if !audited.contains(subsystem) {
+            if !audited.contains(&subsystem) {
                 gaps.push(subsystem.clone());
                 self.emit_event(CapabilityGuardEvent {
                     event_code: event_codes::CAP_004.to_string(),
