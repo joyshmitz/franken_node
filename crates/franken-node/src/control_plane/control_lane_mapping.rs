@@ -505,35 +505,43 @@ impl ControlLaneScheduler {
         for lane in ControlLane::all() {
             let lane_key = lane.as_str().to_string();
             let tasks_run = tasks_by_lane.get(&lane_key).copied().unwrap_or(0);
-            let Some(counters) = self.counters.get_mut(&lane_key) else {
-                alerts.push(ControlLanePolicyError::IncompleteMap {
-                    detail: format!("counters missing for lane {lane_key}"),
-                });
-                continue;
+            let starvation_ticks = {
+                let Some(counters) = self.counters.get_mut(&lane_key) else {
+                    alerts.push(ControlLanePolicyError::IncompleteMap {
+                        detail: format!("counters missing for lane {lane_key}"),
+                    });
+                    continue;
+                };
+
+                if tasks_run == 0 && counters.tasks_queued > 0 {
+                    counters.consecutive_empty_ticks =
+                        counters.consecutive_empty_ticks.saturating_add(1);
+                } else {
+                    counters.consecutive_empty_ticks = 0;
+                }
+                counters.tasks_run = counters.tasks_run.saturating_add(tasks_run);
+
+                if let Some(budget) = self.policy.budgets.get(&lane_key)
+                    && counters.consecutive_empty_ticks >= budget.starvation_threshold_ticks
+                {
+                    counters.starvation_alerts = counters.starvation_alerts.saturating_add(1);
+                    alerts.push(ControlLanePolicyError::Starvation {
+                        lane: *lane,
+                        consecutive_ticks: counters.consecutive_empty_ticks,
+                    });
+                    Some(counters.consecutive_empty_ticks)
+                } else {
+                    None
+                }
             };
 
-            if tasks_run == 0 && counters.tasks_queued > 0 {
-                counters.consecutive_empty_ticks =
-                    counters.consecutive_empty_ticks.saturating_add(1);
-            } else {
-                counters.consecutive_empty_ticks = 0;
-            }
-            counters.tasks_run = counters.tasks_run.saturating_add(tasks_run);
-
-            if let Some(budget) = self.policy.budgets.get(&lane_key)
-                && counters.consecutive_empty_ticks >= budget.starvation_threshold_ticks
-            {
-                counters.starvation_alerts = counters.starvation_alerts.saturating_add(1);
-                alerts.push(ControlLanePolicyError::Starvation {
-                    lane: *lane,
-                    consecutive_ticks: counters.consecutive_empty_ticks,
-                });
+            if let Some(consecutive_ticks) = starvation_ticks {
                 self.record_audit(ControlLaneAuditRecord {
                     event_code: event_codes::CLM_STARVATION_ALERT.to_string(),
                     task_class: String::new(),
                     lane: lane.to_string(),
                     timestamp_ms,
-                    detail: format!("starved for {} ticks", counters.consecutive_empty_ticks),
+                    detail: format!("starved for {} ticks", consecutive_ticks),
                     trace_id: trace_id.to_string(),
                     schema_version: SCHEMA_VERSION.to_string(),
                 });
