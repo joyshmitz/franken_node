@@ -190,8 +190,21 @@ pub struct ReputationEvent {
 ///
 /// This is a pure function: identical inputs always produce identical output.
 /// Satisfies INV-ENE-DETERM.
+///
+/// Returns 0.0 if any input or weight is non-finite (NaN/Inf defense).
 #[must_use]
 pub fn deterministic_reputation_score(inputs: &ReputationInputs, weights: &ScoringWeights) -> f64 {
+    if !inputs.compatibility_pass_rate.is_finite()
+        || !inputs.migration_success_rate.is_finite()
+        || !inputs.trust_artifact_validity.is_finite()
+        || !inputs.verifier_audit_frequency.is_finite()
+        || !weights.compatibility.is_finite()
+        || !weights.migration.is_finite()
+        || !weights.trust_artifact.is_finite()
+        || !weights.verifier_audit.is_finite()
+    {
+        return 0.0;
+    }
     let raw = inputs.compatibility_pass_rate * weights.compatibility
         + inputs.migration_success_rate * weights.migration
         + inputs.trust_artifact_validity * weights.trust_artifact
@@ -208,6 +221,10 @@ pub fn deterministic_reputation_score(inputs: &ReputationInputs, weights: &Scori
 /// standard deviations from the rolling mean.
 #[must_use]
 pub fn is_anomalous_delta(delta: f64, history: &[f64], config: &AnomalyConfig) -> bool {
+    // Non-finite delta is inherently anomalous.
+    if !delta.is_finite() {
+        return true;
+    }
     if history.len() < 2 {
         return false; // Not enough history for anomaly detection.
     }
@@ -219,9 +236,13 @@ pub fn is_anomalous_delta(delta: f64, history: &[f64], config: &AnomalyConfig) -
     };
 
     let n = window.len() as f64;
-    let mean = window.iter().sum::<f64>() / n;
-    let variance = window.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
-    let std_dev = variance.sqrt();
+    let mean = window.iter().copied().fold(0.0_f64, |a, b| a + b) / n;
+    if !mean.is_finite() {
+        // History contains non-finite values; treat delta as anomalous.
+        return true;
+    }
+    let variance = window.iter().map(|x| (x - mean).powi(2)).fold(0.0_f64, |a, b| a + b) / n;
+    let std_dev = if variance.is_finite() { variance.sqrt() } else { return true; };
 
     if std_dev < 1e-9 {
         // Zero variance — any nonzero delta is anomalous if the multiplier is finite.
