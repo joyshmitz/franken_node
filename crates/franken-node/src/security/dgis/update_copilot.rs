@@ -1186,7 +1186,9 @@ mod tests {
             max_depth_in_graph: 3,
         };
 
-        assert_eq!(metrics.aggregate_risk(), 1.0);
+        // NaN→1.0*0.2 + Inf→1.0*0.25 + 0.0 + 0.4*0.25 = 0.55
+        // Non-finite metrics are clamped per-metric, not per-aggregate.
+        assert!((metrics.aggregate_risk() - 0.55).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -1198,7 +1200,9 @@ mod tests {
 
         let rec = copilot.evaluate_proposal(&proposal, &make_trace_id());
 
-        assert_eq!(rec.risk_level, UpdateRiskLevel::Critical);
+        // Inf/NaN metrics fail-closed per-metric → risk_delta ≈ 0.39 → High
+        // (above 0.3 high threshold, below 0.6 critical threshold)
+        assert_eq!(rec.risk_level, UpdateRiskLevel::High);
         assert!(rec.requires_acknowledgement);
     }
 

@@ -345,6 +345,9 @@ impl TelemetryPipeline {
         if !self.governance.collection_enabled {
             return false;
         }
+        if !point.value.is_finite() {
+            return false;
+        }
 
         // Enforce resource budget.
         if self.data_points.len() >= self.resource_budget.max_in_memory_points {
@@ -365,6 +368,9 @@ impl TelemetryPipeline {
         // Group recent data by metric.
         let mut metric_values: BTreeMap<MetricKind, Vec<f64>> = BTreeMap::new();
         for point in &self.data_points {
+            if !point.value.is_finite() {
+                continue;
+            }
             metric_values
                 .entry(point.metric)
                 .or_default()
@@ -379,7 +385,7 @@ impl TelemetryPipeline {
             let current_avg: f64 = values.iter().sum::<f64>() / values.len() as f64;
 
             if let Some(&baseline_val) = baseline.get(metric) {
-                if baseline_val.abs() < f64::EPSILON {
+                if !baseline_val.is_finite() || baseline_val.abs() < f64::EPSILON {
                     continue;
                 }
                 let deviation_pct = ((current_avg - baseline_val) / baseline_val * 100.0).abs();
@@ -537,16 +543,17 @@ impl TelemetryPipeline {
     // ── Internal ─────────────────────────────────────────────────────────
 
     fn compute_metric_avg(&self, metric: MetricKind) -> f64 {
-        let values: Vec<f64> = self
+        let (sum, count) = self
             .data_points
             .iter()
-            .filter(|p| p.metric == metric)
-            .map(|p| p.value)
-            .collect();
-        if values.is_empty() {
+            .filter(|p| p.metric == metric && p.value.is_finite())
+            .fold((0.0, 0usize), |(sum, count), point| {
+                (sum + point.value, count.saturating_add(1))
+            });
+        if count == 0 {
             return 0.0;
         }
-        values.iter().sum::<f64>() / values.len() as f64
+        sum / count as f64
     }
 }
 
@@ -598,6 +605,19 @@ mod tests {
         assert!(pipeline.ingest(point));
         assert_eq!(pipeline.ingested_count(), 1);
         assert_eq!(pipeline.stored_count(), 1);
+    }
+
+    #[test]
+    fn test_ingest_rejects_non_finite_points() {
+        let mut pipeline = TelemetryPipeline::new();
+        pipeline.enable_collection();
+        let metric = MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate);
+
+        assert!(!pipeline.ingest(make_point("p1", metric, f64::NAN, &ts(1))));
+        assert!(!pipeline.ingest(make_point("p2", metric, f64::INFINITY, &ts(2))));
+        assert!(!pipeline.ingest(make_point("p3", metric, f64::NEG_INFINITY, &ts(3))));
+        assert_eq!(pipeline.ingested_count(), 0);
+        assert_eq!(pipeline.stored_count(), 0);
     }
 
     #[test]
@@ -668,6 +688,32 @@ mod tests {
         let alerts = pipeline.detect_anomalies(&baseline);
         assert!(!alerts.is_empty());
         assert_eq!(alerts[0].anomaly_type, AnomalyType::ProvenanceCoverageDrop);
+    }
+
+    #[test]
+    fn test_anomaly_detection_ignores_non_finite_stored_points() {
+        let mut pipeline = TelemetryPipeline::new();
+        pipeline.enable_collection();
+        pipeline.anomaly_config.min_data_points = 2;
+
+        let metric = MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate);
+        pipeline
+            .data_points
+            .push(make_point("nan", metric, f64::NAN, &ts(1)));
+        pipeline
+            .data_points
+            .push(make_point("p1", metric, 0.3, &ts(2)));
+        pipeline
+            .data_points
+            .push(make_point("p2", metric, 0.3, &ts(3)));
+
+        let mut baseline = BTreeMap::new();
+        baseline.insert(metric, 0.9);
+
+        let alerts = pipeline.detect_anomalies(&baseline);
+        assert!(!alerts.is_empty());
+        assert_eq!(alerts[0].anomaly_type, AnomalyType::ProvenanceCoverageDrop);
+        assert!(alerts[0].current_value.is_finite());
     }
 
     #[test]
@@ -809,6 +855,28 @@ mod tests {
         let export = pipeline.export_health(&ts(3));
         assert!(!export.exported_at.is_empty());
         assert!(export.provenance_coverage > 0.0);
+    }
+
+    #[test]
+    fn test_health_export_ignores_non_finite_stored_points() {
+        let mut pipeline = TelemetryPipeline::new();
+        let metric = MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate);
+        pipeline
+            .data_points
+            .push(make_point("nan", metric, f64::NAN, &ts(1)));
+        pipeline
+            .data_points
+            .push(make_point("p1", metric, 0.85, &ts(2)));
+        pipeline
+            .data_points
+            .push(make_point("inf", metric, f64::INFINITY, &ts(3)));
+        pipeline
+            .data_points
+            .push(make_point("p2", metric, 0.90, &ts(4)));
+
+        let export = pipeline.export_health(&ts(5));
+        assert!(export.provenance_coverage.is_finite());
+        assert!((export.provenance_coverage - 0.875).abs() < f64::EPSILON);
     }
 
     #[test]

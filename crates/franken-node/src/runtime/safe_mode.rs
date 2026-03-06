@@ -727,7 +727,9 @@ impl SafeModeController {
     /// Set operation flags and detect conflicts.
     pub fn set_flags(&mut self, flags: OperationFlags) {
         let conflicts = flags.detect_conflicts();
-        self.events.extend(conflicts);
+        for conflict in conflicts {
+            self.emit_event(conflict);
+        }
         self.flags = flags;
     }
 

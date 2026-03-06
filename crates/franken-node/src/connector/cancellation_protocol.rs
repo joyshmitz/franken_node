@@ -30,6 +30,9 @@ use std::time::Duration;
 /// Schema version for the cancellation protocol.
 pub const SCHEMA_VERSION: &str = "cancel-v1.0";
 
+/// Maximum audit log entries before oldest-first eviction.
+const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
+
 /// Bead identifier.
 pub const BEAD_ID: &str = "bd-1cs7";
 
@@ -674,6 +677,10 @@ impl CancellationProtocol {
             detail: detail.to_string(),
             schema_version: SCHEMA_VERSION.to_string(),
         });
+        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.audit_log.drain(0..overflow);
+        }
     }
 }
 

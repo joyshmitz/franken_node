@@ -649,8 +649,10 @@ impl VerificationGate {
             ),
         });
 
-        // Propagate verifier events
-        self.events.extend(verifier.events().iter().cloned());
+        // Propagate verifier events (via emit_event to respect push_bounded)
+        for event in verifier.events().iter().cloned() {
+            self.emit_event(event);
+        }
 
         // Build report
         let report_digest = compute_report_digest(
