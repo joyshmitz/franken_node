@@ -13,6 +13,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 const MAX_EVENTS: usize = 4096;
+const MAX_SCORE_HISTORY: usize = 4096;
+const MAX_DISPUTES: usize = 4096;
 
 // -- Event codes ---------------------------------------------------------------
 
@@ -348,7 +350,7 @@ impl EcosystemReputationApi {
         pub_record.inputs = inputs;
         pub_record.last_computed_at = timestamp.to_owned();
         pub_record.computation_count = pub_record.computation_count.saturating_add(1);
-        pub_record.score_history.push(new_score);
+        push_bounded(&mut pub_record.score_history, new_score, MAX_SCORE_HISTORY);
 
         push_bounded(&mut self.events, ReputationEvent {
             event_code: ENE_003_REPUTATION_COMPUTED.to_owned(),
@@ -393,16 +395,20 @@ impl EcosystemReputationApi {
                 publisher_id.to_owned(),
             ));
         }
-        self.disputes.push(ReputationDispute {
-            dispute_id: dispute_id.to_owned(),
-            publisher_id: publisher_id.to_owned(),
-            reason: reason.to_owned(),
-            old_score,
-            new_score,
-            filed_at: timestamp.to_owned(),
-            resolved: false,
-            outcome: None,
-        });
+        push_bounded(
+            &mut self.disputes,
+            ReputationDispute {
+                dispute_id: dispute_id.to_owned(),
+                publisher_id: publisher_id.to_owned(),
+                reason: reason.to_owned(),
+                old_score,
+                new_score,
+                filed_at: timestamp.to_owned(),
+                resolved: false,
+                outcome: None,
+            },
+            MAX_DISPUTES,
+        );
         Ok(())
     }
 
