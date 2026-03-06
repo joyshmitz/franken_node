@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 /// Maximum number of events retained before oldest entries are drained.
+#[allow(dead_code)]
 const MAX_EVENTS: usize = 4096;
 
 /// Report schema version.

@@ -619,7 +619,7 @@ impl BarrierEngine {
                 if current_tier.level() < cfg.min_tier.level() {
                     let receipt = BarrierAuditReceipt::new(
                         event_codes::BARRIER_CHECK_DENIED,
-                        barrier,
+                        &barrier,
                         BarrierAction::CheckDenied,
                         trace_id,
                         serde_json::json!({
@@ -643,7 +643,7 @@ impl BarrierEngine {
                 {
                     let receipt = BarrierAuditReceipt::new(
                         event_codes::BARRIER_CHECK_DENIED,
-                        barrier,
+                        &barrier,
                         BarrierAction::CheckDenied,
                         trace_id,
                         serde_json::json!({
@@ -756,7 +756,7 @@ impl BarrierEngine {
             {
                 let receipt = BarrierAuditReceipt::new(
                     event_codes::FORK_PIN_REJECTED,
-                    barrier,
+                    &barrier,
                     BarrierAction::CheckDenied,
                     trace_id,
                     serde_json::json!({
