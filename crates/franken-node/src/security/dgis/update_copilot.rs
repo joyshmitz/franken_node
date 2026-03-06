@@ -64,15 +64,23 @@ pub struct TopologyRiskMetrics {
 }
 
 impl TopologyRiskMetrics {
+    fn normalize_unit_metric(value: f64) -> f64 {
+        if !value.is_finite() {
+            // Corrupted or missing topology telemetry must fail closed.
+            return 1.0;
+        }
+        value.clamp(0.0, 1.0)
+    }
+
     /// Compute an aggregate risk score from individual metrics.
     pub fn aggregate_risk(&self) -> f64 {
         let ap_weight = if self.articulation_point { 0.3 } else { 0.0 };
-        let fan_out_norm = (self.fan_out / 100.0).min(1.0);
-        let bc_norm = self.betweenness_centrality.min(1.0);
-        let tb_norm = self.trust_bottleneck_score.min(1.0);
+        let fan_out_norm = Self::normalize_unit_metric(self.fan_out / 100.0);
+        let bc_norm = Self::normalize_unit_metric(self.betweenness_centrality);
+        let tb_norm = Self::normalize_unit_metric(self.trust_bottleneck_score);
 
         let raw = fan_out_norm * 0.2 + bc_norm * 0.25 + ap_weight + tb_norm * 0.25;
-        raw.min(1.0)
+        Self::normalize_unit_metric(raw)
     }
 }
 
@@ -1151,6 +1159,47 @@ mod tests {
     fn high_risk_metrics_have_high_aggregate() {
         let metrics = make_high_risk_metrics();
         assert!(metrics.aggregate_risk() > 0.5);
+    }
+
+    #[test]
+    fn aggregate_risk_clamps_negative_metrics_to_zero_floor() {
+        let metrics = TopologyRiskMetrics {
+            fan_out: -50.0,
+            betweenness_centrality: -0.2,
+            articulation_point: false,
+            trust_bottleneck_score: -0.4,
+            transitive_dependency_count: 0,
+            max_depth_in_graph: 0,
+        };
+
+        assert_eq!(metrics.aggregate_risk(), 0.0);
+    }
+
+    #[test]
+    fn aggregate_risk_non_finite_metrics_fail_closed_to_maximum() {
+        let metrics = TopologyRiskMetrics {
+            fan_out: f64::NAN,
+            betweenness_centrality: f64::INFINITY,
+            articulation_point: false,
+            trust_bottleneck_score: 0.4,
+            transitive_dependency_count: 42,
+            max_depth_in_graph: 3,
+        };
+
+        assert_eq!(metrics.aggregate_risk(), 1.0);
+    }
+
+    #[test]
+    fn non_finite_metrics_do_not_suppress_high_risk_classification() {
+        let mut copilot = UpdateCopilot::default();
+        let mut proposal = make_low_risk_proposal();
+        proposal.post_update_metrics.fan_out = f64::INFINITY;
+        proposal.post_update_metrics.trust_bottleneck_score = f64::NAN;
+
+        let rec = copilot.evaluate_proposal(&proposal, &make_trace_id());
+
+        assert_eq!(rec.risk_level, UpdateRiskLevel::Critical);
+        assert!(rec.requires_acknowledgement);
     }
 
     // === No playbook for low risk ===
