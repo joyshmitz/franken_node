@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+mod cli;
+
 use anyhow::{Context, Result};
 use clap::Parser;
 use frankenengine_node::{
@@ -14,12 +16,6 @@ use frankenengine_node::{
             Pagination, compare_trust_card_versions, compare_trust_cards, get_trust_card,
             get_trust_cards_by_publisher, list_trust_cards, search_trust_cards,
         },
-    },
-    cli::{
-        self, BenchCommand, Cli, Command, FleetCommand, IncidentCommand, MigrateCommand,
-        RegistryCommand, RemoteCapCommand, RemoteCapIssueArgs, TrustCardCommand, TrustCommand,
-        VerifyCommand, VerifyCompatibilityArgs, VerifyCorpusArgs, VerifyMigrationArgs,
-        VerifyModuleArgs, VerifyReleaseArgs,
     },
     config::{self, CliOverrides, Profile},
     migration,
@@ -74,6 +70,12 @@ use frankenengine_node::{
             validate_bundle_integrity, write_bundle_to_path,
         },
     },
+};
+use crate::cli::{
+    self, BenchCommand, Cli, Command, FleetCommand, IncidentCommand, MigrateCommand,
+    RegistryCommand, RemoteCapCommand, RemoteCapIssueArgs, TrustCardCommand, TrustCommand,
+    VerifyCommand, VerifyCompatibilityArgs, VerifyCorpusArgs, VerifyMigrationArgs,
+    VerifyModuleArgs, VerifyReleaseArgs,
 };
 use serde::{Deserialize, Serialize};
 use sha2::Digest;

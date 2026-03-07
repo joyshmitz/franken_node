@@ -3,7 +3,6 @@ extern crate self as frankenengine_node;
 
 pub mod api;
 pub mod claims;
-pub mod cli;
 pub mod config;
 pub mod conformance;
 pub mod connector;
