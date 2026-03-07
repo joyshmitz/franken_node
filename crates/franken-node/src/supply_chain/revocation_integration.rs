@@ -817,7 +817,10 @@ mod tests {
             "high-safety actions must fail before medium actions at the same age"
         );
         assert_eq!(high.status, RevocationDecisionStatus::FailedStale);
-        assert!(medium.allowed, "medium-safety action should still pass at 600s");
+        assert!(
+            medium.allowed,
+            "medium-safety action should still pass at 600s"
+        );
         assert_eq!(medium.status, RevocationDecisionStatus::Passed);
     }
 

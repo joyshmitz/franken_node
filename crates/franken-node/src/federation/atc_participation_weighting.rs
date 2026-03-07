@@ -499,13 +499,13 @@ impl ParticipationWeightEngine {
                     (rep.tenure_seconds as f64 / self.config.established_tenure_seconds as f64)
                         .min(1.0)
                 };
-                let interaction_ratio =
-                    if rep.contributions_accepted + rep.contributions_rejected > 0 {
-                        rep.contributions_accepted as f64
-                            / (rep.contributions_accepted + rep.contributions_rejected) as f64
-                    } else {
-                        0.0
-                    };
+                let total_contributions =
+                    rep.contributions_accepted.saturating_add(rep.contributions_rejected);
+                let interaction_ratio = if total_contributions > 0 {
+                    rep.contributions_accepted as f64 / total_contributions as f64
+                } else {
+                    0.0
+                };
                 (score_component * 0.4 + tenure_component * 0.3 + interaction_ratio * 0.3).min(1.0)
             }
         }
