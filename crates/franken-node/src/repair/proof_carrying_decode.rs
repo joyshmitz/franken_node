@@ -80,6 +80,7 @@ impl Fragment {
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(b"proof_carrying_fragment_v1:");
+        hasher.update((self.data.len() as u64).to_le_bytes());
         hasher.update(&self.data);
         let result = hasher.finalize();
         let mut hash = [0u8; 32];
@@ -323,6 +324,7 @@ impl ProofCarryingDecoder {
         let output_hash = {
             let mut hasher = Sha256::new();
             hasher.update(b"proof_carrying_output_v1:");
+            hasher.update((output_data.len() as u64).to_le_bytes());
             hasher.update(&output_data);
             hex::encode(hasher.finalize())
         };
@@ -848,6 +850,7 @@ mod tests {
 
         let mut hasher = Sha256::new();
         hasher.update(b"proof_carrying_output_v1:");
+        hasher.update((result.output_data.len() as u64).to_le_bytes());
         hasher.update(&result.output_data);
         let recomputed = hex::encode(hasher.finalize());
 
@@ -963,6 +966,7 @@ mod tests {
 
         let mut hasher = Sha256::new();
         hasher.update(b"proof_carrying_output_v1:");
+        hasher.update((result.output_data.len() as u64).to_le_bytes());
         hasher.update(&result.output_data);
         let recomputed = hex::encode(hasher.finalize());
 
@@ -995,6 +999,7 @@ mod tests {
 
         let mut hasher = Sha256::new();
         hasher.update(b"proof_carrying_output_v1:");
+        hasher.update((result.output_data.len() as u64).to_le_bytes());
         hasher.update(&result.output_data);
         let recomputed = hex::encode(hasher.finalize());
 

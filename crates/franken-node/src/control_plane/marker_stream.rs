@@ -329,6 +329,10 @@ pub struct MarkerStream {
     /// Tracks the total number of markers ever appended, even after
     /// oldest entries are drained by the capacity bound.
     total_appended: u64,
+    /// Anchor hash: marker_hash of the most recently evicted marker.
+    /// Used to maintain hash-chain integrity after capacity-bound eviction
+    /// so that verify_integrity can validate the first retained marker's prev_hash.
+    chain_anchor_hash: Option<String>,
 }
 
 impl MarkerStream {
@@ -337,6 +341,7 @@ impl MarkerStream {
         Self {
             markers: Vec::new(),
             total_appended: 0,
+            chain_anchor_hash: None,
         }
     }
 
@@ -374,7 +379,9 @@ impl MarkerStream {
             }
             head.marker_hash.clone()
         } else {
-            GENESIS_PREV_HASH.to_string()
+            self.chain_anchor_hash
+                .clone()
+                .unwrap_or_else(|| GENESIS_PREV_HASH.to_string())
         };
 
         let marker_hash = Marker::compute_hash(
@@ -396,7 +403,13 @@ impl MarkerStream {
             trace_id: trace_id.to_string(),
         };
 
-        push_bounded(&mut self.markers, marker, MAX_MARKERS);
+        self.markers.push(marker);
+        if self.markers.len() > MAX_MARKERS {
+            let overflow = self.markers.len() - MAX_MARKERS;
+            self.chain_anchor_hash =
+                Some(self.markers[overflow - 1].marker_hash.clone());
+            self.markers.drain(0..overflow);
+        }
         self.total_appended = self.total_appended.saturating_add(1);
         self.markers
             .last()
@@ -526,13 +539,14 @@ impl MarkerStream {
                 });
             }
 
-            // Hash chain check (first retained marker's prev_hash can't be verified against drained predecessor)
+            // Hash chain check: use chain_anchor_hash for the first retained marker after eviction
             let expected_prev = if i == 0 {
                 if base_seq == 0 {
                     GENESIS_PREV_HASH.to_string()
                 } else {
-                    // After draining, we can't verify the first retained marker's prev_hash
-                    marker.prev_hash.clone()
+                    self.chain_anchor_hash
+                        .clone()
+                        .unwrap_or_else(|| marker.prev_hash.clone())
                 }
             } else {
                 self.markers[i - 1].marker_hash.clone()
@@ -625,14 +639,6 @@ impl MarkerStream {
 impl Default for MarkerStream {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    items.push(item);
-    if items.len() > cap {
-        let overflow = items.len() - cap;
-        items.drain(0..overflow);
     }
 }
 

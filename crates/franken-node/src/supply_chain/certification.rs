@@ -453,6 +453,8 @@ pub enum CertificationAuditEvent {
 pub struct CertificationRegistry {
     records: BTreeMap<String, CertificationRecord>,
     audit_trail: Vec<CertificationAuditEntry>,
+    /// Anchor hash: entry_hash of the most recently evicted audit entry.
+    chain_anchor_hash: Option<String>,
     next_sequence: u64,
 }
 
@@ -468,6 +470,7 @@ impl CertificationRegistry {
         Self {
             records: BTreeMap::new(),
             audit_trail: Vec::new(),
+            chain_anchor_hash: None,
             next_sequence: 0,
         }
     }
@@ -662,16 +665,21 @@ impl CertificationRegistry {
 
     /// Verify audit trail integrity via hash chain.
     pub fn verify_audit_integrity(&self) -> Result<(), CertificationError> {
-        let mut expected_prev = String::new();
-        for entry in &self.audit_trail {
-            if !ct_eq(&entry.prev_hash, &expected_prev) {
+        let genesis = String::new();
+        let first_expected = self.chain_anchor_hash.as_ref().unwrap_or(&genesis);
+        for (i, entry) in self.audit_trail.iter().enumerate() {
+            let expected_prev = if i == 0 {
+                first_expected
+            } else {
+                &self.audit_trail[i - 1].entry_hash
+            };
+            if !ct_eq(&entry.prev_hash, expected_prev) {
                 return Err(CertificationError::AuditIntegrityViolation);
             }
             let computed = compute_entry_hash(entry);
             if !ct_eq(&computed, &entry.entry_hash) {
                 return Err(CertificationError::AuditIntegrityViolation);
             }
-            expected_prev = entry.entry_hash.clone();
         }
         Ok(())
     }
@@ -699,7 +707,9 @@ impl CertificationRegistry {
         let prev_hash = self
             .audit_trail
             .last()
-            .map_or(String::new(), |e| e.entry_hash.clone());
+            .map(|e| e.entry_hash.clone())
+            .or_else(|| self.chain_anchor_hash.clone())
+            .unwrap_or_default();
 
         let sequence = self.next_sequence;
         self.next_sequence = self.next_sequence.saturating_add(1);
@@ -713,7 +723,13 @@ impl CertificationRegistry {
             event,
         };
         entry.entry_hash = compute_entry_hash(&entry);
-        push_bounded(&mut self.audit_trail, entry, MAX_AUDIT_TRAIL);
+        self.audit_trail.push(entry);
+        if self.audit_trail.len() > MAX_AUDIT_TRAIL {
+            let overflow = self.audit_trail.len() - MAX_AUDIT_TRAIL;
+            self.chain_anchor_hash =
+                Some(self.audit_trail[overflow - 1].entry_hash.clone());
+            self.audit_trail.drain(0..overflow);
+        }
     }
 }
 

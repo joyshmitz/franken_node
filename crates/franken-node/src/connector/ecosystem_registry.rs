@@ -151,6 +151,8 @@ pub struct EcosystemRegistry {
     extensions: BTreeMap<String, ExtensionRecord>,
     publisher_keys: BTreeMap<String, String>,
     audit_trail: Vec<RegistryAuditEntry>,
+    /// Anchor hash: entry_hash of the most recently evicted audit entry.
+    chain_anchor_hash: Option<String>,
     events: Vec<RegistryEvent>,
     next_sequence: u64,
 }
@@ -168,6 +170,7 @@ impl EcosystemRegistry {
             extensions: BTreeMap::new(),
             publisher_keys: BTreeMap::new(),
             audit_trail: Vec::new(),
+            chain_anchor_hash: None,
             events: Vec::new(),
             next_sequence: 0,
         }
@@ -457,7 +460,9 @@ impl EcosystemRegistry {
 
     /// Verify audit trail integrity via hash chain.
     pub fn verify_audit_integrity(&self) -> Result<(), RegistryError> {
-        let mut expected_prev = String::new();
+        let genesis = String::new();
+        let first_expected = self.chain_anchor_hash.as_ref().unwrap_or(&genesis);
+        let mut expected_prev = first_expected.clone();
         for entry in &self.audit_trail {
             if !ct_eq(&entry.prev_hash, &expected_prev) {
                 return Err(RegistryError::AuthFailure(format!(
@@ -495,7 +500,9 @@ impl EcosystemRegistry {
         let prev_hash = self
             .audit_trail
             .last()
-            .map_or(String::new(), |e| e.entry_hash.clone());
+            .map(|e| e.entry_hash.clone())
+            .or_else(|| self.chain_anchor_hash.clone())
+            .unwrap_or_default();
         let sequence = self.next_sequence;
         self.next_sequence = self.next_sequence.saturating_add(1);
 
@@ -510,7 +517,13 @@ impl EcosystemRegistry {
             detail: detail.to_owned(),
         };
         entry.entry_hash = compute_audit_hash(&entry);
-        push_bounded(&mut self.audit_trail, entry, MAX_AUDIT_LOG_ENTRIES);
+        self.audit_trail.push(entry);
+        if self.audit_trail.len() > MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_trail.len() - MAX_AUDIT_LOG_ENTRIES;
+            self.chain_anchor_hash =
+                Some(self.audit_trail[overflow - 1].entry_hash.clone());
+            self.audit_trail.drain(0..overflow);
+        }
     }
 
     fn emit_event(

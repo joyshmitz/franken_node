@@ -18,14 +18,6 @@ use sha2::{Digest, Sha256};
 
 const MAX_AUDIT_TRAIL: usize = 4096;
 
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    items.push(item);
-    if items.len() > cap {
-        let overflow = items.len() - cap;
-        items.drain(0..overflow);
-    }
-}
-
 // ── Event codes ──────────────────────────────────────────────────────────────
 
 pub const REPUTATION_COMPUTED: &str = "REPUTATION_COMPUTED";
@@ -343,6 +335,8 @@ impl PublisherReputation {
 pub struct ReputationRegistry {
     publishers: BTreeMap<String, PublisherReputation>,
     audit_trail: Vec<AuditEntry>,
+    /// Anchor hash: entry_hash of the most recently evicted audit entry.
+    chain_anchor_hash: Option<String>,
     ingested_signals: BTreeMap<String, bool>,
     next_sequence: u64,
 }
@@ -359,6 +353,7 @@ impl ReputationRegistry {
         Self {
             publishers: BTreeMap::new(),
             audit_trail: Vec::new(),
+            chain_anchor_hash: None,
             ingested_signals: BTreeMap::new(),
             next_sequence: 0,
         }
@@ -688,7 +683,9 @@ impl ReputationRegistry {
 
     /// Verify the integrity of the audit trail via hash chain.
     pub fn verify_audit_integrity(&self) -> Result<(), ReputationError> {
-        let mut expected_prev = String::new();
+        let genesis = String::new();
+        let first_expected = self.chain_anchor_hash.as_ref().unwrap_or(&genesis);
+        let mut expected_prev = first_expected.clone();
         for entry in &self.audit_trail {
             if !ct_eq(&entry.prev_hash, &expected_prev) {
                 return Err(ReputationError::AuditIntegrityViolation {
@@ -732,7 +729,9 @@ impl ReputationRegistry {
         let prev_hash = self
             .audit_trail
             .last()
-            .map_or(String::new(), |e| e.entry_hash.clone());
+            .map(|e| e.entry_hash.clone())
+            .or_else(|| self.chain_anchor_hash.clone())
+            .unwrap_or_default();
 
         let sequence = self.next_sequence;
         self.next_sequence = self.next_sequence.saturating_add(1);
@@ -746,7 +745,13 @@ impl ReputationRegistry {
             event,
         };
         entry.entry_hash = compute_entry_hash(&entry);
-        push_bounded(&mut self.audit_trail, entry, MAX_AUDIT_TRAIL);
+        self.audit_trail.push(entry);
+        if self.audit_trail.len() > MAX_AUDIT_TRAIL {
+            let overflow = self.audit_trail.len() - MAX_AUDIT_TRAIL;
+            self.chain_anchor_hash =
+                Some(self.audit_trail[overflow - 1].entry_hash.clone());
+            self.audit_trail.drain(0..overflow);
+        }
     }
 }
 

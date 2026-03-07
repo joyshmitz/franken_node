@@ -82,6 +82,7 @@ impl IncidentTrace {
         hasher.update(b"mitigation_synthesis_hash_v1:");
         for d in &self.decisions {
             hasher.update(d.sequence_number.to_le_bytes());
+            hasher.update((d.action.len() as u64).to_le_bytes());
             hasher.update(d.action.as_bytes());
             hasher.update(d.expected_loss.to_le_bytes());
         }
