@@ -493,7 +493,8 @@ impl ParticipationWeightEngine {
                     0.0
                 };
                 let tenure_component = if self.config.established_tenure_seconds == 0 {
-                    0.0
+                    // A zero threshold disables the tenure requirement entirely.
+                    1.0
                 } else {
                     (rep.tenure_seconds as f64 / self.config.established_tenure_seconds as f64)
                         .min(1.0)
@@ -988,6 +989,22 @@ mod tests {
         let component = engine.compute_reputation_component(&participant);
         assert!(component >= 0.0);
         assert!(component <= 1.0);
+    }
+
+    #[test]
+    fn zero_tenure_threshold_grants_full_tenure_credit() {
+        let engine = ParticipationWeightEngine::new(WeightingConfig {
+            established_tenure_seconds: 0,
+            established_interaction_count: 2,
+            ..WeightingConfig::default()
+        });
+        let participant = make_new_participant("zero-tenure");
+
+        assert!(engine.is_established(&participant));
+
+        let component = engine.compute_reputation_component(&participant);
+        let expected = 0.1 * 0.4 + 1.0 * 0.3 + 1.0 * 0.3;
+        assert!((component - expected).abs() < f64::EPSILON);
     }
 
     // === Mixed batch ===

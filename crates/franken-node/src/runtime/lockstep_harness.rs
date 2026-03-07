@@ -11,17 +11,6 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-struct TempFileCleanup {
-    path: String,
-}
-
-impl Drop for TempFileCleanup {
-    fn drop(&mut self) {
-        // Best-effort cleanup without an exists() pre-check to avoid TOCTOU races.
-        let _ = std::fs::remove_file(&self.path);
-    }
-}
-
 pub struct LockstepHarness {
     runtimes: Vec<String>,
 }

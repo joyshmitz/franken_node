@@ -136,7 +136,7 @@ impl std::fmt::Display for CapsuleError {
             Self::UnsupportedVersion(v) => {
                 write!(
                     f,
-                    "unsupported format_version={v} (min={MIN_FORMAT_VERSION})"
+                    "unsupported format_version={v} (supported={MIN_FORMAT_VERSION}..={CURRENT_FORMAT_VERSION})"
                 )
             }
             Self::NonMonotonicInputSequence => {
@@ -169,6 +169,20 @@ fn deterministic_hash(data: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
+fn validate_environment_snapshot(environment: &EnvironmentSnapshot) -> Result<(), CapsuleError> {
+    if environment.runtime_version.is_empty() {
+        return Err(CapsuleError::IncompleteEnvironment(
+            "runtime_version is empty".to_string(),
+        ));
+    }
+    if environment.platform.is_empty() {
+        return Err(CapsuleError::IncompleteEnvironment(
+            "platform is empty".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Capsule operations
 // ---------------------------------------------------------------------------
@@ -181,7 +195,9 @@ pub fn validate_capsule(capsule: &ReplayCapsule) -> Result<(), CapsuleError> {
     if capsule.capsule_id.is_empty() {
         return Err(CapsuleError::EmptyId);
     }
-    if capsule.format_version < MIN_FORMAT_VERSION {
+    if capsule.format_version < MIN_FORMAT_VERSION
+        || capsule.format_version > CURRENT_FORMAT_VERSION
+    {
         return Err(CapsuleError::UnsupportedVersion(capsule.format_version));
     }
     if capsule.inputs.is_empty() {
@@ -196,18 +212,7 @@ pub fn validate_capsule(capsule: &ReplayCapsule) -> Result<(), CapsuleError> {
             return Err(CapsuleError::NonMonotonicInputSequence);
         }
     }
-    // Check environment
-    if capsule.environment.runtime_version.is_empty() {
-        return Err(CapsuleError::IncompleteEnvironment(
-            "runtime_version is empty".to_string(),
-        ));
-    }
-    if capsule.environment.platform.is_empty() {
-        return Err(CapsuleError::IncompleteEnvironment(
-            "platform is empty".to_string(),
-        ));
-    }
-    Ok(())
+    validate_environment_snapshot(&capsule.environment)
 }
 
 /// Replay a capsule and return the computed output hash.
@@ -263,11 +268,7 @@ pub fn create_capsule(
             return Err(CapsuleError::NonMonotonicInputSequence);
         }
     }
-    if environment.runtime_version.is_empty() {
-        return Err(CapsuleError::IncompleteEnvironment(
-            "runtime_version is empty".to_string(),
-        ));
-    }
+    validate_environment_snapshot(&environment)?;
 
     // Compute the expected output hash from inputs
     let input_data: String = inputs
@@ -410,6 +411,14 @@ mod tests {
     fn test_create_capsule_empty_runtime_version() {
         let mut env = test_env();
         env.runtime_version = String::new();
+        let err = create_capsule("cap", test_inputs(), env).unwrap_err();
+        assert!(matches!(err, CapsuleError::IncompleteEnvironment(_)));
+    }
+
+    #[test]
+    fn test_create_capsule_empty_platform() {
+        let mut env = test_env();
+        env.platform = String::new();
         let err = create_capsule("cap", test_inputs(), env).unwrap_err();
         assert!(matches!(err, CapsuleError::IncompleteEnvironment(_)));
     }
@@ -614,7 +623,9 @@ mod tests {
     #[test]
     fn test_error_display_unsupported_version() {
         let err = CapsuleError::UnsupportedVersion(0);
-        assert!(format!("{err}").contains("unsupported"));
+        let rendered = format!("{err}");
+        assert!(rendered.contains("unsupported"));
+        assert!(rendered.contains("supported=1..=1"));
     }
 
     #[test]
