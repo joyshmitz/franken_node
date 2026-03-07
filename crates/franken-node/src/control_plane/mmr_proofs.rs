@@ -389,6 +389,12 @@ pub fn mmr_prefix_proof(
     }
 
     let prefix_size = root_a.tree_size as usize;
+    if prefix_size > checkpoint_b.leaf_hashes.len() {
+        return Err(ProofError::PrefixSizeInvalid {
+            prefix_size: root_a.tree_size,
+            super_tree_size: checkpoint_b.leaf_hashes.len() as u64,
+        });
+    }
     let prefix_root_from_super =
         merkle_root_from_leaf_hashes(&checkpoint_b.leaf_hashes[..prefix_size])
             .ok_or(ProofError::EmptyCheckpoint)?;

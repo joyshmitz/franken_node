@@ -277,7 +277,8 @@ impl EnforcementEngine {
     pub fn from_contract(contract: &CapabilityContract) -> Self {
         let mut admitted = BTreeMap::new();
         for cap in &contract.capabilities {
-            admitted.insert(cap.capability_id.clone(), cap.clone());
+            // Skip duplicates: first occurrence wins (INV-ARTIFACT-CAPABILITY-ENVELOPE).
+            admitted.entry(cap.capability_id.clone()).or_insert_with(|| cap.clone());
         }
         Self {
             admitted_capabilities: admitted,
