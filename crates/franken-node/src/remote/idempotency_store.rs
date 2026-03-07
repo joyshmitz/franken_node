@@ -524,18 +524,20 @@ impl IdempotencyDedupeStore {
     pub fn content_hash(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"idempotency_content_hash_v1:");
+        // Length-prefixed encoding prevents delimiter-collision ambiguity.
+        hasher.update((SCHEMA_VERSION.len() as u64).to_le_bytes());
         hasher.update(SCHEMA_VERSION.as_bytes());
-        hasher.update(b"|");
         for (k, entry) in &self.entries {
+            hasher.update((k.len() as u64).to_le_bytes());
             hasher.update(k.as_bytes());
-            hasher.update(b"|");
+            hasher.update((entry.payload_hash.len() as u64).to_le_bytes());
             hasher.update(entry.payload_hash.as_bytes());
-            hasher.update(b"|");
-            hasher.update(format!("{}", entry.status).as_bytes());
-            hasher.update(b"|");
+            let status = format!("{}", entry.status);
+            hasher.update((status.len() as u64).to_le_bytes());
+            hasher.update(status.as_bytes());
             if let Some(ref outcome) = entry.outcome {
+                hasher.update((outcome.result_hash.len() as u64).to_le_bytes());
                 hasher.update(outcome.result_hash.as_bytes());
-                hasher.update(b"|");
             }
         }
         format!("{:x}", hasher.finalize())

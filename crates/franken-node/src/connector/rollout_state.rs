@@ -350,35 +350,90 @@ pub fn load(path: &Path) -> Result<RolloutState, PersistError> {
     })
 }
 
+fn replay_mismatch(field: &str, expected: String, actual: String) -> PersistError {
+    PersistError::ReplayMismatch {
+        field: field.to_string(),
+        expected,
+        actual,
+    }
+}
+
+fn replay_value_json<T: Serialize>(value: &T) -> String {
+    serde_json::to_string(value).unwrap_or_else(|e| format!("__serde_err:{e}"))
+}
+
+fn replay_option_string(value: &Option<String>) -> String {
+    value.clone().unwrap_or_else(|| "<none>".to_string())
+}
+
+fn replay_cancel_phase(value: Option<CancellationPhase>) -> String {
+    value.map_or_else(|| "<none>".to_string(), |phase| phase.to_string())
+}
+
 /// Verify that a loaded state matches an expected state for replay validation.
 pub fn verify_replay(expected: &RolloutState, actual: &RolloutState) -> Result<(), PersistError> {
     if expected.connector_id != actual.connector_id {
-        return Err(PersistError::ReplayMismatch {
-            field: "connector_id".to_string(),
-            expected: expected.connector_id.clone(),
-            actual: actual.connector_id.clone(),
-        });
+        return Err(replay_mismatch(
+            "connector_id",
+            expected.connector_id.clone(),
+            actual.connector_id.clone(),
+        ));
+    }
+    if expected.rollout_epoch != actual.rollout_epoch {
+        return Err(replay_mismatch(
+            "rollout_epoch",
+            expected.rollout_epoch.value().to_string(),
+            actual.rollout_epoch.value().to_string(),
+        ));
     }
     if expected.lifecycle_state != actual.lifecycle_state {
-        return Err(PersistError::ReplayMismatch {
-            field: "lifecycle_state".to_string(),
-            expected: expected.lifecycle_state.to_string(),
-            actual: actual.lifecycle_state.to_string(),
-        });
+        return Err(replay_mismatch(
+            "lifecycle_state",
+            expected.lifecycle_state.to_string(),
+            actual.lifecycle_state.to_string(),
+        ));
+    }
+    if expected.health != actual.health {
+        return Err(replay_mismatch(
+            "health",
+            replay_value_json(&expected.health),
+            replay_value_json(&actual.health),
+        ));
     }
     if expected.rollout_phase != actual.rollout_phase {
-        return Err(PersistError::ReplayMismatch {
-            field: "rollout_phase".to_string(),
-            expected: expected.rollout_phase.to_string(),
-            actual: actual.rollout_phase.to_string(),
-        });
+        return Err(replay_mismatch(
+            "rollout_phase",
+            expected.rollout_phase.to_string(),
+            actual.rollout_phase.to_string(),
+        ));
+    }
+    if expected.activated_at != actual.activated_at {
+        return Err(replay_mismatch(
+            "activated_at",
+            replay_option_string(&expected.activated_at),
+            replay_option_string(&actual.activated_at),
+        ));
+    }
+    if expected.persisted_at != actual.persisted_at {
+        return Err(replay_mismatch(
+            "persisted_at",
+            expected.persisted_at.clone(),
+            actual.persisted_at.clone(),
+        ));
     }
     if expected.version != actual.version {
-        return Err(PersistError::ReplayMismatch {
-            field: "version".to_string(),
-            expected: expected.version.to_string(),
-            actual: actual.version.to_string(),
-        });
+        return Err(replay_mismatch(
+            "version",
+            expected.version.to_string(),
+            actual.version.to_string(),
+        ));
+    }
+    if expected.cancel_phase != actual.cancel_phase {
+        return Err(replay_mismatch(
+            "cancel_phase",
+            replay_cancel_phase(expected.cancel_phase),
+            replay_cancel_phase(actual.cancel_phase),
+        ));
     }
     Ok(())
 }
@@ -442,9 +497,7 @@ mod tests {
         let state = sample_state();
         persist(&state, &path).unwrap();
         let loaded = load(&path).unwrap();
-        assert_eq!(state.connector_id, loaded.connector_id);
-        assert_eq!(state.lifecycle_state, loaded.lifecycle_state);
-        assert_eq!(state.version, loaded.version);
+        assert_eq!(state, loaded);
     }
 
     #[test]
@@ -470,7 +523,7 @@ mod tests {
     #[test]
     fn verify_replay_mismatch_state() {
         let state1 = sample_state();
-        let mut state2 = sample_state();
+        let mut state2 = state1.clone();
         state2.lifecycle_state = ConnectorState::Active;
         let err = verify_replay(&state1, &state2).unwrap_err();
         match err {
@@ -484,7 +537,7 @@ mod tests {
     #[test]
     fn verify_replay_mismatch_phase() {
         let state1 = sample_state();
-        let mut state2 = sample_state();
+        let mut state2 = state1.clone();
         state2.rollout_phase = RolloutPhase::Default;
         let err = verify_replay(&state1, &state2).unwrap_err();
         match err {
@@ -496,14 +549,81 @@ mod tests {
     }
 
     #[test]
+    fn verify_replay_mismatch_epoch() {
+        let state1 = sample_state();
+        let mut state2 = state1.clone();
+        state2.rollout_epoch = ControlEpoch::new(7);
+        let err = verify_replay(&state1, &state2).unwrap_err();
+        match err {
+            PersistError::ReplayMismatch { field, .. } => {
+                assert_eq!(field, "rollout_epoch");
+            }
+            _ => panic!("expected ReplayMismatch"),
+        }
+    }
+
+    #[test]
+    fn verify_replay_mismatch_health() {
+        let state1 = sample_state();
+        let mut state2 = state1.clone();
+        state2.health = HealthGateResult::evaluate(standard_checks(true, false, true, true));
+        let err = verify_replay(&state1, &state2).unwrap_err();
+        match err {
+            PersistError::ReplayMismatch { field, .. } => {
+                assert_eq!(field, "health");
+            }
+            _ => panic!("expected ReplayMismatch"),
+        }
+    }
+
+    #[test]
+    fn verify_replay_mismatch_activated_at() {
+        let state1 = sample_state();
+        let mut state2 = state1.clone();
+        state2.activated_at = Some("2026-01-01T00:00:00Z".to_string());
+        let err = verify_replay(&state1, &state2).unwrap_err();
+        match err {
+            PersistError::ReplayMismatch { field, .. } => {
+                assert_eq!(field, "activated_at");
+            }
+            _ => panic!("expected ReplayMismatch"),
+        }
+    }
+
+    #[test]
+    fn verify_replay_mismatch_persisted_at() {
+        let state1 = sample_state();
+        let mut state2 = state1.clone();
+        state2.persisted_at = "2026-01-01T00:00:00Z".to_string();
+        let err = verify_replay(&state1, &state2).unwrap_err();
+        match err {
+            PersistError::ReplayMismatch { field, .. } => {
+                assert_eq!(field, "persisted_at");
+            }
+            _ => panic!("expected ReplayMismatch"),
+        }
+    }
+
+    #[test]
+    fn verify_replay_mismatch_cancel_phase() {
+        let state1 = sample_state();
+        let mut state2 = state1.clone();
+        state2.cancel_phase = Some(CancellationPhase::Draining);
+        let err = verify_replay(&state1, &state2).unwrap_err();
+        match err {
+            PersistError::ReplayMismatch { field, .. } => {
+                assert_eq!(field, "cancel_phase");
+            }
+            _ => panic!("expected ReplayMismatch"),
+        }
+    }
+
+    #[test]
     fn serde_roundtrip() {
         let state = sample_state();
         let json = serde_json::to_string(&state).unwrap();
         let parsed: RolloutState = serde_json::from_str(&json).unwrap();
-        assert_eq!(state.connector_id, parsed.connector_id);
-        assert_eq!(state.rollout_epoch, parsed.rollout_epoch);
-        assert_eq!(state.lifecycle_state, parsed.lifecycle_state);
-        assert_eq!(state.rollout_phase, parsed.rollout_phase);
+        assert_eq!(state, parsed);
     }
 
     #[test]
