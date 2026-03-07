@@ -367,7 +367,8 @@ impl CategoricalModel {
         if category >= self.k {
             return 1e-300;
         }
-        let total = stats.counts.iter().copied().fold(0.0_f64, |a, b| a + b) + self.alpha0 * self.k as f64;
+        let total =
+            stats.counts.iter().copied().fold(0.0_f64, |a, b| a + b) + self.alpha0 * self.k as f64;
         if total <= 0.0 {
             return 1e-300;
         }
@@ -622,7 +623,7 @@ impl BocpdDetector {
         self.run_length_probs
             .iter()
             .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|(_, a), (_, b)| a.total_cmp(b))
             .map(|(i, _)| i)
             .unwrap_or(0)
     }

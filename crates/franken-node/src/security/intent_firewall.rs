@@ -863,13 +863,17 @@ impl EffectsFirewall {
         detail: &str,
         timestamp: &str,
     ) {
-        push_bounded(&mut self.audit_log, FirewallAuditEvent {
-            event_code: event_code.to_string(),
-            effect_id: effect_id.to_string(),
-            trace_id: trace_id.to_string(),
-            detail: detail.to_string(),
-            timestamp: timestamp.to_string(),
-        }, MAX_AUDIT_LOG_ENTRIES);
+        push_bounded(
+            &mut self.audit_log,
+            FirewallAuditEvent {
+                event_code: event_code.to_string(),
+                effect_id: effect_id.to_string(),
+                trace_id: trace_id.to_string(),
+                detail: detail.to_string(),
+                timestamp: timestamp.to_string(),
+            },
+            MAX_AUDIT_LOG_ENTRIES,
+        );
     }
 
     /// Return the audit log.

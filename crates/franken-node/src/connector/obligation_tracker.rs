@@ -558,7 +558,10 @@ impl ObligationTracker {
 
     /// Generate the leak oracle report artifact.
     pub fn generate_leak_oracle_report(&self) -> LeakOracleReport {
-        let total_leaks: usize = self.scan_results.iter().fold(0usize, |acc, s| acc.saturating_add(s.leaked));
+        let total_leaks: usize = self
+            .scan_results
+            .iter()
+            .fold(0usize, |acc, s| acc.saturating_add(s.leaked));
         let verdict = if total_leaks == 0 { "PASS" } else { "FAIL" }.to_string();
 
         LeakOracleReport {

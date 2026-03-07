@@ -192,7 +192,11 @@ impl MmrCheckpoint {
             return Err(ProofError::MmrDisabled);
         }
 
-        push_bounded(&mut self.leaf_hashes, marker_leaf_hash(marker_hash), MAX_LEAF_HASHES);
+        push_bounded(
+            &mut self.leaf_hashes,
+            marker_leaf_hash(marker_hash),
+            MAX_LEAF_HASHES,
+        );
         let root_hash =
             merkle_root_from_leaf_hashes(&self.leaf_hashes).ok_or(ProofError::EmptyCheckpoint)?;
         let root = MmrRoot {
@@ -244,7 +248,11 @@ impl MmrCheckpoint {
             let marker = stream.get(idx).ok_or(ProofError::InvalidProof {
                 reason: format!("marker missing at sequence {idx}"),
             })?;
-            push_bounded(&mut self.leaf_hashes, marker_leaf_hash(&marker.marker_hash), MAX_LEAF_HASHES);
+            push_bounded(
+                &mut self.leaf_hashes,
+                marker_leaf_hash(&marker.marker_hash),
+                MAX_LEAF_HASHES,
+            );
         }
 
         let root_hash =
@@ -710,8 +718,7 @@ mod tests {
         let count = 4_000_u64;
         let stream = build_stream(count);
         let checkpoint = build_checkpoint(&stream);
-        let proof =
-            mmr_inclusion_proof(&stream, &checkpoint, count - 1).expect("proof");
+        let proof = mmr_inclusion_proof(&stream, &checkpoint, count - 1).expect("proof");
         assert!(
             proof.audit_path.len() <= 14,
             "expected <= 14, got {}",

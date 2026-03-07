@@ -786,12 +786,16 @@ impl RuntimeOracle {
     // -----------------------------------------------------------------------
 
     fn emit_event(&mut self, event_code: &str, message: &str, details: BTreeMap<String, String>) {
-        push_bounded(&mut self.event_log, OracleEvent {
-            event_code: event_code.to_string(),
-            trace_id: self.trace_id.clone(),
-            message: message.to_string(),
-            details,
-        }, MAX_EVENT_LOG_ENTRIES);
+        push_bounded(
+            &mut self.event_log,
+            OracleEvent {
+                event_code: event_code.to_string(),
+                trace_id: self.trace_id.clone(),
+                message: message.to_string(),
+                details,
+            },
+            MAX_EVENT_LOG_ENTRIES,
+        );
     }
 }
 

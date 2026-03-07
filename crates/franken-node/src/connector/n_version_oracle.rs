@@ -181,7 +181,11 @@ impl HarnessConfig {
     }
 
     pub fn with_reference(mut self, runtime: ReferenceRuntime) -> Self {
-        push_bounded(&mut self.reference_runtimes, runtime, MAX_REFERENCE_RUNTIMES);
+        push_bounded(
+            &mut self.reference_runtimes,
+            runtime,
+            MAX_REFERENCE_RUNTIMES,
+        );
         self
     }
 }

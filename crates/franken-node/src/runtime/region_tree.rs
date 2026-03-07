@@ -361,7 +361,7 @@ impl RegionTree {
             timestamp_ms,
         };
         self.push_event_log(event.clone());
-                Ok(event)
+        Ok(event)
     }
 
     /// Open a child region under a parent.
@@ -415,7 +415,7 @@ impl RegionTree {
             timestamp_ms,
         };
         self.push_event_log(open_event);
-        
+
         // Emit REG-007 for the parent
         let attach_event = RegionEvent {
             event_code: event_codes::REG_007.to_string(),
@@ -427,7 +427,7 @@ impl RegionTree {
             timestamp_ms,
         };
         self.push_event_log(attach_event.clone());
-                Ok(attach_event)
+        Ok(attach_event)
     }
 
     /// Register a task to a region.
@@ -463,7 +463,7 @@ impl RegionTree {
             timestamp_ms,
         };
         self.push_event_log(event.clone());
-                Ok(event)
+        Ok(event)
     }
 
     /// Deregister a task from a region.
@@ -492,7 +492,7 @@ impl RegionTree {
             timestamp_ms,
         };
         self.push_event_log(event.clone());
-                Ok(event)
+        Ok(event)
     }
 
     /// Close a region, recursively closing children first.
@@ -566,7 +566,7 @@ impl RegionTree {
             timestamp_ms,
         };
         self.push_event_log(drain_start_event.clone());
-                all_events.push(drain_start_event);
+        all_events.push(drain_start_event);
 
         // Step 4: Simulate drain — in a real system this would await task completion.
         // For synchronous operation, we check if tasks remain and force-terminate.
@@ -593,7 +593,7 @@ impl RegionTree {
                 timestamp_ms: timestamp_ms + drain_budget_ms,
             };
             self.push_event_log(force_event.clone());
-                        all_events.push(force_event);
+            all_events.push(force_event);
 
             // Clear tasks
             let node = self.nodes.get_mut(region_id.as_str()).ok_or_else(|| {
@@ -619,7 +619,7 @@ impl RegionTree {
             },
         };
         self.push_event_log(drain_done_event.clone());
-                all_events.push(drain_done_event);
+        all_events.push(drain_done_event);
 
         // Step 6: Mark closed
         {
@@ -645,7 +645,7 @@ impl RegionTree {
             },
         };
         self.push_event_log(close_event.clone());
-                all_events.push(close_event);
+        all_events.push(close_event);
 
         Ok(all_events)
     }
@@ -682,7 +682,7 @@ impl RegionTree {
             timestamp_ms,
         };
         self.push_event_log(event.clone());
-                Ok(event)
+        Ok(event)
     }
 
     /// Get the state of a region.

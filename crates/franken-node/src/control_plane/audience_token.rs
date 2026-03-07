@@ -518,19 +518,23 @@ impl TokenValidator {
     pub fn record_issuance(&mut self, token: &AudienceBoundToken, trace_id: &str, now_ms: u64) {
         self.tokens_issued = self.tokens_issued.saturating_add(1);
         self.seen_nonces.insert(token.nonce.clone());
-        push_bounded(&mut self.events, TokenEvent {
-            event_code: ABT_001.to_string(),
-            token_id: token.token_id.as_str().to_string(),
-            trace_id: trace_id.to_string(),
-            epoch_id: self.epoch_id,
-            action_id: format!("issue-{}", token.token_id),
-            detail: format!(
-                "Issued token with {} capabilities to audience {:?}",
-                token.capabilities.len(),
-                token.audience
-            ),
-            timestamp_ms: now_ms,
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            TokenEvent {
+                event_code: ABT_001.to_string(),
+                token_id: token.token_id.as_str().to_string(),
+                trace_id: trace_id.to_string(),
+                epoch_id: self.epoch_id,
+                action_id: format!("issue-{}", token.token_id),
+                detail: format!(
+                    "Issued token with {} capabilities to audience {:?}",
+                    token.capabilities.len(),
+                    token.audience
+                ),
+                timestamp_ms: now_ms,
+            },
+            MAX_EVENTS,
+        );
     }
 
     /// Record a delegation event.
@@ -543,18 +547,22 @@ impl TokenValidator {
     ) {
         self.tokens_delegated = self.tokens_delegated.saturating_add(1);
         self.seen_nonces.insert(token.nonce.clone());
-        push_bounded(&mut self.events, TokenEvent {
-            event_code: ABT_002.to_string(),
-            token_id: token.token_id.as_str().to_string(),
-            trace_id: trace_id.to_string(),
-            epoch_id: self.epoch_id,
-            action_id: format!("delegate-{}", token.token_id),
-            detail: format!(
-                "Delegated token at depth {} to audience {:?}",
-                chain_depth, token.audience
-            ),
-            timestamp_ms: now_ms,
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            TokenEvent {
+                event_code: ABT_002.to_string(),
+                token_id: token.token_id.as_str().to_string(),
+                trace_id: trace_id.to_string(),
+                epoch_id: self.epoch_id,
+                action_id: format!("delegate-{}", token.token_id),
+                detail: format!(
+                    "Delegated token at depth {} to audience {:?}",
+                    chain_depth, token.audience
+                ),
+                timestamp_ms: now_ms,
+            },
+            MAX_EVENTS,
+        );
     }
 
     /// Verify a full token chain against a requester identity.
@@ -586,18 +594,22 @@ impl TokenValidator {
             if token.is_expired(now_ms) {
                 self.tokens_rejected = self.tokens_rejected.saturating_add(1);
                 let err = TokenError::token_expired(&token.token_id);
-                push_bounded(&mut self.events, TokenEvent {
-                    event_code: ABT_004.to_string(),
-                    token_id: token.token_id.as_str().to_string(),
-                    trace_id: trace_id.to_string(),
-                    epoch_id: self.epoch_id,
-                    action_id: format!("verify-expired-{}", i),
-                    detail: format!(
-                        "Token at chain position {} expired (expires_at={}, now={})",
-                        i, token.expires_at, now_ms
-                    ),
-                    timestamp_ms: now_ms,
-                }, MAX_EVENTS);
+                push_bounded(
+                    &mut self.events,
+                    TokenEvent {
+                        event_code: ABT_004.to_string(),
+                        token_id: token.token_id.as_str().to_string(),
+                        trace_id: trace_id.to_string(),
+                        epoch_id: self.epoch_id,
+                        action_id: format!("verify-expired-{}", i),
+                        detail: format!(
+                            "Token at chain position {} expired (expires_at={}, now={})",
+                            i, token.expires_at, now_ms
+                        ),
+                        timestamp_ms: now_ms,
+                    },
+                    MAX_EVENTS,
+                );
                 return Err(err);
             }
         }
@@ -630,15 +642,19 @@ impl TokenValidator {
             if self.seen_nonces.contains(&token.nonce) {
                 self.tokens_rejected = self.tokens_rejected.saturating_add(1);
                 let err = TokenError::replay_detected(&token.nonce);
-                push_bounded(&mut self.events, TokenEvent {
-                    event_code: ABT_004.to_string(),
-                    token_id: token.token_id.as_str().to_string(),
-                    trace_id: trace_id.to_string(),
-                    epoch_id: self.epoch_id,
-                    action_id: format!("verify-replay-{}", token.token_id),
-                    detail: format!("Nonce '{}' replay detected", token.nonce),
-                    timestamp_ms: now_ms,
-                }, MAX_EVENTS);
+                push_bounded(
+                    &mut self.events,
+                    TokenEvent {
+                        event_code: ABT_004.to_string(),
+                        token_id: token.token_id.as_str().to_string(),
+                        trace_id: trace_id.to_string(),
+                        epoch_id: self.epoch_id,
+                        action_id: format!("verify-replay-{}", token.token_id),
+                        detail: format!("Nonce '{}' replay detected", token.nonce),
+                        timestamp_ms: now_ms,
+                    },
+                    MAX_EVENTS,
+                );
                 return Err(err);
             }
         }
@@ -672,18 +688,22 @@ impl TokenValidator {
         if !leaf.audience_contains(requester_id) {
             self.tokens_rejected = self.tokens_rejected.saturating_add(1);
             let err = TokenError::audience_mismatch(requester_id, &leaf.audience);
-            push_bounded(&mut self.events, TokenEvent {
-                event_code: ABT_004.to_string(),
-                token_id: leaf.token_id.as_str().to_string(),
-                trace_id: trace_id.to_string(),
-                epoch_id: self.epoch_id,
-                action_id: format!("verify-audience-{}", leaf.token_id),
-                detail: format!(
-                    "Audience mismatch: requester '{}' not in {:?}",
-                    requester_id, leaf.audience
-                ),
-                timestamp_ms: now_ms,
-            }, MAX_EVENTS);
+            push_bounded(
+                &mut self.events,
+                TokenEvent {
+                    event_code: ABT_004.to_string(),
+                    token_id: leaf.token_id.as_str().to_string(),
+                    trace_id: trace_id.to_string(),
+                    epoch_id: self.epoch_id,
+                    action_id: format!("verify-audience-{}", leaf.token_id),
+                    detail: format!(
+                        "Audience mismatch: requester '{}' not in {:?}",
+                        requester_id, leaf.audience
+                    ),
+                    timestamp_ms: now_ms,
+                },
+                MAX_EVENTS,
+            );
             return Err(err);
         }
 
@@ -692,18 +712,22 @@ impl TokenValidator {
             self.seen_nonces.insert(token.nonce.clone());
         }
         self.tokens_verified = self.tokens_verified.saturating_add(1);
-        push_bounded(&mut self.events, TokenEvent {
-            event_code: ABT_003.to_string(),
-            token_id: leaf.token_id.as_str().to_string(),
-            trace_id: trace_id.to_string(),
-            epoch_id: self.epoch_id,
-            action_id: format!("verify-ok-{}", leaf.token_id),
-            detail: format!(
-                "Chain verified: depth={}, audience_match=true",
-                tokens.len()
-            ),
-            timestamp_ms: now_ms,
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            TokenEvent {
+                event_code: ABT_003.to_string(),
+                token_id: leaf.token_id.as_str().to_string(),
+                trace_id: trace_id.to_string(),
+                epoch_id: self.epoch_id,
+                action_id: format!("verify-ok-{}", leaf.token_id),
+                detail: format!(
+                    "Chain verified: depth={}, audience_match=true",
+                    tokens.len()
+                ),
+                timestamp_ms: now_ms,
+            },
+            MAX_EVENTS,
+        );
 
         Ok(())
     }

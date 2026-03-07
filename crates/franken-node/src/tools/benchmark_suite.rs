@@ -823,11 +823,15 @@ impl BenchmarkSuite {
     }
 
     fn emit_event(&mut self, code: &str, scenario: Option<&str>, detail: &str) {
-        push_bounded(&mut self.events, BenchmarkEvent {
-            code: code.to_string(),
-            scenario: scenario.map(String::from),
-            detail: detail.to_string(),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            BenchmarkEvent {
+                code: code.to_string(),
+                scenario: scenario.map(String::from),
+                detail: detail.to_string(),
+            },
+            MAX_EVENTS,
+        );
     }
 }
 

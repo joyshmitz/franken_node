@@ -425,30 +425,38 @@ impl RetrievabilityGate {
             latency_ms: state.fetch_latency_ms,
         };
 
-        push_bounded(&mut self.receipts, ProofReceipt {
-            artifact_id: artifact_id.0.clone(),
-            segment_id: segment_id.0.clone(),
-            source_tier: source_tier.label().to_string(),
-            target_tier: target_tier.label().to_string(),
-            content_hash: expected_hash.to_string(),
-            proof_timestamp: ts,
-            latency_ms: state.fetch_latency_ms,
-            passed: true,
-            failure_reason: None,
-        }, MAX_RECEIPTS);
+        push_bounded(
+            &mut self.receipts,
+            ProofReceipt {
+                artifact_id: artifact_id.0.clone(),
+                segment_id: segment_id.0.clone(),
+                source_tier: source_tier.label().to_string(),
+                target_tier: target_tier.label().to_string(),
+                content_hash: expected_hash.to_string(),
+                proof_timestamp: ts,
+                latency_ms: state.fetch_latency_ms,
+                passed: true,
+                failure_reason: None,
+            },
+            MAX_RECEIPTS,
+        );
 
-        push_bounded(&mut self.events, GateEvent {
-            code: RG_PROOF_PASSED.to_string(),
-            artifact_id: artifact_id.0.clone(),
-            segment_id: segment_id.0.clone(),
-            detail: format!(
-                "Proof passed: {}→{}, latency={}ms, hash={}",
-                source_tier.label(),
-                target_tier.label(),
-                state.fetch_latency_ms,
-                &expected_hash[..8.min(expected_hash.len())]
-            ),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            GateEvent {
+                code: RG_PROOF_PASSED.to_string(),
+                artifact_id: artifact_id.0.clone(),
+                segment_id: segment_id.0.clone(),
+                detail: format!(
+                    "Proof passed: {}→{}, latency={}ms, hash={}",
+                    source_tier.label(),
+                    target_tier.label(),
+                    state.fetch_latency_ms,
+                    &expected_hash[..8.min(expected_hash.len())]
+                ),
+            },
+            MAX_EVENTS,
+        );
 
         Ok(proof)
     }
@@ -475,25 +483,33 @@ impl RetrievabilityGate {
         ) {
             Ok(p) => p,
             Err(err) => {
-                push_bounded(&mut self.events, GateEvent {
-                    code: RG_EVICTION_BLOCKED.to_string(),
-                    artifact_id: artifact_id.0.clone(),
-                    segment_id: segment_id.0.clone(),
-                    detail: format!("Eviction blocked: {}", err.reason.error_code()),
-                }, MAX_EVENTS);
+                push_bounded(
+                    &mut self.events,
+                    GateEvent {
+                        code: RG_EVICTION_BLOCKED.to_string(),
+                        artifact_id: artifact_id.0.clone(),
+                        segment_id: segment_id.0.clone(),
+                        detail: format!("Eviction blocked: {}", err.reason.error_code()),
+                    },
+                    MAX_EVENTS,
+                );
                 return Err(err);
             }
         };
 
-        push_bounded(&mut self.events, GateEvent {
-            code: RG_EVICTION_PERMITTED.to_string(),
-            artifact_id: artifact_id.0.clone(),
-            segment_id: segment_id.0.clone(),
-            detail: format!(
-                "Eviction permitted after proof at ts={}",
-                proof.proof_timestamp
-            ),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            GateEvent {
+                code: RG_EVICTION_PERMITTED.to_string(),
+                artifact_id: artifact_id.0.clone(),
+                segment_id: segment_id.0.clone(),
+                detail: format!(
+                    "Eviction permitted after proof at ts={}",
+                    proof.proof_timestamp
+                ),
+            },
+            MAX_EVENTS,
+        );
 
         Ok(EvictionPermit {
             proof,
@@ -543,24 +559,32 @@ impl RetrievabilityGate {
         reason: &ProofFailureReason,
         latency_ms: u64,
     ) {
-        push_bounded(&mut self.receipts, ProofReceipt {
-            artifact_id: artifact_id.0.clone(),
-            segment_id: segment_id.0.clone(),
-            source_tier: source_tier.label().to_string(),
-            target_tier: target_tier.label().to_string(),
-            content_hash: expected_hash.to_string(),
-            proof_timestamp: ts,
-            latency_ms,
-            passed: false,
-            failure_reason: Some(reason.to_string()),
-        }, MAX_RECEIPTS);
+        push_bounded(
+            &mut self.receipts,
+            ProofReceipt {
+                artifact_id: artifact_id.0.clone(),
+                segment_id: segment_id.0.clone(),
+                source_tier: source_tier.label().to_string(),
+                target_tier: target_tier.label().to_string(),
+                content_hash: expected_hash.to_string(),
+                proof_timestamp: ts,
+                latency_ms,
+                passed: false,
+                failure_reason: Some(reason.to_string()),
+            },
+            MAX_RECEIPTS,
+        );
 
-        push_bounded(&mut self.events, GateEvent {
-            code: RG_PROOF_FAILED.to_string(),
-            artifact_id: artifact_id.0.clone(),
-            segment_id: segment_id.0.clone(),
-            detail: format!("Proof failed: {}", reason),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            GateEvent {
+                code: RG_PROOF_FAILED.to_string(),
+                artifact_id: artifact_id.0.clone(),
+                segment_id: segment_id.0.clone(),
+                detail: format!("Proof failed: {}", reason),
+            },
+            MAX_EVENTS,
+        );
     }
 }
 

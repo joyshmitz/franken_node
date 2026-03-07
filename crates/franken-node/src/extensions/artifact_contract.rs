@@ -148,7 +148,11 @@ impl AdmissionConfig {
     }
 
     pub fn with_signer(mut self, signer_id: impl Into<String>) -> Self {
-        push_bounded(&mut self.trusted_signers, signer_id.into(), MAX_TRUSTED_SIGNERS);
+        push_bounded(
+            &mut self.trusted_signers,
+            signer_id.into(),
+            MAX_TRUSTED_SIGNERS,
+        );
         self
     }
 }
@@ -201,10 +205,7 @@ impl AdmissionGate {
                 if !seen_ids.insert(&cap.capability_id) {
                     return AdmissionOutcome::Denied {
                         reason: AdmissionDenialReason::InvalidCapability {
-                            detail: format!(
-                                "duplicate capability_id '{}'",
-                                cap.capability_id
-                            ),
+                            detail: format!("duplicate capability_id '{}'", cap.capability_id),
                         },
                         event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
                     };
@@ -296,7 +297,9 @@ impl EnforcementEngine {
         let mut admitted = BTreeMap::new();
         for cap in &contract.capabilities {
             // Skip duplicates: first occurrence wins (INV-ARTIFACT-CAPABILITY-ENVELOPE).
-            admitted.entry(cap.capability_id.clone()).or_insert_with(|| cap.clone());
+            admitted
+                .entry(cap.capability_id.clone())
+                .or_insert_with(|| cap.clone());
         }
         Self {
             admitted_capabilities: admitted,

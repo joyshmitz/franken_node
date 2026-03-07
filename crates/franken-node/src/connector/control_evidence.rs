@@ -407,12 +407,16 @@ impl ControlEvidenceEmitter {
         decision_type: DecisionType,
         detail: String,
     ) {
-        push_bounded(&mut self.events, ControlEvidenceEvent {
-            code: code.to_string(),
-            decision_id: decision_id.to_string(),
-            decision_type: decision_type.label().to_string(),
-            detail,
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            ControlEvidenceEvent {
+                code: code.to_string(),
+                decision_id: decision_id.to_string(),
+                decision_type: decision_type.label().to_string(),
+                detail,
+            },
+            MAX_EVENTS,
+        );
     }
 }
 

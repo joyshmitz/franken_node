@@ -599,15 +599,19 @@ impl EvictionSaga {
     ) {
         let saga_id = self.saga_id.clone();
         let artifact_id = self.artifact_id.clone();
-        push_bounded(&mut self.transitions, PhaseTransition {
-            saga_id,
-            artifact_id,
-            from_phase: from,
-            to_phase: to,
-            event_code: event_code.to_string(),
-            timestamp_epoch_ms: PhaseTransition::now_epoch_ms(),
-            outcome: outcome.to_string(),
-        }, MAX_TRANSITIONS);
+        push_bounded(
+            &mut self.transitions,
+            PhaseTransition {
+                saga_id,
+                artifact_id,
+                from_phase: from,
+                to_phase: to,
+                event_code: event_code.to_string(),
+                timestamp_epoch_ms: PhaseTransition::now_epoch_ms(),
+                outcome: outcome.to_string(),
+            },
+            MAX_TRANSITIONS,
+        );
     }
 
     /// Generate content hash for verification evidence.

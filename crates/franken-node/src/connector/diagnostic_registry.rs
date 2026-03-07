@@ -1314,22 +1314,30 @@ mod tests {
     #[test]
     fn test_default_diagnostics_has_critical() {
         let diags = default_diagnostics();
-        assert!(diags
-            .iter()
-            .any(|d| d.priority_class == PriorityClass::Critical));
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.priority_class == PriorityClass::Critical)
+        );
     }
 
     #[test]
     fn test_default_diagnostics_has_all_classes() {
         let diags = default_diagnostics();
-        assert!(diags
-            .iter()
-            .any(|d| d.priority_class == PriorityClass::Critical));
-        assert!(diags
-            .iter()
-            .any(|d| d.priority_class == PriorityClass::Standard));
-        assert!(diags
-            .iter()
-            .any(|d| d.priority_class == PriorityClass::Background));
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.priority_class == PriorityClass::Critical)
+        );
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.priority_class == PriorityClass::Standard)
+        );
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.priority_class == PriorityClass::Background)
+        );
     }
 }

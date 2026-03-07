@@ -210,12 +210,16 @@ impl SagaExecutor {
 
     /// Internal: append an audit record with capacity eviction.
     fn log(&mut self, event_code: &str, trace_id: &str, saga_id: &str, detail: serde_json::Value) {
-        push_bounded(&mut self.audit_log, SagaAuditRecord {
-            event_code: event_code.to_string(),
-            trace_id: trace_id.to_string(),
-            saga_id: saga_id.to_string(),
-            detail,
-        }, MAX_AUDIT_LOG_ENTRIES);
+        push_bounded(
+            &mut self.audit_log,
+            SagaAuditRecord {
+                event_code: event_code.to_string(),
+                trace_id: trace_id.to_string(),
+                saga_id: saga_id.to_string(),
+                detail,
+            },
+            MAX_AUDIT_LOG_ENTRIES,
+        );
     }
 
     /// Create a new saga with a list of step definitions.

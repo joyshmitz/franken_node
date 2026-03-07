@@ -383,12 +383,16 @@ impl AdversaryGraph {
                 "{ERR_ADV_DANGLING_EDGE}: target node {to} not found"
             ));
         }
-        push_bounded(&mut self.edges, TrustEdge {
-            from: from.clone(),
-            to: to.clone(),
-            relationship: relationship.clone(),
-            created_at: timestamp,
-        }, MAX_EDGES);
+        push_bounded(
+            &mut self.edges,
+            TrustEdge {
+                from: from.clone(),
+                to: to.clone(),
+                relationship: relationship.clone(),
+                created_at: timestamp,
+            },
+            MAX_EDGES,
+        );
         self.push_log_entry(AdversaryLogEntry {
             trace_id: trace_id.to_string(),
             event_code: ADV_002_EDGE_ADDED.to_string(),

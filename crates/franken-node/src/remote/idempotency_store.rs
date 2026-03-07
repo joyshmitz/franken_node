@@ -247,11 +247,15 @@ impl IdempotencyDedupeStore {
 
     fn log(&mut self, event_code: &str, trace_id: &str, detail: serde_json::Value) {
         let cap = self.max_audit_records;
-        push_bounded(&mut self.audit_log, IdsAuditRecord {
-            event_code: event_code.to_string(),
-            trace_id: trace_id.to_string(),
-            detail,
-        }, cap);
+        push_bounded(
+            &mut self.audit_log,
+            IdsAuditRecord {
+                event_code: event_code.to_string(),
+                trace_id: trace_id.to_string(),
+                detail,
+            },
+            cap,
+        );
     }
 
     // ── primary operations ───────────────────────────────────────────

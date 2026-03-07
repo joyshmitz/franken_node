@@ -241,8 +241,16 @@ pub fn is_anomalous_delta(delta: f64, history: &[f64], config: &AnomalyConfig) -
         // History contains non-finite values; treat delta as anomalous.
         return true;
     }
-    let variance = window.iter().map(|x| (x - mean).powi(2)).fold(0.0_f64, |a, b| a + b) / n;
-    let std_dev = if variance.is_finite() { variance.sqrt() } else { return true; };
+    let variance = window
+        .iter()
+        .map(|x| (x - mean).powi(2))
+        .fold(0.0_f64, |a, b| a + b)
+        / n;
+    let std_dev = if variance.is_finite() {
+        variance.sqrt()
+    } else {
+        return true;
+    };
 
     if std_dev < 1e-9 {
         // Zero variance — any nonzero delta is anomalous if the multiplier is finite.
@@ -373,20 +381,28 @@ impl EcosystemReputationApi {
         pub_record.computation_count = pub_record.computation_count.saturating_add(1);
         push_bounded(&mut pub_record.score_history, new_score, MAX_SCORE_HISTORY);
 
-        push_bounded(&mut self.events, ReputationEvent {
-            event_code: ENE_003_REPUTATION_COMPUTED.to_owned(),
-            publisher_id: publisher_id.to_owned(),
-            detail: format!("score={new_score:.4}, delta={delta:.4}"),
-            timestamp: timestamp.to_owned(),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            ReputationEvent {
+                event_code: ENE_003_REPUTATION_COMPUTED.to_owned(),
+                publisher_id: publisher_id.to_owned(),
+                detail: format!("score={new_score:.4}, delta={delta:.4}"),
+                timestamp: timestamp.to_owned(),
+            },
+            MAX_EVENTS,
+        );
 
         if anomalous {
-            push_bounded(&mut self.events, ReputationEvent {
-                event_code: ENE_004_REPUTATION_ANOMALY.to_owned(),
-                publisher_id: publisher_id.to_owned(),
-                detail: format!("anomalous delta {delta:.4} detected"),
-                timestamp: timestamp.to_owned(),
-            }, MAX_EVENTS);
+            push_bounded(
+                &mut self.events,
+                ReputationEvent {
+                    event_code: ENE_004_REPUTATION_ANOMALY.to_owned(),
+                    publisher_id: publisher_id.to_owned(),
+                    detail: format!("anomalous delta {delta:.4} detected"),
+                    timestamp: timestamp.to_owned(),
+                },
+                MAX_EVENTS,
+            );
         }
 
         Ok(new_score)

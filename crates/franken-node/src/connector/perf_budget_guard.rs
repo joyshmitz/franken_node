@@ -500,13 +500,17 @@ impl OverheadGate {
         overhead_pct: Option<f64>,
         trace_id: &str,
     ) {
-        push_bounded(&mut self.events, OverheadEvent {
-            code: code.to_string(),
-            hot_path: hot_path.label().to_string(),
-            detail,
-            overhead_pct,
-            trace_id: trace_id.to_string(),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            OverheadEvent {
+                code: code.to_string(),
+                hot_path: hot_path.label().to_string(),
+                detail,
+                overhead_pct,
+                trace_id: trace_id.to_string(),
+            },
+            MAX_EVENTS,
+        );
     }
 }
 

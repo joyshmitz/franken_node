@@ -455,11 +455,15 @@ impl ScenarioBuilder {
         if self.nodes.iter().any(|n| n.id == id) {
             return Err(ScenarioBuilderError::DuplicateNode { node_id: id });
         }
-        push_bounded(&mut self.nodes, VirtualNode {
-            id,
-            name: name.into(),
-            role,
-        }, MAX_NODES_CAP);
+        push_bounded(
+            &mut self.nodes,
+            VirtualNode {
+                id,
+                name: name.into(),
+                role,
+            },
+            MAX_NODES_CAP,
+        );
         Ok(self)
     }
 
@@ -478,12 +482,16 @@ impl ScenarioBuilder {
         if self.links.iter().any(|l| l.id == id) {
             return Err(ScenarioBuilderError::DuplicateLink { link_id: id });
         }
-        push_bounded(&mut self.links, VirtualLink {
-            id,
-            source_node: source_node.into(),
-            target_node: target_node.into(),
-            bidirectional,
-        }, MAX_LINKS);
+        push_bounded(
+            &mut self.links,
+            VirtualLink {
+                id,
+                source_node: source_node.into(),
+                target_node: target_node.into(),
+                bidirectional,
+            },
+            MAX_LINKS,
+        );
         Ok(self)
     }
 

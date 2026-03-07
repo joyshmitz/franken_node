@@ -631,7 +631,11 @@ impl DporScheduleGate {
             self.explorer
                 .register_model(model)
                 .map_err(|e| DporScheduleGateError::RegistrationFailed(e.to_string()))?;
-            push_bounded(&mut self.registered_scenarios, name.to_string(), MAX_REGISTERED_SCENARIOS);
+            push_bounded(
+                &mut self.registered_scenarios,
+                name.to_string(),
+                MAX_REGISTERED_SCENARIOS,
+            );
             self.emit(GateEvent::new(
                 event_codes::DSG_002,
                 &format!("registered scenario: {}", name),
@@ -656,7 +660,11 @@ impl DporScheduleGate {
         self.explorer
             .register_model(model)
             .map_err(|e| DporScheduleGateError::RegistrationFailed(e.to_string()))?;
-        push_bounded(&mut self.registered_scenarios, name.to_string(), MAX_REGISTERED_SCENARIOS);
+        push_bounded(
+            &mut self.registered_scenarios,
+            name.to_string(),
+            MAX_REGISTERED_SCENARIOS,
+        );
         self.emit(GateEvent::new(
             event_codes::DSG_002,
             &format!("registered scenario: {}", name),

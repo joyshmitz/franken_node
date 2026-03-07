@@ -728,12 +728,16 @@ impl LaneScheduler {
 
     /// Number of active tasks across all lanes.
     pub fn total_active(&self) -> usize {
-        self.counters.values().fold(0usize, |acc, c| acc.saturating_add(c.active_count))
+        self.counters
+            .values()
+            .fold(0usize, |acc, c| acc.saturating_add(c.active_count))
     }
 
     /// Total completed tasks across all lanes.
     pub fn total_completed(&self) -> u64 {
-        self.counters.values().fold(0u64, |acc, c| acc.saturating_add(c.completed_total))
+        self.counters
+            .values()
+            .fold(0u64, |acc, c| acc.saturating_add(c.completed_total))
     }
 }
 

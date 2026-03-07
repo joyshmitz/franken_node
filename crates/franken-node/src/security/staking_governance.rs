@@ -658,7 +658,10 @@ impl TrustGovernanceState {
         used.push(evidence.evidence_hash.clone());
 
         // INV-STAKE-SLASH-DETERMINISTIC: compute slash amount from policy
-        let fraction = self.policy.slash_fraction_for_tier(record.risk_tier).min(100);
+        let fraction = self
+            .policy
+            .slash_fraction_for_tier(record.risk_tier)
+            .min(100);
         let slash_amount =
             u64::try_from(record.amount as u128 * fraction as u128 / 100).unwrap_or(u64::MAX);
         let appeal_window = self.policy.appeal_window_for_tier(record.risk_tier);

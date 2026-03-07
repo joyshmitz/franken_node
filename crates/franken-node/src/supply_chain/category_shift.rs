@@ -705,12 +705,16 @@ impl ReportingPipeline {
     }
 
     fn emit(&mut self, event_code: &str, trace_id: &str, timestamp_secs: u64, detail: &str) {
-        push_bounded(&mut self.telemetry, PipelineEvent {
-            event_code: event_code.to_string(),
-            trace_id: trace_id.to_string(),
-            timestamp_secs,
-            detail: detail.to_string(),
-        }, MAX_TELEMETRY);
+        push_bounded(
+            &mut self.telemetry,
+            PipelineEvent {
+                event_code: event_code.to_string(),
+                trace_id: trace_id.to_string(),
+                timestamp_secs,
+                detail: detail.to_string(),
+            },
+            MAX_TELEMETRY,
+        );
     }
 }
 

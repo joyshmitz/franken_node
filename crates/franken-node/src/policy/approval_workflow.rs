@@ -354,8 +354,8 @@ impl PolicyChangeEngine {
             && record
                 .approvals
                 .iter()
-                .all(|a| a.signer == record.proposal.proposed_by)
-            && signer == record.proposal.proposed_by
+                .all(|a| a.signer.to_lowercase() == record.proposal.proposed_by.to_lowercase())
+            && signer.to_lowercase() == record.proposal.proposed_by.to_lowercase()
         {
             return Err(PolicyChangeError::new(
                 ERR_SOLE_APPROVER,
@@ -363,8 +363,12 @@ impl PolicyChangeEngine {
             ));
         }
 
-        // Deduplicate: reject if this approver already signed.
-        if record.approvals.iter().any(|a| a.signer == signer) {
+        // Deduplicate: reject if this approver already signed (case-insensitive).
+        if record
+            .approvals
+            .iter()
+            .any(|a| a.signer.to_lowercase() == signer.to_lowercase())
+        {
             return Err(PolicyChangeError::new(
                 ERR_INVALID_STATE_TRANSITION,
                 format!("Approver {signer} has already signed this proposal"),

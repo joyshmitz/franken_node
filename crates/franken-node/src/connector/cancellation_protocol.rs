@@ -291,7 +291,9 @@ impl ResourceTracker {
 
     /// Number of held resources.
     pub fn held_count(&self) -> usize {
-        self.held.values().fold(0usize, |acc, v| acc.saturating_add(*v))
+        self.held
+            .values()
+            .fold(0usize, |acc, v| acc.saturating_add(*v))
     }
 
     /// Release all resources, returning the count released.
@@ -672,14 +674,18 @@ impl CancellationProtocol {
         let phase = self.phase;
         let workflow = self.budget.workflow.clone();
         let trace_id = self.trace_id.clone();
-        push_bounded(&mut self.audit_log, CancellationAuditEvent {
-            event_code: event_code.to_string(),
-            phase,
-            workflow,
-            trace_id,
-            detail: detail.to_string(),
-            schema_version: SCHEMA_VERSION.to_string(),
-        }, MAX_AUDIT_LOG_ENTRIES);
+        push_bounded(
+            &mut self.audit_log,
+            CancellationAuditEvent {
+                event_code: event_code.to_string(),
+                phase,
+                workflow,
+                trace_id,
+                detail: detail.to_string(),
+                schema_version: SCHEMA_VERSION.to_string(),
+            },
+            MAX_AUDIT_LOG_ENTRIES,
+        );
     }
 }
 

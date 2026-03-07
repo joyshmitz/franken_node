@@ -757,13 +757,17 @@ impl IsolationMesh {
         detail: String,
     ) {
         self.event_seq = self.event_seq.saturating_add(1);
-        push_bounded(&mut self.events, MeshEvent {
-            event_code: code.to_string(),
-            workload_id: workload_id.to_string(),
-            rail_id: rail_id.to_string(),
-            now_ms,
-            detail,
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            MeshEvent {
+                event_code: code.to_string(),
+                workload_id: workload_id.to_string(),
+                rail_id: rail_id.to_string(),
+                now_ms,
+                detail,
+            },
+            MAX_EVENTS,
+        );
     }
 }
 

@@ -528,18 +528,22 @@ impl RevocationIntegrationEngine {
         decision: &RevocationCheckDecision,
         zone_id: &str,
     ) {
-        push_bounded(&mut self.evidence_ledger, RevocationLedgerEntry {
-            extension_id: decision.extension_id.clone(),
-            operation: decision.operation,
-            decision_status: decision.status,
-            event: decision.event,
-            error_code: decision.error_code.clone(),
-            revocation_head: decision.revocation_head,
-            staleness_secs: decision.staleness_secs,
-            max_allowed_staleness_secs: decision.max_allowed_staleness_secs,
-            timestamp_epoch: now_epoch,
-            trace_id: decision.trace_id.clone(),
-        }, MAX_ENTRIES);
+        push_bounded(
+            &mut self.evidence_ledger,
+            RevocationLedgerEntry {
+                extension_id: decision.extension_id.clone(),
+                operation: decision.operation,
+                decision_status: decision.status,
+                event: decision.event,
+                error_code: decision.error_code.clone(),
+                revocation_head: decision.revocation_head,
+                staleness_secs: decision.staleness_secs,
+                max_allowed_staleness_secs: decision.max_allowed_staleness_secs,
+                timestamp_epoch: now_epoch,
+                trace_id: decision.trace_id.clone(),
+            },
+            MAX_ENTRIES,
+        );
 
         self.push_event(RevocationEventRecord {
             event: decision.event,

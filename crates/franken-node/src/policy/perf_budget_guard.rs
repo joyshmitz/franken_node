@@ -437,12 +437,16 @@ impl PerformanceBudgetGuard {
 
     fn emit(&mut self, code: &str, hot_path: &str, detail: &str) {
         let trace_id = self.trace_id.clone();
-        push_bounded(&mut self.events, PerfEvent {
-            code: code.to_string(),
-            hot_path: hot_path.to_string(),
-            detail: detail.to_string(),
-            trace_id,
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            PerfEvent {
+                code: code.to_string(),
+                hot_path: hot_path.to_string(),
+                detail: detail.to_string(),
+                trace_id,
+            },
+            MAX_EVENTS,
+        );
     }
 
     fn parse_hot_path(&self, label: &str) -> HotPath {
@@ -507,7 +511,7 @@ impl PercentileStats {
             return None;
         }
         let mut sorted: Vec<f64> = durations_us.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.sort_by(|a, b| a.total_cmp(b));
         let n = sorted.len();
         Some(Self {
             count: n,
@@ -687,12 +691,16 @@ impl TimingCollector {
 
     fn emit(&mut self, code: &str, hot_path: &str, detail: &str) {
         let trace_id = self.trace_id.clone();
-        push_bounded(&mut self.events, PerfEvent {
-            code: code.to_string(),
-            hot_path: hot_path.to_string(),
-            detail: detail.to_string(),
-            trace_id,
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            PerfEvent {
+                code: code.to_string(),
+                hot_path: hot_path.to_string(),
+                detail: detail.to_string(),
+                trace_id,
+            },
+            MAX_EVENTS,
+        );
     }
 }
 
@@ -973,8 +981,10 @@ mod tests {
 
     #[test]
     fn test_flamegraph_on_failure() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().to_string_lossy().to_string();
         let mut guard = PerformanceBudgetGuard::new(BudgetPolicy::default(), "trace-fg")
-            .with_flamegraph_dir("/tmp/flamegraphs");
+            .with_flamegraph_dir(&path);
         let measurements = vec![make_measurement("lifecycle_transition", 100.0, 120.0, 10.0)];
         let result = guard.evaluate(&measurements).unwrap();
         assert!(result.path_results[0].flamegraph_path.is_some());
@@ -989,8 +999,10 @@ mod tests {
 
     #[test]
     fn test_flamegraph_prf004_event() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().to_string_lossy().to_string();
         let mut guard = PerformanceBudgetGuard::new(BudgetPolicy::default(), "trace-fg2")
-            .with_flamegraph_dir("/tmp/fg");
+            .with_flamegraph_dir(&path);
         let measurements = vec![make_measurement("lifecycle_transition", 100.0, 120.0, 10.0)];
         guard.evaluate(&measurements).unwrap();
         let fg_events: Vec<_> = guard

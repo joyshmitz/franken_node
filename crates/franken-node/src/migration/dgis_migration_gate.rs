@@ -145,7 +145,7 @@ fn evaluate_policy(
         });
     }
 
-    if delta.new_articulation_points > i64::from(thresholds.max_new_articulation_points) {
+    if delta.new_articulation_points >= i64::from(thresholds.max_new_articulation_points) {
         reasons.push(RejectionReason {
             code: "DGIS-MIGRATE-ARTICULATION-DELTA".to_string(),
             detail: format!(

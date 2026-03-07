@@ -148,11 +148,15 @@ impl ReplayDiff {
         expected: impl Into<String>,
         actual: impl Into<String>,
     ) {
-        push_bounded(&mut self.fields, DiffField {
-            field_name: field_name.into(),
-            expected: expected.into(),
-            actual: actual.into(),
-        }, MAX_FIELDS);
+        push_bounded(
+            &mut self.fields,
+            DiffField {
+                field_name: field_name.into(),
+                expected: expected.into(),
+                actual: actual.into(),
+            },
+            MAX_FIELDS,
+        );
     }
 
     pub fn is_empty(&self) -> bool {

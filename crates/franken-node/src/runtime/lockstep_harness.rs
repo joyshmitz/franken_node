@@ -316,14 +316,11 @@ impl LockstepHarness {
 
         let mut cmd = Command::new("strace");
 
-        let strace_output_file = format!(
-            "/tmp/strace_{}_{}.log",
-            runtime.replace('-', "_"),
-            uuid::Uuid::now_v7()
-        );
-        let _cleanup = TempFileCleanup {
-            path: strace_output_file.clone(),
-        };
+        let strace_output_file = tempfile::Builder::new()
+            .prefix(&format!("strace_{}_", runtime.replace('-', "_")))
+            .suffix(".log")
+            .tempfile()
+            .context("Failed to create secure temporary file for strace")?;
 
         // Wrap execution in strace to intercept and record filesystem and network mutations
         // -f: trace child processes
@@ -333,7 +330,7 @@ impl LockstepHarness {
             .arg("-e")
             .arg("trace=file,network")
             .arg("-o")
-            .arg(&strace_output_file)
+            .arg(strace_output_file.path())
             .arg(&bin_path);
 
         if Self::is_franken_runtime(runtime) {
@@ -414,7 +411,7 @@ impl LockstepHarness {
 
         // Append deterministic strace output to detect behavioral divergences
         combined_output.extend_from_slice(b"\n--- SYSTEM CALL BOUNDARIES ---\n");
-        let strace_content = Self::read_strace_output(Path::new(&strace_output_file), runtime)?;
+        let strace_content = Self::read_strace_output(strace_output_file.path(), runtime)?;
         // Filter out non-deterministic pointers/PIDs from strace output using simple heuristics
         // so we don't get false positive divergences for different runtimes doing the same thing.
         let deterministic_strace = Self::sanitize_strace_output(&strace_content);
@@ -648,65 +645,27 @@ mod tests {
         assert!(format!("{err:#}").contains("at least two distinct runtimes"));
     }
 
-    // ── TempFileCleanup ──────────────────────────────────────────────
-
-    #[test]
-    fn temp_file_cleanup_removes_file_on_drop() {
-        let path = format!("/tmp/lockstep_test_{}", uuid::Uuid::now_v7());
-        std::fs::write(&path, b"test").expect("write temp");
-        assert!(Path::new(&path).exists());
-
-        {
-            let _cleanup = TempFileCleanup { path: path.clone() };
-        }
-        // File should be removed after drop
-        assert!(!Path::new(&path).exists());
-    }
-
-    #[test]
-    fn temp_file_cleanup_does_not_panic_for_missing_file() {
-        let path = "/tmp/lockstep_test_nonexistent_file_42".to_string();
-        assert!(!Path::new(&path).exists());
-        {
-            let _cleanup = TempFileCleanup { path };
-        }
-        // Should not panic
-    }
-
-    #[test]
-    fn temp_file_cleanup_tolerates_file_removed_before_drop() {
-        let path = format!("/tmp/lockstep_test_race_{}", uuid::Uuid::now_v7());
-        std::fs::write(&path, b"test").expect("write temp");
-        let cleanup = TempFileCleanup { path: path.clone() };
-
-        // Simulate another actor deleting the file before cleanup drop executes.
-        std::fs::remove_file(&path).expect("remove temp before drop");
-        drop(cleanup);
-
-        assert!(!Path::new(&path).exists());
-    }
-
     #[test]
     fn read_strace_output_reads_existing_file() {
-        let path = format!("/tmp/lockstep_strace_read_{}.log", uuid::Uuid::now_v7());
-        std::fs::write(&path, b"open(\"/tmp/test\", O_RDONLY) = 3\n").expect("write strace");
-        let _cleanup = TempFileCleanup { path: path.clone() };
+        let temp_file = tempfile::NamedTempFile::new().expect("tempfile");
+        std::fs::write(temp_file.path(), b"open(\"/tmp/test\", O_RDONLY) = 3\n")
+            .expect("write strace");
 
         let contents =
-            LockstepHarness::read_strace_output(Path::new(&path), "node").expect("read strace");
+            LockstepHarness::read_strace_output(temp_file.path(), "node").expect("read strace");
         assert!(contents.starts_with(b"open("));
     }
 
     #[test]
     fn read_strace_output_errors_when_file_missing() {
-        let path = format!("/tmp/lockstep_missing_strace_{}.log", uuid::Uuid::now_v7());
-        assert!(!Path::new(&path).exists());
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let path = temp_dir.path().join("missing.log");
+        assert!(!path.exists());
 
-        let err = LockstepHarness::read_strace_output(Path::new(&path), "node")
+        let err = LockstepHarness::read_strace_output(&path, "node")
             .expect_err("missing strace file must fail");
         let message = format!("{err:#}");
         assert!(message.contains("strace output missing or unreadable for runtime node"));
-        assert!(message.contains(&path));
     }
 
     // ── sanitize_strace_output ───────────────────────────────────────

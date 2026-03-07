@@ -360,11 +360,11 @@ impl ControlReplayGate {
 
         let decision_id = entry.decision_id.clone();
         let decision_type = entry.decision_type;
-        push_bounded(&mut self.verdicts, (
-            decision_id,
-            decision_type,
-            verdict.clone(),
-        ), MAX_VERDICTS);
+        push_bounded(
+            &mut self.verdicts,
+            (decision_id, decision_type, verdict.clone()),
+            MAX_VERDICTS,
+        );
         verdict
     }
 
@@ -479,14 +479,18 @@ impl ControlReplayGate {
         detail: String,
         trace_id: &str,
     ) {
-        push_bounded(&mut self.events, ReplayGateEvent {
-            code: code.to_string(),
-            decision_id: decision_id.to_string(),
-            decision_type: decision_type.label().to_string(),
-            verdict: verdict.to_string(),
-            detail,
-            trace_id: trace_id.to_string(),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            ReplayGateEvent {
+                code: code.to_string(),
+                decision_id: decision_id.to_string(),
+                decision_type: decision_type.label().to_string(),
+                verdict: verdict.to_string(),
+                detail,
+                trace_id: trace_id.to_string(),
+            },
+            MAX_EVENTS,
+        );
     }
 }
 

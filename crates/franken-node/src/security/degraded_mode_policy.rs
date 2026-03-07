@@ -67,7 +67,11 @@ impl DegradedModePolicy {
 
     #[must_use]
     pub fn with_trigger(mut self, trigger: TriggerCondition) -> Self {
-        push_bounded(&mut self.trigger_conditions, trigger, MAX_TRIGGER_CONDITIONS);
+        push_bounded(
+            &mut self.trigger_conditions,
+            trigger,
+            MAX_TRIGGER_CONDITIONS,
+        );
         self
     }
 
@@ -85,13 +89,21 @@ impl DegradedModePolicy {
 
     #[must_use]
     pub fn with_mandatory_audit_event(mut self, spec: AuditEventSpec) -> Self {
-        push_bounded(&mut self.mandatory_audit_events, spec, MAX_MANDATORY_AUDIT_EVENTS);
+        push_bounded(
+            &mut self.mandatory_audit_events,
+            spec,
+            MAX_MANDATORY_AUDIT_EVENTS,
+        );
         self
     }
 
     #[must_use]
     pub fn with_recovery_criterion(mut self, criterion: RecoveryCriterion) -> Self {
-        push_bounded(&mut self.auto_recovery_criteria, criterion, MAX_AUTO_RECOVERY_CRITERIA);
+        push_bounded(
+            &mut self.auto_recovery_criteria,
+            criterion,
+            MAX_AUTO_RECOVERY_CRITERIA,
+        );
         self
     }
 

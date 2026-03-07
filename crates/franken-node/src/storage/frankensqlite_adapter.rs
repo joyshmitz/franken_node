@@ -325,7 +325,11 @@ impl FrankensqliteAdapter {
         self.write_count = self.write_count.saturating_add(1);
 
         if class == PersistenceClass::AuditLog {
-            push_bounded(&mut self.audit_log, (key.to_string(), value.to_vec()), MAX_AUDIT_LOG_ENTRIES);
+            push_bounded(
+                &mut self.audit_log,
+                (key.to_string(), value.to_vec()),
+                MAX_AUDIT_LOG_ENTRIES,
+            );
         }
 
         let latency = start.elapsed().as_micros() as u64;
@@ -419,11 +423,15 @@ impl FrankensqliteAdapter {
                 reason: "version already applied".into(),
             });
         }
-        push_bounded(&mut self.schema_versions, SchemaVersion {
-            version,
-            applied_at: "2026-02-20T00:00:00Z".into(),
-            description: description.to_string(),
-        }, MAX_SCHEMA_VERSIONS);
+        push_bounded(
+            &mut self.schema_versions,
+            SchemaVersion {
+                version,
+                applied_at: "2026-02-20T00:00:00Z".into(),
+                description: description.to_string(),
+            },
+            MAX_SCHEMA_VERSIONS,
+        );
         Ok(())
     }
 
@@ -482,11 +490,15 @@ impl FrankensqliteAdapter {
     }
 
     fn emit_event(&mut self, code: &str, class: &str, detail: String) {
-        push_bounded(&mut self.events, AdapterEvent {
-            code: code.to_string(),
-            persistence_class: class.to_string(),
-            detail,
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            AdapterEvent {
+                code: code.to_string(),
+                persistence_class: class.to_string(),
+                detail,
+            },
+            MAX_EVENTS,
+        );
     }
 }
 

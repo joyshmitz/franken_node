@@ -505,13 +505,13 @@ impl KeyRoleRegistry {
         expected_role: KeyRole,
         trace_id: &str,
     ) -> Result<&KeyRoleBinding, KeyRoleSeparationError> {
-        let actual_role =
-            self.active
-                .get(key_id)
-                .map(|binding| binding.role)
-                .ok_or_else(|| KeyRoleSeparationError::KeyNotFound {
-                    key_id: key_id.to_string(),
-                })?;
+        let actual_role = self
+            .active
+            .get(key_id)
+            .map(|binding| binding.role)
+            .ok_or_else(|| KeyRoleSeparationError::KeyNotFound {
+                key_id: key_id.to_string(),
+            })?;
 
         if actual_role != expected_role {
             self.push_event(KeyRoleEvent::violation(

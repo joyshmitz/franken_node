@@ -184,10 +184,20 @@ fn build_staged_rollout_plan(
     target_version: &str,
     projected: TrajectorySnapshot,
 ) -> StagedRolloutPlan {
+    let safe_instability = if projected.instability_score.is_finite() {
+        projected.instability_score
+    } else {
+        0.0
+    };
+    let safe_regime = if projected.regime_shift_probability.is_finite() {
+        projected.regime_shift_probability
+    } else {
+        0.0
+    };
     let step = |phase: RolloutPhase, instability_factor: f64, regime_factor: f64| RolloutStep {
         phase,
-        max_instability_score: projected.instability_score * instability_factor,
-        max_regime_shift_probability: projected.regime_shift_probability * regime_factor,
+        max_instability_score: safe_instability * instability_factor,
+        max_regime_shift_probability: safe_regime * regime_factor,
     };
 
     StagedRolloutPlan {
@@ -232,14 +242,14 @@ pub fn evaluate_admission(
     }
 
     let needs_evidence = delta.instability_delta
-        > thresholds.max_instability_delta_for_direct_admit
-        || projected.drift_score > thresholds.max_drift_score_for_direct_admit
+        >= thresholds.max_instability_delta_for_direct_admit
+        || projected.drift_score >= thresholds.max_drift_score_for_direct_admit
         || projected.regime_shift_probability
-            > thresholds.max_regime_shift_probability_for_direct_admit;
+            >= thresholds.max_regime_shift_probability_for_direct_admit;
 
-    let severe = projected.instability_score > thresholds.max_instability_score_for_staged_rollout
+    let severe = projected.instability_score >= thresholds.max_instability_score_for_staged_rollout
         || projected.regime_shift_probability
-            > thresholds.max_regime_shift_probability_for_staged_rollout;
+            >= thresholds.max_regime_shift_probability_for_staged_rollout;
 
     if !needs_evidence {
         events.push(gate_event(

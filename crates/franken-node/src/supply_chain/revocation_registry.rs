@@ -157,13 +157,17 @@ impl RevocationRegistry {
 
         // INV-REV-MONOTONIC + INV-REV-STALE-REJECT
         if head.sequence <= current {
-            push_bounded(&mut self.audits, RevocationAudit {
-                zone_id: head.zone_id.clone(),
-                action: "rejected_stale".into(),
-                sequence: head.sequence,
-                trace_id: head.trace_id.clone(),
-                timestamp: head.timestamp.clone(),
-            }, MAX_AUDIT_ENTRIES);
+            push_bounded(
+                &mut self.audits,
+                RevocationAudit {
+                    zone_id: head.zone_id.clone(),
+                    action: "rejected_stale".into(),
+                    sequence: head.sequence,
+                    trace_id: head.trace_id.clone(),
+                    timestamp: head.timestamp.clone(),
+                },
+                MAX_AUDIT_ENTRIES,
+            );
             return Err(RevocationError::StaleHead {
                 zone_id: head.zone_id,
                 offered: head.sequence,
@@ -174,15 +178,23 @@ impl RevocationRegistry {
         // Advance the head
         self.heads.insert(head.zone_id.clone(), head.sequence);
         let zone_revoked = self.revoked.entry(head.zone_id.clone()).or_default();
-        push_bounded(zone_revoked, head.revoked_artifact.clone(), MAX_REVOKED_PER_ZONE);
+        push_bounded(
+            zone_revoked,
+            head.revoked_artifact.clone(),
+            MAX_REVOKED_PER_ZONE,
+        );
 
-        push_bounded(&mut self.audits, RevocationAudit {
-            zone_id: head.zone_id.clone(),
-            action: "advanced".into(),
-            sequence: head.sequence,
-            trace_id: head.trace_id.clone(),
-            timestamp: head.timestamp.clone(),
-        }, MAX_AUDIT_ENTRIES);
+        push_bounded(
+            &mut self.audits,
+            RevocationAudit {
+                zone_id: head.zone_id.clone(),
+                action: "advanced".into(),
+                sequence: head.sequence,
+                trace_id: head.trace_id.clone(),
+                timestamp: head.timestamp.clone(),
+            },
+            MAX_AUDIT_ENTRIES,
+        );
 
         // Append to canonical log for recovery
         push_bounded(&mut self.log, head.clone(), MAX_LOG_ENTRIES);
@@ -254,7 +266,9 @@ impl RevocationRegistry {
 
     /// Total revocations across all zones.
     pub fn total_revocations(&self) -> usize {
-        self.revoked.values().fold(0usize, |acc, v| acc.saturating_add(v.len()))
+        self.revoked
+            .values()
+            .fold(0usize, |acc, v| acc.saturating_add(v.len()))
     }
 }
 

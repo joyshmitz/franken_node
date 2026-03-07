@@ -830,13 +830,17 @@ impl TrustCardRegistry {
         timestamp_secs: u64,
         detail: &str,
     ) {
-        push_bounded(&mut self.telemetry, TelemetryEvent {
-            event_code: event_code.to_string(),
-            extension_id,
-            trace_id: trace_id.to_string(),
-            timestamp_secs,
-            detail: detail.to_string(),
-        }, MAX_TELEMETRY);
+        push_bounded(
+            &mut self.telemetry,
+            TelemetryEvent {
+                event_code: event_code.to_string(),
+                extension_id,
+                trace_id: trace_id.to_string(),
+                timestamp_secs,
+                detail: detail.to_string(),
+            },
+            MAX_TELEMETRY,
+        );
     }
 }
 
@@ -1369,7 +1373,8 @@ mod tests {
             .expect("history")
             .last_mut()
             .expect("latest");
-        latest.reputation_score_basis_points = latest.reputation_score_basis_points.saturating_add(1);
+        latest.reputation_score_basis_points =
+            latest.reputation_score_basis_points.saturating_add(1);
 
         let err = registry
             .compare(
@@ -1379,7 +1384,9 @@ mod tests {
                 "trace",
             )
             .expect_err("tampered latest card must be rejected");
-        assert!(matches!(err, TrustCardError::CardHashMismatch(extension) if extension == "npm:@beta/telemetry-bridge"));
+        assert!(
+            matches!(err, TrustCardError::CardHashMismatch(extension) if extension == "npm:@beta/telemetry-bridge")
+        );
     }
 
     #[test]
@@ -1399,7 +1406,9 @@ mod tests {
         let err = registry
             .compare_versions("npm:@beta/telemetry-bridge", 1, 2, 1_100, "trace")
             .expect_err("tampered historical card must be rejected");
-        assert!(matches!(err, TrustCardError::CardHashMismatch(extension) if extension == "npm:@beta/telemetry-bridge"));
+        assert!(
+            matches!(err, TrustCardError::CardHashMismatch(extension) if extension == "npm:@beta/telemetry-bridge")
+        );
     }
 
     #[test]

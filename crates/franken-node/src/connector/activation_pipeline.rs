@@ -118,7 +118,11 @@ pub struct EphemeralSecretTracker {
 
 impl EphemeralSecretTracker {
     pub fn mount(&mut self, secret_ref: &str) {
-        push_bounded(&mut self.mounted, secret_ref.to_string(), MAX_MOUNTED_SECRETS);
+        push_bounded(
+            &mut self.mounted,
+            secret_ref.to_string(),
+            MAX_MOUNTED_SECRETS,
+        );
     }
 
     /// Clean up all mounted secrets. Idempotent.

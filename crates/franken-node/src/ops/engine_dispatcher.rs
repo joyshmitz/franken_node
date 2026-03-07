@@ -113,7 +113,15 @@ impl EngineDispatcher {
         }
 
         let serialized_config = config.to_toml()?;
-        let socket_path = format!("/tmp/franken_telemetry_{}.sock", uuid::Uuid::now_v7());
+        let temp_dir = tempfile::Builder::new()
+            .prefix("franken_telemetry_")
+            .tempdir()
+            .context("Failed to create secure temporary directory for telemetry socket")?;
+        let socket_path = temp_dir
+            .path()
+            .join("telemetry.sock")
+            .to_string_lossy()
+            .into_owned();
 
         // Spawn background listener to record telemetry events for deterministic replay
         let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
@@ -121,15 +129,6 @@ impl EngineDispatcher {
         telemetry
             .start_listener()
             .context("Failed to start telemetry bridge")?;
-
-        struct SocketCleanup(String);
-        impl Drop for SocketCleanup {
-            fn drop(&mut self) {
-                // Remove directly without exists() check to avoid TOCTOU race.
-                let _ = std::fs::remove_file(&self.0);
-            }
-        }
-        let _cleanup_guard = SocketCleanup(socket_path.clone());
 
         let mut cmd = Command::new(&bin_path);
         cmd.arg("run")
@@ -146,7 +145,8 @@ impl EngineDispatcher {
 
         if !status.success() {
             if let Some(code) = status.code() {
-                drop(_cleanup_guard);
+                // `process::exit` skips normal destruction, so drop the tempdir first.
+                drop(temp_dir);
                 std::process::exit(code);
             } else {
                 anyhow::bail!("franken_engine exited abnormally (terminated by signal)");

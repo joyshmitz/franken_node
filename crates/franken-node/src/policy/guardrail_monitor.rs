@@ -16,7 +16,11 @@ use std::fmt;
 
 const MAX_MONITORS: usize = 4096;
 
-fn push_bounded_box(items: &mut Vec<Box<dyn GuardrailMonitor>>, item: Box<dyn GuardrailMonitor>, cap: usize) {
+fn push_bounded_box(
+    items: &mut Vec<Box<dyn GuardrailMonitor>>,
+    item: Box<dyn GuardrailMonitor>,
+    cap: usize,
+) {
     items.push(item);
     if items.len() > cap {
         let overflow = items.len() - cap;
@@ -344,7 +348,11 @@ impl MemoryTailRiskGuardrail {
         } else {
             0.0
         };
-        let safe_alpha = if alpha.is_finite() { alpha } else { Self::MIN_ALPHA };
+        let safe_alpha = if alpha.is_finite() {
+            alpha
+        } else {
+            Self::MIN_ALPHA
+        };
         let effective_block = safe_block.clamp(Self::ENVELOPE_MIN_BLOCK_THRESHOLD, 1.0);
         let effective_warn = safe_warn.clamp(0.0, effective_block);
         let effective_alpha = safe_alpha.clamp(Self::MIN_ALPHA, Self::MAX_ALPHA);
@@ -477,7 +485,11 @@ impl ConformalRiskGuardrail {
         } else {
             0.0
         };
-        let safe_delta = if delta.is_finite() { delta } else { Self::MIN_DELTA };
+        let safe_delta = if delta.is_finite() {
+            delta
+        } else {
+            Self::MIN_DELTA
+        };
         let effective_block = safe_block.clamp(
             Self::ENVELOPE_MIN_BLOCK_ERROR_RATE,
             Self::ENVELOPE_MAX_BLOCK_ERROR_RATE,
@@ -1525,9 +1537,7 @@ mod tests {
         let g = MemoryBudgetGuardrail::new(f64::NAN, f64::NAN);
         assert!(g.block_threshold.is_finite());
         assert!(g.warn_threshold.is_finite());
-        assert!(
-            g.block_threshold >= MemoryBudgetGuardrail::ENVELOPE_MIN_BLOCK_THRESHOLD
-        );
+        assert!(g.block_threshold >= MemoryBudgetGuardrail::ENVELOPE_MIN_BLOCK_THRESHOLD);
     }
 
     #[test]

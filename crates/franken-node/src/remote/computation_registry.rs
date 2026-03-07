@@ -377,13 +377,17 @@ impl ComputationRegistry {
         computation_name: Option<String>,
         detail: String,
     ) {
-        push_bounded(&mut self.audit_events, RegistryAuditEvent {
-            event_code: event_code.to_string(),
-            trace_id: trace_id.to_string(),
-            registry_version: self.registry_version,
-            computation_name,
-            detail,
-        }, MAX_AUDIT_EVENTS);
+        push_bounded(
+            &mut self.audit_events,
+            RegistryAuditEvent {
+                event_code: event_code.to_string(),
+                trace_id: trace_id.to_string(),
+                registry_version: self.registry_version,
+                computation_name,
+                detail,
+            },
+            MAX_AUDIT_EVENTS,
+        );
     }
 }
 

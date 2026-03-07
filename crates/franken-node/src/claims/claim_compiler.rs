@@ -148,7 +148,11 @@ impl CompilerConfig {
     }
 
     pub fn with_blocked_source(mut self, source_id: impl Into<String>) -> Self {
-        push_bounded(&mut self.blocked_sources, source_id.into(), MAX_BLOCKED_SOURCES);
+        push_bounded(
+            &mut self.blocked_sources,
+            source_id.into(),
+            MAX_BLOCKED_SOURCES,
+        );
         self
     }
 }

@@ -411,13 +411,17 @@ impl TransportFaultGate {
         seed: u64,
         detail: serde_json::Value,
     ) {
-        push_bounded(&mut self.audit_log, TfgAuditRecord {
-            event_code: event_code.to_string(),
-            protocol: protocol.to_string(),
-            fault_mode: fault_mode.to_string(),
-            seed,
-            detail,
-        }, MAX_AUDIT_LOG_ENTRIES);
+        push_bounded(
+            &mut self.audit_log,
+            TfgAuditRecord {
+                event_code: event_code.to_string(),
+                protocol: protocol.to_string(),
+                fault_mode: fault_mode.to_string(),
+                seed,
+                detail,
+            },
+            MAX_AUDIT_LOG_ENTRIES,
+        );
     }
 
     /// Simulate a single protocol under a specific fault mode and seed.

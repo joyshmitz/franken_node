@@ -268,11 +268,15 @@ impl ObjectClassTuningEngine {
 
     pub fn with_init_event() -> Self {
         let mut engine = Self::new();
-        push_bounded(&mut engine.events, TuningEvent {
-            code: OC_POLICY_ENGINE_INIT.to_string(),
-            class_id: String::new(),
-            detail: "Policy engine initialized with benchmark defaults".to_string(),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut engine.events,
+            TuningEvent {
+                code: OC_POLICY_ENGINE_INIT.to_string(),
+                class_id: String::new(),
+                detail: "Policy engine initialized with benchmark defaults".to_string(),
+            },
+            MAX_EVENTS,
+        );
         engine
     }
 
@@ -292,11 +296,15 @@ impl ObjectClassTuningEngine {
     ) -> Result<(), TuningError> {
         // Validate
         if let Err(e) = tuning.validate() {
-            push_bounded(&mut self.events, TuningEvent {
-                code: OC_POLICY_OVERRIDE_REJECTED.to_string(),
-                class_id: class.label().to_string(),
-                detail: format!("Override rejected: {}", e),
-            }, MAX_EVENTS);
+            push_bounded(
+                &mut self.events,
+                TuningEvent {
+                    code: OC_POLICY_OVERRIDE_REJECTED.to_string(),
+                    class_id: class.label().to_string(),
+                    detail: format!("Override rejected: {}", e),
+                },
+                MAX_EVENTS,
+            );
             return Err(e);
         }
 
@@ -325,11 +333,15 @@ impl ObjectClassTuningEngine {
 
         self.overrides.insert(class.clone(), tuning);
 
-        push_bounded(&mut self.events, TuningEvent {
-            code: OC_POLICY_OVERRIDE_APPLIED.to_string(),
-            class_id: class.label().to_string(),
-            detail: format!("before=[{}], after=[{}]", before_desc, after_desc),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            TuningEvent {
+                code: OC_POLICY_OVERRIDE_APPLIED.to_string(),
+                class_id: class.label().to_string(),
+                detail: format!("before=[{}], after=[{}]", before_desc, after_desc),
+            },
+            MAX_EVENTS,
+        );
 
         Ok(())
     }
@@ -356,11 +368,15 @@ impl ObjectClassTuningEngine {
 
     /// Load benchmark baseline data (emits event).
     pub fn load_benchmark_baseline(&mut self, measurements: &[BenchmarkMeasurement]) {
-        push_bounded(&mut self.events, TuningEvent {
-            code: OC_BENCHMARK_BASELINE_LOADED.to_string(),
-            class_id: String::new(),
-            detail: format!("Loaded {} benchmark measurements", measurements.len()),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            TuningEvent {
+                code: OC_BENCHMARK_BASELINE_LOADED.to_string(),
+                class_id: String::new(),
+                detail: format!("Loaded {} benchmark measurements", measurements.len()),
+            },
+            MAX_EVENTS,
+        );
     }
 
     /// Export policy report as CSV rows.

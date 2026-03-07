@@ -216,10 +216,14 @@ impl HardeningClampPolicy {
 
     /// Record an escalation that occurred.
     pub fn record_escalation(&mut self, timestamp_ms: u64, to_level: HardeningLevel) {
-        push_bounded(&mut self.escalation_history, EscalationRecord {
-            timestamp_ms,
-            to_level,
-        }, MAX_ESCALATION_HISTORY);
+        push_bounded(
+            &mut self.escalation_history,
+            EscalationRecord {
+                timestamp_ms,
+                to_level,
+            },
+            MAX_ESCALATION_HISTORY,
+        );
     }
 
     /// Count escalations within the current window.

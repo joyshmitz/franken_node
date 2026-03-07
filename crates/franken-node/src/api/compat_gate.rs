@@ -394,15 +394,19 @@ impl CompatGateService {
         self.emit_event(event_code, &trace_id, &request.scope, &rationale);
 
         // Issue receipt for divergence tracking
-        push_bounded(&mut self.receipts, CompatReceipt {
-            receipt_id: receipt_id.clone(),
-            scope: request.scope.clone(),
-            receipt_type: "gate_check".to_string(),
-            severity: scope_mode.risk_level().to_string(),
-            issued_at: "2026-01-01T00:00:00Z".to_string(),
-            signature: format!("sig-{}", receipt_id),
-            payload_hash: format!("hash-{}", receipt_id),
-        }, MAX_RECEIPTS);
+        push_bounded(
+            &mut self.receipts,
+            CompatReceipt {
+                receipt_id: receipt_id.clone(),
+                scope: request.scope.clone(),
+                receipt_type: "gate_check".to_string(),
+                severity: scope_mode.risk_level().to_string(),
+                issued_at: "2026-01-01T00:00:00Z".to_string(),
+                signature: format!("sig-{}", receipt_id),
+                payload_hash: format!("hash-{}", receipt_id),
+            },
+            MAX_RECEIPTS,
+        );
 
         GateCheckResponse {
             decision,
@@ -457,15 +461,19 @@ impl CompatGateService {
                 &rationale,
             );
 
-            push_bounded(&mut self.receipts, CompatReceipt {
-                receipt_id: receipt_id.clone(),
-                scope: request.scope_id.clone(),
-                receipt_type: "mode_transition".to_string(),
-                severity: request.to_mode.risk_level().to_string(),
-                issued_at: "2026-01-01T00:00:00Z".to_string(),
-                signature: format!("sig-{}", receipt_id),
-                payload_hash: format!("hash-{}", receipt_id),
-            }, MAX_RECEIPTS);
+            push_bounded(
+                &mut self.receipts,
+                CompatReceipt {
+                    receipt_id: receipt_id.clone(),
+                    scope: request.scope_id.clone(),
+                    receipt_type: "mode_transition".to_string(),
+                    severity: request.to_mode.risk_level().to_string(),
+                    issued_at: "2026-01-01T00:00:00Z".to_string(),
+                    signature: format!("sig-{}", receipt_id),
+                    payload_hash: format!("hash-{}", receipt_id),
+                },
+                MAX_RECEIPTS,
+            );
         }
 
         ModeTransitionResponse {
@@ -588,12 +596,16 @@ impl CompatGateService {
     }
 
     fn emit_event(&mut self, code: &str, trace_id: &str, scope: &str, detail: &str) {
-        push_bounded(&mut self.events, CompatGateEvent {
-            code: code.to_string(),
-            trace_id: trace_id.to_string(),
-            scope: scope.to_string(),
-            detail: detail.to_string(),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            CompatGateEvent {
+                code: code.to_string(),
+                trace_id: trace_id.to_string(),
+                scope: scope.to_string(),
+                detail: detail.to_string(),
+            },
+            MAX_EVENTS,
+        );
     }
 }
 

@@ -618,12 +618,16 @@ impl ClaimCompiler {
     }
 
     fn emit(&mut self, event_code: &str, claim_id: &str, detail: &str, trace_id: &str) {
-        push_bounded(&mut self.events, ClaimCompilerEvent {
-            event_code: event_code.to_string(),
-            claim_id: claim_id.to_string(),
-            detail: detail.to_string(),
-            trace_id: trace_id.to_string(),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            ClaimCompilerEvent {
+                event_code: event_code.to_string(),
+                claim_id: claim_id.to_string(),
+                detail: detail.to_string(),
+                trace_id: trace_id.to_string(),
+            },
+            MAX_EVENTS,
+        );
     }
 }
 

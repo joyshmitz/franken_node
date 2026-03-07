@@ -263,7 +263,11 @@ impl ProofCarryingDecoder {
 
     pub fn register_algorithm(&mut self, algorithm_id: AlgorithmId) {
         if !self.registered_algorithms.contains(&algorithm_id) {
-            push_bounded(&mut self.registered_algorithms, algorithm_id, MAX_REGISTERED_ALGORITHMS);
+            push_bounded(
+                &mut self.registered_algorithms,
+                algorithm_id,
+                MAX_REGISTERED_ALGORITHMS,
+            );
         }
     }
 

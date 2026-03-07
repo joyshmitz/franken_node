@@ -459,18 +459,22 @@ impl IncidentBundleStore {
             });
         }
 
-        push_bounded(&mut self.decisions, RetentionDecision {
-            bundle_id: bundle.bundle_id.clone(),
-            action: "create".into(),
-            old_tier: None,
-            new_tier: Some(bundle.retention_tier.label().into()),
-            reason: format!(
-                "classified as {} severity, {} tier",
-                bundle.severity, bundle.retention_tier
-            ),
-            timestamp: now,
-            event_code: event_codes::IBR_001.into(),
-        }, MAX_DECISIONS);
+        push_bounded(
+            &mut self.decisions,
+            RetentionDecision {
+                bundle_id: bundle.bundle_id.clone(),
+                action: "create".into(),
+                old_tier: None,
+                new_tier: Some(bundle.retention_tier.label().into()),
+                reason: format!(
+                    "classified as {} severity, {} tier",
+                    bundle.severity, bundle.retention_tier
+                ),
+                timestamp: now,
+                event_code: event_codes::IBR_001.into(),
+            },
+            MAX_DECISIONS,
+        );
 
         self.total_bytes = self.total_bytes.saturating_add(bundle.size_bytes);
         self.bundles.insert(bundle.bundle_id.clone(), bundle);
@@ -563,15 +567,19 @@ impl IncidentBundleStore {
             }
         };
 
-        push_bounded(&mut self.decisions, RetentionDecision {
-            bundle_id: bundle_id.into(),
-            action: "export".into(),
-            old_tier: None,
-            new_tier: None,
-            reason: format!("exported as {} by {}", format, requester),
-            timestamp: now,
-            event_code: event_codes::IBR_003.into(),
-        }, MAX_DECISIONS);
+        push_bounded(
+            &mut self.decisions,
+            RetentionDecision {
+                bundle_id: bundle_id.into(),
+                action: "export".into(),
+                old_tier: None,
+                new_tier: None,
+                reason: format!("exported as {} by {}", format, requester),
+                timestamp: now,
+                event_code: event_codes::IBR_003.into(),
+            },
+            MAX_DECISIONS,
+        );
 
         Ok(output)
     }
@@ -646,19 +654,23 @@ impl IncidentBundleStore {
                 })?;
         self.total_bytes = self.total_bytes.saturating_sub(removed.size_bytes);
 
-        push_bounded(&mut self.decisions, RetentionDecision {
-            bundle_id: bundle_id.into(),
-            action: "delete".into(),
-            old_tier: Some(removed.retention_tier.label().into()),
-            new_tier: None,
-            reason: if force_archive {
-                "explicit archive deletion".into()
-            } else {
-                "bundle deleted".into()
+        push_bounded(
+            &mut self.decisions,
+            RetentionDecision {
+                bundle_id: bundle_id.into(),
+                action: "delete".into(),
+                old_tier: Some(removed.retention_tier.label().into()),
+                new_tier: None,
+                reason: if force_archive {
+                    "explicit archive deletion".into()
+                } else {
+                    "bundle deleted".into()
+                },
+                timestamp: now,
+                event_code: event_codes::IBR_004.into(),
             },
-            timestamp: now,
-            event_code: event_codes::IBR_004.into(),
-        }, MAX_DECISIONS);
+            MAX_DECISIONS,
+        );
 
         Ok(())
     }

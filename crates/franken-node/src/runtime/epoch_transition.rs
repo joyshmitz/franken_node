@@ -402,17 +402,21 @@ impl ProductEpochCoordinator {
             quiescence_status: Some("committed".to_string()),
             trace_id: trace_id.to_string(),
         });
-        push_bounded(&mut self.history, EpochTransitionRecord {
-            transition_id: pending.transition_id,
-            pre_epoch: pending.pre_epoch,
-            target_epoch: pending.target_epoch,
-            initiator: pending.initiator,
-            reason: pending.reason,
-            timestamp_ms,
-            outcome: "COMMITTED".to_string(),
-            abort_reason: None,
-            trace_id: trace_id.to_string(),
-        }, MAX_HISTORY_ENTRIES);
+        push_bounded(
+            &mut self.history,
+            EpochTransitionRecord {
+                transition_id: pending.transition_id,
+                pre_epoch: pending.pre_epoch,
+                target_epoch: pending.target_epoch,
+                initiator: pending.initiator,
+                reason: pending.reason,
+                timestamp_ms,
+                outcome: "COMMITTED".to_string(),
+                abort_reason: None,
+                trace_id: trace_id.to_string(),
+            },
+            MAX_HISTORY_ENTRIES,
+        );
         self.pending = None;
         Ok(actual_epoch)
     }
@@ -507,17 +511,21 @@ impl ProductEpochCoordinator {
             quiescence_status: Some("aborted".to_string()),
             trace_id: trace_id.to_string(),
         });
-        push_bounded(&mut self.history, EpochTransitionRecord {
-            transition_id: pending.transition_id,
-            pre_epoch: pending.pre_epoch,
-            target_epoch: pending.target_epoch,
-            initiator: pending.initiator,
-            reason: pending.reason,
-            timestamp_ms: event.timestamp_ms,
-            outcome: "ABORTED".to_string(),
-            abort_reason: Some(reason.to_string()),
-            trace_id: trace_id.to_string(),
-        }, MAX_HISTORY_ENTRIES);
+        push_bounded(
+            &mut self.history,
+            EpochTransitionRecord {
+                transition_id: pending.transition_id,
+                pre_epoch: pending.pre_epoch,
+                target_epoch: pending.target_epoch,
+                initiator: pending.initiator,
+                reason: pending.reason,
+                timestamp_ms: event.timestamp_ms,
+                outcome: "ABORTED".to_string(),
+                abort_reason: Some(reason.to_string()),
+                trace_id: trace_id.to_string(),
+            },
+            MAX_HISTORY_ENTRIES,
+        );
         self.pending = None;
     }
 

@@ -646,11 +646,9 @@ impl HardwarePlanner {
             schema_version: SCHEMA_VERSION.to_string(),
         });
 
-        self.policies.get(&pid).ok_or(
-            HardwarePlannerError::UnknownPolicy {
-                policy_id: pid,
-            },
-        )
+        self.policies
+            .get(&pid)
+            .ok_or(HardwarePlannerError::UnknownPolicy { policy_id: pid })
     }
 
     /// Request placement for a workload.
@@ -680,11 +678,13 @@ impl HardwarePlanner {
             schema_version: SCHEMA_VERSION.to_string(),
         });
 
-        let policy = self.policies.get(&request.policy_id).cloned().ok_or_else(|| {
-            HardwarePlannerError::UnknownPolicy {
+        let policy = self
+            .policies
+            .get(&request.policy_id)
+            .cloned()
+            .ok_or_else(|| HardwarePlannerError::UnknownPolicy {
                 policy_id: request.policy_id.clone(),
-            }
-        })?;
+            })?;
         let effective_max_risk = policy.max_risk_tolerance.min(request.max_risk);
 
         let mut evidence = PolicyEvidence::new(&request.policy_id);

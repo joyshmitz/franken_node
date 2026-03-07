@@ -179,14 +179,18 @@ impl LeaseService {
         };
 
         self.leases.insert(lease_id.clone(), lease.clone());
-        push_bounded(&mut self.decisions, LeaseDecision {
-            lease_id: lease_id.clone(),
-            action: "grant".into(),
-            allowed: true,
-            reason: format!("granted {purpose} lease to {holder}"),
-            trace_id: trace_id.to_string(),
-            timestamp: timestamp.to_string(),
-        }, MAX_DECISIONS);
+        push_bounded(
+            &mut self.decisions,
+            LeaseDecision {
+                lease_id: lease_id.clone(),
+                action: "grant".into(),
+                allowed: true,
+                reason: format!("granted {purpose} lease to {holder}"),
+                trace_id: trace_id.to_string(),
+                timestamp: timestamp.to_string(),
+            },
+            MAX_DECISIONS,
+        );
 
         lease
     }
@@ -209,28 +213,36 @@ impl LeaseService {
             })?;
 
         if lease.revoked {
-            push_bounded(&mut self.decisions, LeaseDecision {
-                lease_id: lease_id.to_string(),
-                action: "renew".into(),
-                allowed: false,
-                reason: "lease revoked".into(),
-                trace_id: trace_id.to_string(),
-                timestamp: timestamp.to_string(),
-            }, MAX_DECISIONS);
+            push_bounded(
+                &mut self.decisions,
+                LeaseDecision {
+                    lease_id: lease_id.to_string(),
+                    action: "renew".into(),
+                    allowed: false,
+                    reason: "lease revoked".into(),
+                    trace_id: trace_id.to_string(),
+                    timestamp: timestamp.to_string(),
+                },
+                MAX_DECISIONS,
+            );
             return Err(LeaseError::AlreadyRevoked {
                 lease_id: lease_id.to_string(),
             });
         }
 
         if lease.is_expired(now) {
-            push_bounded(&mut self.decisions, LeaseDecision {
-                lease_id: lease_id.to_string(),
-                action: "renew".into(),
-                allowed: false,
-                reason: "lease expired".into(),
-                trace_id: trace_id.to_string(),
-                timestamp: timestamp.to_string(),
-            }, MAX_DECISIONS);
+            push_bounded(
+                &mut self.decisions,
+                LeaseDecision {
+                    lease_id: lease_id.to_string(),
+                    action: "renew".into(),
+                    allowed: false,
+                    reason: "lease expired".into(),
+                    trace_id: trace_id.to_string(),
+                    timestamp: timestamp.to_string(),
+                },
+                MAX_DECISIONS,
+            );
             return Err(LeaseError::Expired {
                 lease_id: lease_id.to_string(),
             });
@@ -244,14 +256,18 @@ impl LeaseService {
             })?;
         lease.renewed_at = now;
 
-        push_bounded(&mut self.decisions, LeaseDecision {
-            lease_id: lease_id.to_string(),
-            action: "renew".into(),
-            allowed: true,
-            reason: "renewed".into(),
-            trace_id: trace_id.to_string(),
-            timestamp: timestamp.to_string(),
-        }, MAX_DECISIONS);
+        push_bounded(
+            &mut self.decisions,
+            LeaseDecision {
+                lease_id: lease_id.to_string(),
+                action: "renew".into(),
+                allowed: true,
+                reason: "renewed".into(),
+                trace_id: trace_id.to_string(),
+                timestamp: timestamp.to_string(),
+            },
+            MAX_DECISIONS,
+        );
 
         Ok(lease.clone())
     }
@@ -359,14 +375,18 @@ impl LeaseService {
         }
 
         lease.revoked = true;
-        push_bounded(&mut self.decisions, LeaseDecision {
-            lease_id: lease_id.to_string(),
-            action: "revoke".into(),
-            allowed: true,
-            reason: "revoked".into(),
-            trace_id: trace_id.to_string(),
-            timestamp: timestamp.to_string(),
-        }, MAX_DECISIONS);
+        push_bounded(
+            &mut self.decisions,
+            LeaseDecision {
+                lease_id: lease_id.to_string(),
+                action: "revoke".into(),
+                allowed: true,
+                reason: "revoked".into(),
+                trace_id: trace_id.to_string(),
+                timestamp: timestamp.to_string(),
+            },
+            MAX_DECISIONS,
+        );
 
         Ok(())
     }

@@ -355,15 +355,19 @@ impl CanonicalSerializer {
 
         // INV-CAN-NO-FLOAT: reject payloads containing float indicators
         if contains_float_marker(payload) {
-            push_bounded(&mut self.events, SerializerEvent {
-                event_code: event_codes::CAN_REJECT.to_string(),
-                object_type: object_type.label().to_string(),
-                domain_tag: format!("{:02x}{:02x}", schema.domain_tag[0], schema.domain_tag[1]),
-                byte_length: payload.len(),
-                content_hash_prefix: "rejected".to_string(),
-                trace_id: trace_id.to_string(),
-                detail: "floating-point value detected".to_string(),
-            }, MAX_EVENTS);
+            push_bounded(
+                &mut self.events,
+                SerializerEvent {
+                    event_code: event_codes::CAN_REJECT.to_string(),
+                    object_type: object_type.label().to_string(),
+                    domain_tag: format!("{:02x}{:02x}", schema.domain_tag[0], schema.domain_tag[1]),
+                    byte_length: payload.len(),
+                    content_hash_prefix: "rejected".to_string(),
+                    trace_id: trace_id.to_string(),
+                    detail: "floating-point value detected".to_string(),
+                },
+                MAX_EVENTS,
+            );
             return Err(SerializerError::FloatingPointRejected {
                 object_type: object_type.label().to_string(),
                 field: "payload".to_string(),
@@ -374,19 +378,23 @@ impl CanonicalSerializer {
         let canonical = canonical_encode(payload)?;
 
         let hash_prefix = content_hash_prefix(&canonical);
-        push_bounded(&mut self.events, SerializerEvent {
-            event_code: event_codes::CAN_SERIALIZE.to_string(),
-            object_type: object_type.label().to_string(),
-            domain_tag: format!("{:02x}{:02x}", schema.domain_tag[0], schema.domain_tag[1]),
-            byte_length: canonical.len(),
-            content_hash_prefix: hash_prefix,
-            trace_id: trace_id.to_string(),
-            detail: format!(
-                "serialized {} ({} bytes)",
-                object_type.label(),
-                canonical.len()
-            ),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            SerializerEvent {
+                event_code: event_codes::CAN_SERIALIZE.to_string(),
+                object_type: object_type.label().to_string(),
+                domain_tag: format!("{:02x}{:02x}", schema.domain_tag[0], schema.domain_tag[1]),
+                byte_length: canonical.len(),
+                content_hash_prefix: hash_prefix,
+                trace_id: trace_id.to_string(),
+                detail: format!(
+                    "serialized {} ({} bytes)",
+                    object_type.label(),
+                    canonical.len()
+                ),
+            },
+            MAX_EVENTS,
+        );
 
         Ok(canonical)
     }
@@ -457,18 +465,22 @@ impl CanonicalSerializer {
 
         let preimage = SignaturePreimage::build(version, domain_tag, canonical);
 
-        push_bounded(&mut self.events, SerializerEvent {
-            event_code: event_codes::CAN_PREIMAGE_CONSTRUCT.to_string(),
-            object_type: object_type.label().to_string(),
-            domain_tag: format!("{:02x}{:02x}", domain_tag[0], domain_tag[1]),
-            byte_length: preimage.byte_len(),
-            content_hash_prefix: preimage.content_hash_prefix(),
-            trace_id: trace_id.to_string(),
-            detail: format!(
-                "preimage constructed: version={version} len={}",
-                preimage.byte_len()
-            ),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            SerializerEvent {
+                event_code: event_codes::CAN_PREIMAGE_CONSTRUCT.to_string(),
+                object_type: object_type.label().to_string(),
+                domain_tag: format!("{:02x}{:02x}", domain_tag[0], domain_tag[1]),
+                byte_length: preimage.byte_len(),
+                content_hash_prefix: preimage.content_hash_prefix(),
+                trace_id: trace_id.to_string(),
+                detail: format!(
+                    "preimage constructed: version={version} len={}",
+                    preimage.byte_len()
+                ),
+            },
+            MAX_EVENTS,
+        );
 
         Ok(preimage)
     }

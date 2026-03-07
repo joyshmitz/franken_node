@@ -197,14 +197,18 @@ impl RetentionStore {
             size_bytes,
         };
 
-        push_bounded(&mut self.decisions, RetentionDecision {
-            message_id: message_id.to_string(),
-            message_type: message_type.to_string(),
-            retention_class: class.label().to_string(),
-            action: "store".into(),
-            reason: format!("classified as {}", class.label()),
-            timestamp: now,
-        }, MAX_DECISIONS);
+        push_bounded(
+            &mut self.decisions,
+            RetentionDecision {
+                message_id: message_id.to_string(),
+                message_type: message_type.to_string(),
+                retention_class: class.label().to_string(),
+                action: "store".into(),
+                reason: format!("classified as {}", class.label()),
+                timestamp: now,
+            },
+            MAX_DECISIONS,
+        );
 
         self.total_bytes = self.total_bytes.saturating_add(size_bytes);
         self.messages.insert(message_id.to_string(), msg);
@@ -236,14 +240,18 @@ impl RetentionStore {
             })?;
         self.total_bytes = self.total_bytes.saturating_sub(msg.size_bytes);
 
-        push_bounded(&mut self.decisions, RetentionDecision {
-            message_id: message_id.to_string(),
-            message_type: msg.message_type.clone(),
-            retention_class: msg.retention_class.label().to_string(),
-            action: "drop".into(),
-            reason: "explicit drop request".into(),
-            timestamp: now,
-        }, MAX_DECISIONS);
+        push_bounded(
+            &mut self.decisions,
+            RetentionDecision {
+                message_id: message_id.to_string(),
+                message_type: msg.message_type.clone(),
+                retention_class: msg.retention_class.label().to_string(),
+                action: "drop".into(),
+                reason: "explicit drop request".into(),
+                timestamp: now,
+            },
+            MAX_DECISIONS,
+        );
 
         Ok(())
     }

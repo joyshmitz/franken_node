@@ -366,7 +366,7 @@ impl IncidentLab {
             scenario.baseline_loss * (1.0 - scenario.mitigation.expected_loss_reduction);
         let delta = scenario.baseline_loss - mitigated_loss;
 
-        if delta < 0.0 {
+        if !delta.is_finite() || delta < 0.0 {
             return Err(LabError {
                 code: error_codes::ERR_ILAB_DELTA_NEGATIVE.to_string(),
                 message: format!("Mitigation worsens expected loss: delta={delta}"),

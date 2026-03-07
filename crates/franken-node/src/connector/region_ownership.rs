@@ -335,11 +335,15 @@ impl Region {
         if self.closed {
             return Err(RegionError::AlreadyClosed { region_id: self.id });
         }
-        push_bounded(&mut self.tasks, RegionTask {
-            task_id: task_id.to_string(),
-            state: TaskState::Running,
-            registered_at_ms: 0,
-        }, MAX_TASKS);
+        push_bounded(
+            &mut self.tasks,
+            RegionTask {
+                task_id: task_id.to_string(),
+                state: TaskState::Running,
+                registered_at_ms: 0,
+            },
+            MAX_TASKS,
+        );
         Ok(())
     }
 

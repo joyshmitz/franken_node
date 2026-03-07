@@ -439,18 +439,19 @@ impl WitnessValidator {
         let mut witness_kind_counts = std::collections::BTreeMap::new();
 
         for (entry, witnesses) in entries_with_witnesses {
-            total_entries += 1;
+            total_entries = total_entries.saturating_add(1);
             if is_high_impact(entry) {
-                high_impact_entries += 1;
+                high_impact_entries = high_impact_entries.saturating_add(1);
                 if !witnesses.is_empty() {
-                    high_impact_with_witnesses += 1;
+                    high_impact_with_witnesses = high_impact_with_witnesses.saturating_add(1);
                 }
             }
             for w in witnesses.refs() {
-                total_witnesses += 1;
-                *witness_kind_counts
+                total_witnesses = total_witnesses.saturating_add(1);
+                let count = witness_kind_counts
                     .entry(w.witness_kind.label().to_string())
-                    .or_insert(0u64) += 1;
+                    .or_insert(0u64);
+                *count = count.saturating_add(1);
             }
         }
 

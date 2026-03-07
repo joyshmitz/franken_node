@@ -413,12 +413,16 @@ impl SsrfPolicyTemplate {
             trace_id: trace_id.to_string(),
         };
 
-        push_bounded(&mut self.allowlist, AllowlistEntry {
-            host: host.to_string(),
-            port,
-            reason: reason.to_string(),
-            receipt: receipt.clone(),
-        }, MAX_ALLOWLIST_ENTRIES);
+        push_bounded(
+            &mut self.allowlist,
+            AllowlistEntry {
+                host: host.to_string(),
+                port,
+                reason: reason.to_string(),
+                receipt: receipt.clone(),
+            },
+            MAX_ALLOWLIST_ENTRIES,
+        );
 
         Ok(receipt)
     }

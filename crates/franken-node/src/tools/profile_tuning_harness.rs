@@ -525,10 +525,14 @@ impl ProfileTuningHarness {
     }
 
     fn emit(&mut self, code: &str, detail: String) {
-        push_bounded(&mut self.events, HarnessEvent {
-            code: code.to_string(),
-            detail,
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            HarnessEvent {
+                code: code.to_string(),
+                detail,
+            },
+            MAX_EVENTS,
+        );
     }
 
     fn percent_change(current: f64, previous: f64) -> f64 {

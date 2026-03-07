@@ -391,11 +391,15 @@ impl VerifierEconomyRegistry {
 
     fn emit(&mut self, code: &str, detail: &str) {
         let ts = self.now_epoch();
-        push_bounded(&mut self.events, VerifierEconomyEvent {
-            code: code.to_string(),
-            detail: detail.to_string(),
-            timestamp: ts,
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            VerifierEconomyEvent {
+                code: code.to_string(),
+                detail: detail.to_string(),
+                timestamp: ts,
+            },
+            MAX_EVENTS,
+        );
     }
 
     pub fn events(&self) -> &[VerifierEconomyEvent] {

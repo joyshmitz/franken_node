@@ -284,13 +284,17 @@ impl GateEngine {
 
     fn emit_audit(&mut self, event_code: &str, scope_id: &str, detail: &str, trace_id: &str) {
         let ts = self.now_iso();
-        push_bounded(&mut self.audit_trail, GateAuditEvent {
-            event_code: event_code.to_string(),
-            trace_id: trace_id.to_string(),
-            scope_id: scope_id.to_string(),
-            timestamp: ts,
-            detail: detail.to_string(),
-        }, MAX_AUDIT_TRAIL_ENTRIES);
+        push_bounded(
+            &mut self.audit_trail,
+            GateAuditEvent {
+                event_code: event_code.to_string(),
+                trace_id: trace_id.to_string(),
+                scope_id: scope_id.to_string(),
+                timestamp: ts,
+                detail: detail.to_string(),
+            },
+            MAX_AUDIT_TRAIL_ENTRIES,
+        );
     }
 
     // ---- Shim registry ----

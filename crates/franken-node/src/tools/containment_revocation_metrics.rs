@@ -307,7 +307,7 @@ impl ContainmentRevocationMetrics {
                 .iter()
                 .map(|e| e.initiation_to_convergence_ms)
                 .collect();
-            latencies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            latencies.sort_by(|a, b| a.total_cmp(b));
 
             let percentiles = compute_percentiles(&latencies);
 
@@ -398,13 +398,17 @@ impl ContainmentRevocationMetrics {
     }
 
     fn log(&mut self, event_code: &str, trace_id: &str, details: serde_json::Value) {
-        push_bounded(&mut self.audit_log, CrmAuditRecord {
-            record_id: Uuid::now_v7().to_string(),
-            event_code: event_code.to_string(),
-            timestamp: Utc::now().to_rfc3339(),
-            trace_id: trace_id.to_string(),
-            details,
-        }, MAX_AUDIT_LOG_ENTRIES);
+        push_bounded(
+            &mut self.audit_log,
+            CrmAuditRecord {
+                record_id: Uuid::now_v7().to_string(),
+                event_code: event_code.to_string(),
+                timestamp: Utc::now().to_rfc3339(),
+                trace_id: trace_id.to_string(),
+                details,
+            },
+            MAX_AUDIT_LOG_ENTRIES,
+        );
     }
 }
 

@@ -289,12 +289,16 @@ impl VerifierBenchmarkReleases {
             return Err(format!("release not found: {release_id}"));
         }
         let did = Uuid::now_v7().to_string();
-        push_bounded(&mut self.downloads, DownloadRecord {
-            download_id: did.clone(),
-            release_id: release_id.to_string(),
-            context: context.to_string(),
-            timestamp: Utc::now().to_rfc3339(),
-        }, MAX_DOWNLOADS);
+        push_bounded(
+            &mut self.downloads,
+            DownloadRecord {
+                download_id: did.clone(),
+                release_id: release_id.to_string(),
+                context: context.to_string(),
+                timestamp: Utc::now().to_rfc3339(),
+            },
+            MAX_DOWNLOADS,
+        );
         let release = self
             .releases
             .get_mut(release_id)
@@ -406,13 +410,17 @@ impl VerifierBenchmarkReleases {
     }
 
     fn log(&mut self, event_code: &str, trace_id: &str, details: serde_json::Value) {
-        push_bounded(&mut self.audit_log, VbrAuditRecord {
-            record_id: Uuid::now_v7().to_string(),
-            event_code: event_code.to_string(),
-            timestamp: Utc::now().to_rfc3339(),
-            trace_id: trace_id.to_string(),
-            details,
-        }, MAX_AUDIT_LOG_ENTRIES);
+        push_bounded(
+            &mut self.audit_log,
+            VbrAuditRecord {
+                record_id: Uuid::now_v7().to_string(),
+                event_code: event_code.to_string(),
+                timestamp: Utc::now().to_rfc3339(),
+                trace_id: trace_id.to_string(),
+                details,
+            },
+            MAX_AUDIT_LOG_ENTRIES,
+        );
     }
 }
 

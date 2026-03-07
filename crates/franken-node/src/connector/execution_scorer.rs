@@ -935,10 +935,12 @@ mod tests {
         let records = sensitivity_analysis(&actions, &matrix, &probs, 0.3).unwrap();
         assert!(!records.is_empty());
         assert!(records.iter().any(|record| record.action == "block"));
-        assert!(records
-            .iter()
-            .all(|record| record.parameter_name == "false_alarm"
-                || record.parameter_name == "active_attack"));
+        assert!(
+            records
+                .iter()
+                .all(|record| record.parameter_name == "false_alarm"
+                    || record.parameter_name == "active_attack")
+        );
     }
 
     #[test]

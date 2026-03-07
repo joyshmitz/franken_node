@@ -394,33 +394,41 @@ impl<B: CheckpointBackend> CheckpointContract for CheckpointWriter<B> {
             let checkpoint_id = latest.checkpoint_id.clone();
             let previous_checkpoint_hash = latest.previous_checkpoint_hash.clone();
 
-            push_bounded(&mut self.decision_stream, CheckpointEvent {
-                event_code: FN_CK_005_IDEMPOTENT_REUSE.to_string(),
-                event_name: CHECKPOINT_IDEMPOTENT_REUSE.to_string(),
-                orchestration_id: orchestration_id.to_string(),
-                iteration_count,
-                checkpoint_hash: Some(checkpoint_id.clone()),
-                previous_checkpoint_hash: previous_checkpoint_hash.clone(),
-                progress_state_hash: Some(progress_state_hash.clone()),
-                epoch,
-                trace_id: trace_id.to_string(),
-                contract_status: "idempotent".to_string(),
-                wall_clock_time: now_unix_secs(),
-            }, MAX_EVENTS);
+            push_bounded(
+                &mut self.decision_stream,
+                CheckpointEvent {
+                    event_code: FN_CK_005_IDEMPOTENT_REUSE.to_string(),
+                    event_name: CHECKPOINT_IDEMPOTENT_REUSE.to_string(),
+                    orchestration_id: orchestration_id.to_string(),
+                    iteration_count,
+                    checkpoint_hash: Some(checkpoint_id.clone()),
+                    previous_checkpoint_hash: previous_checkpoint_hash.clone(),
+                    progress_state_hash: Some(progress_state_hash.clone()),
+                    epoch,
+                    trace_id: trace_id.to_string(),
+                    contract_status: "idempotent".to_string(),
+                    wall_clock_time: now_unix_secs(),
+                },
+                MAX_EVENTS,
+            );
 
-            push_bounded(&mut self.decision_stream, CheckpointEvent {
-                event_code: FN_CK_008_DECISION_STREAM_APPEND.to_string(),
-                event_name: CHECKPOINT_DECISION_STREAM_APPEND.to_string(),
-                orchestration_id: orchestration_id.to_string(),
-                iteration_count,
-                checkpoint_hash: Some(checkpoint_id.clone()),
-                previous_checkpoint_hash,
-                progress_state_hash: Some(progress_state_hash),
-                epoch,
-                trace_id: trace_id.to_string(),
-                contract_status: "appended".to_string(),
-                wall_clock_time: now_unix_secs(),
-            }, MAX_EVENTS);
+            push_bounded(
+                &mut self.decision_stream,
+                CheckpointEvent {
+                    event_code: FN_CK_008_DECISION_STREAM_APPEND.to_string(),
+                    event_name: CHECKPOINT_DECISION_STREAM_APPEND.to_string(),
+                    orchestration_id: orchestration_id.to_string(),
+                    iteration_count,
+                    checkpoint_hash: Some(checkpoint_id.clone()),
+                    previous_checkpoint_hash,
+                    progress_state_hash: Some(progress_state_hash),
+                    epoch,
+                    trace_id: trace_id.to_string(),
+                    contract_status: "appended".to_string(),
+                    wall_clock_time: now_unix_secs(),
+                },
+                MAX_EVENTS,
+            );
 
             return Ok(checkpoint_id);
         }
@@ -461,33 +469,41 @@ impl<B: CheckpointBackend> CheckpointContract for CheckpointWriter<B> {
         };
         let contract_status = if inserted { "saved" } else { "idempotent" };
 
-        push_bounded(&mut self.decision_stream, CheckpointEvent {
-            event_code: save_event_code.to_string(),
-            event_name: save_event_name.to_string(),
-            orchestration_id: orchestration_id.to_string(),
-            iteration_count,
-            checkpoint_hash: Some(checkpoint_id.clone()),
-            previous_checkpoint_hash: previous_checkpoint_hash.clone(),
-            progress_state_hash: Some(progress_state_hash.clone()),
-            epoch,
-            trace_id: trace_id.to_string(),
-            contract_status: contract_status.to_string(),
-            wall_clock_time: now_unix_secs(),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.decision_stream,
+            CheckpointEvent {
+                event_code: save_event_code.to_string(),
+                event_name: save_event_name.to_string(),
+                orchestration_id: orchestration_id.to_string(),
+                iteration_count,
+                checkpoint_hash: Some(checkpoint_id.clone()),
+                previous_checkpoint_hash: previous_checkpoint_hash.clone(),
+                progress_state_hash: Some(progress_state_hash.clone()),
+                epoch,
+                trace_id: trace_id.to_string(),
+                contract_status: contract_status.to_string(),
+                wall_clock_time: now_unix_secs(),
+            },
+            MAX_EVENTS,
+        );
 
-        push_bounded(&mut self.decision_stream, CheckpointEvent {
-            event_code: FN_CK_008_DECISION_STREAM_APPEND.to_string(),
-            event_name: CHECKPOINT_DECISION_STREAM_APPEND.to_string(),
-            orchestration_id: orchestration_id.to_string(),
-            iteration_count,
-            checkpoint_hash: Some(checkpoint_id.clone()),
-            previous_checkpoint_hash,
-            progress_state_hash: Some(progress_state_hash),
-            epoch,
-            trace_id: trace_id.to_string(),
-            contract_status: "appended".to_string(),
-            wall_clock_time: now_unix_secs(),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.decision_stream,
+            CheckpointEvent {
+                event_code: FN_CK_008_DECISION_STREAM_APPEND.to_string(),
+                event_name: CHECKPOINT_DECISION_STREAM_APPEND.to_string(),
+                orchestration_id: orchestration_id.to_string(),
+                iteration_count,
+                checkpoint_hash: Some(checkpoint_id.clone()),
+                previous_checkpoint_hash,
+                progress_state_hash: Some(progress_state_hash),
+                epoch,
+                trace_id: trace_id.to_string(),
+                contract_status: "appended".to_string(),
+                wall_clock_time: now_unix_secs(),
+            },
+            MAX_EVENTS,
+        );
 
         Ok(checkpoint_id)
     }

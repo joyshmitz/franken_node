@@ -458,7 +458,7 @@ impl CapabilityGate {
                 true,
                 None,
             ));
-            }
+        }
     }
 
     /// Revoke a token and ensure subsequent checks fail.
@@ -540,7 +540,7 @@ impl CapabilityGate {
                 false,
                 Some(err.code().to_string()),
             ));
-                return Err(err);
+            return Err(err);
         }
 
         let Some(cap) = cap else {
@@ -557,7 +557,7 @@ impl CapabilityGate {
                 false,
                 Some(err.code().to_string()),
             ));
-                return Err(err);
+            return Err(err);
         };
 
         if self.revoked_tokens.contains(&cap.token_id) {
@@ -576,7 +576,7 @@ impl CapabilityGate {
                 false,
                 Some(err.code().to_string()),
             ));
-                return Err(err);
+            return Err(err);
         }
 
         let payload = canonical_payload(
@@ -602,7 +602,7 @@ impl CapabilityGate {
                 false,
                 Some(err.code().to_string()),
             ));
-                return Err(err);
+            return Err(err);
         }
 
         // Expiry is fail-closed at the exact boundary: once `now` reaches
@@ -624,7 +624,7 @@ impl CapabilityGate {
                 false,
                 Some(err.code().to_string()),
             ));
-                return Err(err);
+            return Err(err);
         }
 
         if !cap.scope.allows_operation(operation) || !cap.scope.allows_endpoint(endpoint) {
@@ -644,7 +644,7 @@ impl CapabilityGate {
                 false,
                 Some(err.code().to_string()),
             ));
-                return Err(err);
+            return Err(err);
         }
 
         if cap.single_use && self.consumed_tokens.contains(&cap.token_id) {
@@ -663,7 +663,7 @@ impl CapabilityGate {
                 false,
                 Some(err.code().to_string()),
             ));
-                return Err(err);
+            return Err(err);
         }
 
         if cap.single_use && consume_single_use {

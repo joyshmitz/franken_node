@@ -359,17 +359,21 @@ impl PolicyCheckpointChain {
         self.head_hash = Some(checkpoint_hash);
         self.next_seq = sequence.saturating_add(1);
 
-        push_bounded(&mut self.events, CheckpointChainEvent {
-            event_code: event_codes::PCK_001_CHECKPOINT_CREATED.to_string(),
-            event_name: event_names::CHECKPOINT_CREATED.to_string(),
-            trace_id: trace_id.to_string(),
-            epoch_id,
-            sequence,
-            channel: channel.label(),
-            detail: format!(
-                "checkpoint created: seq={sequence} epoch={epoch_id} channel={channel}"
-            ),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            CheckpointChainEvent {
+                event_code: event_codes::PCK_001_CHECKPOINT_CREATED.to_string(),
+                event_name: event_names::CHECKPOINT_CREATED.to_string(),
+                trace_id: trace_id.to_string(),
+                epoch_id,
+                sequence,
+                channel: channel.label(),
+                detail: format!(
+                    "checkpoint created: seq={sequence} epoch={epoch_id} channel={channel}"
+                ),
+            },
+            MAX_EVENTS,
+        );
 
         self.checkpoints
             .last()
@@ -399,18 +403,22 @@ impl PolicyCheckpointChain {
     ) -> Result<&PolicyCheckpoint, CheckpointChainError> {
         // INV-PCK-MONOTONIC
         if checkpoint.sequence != self.next_seq {
-            push_bounded(&mut self.events, CheckpointChainEvent {
-                event_code: event_codes::PCK_003_CHECKPOINT_REJECTED.to_string(),
-                event_name: event_names::CHECKPOINT_REJECTED.to_string(),
-                trace_id: trace_id.to_string(),
-                epoch_id: checkpoint.epoch_id,
-                sequence: checkpoint.sequence,
-                channel: checkpoint.channel.label(),
-                detail: format!(
-                    "CHECKPOINT_SEQ_VIOLATION: expected={}, actual={}",
-                    self.next_seq, checkpoint.sequence
-                ),
-            }, MAX_EVENTS);
+            push_bounded(
+                &mut self.events,
+                CheckpointChainEvent {
+                    event_code: event_codes::PCK_003_CHECKPOINT_REJECTED.to_string(),
+                    event_name: event_names::CHECKPOINT_REJECTED.to_string(),
+                    trace_id: trace_id.to_string(),
+                    epoch_id: checkpoint.epoch_id,
+                    sequence: checkpoint.sequence,
+                    channel: checkpoint.channel.label(),
+                    detail: format!(
+                        "CHECKPOINT_SEQ_VIOLATION: expected={}, actual={}",
+                        self.next_seq, checkpoint.sequence
+                    ),
+                },
+                MAX_EVENTS,
+            );
             return Err(CheckpointChainError::SequenceViolation {
                 expected: self.next_seq,
                 actual: checkpoint.sequence,
@@ -424,18 +432,22 @@ impl PolicyCheckpointChain {
             _ => false,
         };
         if !parent_match {
-            push_bounded(&mut self.events, CheckpointChainEvent {
-                event_code: event_codes::PCK_003_CHECKPOINT_REJECTED.to_string(),
-                event_name: event_names::CHECKPOINT_REJECTED.to_string(),
-                trace_id: trace_id.to_string(),
-                epoch_id: checkpoint.epoch_id,
-                sequence: checkpoint.sequence,
-                channel: checkpoint.channel.label(),
-                detail: format!(
-                    "CHECKPOINT_PARENT_MISMATCH: expected={:?}, actual={:?}",
-                    self.head_hash, checkpoint.parent_hash
-                ),
-            }, MAX_EVENTS);
+            push_bounded(
+                &mut self.events,
+                CheckpointChainEvent {
+                    event_code: event_codes::PCK_003_CHECKPOINT_REJECTED.to_string(),
+                    event_name: event_names::CHECKPOINT_REJECTED.to_string(),
+                    trace_id: trace_id.to_string(),
+                    epoch_id: checkpoint.epoch_id,
+                    sequence: checkpoint.sequence,
+                    channel: checkpoint.channel.label(),
+                    detail: format!(
+                        "CHECKPOINT_PARENT_MISMATCH: expected={:?}, actual={:?}",
+                        self.head_hash, checkpoint.parent_hash
+                    ),
+                },
+                MAX_EVENTS,
+            );
             return Err(CheckpointChainError::ParentMismatch {
                 expected: self.head_hash.clone(),
                 actual: checkpoint.parent_hash,
@@ -451,15 +463,19 @@ impl PolicyCheckpointChain {
         self.head_hash = Some(hash);
         self.next_seq = seq.saturating_add(1);
 
-        push_bounded(&mut self.events, CheckpointChainEvent {
-            event_code: event_codes::PCK_001_CHECKPOINT_CREATED.to_string(),
-            event_name: event_names::CHECKPOINT_CREATED.to_string(),
-            trace_id: trace_id.to_string(),
-            epoch_id: epoch,
-            sequence: seq,
-            channel: channel_label,
-            detail: format!("checkpoint appended: seq={seq} epoch={epoch}"),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            CheckpointChainEvent {
+                event_code: event_codes::PCK_001_CHECKPOINT_CREATED.to_string(),
+                event_name: event_names::CHECKPOINT_CREATED.to_string(),
+                trace_id: trace_id.to_string(),
+                epoch_id: epoch,
+                sequence: seq,
+                channel: channel_label,
+                detail: format!("checkpoint appended: seq={seq} epoch={epoch}"),
+            },
+            MAX_EVENTS,
+        );
 
         self.checkpoints
             .last()

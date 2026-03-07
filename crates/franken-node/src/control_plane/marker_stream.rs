@@ -145,8 +145,7 @@ fn compare_marker_hash_at(
     sequence: u64,
     comparisons: &mut Vec<DivergenceComparison>,
 ) -> bool {
-    let (Some(local_marker), Some(remote_marker)) =
-        (local.get(sequence), remote.get(sequence))
+    let (Some(local_marker), Some(remote_marker)) = (local.get(sequence), remote.get(sequence))
     else {
         return false;
     };
@@ -432,8 +431,16 @@ impl MarkerStream {
     /// Get markers in a sequence range (inclusive start, exclusive end).
     pub fn range(&self, start: u64, end: u64) -> &[Marker] {
         let base = self.markers.first().map_or(0, |m| m.sequence);
-        let adj_start = if start < base { 0 } else { (start - base) as usize };
-        let adj_end = if end <= base { 0 } else { ((end - base) as usize).min(self.markers.len()) };
+        let adj_start = if start < base {
+            0
+        } else {
+            (start - base) as usize
+        };
+        let adj_end = if end <= base {
+            0
+        } else {
+            ((end - base) as usize).min(self.markers.len())
+        };
         if adj_start >= adj_end {
             return &[];
         }
@@ -1395,10 +1402,7 @@ mod tests {
 
         // Exact match for first retained marker
         let first_ts = 1000 + first_retained * 10;
-        assert_eq!(
-            stream.sequence_by_timestamp(first_ts),
-            Some(first_retained)
-        );
+        assert_eq!(stream.sequence_by_timestamp(first_ts), Some(first_retained));
 
         // Last marker
         assert_eq!(stream.sequence_by_timestamp(1000 + 9999 * 10), Some(9999));

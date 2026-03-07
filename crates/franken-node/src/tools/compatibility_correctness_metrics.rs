@@ -476,13 +476,17 @@ impl CompatibilityCorrectnessMetrics {
     }
 
     fn log(&mut self, event_code: &str, trace_id: &str, details: serde_json::Value) {
-        push_bounded(&mut self.audit_log, CcmAuditRecord {
-            record_id: Uuid::now_v7().to_string(),
-            event_code: event_code.to_string(),
-            timestamp: Utc::now().to_rfc3339(),
-            trace_id: trace_id.to_string(),
-            details,
-        }, MAX_AUDIT_LOG_ENTRIES);
+        push_bounded(
+            &mut self.audit_log,
+            CcmAuditRecord {
+                record_id: Uuid::now_v7().to_string(),
+                event_code: event_code.to_string(),
+                timestamp: Utc::now().to_rfc3339(),
+                trace_id: trace_id.to_string(),
+                details,
+            },
+            MAX_AUDIT_LOG_ENTRIES,
+        );
     }
 }
 

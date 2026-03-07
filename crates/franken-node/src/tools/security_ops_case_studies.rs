@@ -404,13 +404,17 @@ impl SecurityOpsCaseStudyRegistry {
     }
 
     fn log(&mut self, event_code: &str, entity_id: &str, detail: &str, trace_id: &str) {
-        push_bounded(&mut self.audit_log, CaseStudyAuditRecord {
-            event_code: event_code.to_string(),
-            entity_id: entity_id.to_string(),
-            detail: detail.to_string(),
-            trace_id: trace_id.to_string(),
-            timestamp: Utc::now().to_rfc3339(),
-        }, MAX_AUDIT_LOG_ENTRIES);
+        push_bounded(
+            &mut self.audit_log,
+            CaseStudyAuditRecord {
+                event_code: event_code.to_string(),
+                entity_id: entity_id.to_string(),
+                detail: detail.to_string(),
+                trace_id: trace_id.to_string(),
+                timestamp: Utc::now().to_rfc3339(),
+            },
+            MAX_AUDIT_LOG_ENTRIES,
+        );
     }
 }
 

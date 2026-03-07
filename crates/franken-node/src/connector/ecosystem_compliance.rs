@@ -789,9 +789,11 @@ mod tests {
             )
             .unwrap();
         let events = store.take_events();
-        assert!(events
-            .iter()
-            .any(|e| e.event_code == ENE_005_COMPLIANCE_EVIDENCE_STORED));
+        assert!(
+            events
+                .iter()
+                .any(|e| e.event_code == ENE_005_COMPLIANCE_EVIDENCE_STORED)
+        );
     }
 
     #[test]
@@ -812,12 +814,16 @@ mod tests {
         store.take_events(); // drain store events
         store.retrieve_evidence(&hash, &ts(2), "t").unwrap();
         let events = store.take_events();
-        assert!(events
-            .iter()
-            .any(|e| e.event_code == ENE_007_COMPLIANCE_TAMPER_CHECK_PASS));
-        assert!(events
-            .iter()
-            .any(|e| e.event_code == ENE_006_COMPLIANCE_EVIDENCE_RETRIEVED));
+        assert!(
+            events
+                .iter()
+                .any(|e| e.event_code == ENE_007_COMPLIANCE_TAMPER_CHECK_PASS)
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| e.event_code == ENE_006_COMPLIANCE_EVIDENCE_RETRIEVED)
+        );
     }
 
     #[test]

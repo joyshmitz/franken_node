@@ -1321,10 +1321,12 @@ mod tests {
     #[test]
     fn test_guard_events_include_init() {
         let guard = CapabilityGuard::new();
-        assert!(guard
-            .events()
-            .iter()
-            .any(|e| e.event_code == event_codes::CAP_006));
+        assert!(
+            guard
+                .events()
+                .iter()
+                .any(|e| e.event_code == event_codes::CAP_006)
+        );
     }
 
     // ── Default profiles ─────────────────────────────────────────────

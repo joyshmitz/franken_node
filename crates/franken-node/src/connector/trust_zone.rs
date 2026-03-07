@@ -282,11 +282,15 @@ impl ZoneSegmentationEngine {
         }
         let zone_id = policy.zone_id.clone();
         self.zones.insert(zone_id.clone(), policy);
-        push_bounded(&mut self.events, ZoneEvent {
-            code: EVT_ZONE_REGISTERED.to_string(),
-            zone_id: zone_id.clone(),
-            detail: format!("Zone registered: {zone_id}"),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            ZoneEvent {
+                code: EVT_ZONE_REGISTERED.to_string(),
+                zone_id: zone_id.clone(),
+                detail: format!("Zone registered: {zone_id}"),
+            },
+            MAX_EVENTS,
+        );
         Ok(())
     }
 
@@ -307,11 +311,15 @@ impl ZoneSegmentationEngine {
         let tenant_id = binding.tenant_id.clone();
         let zone_id = binding.zone_id.clone();
         self.tenants.insert(tenant_id.clone(), binding);
-        push_bounded(&mut self.events, ZoneEvent {
-            code: EVT_TENANT_BOUND.to_string(),
-            zone_id: zone_id.clone(),
-            detail: format!("Tenant {tenant_id} bound to zone {zone_id}"),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            ZoneEvent {
+                code: EVT_TENANT_BOUND.to_string(),
+                zone_id: zone_id.clone(),
+                detail: format!("Tenant {tenant_id} bound to zone {zone_id}"),
+            },
+            MAX_EVENTS,
+        );
         Ok(())
     }
 

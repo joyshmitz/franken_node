@@ -373,13 +373,17 @@ impl BarrierTranscript {
     }
 
     fn record(&mut self, event_code: &str, detail: &str, timestamp_ms: u64, trace_id: &str) {
-        push_bounded(&mut self.entries, TranscriptEntry {
-            event_code: event_code.to_string(),
-            barrier_id: self.barrier_id.clone(),
-            timestamp_ms,
-            detail: detail.to_string(),
-            trace_id: trace_id.to_string(),
-        }, MAX_TRANSCRIPT_ENTRIES);
+        push_bounded(
+            &mut self.entries,
+            TranscriptEntry {
+                event_code: event_code.to_string(),
+                barrier_id: self.barrier_id.clone(),
+                timestamp_ms,
+                detail: detail.to_string(),
+                trace_id: trace_id.to_string(),
+            },
+            MAX_TRANSCRIPT_ENTRIES,
+        );
     }
 
     /// Export transcript as JSONL string.

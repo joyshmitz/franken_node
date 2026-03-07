@@ -280,7 +280,11 @@ impl HardeningStateMachine {
         };
 
         self.current_level = target;
-        push_bounded(&mut self.transition_log, record.clone(), MAX_TRANSITION_LOG_ENTRIES);
+        push_bounded(
+            &mut self.transition_log,
+            record.clone(),
+            MAX_TRANSITION_LOG_ENTRIES,
+        );
 
         Ok(record)
     }
@@ -318,7 +322,11 @@ impl HardeningStateMachine {
         };
 
         self.current_level = target;
-        push_bounded(&mut self.transition_log, record.clone(), MAX_TRANSITION_LOG_ENTRIES);
+        push_bounded(
+            &mut self.transition_log,
+            record.clone(),
+            MAX_TRANSITION_LOG_ENTRIES,
+        );
 
         Ok(record)
     }

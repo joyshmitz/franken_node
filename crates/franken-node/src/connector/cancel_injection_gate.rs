@@ -190,13 +190,17 @@ impl CancelInjectionGate {
 
         self.control_workflows.insert(key.clone(), workflow);
 
-        push_bounded(&mut self.audit_log, GateAuditRecord {
-            event_code: event_codes::CIN_WORKFLOW_REGISTERED.to_string(),
-            workflow: key,
-            detail: "registered".to_string(),
-            trace_id: trace_id.to_string(),
-            schema_version: SCHEMA_VERSION.to_string(),
-        }, MAX_AUDIT_LOG_ENTRIES);
+        push_bounded(
+            &mut self.audit_log,
+            GateAuditRecord {
+                event_code: event_codes::CIN_WORKFLOW_REGISTERED.to_string(),
+                workflow: key,
+                detail: "registered".to_string(),
+                trace_id: trace_id.to_string(),
+                schema_version: SCHEMA_VERSION.to_string(),
+            },
+            MAX_AUDIT_LOG_ENTRIES,
+        );
     }
 
     /// Register the default set of control-plane workflows.
@@ -488,16 +492,20 @@ impl CancelInjectionGate {
         }
         .to_string();
 
-        push_bounded(&mut self.audit_log, GateAuditRecord {
-            event_code: event_codes::CIN_GATE_VERDICT.to_string(),
-            workflow: String::new(),
-            detail: format!(
-                "verdict={} passed={} failed={} total={}",
-                verdict, total_passed, total_failed, total_points
-            ),
-            trace_id: trace_id.to_string(),
-            schema_version: SCHEMA_VERSION.to_string(),
-        }, MAX_AUDIT_LOG_ENTRIES);
+        push_bounded(
+            &mut self.audit_log,
+            GateAuditRecord {
+                event_code: event_codes::CIN_GATE_VERDICT.to_string(),
+                workflow: String::new(),
+                detail: format!(
+                    "verdict={} passed={} failed={} total={}",
+                    verdict, total_passed, total_failed, total_points
+                ),
+                trace_id: trace_id.to_string(),
+                schema_version: SCHEMA_VERSION.to_string(),
+            },
+            MAX_AUDIT_LOG_ENTRIES,
+        );
 
         let report = CancelInjectionGateReport {
             gate_id: "bd-3tpg".to_string(),

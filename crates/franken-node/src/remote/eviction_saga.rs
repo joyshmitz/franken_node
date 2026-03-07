@@ -171,14 +171,18 @@ impl SagaInstance {
     fn record_transition(&mut self, to_phase: SagaPhase, outcome: &str, max_transitions: usize) {
         let max_transitions = max_transitions.max(1);
         let from = self.phase;
-        push_bounded(&mut self.transitions, PhaseTransition {
-            saga_id: self.saga_id.clone(),
-            artifact_id: self.artifact_id.clone(),
-            from_phase: from,
-            to_phase,
-            timestamp_ms: 0, // Caller provides real timestamp
-            outcome: outcome.to_string(),
-        }, max_transitions);
+        push_bounded(
+            &mut self.transitions,
+            PhaseTransition {
+                saga_id: self.saga_id.clone(),
+                artifact_id: self.artifact_id.clone(),
+                from_phase: from,
+                to_phase,
+                timestamp_ms: 0, // Caller provides real timestamp
+                outcome: outcome.to_string(),
+            },
+            max_transitions,
+        );
         self.phase = to_phase;
     }
 
@@ -232,11 +236,15 @@ impl EvictionSagaManager {
 
     fn log(&mut self, event_code: &str, trace_id: &str, detail: serde_json::Value) {
         let cap = self.max_audit_records;
-        push_bounded(&mut self.audit_log, EsAuditRecord {
-            event_code: event_code.to_string(),
-            trace_id: trace_id.to_string(),
-            detail,
-        }, cap);
+        push_bounded(
+            &mut self.audit_log,
+            EsAuditRecord {
+                event_code: event_code.to_string(),
+                trace_id: trace_id.to_string(),
+                detail,
+            },
+            cap,
+        );
     }
 
     fn ensure_remote_cap_active(

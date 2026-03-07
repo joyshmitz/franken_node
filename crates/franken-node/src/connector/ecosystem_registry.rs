@@ -519,13 +519,17 @@ impl EcosystemRegistry {
         timestamp: &str,
         trace_id: &str,
     ) {
-        push_bounded(&mut self.events, RegistryEvent {
-            event_code: event_code.to_owned(),
-            extension_id: extension_id.to_owned(),
-            detail: detail.to_owned(),
-            timestamp: timestamp.to_owned(),
-            trace_id: trace_id.to_owned(),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            RegistryEvent {
+                event_code: event_code.to_owned(),
+                extension_id: extension_id.to_owned(),
+                detail: detail.to_owned(),
+                timestamp: timestamp.to_owned(),
+                trace_id: trace_id.to_owned(),
+            },
+            MAX_EVENTS,
+        );
     }
 }
 

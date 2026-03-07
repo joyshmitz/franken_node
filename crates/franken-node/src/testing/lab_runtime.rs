@@ -695,18 +695,26 @@ impl LabRuntime {
         let fired = self.test_clock.advance(delta)?;
         if !fired.is_empty() {
             for (tick, cb) in &fired {
-                push_bounded(&mut self.events, LabEvent {
-                    tick: *tick,
-                    event_code: EVT_TIMER_FIRED.to_string(),
-                    payload: format!("timer_id={}, label={}", cb.id, cb.label),
-                }, MAX_EVENTS);
+                push_bounded(
+                    &mut self.events,
+                    LabEvent {
+                        tick: *tick,
+                        event_code: EVT_TIMER_FIRED.to_string(),
+                        payload: format!("timer_id={}, label={}", cb.id, cb.label),
+                    },
+                    MAX_EVENTS,
+                );
             }
         }
-        push_bounded(&mut self.events, LabEvent {
-            tick: self.test_clock.current_tick,
-            event_code: EVT_TEST_CLOCK_ADVANCED.to_string(),
-            payload: format!("delta={delta}, now={}", self.test_clock.current_tick),
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            LabEvent {
+                tick: self.test_clock.current_tick,
+                event_code: EVT_TEST_CLOCK_ADVANCED.to_string(),
+                payload: format!("delta={delta}, now={}", self.test_clock.current_tick),
+            },
+            MAX_EVENTS,
+        );
         Ok(fired)
     }
 
@@ -877,11 +885,15 @@ impl LabRuntime {
     // -- internal helpers --
 
     fn emit(&mut self, code: &str, payload: String) {
-        push_bounded(&mut self.events, LabEvent {
-            tick: self.test_clock.current_tick,
-            event_code: code.to_string(),
-            payload,
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            LabEvent {
+                tick: self.test_clock.current_tick,
+                event_code: code.to_string(),
+                payload,
+            },
+            MAX_EVENTS,
+        );
     }
 }
 

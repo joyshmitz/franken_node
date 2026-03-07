@@ -630,12 +630,16 @@ impl TieredTrustStorage {
     // -- Event log -----------------------------------------------------------
 
     fn emit(&mut self, code: &str, tier: Tier, artifact_id: Option<&ArtifactId>, detail: String) {
-        push_bounded(&mut self.events, StorageEvent {
-            code: code.to_string(),
-            tier: tier.as_str().to_string(),
-            artifact_id: artifact_id.map(|id| id.0.clone()),
-            detail,
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            StorageEvent {
+                code: code.to_string(),
+                tier: tier.as_str().to_string(),
+                artifact_id: artifact_id.map(|id| id.0.clone()),
+                detail,
+            },
+            MAX_EVENTS,
+        );
     }
 
     /// All events emitted since creation.

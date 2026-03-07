@@ -240,14 +240,18 @@ impl EvidenceReplayGate {
         self.total_replays = self.total_replays.saturating_add(1);
 
         // Log replay initiation.
-        push_bounded(&mut self.replay_log, ReplayLogEntry {
-            event_code: RPL_001_REPLAY_INITIATED.to_owned(),
-            decision_id: evidence.decision_id.clone(),
-            verdict: None,
-            diff_size_bytes: None,
-            trace_id: evidence.trace_id.clone(),
-            timestamp: timestamp.to_owned(),
-        }, MAX_REPLAY_LOG_ENTRIES);
+        push_bounded(
+            &mut self.replay_log,
+            ReplayLogEntry {
+                event_code: RPL_001_REPLAY_INITIATED.to_owned(),
+                decision_id: evidence.decision_id.clone(),
+                verdict: None,
+                diff_size_bytes: None,
+                trace_id: evidence.trace_id.clone(),
+                timestamp: timestamp.to_owned(),
+            },
+            MAX_REPLAY_LOG_ENTRIES,
+        );
 
         // Verify input hash integrity.
         let computed_hash = evidence.compute_input_hash();
@@ -267,14 +271,18 @@ impl EvidenceReplayGate {
                 event_code: RPL_004_ERROR.to_owned(),
             };
 
-            push_bounded(&mut self.replay_log, ReplayLogEntry {
-                event_code: RPL_004_ERROR.to_owned(),
-                decision_id: evidence.decision_id.clone(),
-                verdict: Some("error".to_owned()),
-                diff_size_bytes: None,
-                trace_id: evidence.trace_id.clone(),
-                timestamp: timestamp.to_owned(),
-            }, MAX_REPLAY_LOG_ENTRIES);
+            push_bounded(
+                &mut self.replay_log,
+                ReplayLogEntry {
+                    event_code: RPL_004_ERROR.to_owned(),
+                    decision_id: evidence.decision_id.clone(),
+                    verdict: Some("error".to_owned()),
+                    diff_size_bytes: None,
+                    trace_id: evidence.trace_id.clone(),
+                    timestamp: timestamp.to_owned(),
+                },
+                MAX_REPLAY_LOG_ENTRIES,
+            );
 
             return result;
         }
@@ -283,14 +291,18 @@ impl EvidenceReplayGate {
         let verdict = if replayed_action == evidence.chosen_action {
             self.total_reproduced = self.total_reproduced.saturating_add(1);
 
-            push_bounded(&mut self.replay_log, ReplayLogEntry {
-                event_code: RPL_002_REPRODUCED.to_owned(),
-                decision_id: evidence.decision_id.clone(),
-                verdict: Some("reproduced".to_owned()),
-                diff_size_bytes: None,
-                trace_id: evidence.trace_id.clone(),
-                timestamp: timestamp.to_owned(),
-            }, MAX_REPLAY_LOG_ENTRIES);
+            push_bounded(
+                &mut self.replay_log,
+                ReplayLogEntry {
+                    event_code: RPL_002_REPRODUCED.to_owned(),
+                    decision_id: evidence.decision_id.clone(),
+                    verdict: Some("reproduced".to_owned()),
+                    diff_size_bytes: None,
+                    trace_id: evidence.trace_id.clone(),
+                    timestamp: timestamp.to_owned(),
+                },
+                MAX_REPLAY_LOG_ENTRIES,
+            );
 
             ReplayVerdict::Reproduced
         } else {
@@ -306,14 +318,18 @@ impl EvidenceReplayGate {
             );
             let diff_size = diff.len();
 
-            push_bounded(&mut self.replay_log, ReplayLogEntry {
-                event_code: RPL_003_DIVERGED.to_owned(),
-                decision_id: evidence.decision_id.clone(),
-                verdict: Some("diverged".to_owned()),
-                diff_size_bytes: Some(diff_size),
-                trace_id: evidence.trace_id.clone(),
-                timestamp: timestamp.to_owned(),
-            }, MAX_REPLAY_LOG_ENTRIES);
+            push_bounded(
+                &mut self.replay_log,
+                ReplayLogEntry {
+                    event_code: RPL_003_DIVERGED.to_owned(),
+                    decision_id: evidence.decision_id.clone(),
+                    verdict: Some("diverged".to_owned()),
+                    diff_size_bytes: Some(diff_size),
+                    trace_id: evidence.trace_id.clone(),
+                    timestamp: timestamp.to_owned(),
+                },
+                MAX_REPLAY_LOG_ENTRIES,
+            );
 
             ReplayVerdict::Diverged {
                 original_action: evidence.chosen_action.clone(),
@@ -371,14 +387,18 @@ impl EvidenceReplayGate {
         };
 
         // Log gate decision.
-        push_bounded(&mut self.replay_log, ReplayLogEntry {
-            event_code: RPL_005_GATE_DECISION.to_owned(),
-            decision_id: format!("gate-{timestamp}"),
-            verdict: Some(format!("{decision:?}")),
-            diff_size_bytes: None,
-            trace_id: String::new(),
-            timestamp: timestamp.to_owned(),
-        }, MAX_REPLAY_LOG_ENTRIES);
+        push_bounded(
+            &mut self.replay_log,
+            ReplayLogEntry {
+                event_code: RPL_005_GATE_DECISION.to_owned(),
+                decision_id: format!("gate-{timestamp}"),
+                verdict: Some(format!("{decision:?}")),
+                diff_size_bytes: None,
+                trace_id: String::new(),
+                timestamp: timestamp.to_owned(),
+            },
+            MAX_REPLAY_LOG_ENTRIES,
+        );
 
         GateResult {
             decision,

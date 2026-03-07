@@ -439,10 +439,9 @@ impl TrustComplexityGate {
             .filter(|e| e.code == RTC_004_BUDGET_EXCEEDED)
             .count() as u64;
 
-        let total_depth: u64 = self
-            .decisions
-            .iter()
-            .fold(0u64, |acc, d| acc.saturating_add(u64::from(d.context.chain_depth)));
+        let total_depth: u64 = self.decisions.iter().fold(0u64, |acc, d| {
+            acc.saturating_add(u64::from(d.context.chain_depth))
+        });
         let avg_chain_depth = if total > 0 {
             total_depth as f64 / total as f64
         } else {

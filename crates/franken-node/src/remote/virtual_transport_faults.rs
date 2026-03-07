@@ -322,11 +322,15 @@ impl VirtualTransportFaultHarness {
 
     fn log_audit(&mut self, event_code: &str, trace_id: &str, detail: serde_json::Value) {
         let cap = self.max_audit_log_entries;
-        push_bounded(&mut self.audit_log, VtfAuditRecord {
-            event_code: event_code.to_string(),
-            trace_id: trace_id.to_string(),
-            detail,
-        }, cap);
+        push_bounded(
+            &mut self.audit_log,
+            VtfAuditRecord {
+                event_code: event_code.to_string(),
+                trace_id: trace_id.to_string(),
+                detail,
+            },
+            cap,
+        );
     }
 
     fn record_fault(
@@ -338,12 +342,16 @@ impl VirtualTransportFaultHarness {
         let id = self.next_fault_id;
         self.next_fault_id = self.next_fault_id.saturating_add(1);
         let cap = self.max_fault_log_entries;
-        push_bounded(&mut self.fault_log, FaultEvent {
-            fault_id: id,
-            fault_class: fault_class.to_string(),
-            message_id,
-            details,
-        }, cap);
+        push_bounded(
+            &mut self.fault_log,
+            FaultEvent {
+                fault_id: id,
+                fault_class: fault_class.to_string(),
+                message_id,
+                details,
+            },
+            cap,
+        );
         id
     }
 

@@ -544,11 +544,15 @@ impl DurabilityController {
 
     fn emit(&mut self, code: &str, mode: &DurabilityMode, detail: String) {
         let mode_label = mode.label();
-        push_bounded(&mut self.events, DurabilityEvent {
-            code: code.to_string(),
-            mode: mode_label,
-            detail,
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            DurabilityEvent {
+                code: code.to_string(),
+                mode: mode_label,
+                detail,
+            },
+            MAX_EVENTS,
+        );
     }
 
     /// All events emitted by this controller.
