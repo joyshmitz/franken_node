@@ -86,6 +86,7 @@ impl ProofLagSlo {
     pub fn breached_by(&self, metrics: &ProofLagMetrics) -> bool {
         metrics.proof_lag_secs >= self.max_proof_lag_secs
             || metrics.backlog_depth >= self.max_backlog_depth
+            || !metrics.error_rate.is_finite()
             || metrics.error_rate >= self.max_error_rate
     }
 
@@ -96,7 +97,7 @@ impl ProofLagSlo {
             Some("proof_lag_secs")
         } else if metrics.backlog_depth >= self.max_backlog_depth {
             Some("backlog_depth")
-        } else if metrics.error_rate >= self.max_error_rate {
+        } else if !metrics.error_rate.is_finite() || metrics.error_rate >= self.max_error_rate {
             Some("error_rate")
         } else {
             None
@@ -640,7 +641,7 @@ impl VefDegradedModeEngine {
                 metrics.backlog_depth as f64,
                 slo.max_backlog_depth as f64,
             )
-        } else if metrics.error_rate >= slo.max_error_rate {
+        } else if !metrics.error_rate.is_finite() || metrics.error_rate >= slo.max_error_rate {
             ("error_rate", metrics.error_rate, slo.max_error_rate)
         } else {
             ("unknown", 0.0, 0.0)
@@ -1277,5 +1278,69 @@ mod tests {
     fn proof_lag_slo_inf_error_rate_is_fail_closed() {
         let slo = ProofLagSlo::new(300, 100, f64::INFINITY);
         assert!((slo.max_error_rate - 0.0).abs() < f64::EPSILON);
+    }
+
+    // ── NaN/Inf error_rate in metrics → fail-closed ────────────────────
+
+    #[test]
+    fn nan_error_rate_in_metrics_breaches_slo() {
+        let slo = ProofLagSlo::new(300, 100, 0.10);
+        let metrics = ProofLagMetrics {
+            proof_lag_secs: 0,
+            backlog_depth: 0,
+            error_rate: f64::NAN,
+            heartbeat_age_secs: 0,
+        };
+        assert!(slo.breached_by(&metrics), "NaN error_rate must breach SLO (fail-closed)");
+    }
+
+    #[test]
+    fn inf_error_rate_in_metrics_breaches_slo() {
+        let slo = ProofLagSlo::new(300, 100, 0.10);
+        let metrics = ProofLagMetrics {
+            proof_lag_secs: 0,
+            backlog_depth: 0,
+            error_rate: f64::INFINITY,
+            heartbeat_age_secs: 0,
+        };
+        assert!(slo.breached_by(&metrics), "Inf error_rate must breach SLO (fail-closed)");
+    }
+
+    #[test]
+    fn neg_inf_error_rate_in_metrics_breaches_slo() {
+        let slo = ProofLagSlo::new(300, 100, 0.10);
+        let metrics = ProofLagMetrics {
+            proof_lag_secs: 0,
+            backlog_depth: 0,
+            error_rate: f64::NEG_INFINITY,
+            heartbeat_age_secs: 0,
+        };
+        assert!(slo.breached_by(&metrics), "NEG_INFINITY error_rate must breach SLO (fail-closed)");
+    }
+
+    #[test]
+    fn nan_error_rate_escalates_engine_to_halt() {
+        let mut engine = default_engine();
+        let metrics = ProofLagMetrics {
+            proof_lag_secs: 0,
+            backlog_depth: 0,
+            error_rate: f64::NAN,
+            heartbeat_age_secs: 0,
+        };
+        engine.observe_metrics(&metrics, 1000, "corr-nan");
+        // NaN breaches all SLO tiers (restricted, quarantine, halt) → Halt
+        assert_eq!(engine.mode(), VefMode::Halt, "NaN error_rate must escalate to halt");
+    }
+
+    #[test]
+    fn nan_error_rate_first_breached_metric_reports_error_rate() {
+        let slo = ProofLagSlo::new(300, 100, 0.10);
+        let metrics = ProofLagMetrics {
+            proof_lag_secs: 0,
+            backlog_depth: 0,
+            error_rate: f64::NAN,
+            heartbeat_age_secs: 0,
+        };
+        assert_eq!(slo.first_breached_metric(&metrics), Some("error_rate"));
     }
 }
