@@ -275,9 +275,9 @@ impl VefPerfBudgetConfig {
                 }
             }
         }
-        if self.noise_tolerance_cv_pct <= 0.0 {
+        if !self.noise_tolerance_cv_pct.is_finite() || self.noise_tolerance_cv_pct <= 0.0 {
             return Err(VefPerfBudgetError::InvalidConfig(
-                "noise_tolerance_cv_pct must be > 0".into(),
+                "noise_tolerance_cv_pct must be finite and > 0".into(),
             ));
         }
         if self.min_samples == 0 {
@@ -680,6 +680,14 @@ impl VefPerfBudgetGate {
         baseline: &BaselineSnapshot,
         regression_threshold_pct: f64,
     ) -> Vec<RegressionReport> {
+        // NaN/Inf threshold would cause all `> threshold` comparisons to
+        // return false, silently hiding regressions.  Fail-closed: treat any
+        // non-finite threshold as 0 (every increase is a regression).
+        let regression_threshold_pct = if regression_threshold_pct.is_finite() {
+            regression_threshold_pct
+        } else {
+            0.0
+        };
         let mut reports = Vec::new();
 
         for curr in current {
@@ -1248,5 +1256,108 @@ mod tests {
         let labels: Vec<&str> = BudgetMode::all().iter().map(|m| m.label()).collect();
         let unique: std::collections::BTreeSet<&str> = labels.iter().copied().collect();
         assert_eq!(labels.len(), unique.len());
+    }
+
+    // ── NaN/Inf hardening tests ───────────────────────────────────────
+
+    #[test]
+    fn nan_noise_tolerance_rejected_by_validate() {
+        let config = VefPerfBudgetConfig {
+            noise_tolerance_cv_pct: f64::NAN,
+            ..Default::default()
+        };
+        assert!(
+            matches!(config.validate(), Err(VefPerfBudgetError::InvalidConfig(_))),
+            "NaN noise_tolerance_cv_pct must be rejected"
+        );
+    }
+
+    #[test]
+    fn inf_noise_tolerance_rejected_by_validate() {
+        let config = VefPerfBudgetConfig {
+            noise_tolerance_cv_pct: f64::INFINITY,
+            ..Default::default()
+        };
+        assert!(
+            matches!(config.validate(), Err(VefPerfBudgetError::InvalidConfig(_))),
+            "Inf noise_tolerance_cv_pct must be rejected"
+        );
+    }
+
+    #[test]
+    fn neg_inf_noise_tolerance_rejected_by_validate() {
+        let config = VefPerfBudgetConfig {
+            noise_tolerance_cv_pct: f64::NEG_INFINITY,
+            ..Default::default()
+        };
+        assert!(
+            matches!(config.validate(), Err(VefPerfBudgetError::InvalidConfig(_))),
+            "-Inf noise_tolerance_cv_pct must be rejected"
+        );
+    }
+
+    #[test]
+    fn nan_regression_threshold_fails_closed() {
+        let config = VefPerfBudgetConfig::default();
+        let gate = VefPerfBudgetGate::new(config);
+
+        let baseline = BaselineSnapshot {
+            schema_version: BUDGET_SCHEMA_VERSION.to_string(),
+            commit_sha: "abc".to_string(),
+            recorded_at_epoch_secs: 1000,
+            measurements: vec![sample_measurement(
+                VefOperation::ReceiptEmission,
+                BudgetMode::Normal,
+                30,
+                60,
+            )],
+        };
+
+        // 50% regression with NaN threshold — must still detect it
+        let current = vec![sample_measurement(
+            VefOperation::ReceiptEmission,
+            BudgetMode::Normal,
+            45,
+            90,
+        )];
+
+        let reports = gate.detect_regressions(&current, &baseline, f64::NAN);
+        assert_eq!(reports.len(), 1);
+        assert!(
+            reports[0].regressed,
+            "NaN threshold must fail-closed: treat any increase as regression"
+        );
+    }
+
+    #[test]
+    fn inf_regression_threshold_fails_closed() {
+        let config = VefPerfBudgetConfig::default();
+        let gate = VefPerfBudgetGate::new(config);
+
+        let baseline = BaselineSnapshot {
+            schema_version: BUDGET_SCHEMA_VERSION.to_string(),
+            commit_sha: "abc".to_string(),
+            recorded_at_epoch_secs: 1000,
+            measurements: vec![sample_measurement(
+                VefOperation::ReceiptEmission,
+                BudgetMode::Normal,
+                30,
+                60,
+            )],
+        };
+
+        let current = vec![sample_measurement(
+            VefOperation::ReceiptEmission,
+            BudgetMode::Normal,
+            45,
+            90,
+        )];
+
+        let reports = gate.detect_regressions(&current, &baseline, f64::INFINITY);
+        assert_eq!(reports.len(), 1);
+        assert!(
+            reports[0].regressed,
+            "Inf threshold must fail-closed: treat any increase as regression"
+        );
     }
 }

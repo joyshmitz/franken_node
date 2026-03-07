@@ -139,11 +139,14 @@ impl ClassTuning {
                 "Symbol size must be > 0",
             ));
         }
-        if self.encoding_overhead_ratio < 0.0 || self.encoding_overhead_ratio > 1.0 {
+        if !self.encoding_overhead_ratio.is_finite()
+            || self.encoding_overhead_ratio < 0.0
+            || self.encoding_overhead_ratio > 1.0
+        {
             return Err(TuningError::new(
                 ERR_INVALID_OVERHEAD_RATIO,
                 format!(
-                    "Overhead ratio must be in [0.0, 1.0], got {}",
+                    "Overhead ratio must be finite and in [0.0, 1.0], got {}",
                     self.encoding_overhead_ratio
                 ),
             ));
@@ -519,6 +522,30 @@ mod tests {
         let tuning = ClassTuning {
             symbol_size_bytes: 1024,
             encoding_overhead_ratio: 1.5,
+            fetch_priority: FetchPriority::Normal,
+            prefetch_policy: PrefetchPolicy::Lazy,
+        };
+        let err = tuning.validate().unwrap_err();
+        assert_eq!(err.code, ERR_INVALID_OVERHEAD_RATIO);
+    }
+
+    #[test]
+    fn test_validate_nan_overhead_rejected() {
+        let tuning = ClassTuning {
+            symbol_size_bytes: 1024,
+            encoding_overhead_ratio: f64::NAN,
+            fetch_priority: FetchPriority::Normal,
+            prefetch_policy: PrefetchPolicy::Lazy,
+        };
+        let err = tuning.validate().unwrap_err();
+        assert_eq!(err.code, ERR_INVALID_OVERHEAD_RATIO);
+    }
+
+    #[test]
+    fn test_validate_inf_overhead_rejected() {
+        let tuning = ClassTuning {
+            symbol_size_bytes: 1024,
+            encoding_overhead_ratio: f64::INFINITY,
             fetch_priority: FetchPriority::Normal,
             prefetch_policy: PrefetchPolicy::Lazy,
         };
