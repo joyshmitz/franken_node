@@ -311,16 +311,26 @@ fn now_timestamp() -> String {
 /// Compute the signing payload for a capsule.
 /// INV-VSDK-SIGNATURE-BOUND: covers manifest + payload + inputs.
 fn compute_signing_payload(capsule: &ReplayCapsule) -> String {
-    let mut parts = vec![
-        capsule.manifest.capsule_id.clone(),
-        capsule.manifest.schema_version.clone(),
-        capsule.manifest.expected_output_hash.clone(),
-        capsule.payload.clone(),
-    ];
-    for (k, v) in &capsule.inputs {
-        parts.push(format!("{k}={v}"));
+    let mut hasher = Sha256::new();
+    hasher.update(b"universal_verifier_sdk_signing_v1:");
+    // Length-prefixed encoding prevents delimiter-collision ambiguity.
+    for field in [
+        capsule.manifest.capsule_id.as_str(),
+        capsule.manifest.schema_version.as_str(),
+        capsule.manifest.expected_output_hash.as_str(),
+        capsule.payload.as_str(),
+    ] {
+        hasher.update((field.len() as u64).to_le_bytes());
+        hasher.update(field.as_bytes());
     }
-    parts.join("|")
+    hasher.update((capsule.inputs.len() as u64).to_le_bytes());
+    for (k, v) in &capsule.inputs {
+        hasher.update((k.len() as u64).to_le_bytes());
+        hasher.update(k.as_bytes());
+        hasher.update((v.len() as u64).to_le_bytes());
+        hasher.update(v.as_bytes());
+    }
+    hex::encode(hasher.finalize())
 }
 
 // ---------------------------------------------------------------------------
@@ -375,8 +385,7 @@ pub fn validate_manifest(manifest: &CapsuleManifest) -> Result<(), VsdkError> {
 ///
 /// INV-VSDK-SIGNATURE-BOUND: signature covers full capsule payload.
 pub fn verify_capsule_signature(capsule: &ReplayCapsule) -> Result<(), VsdkError> {
-    let payload = compute_signing_payload(capsule);
-    let expected_sig = deterministic_hash(&payload);
+    let expected_sig = compute_signing_payload(capsule);
     if !crate::security::constant_time::ct_eq(&capsule.signature, &expected_sig) {
         return Err(VsdkError::SignatureMismatch {
             expected: expected_sig,
@@ -390,8 +399,7 @@ pub fn verify_capsule_signature(capsule: &ReplayCapsule) -> Result<(), VsdkError
 ///
 /// INV-VSDK-SIGNATURE-BOUND: signature covers manifest + payload + inputs.
 pub fn sign_capsule(capsule: &mut ReplayCapsule) {
-    let payload = compute_signing_payload(capsule);
-    capsule.signature = deterministic_hash(&payload);
+    capsule.signature = compute_signing_payload(capsule);
 }
 
 /// Replay a capsule and produce a result.
