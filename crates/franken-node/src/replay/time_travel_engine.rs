@@ -558,11 +558,14 @@ impl TraceBuilder {
         timestamp_ns: u64,
     ) -> u64 {
         let seq = self.next_seq;
-        push_bounded(
-            &mut self.steps,
-            TraceStep::new(seq, input, output, side_effects, timestamp_ns),
-            MAX_TRACE_STEPS,
-        );
+        // Cannot use push_bounded here: evicting oldest steps would shift
+        // indices so that step.seq != enumerate-index, violating
+        // INV-TTR-STEP-ORDER and causing validate() to reject the trace.
+        // Instead, cap at MAX_TRACE_STEPS and silently stop recording.
+        if self.steps.len() < MAX_TRACE_STEPS {
+            self.steps
+                .push(TraceStep::new(seq, input, output, side_effects, timestamp_ns));
+        }
         let trace_id = self.trace_id.clone();
         push_bounded(
             &mut self.audit_log,
@@ -919,9 +922,6 @@ impl ReplayEngine {
         };
 
         // TTR-007: Replay completed
-        if self.audit_log.len() >= MAX_AUDIT_LOG_ENTRIES {
-            self.audit_log.drain(0..1);
-        }
         push_bounded(
             &mut self.audit_log,
             AuditEntry::new(
