@@ -533,9 +533,12 @@ impl GateEngine {
 
     /// Verify a divergence receipt's signature.
     pub fn verify_receipt_signature(&self, receipt: &DivergenceReceipt) -> bool {
+        // Length-prefixed fields must match emit_divergence_receipt().
         let payload = format!(
-            "receipt:{}:{}:{}",
-            receipt.scope_id, receipt.shim_id, receipt.divergence_description
+            "receipt:{}:{}:{}:{}:{}:{}",
+            receipt.scope_id.len(), receipt.scope_id,
+            receipt.shim_id.len(), receipt.shim_id,
+            receipt.divergence_description.len(), receipt.divergence_description
         );
         let expected = self.sign(&payload);
         crate::security::constant_time::ct_eq(&receipt.signature, &expected)

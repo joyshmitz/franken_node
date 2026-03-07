@@ -2257,13 +2257,17 @@ fn build_registry_seed_request(
     version: &str,
     tags: &[&str],
 ) -> RegistrationRequest {
-    let attestation_hash = hex::encode(sha2::Sha256::digest(
-        [
-            b"registry_seed_attestation_v1:" as &[u8],
-            format!("{name}:{publisher_id}:{version}").as_bytes(),
-        ]
-        .concat(),
-    ));
+    // Length-prefixed encoding prevents delimiter-collision ambiguity.
+    let attestation_hash = {
+        use sha2::Digest;
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(b"registry_seed_attestation_v1:");
+        for field in [name, publisher_id, version] {
+            hasher.update((field.len() as u64).to_le_bytes());
+            hasher.update(field.as_bytes());
+        }
+        hex::encode(hasher.finalize())
+    };
     let signature_hex = format!("{attestation_hash}{attestation_hash}");
     RegistrationRequest {
         name: name.to_string(),

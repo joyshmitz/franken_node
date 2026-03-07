@@ -427,7 +427,14 @@ pub fn make_artifact(
     extension_id: &str,
     contract: CapabilityContract,
 ) -> ExtensionArtifact {
-    let payload_hash = digest_bytes(format!("{}:{}", artifact_id, extension_id).as_bytes());
+    // Length-prefixed encoding prevents delimiter-collision ambiguity.
+    let mut hasher = Sha256::new();
+    hasher.update(b"artifact_contract_digest_v1:");
+    for field in [artifact_id, extension_id] {
+        hasher.update((field.len() as u64).to_le_bytes());
+        hasher.update(field.as_bytes());
+    }
+    let payload_hash = hex::encode(hasher.finalize());
     ExtensionArtifact {
         artifact_id: artifact_id.to_string(),
         extension_id: extension_id.to_string(),

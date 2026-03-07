@@ -262,13 +262,21 @@ fn digest_bytes(input: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
+fn signature_digest(receipt_id: &str, proof_hash: &str, signer_id: &str, expires_epoch_ms: u64) -> String {
+    // Length-prefixed encoding prevents delimiter-collision ambiguity.
+    let mut hasher = Sha256::new();
+    hasher.update(b"proof_executor_digest_v1:");
+    for field in [receipt_id, proof_hash, signer_id] {
+        hasher.update((field.len() as u64).to_le_bytes());
+        hasher.update(field.as_bytes());
+    }
+    hasher.update(expires_epoch_ms.to_le_bytes());
+    hex::encode(hasher.finalize())
+}
+
 fn verify_signature(receipt: &ProofReceipt) -> bool {
-    let expected = digest_bytes(
-        format!(
-            "{}|{}|{}|{}",
-            receipt.receipt_id, receipt.proof_hash, receipt.signer_id, receipt.expires_epoch_ms
-        )
-        .as_bytes(),
+    let expected = signature_digest(
+        &receipt.receipt_id, &receipt.proof_hash, &receipt.signer_id, receipt.expires_epoch_ms
     );
     crate::security::constant_time::ct_eq(&receipt.signature, &expected)
 }
@@ -282,13 +290,7 @@ pub fn make_receipt(
     trace_id: &str,
 ) -> ProofReceipt {
     let proof_hash = digest_bytes(format!("{}:{}", transform.as_str(), interface_id).as_bytes());
-    let signature = digest_bytes(
-        format!(
-            "{}|{}|{}|{}",
-            receipt_id, proof_hash, signer_id, expires_epoch_ms
-        )
-        .as_bytes(),
-    );
+    let signature = signature_digest(receipt_id, &proof_hash, signer_id, expires_epoch_ms);
     ProofReceipt {
         receipt_id: receipt_id.to_string(),
         transform,
