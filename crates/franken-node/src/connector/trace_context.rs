@@ -7,6 +7,16 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+const MAX_SPANS_PER_TRACE: usize = 4096;
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if items.len() >= cap {
+        let overflow = items.len() - cap + 1;
+        items.drain(0..overflow);
+    }
+    items.push(item);
+}
+
 // ── Trace context ───────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,10 +166,8 @@ impl TraceStore {
             }
         }
 
-        self.traces
-            .entry(ctx.trace_id.clone())
-            .or_default()
-            .push(ctx.clone());
+        let spans = self.traces.entry(ctx.trace_id.clone()).or_default();
+        push_bounded(spans, ctx.clone(), MAX_SPANS_PER_TRACE);
         Ok(())
     }
 
