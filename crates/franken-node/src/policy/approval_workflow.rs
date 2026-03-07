@@ -145,24 +145,28 @@ fn compute_entry_hash(entry: &PolicyChangeAuditEntry) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"approval_workflow_entry_v1:");
     hasher.update(entry.sequence.to_le_bytes());
-    hasher.update(b"|");
-    hasher.update(entry.event_code.as_bytes());
-    hasher.update(b"|");
-    hasher.update(entry.proposal_id.as_bytes());
-    hasher.update(b"|");
-    hasher.update(entry.actor.as_bytes());
-    hasher.update(b"|");
-    hasher.update(entry.timestamp.as_bytes());
-    hasher.update(b"|");
-    hasher.update(entry.details.as_bytes());
-    hasher.update(b"|");
-    hasher.update(entry.prev_hash.as_bytes());
-    hasher.update(b"|");
-    if let Some(ref from) = entry.transition_from {
-        hasher.update(format!("{from:?}").as_bytes());
+    // Length-prefixed encoding prevents delimiter-collision ambiguity.
+    for field in [
+        &entry.event_code,
+        &entry.proposal_id,
+        &entry.actor,
+        &entry.timestamp,
+        &entry.details,
+        &entry.prev_hash,
+    ] {
+        hasher.update((field.len() as u64).to_le_bytes());
+        hasher.update(field.as_bytes());
     }
-    hasher.update(b"|");
-    hasher.update(format!("{:?}", entry.transition_to).as_bytes());
+    let from_str = entry
+        .transition_from
+        .as_ref()
+        .map(|f| format!("{f:?}"))
+        .unwrap_or_default();
+    let to_str = format!("{:?}", entry.transition_to);
+    hasher.update((from_str.len() as u64).to_le_bytes());
+    hasher.update(from_str.as_bytes());
+    hasher.update((to_str.len() as u64).to_le_bytes());
+    hasher.update(to_str.as_bytes());
     format!("{:x}", hasher.finalize())
 }
 
@@ -227,6 +231,8 @@ pub struct PolicyChangeEngine {
     total_activated: u64,
     /// Total rollbacks.
     total_rollbacks: u64,
+    /// Monotonic sequence counter for audit entries (survives eviction).
+    next_sequence: u64,
 }
 
 impl Default for PolicyChangeEngine {
@@ -246,6 +252,7 @@ impl PolicyChangeEngine {
             total_proposals: 0,
             total_activated: 0,
             total_rollbacks: 0,
+            next_sequence: 0,
         }
     }
 
@@ -679,7 +686,8 @@ impl PolicyChangeEngine {
             .map(|e| e.entry_hash.clone())
             .unwrap_or(genesis_hash);
 
-        let sequence = self.audit_ledger.len() as u64;
+        let sequence = self.next_sequence;
+        self.next_sequence = self.next_sequence.saturating_add(1);
 
         let mut entry = PolicyChangeAuditEntry {
             sequence,

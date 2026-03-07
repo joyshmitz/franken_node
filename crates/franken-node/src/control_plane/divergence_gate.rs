@@ -257,8 +257,13 @@ impl OperatorAuthorization {
         let mut hasher = Sha256::new();
         hasher.update(b"divergence_gate_auth_v1:");
         let canonical = format!(
-            "{}|{}|{}|{}",
-            operator_id, resync_checkpoint_epoch, timestamp, reason
+            "{}:{}|{}|{}|{}:{}",
+            operator_id.len(),
+            operator_id,
+            resync_checkpoint_epoch,
+            timestamp,
+            reason.len(),
+            reason
         );
         hasher.update(canonical.as_bytes());
         let authorization_hash = format!("{:x}", hasher.finalize());
@@ -288,8 +293,13 @@ impl OperatorAuthorization {
         let mut hasher = Sha256::new();
         hasher.update(b"divergence_gate_auth_v1:");
         let canonical = format!(
-            "{}|{}|{}|{}",
-            self.operator_id, self.resync_checkpoint_epoch, self.timestamp, self.reason
+            "{}:{}|{}|{}|{}:{}",
+            self.operator_id.len(),
+            self.operator_id,
+            self.resync_checkpoint_epoch,
+            self.timestamp,
+            self.reason.len(),
+            self.reason
         );
         hasher.update(canonical.as_bytes());
         let expected = format!("{:x}", hasher.finalize());
@@ -628,10 +638,6 @@ impl ControlPlaneDivergenceGate {
             result.clone(),
             MAX_BLOCKED_MUTATIONS,
         );
-        if self.blocked_mutations.len() > MAX_BLOCKED_MUTATIONS {
-            let overflow = self.blocked_mutations.len() - MAX_BLOCKED_MUTATIONS;
-            self.blocked_mutations.drain(0..overflow);
-        }
         self.events
             .push(event_codes::DG_002_MUTATION_BLOCKED.to_string());
         self.enforce_events_cap();
@@ -719,10 +725,6 @@ impl ControlPlaneDivergenceGate {
             partition.clone(),
             MAX_QUARANTINED_PARTITIONS,
         );
-        if self.quarantined_partitions.len() > MAX_QUARANTINED_PARTITIONS {
-            let overflow = self.quarantined_partitions.len() - MAX_QUARANTINED_PARTITIONS;
-            self.quarantined_partitions.drain(0..overflow);
-        }
         self.state = GateState::Quarantined;
         if let Some(ref mut ad) = self.active_divergence {
             ad.response_mode = Some(ResponseMode::Quarantine.label().to_string());
@@ -790,10 +792,6 @@ impl ControlPlaneDivergenceGate {
         };
 
         push_bounded(&mut self.alerts, alert.clone(), MAX_ALERTS);
-        if self.alerts.len() > MAX_ALERTS {
-            let overflow = self.alerts.len() - MAX_ALERTS;
-            self.alerts.drain(0..overflow);
-        }
         self.state = GateState::Alerted;
         if let Some(ref mut ad) = self.active_divergence {
             ad.response_mode = Some(ResponseMode::Alert.label().to_string());
