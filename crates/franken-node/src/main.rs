@@ -2289,13 +2289,15 @@ fn build_registry_seed_request(
         initial_version: VersionEntry {
             version: version.to_string(),
             parent_version: None,
-            content_hash: hex::encode(sha2::Sha256::digest(
-                [
-                    b"registry_seed_content_v1:" as &[u8],
-                    format!("{name}:{version}:content").as_bytes(),
-                ]
-                .concat(),
-            )),
+            content_hash: {
+                let mut h = sha2::Sha256::new();
+                h.update(b"registry_seed_content_v1:");
+                for field in [name, version, "content"] {
+                    h.update((field.len() as u64).to_le_bytes());
+                    h.update(field.as_bytes());
+                }
+                hex::encode(h.finalize())
+            },
             registered_at: chrono::Utc::now().to_rfc3339(),
             compatible_with: vec!["franken-node".to_string()],
         },
