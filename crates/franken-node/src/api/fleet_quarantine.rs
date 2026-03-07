@@ -830,8 +830,15 @@ impl FleetControlManager {
         zone_id: &str,
         timestamp: &str,
     ) -> DecisionReceipt {
-        let payload = format!("{op_id}:{principal}:{zone_id}:{timestamp}");
-        let payload_hash = receipt_payload_hash(payload.as_bytes());
+        // Length-prefixed encoding prevents delimiter-collision ambiguity.
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(b"fleet_receipt_v1:");
+        for field in [op_id, principal, zone_id, timestamp] {
+            hasher.update((field.len() as u64).to_le_bytes());
+            hasher.update(field.as_bytes());
+        }
+        let payload_hash = hex::encode(hasher.finalize());
         DecisionReceipt {
             receipt_id: format!("rcpt-{op_id}"),
             issuer: principal.to_string(),
@@ -848,16 +855,6 @@ impl Default for FleetControlManager {
     }
 }
 
-/// Deterministic SHA-256 hash for receipt payload (hex-encoded).
-/// Replaces weak FNV-1a XOR-multiply loop with proper SHA-256.
-fn receipt_payload_hash(data: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-
-    let mut hasher = Sha256::new();
-    hasher.update(b"fleet_receipt_v1:");
-    hasher.update(data);
-    hex::encode(hasher.finalize())
-}
 
 // ── Request / Response types for API handlers ─────────────────────────────
 
@@ -1973,5 +1970,17 @@ mod tests {
         let r1 = mgr.build_receipt("op-1", "admin", "zone-1", "2026-01-01T00:00:00Z");
         let r2 = mgr.build_receipt("op-2", "admin", "zone-1", "2026-01-01T00:00:00Z");
         assert_ne!(r1.payload_hash, r2.payload_hash);
+    }
+
+    #[test]
+    fn receipt_hash_no_delimiter_collision() {
+        let mgr = FleetControlManager::new();
+        // Without length-prefixing, "a:b" + "c" and "a" + "b:c" could collide.
+        let r1 = mgr.build_receipt("op", "admin:x", "zone", "ts");
+        let r2 = mgr.build_receipt("op", "admin", "x:zone", "ts");
+        assert_ne!(
+            r1.payload_hash, r2.payload_hash,
+            "length-prefixed encoding must prevent delimiter collision"
+        );
     }
 }
