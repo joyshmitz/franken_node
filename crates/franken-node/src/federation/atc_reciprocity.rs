@@ -276,6 +276,8 @@ impl Default for ReciprocityConfig {
 pub struct ReciprocityEngine {
     config: ReciprocityConfig,
     audit_log: Vec<AccessAuditEntry>,
+    next_audit_sequence: u64,
+    audit_epoch: u64,
 }
 
 impl Default for ReciprocityEngine {
@@ -289,7 +291,25 @@ impl ReciprocityEngine {
         Self {
             config,
             audit_log: Vec::new(),
+            next_audit_sequence: 1,
+            audit_epoch: 0,
         }
+    }
+
+    fn allocate_audit_entry_id(&mut self) -> String {
+        let entry_id = format!(
+            "audit-{:016x}-{:016x}",
+            self.audit_epoch, self.next_audit_sequence
+        );
+
+        if self.next_audit_sequence == u64::MAX {
+            self.next_audit_sequence = 1;
+            self.audit_epoch = self.audit_epoch.wrapping_add(1);
+        } else {
+            self.next_audit_sequence += 1;
+        }
+
+        entry_id
     }
 
     /// Evaluate access for a single participant.
@@ -481,7 +501,7 @@ impl ReciprocityEngine {
 
     fn log_decision(&mut self, decision: &AccessDecision, event_code: &str, timestamp: &str) {
         let content_hash = AccessAuditEntry::compute_hash(decision);
-        let entry_id = format!("audit-{}", self.audit_log.len() + 1);
+        let entry_id = self.allocate_audit_entry_id();
         push_bounded(
             &mut self.audit_log,
             AccessAuditEntry {
@@ -504,6 +524,7 @@ impl ReciprocityEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     fn make_high_contributor(id: &str) -> ContributionMetrics {
         ContributionMetrics {
@@ -732,6 +753,28 @@ mod tests {
         let entry = &engine.audit_log()[0];
         assert!(!entry.content_hash.is_empty());
         assert_eq!(entry.content_hash.len(), 64);
+    }
+
+    #[test]
+    fn audit_entry_ids_remain_unique_after_log_eviction() {
+        let mut engine = ReciprocityEngine::default();
+
+        for idx in 0..(MAX_AUDIT_LOG_ENTRIES + 3) {
+            let participant_id = format!("overflow-{idx}");
+            let metrics = make_high_contributor(&participant_id);
+            engine.evaluate_access(&metrics, "2026-02-20T00:00:00Z");
+        }
+
+        let ids: Vec<String> = engine
+            .audit_log()
+            .iter()
+            .map(|entry| entry.entry_id.clone())
+            .collect();
+        let unique_ids: BTreeSet<String> = ids.iter().cloned().collect();
+
+        assert_eq!(engine.audit_log().len(), MAX_AUDIT_LOG_ENTRIES);
+        assert_eq!(unique_ids.len(), ids.len());
+        assert!(ids.windows(2).all(|window| window[0] != window[1]));
     }
 
     // === Determinism (INV-ATC-RECIPROCITY-DETERMINISM) ===

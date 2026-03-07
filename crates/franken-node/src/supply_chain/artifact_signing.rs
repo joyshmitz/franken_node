@@ -163,14 +163,25 @@ impl ChecksumManifest {
     }
 
     /// Parse a canonical manifest text back into entries (no signature).
+    ///
+    /// SECURITY: rejects entries whose name contains path traversal
+    /// sequences (`..`, leading `/`, or backslashes) to prevent
+    /// arbitrary file reads when the manifest is attacker-controlled.
     pub fn parse_canonical(text: &str) -> Vec<ManifestEntry> {
         let mut entries = Vec::new();
         for line in text.lines() {
             let parts: Vec<&str> = line.splitn(3, "  ").collect();
             if parts.len() == 3 {
+                let name = parts[1];
+                if name.split('/').any(|s| s == "..")
+                    || name.starts_with('/')
+                    || name.contains('\\')
+                {
+                    continue;
+                }
                 entries.push(ManifestEntry {
                     sha256: parts[0].to_string(),
-                    name: parts[1].to_string(),
+                    name: name.to_string(),
                     size_bytes: parts[2].parse().unwrap_or(0),
                 });
             }
@@ -985,5 +996,36 @@ mod tests {
         let sk = demo_signing_key();
         let sig = sign_artifact(&sk, b"some artifact content");
         assert_eq!(sig.len(), 64);
+    }
+
+    #[test]
+    fn parse_canonical_rejects_path_traversal() {
+        let malicious = "e3b0c44  ../../../etc/passwd  1024\n";
+        let parsed = ChecksumManifest::parse_canonical(malicious);
+        assert!(parsed.is_empty(), "should reject .. traversal");
+    }
+
+    #[test]
+    fn parse_canonical_rejects_absolute_path() {
+        let malicious = "e3b0c44  /etc/passwd  1024\n";
+        let parsed = ChecksumManifest::parse_canonical(malicious);
+        assert!(parsed.is_empty(), "should reject absolute paths");
+    }
+
+    #[test]
+    fn parse_canonical_rejects_backslash_path() {
+        let malicious = "e3b0c44  ..\\..\\windows\\system32  1024\n";
+        let parsed = ChecksumManifest::parse_canonical(malicious);
+        assert!(parsed.is_empty(), "should reject backslash paths");
+    }
+
+    #[test]
+    fn parse_canonical_accepts_clean_names() {
+        let valid = "e3b0c44  release/artifact.tar.gz  1024\n\
+                     d41d8cd  checksums.txt  512\n";
+        let parsed = ChecksumManifest::parse_canonical(valid);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].name, "release/artifact.tar.gz");
+        assert_eq!(parsed[1].name, "checksums.txt");
     }
 }
