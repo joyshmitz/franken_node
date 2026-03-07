@@ -161,7 +161,7 @@ impl std::fmt::Display for AmplificationError {
 
 /// Validate an amplification policy.
 pub fn validate_policy(policy: &AmplificationPolicy) -> Result<(), AmplificationError> {
-    if policy.max_response_ratio <= 0.0 {
+    if !policy.max_response_ratio.is_finite() || policy.max_response_ratio <= 0.0 {
         return Err(AmplificationError::InvalidPolicy {
             reason: "max_response_ratio must be > 0".into(),
         });
@@ -590,5 +590,29 @@ mod tests {
     #[test]
     fn default_policy_valid() {
         assert!(validate_policy(&AmplificationPolicy::default_policy()).is_ok());
+    }
+
+    #[test]
+    fn nan_max_response_ratio_rejected() {
+        let mut p = policy();
+        p.max_response_ratio = f64::NAN;
+        let err = validate_policy(&p).unwrap_err();
+        assert_eq!(err.code(), "AAR_INVALID_POLICY");
+    }
+
+    #[test]
+    fn inf_max_response_ratio_rejected() {
+        let mut p = policy();
+        p.max_response_ratio = f64::INFINITY;
+        let err = validate_policy(&p).unwrap_err();
+        assert_eq!(err.code(), "AAR_INVALID_POLICY");
+    }
+
+    #[test]
+    fn neg_inf_max_response_ratio_rejected() {
+        let mut p = policy();
+        p.max_response_ratio = f64::NEG_INFINITY;
+        let err = validate_policy(&p).unwrap_err();
+        assert_eq!(err.code(), "AAR_INVALID_POLICY");
     }
 }
