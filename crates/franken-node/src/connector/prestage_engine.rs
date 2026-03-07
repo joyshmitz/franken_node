@@ -142,8 +142,10 @@ pub fn evaluate_candidates(
     let mut staged_count: usize = 0;
 
     for candidate in &sorted {
-        // Below threshold
-        if candidate.predicted_probability < config.probability_threshold {
+        // Below threshold (NaN/Inf probabilities are treated as below threshold)
+        if !candidate.predicted_probability.is_finite()
+            || candidate.predicted_probability < config.probability_threshold
+        {
             decisions.push(PrestageDecision {
                 artifact_id: candidate.artifact_id.clone(),
                 staged: false,
@@ -494,5 +496,39 @@ mod tests {
             report.staged_count < report.total_candidates,
             "Not all staged (threshold filters)"
         );
+    }
+
+    #[test]
+    fn nan_probability_not_staged() {
+        let candidates = vec![cand("a1", 100, f64::NAN)];
+        let (decisions, report) = evaluate_candidates(&candidates, &config(), "tr", "ts").unwrap();
+        assert!(!decisions[0].staged, "NaN probability must not be staged");
+        assert_eq!(report.staged_count, 0);
+    }
+
+    #[test]
+    fn inf_probability_not_staged() {
+        let candidates = vec![cand("a1", 100, f64::INFINITY)];
+        let (decisions, report) = evaluate_candidates(&candidates, &config(), "tr", "ts").unwrap();
+        assert!(!decisions[0].staged, "Inf probability must not be staged");
+        assert_eq!(report.staged_count, 0);
+    }
+
+    #[test]
+    fn neg_inf_probability_not_staged() {
+        let candidates = vec![cand("a1", 100, f64::NEG_INFINITY)];
+        let (decisions, report) = evaluate_candidates(&candidates, &config(), "tr", "ts").unwrap();
+        assert!(!decisions[0].staged, "NEG_INFINITY probability must not be staged");
+        assert_eq!(report.staged_count, 0);
+    }
+
+    #[test]
+    fn nan_threshold_rejected_by_validation() {
+        let cfg = PrestageConfig {
+            probability_threshold: f64::NAN,
+            ..config()
+        };
+        let err = evaluate_candidates(&[cand("a", 10, 0.9)], &cfg, "tr", "ts").unwrap_err();
+        assert_eq!(err.code(), "PSE_THRESHOLD_INVALID");
     }
 }

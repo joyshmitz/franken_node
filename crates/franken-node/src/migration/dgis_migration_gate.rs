@@ -125,7 +125,9 @@ fn evaluate_policy(
 ) -> Vec<RejectionReason> {
     let mut reasons = Vec::new();
 
-    if delta.cascade_risk_delta >= thresholds.max_cascade_risk_delta {
+    if !delta.cascade_risk_delta.is_finite()
+        || delta.cascade_risk_delta >= thresholds.max_cascade_risk_delta
+    {
         reasons.push(RejectionReason {
             code: "DGIS-MIGRATE-RISK-DELTA".to_string(),
             detail: format!(
@@ -663,6 +665,75 @@ mod tests {
         assert!(!event_codes::BASELINE_CAPTURED.is_empty());
         assert!(!event_codes::ADMISSION_ALLOWED.is_empty());
         assert!(!event_codes::ADMISSION_BLOCKED.is_empty());
+    }
+
+    #[test]
+    fn nan_cascade_risk_delta_blocks_admission() {
+        let projected = GraphHealthSnapshot {
+            cascade_risk: f64::NAN,
+            fragility_findings: 4,
+            articulation_points: 2,
+        };
+        let evaluation = evaluate_admission(
+            "trace-nan",
+            baseline(),
+            projected,
+            MigrationGateThresholds::default(),
+            &[],
+        );
+        assert_eq!(evaluation.verdict, GateVerdict::Block);
+        assert!(
+            evaluation
+                .rejection_reasons
+                .iter()
+                .any(|r| r.code == "DGIS-MIGRATE-RISK-DELTA")
+        );
+    }
+
+    #[test]
+    fn inf_cascade_risk_delta_blocks_admission() {
+        let projected = GraphHealthSnapshot {
+            cascade_risk: f64::INFINITY,
+            fragility_findings: 4,
+            articulation_points: 2,
+        };
+        let evaluation = evaluate_admission(
+            "trace-inf",
+            baseline(),
+            projected,
+            MigrationGateThresholds::default(),
+            &[],
+        );
+        assert_eq!(evaluation.verdict, GateVerdict::Block);
+        assert!(
+            evaluation
+                .rejection_reasons
+                .iter()
+                .any(|r| r.code == "DGIS-MIGRATE-RISK-DELTA")
+        );
+    }
+
+    #[test]
+    fn neg_inf_cascade_risk_delta_blocks_admission() {
+        let projected = GraphHealthSnapshot {
+            cascade_risk: f64::NEG_INFINITY,
+            fragility_findings: 4,
+            articulation_points: 2,
+        };
+        let evaluation = evaluate_admission(
+            "trace-neg-inf",
+            baseline(),
+            projected,
+            MigrationGateThresholds::default(),
+            &[],
+        );
+        assert_eq!(evaluation.verdict, GateVerdict::Block);
+        assert!(
+            evaluation
+                .rejection_reasons
+                .iter()
+                .any(|r| r.code == "DGIS-MIGRATE-RISK-DELTA")
+        );
     }
 
     #[test]
