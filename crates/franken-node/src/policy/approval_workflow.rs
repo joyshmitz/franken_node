@@ -205,6 +205,7 @@ pub struct ChangeEvidencePackage {
 }
 
 const MAX_AUDIT_LEDGER_ENTRIES: usize = 4096;
+const MAX_APPROVALS: usize = 256;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     items.push(item);
@@ -382,7 +383,7 @@ impl PolicyChangeEngine {
             ));
         }
 
-        record.approvals.push(signature);
+        push_bounded(&mut record.approvals, signature, MAX_APPROVALS);
 
         // Transition to UnderReview if first approval.
         let prev_state = record.state;
