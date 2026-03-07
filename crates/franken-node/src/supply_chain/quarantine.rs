@@ -281,8 +281,11 @@ fn compute_entry_hash(entry: &QuarantineAuditEntry) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"quarantine_entry_v1:");
     hasher.update(entry.sequence.to_le_bytes());
+    hasher.update((entry.event_code.len() as u64).to_le_bytes());
     hasher.update(entry.event_code.as_bytes());
+    hasher.update((entry.order_id.len() as u64).to_le_bytes());
     hasher.update(entry.order_id.as_bytes());
+    hasher.update((entry.extension_id.len() as u64).to_le_bytes());
     hasher.update(entry.extension_id.as_bytes());
 
     let severity_str = match entry.severity {
@@ -291,11 +294,16 @@ fn compute_entry_hash(entry: &QuarantineAuditEntry) -> String {
         QuarantineSeverity::High => "high",
         QuarantineSeverity::Critical => "critical",
     };
+    hasher.update((severity_str.len() as u64).to_le_bytes());
     hasher.update(severity_str.as_bytes());
 
+    hasher.update((entry.trace_id.len() as u64).to_le_bytes());
     hasher.update(entry.trace_id.as_bytes());
+    hasher.update((entry.timestamp.len() as u64).to_le_bytes());
     hasher.update(entry.timestamp.as_bytes());
+    hasher.update((entry.details.len() as u64).to_le_bytes());
     hasher.update(entry.details.as_bytes());
+    hasher.update((entry.prev_hash.len() as u64).to_le_bytes());
     hasher.update(entry.prev_hash.as_bytes());
     format!("{:x}", hasher.finalize())
 }
@@ -332,6 +340,10 @@ pub struct QuarantineRegistry {
     active_quarantines: BTreeMap<String, String>,
     /// Audit trail (hash-chained).
     audit_trail: Vec<QuarantineAuditEntry>,
+    /// Anchor hash: entry_hash of the most recently evicted audit entry.
+    chain_anchor_hash: Option<String>,
+    /// Monotonic sequence counter (not reset by eviction).
+    next_sequence: u64,
     /// Propagation tracking: node_id -> last propagation timestamp.
     propagation_status: BTreeMap<String, String>,
     /// Total quarantines issued.
@@ -354,6 +366,8 @@ impl QuarantineRegistry {
             records: BTreeMap::new(),
             active_quarantines: BTreeMap::new(),
             audit_trail: Vec::new(),
+            chain_anchor_hash: None,
+            next_sequence: 0,
             propagation_status: BTreeMap::new(),
             total_quarantines: 0,
             total_recalls: 0,
@@ -953,28 +967,23 @@ impl QuarantineRegistry {
     /// Verify audit trail integrity (hash chain).
     pub fn verify_audit_integrity(&self) -> Result<bool, QuarantineError> {
         let genesis_hash = format!("{:x}", Sha256::digest(b"quarantine_genesis_v1:"));
+        let first_expected = self
+            .chain_anchor_hash
+            .as_deref()
+            .unwrap_or(&genesis_hash);
 
         for (i, entry) in self.audit_trail.iter().enumerate() {
-            // Check prev_hash.
-            // When push_bounded has evicted old entries, the first retained
-            // entry's prev_hash references an evicted predecessor — skip the
-            // genesis linkage check in that case (sequence > 0 means entries
-            // were evicted before this one).
-            if i == 0 && entry.sequence > 0 {
-                // Cannot verify genesis linkage after eviction; skip.
+            let expected_prev = if i == 0 {
+                first_expected
             } else {
-                let expected_prev = if i == 0 {
-                    &genesis_hash
-                } else {
-                    &self.audit_trail[i - 1].entry_hash
-                };
+                &self.audit_trail[i - 1].entry_hash
+            };
 
-                if !ct_eq(&entry.prev_hash, expected_prev) {
-                    return Err(QuarantineError {
-                        code: ERR_AUDIT_CHAIN_BROKEN.to_owned(),
-                        message: format!("Audit chain broken at index {i}: prev_hash mismatch"),
-                    });
-                }
+            if !ct_eq(&entry.prev_hash, expected_prev) {
+                return Err(QuarantineError {
+                    code: ERR_AUDIT_CHAIN_BROKEN.to_owned(),
+                    message: format!("Audit chain broken at index {i}: prev_hash mismatch"),
+                });
             }
 
             // Verify entry hash.
@@ -1051,9 +1060,11 @@ impl QuarantineRegistry {
             .audit_trail
             .last()
             .map(|e| e.entry_hash.clone())
+            .or_else(|| self.chain_anchor_hash.clone())
             .unwrap_or(genesis_hash);
 
-        let sequence = self.audit_trail.len() as u64;
+        let sequence = self.next_sequence;
+        self.next_sequence = self.next_sequence.saturating_add(1);
 
         let mut entry = QuarantineAuditEntry {
             sequence,
@@ -1069,7 +1080,13 @@ impl QuarantineRegistry {
         };
 
         entry.entry_hash = compute_entry_hash(&entry);
-        push_bounded(&mut self.audit_trail, entry, MAX_AUDIT_TRAIL);
+        self.audit_trail.push(entry);
+        if self.audit_trail.len() > MAX_AUDIT_TRAIL {
+            let overflow = self.audit_trail.len() - MAX_AUDIT_TRAIL;
+            self.chain_anchor_hash =
+                Some(self.audit_trail[overflow - 1].entry_hash.clone());
+            self.audit_trail.drain(0..overflow);
+        }
     }
 }
 

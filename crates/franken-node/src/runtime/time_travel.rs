@@ -436,6 +436,8 @@ pub struct CaptureSession {
     clock: DeterministicClock,
     frames: Vec<CaptureFrame>,
     events: Vec<String>,
+    /// Monotonic frame counter — not reset by push_bounded eviction.
+    next_frame_index: u64,
 }
 
 impl CaptureSession {
@@ -451,6 +453,7 @@ impl CaptureSession {
             clock: DeterministicClock::new(),
             frames: Vec::new(),
             events: Vec::new(),
+            next_frame_index: 0,
         };
         session.emit_event(event_codes::TTR_001.to_string());
         session
@@ -468,8 +471,10 @@ impl CaptureSession {
     ) -> Result<&CaptureFrame, TimeTravelError> {
         self.clock.advance_to(tick)?;
         let input_hash = hash_bytes(input);
+        let idx = self.next_frame_index;
+        self.next_frame_index = self.next_frame_index.saturating_add(1);
         let frame = CaptureFrame {
-            frame_index: self.frames.len() as u64,
+            frame_index: idx,
             clock_tick: tick,
             input_hash,
             decision,
