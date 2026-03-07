@@ -377,7 +377,7 @@ impl GateEngine {
 
     /// Set the initial mode for a scope (no transition workflow).
     pub fn set_scope_mode(&mut self, scope_id: &str, mode: CompatMode) {
-        let sig = self.sign(&format!("mode:{}:{}", scope_id, mode.label()));
+        let sig = self.sign(&format!("mode:{}:{}:{}:{}", scope_id.len(), scope_id, mode.label().len(), mode.label()));
         self.scope_modes.insert(
             scope_id.to_string(),
             ScopeMode {

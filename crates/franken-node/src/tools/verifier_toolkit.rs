@@ -575,10 +575,14 @@ impl VerifierToolkit {
     }
 
     fn step_hash(&self, claim_id: &str, step: &str, passed: bool) -> String {
-        let input = format!("{}:{}:{}", claim_id, step, passed);
-        hex::encode(Sha256::digest(
-            [b"verifier_toolkit_hash_v1:" as &[u8], input.as_bytes()].concat(),
-        ))
+        let mut hasher = Sha256::new();
+        hasher.update(b"verifier_toolkit_hash_v1:");
+        hasher.update((claim_id.len() as u64).to_le_bytes());
+        hasher.update(claim_id.as_bytes());
+        hasher.update((step.len() as u64).to_le_bytes());
+        hasher.update(step.as_bytes());
+        hasher.update(&[u8::from(passed)]);
+        hex::encode(hasher.finalize())
     }
 
     fn log(&mut self, event_code: &str, trace_id: &str, details: serde_json::Value) {

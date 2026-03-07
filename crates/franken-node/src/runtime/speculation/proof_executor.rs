@@ -237,7 +237,7 @@ impl ProofExecutor {
         let decision = self.evaluate_activation(transform, interface_id, receipt, guard_ok);
         let output_digest = match &decision {
             ActivationDecision::Activated { receipt_id, .. } => {
-                digest_bytes(format!("active:{}:{}", transform.as_str(), receipt_id).as_bytes())
+                digest_fields(b"proof_executor_active_v1:", &[transform.as_str().as_bytes(), receipt_id.as_bytes()])
             }
             ActivationDecision::Degraded { .. } => deterministic_baseline_digest(baseline_input),
         };
@@ -259,6 +259,16 @@ fn digest_bytes(input: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"proof_executor_digest_v1:");
     hasher.update(input);
+    hex::encode(hasher.finalize())
+}
+
+fn digest_fields(domain: &[u8], fields: &[&[u8]]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(domain);
+    for field in fields {
+        hasher.update((field.len() as u64).to_le_bytes());
+        hasher.update(field);
+    }
     hex::encode(hasher.finalize())
 }
 
@@ -289,7 +299,7 @@ pub fn make_receipt(
     expires_epoch_ms: u64,
     trace_id: &str,
 ) -> ProofReceipt {
-    let proof_hash = digest_bytes(format!("{}:{}", transform.as_str(), interface_id).as_bytes());
+    let proof_hash = digest_fields(b"proof_executor_proof_v1:", &[transform.as_str().as_bytes(), interface_id.as_bytes()]);
     let signature = signature_digest(receipt_id, &proof_hash, signer_id, expires_epoch_ms);
     ProofReceipt {
         receipt_id: receipt_id.to_string(),

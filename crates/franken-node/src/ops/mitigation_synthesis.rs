@@ -380,14 +380,16 @@ impl IncidentLab {
         }
 
         // Build rollout contract
-        let rollout_payload = format!(
-            "{}|{}|{}|{}",
-            candidate.mitigation_id,
-            comparison.loss_delta,
-            self.config.operator_id,
-            self.config.valid_until_epoch_ms,
+        let rollout_signature = sign_structured(
+            &self.config.signing_secret,
+            b"mitigation_rollout_sign_v1:",
+            &[
+                candidate.mitigation_id.as_bytes(),
+                &comparison.loss_delta.to_le_bytes(),
+                self.config.operator_id.as_bytes(),
+                &self.config.valid_until_epoch_ms.to_le_bytes(),
+            ],
         );
-        let rollout_signature = sign_payload(&rollout_payload, &self.config.signing_secret);
 
         // INV-LAB-SIGNED-ROLLOUT
         if rollout_signature.is_empty() {
@@ -413,11 +415,15 @@ impl IncidentLab {
             });
         }
 
-        let rollback_payload = format!(
-            "{}|{}|{}",
-            candidate.mitigation_id, self.config.rollback_trigger, self.config.operator_id,
+        let rollback_signature = sign_structured(
+            &self.config.signing_secret,
+            b"mitigation_rollback_sign_v1:",
+            &[
+                candidate.mitigation_id.as_bytes(),
+                self.config.rollback_trigger.as_bytes(),
+                self.config.operator_id.as_bytes(),
+            ],
         );
-        let rollback_signature = sign_payload(&rollback_payload, &self.config.signing_secret);
 
         let rollback = RollbackContract {
             mitigation_id: candidate.mitigation_id.clone(),
@@ -456,13 +462,15 @@ impl IncidentLab {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn sign_payload(payload: &str, secret: &str) -> String {
+fn sign_structured(secret: &str, domain: &[u8], fields: &[&[u8]]) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(b"mitigation_synthesis_sign_v1:");
+    hasher.update(domain);
     hasher.update((secret.len() as u64).to_le_bytes());
     hasher.update(secret.as_bytes());
-    hasher.update((payload.len() as u64).to_le_bytes());
-    hasher.update(payload.as_bytes());
+    for field in fields {
+        hasher.update((field.len() as u64).to_le_bytes());
+        hasher.update(field);
+    }
     hex::encode(hasher.finalize())
 }
 
@@ -665,18 +673,26 @@ mod tests {
     }
 
     #[test]
-    fn test_sign_payload_deterministic() {
-        let a = sign_payload("test-payload", "secret-key");
-        let b = sign_payload("test-payload", "secret-key");
+    fn test_sign_structured_deterministic() {
+        let a = sign_structured("secret-key", b"test:", &[b"payload"]);
+        let b = sign_structured("secret-key", b"test:", &[b"payload"]);
         assert_eq!(a, b);
         assert!(!a.is_empty());
     }
 
     #[test]
-    fn test_sign_payload_different_secrets() {
-        let a = sign_payload("test-payload", "secret-1");
-        let b = sign_payload("test-payload", "secret-2");
+    fn test_sign_structured_different_secrets() {
+        let a = sign_structured("secret-1", b"test:", &[b"payload"]);
+        let b = sign_structured("secret-2", b"test:", &[b"payload"]);
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_sign_structured_no_delimiter_collision() {
+        // "a|b" as one field vs "a" and "b" as two fields must differ
+        let single = sign_structured("s", b"test:", &[b"a|b"]);
+        let split = sign_structured("s", b"test:", &[b"a", b"b"]);
+        assert_ne!(single, split);
     }
 
     #[test]

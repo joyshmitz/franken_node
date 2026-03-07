@@ -752,16 +752,21 @@ impl ReputationRegistry {
 
 /// Compute the SHA-256 hash of an audit entry's content for chaining.
 fn compute_entry_hash(entry: &AuditEntry) -> String {
-    let payload = format!(
-        "{}:{}:{}:{}:{}",
-        entry.sequence,
-        entry.prev_hash,
-        entry.timestamp,
-        entry.publisher_id,
-        serde_json::to_string(&entry.event).unwrap_or_else(|e| format!("__serde_err:{e}"))
-    );
-    let digest = Sha256::digest([b"reputation_hash_v1:" as &[u8], payload.as_bytes()].concat());
-    format!("sha256:{}", hex::encode(digest))
+    let event_json =
+        serde_json::to_string(&entry.event).unwrap_or_else(|e| format!("__serde_err:{e}"));
+    let mut hasher = Sha256::new();
+    hasher.update(b"reputation_hash_v1:");
+    hasher.update(entry.sequence.to_le_bytes());
+    for field in [
+        entry.prev_hash.as_str(),
+        entry.timestamp.as_str(),
+        entry.publisher_id.as_str(),
+        event_json.as_str(),
+    ] {
+        hasher.update((field.len() as u64).to_le_bytes());
+        hasher.update(field.as_bytes());
+    }
+    format!("sha256:{}", hex::encode(hasher.finalize()))
 }
 
 // ── Determinism helper ───────────────────────────────────────────────────────

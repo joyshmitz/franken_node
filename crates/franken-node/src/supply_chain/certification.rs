@@ -718,16 +718,21 @@ impl CertificationRegistry {
 }
 
 fn compute_entry_hash(entry: &CertificationAuditEntry) -> String {
-    let payload = format!(
-        "{}:{}:{}:{}:{}",
-        entry.sequence,
-        entry.prev_hash,
-        entry.timestamp,
-        entry.extension_id,
-        serde_json::to_string(&entry.event).unwrap_or_else(|e| format!("__serde_err:{e}"))
-    );
-    let digest = Sha256::digest([b"certification_hash_v1:" as &[u8], payload.as_bytes()].concat());
-    format!("sha256:{}", hex::encode(digest))
+    let event_json =
+        serde_json::to_string(&entry.event).unwrap_or_else(|e| format!("__serde_err:{e}"));
+    let mut hasher = Sha256::new();
+    hasher.update(b"certification_hash_v1:");
+    hasher.update(entry.sequence.to_le_bytes());
+    for field in [
+        entry.prev_hash.as_str(),
+        entry.timestamp.as_str(),
+        entry.extension_id.as_str(),
+        event_json.as_str(),
+    ] {
+        hasher.update((field.len() as u64).to_le_bytes());
+        hasher.update(field.as_bytes());
+    }
+    format!("sha256:{}", hex::encode(hasher.finalize()))
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────

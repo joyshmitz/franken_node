@@ -75,7 +75,7 @@ pub struct Marker {
 impl Marker {
     /// Compute the canonical hash for this marker.
     ///
-    /// The canonical serialization is: `{sequence}|{event_type}|{payload_hash}|{prev_hash}|{timestamp}|{trace_id}`
+    /// Compute length-prefixed hash over all marker fields.
     fn compute_hash(
         sequence: u64,
         event_type: MarkerEventType,
@@ -84,14 +84,16 @@ impl Marker {
         timestamp: u64,
         trace_id: &str,
     ) -> String {
-        let canonical = format!(
-            "{sequence}|{}|{payload_hash}|{prev_hash}|{timestamp}|{trace_id}",
-            event_type.label()
-        );
-
         let mut hasher = sha2::Sha256::new();
         sha2::Digest::update(&mut hasher, b"marker_stream_v1:");
-        sha2::Digest::update(&mut hasher, canonical.as_bytes());
+        sha2::Digest::update(&mut hasher, sequence.to_le_bytes());
+        for field in [event_type.label(), payload_hash, prev_hash] {
+            sha2::Digest::update(&mut hasher, (field.len() as u64).to_le_bytes());
+            sha2::Digest::update(&mut hasher, field.as_bytes());
+        }
+        sha2::Digest::update(&mut hasher, timestamp.to_le_bytes());
+        sha2::Digest::update(&mut hasher, (trace_id.len() as u64).to_le_bytes());
+        sha2::Digest::update(&mut hasher, trace_id.as_bytes());
         format!("{:x}", sha2::Digest::finalize(hasher))
     }
 }
