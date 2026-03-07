@@ -1286,14 +1286,23 @@ impl StakingLedger {
             });
         }
 
-        if let Some(expires_at) = record.expires_at
-            && current_time < expires_at
-        {
-            return Err(StakingError::InvalidTransition {
-                from: record.state,
-                to: StakeState::Expired,
-                code: ERR_STAKE_INVALID_TRANSITION,
-            });
+        match record.expires_at {
+            Some(expires_at) if current_time < expires_at => {
+                return Err(StakingError::InvalidTransition {
+                    from: record.state,
+                    to: StakeState::Expired,
+                    code: ERR_STAKE_INVALID_TRANSITION,
+                });
+            }
+            Some(_) => { /* expired — fall through to process */ }
+            None => {
+                // No expiration set — stake cannot be expired
+                return Err(StakingError::InvalidTransition {
+                    from: record.state,
+                    to: StakeState::Expired,
+                    code: ERR_STAKE_INVALID_TRANSITION,
+                });
+            }
         }
 
         let stake_record =
@@ -1858,6 +1867,22 @@ mod tests {
         let record = ledger.expire(id, 600).unwrap();
         assert_eq!(record.state, StakeState::Expired);
         assert_eq!(record.amount, 0);
+    }
+
+    #[test]
+    fn test_expire_no_expiration_set_rejected() {
+        // Stakes with expires_at: None cannot be expired — no deadline to pass
+        let mut ledger = StakingLedger::new();
+        let id = ledger.deposit("pub-1", 100, RiskTier::Low, 100).unwrap();
+        assert!(ledger.get_stake(id).unwrap().expires_at.is_none());
+        let err = ledger.expire(id, 999_999).unwrap_err();
+        match err {
+            StakingError::InvalidTransition { from, to, .. } => {
+                assert_eq!(from, StakeState::Active);
+                assert_eq!(to, StakeState::Expired);
+            }
+            other => panic!("unexpected error: {other}"),
+        }
     }
 
     #[test]
