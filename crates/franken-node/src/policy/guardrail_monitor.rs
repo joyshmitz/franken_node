@@ -619,7 +619,7 @@ impl DurabilityLossGuardrail {
 
 impl GuardrailMonitor for DurabilityLossGuardrail {
     fn check(&self, state: &SystemState) -> GuardrailVerdict {
-        if state.durability_level < self.min_durability {
+        if !state.durability_level.is_finite() || state.durability_level < self.min_durability {
             GuardrailVerdict::Block {
                 reason: format!(
                     "durability {:.2} below minimum {:.2}",
@@ -1554,6 +1554,40 @@ mod tests {
         assert!(g.block_error_rate.is_finite());
         assert!(g.warn_error_rate.is_finite());
         assert!(g.delta.is_finite());
+    }
+
+    #[test]
+    fn nan_durability_level_blocks() {
+        let guard = DurabilityLossGuardrail::default_guardrail();
+        let mut state = healthy_state();
+        state.durability_level = f64::NAN;
+        assert!(
+            guard.check(&state).is_blocked(),
+            "NaN durability must fail closed (block)"
+        );
+    }
+
+    #[test]
+    fn inf_durability_level_allows() {
+        // Infinite durability is not finite → should block
+        let guard = DurabilityLossGuardrail::default_guardrail();
+        let mut state = healthy_state();
+        state.durability_level = f64::INFINITY;
+        assert!(
+            guard.check(&state).is_blocked(),
+            "Inf durability must fail closed (block)"
+        );
+    }
+
+    #[test]
+    fn neg_inf_durability_level_blocks() {
+        let guard = DurabilityLossGuardrail::default_guardrail();
+        let mut state = healthy_state();
+        state.durability_level = f64::NEG_INFINITY;
+        assert!(
+            guard.check(&state).is_blocked(),
+            "NegInf durability must fail closed (block)"
+        );
     }
 
     #[test]
