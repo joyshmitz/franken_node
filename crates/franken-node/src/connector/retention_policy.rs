@@ -104,6 +104,7 @@ pub struct RetentionDecision {
 #[derive(Debug, Clone, PartialEq)]
 pub enum RetentionError {
     Unclassified { message_type: String },
+    DuplicateMessageId { message_id: String },
     DropRequired { message_id: String },
     InvalidPolicy { reason: String },
     StorageFull { current_bytes: u64, max_bytes: u64 },
@@ -114,6 +115,7 @@ impl RetentionError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Unclassified { .. } => "CPR_UNCLASSIFIED",
+            Self::DuplicateMessageId { .. } => "CPR_DUPLICATE_MESSAGE_ID",
             Self::DropRequired { .. } => "CPR_DROP_REQUIRED",
             Self::InvalidPolicy { .. } => "CPR_INVALID_POLICY",
             Self::StorageFull { .. } => "CPR_STORAGE_FULL",
@@ -126,6 +128,9 @@ impl std::fmt::Display for RetentionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unclassified { message_type } => write!(f, "CPR_UNCLASSIFIED: {message_type}"),
+            Self::DuplicateMessageId { message_id } => {
+                write!(f, "CPR_DUPLICATE_MESSAGE_ID: {message_id}")
+            }
             Self::DropRequired { message_id } => write!(f, "CPR_DROP_REQUIRED: {message_id}"),
             Self::InvalidPolicy { reason } => write!(f, "CPR_INVALID_POLICY: {reason}"),
             Self::StorageFull {
@@ -174,6 +179,12 @@ impl RetentionStore {
         size_bytes: u64,
         now: u64,
     ) -> Result<(), RetentionError> {
+        if self.messages.contains_key(message_id) {
+            return Err(RetentionError::DuplicateMessageId {
+                message_id: message_id.to_string(),
+            });
+        }
+
         let policy = self.registry.classify(message_type)?;
         let class = policy.retention_class;
 
@@ -449,6 +460,18 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_message_id_rejected_without_corrupting_storage_bytes() {
+        let mut store = RetentionStore::new(registry(), 10_000).unwrap();
+        store.store("m1", "invoke", 100, 1_000).unwrap();
+
+        let err = store.store("m1", "heartbeat", 50, 1_001).unwrap_err();
+        assert_eq!(err.code(), "CPR_DUPLICATE_MESSAGE_ID");
+        assert_eq!(store.total_bytes(), 100);
+        assert_eq!(store.message_count(), 1);
+        assert_eq!(store.decisions().len(), 1);
+    }
+
+    #[test]
     fn invalid_policy_empty_type() {
         let mut reg = RetentionRegistry::new();
         let err = reg
@@ -495,6 +518,13 @@ mod tests {
             }
             .code(),
             "CPR_DROP_REQUIRED"
+        );
+        assert_eq!(
+            RetentionError::DuplicateMessageId {
+                message_id: "".into()
+            }
+            .code(),
+            "CPR_DUPLICATE_MESSAGE_ID"
         );
         assert_eq!(
             RetentionError::InvalidPolicy { reason: "".into() }.code(),

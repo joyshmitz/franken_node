@@ -13,10 +13,10 @@
 //! - **INV-CE-FAIL-CLOSED**: Missing evidence blocks decision execution.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt;
 
 const MAX_EVENTS: usize = 4096;
-#[allow(dead_code)]
 const MAX_ENTRIES: usize = 4096;
 
 // ---------------------------------------------------------------------------
@@ -291,7 +291,7 @@ impl ControlEvidenceEmitter {
             ),
         );
 
-        push_bounded(&mut self.entries, entry, MAX_EVENTS);
+        push_bounded(&mut self.entries, entry, MAX_ENTRIES);
         Ok(())
     }
 
@@ -336,21 +336,17 @@ impl ControlEvidenceEmitter {
     /// Verify ordering: entries for the same decision_id must be
     /// in deterministic order (by timestamp then action).
     pub fn verify_ordering(&mut self) -> Result<(), ConformanceError> {
-        let mut last_key: Option<(u64, String, String)> = None;
+        let mut last_keys: BTreeMap<String, (u64, String)> = BTreeMap::new();
         let mut violation: Option<(String, DecisionType)> = None;
         for entry in &self.entries {
-            let key = (
-                entry.timestamp_ms,
-                entry.decision_id.clone(),
-                entry.chosen_action.clone(),
-            );
-            if let Some(ref prev) = last_key
+            let key = (entry.timestamp_ms, entry.chosen_action.clone());
+            if let Some(prev) = last_keys.get(&entry.decision_id)
                 && key < *prev
             {
                 violation = Some((entry.decision_id.clone(), entry.decision_type));
                 break;
             }
-            last_key = Some(key);
+            last_keys.insert(entry.decision_id.clone(), key);
         }
         if let Some((decision_id, decision_type)) = violation {
             self.emit_event(
@@ -827,17 +823,24 @@ mod tests {
             .emit_evidence(make_entry(
                 DecisionType::HealthGateEval,
                 DecisionOutcome::Pass,
-                "d2",
+                "d1",
                 200,
             ))
             .unwrap();
-        // Insert entry with earlier timestamp
         emitter
             .emit_evidence(make_entry(
                 DecisionType::RolloutTransition,
                 DecisionOutcome::Proceed,
-                "d1",
+                "d2",
                 100,
+            ))
+            .unwrap();
+        emitter
+            .emit_evidence(make_entry(
+                DecisionType::HealthGateEval,
+                DecisionOutcome::Fail,
+                "d1",
+                150,
             ))
             .unwrap();
         let result = emitter.verify_ordering();
@@ -849,6 +852,42 @@ mod tests {
 
     #[test]
     fn test_ordering_violation_emits_evd005() {
+        let mut emitter = ControlEvidenceEmitter::new();
+        emitter
+            .emit_evidence(make_entry(
+                DecisionType::HealthGateEval,
+                DecisionOutcome::Pass,
+                "d1",
+                200,
+            ))
+            .unwrap();
+        emitter
+            .emit_evidence(make_entry(
+                DecisionType::RolloutTransition,
+                DecisionOutcome::Proceed,
+                "d2",
+                100,
+            ))
+            .unwrap();
+        emitter
+            .emit_evidence(make_entry(
+                DecisionType::HealthGateEval,
+                DecisionOutcome::Fail,
+                "d1",
+                150,
+            ))
+            .unwrap();
+        let _ = emitter.verify_ordering();
+        let violations: Vec<_> = emitter
+            .events()
+            .iter()
+            .filter(|e| e.code == EVD_005_ORDERING_VIOLATION)
+            .collect();
+        assert_eq!(violations.len(), 1);
+    }
+
+    #[test]
+    fn test_interleaved_decision_ids_do_not_trigger_ordering_violation() {
         let mut emitter = ControlEvidenceEmitter::new();
         emitter
             .emit_evidence(make_entry(
@@ -866,13 +905,8 @@ mod tests {
                 100,
             ))
             .unwrap();
-        let _ = emitter.verify_ordering();
-        let violations: Vec<_> = emitter
-            .events()
-            .iter()
-            .filter(|e| e.code == EVD_005_ORDERING_VIOLATION)
-            .collect();
-        assert_eq!(violations.len(), 1);
+
+        assert!(emitter.verify_ordering().is_ok());
     }
 
     // -- Coverage tracking ----------------------------------------------
