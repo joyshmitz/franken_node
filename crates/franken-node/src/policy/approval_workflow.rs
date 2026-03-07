@@ -234,6 +234,10 @@ pub struct PolicyChangeEngine {
     total_rollbacks: u64,
     /// Monotonic sequence counter for audit entries (survives eviction).
     next_sequence: u64,
+    /// Anchor hash: entry_hash of the most recently evicted entry.
+    /// Used instead of genesis_hash when verifying the chain after eviction
+    /// so that push_bounded eviction does not break verify_audit_chain().
+    chain_anchor_hash: Option<String>,
 }
 
 impl Default for PolicyChangeEngine {
@@ -254,6 +258,7 @@ impl PolicyChangeEngine {
             total_activated: 0,
             total_rollbacks: 0,
             next_sequence: 0,
+            chain_anchor_hash: None,
         }
     }
 
@@ -606,9 +611,17 @@ impl PolicyChangeEngine {
     pub fn verify_audit_chain(&self) -> Result<bool, PolicyChangeError> {
         let genesis_hash = format!("{:x}", Sha256::digest(b"approval_workflow_genesis_v1:"));
 
+        // After push_bounded eviction the first retained entry's prev_hash
+        // points to the evicted entry — not to genesis.  Use the saved
+        // chain_anchor_hash (the last evicted entry's hash) when available.
+        let first_expected = self
+            .chain_anchor_hash
+            .as_ref()
+            .unwrap_or(&genesis_hash);
+
         for (i, entry) in self.audit_ledger.iter().enumerate() {
             let expected_prev = if i == 0 {
-                &genesis_hash
+                first_expected
             } else {
                 &self.audit_ledger[i - 1].entry_hash
             };
@@ -705,7 +718,19 @@ impl PolicyChangeEngine {
         };
 
         entry.entry_hash = compute_entry_hash(&entry);
-        push_bounded(&mut self.audit_ledger, entry, MAX_AUDIT_LEDGER_ENTRIES);
+
+        // Cannot use push_bounded here: evicting oldest entries would break
+        // verify_audit_chain() because the new [0].prev_hash would point to
+        // the evicted entry instead of genesis.  Track the anchor hash so
+        // the verifier knows which hash to expect for the retained head.
+        self.audit_ledger.push(entry);
+        if self.audit_ledger.len() > MAX_AUDIT_LEDGER_ENTRIES {
+            let overflow = self.audit_ledger.len() - MAX_AUDIT_LEDGER_ENTRIES;
+            // Save the entry_hash of the last entry being evicted as anchor.
+            self.chain_anchor_hash =
+                Some(self.audit_ledger[overflow - 1].entry_hash.clone());
+            self.audit_ledger.drain(0..overflow);
+        }
     }
 }
 

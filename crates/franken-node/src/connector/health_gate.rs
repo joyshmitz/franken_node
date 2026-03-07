@@ -193,6 +193,10 @@ impl EpochHealthGateError {
 impl fmt::Display for EpochHealthGateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let rejection = self.rejection();
+        let reason = match rejection.rejection_reason {
+            EpochRejectionReason::FutureEpoch => "future_epoch",
+            EpochRejectionReason::ExpiredEpoch => "expired_epoch",
+        };
         write!(
             f,
             "{}: artifact={} artifact_epoch={} current_epoch={} reason={}",
@@ -200,7 +204,7 @@ impl fmt::Display for EpochHealthGateError {
             rejection.artifact_id,
             rejection.artifact_epoch.value(),
             rejection.current_epoch.value(),
-            rejection.code()
+            reason
         )
     }
 }
@@ -390,6 +394,21 @@ mod tests {
             err,
             EpochHealthGateError::StaleEpochRejected { .. }
         ));
+    }
+
+    #[test]
+    fn epoch_health_gate_error_display_uses_reason_label() {
+        let err = EpochHealthGateError::from_rejection(EpochRejection {
+            artifact_id: "health-policy-future".to_string(),
+            artifact_epoch: ControlEpoch::new(9),
+            current_epoch: ControlEpoch::new(8),
+            rejection_reason: EpochRejectionReason::FutureEpoch,
+            trace_id: "trace-hg-future".to_string(),
+        });
+
+        let rendered = err.to_string();
+        assert!(rendered.contains("EPOCH_REJECT_FUTURE"));
+        assert!(rendered.contains("reason=future_epoch"));
     }
 
     #[test]

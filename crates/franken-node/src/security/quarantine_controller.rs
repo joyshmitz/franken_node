@@ -166,12 +166,26 @@ impl QuarantineController {
         &mut self,
         event: EvidenceEvent,
     ) -> Result<(QuarantineAction, f64), String> {
-        // Sign the evidence entry
-        let signed = self.sign_evidence(&event)?;
-        push_bounded(&mut self.evidence_log, signed, MAX_EVIDENCE_LOG_ENTRIES);
+        // Sign the evidence entry (without mutating sequence yet)
+        let canonical =
+            serde_json::to_string(&event).map_err(|e| format!("serialization error: {e}"))?;
+        let signature = self.hmac_sha256(&canonical)?;
 
-        // Ingest into graph
+        // Ingest into graph (can fail if node not found or weight invalid)
         let (action, posterior) = self.graph.ingest_evidence(&event)?;
+
+        // Now that it succeeded, mutate sequence and evidence log
+        let seq = self.next_sequence;
+        self.next_sequence = self.next_sequence.saturating_add(1);
+
+        let signed = SignedEvidenceEntry {
+            event: event.clone(),
+            event_code: ADV_008_SIGNED_EVIDENCE.to_string(),
+            signature,
+            sequence: seq,
+        };
+
+        push_bounded(&mut self.evidence_log, signed, MAX_EVIDENCE_LOG_ENTRIES);
 
         // Record action if non-trivial
         if action != QuarantineAction::None {
@@ -221,23 +235,6 @@ impl QuarantineController {
             map
         };
         Ok((snapshot, batch_actions))
-    }
-
-    /// Produce a signed evidence entry for a given event.
-    fn sign_evidence(&mut self, event: &EvidenceEvent) -> Result<SignedEvidenceEntry, String> {
-        let seq = self.next_sequence;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-
-        let canonical =
-            serde_json::to_string(event).map_err(|e| format!("serialization error: {e}"))?;
-        let signature = self.hmac_sha256(&canonical)?;
-
-        Ok(SignedEvidenceEntry {
-            event: event.clone(),
-            event_code: ADV_008_SIGNED_EVIDENCE.to_string(),
-            signature,
-            sequence: seq,
-        })
     }
 
     /// Compute HMAC-SHA256 over data using the controller's signing key.

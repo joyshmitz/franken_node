@@ -844,7 +844,9 @@ impl EffectsFirewall {
 
     /// Attempt to quarantine an effect. Fails if quarantine is full.
     fn try_quarantine(&mut self, effect_id: &str) -> Result<(), FirewallError> {
-        if self.quarantine.len() >= self.policy.quarantine_capacity {
+        if self.quarantine.len() >= self.policy.quarantine_capacity
+            && !self.quarantine.contains(effect_id)
+        {
             return Err(FirewallError::QuarantineFull(format!(
                 "capacity {} reached",
                 self.policy.quarantine_capacity

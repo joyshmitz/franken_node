@@ -751,6 +751,9 @@ impl AttestationLedger {
 
     /// Verify a batch of attestations. Returns a `ZkBatchResult`.
     /// Emits FN-ZK-011 at start, FN-ZK-012 at end.
+    ///
+    /// Batch size is capped at [`MAX_BATCH_SIZE`]; excess proofs are silently
+    /// truncated so that a single caller cannot cause unbounded work.
     pub fn verify_batch(
         &mut self,
         attestations: &[ZkAttestation],
@@ -758,6 +761,13 @@ impl AttestationLedger {
         now_ms: u64,
         trace_id: String,
     ) -> ZkBatchResult {
+        // Enforce MAX_BATCH_SIZE to prevent DoS via oversized batches.
+        let attestations = if attestations.len() > MAX_BATCH_SIZE {
+            &attestations[..MAX_BATCH_SIZE]
+        } else {
+            attestations
+        };
+
         self.record_audit(
             format!("audit-batch-{}-start", trace_id),
             event_codes::FN_ZK_011.to_string(),
