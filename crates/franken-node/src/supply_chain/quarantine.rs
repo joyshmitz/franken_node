@@ -18,6 +18,9 @@ const MAX_RECORDS: usize = 4096;
 /// Maximum propagation status entries before oldest are evicted.
 const MAX_PROPAGATION_STATUS: usize = 4096;
 
+/// Maximum recall receipts per quarantine record before oldest are evicted.
+const MAX_RECALL_RECEIPTS: usize = 4096;
+
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     items.push(item);
     if items.len() > cap {
@@ -767,7 +770,7 @@ impl QuarantineRegistry {
                 ),
             });
         }
-        record.recall_receipts.push(receipt);
+        push_bounded(&mut record.recall_receipts, receipt, MAX_RECALL_RECEIPTS);
 
         self.append_audit(
             RECALL_RECEIPT_EMITTED,
@@ -936,17 +939,25 @@ impl QuarantineRegistry {
 
         for (i, entry) in self.audit_trail.iter().enumerate() {
             // Check prev_hash.
-            let expected_prev = if i == 0 {
-                &genesis_hash
+            // When push_bounded has evicted old entries, the first retained
+            // entry's prev_hash references an evicted predecessor — skip the
+            // genesis linkage check in that case (sequence > 0 means entries
+            // were evicted before this one).
+            if i == 0 && entry.sequence > 0 {
+                // Cannot verify genesis linkage after eviction; skip.
             } else {
-                &self.audit_trail[i - 1].entry_hash
-            };
+                let expected_prev = if i == 0 {
+                    &genesis_hash
+                } else {
+                    &self.audit_trail[i - 1].entry_hash
+                };
 
-            if !ct_eq(&entry.prev_hash, expected_prev) {
-                return Err(QuarantineError {
-                    code: ERR_AUDIT_CHAIN_BROKEN.to_owned(),
-                    message: format!("Audit chain broken at index {i}: prev_hash mismatch"),
-                });
+                if !ct_eq(&entry.prev_hash, expected_prev) {
+                    return Err(QuarantineError {
+                        code: ERR_AUDIT_CHAIN_BROKEN.to_owned(),
+                        message: format!("Audit chain broken at index {i}: prev_hash mismatch"),
+                    });
+                }
             }
 
             // Verify entry hash.
@@ -1417,5 +1428,65 @@ mod tests {
         assert!(QuarantineSeverity::Low < QuarantineSeverity::Medium);
         assert!(QuarantineSeverity::Medium < QuarantineSeverity::High);
         assert!(QuarantineSeverity::High < QuarantineSeverity::Critical);
+    }
+
+    #[test]
+    fn test_audit_integrity_survives_eviction() {
+        // After push_bounded evicts old audit entries, verify_audit_integrity
+        // must still pass (the first retained entry's prev_hash references an
+        // evicted predecessor, so genesis linkage cannot be verified).
+        let mut reg = QuarantineRegistry::new();
+
+        // Generate enough audit entries to trigger eviction.
+        // Each quarantine with unique extension_id produces audit entries.
+        for i in 0..(MAX_AUDIT_TRAIL + 10) {
+            let mut order = make_order(
+                &format!("q-{i}"),
+                QuarantineSeverity::Low,
+                QuarantineMode::Soft,
+            );
+            order.scope = QuarantineScope::AllVersions {
+                extension_id: format!("ext-{i}"),
+            };
+            let _ = reg.initiate_quarantine(order);
+        }
+
+        // Audit trail should be capped.
+        assert!(reg.audit_trail().len() <= MAX_AUDIT_TRAIL);
+
+        // First entry's sequence > 0 means entries were evicted.
+        assert!(reg.audit_trail().first().unwrap().sequence > 0);
+
+        // Integrity check must still pass despite eviction.
+        assert!(reg.verify_audit_integrity().unwrap());
+    }
+
+    #[test]
+    fn test_recall_receipts_bounded() {
+        let mut reg = QuarantineRegistry::new();
+        let order = make_order("q-001", QuarantineSeverity::High, QuarantineMode::Hard);
+        reg.initiate_quarantine(order).unwrap();
+        reg.enforce_quarantine("q-001", "2026-01-15T00:02:00Z")
+            .unwrap();
+        reg.start_drain("q-001", "2026-01-15T00:03:00Z").unwrap();
+        reg.complete_drain("q-001", "2026-01-15T00:04:00Z")
+            .unwrap();
+        reg.trigger_recall(make_recall("q-001")).unwrap();
+
+        // Push more receipts than the cap.
+        for i in 0..(MAX_RECALL_RECEIPTS + 10) {
+            let receipt = RecallReceipt {
+                node_id: format!("node-{i}"),
+                recall_id: "recall-001".to_owned(),
+                removed: true,
+                removal_method: "file_delete".to_owned(),
+                removed_at: "2026-01-16T13:00:00Z".to_owned(),
+                artifact_hash: format!("hash-{i}"),
+            };
+            reg.record_recall_receipt("q-001", receipt).unwrap();
+        }
+
+        let record = reg.get_record("q-001").unwrap();
+        assert!(record.recall_receipts.len() <= MAX_RECALL_RECEIPTS);
     }
 }
