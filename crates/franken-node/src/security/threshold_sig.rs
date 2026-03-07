@@ -234,7 +234,7 @@ pub fn verify_threshold(
             continue;
         }
 
-        valid_count += 1;
+        valid_count = valid_count.saturating_add(1);
     }
 
     let verified = valid_count >= config.threshold;

@@ -200,7 +200,7 @@ pub fn verify_quorum(
         );
 
         if crate::security::constant_time::ct_eq(&sig.signature, &expected_sig) {
-            valid_count += 1;
+            valid_count = valid_count.saturating_add(1);
         } else {
             failures.push(VerificationFailure::InvalidSignature {
                 signer_id: sig.signer_id.clone(),
