@@ -15,6 +15,7 @@ pub mod encoding;
 pub mod extensions;
 #[cfg(feature = "extended-surfaces")]
 pub mod federation;
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod migration;
 pub mod observability;
 pub mod ops;
@@ -27,6 +28,7 @@ pub mod remote;
 #[cfg(feature = "extended-surfaces")]
 pub mod repair;
 pub mod replay;
+#[cfg(feature = "extended-surfaces")]
 #[path = "control_plane/root_pointer.rs"]
 pub mod root_pointer;
 pub mod runtime;

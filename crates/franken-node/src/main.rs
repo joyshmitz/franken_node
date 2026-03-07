@@ -2,6 +2,12 @@
 
 mod cli;
 
+use crate::cli::{
+    BenchCommand, Cli, Command, FleetCommand, IncidentCommand, MigrateCommand, RegistryCommand,
+    RemoteCapCommand, RemoteCapIssueArgs, TrustCardCommand, TrustCommand, VerifyCommand,
+    VerifyCompatibilityArgs, VerifyCorpusArgs, VerifyMigrationArgs, VerifyModuleArgs,
+    VerifyReleaseArgs,
+};
 use anyhow::{Context, Result};
 use clap::Parser;
 use frankenengine_node::{
@@ -18,7 +24,6 @@ use frankenengine_node::{
         },
     },
     config::{self, CliOverrides, Profile},
-    migration,
     ops,
     policy::{
         bayesian_diagnostics::{BayesianDiagnostics, CandidateRef, Observation},
@@ -49,8 +54,8 @@ use frankenengine_node::{
         trust_card::{
             ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard,
             TrustCardListFilter, TrustCardMutation, TrustCardRegistry, TrustCardSyncReport,
-            demo_registry as demo_trust_registry, render_comparison_human,
-            render_trust_card_human, to_canonical_json as trust_card_to_json,
+            demo_registry as demo_trust_registry, render_comparison_human, render_trust_card_human,
+            to_canonical_json as trust_card_to_json,
         },
     },
     tools::{
@@ -65,23 +70,18 @@ use frankenengine_node::{
             to_canonical_json as counterfactual_to_json,
         },
         replay_bundle::{
-            generate_replay_bundle, read_bundle_from_path,
-            replay_bundle as replay_incident_bundle, sample_incident_events,
-            validate_bundle_integrity, write_bundle_to_path,
+            generate_replay_bundle, read_bundle_from_path, replay_bundle as replay_incident_bundle,
+            sample_incident_events, validate_bundle_integrity, write_bundle_to_path,
         },
     },
-};
-use crate::cli::{
-    BenchCommand, Cli, Command, FleetCommand, IncidentCommand, MigrateCommand,
-    RegistryCommand, RemoteCapCommand, RemoteCapIssueArgs, TrustCardCommand, TrustCommand,
-    VerifyCommand, VerifyCompatibilityArgs, VerifyCorpusArgs, VerifyMigrationArgs,
-    VerifyModuleArgs, VerifyReleaseArgs,
 };
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+
+mod migration;
 
 const PROFILE_EXAMPLES_TEMPLATE: &str =
     include_str!("../../../config/franken_node.profile_examples.toml");
