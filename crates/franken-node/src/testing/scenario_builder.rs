@@ -452,11 +452,11 @@ impl ScenarioBuilder {
         if self.nodes.iter().any(|n| n.id == id) {
             return Err(ScenarioBuilderError::DuplicateNode { node_id: id });
         }
-        self.nodes.push(VirtualNode {
+        push_bounded(&mut self.nodes, VirtualNode {
             id,
             name: name.into(),
             role,
-        });
+        }, MAX_NODES);
         Ok(self)
     }
 
