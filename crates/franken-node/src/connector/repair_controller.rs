@@ -177,8 +177,8 @@ pub fn run_cycle(
                 .min(config.max_units_per_cycle.saturating_sub(total_used));
             if can_use > 0 {
                 tenant_alloc.items_allocated.push(item.item_id.clone());
-                tenant_alloc.units_used += can_use;
-                total_used += can_use;
+                tenant_alloc.units_used = tenant_alloc.units_used.saturating_add(can_use);
+                total_used = total_used.saturating_add(can_use);
                 fairness_remaining = fairness_remaining.saturating_sub(can_use);
             }
         }
@@ -220,8 +220,8 @@ pub fn run_cycle(
                             reason: format!("missing allocation for tenant {}", item.tenant_id),
                         })?;
                 alloc.items_allocated.push(item.item_id.clone());
-                alloc.units_used += can_use;
-                total_used += can_use;
+                alloc.units_used = alloc.units_used.saturating_add(can_use);
+                total_used = total_used.saturating_add(can_use);
             }
         }
     }

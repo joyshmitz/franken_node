@@ -779,9 +779,9 @@ impl AttestationLedger {
             let sub_trace = format!("{}-{}", trace_id, att.attestation_id);
             let result = self.verify_proof(att, policy, now_ms, sub_trace);
             if result.is_verified() {
-                passed += 1;
+                passed = passed.saturating_add(1);
             } else {
-                failed += 1;
+                failed = failed.saturating_add(1);
             }
             results.insert(att.attestation_id.clone(), result);
         }
@@ -887,7 +887,7 @@ impl AttestationLedger {
     pub fn generate_compliance_report(&self, policy_id: &str) -> BTreeMap<String, usize> {
         fn increment_counter(report: &mut BTreeMap<String, usize>, key: &str) {
             if let Some(count) = report.get_mut(key) {
-                *count += 1;
+                *count = count.saturating_add(1);
             } else {
                 // Fail-safe fallback: preserve accounting even if key initialization drifts.
                 report.insert(key.to_string(), 1);
