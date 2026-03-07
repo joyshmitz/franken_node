@@ -293,18 +293,18 @@ fn compute_binding_hash(claim: &Claim, evidence: &[Evidence]) -> String {
     hasher.update(b"connector_verifier_sdk_binding_v1:");
     // Length-prefixed encoding prevents delimiter-collision ambiguity.
     for field in [claim.claim_id.as_str(), claim.assertion.as_str()] {
-        hasher.update(&(field.len() as u64).to_le_bytes());
+        hasher.update((field.len() as u64).to_le_bytes());
         hasher.update(field.as_bytes());
     }
-    hasher.update(&(evidence.len() as u64).to_le_bytes());
+    hasher.update((evidence.len() as u64).to_le_bytes());
     for ev in evidence {
-        hasher.update(&(ev.evidence_id.len() as u64).to_le_bytes());
+        hasher.update((ev.evidence_id.len() as u64).to_le_bytes());
         hasher.update(ev.evidence_id.as_bytes());
-        hasher.update(&(ev.artifacts.len() as u64).to_le_bytes());
+        hasher.update((ev.artifacts.len() as u64).to_le_bytes());
         for (k, v) in &ev.artifacts {
-            hasher.update(&(k.len() as u64).to_le_bytes());
+            hasher.update((k.len() as u64).to_le_bytes());
             hasher.update(k.as_bytes());
-            hasher.update(&(v.len() as u64).to_le_bytes());
+            hasher.update((v.len() as u64).to_le_bytes());
             hasher.update(v.as_bytes());
         }
     }
@@ -606,18 +606,18 @@ pub fn verify_trust_state(
 
     let mut hasher = Sha256::new();
     hasher.update(b"connector_verifier_sdk_state_binding_v1:");
-    hasher.update(&(state.len() as u64).to_le_bytes());
+    hasher.update((state.len() as u64).to_le_bytes());
     for (k, v) in state {
-        hasher.update(&(k.len() as u64).to_le_bytes());
+        hasher.update((k.len() as u64).to_le_bytes());
         hasher.update(k.as_bytes());
-        hasher.update(&(v.len() as u64).to_le_bytes());
+        hasher.update((v.len() as u64).to_le_bytes());
         hasher.update(v.as_bytes());
     }
-    hasher.update(&(anchor.len() as u64).to_le_bytes());
+    hasher.update((anchor.len() as u64).to_le_bytes());
     for (k, v) in anchor {
-        hasher.update(&(k.len() as u64).to_le_bytes());
+        hasher.update((k.len() as u64).to_le_bytes());
         hasher.update(k.as_bytes());
-        hasher.update(&(v.len() as u64).to_le_bytes());
+        hasher.update((v.len() as u64).to_le_bytes());
         hasher.update(v.as_bytes());
     }
     let binding_hash = hex::encode(hasher.finalize());

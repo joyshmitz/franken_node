@@ -400,7 +400,7 @@ fn predicate_hash_id(fields: &[&str]) -> String {
     hasher.update(b"vef_predicate_hash_v1:");
     // Length-prefixed encoding prevents delimiter-collision ambiguity.
     for field in fields {
-        hasher.update(&(field.len() as u64).to_le_bytes());
+        hasher.update((field.len() as u64).to_le_bytes());
         hasher.update(field.as_bytes());
     }
     let digest = hasher.finalize();

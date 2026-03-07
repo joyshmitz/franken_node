@@ -122,12 +122,12 @@ impl EpochTransition {
     ) -> String {
         let mut hasher = sha2::Sha256::new();
         sha2::Digest::update(&mut hasher, b"control_epoch_mac_v1:");
-        sha2::Digest::update(&mut hasher, &old_epoch.value().to_le_bytes());
-        sha2::Digest::update(&mut hasher, &new_epoch.value().to_le_bytes());
-        sha2::Digest::update(&mut hasher, &timestamp.to_le_bytes());
+        sha2::Digest::update(&mut hasher, old_epoch.value().to_le_bytes());
+        sha2::Digest::update(&mut hasher, new_epoch.value().to_le_bytes());
+        sha2::Digest::update(&mut hasher, timestamp.to_le_bytes());
         // Length-prefixed encoding prevents delimiter-collision ambiguity.
         for field in [manifest_hash, trace_id] {
-            sha2::Digest::update(&mut hasher, &(field.len() as u64).to_le_bytes());
+            sha2::Digest::update(&mut hasher, (field.len() as u64).to_le_bytes());
             sha2::Digest::update(&mut hasher, field.as_bytes());
         }
         format!("mac:{:x}", sha2::Digest::finalize(hasher))
