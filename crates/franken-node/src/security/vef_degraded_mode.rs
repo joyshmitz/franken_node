@@ -87,6 +87,7 @@ impl ProofLagSlo {
         metrics.proof_lag_secs >= self.max_proof_lag_secs
             || metrics.backlog_depth >= self.max_backlog_depth
             || !metrics.error_rate.is_finite()
+            || !self.max_error_rate.is_finite()
             || metrics.error_rate >= self.max_error_rate
     }
 
@@ -97,7 +98,10 @@ impl ProofLagSlo {
             Some("proof_lag_secs")
         } else if metrics.backlog_depth >= self.max_backlog_depth {
             Some("backlog_depth")
-        } else if !metrics.error_rate.is_finite() || metrics.error_rate >= self.max_error_rate {
+        } else if !metrics.error_rate.is_finite()
+            || !self.max_error_rate.is_finite()
+            || metrics.error_rate >= self.max_error_rate
+        {
             Some("error_rate")
         } else {
             None
@@ -140,13 +144,13 @@ impl VefDegradedModeConfig {
         } else {
             1.0
         };
-        ProofLagSlo {
-            max_proof_lag_secs: (self.quarantine_slo.max_proof_lag_secs as f64 * safe_mult)
+        ProofLagSlo::new(
+            (self.quarantine_slo.max_proof_lag_secs as f64 * safe_mult)
                 .min(u64::MAX as f64) as u64,
-            max_backlog_depth: (self.quarantine_slo.max_backlog_depth as f64 * safe_mult)
+            (self.quarantine_slo.max_backlog_depth as f64 * safe_mult)
                 .min(u64::MAX as f64) as u64,
-            max_error_rate: self.halt_error_rate,
-        }
+            self.halt_error_rate,
+        )
     }
 }
 
@@ -1342,5 +1346,89 @@ mod tests {
             heartbeat_age_secs: 0,
         };
         assert_eq!(slo.first_breached_metric(&metrics), Some("error_rate"));
+    }
+
+    // ── NaN/Inf max_error_rate in SLO threshold → fail-closed ──────────
+
+    #[test]
+    fn nan_slo_threshold_breaches_for_finite_metric() {
+        // Construct directly (bypassing new()) to simulate deserialization or config error
+        let slo = ProofLagSlo {
+            max_proof_lag_secs: 300,
+            max_backlog_depth: 100,
+            max_error_rate: f64::NAN,
+        };
+        let metrics = ProofLagMetrics {
+            proof_lag_secs: 0,
+            backlog_depth: 0,
+            error_rate: 0.05, // well within normal range
+            heartbeat_age_secs: 0,
+        };
+        assert!(
+            slo.breached_by(&metrics),
+            "NaN SLO threshold must fail-closed (breach for any finite error_rate)"
+        );
+        assert_eq!(
+            slo.first_breached_metric(&metrics),
+            Some("error_rate"),
+            "NaN SLO threshold must report error_rate as breached metric"
+        );
+    }
+
+    #[test]
+    fn inf_slo_threshold_breaches_for_finite_metric() {
+        let slo = ProofLagSlo {
+            max_proof_lag_secs: 300,
+            max_backlog_depth: 100,
+            max_error_rate: f64::INFINITY,
+        };
+        let metrics = ProofLagMetrics {
+            proof_lag_secs: 0,
+            backlog_depth: 0,
+            error_rate: 0.99,
+            heartbeat_age_secs: 0,
+        };
+        assert!(
+            slo.breached_by(&metrics),
+            "Inf SLO threshold must fail-closed"
+        );
+    }
+
+    #[test]
+    fn halt_slo_sanitizes_nan_halt_error_rate() {
+        let config = VefDegradedModeConfig {
+            halt_error_rate: f64::NAN,
+            ..VefDegradedModeConfig::default()
+        };
+        let halt_slo = config.halt_slo();
+        assert!(
+            halt_slo.max_error_rate.is_finite(),
+            "halt_slo() must sanitize NaN halt_error_rate to finite value"
+        );
+        assert!(
+            (halt_slo.max_error_rate - 0.0).abs() < f64::EPSILON,
+            "NaN halt_error_rate should become 0.0 (fail-closed)"
+        );
+    }
+
+    #[test]
+    fn nan_halt_error_rate_escalates_engine_to_halt() {
+        let config = VefDegradedModeConfig {
+            halt_error_rate: f64::NAN,
+            ..VefDegradedModeConfig::default()
+        };
+        let mut engine = VefDegradedModeEngine::new(config);
+        let metrics = ProofLagMetrics {
+            proof_lag_secs: 0,
+            backlog_depth: 0,
+            error_rate: 0.01, // tiny error rate, still must escalate
+            heartbeat_age_secs: 0,
+        };
+        engine.observe_metrics(&metrics, 1000, "corr-nan-cfg");
+        assert_eq!(
+            engine.mode(),
+            VefMode::Halt,
+            "NaN halt_error_rate config must cause escalation to Halt"
+        );
     }
 }
