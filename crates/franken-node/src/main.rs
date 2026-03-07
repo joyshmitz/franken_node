@@ -1,98 +1,88 @@
 #![forbid(unsafe_code)]
-extern crate self as frankenengine_node;
-
-pub mod api;
-pub mod claims;
-mod cli;
-mod config;
-pub mod conformance;
-pub mod connector;
-pub mod control_plane;
-pub mod encoding;
-pub mod extensions;
-pub mod federation;
-pub mod migration;
-pub mod observability;
-pub mod ops;
-pub mod perf;
-pub mod policy;
-pub mod registry;
-pub mod remote;
-pub mod repair;
-pub mod replay;
-pub mod runtime;
-pub mod sdk;
-pub mod security;
-pub mod storage;
-pub mod supply_chain;
-pub mod testing;
-pub mod tools;
-pub mod verifier_economy;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use frankenengine_node::{
+    api::{
+        self,
+        fleet_quarantine::{
+            FleetActionResult, FleetStatus, ReleaseRequest,
+            handle_reconcile as handle_fleet_reconcile, handle_release as handle_fleet_release,
+            handle_status as handle_fleet_status,
+        },
+        middleware::{AuthIdentity, AuthMethod, TraceContext},
+        trust_card_routes::{
+            Pagination, compare_trust_card_versions, compare_trust_cards, get_trust_card,
+            get_trust_cards_by_publisher, list_trust_cards, search_trust_cards,
+        },
+    },
+    cli::{
+        self, BenchCommand, Cli, Command, FleetCommand, IncidentCommand, MigrateCommand,
+        RegistryCommand, RemoteCapCommand, RemoteCapIssueArgs, TrustCardCommand, TrustCommand,
+        VerifyCommand, VerifyCompatibilityArgs, VerifyCorpusArgs, VerifyMigrationArgs,
+        VerifyModuleArgs, VerifyReleaseArgs,
+    },
+    config::{self, CliOverrides, Profile},
+    migration,
+    ops,
+    policy::{
+        self,
+        bayesian_diagnostics::{BayesianDiagnostics, CandidateRef, Observation},
+        decision_engine::{DecisionEngine, DecisionOutcome, DecisionReason},
+        guardrail_monitor::{
+            GuardrailCertificate, GuardrailFinding, GuardrailMonitorSet, GuardrailVerdict,
+            MemoryTailRiskTelemetry, ReliabilityTelemetry, SystemState,
+        },
+        hardening_state_machine::HardeningLevel,
+        policy_explainer::{
+            PolicyExplainer, PolicyExplanation, WordingValidation, validate_wording,
+        },
+    },
+    runtime,
+    security::{
+        self,
+        decision_receipt::{
+            Decision, Receipt, ReceiptQuery, append_signed_receipt, demo_signing_key,
+            export_receipts_to_path, write_receipts_markdown,
+        },
+        remote_cap::{CapabilityProvider, RemoteOperation, RemoteScope},
+    },
+    supply_chain::{
+        self,
+        extension_registry::{
+            ExtensionSignature, ExtensionStatus, ProvenanceAttestation, RegistrationRequest,
+            SignedExtension, SignedExtensionRegistry, VersionEntry,
+        },
+        trust_card::{
+            ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard,
+            TrustCardListFilter, TrustCardMutation, TrustCardRegistry, TrustCardSyncReport,
+            demo_registry as demo_trust_registry, render_comparison_human,
+            render_trust_card_human, to_canonical_json as trust_card_to_json,
+        },
+    },
+    tools::{
+        self,
+        benchmark_suite::{
+            render_human_summary as benchmark_suite_render_human_summary,
+            run_default_suite as benchmark_suite_run_default_suite,
+            to_canonical_json as benchmark_suite_to_json,
+        },
+        counterfactual_replay::{
+            CounterfactualReplayEngine, PolicyConfig, summarize_output,
+            to_canonical_json as counterfactual_to_json,
+        },
+        replay_bundle::{
+            generate_replay_bundle, read_bundle_from_path,
+            replay_bundle as replay_incident_bundle, sample_incident_events,
+            validate_bundle_integrity, write_bundle_to_path,
+        },
+    },
+};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-
-use api::trust_card_routes::{
-    Pagination, compare_trust_card_versions, compare_trust_cards, get_trust_card,
-    get_trust_cards_by_publisher, list_trust_cards, search_trust_cards,
-};
-use api::{
-    fleet_quarantine::{
-        FleetActionResult, FleetStatus, ReleaseRequest, handle_reconcile as handle_fleet_reconcile,
-        handle_release as handle_fleet_release, handle_status as handle_fleet_status,
-    },
-    middleware::{AuthIdentity, AuthMethod, TraceContext},
-};
-use cli::{
-    BenchCommand, Cli, Command, FleetCommand, IncidentCommand, MigrateCommand, RegistryCommand,
-    RemoteCapCommand, RemoteCapIssueArgs, TrustCardCommand, TrustCommand, VerifyCommand,
-    VerifyCompatibilityArgs, VerifyCorpusArgs, VerifyMigrationArgs, VerifyModuleArgs,
-    VerifyReleaseArgs,
-};
-use config::{CliOverrides, Profile};
-use policy::bayesian_diagnostics::{BayesianDiagnostics, CandidateRef, Observation};
-use policy::decision_engine::{DecisionEngine, DecisionOutcome, DecisionReason};
-use policy::guardrail_monitor::{
-    GuardrailCertificate, GuardrailFinding, GuardrailMonitorSet, GuardrailVerdict,
-    MemoryTailRiskTelemetry, ReliabilityTelemetry, SystemState,
-};
-use policy::hardening_state_machine::HardeningLevel;
-use policy::policy_explainer::{
-    PolicyExplainer, PolicyExplanation, WordingValidation, validate_wording,
-};
-use security::decision_receipt::{
-    Decision, Receipt, ReceiptQuery, append_signed_receipt, demo_signing_key,
-    export_receipts_to_path, write_receipts_markdown,
-};
-use security::remote_cap::{CapabilityProvider, RemoteOperation, RemoteScope};
-use supply_chain::extension_registry::{
-    ExtensionSignature, ExtensionStatus, ProvenanceAttestation, RegistrationRequest,
-    SignedExtension, SignedExtensionRegistry, VersionEntry,
-};
-use supply_chain::trust_card::{
-    ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard, TrustCardListFilter,
-    TrustCardMutation, TrustCardRegistry, TrustCardSyncReport,
-    demo_registry as demo_trust_registry, render_comparison_human, render_trust_card_human,
-    to_canonical_json as trust_card_to_json,
-};
-use tools::benchmark_suite::{
-    render_human_summary as benchmark_suite_render_human_summary,
-    run_default_suite as benchmark_suite_run_default_suite,
-    to_canonical_json as benchmark_suite_to_json,
-};
-use tools::counterfactual_replay::{
-    CounterfactualReplayEngine, PolicyConfig, summarize_output,
-    to_canonical_json as counterfactual_to_json,
-};
-use tools::replay_bundle::{
-    generate_replay_bundle, read_bundle_from_path, replay_bundle as replay_incident_bundle,
-    sample_incident_events, validate_bundle_integrity, write_bundle_to_path,
-};
 
 const PROFILE_EXAMPLES_TEMPLATE: &str =
     include_str!("../../../config/franken_node.profile_examples.toml");
@@ -2031,7 +2021,9 @@ mod registry_command_tests {
 #[cfg(test)]
 mod fleet_command_tests {
     use super::*;
-    use crate::api::fleet_quarantine::{ConvergencePhase, ConvergenceState, DecisionReceipt};
+    use frankenengine_node::api::fleet_quarantine::{
+        ConvergencePhase, ConvergenceState, DecisionReceipt,
+    };
 
     #[test]
     fn fleet_cli_identity_has_operator_and_admin_roles() {
