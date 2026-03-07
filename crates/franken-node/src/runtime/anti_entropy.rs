@@ -159,7 +159,9 @@ impl TrustRecord {
     pub fn digest(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(b"anti_entropy_record_v1:");
+        hasher.update((self.payload.len() as u64).to_le_bytes());
         hasher.update(&self.payload);
+        hasher.update((self.mmr_proof.len() as u64).to_le_bytes());
         for proof_hash in &self.mmr_proof {
             hasher.update(proof_hash);
         }
