@@ -270,15 +270,14 @@ impl IncidentLab {
     pub fn compute_trace_hash(trace: &IncidentTrace) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"incident_lab_trace_v1:");
+        hasher.update((trace.events.len() as u64).to_le_bytes());
         for ev in &trace.events {
             hasher.update(ev.seq.to_le_bytes());
-            hasher.update(b"|");
+            hasher.update((ev.label.len() as u64).to_le_bytes());
             hasher.update(ev.label.as_bytes());
-            hasher.update(b"|");
+            hasher.update((ev.payload_hex.len() as u64).to_le_bytes());
             hasher.update(ev.payload_hex.as_bytes());
-            hasher.update(b"|");
             hasher.update(ev.timestamp_ms.to_le_bytes());
-            hasher.update(b"|");
         }
         hex::encode(hasher.finalize())
     }
@@ -337,11 +336,11 @@ impl IncidentLab {
 
         let mut hasher = Sha256::new();
         hasher.update(b"incident_lab_replay_v1:");
+        hasher.update((trace.events.len() as u64).to_le_bytes());
         for ev in &trace.events {
             hasher.update(ev.seq.to_le_bytes());
-            hasher.update(b"|");
+            hasher.update((ev.payload_hex.len() as u64).to_le_bytes());
             hasher.update(ev.payload_hex.as_bytes());
-            hasher.update(b"|");
         }
         let replay_digest = hex::encode(hasher.finalize());
 
@@ -467,10 +466,11 @@ impl IncidentLab {
     fn sign_contract(contract_id: &str, plan_id: &str, signer_id: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"incident_lab_contract_v1:");
+        hasher.update((contract_id.len() as u64).to_le_bytes());
         hasher.update(contract_id.as_bytes());
-        hasher.update(b"|");
+        hasher.update((plan_id.len() as u64).to_le_bytes());
         hasher.update(plan_id.as_bytes());
-        hasher.update(b"|");
+        hasher.update((signer_id.len() as u64).to_le_bytes());
         hasher.update(signer_id.as_bytes());
         hex::encode(hasher.finalize())
     }

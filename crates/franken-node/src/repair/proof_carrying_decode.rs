@@ -331,12 +331,15 @@ impl ProofCarryingDecoder {
         let payload_hash = {
             let mut hasher = Sha256::new();
             hasher.update(b"proof_carrying_payload_v1:");
+            hasher.update((input_fragment_hashes.len() as u64).to_le_bytes());
             for h in &input_fragment_hashes {
+                hasher.update((h.len() as u64).to_le_bytes());
                 hasher.update(h.as_bytes());
-                hasher.update(b"|");
             }
-            hasher.update(algorithm_id.as_str().as_bytes());
-            hasher.update(b"|");
+            let alg = algorithm_id.as_str();
+            hasher.update((alg.len() as u64).to_le_bytes());
+            hasher.update(alg.as_bytes());
+            hasher.update((output_hash.len() as u64).to_le_bytes());
             hasher.update(output_hash.as_bytes());
             hex::encode(hasher.finalize())
         };
@@ -344,8 +347,9 @@ impl ProofCarryingDecoder {
         let signature = {
             let mut hasher = Sha256::new();
             hasher.update(b"proof_carrying_signature_v1:");
+            hasher.update((self.signing_secret.len() as u64).to_le_bytes());
             hasher.update(self.signing_secret.as_bytes());
-            hasher.update(b"|");
+            hasher.update((payload_hash.len() as u64).to_le_bytes());
             hasher.update(payload_hash.as_bytes());
             hex::encode(hasher.finalize())
         };
@@ -454,12 +458,15 @@ impl ProofVerificationApi {
         let expected_payload_hash = {
             let mut hasher = Sha256::new();
             hasher.update(b"proof_carrying_payload_v1:");
+            hasher.update((proof.input_fragment_hashes.len() as u64).to_le_bytes());
             for h in &proof.input_fragment_hashes {
+                hasher.update((h.len() as u64).to_le_bytes());
                 hasher.update(h.as_bytes());
-                hasher.update(b"|");
             }
-            hasher.update(proof.algorithm_id.as_str().as_bytes());
-            hasher.update(b"|");
+            let alg = proof.algorithm_id.as_str();
+            hasher.update((alg.len() as u64).to_le_bytes());
+            hasher.update(alg.as_bytes());
+            hasher.update((proof.output_hash.len() as u64).to_le_bytes());
             hasher.update(proof.output_hash.as_bytes());
             hex::encode(hasher.finalize())
         };
@@ -474,8 +481,9 @@ impl ProofVerificationApi {
         let expected_signature = {
             let mut hasher = Sha256::new();
             hasher.update(b"proof_carrying_signature_v1:");
+            hasher.update((self.signing_secret.len() as u64).to_le_bytes());
             hasher.update(self.signing_secret.as_bytes());
-            hasher.update(b"|");
+            hasher.update((expected_payload_hash.len() as u64).to_le_bytes());
             hasher.update(expected_payload_hash.as_bytes());
             hex::encode(hasher.finalize())
         };

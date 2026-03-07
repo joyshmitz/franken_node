@@ -239,9 +239,10 @@ impl TestProofBackend {
         let mut hasher = Sha256::new();
         hasher.update(b"proof_generator_hash_v1:");
         hasher.update(b"proof-backend-v1:");
+        hasher.update((entries.len() as u64).to_le_bytes());
         for entry in entries {
+            hasher.update((entry.chain_hash.len() as u64).to_le_bytes());
             hasher.update(entry.chain_hash.as_bytes());
-            hasher.update(b"|");
         }
         hasher.finalize().to_vec()
     }

@@ -270,15 +270,17 @@ impl CapabilityEnvelope {
         // Deterministic canonical representation for hashing.
         let mut hasher = Sha256::new();
         hasher.update(b"capability_artifact_digest_v1:");
-        hasher.update(identity.canonical_repr().as_bytes());
-        hasher.update(b"|");
+        let repr = identity.canonical_repr();
+        hasher.update((repr.len() as u64).to_le_bytes());
+        hasher.update(repr.as_bytes());
+        hasher.update((self.schema_version.len() as u64).to_le_bytes());
         hasher.update(self.schema_version.as_bytes());
+        hasher.update((self.requirements.len() as u64).to_le_bytes());
         for (name, req) in &self.requirements {
-            hasher.update(b"|");
+            hasher.update((name.len() as u64).to_le_bytes());
             hasher.update(name.as_bytes());
-            hasher.update(b"|");
+            hasher.update((req.justification.len() as u64).to_le_bytes());
             hasher.update(req.justification.as_bytes());
-            hasher.update(b"|");
             hasher.update([req.mandatory as u8]);
         }
         let digest = hasher.finalize();

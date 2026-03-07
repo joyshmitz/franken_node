@@ -209,8 +209,9 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
 pub fn hmac_sign(payload: &str, key: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"profile_tuning_hmac_v1:");
+    hasher.update((key.len() as u64).to_le_bytes());
     hasher.update(key.as_bytes());
-    hasher.update(b"|");
+    hasher.update((payload.len() as u64).to_le_bytes());
     hasher.update(payload.as_bytes());
     format!("{:x}", hasher.finalize())
 }

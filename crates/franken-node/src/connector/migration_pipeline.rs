@@ -589,15 +589,16 @@ pub fn is_idempotent(a: &PipelineState, b: &PipelineState) -> bool {
 fn calculate_idempotency_key(cohort: &CohortDefinition) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"migration_idempotency_v1:");
+    hasher.update((cohort.cohort_id.len() as u64).to_le_bytes());
     hasher.update(cohort.cohort_id.as_bytes());
-    hasher.update(b"|");
+    hasher.update((cohort.extensions.len() as u64).to_le_bytes());
     for ext in &cohort.extensions {
+        hasher.update((ext.name.len() as u64).to_le_bytes());
         hasher.update(ext.name.as_bytes());
-        hasher.update(b"|");
+        hasher.update((ext.source_version.len() as u64).to_le_bytes());
         hasher.update(ext.source_version.as_bytes());
-        hasher.update(b"|");
+        hasher.update((ext.target_version.len() as u64).to_le_bytes());
         hasher.update(ext.target_version.as_bytes());
-        hasher.update(b"|");
     }
     hex::encode(hasher.finalize())
 }

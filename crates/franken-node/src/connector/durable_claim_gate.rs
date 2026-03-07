@@ -466,9 +466,10 @@ fn validate_claim(claim: &DurableClaim) -> Result<(), DurableClaimGateError> {
 fn hash_witnesses(proof_hashes: &[String]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"durable_claim_merkle_v1:");
+    hasher.update((proof_hashes.len() as u64).to_le_bytes());
     for proof_hash in proof_hashes {
+        hasher.update((proof_hash.len() as u64).to_le_bytes());
         hasher.update(proof_hash.as_bytes());
-        hasher.update(b"|");
     }
     hex::encode(hasher.finalize())
 }

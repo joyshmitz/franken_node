@@ -188,15 +188,16 @@ impl ControlDecision {
     pub fn digest(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"time_travel_decision_v1:");
+        hasher.update((self.decision_id.len() as u64).to_le_bytes());
         hasher.update(self.decision_id.as_bytes());
-        hasher.update(b"|");
+        hasher.update((self.payload.len() as u64).to_le_bytes());
         hasher.update(&self.payload);
-        hasher.update(b"|");
+        hasher.update((self.metadata.len() as u64).to_le_bytes());
         for (k, v) in &self.metadata {
+            hasher.update((k.len() as u64).to_le_bytes());
             hasher.update(k.as_bytes());
-            hasher.update(b"=");
+            hasher.update((v.len() as u64).to_le_bytes());
             hasher.update(v.as_bytes());
-            hasher.update(b"|");
         }
         hex::encode(hasher.finalize())
     }
@@ -254,15 +255,15 @@ impl WorkflowSnapshot {
     pub fn compute_integrity_digest(frames: &[CaptureFrame]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"time_travel_integrity_v1:");
+        hasher.update((frames.len() as u64).to_le_bytes());
         for f in frames {
             hasher.update(f.frame_index.to_le_bytes());
-            hasher.update(b"|");
             hasher.update(f.clock_tick.to_le_bytes());
-            hasher.update(b"|");
+            hasher.update((f.input_hash.len() as u64).to_le_bytes());
             hasher.update(f.input_hash.as_bytes());
-            hasher.update(b"|");
-            hasher.update(f.decision.digest().as_bytes());
-            hasher.update(b"|");
+            let digest = f.decision.digest();
+            hasher.update((digest.len() as u64).to_le_bytes());
+            hasher.update(digest.as_bytes());
         }
         hex::encode(hasher.finalize())
     }
@@ -785,9 +786,8 @@ pub fn deterministic_decision(seed: u64, tick: u64, input: &[u8]) -> ControlDeci
     let mut hasher = Sha256::new();
     hasher.update(b"time_travel_det_decision_v1:");
     hasher.update(seed.to_le_bytes());
-    hasher.update(b"|");
     hasher.update(tick.to_le_bytes());
-    hasher.update(b"|");
+    hasher.update((input.len() as u64).to_le_bytes());
     hasher.update(input);
     let digest = hex::encode(hasher.finalize());
     let decision_id = format!("dec-{}-{}", tick, &digest[..8]);

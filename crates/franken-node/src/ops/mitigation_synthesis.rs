@@ -459,8 +459,9 @@ impl IncidentLab {
 fn sign_payload(payload: &str, secret: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"mitigation_synthesis_sign_v1:");
+    hasher.update((secret.len() as u64).to_le_bytes());
     hasher.update(secret.as_bytes());
-    hasher.update(b"|");
+    hasher.update((payload.len() as u64).to_le_bytes());
     hasher.update(payload.as_bytes());
     hex::encode(hasher.finalize())
 }

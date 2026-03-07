@@ -422,10 +422,9 @@ pub fn compute_penalty_hash(
 ) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"staking_governance_penalty_v1:");
+    hasher.update((evidence_hash.len() as u64).to_le_bytes());
     hasher.update(evidence_hash.as_bytes());
-    hasher.update(b"|");
     hasher.update(slash_fraction_bps.to_le_bytes());
-    hasher.update(b"|");
     hasher.update(stake_amount.to_le_bytes());
     hex::encode(hasher.finalize())
 }

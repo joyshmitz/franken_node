@@ -699,15 +699,16 @@ fn summarize_claim_text(normalised_text: &str) -> String {
 fn compute_compilation_digest(normalised_text: &str, evidence_links: &[EvidenceLink]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"claim_text_hash_v1:");
+    hasher.update((normalised_text.len() as u64).to_le_bytes());
     hasher.update(normalised_text.as_bytes());
-    hasher.update(b"|");
+    hasher.update((evidence_links.len() as u64).to_le_bytes());
     for link in evidence_links {
+        hasher.update((link.label.len() as u64).to_le_bytes());
         hasher.update(link.label.as_bytes());
-        hasher.update(b"|");
+        hasher.update((link.uri.len() as u64).to_le_bytes());
         hasher.update(link.uri.as_bytes());
-        hasher.update(b"|");
+        hasher.update((link.content_digest.len() as u64).to_le_bytes());
         hasher.update(link.content_digest.as_bytes());
-        hasher.update(b"|");
     }
     hex::encode(hasher.finalize())
 }
@@ -717,11 +718,12 @@ fn compute_scoreboard_digest(entries: &BTreeMap<String, ScoreEntry>) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"claim_evidence_hash_v1:");
     // BTreeMap iteration is deterministic (INV-CLMC-DETERMINISTIC)
+    hasher.update((entries.len() as u64).to_le_bytes());
     for (claim_id, entry) in entries {
+        hasher.update((claim_id.len() as u64).to_le_bytes());
         hasher.update(claim_id.as_bytes());
-        hasher.update(b"|");
+        hasher.update((entry.compilation_digest.len() as u64).to_le_bytes());
         hasher.update(entry.compilation_digest.as_bytes());
-        hasher.update(b"|");
     }
     hex::encode(hasher.finalize())
 }

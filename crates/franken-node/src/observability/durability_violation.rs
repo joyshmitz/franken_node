@@ -445,32 +445,35 @@ impl std::error::Error for DurabilityHaltedError {}
 
 /// Generate a violation bundle deterministically from context.
 pub fn generate_bundle(context: &ViolationContext) -> ViolationBundle {
-    // Derive bundle_id deterministically from content
+    // Derive bundle_id deterministically from content.
+    // Length-prefix all variable-length string fields to prevent
+    // delimiter-collision attacks (e.g. key="a|b" vs key="a" + delim + "b").
     let mut hasher = Sha256::new();
     hasher.update(b"durability_violation_bundle_v1:");
     hasher.update(context.epoch_id.to_le_bytes());
-    hasher.update(b"|");
     hasher.update(context.timestamp_ms.to_le_bytes());
-    hasher.update(b"|");
+    hasher.update((context.hardening_level.len() as u64).to_le_bytes());
     hasher.update(context.hardening_level.as_bytes());
     for event in &context.events {
-        hasher.update(b"|");
-        hasher.update(event.event_type.label().as_bytes());
-        hasher.update(b"|");
+        let label = event.event_type.label();
+        hasher.update((label.len() as u64).to_le_bytes());
+        hasher.update(label.as_bytes());
         hasher.update(event.timestamp_ms.to_le_bytes());
-        hasher.update(b"|");
-        hasher.update(event.description.as_bytes());
-        hasher.update(b"|");
-        hasher.update(event.evidence_ref.as_deref().unwrap_or("").as_bytes());
+        let desc = event.description.as_bytes();
+        hasher.update((desc.len() as u64).to_le_bytes());
+        hasher.update(desc);
+        let eref = event.evidence_ref.as_deref().unwrap_or("");
+        hasher.update((eref.len() as u64).to_le_bytes());
+        hasher.update(eref.as_bytes());
     }
     for artifact in &context.artifacts {
-        hasher.update(b"|");
+        hasher.update((artifact.artifact_path.len() as u64).to_le_bytes());
         hasher.update(artifact.artifact_path.as_bytes());
-        hasher.update(b"|");
+        hasher.update((artifact.expected_hash.len() as u64).to_le_bytes());
         hasher.update(artifact.expected_hash.as_bytes());
-        hasher.update(b"|");
+        hasher.update((artifact.actual_hash.len() as u64).to_le_bytes());
         hasher.update(artifact.actual_hash.as_bytes());
-        hasher.update(b"|");
+        hasher.update((artifact.failure_reason.len() as u64).to_le_bytes());
         hasher.update(artifact.failure_reason.as_bytes());
     }
     let digest = hasher.finalize();
@@ -929,5 +932,72 @@ mod tests {
         detector.generate_bundle(&ctx);
 
         assert!(!detector.is_scope_halted("any"));
+    }
+
+    // ── Delimiter-collision resistance ──
+
+    #[test]
+    fn delimiter_collision_hardening_level_vs_event_label() {
+        // Old scheme: "critical|guardrail_rejection" == "critical|guardrail" + "|" + "rejection"
+        // With length-prefixing, these must produce different bundle IDs.
+        let mut ctx1 = make_context();
+        ctx1.hardening_level = "critical".into();
+
+        let mut ctx2 = make_context();
+        ctx2.hardening_level = "critical|guardrail_rejection".into();
+        // Remove first event so event label doesn't contribute
+        ctx2.events.clear();
+
+        let b1 = generate_bundle(&ctx1);
+        let b2 = generate_bundle(&ctx2);
+        assert_ne!(b1.bundle_id, b2.bundle_id);
+    }
+
+    #[test]
+    fn delimiter_collision_description_vs_evidence_ref() {
+        // description="desc|" + evidence_ref="ref" vs description="desc" + "|ref"
+        let mut ctx1 = make_context();
+        ctx1.events = vec![CausalEvent {
+            event_type: CausalEventType::RepairFailed,
+            timestamp_ms: 100,
+            description: "desc|".into(),
+            evidence_ref: Some("ref".into()),
+        }];
+
+        let mut ctx2 = make_context();
+        ctx2.events = vec![CausalEvent {
+            event_type: CausalEventType::RepairFailed,
+            timestamp_ms: 100,
+            description: "desc".into(),
+            evidence_ref: Some("|ref".into()),
+        }];
+
+        let b1 = generate_bundle(&ctx1);
+        let b2 = generate_bundle(&ctx2);
+        assert_ne!(b1.bundle_id, b2.bundle_id);
+    }
+
+    #[test]
+    fn delimiter_collision_artifact_path_vs_expected_hash() {
+        // artifact_path="path|" + expected_hash="hash" vs artifact_path="path" + "|hash"
+        let mut ctx1 = make_context();
+        ctx1.artifacts = vec![FailedArtifact {
+            artifact_path: "path|".into(),
+            expected_hash: "hash".into(),
+            actual_hash: "ah".into(),
+            failure_reason: "reason".into(),
+        }];
+
+        let mut ctx2 = make_context();
+        ctx2.artifacts = vec![FailedArtifact {
+            artifact_path: "path".into(),
+            expected_hash: "|hash".into(),
+            actual_hash: "ah".into(),
+            failure_reason: "reason".into(),
+        }];
+
+        let b1 = generate_bundle(&ctx1);
+        let b2 = generate_bundle(&ctx2);
+        assert_ne!(b1.bundle_id, b2.bundle_id);
     }
 }

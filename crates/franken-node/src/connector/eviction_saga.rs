@@ -619,12 +619,13 @@ impl EvictionSaga {
     pub fn content_hash(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"eviction_saga_hash_v1:");
+        hasher.update((self.saga_id.len() as u64).to_le_bytes());
         hasher.update(self.saga_id.as_bytes());
-        hasher.update(b"|");
+        hasher.update((self.artifact_id.len() as u64).to_le_bytes());
         hasher.update(self.artifact_id.as_bytes());
-        hasher.update(b"|");
-        hasher.update(self.current_phase.as_str().as_bytes());
-        hasher.update(b"|");
+        let phase = self.current_phase.as_str();
+        hasher.update((phase.len() as u64).to_le_bytes());
+        hasher.update(phase.as_bytes());
         hasher.update(self.transitions.len().to_le_bytes());
         format!("{:x}", hasher.finalize())
     }

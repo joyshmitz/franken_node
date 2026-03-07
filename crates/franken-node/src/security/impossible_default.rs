@@ -192,18 +192,20 @@ impl CapabilityToken {
     pub fn content_hash(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"impossible_default_hash_v1:");
+        // Length-prefix variable-length string fields to prevent delimiter-collision attacks.
+        hasher.update((self.token_id.len() as u64).to_le_bytes());
         hasher.update(self.token_id.as_bytes());
-        hasher.update(b"|");
-        hasher.update(self.capability.label().as_bytes());
-        hasher.update(b"|");
+        let cap_label = self.capability.label();
+        hasher.update((cap_label.len() as u64).to_le_bytes());
+        hasher.update(cap_label.as_bytes());
+        hasher.update((self.issuer.len() as u64).to_le_bytes());
         hasher.update(self.issuer.as_bytes());
-        hasher.update(b"|");
+        hasher.update((self.subject.len() as u64).to_le_bytes());
         hasher.update(self.subject.as_bytes());
-        hasher.update(b"|");
+        // Fixed-size u64 fields — no length-prefix needed.
         hasher.update(self.issued_at_ms.to_le_bytes());
-        hasher.update(b"|");
         hasher.update(self.expires_at_ms.to_le_bytes());
-        hasher.update(b"|");
+        hasher.update((self.justification.len() as u64).to_le_bytes());
         hasher.update(self.justification.as_bytes());
         format!("{:x}", hasher.finalize())
     }
@@ -326,20 +328,32 @@ impl EnforcementAuditEntry {
     pub fn hash(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"impossible_default_audit_hash_v1:");
+        // Length-prefix variable-length string fields to prevent delimiter-collision attacks.
+        hasher.update((self.event_code.len() as u64).to_le_bytes());
         hasher.update(self.event_code.as_bytes());
-        hasher.update(b"|");
-        hasher.update(self.capability.label().as_bytes());
-        hasher.update(b"|");
+        let cap_label = self.capability.label();
+        hasher.update((cap_label.len() as u64).to_le_bytes());
+        hasher.update(cap_label.as_bytes());
+        hasher.update((self.actor.len() as u64).to_le_bytes());
         hasher.update(self.actor.as_bytes());
-        hasher.update(b"|");
+        // Fixed-size u64 field — no length-prefix needed.
         hasher.update(self.timestamp_ms.to_le_bytes());
-        hasher.update(b"|");
+        hasher.update((self.detail.len() as u64).to_le_bytes());
         hasher.update(self.detail.as_bytes());
-        hasher.update(b"|");
-        if let Some(tid) = &self.token_id {
-            hasher.update(tid.as_bytes());
+        // Optional token_id: use 0-length sentinel for None, length-prefixed for Some.
+        match &self.token_id {
+            Some(tid) => {
+                hasher.update((tid.len() as u64).to_le_bytes());
+                hasher.update(tid.as_bytes());
+            }
+            None => {
+                // Distinct from Some("") because Some("") has length 0 followed by
+                // empty bytes, while None uses u64::MAX as a sentinel that no real
+                // string length can match.
+                hasher.update(u64::MAX.to_le_bytes());
+            }
         }
-        hasher.update(b"|");
+        hasher.update((self.prev_hash.len() as u64).to_le_bytes());
         hasher.update(self.prev_hash.as_bytes());
         format!("{:x}", hasher.finalize())
     }

@@ -297,28 +297,25 @@ pub fn compute_integrity_hash(bundle: &IncidentBundle) -> String {
 
     let mut hasher = Sha256::new();
     hasher.update(b"incident_bundle_retention_hash_v1:");
+    // Length-prefix free-form string fields to prevent delimiter-collision attacks
+    hasher.update((bundle.bundle_id.len() as u64).to_le_bytes());
     hasher.update(bundle.bundle_id.as_bytes());
-    hasher.update(b"|");
+    hasher.update((bundle.incident_id.len() as u64).to_le_bytes());
     hasher.update(bundle.incident_id.as_bytes());
-    hasher.update(b"|");
+    hasher.update((bundle.created_at.len() as u64).to_le_bytes());
     hasher.update(bundle.created_at.as_bytes());
-    hasher.update(b"|");
+    // Enum labels are from a fixed set (no attacker control), no length-prefix needed
     hasher.update(bundle.severity.label().as_bytes());
-    hasher.update(b"|");
     hasher.update(bundle.retention_tier.label().as_bytes());
-    hasher.update(b"|");
+    hasher.update((bundle.metadata.title.len() as u64).to_le_bytes());
     hasher.update(bundle.metadata.title.as_bytes());
-    hasher.update(b"|");
+    hasher.update((bundle.metadata.detected_by.len() as u64).to_le_bytes());
     hasher.update(bundle.metadata.detected_by.as_bytes());
-    hasher.update(b"|");
+    // Fixed-size numeric fields need no length-prefix
     hasher.update(bundle.log_count.to_le_bytes());
-    hasher.update(b"|");
     hasher.update(bundle.trace_count.to_le_bytes());
-    hasher.update(b"|");
     hasher.update(bundle.metric_snapshot_count.to_le_bytes());
-    hasher.update(b"|");
     hasher.update(bundle.evidence_ref_count.to_le_bytes());
-    hasher.update(b"|");
     hasher.update(bundle.export_format_version.to_le_bytes());
 
     let digest = hasher.finalize();
@@ -1172,12 +1169,10 @@ mod tests {
         );
         store.store(bundle, 1000).unwrap();
         assert!(!store.decisions().is_empty());
-        assert!(
-            store
-                .decisions()
-                .iter()
-                .any(|d| d.event_code == event_codes::IBR_001)
-        );
+        assert!(store
+            .decisions()
+            .iter()
+            .any(|d| d.event_code == event_codes::IBR_001));
     }
 
     #[test]

@@ -158,30 +158,38 @@ impl AudienceBoundToken {
     pub fn hash(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"audience_auth_v1:");
-        hasher.update(self.token_id.as_str().as_bytes());
-        hasher.update(b"|");
+        let tid = self.token_id.as_str();
+        hasher.update((tid.len() as u64).to_le_bytes());
+        hasher.update(tid.as_bytes());
+        hasher.update((self.issuer.len() as u64).to_le_bytes());
         hasher.update(self.issuer.as_bytes());
-        hasher.update(b"|");
+        hasher.update((self.audience.len() as u64).to_le_bytes());
         for aud in &self.audience {
+            hasher.update((aud.len() as u64).to_le_bytes());
             hasher.update(aud.as_bytes());
-            hasher.update(b"|");
         }
+        hasher.update((self.capabilities.len() as u64).to_le_bytes());
         for cap in &self.capabilities {
-            hasher.update(cap.label().as_bytes());
-            hasher.update(b"|");
+            let label = cap.label();
+            hasher.update((label.len() as u64).to_le_bytes());
+            hasher.update(label.as_bytes());
         }
         hasher.update(self.issued_at.to_le_bytes());
-        hasher.update(b"|");
         hasher.update(self.expires_at.to_le_bytes());
-        hasher.update(b"|");
+        hasher.update((self.nonce.len() as u64).to_le_bytes());
         hasher.update(self.nonce.as_bytes());
-        hasher.update(b"|");
-        if let Some(ref ph) = self.parent_token_hash {
-            hasher.update(ph.as_bytes());
+        match &self.parent_token_hash {
+            Some(ph) => {
+                hasher.update(1u8.to_le_bytes());
+                hasher.update((ph.len() as u64).to_le_bytes());
+                hasher.update(ph.as_bytes());
+            }
+            None => {
+                hasher.update(0u8.to_le_bytes());
+            }
         }
-        hasher.update(b"|");
+        hasher.update((self.signature.len() as u64).to_le_bytes());
         hasher.update(self.signature.as_bytes());
-        hasher.update(b"|");
         hasher.update([self.max_delegation_depth]);
         format!("{:x}", hasher.finalize())
     }

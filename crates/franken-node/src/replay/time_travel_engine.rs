@@ -410,11 +410,12 @@ impl TraceStep {
     pub fn side_effects_digest(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"replay_step_effects_v1:");
+        hasher.update((self.side_effects.len() as u64).to_le_bytes());
         for effect in &self.side_effects {
+            hasher.update((effect.kind.len() as u64).to_le_bytes());
             hasher.update(effect.kind.as_bytes());
-            hasher.update(b"|");
+            hasher.update((effect.payload.len() as u64).to_le_bytes());
             hasher.update(&effect.payload);
-            hasher.update(b"|");
         }
         hex::encode(hasher.finalize())
     }
@@ -443,18 +444,19 @@ impl WorkflowTrace {
     pub fn compute_digest(steps: &[TraceStep]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"replay_trace_digest_v1:");
+        hasher.update((steps.len() as u64).to_le_bytes());
         for step in steps {
             hasher.update(step.seq.to_le_bytes());
-            hasher.update(b"|");
+            hasher.update((step.input.len() as u64).to_le_bytes());
             hasher.update(&step.input);
-            hasher.update(b"|");
+            hasher.update((step.output.len() as u64).to_le_bytes());
             hasher.update(&step.output);
-            hasher.update(b"|");
+            hasher.update((step.side_effects.len() as u64).to_le_bytes());
             for effect in &step.side_effects {
+                hasher.update((effect.kind.len() as u64).to_le_bytes());
                 hasher.update(effect.kind.as_bytes());
-                hasher.update(b"|");
+                hasher.update((effect.payload.len() as u64).to_le_bytes());
                 hasher.update(&effect.payload);
-                hasher.update(b"|");
             }
         }
         hex::encode(hasher.finalize())
@@ -852,11 +854,12 @@ impl ReplayEngine {
             let replayed_effects_digest = {
                 let mut hasher = Sha256::new();
                 hasher.update(b"replay_step_effects_v1:");
+                hasher.update((replayed_effects.len() as u64).to_le_bytes());
                 for effect in &replayed_effects {
+                    hasher.update((effect.kind.len() as u64).to_le_bytes());
                     hasher.update(effect.kind.as_bytes());
-                    hasher.update(b"|");
+                    hasher.update((effect.payload.len() as u64).to_le_bytes());
                     hasher.update(&effect.payload);
-                    hasher.update(b"|");
                 }
                 hex::encode(hasher.finalize())
             };

@@ -267,15 +267,16 @@ fn compute_contract_digest(
 ) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"claim_compiler_hash_v1:");
+    hasher.update(&(claim_id.len() as u64).to_le_bytes());
     hasher.update(claim_id.as_bytes());
-    hasher.update(b"|");
+    hasher.update(&(claim_text.len() as u64).to_le_bytes());
     hasher.update(claim_text.as_bytes());
-    hasher.update(b"|");
+    hasher.update(&(evidence_uris.len() as u64).to_le_bytes());
     for uri in evidence_uris {
+        hasher.update(&(uri.len() as u64).to_le_bytes());
         hasher.update(uri.as_bytes());
-        hasher.update(b",");
     }
-    hasher.update(b"|");
+    hasher.update(&(source_id.len() as u64).to_le_bytes());
     hasher.update(source_id.as_bytes());
     hex::encode(hasher.finalize())
 }
@@ -283,10 +284,12 @@ fn compute_contract_digest(
 fn sign_contract(digest: &str, signer_id: &str, signing_key: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"claim_compiler_sign_v1:");
+    // digest is hex-encoded (fixed charset), but length-prefix for consistency
+    hasher.update(&(digest.len() as u64).to_le_bytes());
     hasher.update(digest.as_bytes());
-    hasher.update(b"|");
+    hasher.update(&(signer_id.len() as u64).to_le_bytes());
     hasher.update(signer_id.as_bytes());
-    hasher.update(b"|");
+    hasher.update(&(signing_key.len() as u64).to_le_bytes());
     hasher.update(signing_key.as_bytes());
     hex::encode(hasher.finalize())
 }
@@ -518,14 +521,15 @@ fn compute_entry_digest(
 ) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"claim_compiler_entry_v1:");
+    hasher.update(&(entry_id.len() as u64).to_le_bytes());
     hasher.update(entry_id.as_bytes());
-    hasher.update(b"|");
+    hasher.update(&(claim_id.len() as u64).to_le_bytes());
     hasher.update(claim_id.as_bytes());
-    hasher.update(b"|");
+    hasher.update(&(evidence_link.len() as u64).to_le_bytes());
     hasher.update(evidence_link.as_bytes());
-    hasher.update(b"|");
+    hasher.update(&(signer_id.len() as u64).to_le_bytes());
     hasher.update(signer_id.as_bytes());
-    hasher.update(b"|");
+    hasher.update(&(signing_key.len() as u64).to_le_bytes());
     hasher.update(signing_key.as_bytes());
     hex::encode(hasher.finalize())
 }
@@ -536,11 +540,14 @@ fn compute_snapshot_digest(
 ) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"claim_compiler_snapshot_v1:");
+    hasher.update(&(snapshot_id.len() as u64).to_le_bytes());
     hasher.update(snapshot_id.as_bytes());
+    hasher.update(&(entries.len() as u64).to_le_bytes());
     for (key, entry) in entries {
-        hasher.update(b"|");
+        hasher.update(&(key.len() as u64).to_le_bytes());
         hasher.update(key.as_bytes());
-        hasher.update(b":");
+        // signed_digest is hex-encoded (fixed charset), but length-prefix for consistency
+        hasher.update(&(entry.signed_digest.len() as u64).to_le_bytes());
         hasher.update(entry.signed_digest.as_bytes());
     }
     hex::encode(hasher.finalize())

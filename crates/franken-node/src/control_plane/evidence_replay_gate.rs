@@ -87,21 +87,23 @@ impl CapturedEvidence {
     pub fn compute_input_hash(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"evidence_replay_input_v1:");
+        hasher.update((self.decision_id.len() as u64).to_le_bytes());
         hasher.update(self.decision_id.as_bytes());
-        hasher.update(b"|");
-        hasher.update(self.decision_type_str().as_bytes());
-        hasher.update(b"|");
+        let dt = self.decision_type_str();
+        hasher.update((dt.len() as u64).to_le_bytes());
+        hasher.update(dt.as_bytes());
         hasher.update(self.epoch_id.to_le_bytes());
-        hasher.update(b"|");
+        hasher.update((self.input_entries.len() as u64).to_le_bytes());
         for entry in &self.input_entries {
+            hasher.update((entry.len() as u64).to_le_bytes());
             hasher.update(entry.as_bytes());
-            hasher.update(b"|");
         }
+        hasher.update((self.input_context.len() as u64).to_le_bytes());
         for (k, v) in &self.input_context {
+            hasher.update((k.len() as u64).to_le_bytes());
             hasher.update(k.as_bytes());
-            hasher.update(b"=");
+            hasher.update((v.len() as u64).to_le_bytes());
             hasher.update(v.as_bytes());
-            hasher.update(b"|");
         }
         format!("{:x}", hasher.finalize())
     }
