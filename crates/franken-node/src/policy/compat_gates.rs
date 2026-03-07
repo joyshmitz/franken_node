@@ -255,9 +255,12 @@ impl ShimRegistry {
                 shim_id: entry.shim_id.clone(),
             });
         }
-        let idx = self.entries.len();
-        self.index.insert(entry.shim_id.clone(), idx);
         push_bounded(&mut self.entries, entry, MAX_ENTRIES);
+        // Rebuild index to account for possible eviction shifting indices
+        self.index.clear();
+        for (i, e) in self.entries.iter().enumerate() {
+            self.index.insert(e.shim_id.clone(), i);
+        }
         Ok(())
     }
 

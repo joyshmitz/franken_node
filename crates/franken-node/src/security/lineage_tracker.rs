@@ -844,25 +844,25 @@ impl ExfiltrationSentinel {
                     Ok(FlowVerdict::Quarantine) => {
                         let _det = SENTINEL_EXFIL_DETECTED;
                         let _trig = SENTINEL_CONTAINMENT_TRIGGERED;
-                        detected += 1;
-                        contained += 1;
+                        detected = detected.saturating_add(1);
+                        contained = contained.saturating_add(1);
                     }
                     Ok(FlowVerdict::Pass) => {
-                        passed += 1;
+                        passed = passed.saturating_add(1);
                     }
                     Ok(FlowVerdict::Alert) => {
-                        detected += 1;
+                        detected = detected.saturating_add(1);
                     }
                     Err(_) => {
                         // Fail closed: evaluation failure counts as a detection
-                        detected += 1;
+                        detected = detected.saturating_add(1);
                     }
                 }
             }
         }
 
         Ok(SentinelScanResult {
-            edges_scanned: edge_ids.len() as u64,
+            edges_scanned: u64::try_from(edge_ids.len()).unwrap_or(u64::MAX),
             edges_passed: passed,
             exfiltrations_detected: detected,
             exfiltrations_contained: contained,
