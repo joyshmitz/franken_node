@@ -561,6 +561,10 @@ impl ObligationLedger {
             .get_mut(obligation_id)
             .ok_or_else(|| error_codes::ERR_OCH_NOT_FOUND.to_string())?;
 
+        if obligation.status.is_terminal() {
+            return Err(error_codes::ERR_OCH_INVALID_TRANSITION.to_string());
+        }
+
         obligation.status = status;
         obligation.resolved_at_ms = Some(now_ms);
 
