@@ -532,7 +532,7 @@ impl ParticipationWeightEngine {
 
         for (hint, members) in &hint_groups {
             if members.len() >= self.config.sybil_cluster_min_size {
-                cluster_counter += 1;
+                cluster_counter = cluster_counter.saturating_add(1);
                 clusters.push(SybilCluster {
                     cluster_id: format!("SYBIL-{cluster_counter:04}"),
                     member_ids: members.clone(),
