@@ -19,6 +19,7 @@
 //! - INV-FLEET-ROLLBACK     — release deterministically rolls back quarantine state
 
 use std::collections::BTreeMap;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -432,6 +433,33 @@ impl OperationSlot {
             format!("fleet-op-{:016x}-{:016x}", self.epoch, self.sequence)
         }
     }
+}
+
+static SHARED_FLEET_CONTROL_MANAGER: OnceLock<Mutex<FleetControlManager>> = OnceLock::new();
+
+fn shared_fleet_control_manager() -> &'static Mutex<FleetControlManager> {
+    SHARED_FLEET_CONTROL_MANAGER.get_or_init(|| Mutex::new(FleetControlManager::new()))
+}
+
+fn lock_shared_fleet_control_manager(
+    trace: &TraceContext,
+) -> Result<MutexGuard<'static, FleetControlManager>, ApiError> {
+    shared_fleet_control_manager()
+        .lock()
+        .map_err(|_| ApiError::Internal {
+            detail: "fleet control manager lock poisoned".to_string(),
+            trace_id: trace.trace_id.clone(),
+        })
+}
+
+#[cfg(test)]
+fn reset_shared_fleet_control_manager_for_tests() {
+    let manager = shared_fleet_control_manager();
+    let mut guard = match manager.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    *guard = FleetControlManager::new();
 }
 
 impl FleetControlManager {
@@ -936,7 +964,7 @@ pub fn handle_quarantine(
     trace: &TraceContext,
     request: &QuarantineRequest,
 ) -> Result<ApiResponse<FleetActionResult>, ApiError> {
-    let mut mgr = FleetControlManager::new();
+    let mut mgr = lock_shared_fleet_control_manager(trace)?;
     mgr.activate();
     let result = mgr
         .quarantine(&request.extension_id, &request.scope, identity, trace)
@@ -956,7 +984,7 @@ pub fn handle_revoke(
     trace: &TraceContext,
     request: &RevokeRequest,
 ) -> Result<ApiResponse<FleetActionResult>, ApiError> {
-    let mut mgr = FleetControlManager::new();
+    let mut mgr = lock_shared_fleet_control_manager(trace)?;
     mgr.activate();
     let result = mgr
         .revoke(&request.extension_id, &request.scope, identity, trace)
@@ -984,7 +1012,7 @@ pub fn handle_release(
         });
     }
 
-    let mut mgr = FleetControlManager::new();
+    let mut mgr = lock_shared_fleet_control_manager(trace)?;
     mgr.activate();
     let result = mgr
         .release(incident_id, identity, trace)
@@ -1004,7 +1032,7 @@ pub fn handle_status(
     trace: &TraceContext,
     zone_id: &str,
 ) -> Result<ApiResponse<FleetStatus>, ApiError> {
-    let mgr = FleetControlManager::new();
+    let mgr = lock_shared_fleet_control_manager(trace)?;
     let status = mgr.status(zone_id).map_err(|e| ApiError::BadRequest {
         detail: format!("{}: {}", e.error_code(), "status failed"),
         trace_id: trace.trace_id.clone(),
@@ -1020,7 +1048,7 @@ pub fn handle_reconcile(
     identity: &AuthIdentity,
     trace: &TraceContext,
 ) -> Result<ApiResponse<FleetActionResult>, ApiError> {
-    let mut mgr = FleetControlManager::new();
+    let mut mgr = lock_shared_fleet_control_manager(trace)?;
     mgr.activate();
     let result = mgr
         .reconcile(identity, trace)
@@ -1049,6 +1077,17 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
 mod tests {
     use super::*;
     use crate::api::middleware::AuthMethod;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    fn lock_handler_test_state() -> MutexGuard<'static, ()> {
+        static HANDLER_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        let guard = HANDLER_TEST_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("handler test lock");
+        reset_shared_fleet_control_manager_for_tests();
+        guard
+    }
 
     fn admin_identity() -> AuthIdentity {
         AuthIdentity {
@@ -1612,6 +1651,7 @@ mod tests {
 
     #[test]
     fn handle_quarantine_succeeds() {
+        let _guard = lock_handler_test_state();
         let request = QuarantineRequest {
             extension_id: "ext-1".to_string(),
             scope: test_quarantine_scope(),
@@ -1624,6 +1664,7 @@ mod tests {
 
     #[test]
     fn handle_revoke_succeeds() {
+        let _guard = lock_handler_test_state();
         let request = RevokeRequest {
             extension_id: "ext-1".to_string(),
             scope: test_revocation_scope(),
@@ -1636,6 +1677,7 @@ mod tests {
 
     #[test]
     fn handle_status_succeeds() {
+        let _guard = lock_handler_test_state();
         let result =
             handle_status(&admin_identity(), &test_trace(), "zone-1").expect("handle status");
         assert!(result.ok);
@@ -1645,6 +1687,7 @@ mod tests {
 
     #[test]
     fn handle_status_rejects_empty_zone() {
+        let _guard = lock_handler_test_state();
         let err = handle_status(&admin_identity(), &test_trace(), "").expect_err("empty zone");
         let detail = match err {
             ApiError::BadRequest { detail, .. } => detail,
@@ -1655,6 +1698,7 @@ mod tests {
 
     #[test]
     fn handle_reconcile_succeeds() {
+        let _guard = lock_handler_test_state();
         let result = handle_reconcile(&admin_identity(), &test_trace()).expect("handle reconcile");
         assert!(result.ok);
         assert_eq!(result.data.action_type, "reconcile");
@@ -1662,6 +1706,7 @@ mod tests {
 
     #[test]
     fn handle_release_nonexistent_incident_returns_error() {
+        let _guard = lock_handler_test_state();
         let identity = admin_identity();
         let trace = TraceContext {
             trace_id: "🙂🙂🙂🙂🙂🙂🙂🙂🙂".to_string(),
@@ -1682,6 +1727,7 @@ mod tests {
 
     #[test]
     fn handle_release_rejects_empty_incident_id() {
+        let _guard = lock_handler_test_state();
         let identity = admin_identity();
         let trace = test_trace();
         let request = ReleaseRequest {
@@ -1693,6 +1739,46 @@ mod tests {
             other => panic!("unexpected error: {other:?}"),
         };
         assert!(detail.contains(FLEET_SCOPE_INVALID));
+    }
+
+    #[test]
+    fn handler_status_reflects_prior_quarantine() {
+        let _guard = lock_handler_test_state();
+        let request = QuarantineRequest {
+            extension_id: "ext-1".to_string(),
+            scope: test_quarantine_scope(),
+        };
+        handle_quarantine(&admin_identity(), &test_trace(), &request).expect("handle quarantine");
+
+        let status = handle_status(&admin_identity(), &test_trace(), "zone-us-east-1")
+            .expect("handle status");
+        assert_eq!(status.data.active_quarantines, 1);
+        assert!(status.data.activated);
+    }
+
+    #[test]
+    fn handler_release_succeeds_for_prior_quarantine_incident() {
+        let _guard = lock_handler_test_state();
+        let request = QuarantineRequest {
+            extension_id: "ext-1".to_string(),
+            scope: test_quarantine_scope(),
+        };
+        handle_quarantine(&admin_identity(), &test_trace(), &request).expect("handle quarantine");
+
+        let incident_id = {
+            let mgr = shared_fleet_control_manager()
+                .lock()
+                .expect("shared fleet manager");
+            mgr.active_incidents()[0].incident_id.clone()
+        };
+
+        let release = handle_release(
+            &admin_identity(),
+            &test_trace(),
+            &ReleaseRequest { incident_id },
+        )
+        .expect("handle release");
+        assert_eq!(release.data.action_type, "release");
     }
 
     // ── Serde round-trip tests ────────────────────────────────────────────
