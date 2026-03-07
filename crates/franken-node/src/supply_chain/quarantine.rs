@@ -21,6 +21,9 @@ const MAX_PROPAGATION_STATUS: usize = 4096;
 /// Maximum recall receipts per quarantine record before oldest are evicted.
 const MAX_RECALL_RECEIPTS: usize = 4096;
 
+/// Maximum state history entries per quarantine record before oldest are evicted.
+const MAX_STATE_HISTORY: usize = 256;
+
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     items.push(item);
     if items.len() > cap {
@@ -477,9 +480,11 @@ impl QuarantineRegistry {
             })?;
         if record.state == QuarantineState::Initiated {
             record.state = QuarantineState::Propagated;
-            record
-                .state_history
-                .push((QuarantineState::Propagated, timestamp.to_owned()));
+            push_bounded(
+                &mut record.state_history,
+                (QuarantineState::Propagated, timestamp.to_owned()),
+                MAX_STATE_HISTORY,
+            );
         }
 
         self.append_audit(
@@ -525,9 +530,11 @@ impl QuarantineRegistry {
             QuarantineState::Initiated | QuarantineState::Propagated
         ) {
             record.state = QuarantineState::Enforced;
-            record
-                .state_history
-                .push((QuarantineState::Enforced, timestamp.to_owned()));
+            push_bounded(
+                &mut record.state_history,
+                (QuarantineState::Enforced, timestamp.to_owned()),
+                MAX_STATE_HISTORY,
+            );
 
             self.append_audit(
                 QUARANTINE_ENFORCED,
@@ -574,9 +581,11 @@ impl QuarantineRegistry {
                 message: "Quarantine order disappeared during operation".to_string(),
             })?;
         record.state = QuarantineState::Draining;
-        record
-            .state_history
-            .push((QuarantineState::Draining, timestamp.to_owned()));
+        push_bounded(
+            &mut record.state_history,
+            (QuarantineState::Draining, timestamp.to_owned()),
+            MAX_STATE_HISTORY,
+        );
 
         self.append_audit(
             QUARANTINE_DRAIN_STARTED,
@@ -626,9 +635,11 @@ impl QuarantineRegistry {
                 message: "Quarantine order disappeared during operation".to_string(),
             })?;
         record.state = QuarantineState::Isolated;
-        record
-            .state_history
-            .push((QuarantineState::Isolated, timestamp.to_owned()));
+        push_bounded(
+            &mut record.state_history,
+            (QuarantineState::Isolated, timestamp.to_owned()),
+            MAX_STATE_HISTORY,
+        );
 
         self.append_audit(
             QUARANTINE_DRAIN_COMPLETED,
@@ -716,9 +727,11 @@ impl QuarantineRegistry {
             });
         }
         record.state = QuarantineState::RecallTriggered;
-        record
-            .state_history
-            .push((QuarantineState::RecallTriggered, timestamp.clone()));
+        push_bounded(
+            &mut record.state_history,
+            (QuarantineState::RecallTriggered, timestamp.clone()),
+            MAX_STATE_HISTORY,
+        );
         record.recall = Some(recall);
 
         self.append_audit(
@@ -811,9 +824,11 @@ impl QuarantineRegistry {
             })?;
 
         record.state = QuarantineState::RecallCompleted;
-        record
-            .state_history
-            .push((QuarantineState::RecallCompleted, timestamp.to_owned()));
+        push_bounded(
+            &mut record.state_history,
+            (QuarantineState::RecallCompleted, timestamp.to_owned()),
+            MAX_STATE_HISTORY,
+        );
         self.total_recalls = self.total_recalls.saturating_add(1);
 
         // Remove from active quarantines.
@@ -877,9 +892,11 @@ impl QuarantineRegistry {
                 message: "Quarantine order disappeared during operation".to_string(),
             })?;
         record.state = QuarantineState::Lifted;
-        record
-            .state_history
-            .push((QuarantineState::Lifted, timestamp.clone()));
+        push_bounded(
+            &mut record.state_history,
+            (QuarantineState::Lifted, timestamp.clone()),
+            MAX_STATE_HISTORY,
+        );
         record.clearance = Some(clearance);
 
         // Remove from active quarantines.

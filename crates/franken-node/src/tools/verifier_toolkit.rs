@@ -581,7 +581,7 @@ impl VerifierToolkit {
         hasher.update(claim_id.as_bytes());
         hasher.update((step.len() as u64).to_le_bytes());
         hasher.update(step.as_bytes());
-        hasher.update(&[u8::from(passed)]);
+        hasher.update([u8::from(passed)]);
         hex::encode(hasher.finalize())
     }
 
