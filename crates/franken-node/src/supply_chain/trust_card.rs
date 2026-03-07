@@ -12,6 +12,8 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 const MAX_TELEMETRY: usize = 4096;
+const MAX_CARD_VERSIONS: usize = 512;
+const MAX_AUDIT_HISTORY: usize = 256;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     items.push(item);
@@ -335,10 +337,13 @@ impl TrustCardRegistry {
         };
         sign_card_in_place(&mut card, &self.registry_key)?;
 
-        self.cards_by_extension
-            .entry(extension_id.clone())
-            .or_default()
-            .push(card.clone());
+        push_bounded(
+            self.cards_by_extension
+                .entry(extension_id.clone())
+                .or_default(),
+            card.clone(),
+            MAX_CARD_VERSIONS,
+        );
         self.cache_by_extension.insert(
             extension_id.clone(),
             CachedCard {
@@ -409,18 +414,25 @@ impl TrustCardRegistry {
         if let Some(ts) = mutation.last_verified_timestamp {
             next.last_verified_timestamp = ts;
         }
-        next.audit_history.push(AuditRecord {
-            timestamp: timestamp_from_secs(now_secs),
-            event_code: TRUST_CARD_UPDATED.to_string(),
-            detail: "trust card updated".to_string(),
-            trace_id: trace_id.to_string(),
-        });
+        push_bounded(
+            &mut next.audit_history,
+            AuditRecord {
+                timestamp: timestamp_from_secs(now_secs),
+                event_code: TRUST_CARD_UPDATED.to_string(),
+                detail: "trust card updated".to_string(),
+                trace_id: trace_id.to_string(),
+            },
+            MAX_AUDIT_HISTORY,
+        );
 
         sign_card_in_place(&mut next, &self.registry_key)?;
-        self.cards_by_extension
-            .entry(extension_id.to_string())
-            .or_default()
-            .push(next.clone());
+        push_bounded(
+            self.cards_by_extension
+                .entry(extension_id.to_string())
+                .or_default(),
+            next.clone(),
+            MAX_CARD_VERSIONS,
+        );
         self.cache_by_extension.insert(
             extension_id.to_string(),
             CachedCard {
@@ -985,7 +997,7 @@ pub fn render_comparison_human(comparison: &TrustCardComparison) -> String {
 
 pub fn verify_card_signature(card: &TrustCard, registry_key: &[u8]) -> Result<(), TrustCardError> {
     let expected_hash = compute_card_hash(card)?;
-    if !constant_time_eq(&card.card_hash, &expected_hash) {
+    if !crate::security::constant_time::ct_eq(&card.card_hash, &expected_hash) {
         return Err(TrustCardError::CardHashMismatch(
             card.extension.extension_id.clone(),
         ));
@@ -996,25 +1008,12 @@ pub fn verify_card_signature(card: &TrustCard, registry_key: &[u8]) -> Result<()
     mac.update(b"trust_card_registry_sig_v1:");
     mac.update(card.card_hash.as_bytes());
     let expected_signature = hex::encode(mac.finalize().into_bytes());
-    if !constant_time_eq(&card.registry_signature, &expected_signature) {
+    if !crate::security::constant_time::ct_eq(&card.registry_signature, &expected_signature) {
         return Err(TrustCardError::SignatureInvalid(
             card.extension.extension_id.clone(),
         ));
     }
     Ok(())
-}
-
-fn constant_time_eq(a: &str, b: &str) -> bool {
-    let a_bytes = a.as_bytes();
-    let b_bytes = b.as_bytes();
-    if a_bytes.len() != b_bytes.len() {
-        return false;
-    }
-    let mut result = 0;
-    for (x, y) in a_bytes.iter().zip(b_bytes.iter()) {
-        result |= x ^ y;
-    }
-    result == 0
 }
 
 pub fn compute_card_hash(card: &TrustCard) -> Result<String, TrustCardError> {
