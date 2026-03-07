@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_TRUSTED_SIGNERS: usize = 4096;
 
@@ -192,6 +192,24 @@ impl AdmissionGate {
                 },
                 event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
             };
+        }
+
+        // Reject duplicate capability_ids (INV-ARTIFACT-CAPABILITY-ENVELOPE).
+        {
+            let mut seen_ids = BTreeSet::new();
+            for cap in &contract.capabilities {
+                if !seen_ids.insert(&cap.capability_id) {
+                    return AdmissionOutcome::Denied {
+                        reason: AdmissionDenialReason::InvalidCapability {
+                            detail: format!(
+                                "duplicate capability_id '{}'",
+                                cap.capability_id
+                            ),
+                        },
+                        event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+                    };
+                }
+            }
         }
 
         // Validate each capability entry
