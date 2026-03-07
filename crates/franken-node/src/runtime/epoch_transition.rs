@@ -573,10 +573,15 @@ fn manifest_hash_for_transition(
     reason: &str,
     target_epoch: u64,
 ) -> String {
-    let canonical = format!("epoch-manifest|{transition_id}|{initiator}|{reason}|{target_epoch}");
-    let digest =
-        Sha256::digest([b"epoch_transition_hash_v1:" as &[u8], canonical.as_bytes()].concat());
-    format!("{digest:x}")
+    let mut hasher = Sha256::new();
+    hasher.update(b"epoch_transition_hash_v1:");
+    // Length-prefixed encoding prevents delimiter-collision ambiguity.
+    for field in [transition_id, initiator, reason] {
+        hasher.update(&(field.len() as u64).to_le_bytes());
+        hasher.update(field.as_bytes());
+    }
+    hasher.update(&target_epoch.to_le_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {

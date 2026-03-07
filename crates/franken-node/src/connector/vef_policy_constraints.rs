@@ -395,8 +395,15 @@ fn expression_for_decision(effect: RuleEffect, action: ActionClass) -> String {
     }
 }
 
-fn predicate_hash_id(seed: &str) -> String {
-    let digest = Sha256::digest([b"vef_predicate_hash_v1:" as &[u8], seed.as_bytes()].concat());
+fn predicate_hash_id(fields: &[&str]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"vef_predicate_hash_v1:");
+    // Length-prefixed encoding prevents delimiter-collision ambiguity.
+    for field in fields {
+        hasher.update(&(field.len() as u64).to_le_bytes());
+        hasher.update(field.as_bytes());
+    }
+    let digest = hasher.finalize();
     let mut hex = String::with_capacity(16);
     for b in &digest[..8] {
         hex.push_str(&format!("{b:02x}"));
@@ -473,15 +480,14 @@ pub fn compile_policy(
         let trace_link = format!("policy:{}/rule:{}", normalized.policy_id, rule.rule_id);
 
         let decision_expr = expression_for_decision(rule.effect, rule.action_class);
-        let decision_seed = format!(
-            "{}|{}|{}|decision|{}",
-            normalized.policy_id,
-            rule.rule_id,
-            rule.action_class.as_str(),
-            decision_expr
-        );
         predicates.push(CompiledPredicate {
-            predicate_id: predicate_hash_id(&decision_seed),
+            predicate_id: predicate_hash_id(&[
+                &normalized.policy_id,
+                &rule.rule_id,
+                rule.action_class.as_str(),
+                "decision",
+                &decision_expr,
+            ]),
             source_rule_id: rule.rule_id.clone(),
             action_class: rule.action_class,
             kind: PredicateKind::Decision,
@@ -498,15 +504,14 @@ pub fn compile_policy(
                 rule.action_class.as_str(),
                 capability
             );
-            let seed = format!(
-                "{}|{}|{}|capability|{}",
-                normalized.policy_id,
-                rule.rule_id,
-                rule.action_class.as_str(),
-                capability
-            );
             predicates.push(CompiledPredicate {
-                predicate_id: predicate_hash_id(&seed),
+                predicate_id: predicate_hash_id(&[
+                    &normalized.policy_id,
+                    &rule.rule_id,
+                    rule.action_class.as_str(),
+                    "capability",
+                    capability,
+                ]),
                 source_rule_id: rule.rule_id.clone(),
                 action_class: rule.action_class,
                 kind: PredicateKind::Capability,
@@ -526,16 +531,15 @@ pub fn compile_policy(
                 key,
                 value
             );
-            let seed = format!(
-                "{}|{}|{}|constraint|{}={}",
-                normalized.policy_id,
-                rule.rule_id,
-                rule.action_class.as_str(),
-                key,
-                value
-            );
             predicates.push(CompiledPredicate {
-                predicate_id: predicate_hash_id(&seed),
+                predicate_id: predicate_hash_id(&[
+                    &normalized.policy_id,
+                    &rule.rule_id,
+                    rule.action_class.as_str(),
+                    "constraint",
+                    key,
+                    value,
+                ]),
                 source_rule_id: rule.rule_id.clone(),
                 action_class: rule.action_class,
                 kind: PredicateKind::Constraint,

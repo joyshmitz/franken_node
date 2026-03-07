@@ -195,20 +195,20 @@ impl ForceTransitionPolicy {
     /// Compute a deterministic hash of the policy for audit logging.
     pub fn policy_hash(&self) -> String {
         use sha2::Digest;
-        let canonical = format!(
-            "force_policy|{}|{}|{}|{}",
-            self.skippable_participants
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(","),
-            self.max_skippable,
-            self.operator_id,
-            self.audit_reason,
-        );
         let mut hasher = sha2::Sha256::new();
         sha2::Digest::update(&mut hasher, b"transition_abort_policy_v1:");
-        sha2::Digest::update(&mut hasher, canonical.as_bytes());
+        let joined = self
+            .skippable_participants
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(",");
+        // Length-prefixed encoding prevents delimiter-collision ambiguity.
+        for field in [joined.as_str(), self.operator_id.as_str(), self.audit_reason.as_str()] {
+            sha2::Digest::update(&mut hasher, &(field.len() as u64).to_le_bytes());
+            sha2::Digest::update(&mut hasher, field.as_bytes());
+        }
+        sha2::Digest::update(&mut hasher, &self.max_skippable.to_le_bytes());
         format!("policy:{:x}", sha2::Digest::finalize(hasher))
     }
 }

@@ -382,15 +382,21 @@ pub fn compute_contract_signature(contract: &CapabilityContract) -> String {
         .iter()
         .map(|c| c.capability_id.as_str())
         .collect();
-    let payload = format!(
-        "{}|{}|{}|{}|{}",
-        contract.contract_id,
-        contract.extension_id,
-        cap_ids.join(","),
-        contract.signer_id,
-        contract.issued_epoch_ms
-    );
-    digest_bytes(payload.as_bytes())
+    let joined_caps = cap_ids.join(",");
+    let signer = &contract.signer_id;
+    // Use length-prefixed encoding to prevent delimiter-collision ambiguity.
+    let mut buf = Vec::new();
+    for field in [
+        contract.contract_id.as_str(),
+        contract.extension_id.as_str(),
+        joined_caps.as_str(),
+        signer.as_str(),
+    ] {
+        buf.extend_from_slice(&(field.len() as u64).to_le_bytes());
+        buf.extend_from_slice(field.as_bytes());
+    }
+    buf.extend_from_slice(&contract.issued_epoch_ms.to_le_bytes());
+    digest_bytes(&buf)
 }
 
 /// Create a valid, signed capability contract for testing.

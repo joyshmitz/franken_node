@@ -289,14 +289,26 @@ fn deterministic_hash(data: &str) -> String {
 /// Compute the binding hash for a claim and its evidence items.
 /// INV-VER-EVIDENCE-BOUND: result is bound to evidence.
 fn compute_binding_hash(claim: &Claim, evidence: &[Evidence]) -> String {
-    let mut parts = vec![claim.claim_id.clone(), claim.assertion.clone()];
+    let mut hasher = Sha256::new();
+    hasher.update(b"connector_verifier_sdk_binding_v1:");
+    // Length-prefixed encoding prevents delimiter-collision ambiguity.
+    for field in [claim.claim_id.as_str(), claim.assertion.as_str()] {
+        hasher.update(&(field.len() as u64).to_le_bytes());
+        hasher.update(field.as_bytes());
+    }
+    hasher.update(&(evidence.len() as u64).to_le_bytes());
     for ev in evidence {
-        parts.push(ev.evidence_id.clone());
+        hasher.update(&(ev.evidence_id.len() as u64).to_le_bytes());
+        hasher.update(ev.evidence_id.as_bytes());
+        hasher.update(&(ev.artifacts.len() as u64).to_le_bytes());
         for (k, v) in &ev.artifacts {
-            parts.push(format!("{k}={v}"));
+            hasher.update(&(k.len() as u64).to_le_bytes());
+            hasher.update(k.as_bytes());
+            hasher.update(&(v.len() as u64).to_le_bytes());
+            hasher.update(v.as_bytes());
         }
     }
-    deterministic_hash(&parts.join("|"))
+    hex::encode(hasher.finalize())
 }
 
 fn now_timestamp() -> String {
@@ -592,14 +604,23 @@ pub fn verify_trust_state(
     };
     let confidence = if all_pass { 1.0 } else { 0.0 };
 
-    let mut parts = Vec::new();
+    let mut hasher = Sha256::new();
+    hasher.update(b"connector_verifier_sdk_state_binding_v1:");
+    hasher.update(&(state.len() as u64).to_le_bytes());
     for (k, v) in state {
-        parts.push(format!("{k}={v}"));
+        hasher.update(&(k.len() as u64).to_le_bytes());
+        hasher.update(k.as_bytes());
+        hasher.update(&(v.len() as u64).to_le_bytes());
+        hasher.update(v.as_bytes());
     }
+    hasher.update(&(anchor.len() as u64).to_le_bytes());
     for (k, v) in anchor {
-        parts.push(format!("anchor:{k}={v}"));
+        hasher.update(&(k.len() as u64).to_le_bytes());
+        hasher.update(k.as_bytes());
+        hasher.update(&(v.len() as u64).to_le_bytes());
+        hasher.update(v.as_bytes());
     }
-    let binding_hash = deterministic_hash(&parts.join("|"));
+    let binding_hash = hex::encode(hasher.finalize());
     let signature = deterministic_hash(&format!("{verifier_identity}|{binding_hash}"));
 
     Ok(VerificationResult {
