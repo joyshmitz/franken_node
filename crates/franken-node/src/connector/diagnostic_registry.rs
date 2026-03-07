@@ -353,7 +353,7 @@ impl VoiScheduler {
 
     /// Signal a regime shift, boosting budget temporarily.
     pub fn signal_regime_shift(&mut self, now_ts: u64) {
-        self.regime_boost_until = now_ts + self.config.regime_boost_secs;
+        self.regime_boost_until = now_ts.saturating_add(self.config.regime_boost_secs);
         // Increase uncertainty for all diagnostics.
         for state in self.states.values_mut() {
             state.uncertainty_level = 1.0;

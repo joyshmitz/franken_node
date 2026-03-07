@@ -85,11 +85,21 @@ impl PhenotypeTrajectory {
         let recent = &self.observations[n - 1];
         let earlier = &self.observations[0];
 
-        let activity_trend = earlier.maintainer_activity_score - recent.maintainer_activity_score;
-        let velocity_trend = earlier.commit_velocity - recent.commit_velocity;
-        let response_trend = recent.issue_response_time_hours - earlier.issue_response_time_hours;
-        let diversity_trend =
-            earlier.contributor_diversity_index - recent.contributor_diversity_index;
+        // Guard non-finite observation fields fail-closed before trend arithmetic.
+        let fin = |v: f64, fallback: f64| if v.is_finite() { v } else { fallback };
+        let earlier_activity = fin(earlier.maintainer_activity_score, 0.0);
+        let recent_activity = fin(recent.maintainer_activity_score, 0.0);
+        let earlier_velocity = fin(earlier.commit_velocity, 0.0);
+        let recent_velocity = fin(recent.commit_velocity, 0.0);
+        let earlier_response = fin(earlier.issue_response_time_hours, 720.0);
+        let recent_response = fin(recent.issue_response_time_hours, 720.0);
+        let earlier_diversity = fin(earlier.contributor_diversity_index, 0.0);
+        let recent_diversity = fin(recent.contributor_diversity_index, 0.0);
+
+        let activity_trend = earlier_activity - recent_activity;
+        let velocity_trend = earlier_velocity - recent_velocity;
+        let response_trend = recent_response - earlier_response;
+        let diversity_trend = earlier_diversity - recent_diversity;
 
         // Normalize and combine: positive values = worsening
         let trend_score = (activity_trend.max(0.0) * 0.3
@@ -104,10 +114,32 @@ impl PhenotypeTrajectory {
     }
 
     fn single_observation_score(&self, obs: &PhenotypeObservation) -> f64 {
-        let activity_risk = (1.0 - obs.maintainer_activity_score).max(0.0);
-        let velocity_risk = (1.0 - (obs.commit_velocity / 10.0).min(1.0)).max(0.0);
-        let response_risk = (obs.issue_response_time_hours / 720.0).min(1.0); // 30 days max
-        let diversity_risk = (1.0 - obs.contributor_diversity_index).max(0.0);
+        // Guard non-finite values fail-closed: NaN/Inf → worst-case risk.
+        let activity = if obs.maintainer_activity_score.is_finite() {
+            obs.maintainer_activity_score
+        } else {
+            0.0
+        };
+        let velocity = if obs.commit_velocity.is_finite() {
+            obs.commit_velocity
+        } else {
+            0.0
+        };
+        let response = if obs.issue_response_time_hours.is_finite() {
+            obs.issue_response_time_hours
+        } else {
+            720.0
+        };
+        let diversity = if obs.contributor_diversity_index.is_finite() {
+            obs.contributor_diversity_index
+        } else {
+            0.0
+        };
+
+        let activity_risk = (1.0 - activity).max(0.0);
+        let velocity_risk = (1.0 - (velocity / 10.0).min(1.0)).max(0.0);
+        let response_risk = (response / 720.0).min(1.0); // 30 days max
+        let diversity_risk = (1.0 - diversity).max(0.0);
 
         (activity_risk * 0.3 + velocity_risk * 0.2 + response_risk * 0.25 + diversity_risk * 0.25)
             .min(1.0)
@@ -141,6 +173,18 @@ impl CompromisePricing {
                 "no observations available".to_string(),
             ));
         }
+
+        // Guard non-finite inputs fail-closed: NaN/Inf → zero loss/confidence.
+        let expected_loss = if expected_loss.is_finite() {
+            expected_loss
+        } else {
+            0.0
+        };
+        let confidence = if confidence.is_finite() {
+            confidence
+        } else {
+            0.0
+        };
 
         let propensity = trajectory.compromise_propensity();
         let risk_adjusted = propensity * expected_loss;
