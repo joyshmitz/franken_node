@@ -428,7 +428,7 @@ impl ReceiptChain {
         Self::verify_entries_and_checkpoints(&entries, &checkpoints)?;
         let last_checkpoint_entry = checkpoints
             .last()
-            .map(|checkpoint| checkpoint.end_index as usize + 1)
+            .map(|checkpoint| (checkpoint.end_index as usize).saturating_add(1))
             .unwrap_or(0);
         Ok(Self {
             schema_version: RECEIPT_CHAIN_SCHEMA_VERSION.to_string(),
