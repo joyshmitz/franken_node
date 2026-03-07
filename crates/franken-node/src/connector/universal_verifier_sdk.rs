@@ -431,9 +431,10 @@ pub fn replay_capsule(
     }
 
     // Step 4: Compute actual output hash (deterministic)
+    // Length-prefixed encoding prevents delimiter-collision ambiguity.
     let mut replay_input = capsule.payload.clone();
     for (k, v) in &capsule.inputs {
-        replay_input.push_str(&format!("|{k}={v}"));
+        replay_input.push_str(&format!("|{}:{}={}:{}", k.len(), k, v.len(), v));
     }
     let actual_hash = deterministic_hash(&replay_input);
 
@@ -572,9 +573,10 @@ pub fn build_reference_capsule() -> ReplayCapsule {
     let payload = "reference_payload_data".to_string();
 
     // Compute expected output hash exactly as replay_capsule does
+    // Length-prefixed encoding prevents delimiter-collision ambiguity.
     let mut replay_input = payload.clone();
     for (k, v) in &inputs {
-        replay_input.push_str(&format!("|{k}={v}"));
+        replay_input.push_str(&format!("|{}:{}={}:{}", k.len(), k, v.len(), v));
     }
     let expected_hash = deterministic_hash(&replay_input);
 
