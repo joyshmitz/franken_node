@@ -10,6 +10,7 @@ use std::collections::VecDeque;
 use std::f64::consts::PI;
 
 const MAX_EVENTS: usize = 4096;
+const MAX_RECENT_SHIFTS: usize = 4096;
 
 // ---------------------------------------------------------------------------
 // Event codes
@@ -696,7 +697,7 @@ impl MultiStreamCorrelator {
             .cloned()
             .collect();
 
-        self.recent_shifts.push(shift);
+        push_bounded(&mut self.recent_shifts, shift, MAX_RECENT_SHIFTS);
         correlated
     }
 

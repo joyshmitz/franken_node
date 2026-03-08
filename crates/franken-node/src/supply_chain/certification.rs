@@ -15,14 +15,6 @@ use crate::security::constant_time::ct_eq;
 
 const MAX_AUDIT_TRAIL: usize = 4096;
 
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    items.push(item);
-    if items.len() > cap {
-        let overflow = items.len() - cap;
-        items.drain(0..overflow);
-    }
-}
-
 // ── Event codes ──────────────────────────────────────────────────────────────
 
 pub const CERTIFICATION_EVALUATED: &str = "CERTIFICATION_EVALUATED";
@@ -726,8 +718,7 @@ impl CertificationRegistry {
         self.audit_trail.push(entry);
         if self.audit_trail.len() > MAX_AUDIT_TRAIL {
             let overflow = self.audit_trail.len() - MAX_AUDIT_TRAIL;
-            self.chain_anchor_hash =
-                Some(self.audit_trail[overflow - 1].entry_hash.clone());
+            self.chain_anchor_hash = Some(self.audit_trail[overflow - 1].entry_hash.clone());
             self.audit_trail.drain(0..overflow);
         }
     }

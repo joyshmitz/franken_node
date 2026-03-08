@@ -328,17 +328,16 @@ impl MigrationValidationCohorts {
             *count = count.saturating_add(1);
         }
 
-        let hash_input = format!(
-            "{total_cohorts}:{total_runs}:{determinism_rate}:{}",
-            &self.schema_version
-        );
-        let content_hash = hex::encode(Sha256::digest(
-            [
-                b"migration_validation_hash_v1:" as &[u8],
-                hash_input.as_bytes(),
-            ]
-            .concat(),
-        ));
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"migration_validation_hash_v1:");
+            h.update((total_cohorts as u64).to_le_bytes());
+            h.update((total_runs as u64).to_le_bytes());
+            h.update(determinism_rate.to_le_bytes());
+            h.update((self.schema_version.len() as u64).to_le_bytes());
+            h.update(self.schema_version.as_bytes());
+            hex::encode(h.finalize())
+        };
 
         self.log(
             event_codes::MVC_COVERAGE_COMPUTED,

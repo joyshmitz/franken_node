@@ -269,7 +269,11 @@ impl ExternalReplicationClaims {
             .claims
             .get_mut(claim_id)
             .ok_or_else(|| format!("claim not found: {claim_id}"))?;
-        push_bounded(&mut claim.evidence_refs, evidence_ref.to_string(), MAX_EVIDENCE_REFS);
+        push_bounded(
+            &mut claim.evidence_refs,
+            evidence_ref.to_string(),
+            MAX_EVIDENCE_REFS,
+        );
         self.log(
             event_codes::ERC_EVIDENCE_LINKED,
             trace_id,
@@ -334,14 +338,15 @@ impl ExternalReplicationClaims {
             let count = by_cat.entry(c.category.label().to_string()).or_default();
             *count = count.saturating_add(1);
         }
-        let hash_input = format!("{total}:{published}:{}", &self.schema_version);
-        let content_hash = hex::encode(Sha256::digest(
-            [
-                b"external_replication_hash_v1:" as &[u8],
-                hash_input.as_bytes(),
-            ]
-            .concat(),
-        ));
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"external_replication_hash_v1:");
+            h.update((total as u64).to_le_bytes());
+            h.update((published as u64).to_le_bytes());
+            h.update((self.schema_version.len() as u64).to_le_bytes());
+            h.update(self.schema_version.as_bytes());
+            hex::encode(h.finalize())
+        };
         self.log(
             event_codes::ERC_CATALOG_GENERATED,
             trace_id,

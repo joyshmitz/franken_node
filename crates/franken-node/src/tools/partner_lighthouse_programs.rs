@@ -350,14 +350,16 @@ impl PartnerLighthousePrograms {
         let total_p = self.partners.len();
         let total_d = self.deployments.len();
         let total_o = self.outcomes.len();
-        let hash_input = format!("{total_p}:{total_d}:{total_o}:{}", &self.schema_version);
-        let content_hash = hex::encode(Sha256::digest(
-            [
-                b"partner_lighthouse_hash_v1:" as &[u8],
-                hash_input.as_bytes(),
-            ]
-            .concat(),
-        ));
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"partner_lighthouse_hash_v1:");
+            h.update((total_p as u64).to_le_bytes());
+            h.update((total_d as u64).to_le_bytes());
+            h.update((total_o as u64).to_le_bytes());
+            h.update((self.schema_version.len() as u64).to_le_bytes());
+            h.update(self.schema_version.as_bytes());
+            hex::encode(h.finalize())
+        };
 
         self.log(
             event_codes::PLP_FUNNEL_COMPUTED,

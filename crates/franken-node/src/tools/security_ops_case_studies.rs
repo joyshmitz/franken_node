@@ -340,11 +340,22 @@ impl SecurityOpsCaseStudyRegistry {
         }
 
         let overall_verdict = unmet_criteria.is_empty();
-        let hash_input = format!(
-            "{SCHEMA_VERSION}:{total_case_studies}:{security_improvement_case_studies}:{reviewed_case_studies}:{website_published_case_studies}:{industry_submissions}:{overall_verdict}:{:?}",
-            unmet_criteria
-        );
-        let content_hash = sha256_hex(hash_input.as_bytes());
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"security_ops_hash_v1:");
+            h.update((SCHEMA_VERSION.len() as u64).to_le_bytes());
+            h.update(SCHEMA_VERSION.as_bytes());
+            h.update((total_case_studies as u64).to_le_bytes());
+            h.update((security_improvement_case_studies as u64).to_le_bytes());
+            h.update((reviewed_case_studies as u64).to_le_bytes());
+            h.update((website_published_case_studies as u64).to_le_bytes());
+            h.update((industry_submissions as u64).to_le_bytes());
+            h.update(&[u8::from(overall_verdict)]);
+            let unmet_str = format!("{unmet_criteria:?}");
+            h.update((unmet_str.len() as u64).to_le_bytes());
+            h.update(unmet_str.as_bytes());
+            format!("{:x}", h.finalize())
+        };
 
         self.log(
             event_codes::CSC_SUMMARY_GENERATED,

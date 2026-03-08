@@ -18,14 +18,6 @@ use std::collections::BTreeMap;
 
 const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
 
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    items.push(item);
-    if items.len() > cap {
-        let overflow = items.len() - cap;
-        items.drain(0..overflow);
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -341,7 +333,7 @@ pub struct ChallengeFlowController {
     challenges: BTreeMap<ChallengeId, Challenge>,
     audit_log: Vec<ChallengeAuditEntry>,
     /// Anchor hash: entry hash of the most recently evicted audit entry.
-    /// Used to maintain hash-chain integrity after push_bounded eviction.
+    /// Used to maintain hash-chain integrity after bounded eviction.
     chain_anchor_hash: Option<String>,
     config: ChallengeConfig,
     metrics: ChallengeMetrics,
@@ -679,15 +671,11 @@ impl ChallengeFlowController {
         timestamp_ms: u64,
         detail: &str,
     ) {
-        let prev_hash = self
-            .audit_log
-            .last()
-            .map(|e| e.hash())
-            .unwrap_or_else(|| {
-                self.chain_anchor_hash
-                    .clone()
-                    .unwrap_or_else(|| "0".repeat(64))
-            });
+        let prev_hash = self.audit_log.last().map(|e| e.hash()).unwrap_or_else(|| {
+            self.chain_anchor_hash
+                .clone()
+                .unwrap_or_else(|| "0".repeat(64))
+        });
 
         let entry = ChallengeAuditEntry {
             challenge_id: challenge_id.as_str().to_string(),
@@ -704,8 +692,7 @@ impl ChallengeFlowController {
         self.audit_log.push(entry);
         if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
             let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
-            self.chain_anchor_hash =
-                Some(self.audit_log[overflow - 1].hash());
+            self.chain_anchor_hash = Some(self.audit_log[overflow - 1].hash());
             self.audit_log.drain(0..overflow);
         }
     }

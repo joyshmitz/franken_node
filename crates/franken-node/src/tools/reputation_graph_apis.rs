@@ -264,13 +264,17 @@ impl ReputationGraphApis {
         };
 
         let meets = composite >= MIN_TRUST_SCORE;
-        let hash_input = format!(
-            "{node_id}:{composite}:{edge_count}:{}",
-            &self.schema_version
-        );
-        let content_hash = hex::encode(Sha256::digest(
-            [b"reputation_graph_hash_v1:" as &[u8], hash_input.as_bytes()].concat(),
-        ));
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"reputation_graph_hash_v1:");
+            h.update((node_id.len() as u64).to_le_bytes());
+            h.update(node_id.as_bytes());
+            h.update(composite.to_le_bytes());
+            h.update((edge_count as u64).to_le_bytes());
+            h.update((self.schema_version.len() as u64).to_le_bytes());
+            h.update(self.schema_version.as_bytes());
+            hex::encode(h.finalize())
+        };
 
         self.log(
             event_codes::RGA_SCORE_COMPUTED,
@@ -348,16 +352,16 @@ impl ReputationGraphApis {
     }
 
     pub fn export_snapshot(&mut self, trace_id: &str) -> GraphSnapshot {
-        let hash_input = format!(
-            "{}:{}:{}:{}",
-            self.nodes.len(),
-            self.edges.len(),
-            self.schema_version,
-            self.audit_log.len()
-        );
-        let content_hash = hex::encode(Sha256::digest(
-            [b"reputation_graph_hash_v1:" as &[u8], hash_input.as_bytes()].concat(),
-        ));
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"reputation_graph_hash_v1:");
+            h.update((self.nodes.len() as u64).to_le_bytes());
+            h.update((self.edges.len() as u64).to_le_bytes());
+            h.update((self.schema_version.len() as u64).to_le_bytes());
+            h.update(self.schema_version.as_bytes());
+            h.update((self.audit_log.len() as u64).to_le_bytes());
+            hex::encode(h.finalize())
+        };
         self.log(
             event_codes::RGA_GRAPH_EXPORTED,
             trace_id,

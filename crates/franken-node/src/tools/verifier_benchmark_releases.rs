@@ -349,14 +349,16 @@ impl VerifierBenchmarkReleases {
                 .or_default();
             *entry = entry.saturating_add(r.download_count);
         }
-        let hash_input = format!("{total}:{published}:{total_dl}:{}", &self.schema_version);
-        let content_hash = hex::encode(Sha256::digest(
-            [
-                b"verifier_benchmark_hash_v1:" as &[u8],
-                hash_input.as_bytes(),
-            ]
-            .concat(),
-        ));
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"verifier_benchmark_hash_v1:");
+            h.update((total as u64).to_le_bytes());
+            h.update((published as u64).to_le_bytes());
+            h.update(total_dl.to_le_bytes());
+            h.update((self.schema_version.len() as u64).to_le_bytes());
+            h.update(self.schema_version.as_bytes());
+            hex::encode(h.finalize())
+        };
 
         self.log(
             event_codes::VBR_METRICS_COMPUTED,

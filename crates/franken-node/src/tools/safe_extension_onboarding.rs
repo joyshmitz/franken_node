@@ -349,19 +349,18 @@ impl SafeExtensionOnboarding {
 
         let meets_ttfe = mean_ttfe > 0.0 && mean_ttfe <= TARGET_TTFE_SECONDS as f64;
 
-        let hash_input = format!(
-            "{}:{}:{}:{:.4}:{:.4}:{}",
-            SCHEMA_VERSION,
-            total_sessions,
-            completed,
-            mean_ttfe,
-            overall_friction,
-            bottleneck_phases.len()
-        );
-        let content_hash = format!(
-            "{:x}",
-            Sha256::digest([b"safe_extension_hash_v1:" as &[u8], hash_input.as_bytes()].concat())
-        );
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"safe_extension_hash_v1:");
+            h.update((SCHEMA_VERSION.len() as u64).to_le_bytes());
+            h.update(SCHEMA_VERSION.as_bytes());
+            h.update((total_sessions as u64).to_le_bytes());
+            h.update((completed as u64).to_le_bytes());
+            h.update(mean_ttfe.to_le_bytes());
+            h.update(overall_friction.to_le_bytes());
+            h.update((bottleneck_phases.len() as u64).to_le_bytes());
+            format!("{:x}", h.finalize())
+        };
 
         self.log(
             event_codes::SEO_REPORT_GENERATED,

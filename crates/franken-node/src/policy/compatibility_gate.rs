@@ -173,6 +173,7 @@ pub struct ScopeMode {
 
 const MAX_AUDIT_TRAIL_ENTRIES: usize = 4096;
 const MAX_RECEIPTS: usize = 4096;
+const MAX_SHIMS: usize = 4096;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     items.push(item);
@@ -302,7 +303,7 @@ impl GateEngine {
 
     /// Register a compatibility shim.
     pub fn register_shim(&mut self, entry: ShimEntry) {
-        self.shims.push(entry);
+        push_bounded(&mut self.shims, entry, MAX_SHIMS);
     }
 
     /// Query registered shims, optionally filtered by scope.
@@ -377,7 +378,13 @@ impl GateEngine {
 
     /// Set the initial mode for a scope (no transition workflow).
     pub fn set_scope_mode(&mut self, scope_id: &str, mode: CompatMode) {
-        let sig = self.sign(&format!("mode:{}:{}:{}:{}", scope_id.len(), scope_id, mode.label().len(), mode.label()));
+        let sig = self.sign(&format!(
+            "mode:{}:{}:{}:{}",
+            scope_id.len(),
+            scope_id,
+            mode.label().len(),
+            mode.label()
+        ));
         self.scope_modes.insert(
             scope_id.to_string(),
             ScopeMode {
@@ -489,9 +496,12 @@ impl GateEngine {
         // Length-prefixed fields prevent delimiter-collision ambiguity.
         let payload = format!(
             "receipt:{}:{}:{}:{}:{}:{}",
-            scope_id.len(), scope_id,
-            shim_id.len(), shim_id,
-            description.len(), description
+            scope_id.len(),
+            scope_id,
+            shim_id.len(),
+            shim_id,
+            description.len(),
+            description
         );
         let sig = self.sign(&payload);
 
@@ -536,9 +546,12 @@ impl GateEngine {
         // Length-prefixed fields must match emit_divergence_receipt().
         let payload = format!(
             "receipt:{}:{}:{}:{}:{}:{}",
-            receipt.scope_id.len(), receipt.scope_id,
-            receipt.shim_id.len(), receipt.shim_id,
-            receipt.divergence_description.len(), receipt.divergence_description
+            receipt.scope_id.len(),
+            receipt.scope_id,
+            receipt.shim_id.len(),
+            receipt.shim_id,
+            receipt.divergence_description.len(),
+            receipt.divergence_description
         );
         let expected = self.sign(&payload);
         crate::security::constant_time::ct_eq(&receipt.signature, &expected)
