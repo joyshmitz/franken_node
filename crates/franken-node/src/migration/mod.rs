@@ -9,8 +9,10 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 #[cfg(any(test, feature = "extended-surfaces"))]
+#[allow(dead_code)]
 pub mod bpet_migration_gate;
 #[cfg(any(test, feature = "extended-surfaces"))]
+#[allow(dead_code)]
 pub mod dgis_migration_gate;
 
 const MAX_FINDINGS_PER_CATEGORY: usize = 16;

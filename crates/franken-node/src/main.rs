@@ -1,5 +1,9 @@
 #![forbid(unsafe_code)]
 
+// The api and policy modules are included via #[path] so the bin target
+// can use a subset of functions from these files. The lib target uses
+// them fully; the bin only needs selected items, so dead_code is expected.
+#[allow(dead_code)]
 mod api {
     #[path = "error.rs"]
     pub mod error;
@@ -10,6 +14,7 @@ mod api {
     #[path = "trust_card_routes.rs"]
     pub mod trust_card_routes;
 
+    #[cfg(any(test, feature = "extended-surfaces"))]
     pub(crate) fn utf8_prefix(input: &str, max_chars: usize) -> &str {
         if max_chars == 0 {
             return "";
@@ -23,6 +28,7 @@ mod api {
     }
 }
 mod cli;
+#[allow(dead_code)]
 mod policy {
     #[path = "bayesian_diagnostics.rs"]
     pub mod bayesian_diagnostics;

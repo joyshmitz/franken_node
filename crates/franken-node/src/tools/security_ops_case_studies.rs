@@ -350,7 +350,7 @@ impl SecurityOpsCaseStudyRegistry {
             h.update((reviewed_case_studies as u64).to_le_bytes());
             h.update((website_published_case_studies as u64).to_le_bytes());
             h.update((industry_submissions as u64).to_le_bytes());
-            h.update(&[u8::from(overall_verdict)]);
+            h.update([u8::from(overall_verdict)]);
             let unmet_str = format!("{unmet_criteria:?}");
             h.update((unmet_str.len() as u64).to_le_bytes());
             h.update(unmet_str.as_bytes());

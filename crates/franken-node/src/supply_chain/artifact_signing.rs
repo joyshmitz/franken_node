@@ -179,10 +179,14 @@ impl ChecksumManifest {
                 {
                     continue;
                 }
+                // Reject entries with unparseable size (fail-closed)
+                let Ok(size_bytes) = parts[2].parse::<u64>() else {
+                    continue;
+                };
                 entries.push(ManifestEntry {
                     sha256: parts[0].to_string(),
                     name: name.to_string(),
-                    size_bytes: parts[2].parse().unwrap_or(0),
+                    size_bytes,
                 });
             }
         }
@@ -1027,5 +1031,19 @@ mod tests {
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].name, "release/artifact.tar.gz");
         assert_eq!(parsed[1].name, "checksums.txt");
+    }
+
+    #[test]
+    fn parse_canonical_rejects_invalid_size() {
+        let malicious = "e3b0c44  legit.bin  not_a_number\n";
+        let parsed = ChecksumManifest::parse_canonical(malicious);
+        assert!(parsed.is_empty(), "should reject entries with unparseable size");
+    }
+
+    #[test]
+    fn parse_canonical_rejects_negative_size() {
+        let malicious = "e3b0c44  legit.bin  -42\n";
+        let parsed = ChecksumManifest::parse_canonical(malicious);
+        assert!(parsed.is_empty(), "should reject entries with negative size");
     }
 }

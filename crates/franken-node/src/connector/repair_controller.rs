@@ -150,7 +150,7 @@ pub fn run_cycle(
         .into_iter()
         .take(config.max_tenants_per_cycle)
         .collect();
-    let skipped = by_tenant.len() - active_tenants.len();
+    let skipped = by_tenant.len().saturating_sub(active_tenants.len());
 
     let mut allocations: BTreeMap<String, RepairAllocation> = BTreeMap::new();
     let mut total_used: u64 = 0;

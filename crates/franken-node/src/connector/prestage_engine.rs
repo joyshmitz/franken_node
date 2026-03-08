@@ -200,7 +200,7 @@ pub fn evaluate_candidates(
     let report = PrestageReport {
         total_candidates: candidates.len(),
         staged_count,
-        skipped_count: candidates.len() - staged_count,
+        skipped_count: candidates.len().saturating_sub(staged_count),
         budget_used,
         budget_total: config.max_bytes,
         trace_id: trace_id.to_string(),

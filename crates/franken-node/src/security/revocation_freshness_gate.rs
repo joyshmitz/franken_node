@@ -508,13 +508,32 @@ mod tests {
 
     #[test]
     fn proof_canonical_payload_includes_fields() {
-        let p = proof(SafetyTier::Critical, 42, "nonce-x");
-        let payload = String::from_utf8(p.canonical_payload()).unwrap();
-        assert!(payload.contains("1700000000"));
-        assert!(payload.contains("cred-1,cred-2"));
-        assert!(payload.contains("nonce-x"));
-        assert!(payload.contains("Critical"));
-        assert!(payload.contains("42"));
+        // canonical_payload() returns a SHA-256 hash. Verify each field
+        // contributes by showing that changing any field changes the hash.
+        let baseline = proof(SafetyTier::Critical, 42, "nonce-x");
+        let baseline_hash = baseline.canonical_payload();
+
+        // Changing nonce changes the hash
+        let different_nonce = proof(SafetyTier::Critical, 42, "nonce-y");
+        assert_ne!(baseline_hash, different_nonce.canonical_payload());
+
+        // Changing epoch changes the hash
+        let different_epoch = proof(SafetyTier::Critical, 43, "nonce-x");
+        assert_ne!(baseline_hash, different_epoch.canonical_payload());
+
+        // Changing tier changes the hash
+        let different_tier = proof(SafetyTier::Standard, 42, "nonce-x");
+        assert_ne!(baseline_hash, different_tier.canonical_payload());
+
+        // Changing timestamp changes the hash
+        let mut different_ts = proof(SafetyTier::Critical, 42, "nonce-x");
+        different_ts.timestamp = 1700000001;
+        assert_ne!(baseline_hash, different_ts.canonical_payload());
+
+        // Changing credentials changes the hash
+        let mut different_creds = proof(SafetyTier::Critical, 42, "nonce-x");
+        different_creds.credentials_checked = vec!["cred-3".into()];
+        assert_ne!(baseline_hash, different_creds.canonical_payload());
     }
 
     // --- check() fresh proofs ---
