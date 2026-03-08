@@ -10,6 +10,7 @@
 //! - Standard (Tier-2): owner-bypass allowed
 //! - Advisory (Tier-3): proceed-with-warning
 
+use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fmt;
 
@@ -95,13 +96,26 @@ pub struct FreshnessProof {
 
 impl FreshnessProof {
     /// Compute the canonical payload bytes for signature verification.
+    ///
+    /// Uses length-prefixed encoding to prevent delimiter-collision attacks
+    /// where crafted credential IDs or nonces shift field boundaries.
     pub fn canonical_payload(&self) -> Vec<u8> {
-        let creds = self.credentials_checked.join(",");
-        format!(
-            "{}:{}:{}:{}:{}",
-            self.timestamp, creds, self.nonce, self.tier, self.epoch
-        )
-        .into_bytes()
+        let mut hasher = Sha256::new();
+        hasher.update(b"rfg_freshness_proof_v1:");
+        hasher.update(self.timestamp.to_le_bytes());
+        // Length-prefix each credential individually
+        hasher.update((self.credentials_checked.len() as u64).to_le_bytes());
+        for cred in &self.credentials_checked {
+            hasher.update((cred.len() as u64).to_le_bytes());
+            hasher.update(cred.as_bytes());
+        }
+        hasher.update((self.nonce.len() as u64).to_le_bytes());
+        hasher.update(self.nonce.as_bytes());
+        let tier_str = self.tier.to_string();
+        hasher.update((tier_str.len() as u64).to_le_bytes());
+        hasher.update(tier_str.as_bytes());
+        hasher.update(self.epoch.to_le_bytes());
+        hasher.finalize().to_vec()
     }
 }
 
