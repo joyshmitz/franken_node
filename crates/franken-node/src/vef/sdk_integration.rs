@@ -654,6 +654,9 @@ impl ExternalVerificationEndpoint {
     }
 
     /// Mark a stored evidence record's status (e.g., expire it).
+    ///
+    /// Terminal states (`Rejected`, `Expired`) cannot be overwritten — attempting
+    /// to regress from a terminal state returns an error.
     pub fn update_status(
         &mut self,
         submission_id: &str,
@@ -663,6 +666,15 @@ impl ExternalVerificationEndpoint {
         let record = self.store.get_mut(submission_id).ok_or_else(|| {
             VsiError::submission_rejected(format!("unknown submission_id '{submission_id}'"))
         })?;
+
+        // Guard: Rejected and Expired are terminal — no regression allowed.
+        if matches!(record.status, EvidenceStatus::Rejected | EvidenceStatus::Expired) {
+            return Err(VsiError::submission_rejected(format!(
+                "submission '{submission_id}' is in terminal state {:?}",
+                record.status
+            )));
+        }
+
         record.status = new_status;
 
         self.emit_event(VsiEvent {
@@ -1034,6 +1046,38 @@ mod tests {
         let mut endpoint = ExternalVerificationEndpoint::new();
         let err = endpoint
             .update_status("nonexistent", EvidenceStatus::Expired, "t-bad")
+            .unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_VSI_SUBMISSION_REJECTED);
+    }
+
+    // ── 23b. Terminal state regression is rejected ──
+
+    #[test]
+    fn update_status_rejects_regression_from_expired() {
+        let mut endpoint = ExternalVerificationEndpoint::new();
+        endpoint
+            .submit(&sample_submission("s-term", "proof-t"))
+            .unwrap();
+        endpoint
+            .update_status("s-term", EvidenceStatus::Expired, "t-exp")
+            .unwrap();
+        let err = endpoint
+            .update_status("s-term", EvidenceStatus::Accepted, "t-reg")
+            .unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_VSI_SUBMISSION_REJECTED);
+    }
+
+    #[test]
+    fn update_status_rejects_regression_from_rejected() {
+        let mut endpoint = ExternalVerificationEndpoint::new();
+        endpoint
+            .submit(&sample_submission("s-rej", "proof-r"))
+            .unwrap();
+        endpoint
+            .update_status("s-rej", EvidenceStatus::Rejected, "t-rej")
+            .unwrap();
+        let err = endpoint
+            .update_status("s-rej", EvidenceStatus::Pending, "t-reg")
             .unwrap_err();
         assert_eq!(err.code, error_codes::ERR_VSI_SUBMISSION_REJECTED);
     }
