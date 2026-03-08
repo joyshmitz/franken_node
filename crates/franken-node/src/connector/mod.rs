@@ -9,6 +9,7 @@ pub mod canonical_serializer;
 pub mod capability_artifact;
 pub mod capability_guard;
 pub mod claim_compiler;
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod conformance_profile;
 pub mod control_channel;
 pub mod control_evidence;
@@ -24,6 +25,7 @@ pub mod ecosystem_reputation;
 pub mod error_code_registry;
 pub mod error_surface;
 pub mod eviction_saga;
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod execution_scorer;
 pub mod fencing;
 pub mod frame_parser;
@@ -32,14 +34,19 @@ pub mod fuzz_corpus;
 #[cfg(feature = "extended-surfaces")]
 pub mod golden_vectors;
 pub mod health_gate;
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod high_assurance_promotion;
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod incident_bundle_retention;
 #[cfg(feature = "extended-surfaces")]
 pub mod interop_suite;
 pub mod lease_conflict;
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod lease_coordinator;
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod lease_service;
 pub mod lifecycle;
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod manifest_negotiation;
 pub mod migration_artifact;
 pub mod migration_pipeline;
@@ -53,15 +60,20 @@ pub mod operator_intelligence;
 pub mod perf_budget_guard;
 pub mod policy_checkpoint;
 pub mod prestage_engine;
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod quarantine_promotion;
 pub mod quarantine_store;
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod region_ownership;
 pub mod repair_controller;
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod retention_policy;
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod rollback_bundle;
 pub mod rollout_state;
 pub mod saga;
 pub mod schema_migration;
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod snapshot_policy;
 pub mod state_model;
 pub mod supervision;
