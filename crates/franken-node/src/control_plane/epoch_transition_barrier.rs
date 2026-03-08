@@ -616,7 +616,7 @@ impl EpochTransitionBarrier {
             });
         }
 
-        let timestamp_ms = barrier.propose_timestamp_ms + ack.elapsed_ms;
+        let timestamp_ms = barrier.propose_timestamp_ms.saturating_add(ack.elapsed_ms);
         barrier.transcript.record(
             event_codes::BARRIER_DRAIN_ACK,
             &format!(

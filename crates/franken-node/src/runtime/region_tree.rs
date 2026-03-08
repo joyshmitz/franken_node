@@ -590,7 +590,7 @@ impl RegionTree {
                 detail: format!("{} tasks force-terminated", remaining),
                 child_count: children.len(),
                 task_count: remaining,
-                timestamp_ms: timestamp_ms + drain_budget_ms,
+                timestamp_ms: timestamp_ms.saturating_add(drain_budget_ms),
             };
             self.push_event_log(force_event.clone());
             all_events.push(force_event);
@@ -613,7 +613,7 @@ impl RegionTree {
             child_count: children.len(),
             task_count: 0,
             timestamp_ms: if remaining > 0 {
-                timestamp_ms + drain_budget_ms
+                timestamp_ms.saturating_add(drain_budget_ms)
             } else {
                 timestamp_ms
             },
@@ -639,7 +639,7 @@ impl RegionTree {
             child_count: children.len(),
             task_count: 0,
             timestamp_ms: if remaining > 0 {
-                timestamp_ms + drain_budget_ms
+                timestamp_ms.saturating_add(drain_budget_ms)
             } else {
                 timestamp_ms
             },
