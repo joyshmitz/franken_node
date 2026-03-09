@@ -73,7 +73,7 @@ def check_structs() -> tuple[str, bool, str]:
     src = _read(SRC)
     required = [
         "struct ExtensionSignature",
-        "struct ProvenanceAttestation",
+        "ProvenanceAttestation",  # Imported from provenance module
         "struct VersionEntry",
         "struct RevocationRecord",
         "struct SignedExtension",
@@ -138,7 +138,7 @@ def check_provenance_validation() -> tuple[str, bool, str]:
         "build_system" in src,
         "source_repository" in src,
         "vcs_commit" in src,
-        "attestation_hash" in src,
+        "attestation_chain" in src,  # verify_attestation_chain from provenance module
     ]
     ok = all(checks)
     return ("provenance_validation", ok, f"Provenance validation: {sum(checks)}/6 checks")
