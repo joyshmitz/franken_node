@@ -10,6 +10,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::time::Instant;
 
 const MAX_EVENTS: usize = 4096;
 
@@ -79,6 +80,163 @@ pub mod error_codes {
     pub const ERR_SUP_SHUTDOWN_TIMEOUT: &str = "ERR_SUP_SHUTDOWN_TIMEOUT";
     /// A child with the same name already exists in the supervisor.
     pub const ERR_SUP_DUPLICATE_CHILD: &str = "ERR_SUP_DUPLICATE_CHILD";
+}
+
+// ---------------------------------------------------------------------------
+// Clock kernel
+// ---------------------------------------------------------------------------
+
+/// Errors emitted while manually driving a deterministic supervision clock.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "code")]
+pub enum SupervisionClockError {
+    /// ERR_SUP_CLOCK_REGRESSION
+    #[serde(rename = "ERR_SUP_CLOCK_REGRESSION")]
+    ClockRegression { current_ms: u64, attempted_ms: u64 },
+    /// ERR_SUP_CLOCK_CONTROL_UNAVAILABLE
+    #[serde(rename = "ERR_SUP_CLOCK_CONTROL_UNAVAILABLE")]
+    ManualControlUnavailable,
+}
+
+impl fmt::Display for SupervisionClockError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ClockRegression {
+                current_ms,
+                attempted_ms,
+            } => write!(
+                f,
+                "ERR_SUP_CLOCK_REGRESSION: attempted monotonic regression from {} to {}",
+                current_ms, attempted_ms
+            ),
+            Self::ManualControlUnavailable => {
+                write!(
+                    f,
+                    "ERR_SUP_CLOCK_CONTROL_UNAVAILABLE: steady clock cannot be advanced manually"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for SupervisionClockError {}
+
+/// Monotonic clock abstraction shared by production and deterministic test kernels.
+pub trait MonotonicClock {
+    fn now_ms(&self) -> u64;
+}
+
+/// Production steady clock backed by [`Instant`].
+#[derive(Debug, Clone)]
+pub struct SteadyMonotonicClock {
+    started_at: Instant,
+}
+
+impl SteadyMonotonicClock {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            started_at: Instant::now(),
+        }
+    }
+}
+
+impl Default for SteadyMonotonicClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MonotonicClock for SteadyMonotonicClock {
+    fn now_ms(&self) -> u64 {
+        u64::try_from(self.started_at.elapsed().as_millis()).unwrap_or(u64::MAX)
+    }
+}
+
+/// Deterministic monotonic clock for unit tests and lab-style schedule replay.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeterministicMonotonicClock {
+    now_ms: u64,
+}
+
+impl DeterministicMonotonicClock {
+    #[must_use]
+    pub fn new(start_ms: u64) -> Self {
+        Self { now_ms: start_ms }
+    }
+
+    pub fn advance_by(&mut self, delta_ms: u64) -> u64 {
+        self.now_ms = self.now_ms.saturating_add(delta_ms);
+        self.now_ms
+    }
+
+    pub fn advance_to(&mut self, new_now_ms: u64) -> Result<(), SupervisionClockError> {
+        if new_now_ms < self.now_ms {
+            return Err(SupervisionClockError::ClockRegression {
+                current_ms: self.now_ms,
+                attempted_ms: new_now_ms,
+            });
+        }
+        self.now_ms = new_now_ms;
+        Ok(())
+    }
+}
+
+impl Default for DeterministicMonotonicClock {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
+impl MonotonicClock for DeterministicMonotonicClock {
+    fn now_ms(&self) -> u64 {
+        self.now_ms
+    }
+}
+
+#[derive(Debug, Clone)]
+enum SupervisorClock {
+    Steady(SteadyMonotonicClock),
+    Deterministic(DeterministicMonotonicClock),
+}
+
+impl SupervisorClock {
+    fn steady() -> Self {
+        Self::Steady(SteadyMonotonicClock::new())
+    }
+
+    fn deterministic(start_ms: u64) -> Self {
+        Self::Deterministic(DeterministicMonotonicClock::new(start_ms))
+    }
+
+    fn advance_by(&mut self, delta_ms: u64) -> Result<u64, SupervisionClockError> {
+        match self {
+            Self::Steady(_) => Err(SupervisionClockError::ManualControlUnavailable),
+            Self::Deterministic(clock) => Ok(clock.advance_by(delta_ms)),
+        }
+    }
+
+    fn advance_to(&mut self, new_now_ms: u64) -> Result<(), SupervisionClockError> {
+        match self {
+            Self::Steady(_) => Err(SupervisionClockError::ManualControlUnavailable),
+            Self::Deterministic(clock) => clock.advance_to(new_now_ms),
+        }
+    }
+}
+
+impl Default for SupervisorClock {
+    fn default() -> Self {
+        Self::steady()
+    }
+}
+
+impl MonotonicClock for SupervisorClock {
+    fn now_ms(&self) -> u64 {
+        match self {
+            Self::Steady(clock) => clock.now_ms(),
+            Self::Deterministic(clock) => clock.now_ms(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -189,6 +347,10 @@ pub struct SupervisorHealth {
     pub budget_remaining: u32,
     /// Current escalation depth.
     pub escalation_depth: u32,
+    /// Current monotonic supervisor time in milliseconds.
+    pub current_time_ms: u64,
+    /// Age of the oldest restart still counted in the active sliding window.
+    pub oldest_restart_age_ms: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -332,12 +494,15 @@ pub struct Supervisor {
     children: BTreeMap<String, ChildRecord>,
     /// Monotonic counter for insertion order.
     next_order: u64,
-    /// Restart timestamps within the current sliding window (epoch ms).
+    /// Restart timestamps within the current sliding window (monotonic ms).
     restart_timestamps: Vec<u64>,
     /// Current escalation depth.
     escalation_depth: u32,
     /// Accumulated event log.
     events: Vec<SupervisionEvent>,
+    /// Production steady clock or deterministic lab/test clock.
+    #[serde(skip, default)]
+    clock: SupervisorClock,
 }
 
 impl Supervisor {
@@ -347,6 +512,40 @@ impl Supervisor {
         max_restarts: u32,
         time_window_ms: u64,
         max_escalation_depth: u32,
+    ) -> Self {
+        Self::with_clock(
+            strategy,
+            max_restarts,
+            time_window_ms,
+            max_escalation_depth,
+            SupervisorClock::steady(),
+        )
+    }
+
+    /// Create a supervisor with a deterministic clock starting at `start_ms`.
+    #[must_use]
+    pub fn with_deterministic_clock(
+        strategy: SupervisionStrategy,
+        max_restarts: u32,
+        time_window_ms: u64,
+        max_escalation_depth: u32,
+        start_ms: u64,
+    ) -> Self {
+        Self::with_clock(
+            strategy,
+            max_restarts,
+            time_window_ms,
+            max_escalation_depth,
+            SupervisorClock::deterministic(start_ms),
+        )
+    }
+
+    fn with_clock(
+        strategy: SupervisionStrategy,
+        max_restarts: u32,
+        time_window_ms: u64,
+        max_escalation_depth: u32,
+        clock: SupervisorClock,
     ) -> Self {
         Self {
             strategy,
@@ -358,7 +557,24 @@ impl Supervisor {
             restart_timestamps: Vec::new(),
             escalation_depth: 0,
             events: Vec::new(),
+            clock,
         }
+    }
+
+    /// Return the current monotonic supervisor time in milliseconds.
+    #[must_use]
+    pub fn current_time_ms(&self) -> u64 {
+        self.clock.now_ms()
+    }
+
+    /// Advance a deterministic supervisor clock by `delta_ms`.
+    pub fn advance_clock_ms(&mut self, delta_ms: u64) -> Result<u64, SupervisionClockError> {
+        self.clock.advance_by(delta_ms)
+    }
+
+    /// Set a deterministic supervisor clock to `new_now_ms`.
+    pub fn set_clock_ms(&mut self, new_now_ms: u64) -> Result<(), SupervisionClockError> {
+        self.clock.advance_to(new_now_ms)
     }
 
     /// Add a child specification to this supervisor.
@@ -438,9 +654,10 @@ impl Supervisor {
         }
 
         // Prune restart timestamps outside the sliding window.
-        let now_ms = self.computed_now_ms();
+        let now_ms = self.current_time_ms();
+        let time_window_ms = self.time_window_ms;
         self.restart_timestamps
-            .retain(|&ts| now_ms.saturating_sub(ts) <= self.time_window_ms);
+            .retain(|&ts| now_ms.saturating_sub(ts) <= time_window_ms);
 
         // INV-SUP-BUDGET-BOUND: check budget.
         let restart_count = u32::try_from(self.restart_timestamps.len()).unwrap_or(u32::MAX);
@@ -591,6 +808,7 @@ impl Supervisor {
     ///
     /// Emits `SUP-008` (supervisor.health_report).
     pub fn health_status(&self) -> SupervisorHealth {
+        let now_ms = self.current_time_ms();
         let active_children = u32::try_from(
             self.children
                 .values()
@@ -599,14 +817,20 @@ impl Supervisor {
         )
         .unwrap_or(u32::MAX);
 
-        let restart_count = u32::try_from(self.restart_timestamps.len()).unwrap_or(u32::MAX);
+        let active_restart_timestamps = self.active_restart_timestamps(now_ms);
+        let restart_count = u32::try_from(active_restart_timestamps.len()).unwrap_or(u32::MAX);
         let budget_remaining = self.max_restarts.saturating_sub(restart_count);
+        let oldest_restart_age_ms = active_restart_timestamps
+            .first()
+            .map(|ts| now_ms.saturating_sub(*ts));
 
         SupervisorHealth {
             active_children,
             restart_count,
             budget_remaining,
             escalation_depth: self.escalation_depth,
+            current_time_ms: now_ms,
+            oldest_restart_age_ms,
         }
     }
 
@@ -625,13 +849,16 @@ impl Supervisor {
         self.children.get(name).map(|r| r.state)
     }
 
-    // Internal: monotonic clock stub.  In production this would read a real
-    // monotonic clock; here we use restart_timestamps length as a proxy.
-    fn computed_now_ms(&self) -> u64 {
-        // Use a simple incrementing value to avoid non-determinism in tests.
-        (self.restart_timestamps.len() as u64)
-            .saturating_add(1)
-            .saturating_mul(1000)
+    fn active_restart_timestamps(&self, now_ms: u64) -> Vec<u64> {
+        self.restart_timestamps
+            .iter()
+            .copied()
+            .filter(|&timestamp| self.restart_within_window(now_ms, timestamp))
+            .collect()
+    }
+
+    fn restart_within_window(&self, now_ms: u64, restart_timestamp_ms: u64) -> bool {
+        now_ms.saturating_sub(restart_timestamp_ms) <= self.time_window_ms
     }
 }
 
@@ -664,7 +891,7 @@ mod tests {
     }
 
     fn make_supervisor() -> Supervisor {
-        Supervisor::new(SupervisionStrategy::OneForOne, 3, 60_000, 2)
+        Supervisor::with_deterministic_clock(SupervisionStrategy::OneForOne, 3, 60_000, 2, 0)
     }
 
     #[test]
@@ -818,6 +1045,8 @@ mod tests {
         assert_eq!(health.restart_count, 0);
         assert_eq!(health.budget_remaining, 3);
         assert_eq!(health.escalation_depth, 0);
+        assert_eq!(health.current_time_ms, 0);
+        assert_eq!(health.oldest_restart_age_ms, None);
     }
 
     #[test]
@@ -825,9 +1054,12 @@ mod tests {
         let mut sup = make_supervisor();
         sup.add_child(make_spec("w")).unwrap();
         sup.handle_failure("w").unwrap();
+        sup.advance_clock_ms(250).unwrap();
         let health = sup.health_status();
         assert_eq!(health.restart_count, 1);
         assert_eq!(health.budget_remaining, 2);
+        assert_eq!(health.current_time_ms, 250);
+        assert_eq!(health.oldest_restart_age_ms, Some(250));
     }
 
     #[test]
@@ -899,5 +1131,107 @@ mod tests {
         sup.add_child(spec).unwrap();
         let report = sup.shutdown();
         assert_eq!(report.force_terminated, 1);
+    }
+
+    #[test]
+    fn test_budget_window_resets_after_elapsed_time() {
+        let mut sup =
+            Supervisor::with_deterministic_clock(SupervisionStrategy::OneForOne, 2, 1_000, 3, 0);
+        sup.add_child(make_spec("w")).unwrap();
+
+        assert!(matches!(
+            sup.handle_failure("w").unwrap(),
+            SupervisionAction::Restart { .. }
+        ));
+        assert!(matches!(
+            sup.handle_failure("w").unwrap(),
+            SupervisionAction::Restart { .. }
+        ));
+
+        sup.advance_clock_ms(1_001).unwrap();
+        let action = sup.handle_failure("w").unwrap();
+        assert!(matches!(action, SupervisionAction::Restart { .. }));
+
+        let health = sup.health_status();
+        assert_eq!(health.restart_count, 1);
+        assert_eq!(health.budget_remaining, 1);
+        assert_eq!(health.oldest_restart_age_ms, Some(0));
+    }
+
+    #[test]
+    fn test_deterministic_clock_regression_rejected() {
+        let mut sup = make_supervisor();
+        sup.set_clock_ms(500).unwrap();
+        let err = sup.set_clock_ms(499).unwrap_err();
+        assert!(matches!(
+            err,
+            SupervisionClockError::ClockRegression {
+                current_ms: 500,
+                attempted_ms: 499
+            }
+        ));
+    }
+
+    #[test]
+    fn test_restart_budget_matches_reference_window_model() {
+        let delta_options = [0_u64, 250, 999, 1_001];
+
+        for first_delta in delta_options {
+            for second_delta in delta_options {
+                for third_delta in delta_options {
+                    let mut sup = Supervisor::with_deterministic_clock(
+                        SupervisionStrategy::OneForOne,
+                        2,
+                        1_000,
+                        8,
+                        0,
+                    );
+                    sup.add_child(make_spec("worker")).unwrap();
+
+                    let mut reference_restart_times: Vec<u64> = Vec::new();
+
+                    for delta in [first_delta, second_delta, third_delta] {
+                        sup.advance_clock_ms(delta).unwrap();
+                        let now_ms = sup.current_time_ms();
+                        reference_restart_times
+                            .retain(|timestamp| now_ms.saturating_sub(*timestamp) <= 1_000);
+
+                        let expected_escalation = reference_restart_times.len() >= 2;
+                        let action = sup.handle_failure("worker").unwrap();
+
+                        assert_eq!(
+                            matches!(action, SupervisionAction::Escalate { .. }),
+                            expected_escalation,
+                            "delta sequence {:?} produced unexpected action at now_ms={}",
+                            [first_delta, second_delta, third_delta],
+                            now_ms
+                        );
+
+                        if !expected_escalation {
+                            reference_restart_times.push(now_ms);
+                        }
+
+                        let health = sup.health_status();
+                        assert_eq!(
+                            usize::try_from(health.restart_count).unwrap(),
+                            reference_restart_times.len(),
+                            "health drift for delta sequence {:?} at now_ms={}",
+                            [first_delta, second_delta, third_delta],
+                            now_ms
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_deterministic_clock_serde_roundtrip() {
+        let mut clock = DeterministicMonotonicClock::new(123);
+        clock.advance_by(77);
+        let json = serde_json::to_string(&clock).unwrap();
+        let decoded: DeterministicMonotonicClock = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, clock);
+        assert_eq!(decoded.now_ms(), 200);
     }
 }
