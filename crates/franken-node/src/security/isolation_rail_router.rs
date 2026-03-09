@@ -569,9 +569,23 @@ impl RailRouter {
         let current_policy = self.config.rail_policies.get(&current_rail);
         let target_policy = self.config.rail_policies.get(&target_rail);
 
-        if let (Some(cp), Some(tp)) = (current_policy, target_policy) {
-            // INV-ISOLATION-FAIL-SAFE: if policy check fails, workload stays.
-            cp.is_subset_of(tp)?;
+        match (current_policy, target_policy) {
+            (Some(cp), Some(tp)) => {
+                // INV-ISOLATION-FAIL-SAFE: if policy check fails, workload stays.
+                cp.is_subset_of(tp)?;
+            }
+            (Some(cp), None) if !cp.rules.is_empty() => {
+                // INV-ISOLATION-POLICY-CONTINUITY: fail-closed when target rail
+                // has no policy definition — current rules would be silently lost.
+                return Err(RailRouterError::PolicyBreak {
+                    rule_name: "(target rail has no policy definition)".to_string(),
+                    from_rail: current_rail,
+                    to_rail: target_rail,
+                });
+            }
+            _ => {
+                // No current rules to preserve — vacuously safe.
+            }
         }
 
         // Emit ISOLATION_POLICY_PRESERVED
@@ -1234,6 +1248,40 @@ mod tests {
         assert_eq!(
             p.latency_budget_us,
             IsolationRail::Standard.default_latency_budget_us()
+        );
+    }
+
+    #[test]
+    fn elevation_to_rail_without_policy_fails_closed() {
+        // Regression: when target rail has no policy definition, elevation
+        // must be rejected to prevent silent loss of current policy rules.
+        let mut policies = BTreeMap::new();
+        policies.insert(
+            IsolationRail::Standard,
+            RailPolicy {
+                rail: IsolationRail::Standard,
+                rules: vec![PolicyRule {
+                    name: "deny_raw_syscall".to_string(),
+                    scope: "system".to_string(),
+                    deny: true,
+                }],
+            },
+        );
+        // Elevated rail deliberately has NO policy entry.
+        let config = MeshConfig {
+            available_rails: vec![IsolationRail::Standard, IsolationRail::Elevated],
+            rail_policies: policies,
+            partition_check_enabled: false,
+        };
+        let mut router = RailRouter::new(config);
+        let wl = test_workload("wl-no-target-policy", TrustProfile::Untrusted, false);
+        router.assign_workload(&wl).unwrap();
+        let err = router
+            .hot_elevate("wl-no-target-policy", IsolationRail::Elevated)
+            .unwrap_err();
+        assert!(
+            matches!(err, RailRouterError::PolicyBreak { .. }),
+            "must fail-closed when target rail has no policy"
         );
     }
 }
