@@ -3,6 +3,7 @@
   "bead_id": "bd-2ac",
   "section": "10.0",
   "title": "Secure extension distribution network",
+  "timestamp": "2026-03-09T07:35:00Z",
   "verdict": "PASS",
   "total": 20,
   "passed": 20,
@@ -28,5 +29,32 @@
     {"check": "quarantine_control", "pass": true},
     {"check": "distribution_security", "pass": true},
     {"check": "economic_model", "pass": true}
-  ]
+  ],
+  "gap_closures": {
+    "bd-3hdn": "CLOSED — Canonical signed-manifest admission kernel replaces shape-only checks (Ed25519 verification, provenance chain validation, transparency proof inclusion)",
+    "bd-1oju": "CLOSED — Trust cards and certification bound to verified evidence (VerifiedEvidenceRef, monotone upgrade enforcement)"
+  },
+  "implementation_summary": {
+    "extension_registry": "crates/franken-node/src/supply_chain/extension_registry.rs (42 tests)",
+    "artifact_signing": "crates/franken-node/src/supply_chain/artifact_signing.rs (31 tests)",
+    "provenance": "crates/franken-node/src/supply_chain/provenance.rs (10 tests)",
+    "transparency_verifier": "crates/franken-node/src/supply_chain/transparency_verifier.rs (23 tests)",
+    "revocation_registry": "crates/franken-node/src/supply_chain/revocation_registry.rs (20 tests)",
+    "revocation_integration": "crates/franken-node/src/supply_chain/revocation_integration.rs (16 tests)",
+    "reputation": "crates/franken-node/src/supply_chain/reputation.rs (23 tests)",
+    "trust_card": "crates/franken-node/src/supply_chain/trust_card.rs (22 tests)",
+    "cli": "crates/franken-node/src/cli.rs (RegistryCommand: Publish, Search)",
+    "features": [
+      "Ed25519 signed extension packages with AdmissionKernel (no shape-only checks)",
+      "Canonical provenance attestation chain verification",
+      "Merkle inclusion proof transparency verification",
+      "Monotonic revocation with reason tracking and sequence numbers",
+      "Version lineage with compatibility markers",
+      "Admission receipts with negative witnesses for rejections",
+      "Publisher reputation linkage via trust cards",
+      "BTreeMap-based registry for deterministic ordering",
+      "Bounded audit log (4096 entries) with JSONL export",
+      "CLI: registry publish / registry search commands"
+    ]
+  }
 }
