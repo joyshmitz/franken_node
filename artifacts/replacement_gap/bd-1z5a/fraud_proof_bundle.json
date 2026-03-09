@@ -1,0 +1,35 @@
+{
+  "artifact_type": "fraud_proof_witness_bundle",
+  "bead_id": "bd-1z5a",
+  "support_bead_id": "bd-1z5a.5",
+  "generated_at": "2026-03-09T19:40:00Z",
+  "verdict": "PASS",
+  "trace_id": "trace-bd-1z5a-operator-e2e-final",
+  "stage_id": "capsule_verify_fraud_proof",
+  "event_code": "CAPSULE_VERIFY_FRAUD_PROOF_EXTRACTED",
+  "fraud_proof_id": "counterexample-witness-verification_regression",
+  "proof_type": "counterexample_witness_reference",
+  "decision": "deny",
+  "reason_code": "ERR_PIPE_VALIDATION_FAILURE",
+  "capsule_id": "verification-regression-capsule",
+  "verifier_id": "pipeline-verifier",
+  "claim_id": "verification_regression",
+  "commitment_digest": "dafc88c91504f573883e4b7e69a60447f44238ce4457b067d4bf5af0227fe460",
+  "source_artifacts": {
+    "operator_e2e_summary": "artifacts/replacement_gap/bd-1z5a/operator_e2e_summary.json",
+    "operator_e2e_bundle": "artifacts/replacement_gap/bd-1z5a/operator_e2e_bundle.json",
+    "operator_e2e_log": "artifacts/replacement_gap/bd-1z5a/operator_e2e_log.jsonl",
+    "stage_stdout": "artifacts/replacement_gap/bd-1z5a/stage_outputs/capsule_verify_fraud_proof.stdout",
+    "stage_stderr": "artifacts/replacement_gap/bd-1z5a/stage_outputs/capsule_verify_fraud_proof.stderr"
+  },
+  "witness_summary": "Minimal machine-readable witness bundle linking the extracted fraud-proof id to the successful operator E2E fraud-proof stage and its trace-bound artifacts.",
+  "recheck_steps": [
+    "Load artifacts/replacement_gap/bd-1z5a/operator_e2e_bundle.json and confirm stage_id capsule_verify_fraud_proof has status pass.",
+    "Load artifacts/replacement_gap/bd-1z5a/operator_e2e_log.jsonl and confirm the same trace_id contains CAPSULE_VERIFY_FRAUD_PROOF_STARTED and CAPSULE_VERIFY_FRAUD_PROOF_EXTRACTED.",
+    "Confirm fraud_proof_id counterexample-witness-verification_regression and commitment_digest dafc88c91504f573883e4b7e69a60447f44238ce4457b067d4bf5af0227fe460 match across the bundle and log."
+  ],
+  "limitations": [
+    "Current stage outputs expose a stable witness id and trace binding, not a full serialized counterexample payload.",
+    "This bundle is therefore a truthful witness reference artifact rather than a complete subtrace payload dump."
+  ]
+}

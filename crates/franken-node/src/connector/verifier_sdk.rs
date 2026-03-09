@@ -23,7 +23,7 @@
 //! - **INV-VER-RESULT-SIGNED**: Every verification result carries a verifier signature.
 //! - **INV-VER-TRANSPARENCY-APPEND**: Transparency log entries are append-only and hash-chained.
 
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -150,6 +150,38 @@ pub struct AssertionResult {
 }
 
 // ---------------------------------------------------------------------------
+// Verifier signer
+// ---------------------------------------------------------------------------
+
+/// Signing identity used to bind verification results to a concrete verifier key.
+#[derive(Clone)]
+pub struct VerifierSigner {
+    verifier_identity: String,
+    signing_key: SigningKey,
+}
+
+impl VerifierSigner {
+    pub fn from_signing_key(verifier_identity: impl Into<String>, signing_key: SigningKey) -> Self {
+        Self {
+            verifier_identity: verifier_identity.into(),
+            signing_key,
+        }
+    }
+
+    pub fn verifier_identity(&self) -> &str {
+        &self.verifier_identity
+    }
+
+    pub fn public_key_hex(&self) -> String {
+        hex::encode(self.signing_key.verifying_key().to_bytes())
+    }
+
+    fn sign(&self, payload: &[u8]) -> String {
+        hex::encode(self.signing_key.sign(payload).to_bytes())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // VerificationResult
 // ---------------------------------------------------------------------------
 
@@ -167,6 +199,8 @@ pub struct VerificationResult {
     pub checked_assertions: Vec<AssertionResult>,
     pub execution_timestamp: String,
     pub verifier_identity: String,
+    pub signature_algorithm: String,
+    pub verifier_public_key: String,
     pub artifact_binding_hash: String,
     pub verifier_signature: String,
 }
@@ -390,16 +424,105 @@ fn canonical_migration_artifact_payload(
     })
 }
 
-/// Compute a signature by binding a verifier identity to a binding hash.
-/// Uses length-prefixed encoding to prevent delimiter-collision ambiguity.
-fn compute_verifier_signature(verifier_identity: &str, binding_hash: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(b"connector_verifier_sdk_sig_v1:");
-    hasher.update((verifier_identity.len() as u64).to_le_bytes());
-    hasher.update(verifier_identity.as_bytes());
-    hasher.update((binding_hash.len() as u64).to_le_bytes());
-    hasher.update(binding_hash.as_bytes());
-    hex::encode(hasher.finalize())
+fn verification_result_signature_payload(
+    verdict: &Verdict,
+    confidence_score: f64,
+    checked_assertions: &[AssertionResult],
+    execution_timestamp: &str,
+    verifier_identity: &str,
+    signature_algorithm: &str,
+    verifier_public_key: &str,
+    artifact_binding_hash: &str,
+) -> Vec<u8> {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(b"connector_verifier_sdk_result_v1:");
+    append_length_prefixed(
+        &mut payload,
+        match verdict {
+            Verdict::Pass => "pass",
+            Verdict::Fail => "fail",
+            Verdict::Inconclusive => "inconclusive",
+        },
+    );
+    payload.extend_from_slice(&confidence_score.to_bits().to_le_bytes());
+    payload.extend_from_slice(&(checked_assertions.len() as u64).to_le_bytes());
+    for assertion in checked_assertions {
+        append_length_prefixed(&mut payload, &assertion.assertion);
+        payload.push(u8::from(assertion.passed));
+        append_length_prefixed(&mut payload, &assertion.detail);
+    }
+    for field in [
+        execution_timestamp,
+        verifier_identity,
+        signature_algorithm,
+        verifier_public_key,
+        artifact_binding_hash,
+    ] {
+        append_length_prefixed(&mut payload, field);
+    }
+    payload
+}
+
+fn build_signed_verification_result(
+    verdict: Verdict,
+    confidence_score: f64,
+    checked_assertions: Vec<AssertionResult>,
+    artifact_binding_hash: String,
+    signer: &VerifierSigner,
+) -> VerificationResult {
+    let execution_timestamp = now_timestamp();
+    let signature_algorithm = "ed25519".to_string();
+    let verifier_public_key = signer.public_key_hex();
+    let payload = verification_result_signature_payload(
+        &verdict,
+        confidence_score,
+        &checked_assertions,
+        &execution_timestamp,
+        signer.verifier_identity(),
+        &signature_algorithm,
+        &verifier_public_key,
+        &artifact_binding_hash,
+    );
+    let verifier_signature = signer.sign(&payload);
+
+    VerificationResult {
+        verdict,
+        confidence_score,
+        checked_assertions,
+        execution_timestamp,
+        verifier_identity: signer.verifier_identity().to_string(),
+        signature_algorithm,
+        verifier_public_key,
+        artifact_binding_hash,
+        verifier_signature,
+    }
+}
+
+pub fn verify_verification_result_signature(
+    result: &VerificationResult,
+) -> Result<(), VerifierSdkError> {
+    if !result.signature_algorithm.eq_ignore_ascii_case("ed25519") {
+        return Err(VerifierSdkError::SignatureInvalid(format!(
+            "unsupported signature algorithm {}",
+            result.signature_algorithm
+        )));
+    }
+
+    let payload = verification_result_signature_payload(
+        &result.verdict,
+        result.confidence_score,
+        &result.checked_assertions,
+        &result.execution_timestamp,
+        &result.verifier_identity,
+        &result.signature_algorithm,
+        &result.verifier_public_key,
+        &result.artifact_binding_hash,
+    );
+    verify_ed25519_signature_hex(
+        &result.verifier_public_key,
+        &payload,
+        &result.verifier_signature,
+    )
 }
 
 /// Compute the binding hash for a claim and its evidence items.
@@ -449,7 +572,7 @@ fn now_timestamp() -> String {
 pub fn verify_claim(
     claim: &Claim,
     evidence: &[Evidence],
-    verifier_identity: &str,
+    signer: &VerifierSigner,
 ) -> Result<VerificationResult, VerifierSdkError> {
     let mut assertions = Vec::new();
 
@@ -538,17 +661,13 @@ pub fn verify_claim(
     };
     let confidence = if all_pass { 1.0 } else { 0.0 };
     let binding_hash = compute_binding_hash(claim, evidence);
-    let signature = compute_verifier_signature(verifier_identity, &binding_hash);
-
-    Ok(VerificationResult {
+    Ok(build_signed_verification_result(
         verdict,
-        confidence_score: confidence,
-        checked_assertions: assertions,
-        execution_timestamp: now_timestamp(),
-        verifier_identity: verifier_identity.to_string(),
-        artifact_binding_hash: binding_hash,
-        verifier_signature: signature,
-    })
+        confidence,
+        assertions,
+        binding_hash,
+        signer,
+    ))
 }
 
 /// Verify a migration artifact: signature, schema, preconditions, rollback receipt.
@@ -557,7 +676,7 @@ pub fn verify_claim(
 /// INV-VER-DETERMINISTIC: same inputs produce the same result.
 pub fn verify_migration_artifact(
     artifact: &BTreeMap<String, serde_json::Value>,
-    verifier_identity: &str,
+    signer: &VerifierSigner,
 ) -> Result<VerificationResult, VerifierSdkError> {
     let mut assertions = Vec::new();
 
@@ -655,17 +774,13 @@ pub fn verify_migration_artifact(
     let binding_hash = deterministic_hash(
         std::str::from_utf8(&signature_payload).unwrap_or("__non_utf8_artifact_payload"),
     );
-    let signature = compute_verifier_signature(verifier_identity, &binding_hash);
-
-    Ok(VerificationResult {
+    Ok(build_signed_verification_result(
         verdict,
-        confidence_score: confidence,
-        checked_assertions: assertions,
-        execution_timestamp: now_timestamp(),
-        verifier_identity: verifier_identity.to_string(),
-        artifact_binding_hash: binding_hash,
-        verifier_signature: signature,
-    })
+        confidence,
+        assertions,
+        binding_hash,
+        signer,
+    ))
 }
 
 /// Verify trust state against a trust anchor.
@@ -675,7 +790,7 @@ pub fn verify_migration_artifact(
 pub fn verify_trust_state(
     state: &BTreeMap<String, String>,
     anchor: &BTreeMap<String, String>,
-    verifier_identity: &str,
+    signer: &VerifierSigner,
 ) -> Result<VerificationResult, VerifierSdkError> {
     let mut assertions = Vec::new();
 
@@ -748,17 +863,13 @@ pub fn verify_trust_state(
         hasher.update(v.as_bytes());
     }
     let binding_hash = hex::encode(hasher.finalize());
-    let signature = compute_verifier_signature(verifier_identity, &binding_hash);
-
-    Ok(VerificationResult {
+    Ok(build_signed_verification_result(
         verdict,
-        confidence_score: confidence,
-        checked_assertions: assertions,
-        execution_timestamp: now_timestamp(),
-        verifier_identity: verifier_identity.to_string(),
-        artifact_binding_hash: binding_hash,
-        verifier_signature: signature,
-    })
+        confidence,
+        assertions,
+        binding_hash,
+        signer,
+    ))
 }
 
 /// Replay a capsule and compare outputs.
@@ -821,7 +932,8 @@ pub fn validate_bundle(bundle: &EvidenceBundle) -> Result<(), VerifierSdkError> 
 pub fn append_transparency_log(
     log: &mut Vec<TransparencyLogEntry>,
     result: &VerificationResult,
-) -> TransparencyLogEntry {
+) -> Result<TransparencyLogEntry, VerifierSdkError> {
+    verify_verification_result_signature(result)?;
     let result_hash = deterministic_hash(
         &serde_json::to_string(result).unwrap_or_else(|e| format!("__serde_err:{e}")),
     );
@@ -838,7 +950,7 @@ pub fn append_transparency_log(
         merkle_proof,
     };
     log.push(entry.clone());
-    entry
+    Ok(entry)
 }
 
 // ---------------------------------------------------------------------------
@@ -851,11 +963,11 @@ pub fn append_transparency_log(
 pub fn execute_workflow(
     workflow: &ValidationWorkflow,
     bundle: &EvidenceBundle,
-    verifier_identity: &str,
+    signer: &VerifierSigner,
 ) -> Result<VerificationResult, VerifierSdkError> {
     validate_bundle(bundle)?;
 
-    let result = verify_claim(&bundle.claim, &bundle.evidence_items, verifier_identity)?;
+    let result = verify_claim(&bundle.claim, &bundle.evidence_items, signer)?;
 
     // Workflow-specific checks add assertion context but same core logic
     let mut assertions = result.checked_assertions.clone();
@@ -870,10 +982,13 @@ pub fn execute_workflow(
         detail: format!("workflow {workflow_name} executed"),
     });
 
-    Ok(VerificationResult {
-        checked_assertions: assertions,
-        ..result
-    })
+    Ok(build_signed_verification_result(
+        result.verdict,
+        result.confidence_score,
+        assertions,
+        result.artifact_binding_hash,
+        signer,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -934,7 +1049,11 @@ pub fn generate_reference_bundle() -> EvidenceBundle {
 pub fn generate_reference_verification_result() -> Result<VerificationResult, VerifierSdkError> {
     let claim = generate_reference_claim();
     let evidence = generate_reference_evidence();
-    verify_claim(&claim, &evidence, "verifier://test@example.com")
+    let signer = VerifierSigner::from_signing_key(
+        "verifier://test@example.com",
+        SigningKey::from_bytes(&[42; 32]),
+    );
+    verify_claim(&claim, &evidence, &signer)
 }
 
 // ---------------------------------------------------------------------------
@@ -989,7 +1108,8 @@ mod tests {
     fn test_verify_claim_pass() {
         let claim = generate_reference_claim();
         let evidence = generate_reference_evidence();
-        let result = verify_claim(&claim, &evidence, "verifier-1").unwrap();
+        let signer = test_verifier_signer("verifier-1", 1);
+        let result = verify_claim(&claim, &evidence, &signer).unwrap();
         assert_eq!(result.verdict, Verdict::Pass);
         assert_eq!(result.confidence_score, 1.0);
     }
@@ -999,7 +1119,8 @@ mod tests {
         let mut claim = generate_reference_claim();
         claim.claim_id = String::new();
         let evidence = generate_reference_evidence();
-        let err = verify_claim(&claim, &evidence, "v1");
+        let signer = test_verifier_signer("v1", 1);
+        let err = verify_claim(&claim, &evidence, &signer);
         assert!(err.is_err());
         match err.unwrap_err() {
             VerifierSdkError::InvalidClaim(_) => {}
@@ -1012,7 +1133,8 @@ mod tests {
         let mut claim = generate_reference_claim();
         claim.assertion = String::new();
         let evidence = generate_reference_evidence();
-        let err = verify_claim(&claim, &evidence, "v1");
+        let signer = test_verifier_signer("v1", 1);
+        let err = verify_claim(&claim, &evidence, &signer);
         assert!(err.is_err());
     }
 
@@ -1021,14 +1143,16 @@ mod tests {
         let mut claim = generate_reference_claim();
         claim.subject = String::new();
         let evidence = generate_reference_evidence();
-        let err = verify_claim(&claim, &evidence, "v1");
+        let signer = test_verifier_signer("v1", 1);
+        let err = verify_claim(&claim, &evidence, &signer);
         assert!(err.is_err());
     }
 
     #[test]
     fn test_verify_claim_no_evidence_fails() {
         let claim = generate_reference_claim();
-        let err = verify_claim(&claim, &[], "v1");
+        let signer = test_verifier_signer("v1", 1);
+        let err = verify_claim(&claim, &[], &signer);
         assert!(err.is_err());
         match err.unwrap_err() {
             VerifierSdkError::EvidenceMissing(_) => {}
@@ -1041,7 +1165,8 @@ mod tests {
         let claim = generate_reference_claim();
         let mut evidence = generate_reference_evidence();
         evidence[0].claim_ref = "wrong-ref".to_string();
-        let result = verify_claim(&claim, &evidence, "v1").unwrap();
+        let signer = test_verifier_signer("v1", 1);
+        let result = verify_claim(&claim, &evidence, &signer).unwrap();
         assert_eq!(result.verdict, Verdict::Fail);
     }
 
@@ -1050,7 +1175,8 @@ mod tests {
         let claim = generate_reference_claim();
         let mut evidence = generate_reference_evidence();
         evidence[0].artifacts.clear();
-        let result = verify_claim(&claim, &evidence, "v1").unwrap();
+        let signer = test_verifier_signer("v1", 1);
+        let result = verify_claim(&claim, &evidence, &signer).unwrap();
         assert_eq!(result.verdict, Verdict::Fail);
     }
 
@@ -1059,9 +1185,13 @@ mod tests {
         // INV-VER-RESULT-SIGNED
         let claim = generate_reference_claim();
         let evidence = generate_reference_evidence();
-        let result = verify_claim(&claim, &evidence, "v1").unwrap();
+        let signer = test_verifier_signer("v1", 1);
+        let result = verify_claim(&claim, &evidence, &signer).unwrap();
         assert!(!result.verifier_signature.is_empty());
+        assert_eq!(result.signature_algorithm, "ed25519");
+        assert_eq!(result.verifier_public_key, signer.public_key_hex());
         assert_eq!(result.verifier_identity, "v1");
+        verify_verification_result_signature(&result).expect("signature must verify");
     }
 
     #[test]
@@ -1069,7 +1199,8 @@ mod tests {
         // INV-VER-EVIDENCE-BOUND
         let claim = generate_reference_claim();
         let evidence = generate_reference_evidence();
-        let result = verify_claim(&claim, &evidence, "v1").unwrap();
+        let signer = test_verifier_signer("v1", 1);
+        let result = verify_claim(&claim, &evidence, &signer).unwrap();
         assert!(!result.artifact_binding_hash.is_empty());
         assert_eq!(result.artifact_binding_hash.len(), 64);
     }
@@ -1079,8 +1210,9 @@ mod tests {
         // INV-VER-DETERMINISTIC
         let claim = generate_reference_claim();
         let evidence = generate_reference_evidence();
-        let r1 = verify_claim(&claim, &evidence, "v1").unwrap();
-        let r2 = verify_claim(&claim, &evidence, "v1").unwrap();
+        let signer = test_verifier_signer("v1", 1);
+        let r1 = verify_claim(&claim, &evidence, &signer).unwrap();
+        let r2 = verify_claim(&claim, &evidence, &signer).unwrap();
         assert_eq!(r1.verdict, r2.verdict);
         assert_eq!(r1.artifact_binding_hash, r2.artifact_binding_hash);
         assert_eq!(r1.verifier_signature, r2.verifier_signature);
@@ -1104,8 +1236,10 @@ mod tests {
             serde_json::json!(format!("sha256:{}", "aa".repeat(32))),
         );
         sign_migration_artifact(&mut artifact, &signing_key);
-        let result = verify_migration_artifact(&artifact, "v1").unwrap();
+        let signer = test_verifier_signer("v1", 1);
+        let result = verify_migration_artifact(&artifact, &signer).unwrap();
         assert_eq!(result.verdict, Verdict::Pass);
+        verify_verification_result_signature(&result).expect("signature must verify");
     }
 
     #[test]
@@ -1121,7 +1255,8 @@ mod tests {
             "content_hash".to_string(),
             serde_json::json!(format!("sha256:{}", "aa".repeat(32))),
         );
-        let result = verify_migration_artifact(&artifact, "v1").unwrap();
+        let signer = test_verifier_signer("v1", 1);
+        let result = verify_migration_artifact(&artifact, &signer).unwrap();
         assert_eq!(result.verdict, Verdict::Fail);
     }
 
@@ -1138,8 +1273,9 @@ mod tests {
             serde_json::json!(format!("sha256:{}", "cc".repeat(32))),
         );
         sign_migration_artifact(&mut artifact, &signing_key);
-        let r1 = verify_migration_artifact(&artifact, "v1").unwrap();
-        let r2 = verify_migration_artifact(&artifact, "v1").unwrap();
+        let signer = test_verifier_signer("v1", 1);
+        let r1 = verify_migration_artifact(&artifact, &signer).unwrap();
+        let r2 = verify_migration_artifact(&artifact, &signer).unwrap();
         assert_eq!(r1.artifact_binding_hash, r2.artifact_binding_hash);
     }
 
@@ -1160,14 +1296,13 @@ mod tests {
             serde_json::json!(format!("sha256:{}", "ee".repeat(32))),
         );
 
-        let result = verify_migration_artifact(&artifact, "v1").unwrap();
+        let signer = test_verifier_signer("v1", 1);
+        let result = verify_migration_artifact(&artifact, &signer).unwrap();
         assert_eq!(result.verdict, Verdict::Fail);
-        assert!(
-            result
-                .checked_assertions
-                .iter()
-                .any(|assertion| assertion.assertion == "signature_valid" && !assertion.passed)
-        );
+        assert!(result
+            .checked_assertions
+            .iter()
+            .any(|assertion| assertion.assertion == "signature_valid" && !assertion.passed));
     }
 
     // ── verify_trust_state ────────────────────────────────────────
@@ -1179,7 +1314,8 @@ mod tests {
         state.insert("policy_epoch".to_string(), "42".to_string());
         let mut anchor = BTreeMap::new();
         anchor.insert("root_key".to_string(), "abc123".to_string());
-        let result = verify_trust_state(&state, &anchor, "v1").unwrap();
+        let signer = test_verifier_signer("v1", 1);
+        let result = verify_trust_state(&state, &anchor, &signer).unwrap();
         assert_eq!(result.verdict, Verdict::Pass);
     }
 
@@ -1189,7 +1325,8 @@ mod tests {
         state.insert("root_key".to_string(), "wrong".to_string());
         let mut anchor = BTreeMap::new();
         anchor.insert("root_key".to_string(), "abc123".to_string());
-        let result = verify_trust_state(&state, &anchor, "v1").unwrap();
+        let signer = test_verifier_signer("v1", 1);
+        let result = verify_trust_state(&state, &anchor, &signer).unwrap();
         assert_eq!(result.verdict, Verdict::Fail);
     }
 
@@ -1198,7 +1335,8 @@ mod tests {
         let mut state = BTreeMap::new();
         state.insert("key".to_string(), "val".to_string());
         let anchor = BTreeMap::new();
-        let err = verify_trust_state(&state, &anchor, "v1");
+        let signer = test_verifier_signer("v1", 1);
+        let err = verify_trust_state(&state, &anchor, &signer);
         assert!(err.is_err());
         match err.unwrap_err() {
             VerifierSdkError::AnchorUnknown(_) => {}
@@ -1213,8 +1351,9 @@ mod tests {
         state.insert("k".to_string(), "v".to_string());
         let mut anchor = BTreeMap::new();
         anchor.insert("k".to_string(), "v".to_string());
-        let r1 = verify_trust_state(&state, &anchor, "v1").unwrap();
-        let r2 = verify_trust_state(&state, &anchor, "v1").unwrap();
+        let signer = test_verifier_signer("v1", 1);
+        let r1 = verify_trust_state(&state, &anchor, &signer).unwrap();
+        let r2 = verify_trust_state(&state, &anchor, &signer).unwrap();
         assert_eq!(r1.artifact_binding_hash, r2.artifact_binding_hash);
     }
 
@@ -1281,7 +1420,7 @@ mod tests {
         // INV-VER-TRANSPARENCY-APPEND
         let mut log = Vec::new();
         let result = generate_reference_verification_result().unwrap();
-        let entry = append_transparency_log(&mut log, &result);
+        let entry = append_transparency_log(&mut log, &result).unwrap();
         assert_eq!(log.len(), 1);
         assert!(!entry.result_hash.is_empty());
         assert!(!entry.merkle_proof.is_empty());
@@ -1291,8 +1430,8 @@ mod tests {
     fn test_transparency_log_chain() {
         let mut log = Vec::new();
         let r1 = generate_reference_verification_result().unwrap();
-        let e1 = append_transparency_log(&mut log, &r1);
-        let e2 = append_transparency_log(&mut log, &r1);
+        let e1 = append_transparency_log(&mut log, &r1).unwrap();
+        let e2 = append_transparency_log(&mut log, &r1).unwrap();
         assert_eq!(log.len(), 2);
         // Second entry's merkle_proof should reference first entry's hash
         assert!(e2.merkle_proof.contains(&e1.result_hash));
@@ -1302,7 +1441,7 @@ mod tests {
     fn test_transparency_log_first_entry_zeros() {
         let mut log = Vec::new();
         let result = generate_reference_verification_result().unwrap();
-        let entry = append_transparency_log(&mut log, &result);
+        let entry = append_transparency_log(&mut log, &result).unwrap();
         assert!(entry.merkle_proof[0] == "0".repeat(64));
     }
 
@@ -1311,8 +1450,9 @@ mod tests {
     #[test]
     fn test_execute_workflow_release() {
         let bundle = generate_reference_bundle();
+        let signer = test_verifier_signer("v1", 1);
         let result =
-            execute_workflow(&ValidationWorkflow::ReleaseValidation, &bundle, "v1").unwrap();
+            execute_workflow(&ValidationWorkflow::ReleaseValidation, &bundle, &signer).unwrap();
         assert_eq!(result.verdict, Verdict::Pass);
         let workflow_assertion = result
             .checked_assertions
@@ -1324,15 +1464,18 @@ mod tests {
     #[test]
     fn test_execute_workflow_incident() {
         let bundle = generate_reference_bundle();
+        let signer = test_verifier_signer("v1", 1);
         let result =
-            execute_workflow(&ValidationWorkflow::IncidentValidation, &bundle, "v1").unwrap();
+            execute_workflow(&ValidationWorkflow::IncidentValidation, &bundle, &signer).unwrap();
         assert_eq!(result.verdict, Verdict::Pass);
     }
 
     #[test]
     fn test_execute_workflow_compliance() {
         let bundle = generate_reference_bundle();
-        let result = execute_workflow(&ValidationWorkflow::ComplianceAudit, &bundle, "v1").unwrap();
+        let signer = test_verifier_signer("v1", 1);
+        let result =
+            execute_workflow(&ValidationWorkflow::ComplianceAudit, &bundle, &signer).unwrap();
         assert_eq!(result.verdict, Verdict::Pass);
     }
 
@@ -1340,7 +1483,8 @@ mod tests {
     fn test_execute_workflow_invalid_bundle_fails() {
         let mut bundle = generate_reference_bundle();
         bundle.evidence_items.clear();
-        let err = execute_workflow(&ValidationWorkflow::ReleaseValidation, &bundle, "v1");
+        let signer = test_verifier_signer("v1", 1);
+        let err = execute_workflow(&ValidationWorkflow::ReleaseValidation, &bundle, &signer);
         assert!(err.is_err());
     }
 
@@ -1557,7 +1701,8 @@ mod tests {
         // INV-VER-OFFLINE-CAPABLE: no network calls
         let claim = generate_reference_claim();
         let evidence = generate_reference_evidence();
-        let result = verify_claim(&claim, &evidence, "offline-verifier").unwrap();
+        let signer = test_verifier_signer("offline-verifier", 9);
+        let result = verify_claim(&claim, &evidence, &signer).unwrap();
         assert_eq!(result.verdict, Verdict::Pass);
     }
 
@@ -1631,7 +1776,8 @@ mod tests {
         let claim = generate_reference_claim();
         let mut evidence = generate_reference_evidence();
         evidence[0].verification_procedure = String::new();
-        let result = verify_claim(&claim, &evidence, "v1").unwrap();
+        let signer = test_verifier_signer("v1", 1);
+        let result = verify_claim(&claim, &evidence, &signer).unwrap();
         assert_eq!(result.verdict, Verdict::Fail);
     }
 
@@ -1645,18 +1791,46 @@ mod tests {
         let mut anchor = BTreeMap::new();
         // Off-by-one in last byte
         anchor.insert("root_key".to_string(), "abcdef012345678a".to_string());
-        let result = verify_trust_state(&state, &anchor, "v1").unwrap();
+        let signer = test_verifier_signer("v1", 1);
+        let result = verify_trust_state(&state, &anchor, &signer).unwrap();
         assert_eq!(result.verdict, Verdict::Fail);
 
         // Same-length, completely different values
         let mut anchor2 = BTreeMap::new();
         anchor2.insert("root_key".to_string(), "xxxxxxxxxxxxxxxx".to_string());
-        let result2 = verify_trust_state(&state, &anchor2, "v1").unwrap();
+        let result2 = verify_trust_state(&state, &anchor2, &signer).unwrap();
         assert_eq!(result2.verdict, Verdict::Fail);
+    }
+
+    #[test]
+    fn test_verify_claim_signature_rejects_tampered_binding_hash() {
+        let claim = generate_reference_claim();
+        let evidence = generate_reference_evidence();
+        let signer = test_verifier_signer("v1", 1);
+        let mut result = verify_claim(&claim, &evidence, &signer).unwrap();
+        result.artifact_binding_hash = "0".repeat(64);
+        let err =
+            verify_verification_result_signature(&result).expect_err("tampered result must fail");
+        assert!(matches!(err, VerifierSdkError::SignatureInvalid(_)));
+    }
+
+    #[test]
+    fn test_append_transparency_log_rejects_invalid_signature() {
+        let mut log = Vec::new();
+        let mut result = generate_reference_verification_result().unwrap();
+        result.verifier_signature = "ff".repeat(64);
+        let err = append_transparency_log(&mut log, &result)
+            .expect_err("invalid signature must be rejected");
+        assert!(matches!(err, VerifierSdkError::SignatureInvalid(_)));
+        assert!(log.is_empty());
     }
 
     fn test_signing_key(seed: u8) -> SigningKey {
         SigningKey::from_bytes(&[seed; 32])
+    }
+
+    fn test_verifier_signer(verifier_identity: &str, seed: u8) -> VerifierSigner {
+        VerifierSigner::from_signing_key(verifier_identity, test_signing_key(seed))
     }
 
     fn sign_migration_artifact(

@@ -1,0 +1,201 @@
+  [2m2026-03-09T19:25:41.318070Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mSelected worker: vmi1149989 at ubuntu@212.90.121.76 (4 slots, speed 50.0)[0m
+    [2;3mat[0m rch/src/hook.rs:287 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:25:46.571197Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mStarting remote compilation pipeline for franken_node (hash: d67e3a77b680195a)[0m
+    [2;3mat[0m rch/src/hook.rs:4210 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:25:46.571253Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mPrepared dependency sync manifest for 7 roots[0m
+    [2;3mat[0m rch/src/hook.rs:4232 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:25:48.074770Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mSyncing project to worker vmi1149989...[0m
+    [2;3mat[0m rch/src/hook.rs:4256 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:25:48.074853Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSyncing /data/projects/asupersync/franken_decision -> /data/projects/asupersync/franken_decision on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:927 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:25:50.010992Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSync completed in 1936ms[0m
+    [2;3mat[0m rch/src/transfer.rs:996 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:25:50.011114Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSyncing /data/projects/asupersync/franken_evidence -> /data/projects/asupersync/franken_evidence on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:927 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:25:52.000264Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSync completed in 1989ms[0m
+    [2;3mat[0m rch/src/transfer.rs:996 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:25:52.000383Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSyncing /data/projects/asupersync/franken_kernel -> /data/projects/asupersync/franken_kernel on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:927 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:25:54.127329Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSync completed in 2126ms[0m
+    [2;3mat[0m rch/src/transfer.rs:996 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:25:54.127454Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSyncing /data/projects/franken_engine/crates/franken-engine -> /data/projects/franken_engine/crates/franken-engine on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:927 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:25:56.627866Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSync completed in 2500ms[0m
+    [2;3mat[0m rch/src/transfer.rs:996 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:25:56.627991Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSyncing /data/projects/franken_engine/crates/franken-extension-host -> /data/projects/franken_engine/crates/franken-extension-host on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:927 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:25:58.602767Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSync completed in 1974ms[0m
+    [2;3mat[0m rch/src/transfer.rs:996 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:25:58.602894Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSyncing /data/projects/franken_node -> /data/projects/franken_node on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:927 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:26:08.243642Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSync completed in 9640ms[0m
+    [2;3mat[0m rch/src/transfer.rs:996 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:26:08.243778Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSyncing /data/projects/franken_node/crates/franken-node -> /data/projects/franken_node/crates/franken-node on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:927 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:26:10.245030Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSync completed in 2001ms[0m
+    [2;3mat[0m rch/src/transfer.rs:996 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:26:10.245081Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mSync complete: 12340 files, 491113 bytes in 22166ms[0m
+    [2;3mat[0m rch/src/hook.rs:4402 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:26:16.728728Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mExecuting command remotely: env CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=/tmp/rch_franken_node_bd1z5a3_suite_rerun2 cargo test -p frankenengine-node --features extended-surfaces test_register_replay_capsule_rejects_tampered_integrity_hash --lib -- --nocapture[0m
+    [2;3mat[0m rch/src/hook.rs:4429 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:26:16.728772Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mWrapping command with external timeout protection, [1;32mkind[0m[32m: cargo test, [1;32mtimeout_secs[0m[32m: 1800[0m
+    [2;3mat[0m rch/src/transfer.rs:688 [2;3mon[0m ThreadId(1)
+
+[1m[92m   Compiling[0m unicode-ident v1.0.24
+[1m[92m   Compiling[0m proc-macro2 v1.0.106
+[1m[92m   Compiling[0m quote v1.0.44
+[1m[92m   Compiling[0m serde_core v1.0.228
+[1m[92m   Compiling[0m version_check v0.9.5
+[1m[92m   Compiling[0m typenum v1.19.0
+[1m[92m   Compiling[0m serde v1.0.228
+[1m[92m   Compiling[0m cfg-if v1.0.4
+[1m[92m   Compiling[0m subtle v2.6.1
+[1m[92m   Compiling[0m zmij v1.0.21
+[1m[92m   Compiling[0m serde_json v1.0.149
+[1m[92m   Compiling[0m libc v0.2.182
+[1m[92m   Compiling[0m itoa v1.0.17
+[1m[92m   Compiling[0m memchr v2.8.0
+[1m[92m   Compiling[0m semver v1.0.27
+[1m[92m   Compiling[0m cpufeatures v0.2.17
+[1m[92m   Compiling[0m generic-array v0.14.7
+[1m[92m   Compiling[0m getrandom v0.4.1
+[1m[92m   Compiling[0m autocfg v1.5.0
+[1m[92m   Compiling[0m once_cell v1.21.3
+[1m[92m   Compiling[0m rustc_version v0.4.1
+[1m[92m   Compiling[0m hashbrown v0.16.1
+[1m[92m   Compiling[0m equivalent v1.0.2
+[1m[92m   Compiling[0m utf8parse v0.2.2
+[1m[92m   Compiling[0m anstyle-parse v0.2.7
+[1m[92m   Compiling[0m num-traits v0.2.19
+[1m[92m   Compiling[0m curve25519-dalek v4.1.3
+[1m[92m   Compiling[0m syn v2.0.116
+[1m[92m   Compiling[0m tracing-core v0.1.36
+[1m[92m   Compiling[0m is_terminal_polyfill v1.70.2
+[1m[92m   Compiling[0m rustix v1.1.3
+[1m[92m   Compiling[0m thiserror v2.0.18
+[1m[92m   Compiling[0m toml_write v0.1.2
+[1m[92m   Compiling[0m regex-syntax v0.8.9
+[1m[92m   Compiling[0m indexmap v2.13.0
+[1m[92m   Compiling[0m anstyle-query v1.1.5
+[1m[92m   Compiling[0m colorchoice v1.0.4
+[1m[92m   Compiling[0m pin-project-lite v0.2.16
+[1m[92m   Compiling[0m anstyle v1.0.13
+[1m[92m   Compiling[0m winnow v0.7.14
+[1m[92m   Compiling[0m crc32fast v1.5.0
+[1m[92m   Compiling[0m crypto-common v0.1.7
+[1m[92m   Compiling[0m block-buffer v0.10.4
+[1m[92m   Compiling[0m digest v0.10.7
+[1m[92m   Compiling[0m anstream v0.6.21
+[1m[92m   Compiling[0m signature v2.2.0
+[1m[92m   Compiling[0m sha2 v0.10.9
+[1m[92m   Compiling[0m clap_lex v1.0.0
+[1m[92m   Compiling[0m strsim v0.11.1
+[1m[92m   Compiling[0m bitflags v2.11.0
+[1m[92m   Compiling[0m simd-adler32 v0.3.8
+[1m[92m   Compiling[0m anyhow v1.0.101
+[1m[92m   Compiling[0m adler2 v2.0.1
+[1m[92m   Compiling[0m regex-automata v0.4.14
+[1m[92m   Compiling[0m iana-time-zone v0.1.65
+[1m[92m   Compiling[0m heck v0.5.0
+[1m[92m   Compiling[0m linux-raw-sys v0.11.0
+[1m[92m   Compiling[0m lazy_static v1.5.0
+[1m[92m   Compiling[0m log v0.4.29
+[1m[92m   Compiling[0m uuid v1.21.0
+[1m[92m   Compiling[0m sharded-slab v0.1.7
+[1m[92m   Compiling[0m tracing-log v0.2.0
+[1m[92m   Compiling[0m miniz_oxide v0.8.9
+[1m[92m   Compiling[0m clap_builder v4.5.60
+[1m[92m   Compiling[0m ed25519 v2.2.3
+[1m[92m   Compiling[0m hmac v0.12.1
+[1m[92m   Compiling[0m thread_local v1.1.9
+[1m[92m   Compiling[0m nu-ansi-term v0.50.3
+[1m[92m   Compiling[0m fastrand v2.3.0
+[1m[92m   Compiling[0m smallvec v1.15.1
+[1m[92m   Compiling[0m rand_core v0.6.4
+[1m[92m   Compiling[0m half v1.8.3
+[1m[92m   Compiling[0m hex v0.4.3
+[1m[92m   Compiling[0m flate2 v1.1.9
+[1m[92m   Compiling[0m hkdf v0.12.4
+[1m[92m   Compiling[0m base64 v0.22.1
+[1m[92m   Compiling[0m tempfile v3.25.0
+[1m[92m   Compiling[0m matchers v0.2.0
+[1m[92m   Compiling[0m serde_derive v1.0.228
+[1m[92m   Compiling[0m zeroize_derive v1.4.3
+[1m[92m   Compiling[0m curve25519-dalek-derive v0.1.1
+[1m[92m   Compiling[0m tracing-attributes v0.1.31
+[1m[92m   Compiling[0m thiserror-impl v2.0.18
+[1m[92m   Compiling[0m clap_derive v4.5.55
+[1m[92m   Compiling[0m tokio-macros v2.6.0
+[1m[92m   Compiling[0m zeroize v1.8.2
+[1m[92m   Compiling[0m tokio v1.49.0
+[1m[92m   Compiling[0m tracing v0.1.44
+[1m[92m   Compiling[0m tracing-subscriber v0.3.22
+[1m[92m   Compiling[0m ed25519-dalek v2.2.0
+[1m[92m   Compiling[0m clap v4.5.60
+[1m[92m   Compiling[0m toml_datetime v0.6.11
+[1m[92m   Compiling[0m serde_spanned v0.6.9
+[1m[92m   Compiling[0m franken-kernel v0.2.7 (/dp/asupersync/franken_kernel)
+[1m[92m   Compiling[0m franken-evidence v0.2.7 (/dp/asupersync/franken_evidence)
+[1m[92m   Compiling[0m chrono v0.4.43
+[1m[92m   Compiling[0m frankenengine-extension-host v0.1.0 (/data/projects/franken_engine/crates/franken-extension-host)
+[1m[92m   Compiling[0m serde_cbor v0.11.2
+[1m[92m   Compiling[0m toml_edit v0.22.27
+[1m[92m   Compiling[0m franken-decision v0.2.7 (/dp/asupersync/franken_decision)
+[1m[92m   Compiling[0m toml v0.8.23
+[1m[92m   Compiling[0m frankenengine-engine v0.1.0 (/data/projects/franken_engine/crates/franken-engine)
+[1m[92m   Compiling[0m frankenengine-node v0.1.0 (/data/projects/franken_node/crates/franken-node)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 5m 41s
+[1m[92m     Running[0m unittests src/lib.rs (/tmp/rch_franken_node_bd1z5a3_suite_rerun2/debug/deps/frankenengine_node-c7d11b1a39b69eae)
+
+running 1 test
+test verifier_economy::tests::test_register_replay_capsule_rejects_tampered_integrity_hash ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7634 filtered out; finished in 0.00s
+
+  [2m2026-03-09T19:31:59.735874Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mRemote command finished: exit=0 in 343007ms[0m
+    [2;3mat[0m rch/src/hook.rs:4550 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:31:59.735926Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mRetrieving build artifacts...[0m
+    [2;3mat[0m rch/src/hook.rs:4599 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:31:59.735941Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mRetrieving artifacts from /data/projects/franken_node on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:1541 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:32:02.424211Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mArtifacts retrieved in 2688ms (4506 files, 255 bytes)[0m
+    [2;3mat[0m rch/src/transfer.rs:1580 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:32:02.424269Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mArtifacts retrieved: 4506 files, 255 bytes in 2688ms[0m
+    [2;3mat[0m rch/src/hook.rs:4632 [2;3mon[0m ThreadId(1)
+
+26-03-09T19:29:16.949161Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mRetrieving build artifacts...[0m
+    [2;3mat[0m rch/src/hook.rs:4599 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:29:16.949242Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mRetrieving artifacts from /data/projects/franken_node on vmi1264463[0m
+    [2;3mat[0m rch/src/transfer.rs:1541 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:29:20.259343Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mArtifacts retrieved in 3310ms (2188 files, 255 bytes)[0m
+    [2;3mat[0m rch/src/transfer.rs:1580 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:29:20.259402Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mArtifacts retrieved: 2188 files, 255 bytes in 3310ms[0m
+    [2;3mat[0m rch/src/hook.rs:4632 [2;3mon[0m ThreadId(1)
+

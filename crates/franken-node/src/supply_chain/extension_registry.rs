@@ -910,7 +910,7 @@ mod tests {
     use crate::supply_chain::provenance::{
         AttestationEnvelopeFormat, AttestationLink, ChainLinkRole,
     };
-    use ed25519_dalek::{Signer, SigningKey};
+    use ed25519_dalek::SigningKey;
 
     fn make_trace() -> String {
         Uuid::now_v7().to_string()
@@ -1205,7 +1205,7 @@ mod tests {
         let (_sk, vk) = test_keypair();
         let (sk2, _vk2) = test_keypair_2();
         let mut reg = test_registry(&vk);
-        let mut req = valid_request("ext-a", &sk2, now_epoch());
+        let req = valid_request("ext-a", &sk2, now_epoch());
         // Even though this is a valid signature by sk2, the key is not in the ring
         let result = reg.register(req, &make_trace(), now_epoch());
         assert!(!result.success);

@@ -1,0 +1,172 @@
+{
+  "bead_id": "bd-1z5a",
+  "support_bead_id": "bd-1z5a.5",
+  "generated_at": "2026-03-09T19:40:00Z",
+  "fixtures": [
+    {
+      "id": "capsule_certification_report",
+      "kind": "artifact_report",
+      "path": "artifacts/10.17/verifier_sdk_certification_report.json",
+      "coverage": [
+        "replay capsule schema versioning",
+        "signature-bound capsule verification",
+        "verdict reproducibility",
+        "no privileged access contract"
+      ],
+      "consumed_by": [
+        "tests/conformance/verifier_sdk_capsule_replay.rs"
+      ]
+    },
+    {
+      "id": "capsule_conformance_test",
+      "kind": "rust_conformance_test",
+      "path": "tests/conformance/verifier_sdk_capsule_replay.rs",
+      "inputs": [
+        "artifacts/10.17/verifier_sdk_certification_report.json"
+      ],
+      "coverage": [
+        "expected capsule event codes",
+        "expected capsule error codes",
+        "capsule contract flags",
+        "minimum certification report shape"
+      ]
+    },
+    {
+      "id": "scoreboard_snapshot_report",
+      "kind": "artifact_report",
+      "path": "artifacts/10.17/public_trust_scoreboard_snapshot.json",
+      "coverage": [
+        "signed evidence links",
+        "atomic scoreboard publication",
+        "fail-closed unverifiable claims",
+        "deterministic digest binding"
+      ],
+      "consumed_by": [
+        "tests/conformance/claim_compiler_gate.rs"
+      ]
+    },
+    {
+      "id": "scoreboard_conformance_test",
+      "kind": "rust_conformance_test",
+      "path": "tests/conformance/claim_compiler_gate.rs",
+      "inputs": [
+        "artifacts/10.17/public_trust_scoreboard_snapshot.json"
+      ],
+      "coverage": [
+        "scoreboard report identity fields",
+        "event and error code presence",
+        "claim-compiler contract flags",
+        "nonempty signed snapshot checks"
+      ]
+    },
+    {
+      "id": "verifier_economy_checker",
+      "kind": "python_checker",
+      "path": "scripts/check_verifier_economy.py",
+      "coverage": [
+        "attestation signature path rejects presence-only shortcuts",
+        "cached-key verification path rejects presence-only shortcuts",
+        "replay capsule integrity path requires canonical hash verification"
+      ],
+      "paired_tests": [
+        "tests/test_check_verifier_economy.py"
+      ]
+    },
+    {
+      "id": "connector_verifier_sdk_checker",
+      "kind": "python_checker",
+      "path": "scripts/check_verifier_sdk.py",
+      "coverage": [
+        "canonical migration signature payload verification",
+        "content-hash validation instead of nonempty-string acceptance"
+      ],
+      "paired_tests": [
+        "tests/test_check_verifier_sdk.py"
+      ]
+    },
+    {
+      "id": "operator_e2e_harness",
+      "kind": "shell_e2e_harness",
+      "path": "tests/e2e/verifier_replay_operator_suite.sh",
+      "coverage": [
+        "successful replay verification",
+        "forged capsule rejection",
+        "fraud-proof extraction",
+        "quarantine replay",
+        "scoreboard update logging"
+      ],
+      "outputs": [
+        "artifacts/replacement_gap/bd-1z5a/operator_e2e_summary.json",
+        "artifacts/replacement_gap/bd-1z5a/operator_e2e_bundle.json",
+        "artifacts/replacement_gap/bd-1z5a/operator_e2e_log.jsonl"
+      ]
+    },
+    {
+      "id": "operator_e2e_checker",
+      "kind": "python_checker",
+      "path": "scripts/check_verifier_replay_operator_e2e.py",
+      "coverage": [
+        "required operator stage coverage",
+        "single trace-id enforcement",
+        "required CAPSULE_VERIFY_* and VERIFIER_SCORE_* event-family coverage",
+        "stage artifact existence"
+      ],
+      "paired_tests": [
+        "tests/test_check_verifier_replay_operator_e2e.py"
+      ]
+    },
+    {
+      "id": "operator_e2e_bundle",
+      "kind": "machine_readable_bundle",
+      "path": "artifacts/replacement_gap/bd-1z5a/operator_e2e_bundle.json",
+      "inputs": [
+        "artifacts/replacement_gap/bd-1z5a/operator_e2e_summary.json",
+        "artifacts/replacement_gap/bd-1z5a/operator_e2e_log.jsonl",
+        "artifacts/replacement_gap/bd-1z5a/stage_outputs/stage_results.jsonl"
+      ],
+      "coverage": [
+        "five operator stages",
+        "single normalized trace id",
+        "stage-to-artifact linkage",
+        "machine-readable external verification summary"
+      ],
+      "consumed_by": [
+        "scripts/check_verifier_replay_operator_e2e.py"
+      ]
+    },
+    {
+      "id": "fraud_proof_witness_bundle",
+      "kind": "machine_readable_witness_bundle",
+      "path": "artifacts/replacement_gap/bd-1z5a/fraud_proof_bundle.json",
+      "inputs": [
+        "artifacts/replacement_gap/bd-1z5a/operator_e2e_bundle.json",
+        "artifacts/replacement_gap/bd-1z5a/operator_e2e_log.jsonl",
+        "artifacts/replacement_gap/bd-1z5a/stage_outputs/capsule_verify_fraud_proof.stderr"
+      ],
+      "coverage": [
+        "stable fraud_proof_id reference",
+        "trace binding for witness lookup",
+        "machine-readable source artifact references",
+        "minimal operator-facing recheck steps"
+      ]
+    }
+  ],
+  "rch_verification_builds": [
+    {
+      "build_id": 29747325727408129,
+      "command": "cargo clippy -p frankenengine-node --tests --message-format short -- -D warnings",
+      "status": "PASS"
+    },
+    {
+      "build_id": 29747325727408132,
+      "command": "cargo test -p frankenengine-node --lib -- verify_trust_state",
+      "status": "PASS"
+    },
+    {
+      "build_id": 29747325727408133,
+      "command": "cargo clippy -p frankenengine-node --all-targets --message-format short -- -D warnings",
+      "status": "PASS"
+    }
+  ],
+  "missing_or_future_fixtures": []
+}

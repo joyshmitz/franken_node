@@ -1,0 +1,116 @@
+{
+  "artifact_type": "verification_evidence",
+  "bead_id": "bd-1z5a",
+  "support_bead_id": "bd-1z5a.5",
+  "title": "Replace verifier-economy and replay-capsule trust surrogates with canonical signed capsule verifier",
+  "section": "10.17",
+  "verdict": "PARTIAL",
+  "timestamp": "2026-03-09T19:40:00Z",
+  "overall_bead_status": "in_progress",
+  "artifact_scope": "Support-bead evidence pack for current external replay, quarantine, scoreboard, and fraud-proof witness verification state after the passing operator E2E bundle landed.",
+  "artifacts": {
+    "verification_summary": "artifacts/replacement_gap/bd-1z5a/verification_summary.md",
+    "verification_evidence": "artifacts/replacement_gap/bd-1z5a/verification_evidence.json",
+    "replay_fixture_index": "artifacts/replacement_gap/bd-1z5a/replay_fixture_index.json",
+    "fraud_proof_bundle": "artifacts/replacement_gap/bd-1z5a/fraud_proof_bundle.json",
+    "operator_e2e_summary": "artifacts/replacement_gap/bd-1z5a/operator_e2e_summary.json",
+    "operator_e2e_bundle": "artifacts/replacement_gap/bd-1z5a/operator_e2e_bundle.json",
+    "operator_e2e_log": "artifacts/replacement_gap/bd-1z5a/operator_e2e_log.jsonl",
+    "operator_e2e_harness": "tests/e2e/verifier_replay_operator_suite.sh",
+    "operator_e2e_checker": "scripts/check_verifier_replay_operator_e2e.py",
+    "operator_e2e_checker_tests": "tests/test_check_verifier_replay_operator_e2e.py",
+    "verifier_economy_module": "crates/franken-node/src/verifier_economy/mod.rs",
+    "connector_verifier_sdk": "crates/franken-node/src/connector/verifier_sdk.rs",
+    "universal_capsule_report": "artifacts/10.17/verifier_sdk_certification_report.json",
+    "scoreboard_snapshot": "artifacts/10.17/public_trust_scoreboard_snapshot.json",
+    "capsule_conformance_test": "tests/conformance/verifier_sdk_capsule_replay.rs",
+    "scoreboard_conformance_test": "tests/conformance/claim_compiler_gate.rs",
+    "verifier_economy_checker": "scripts/check_verifier_economy.py",
+    "verifier_sdk_checker": "scripts/check_verifier_sdk.py",
+    "verifier_economy_checker_tests": "tests/test_check_verifier_economy.py",
+    "verifier_sdk_checker_tests": "tests/test_check_verifier_sdk.py"
+  },
+  "verification_steps": [
+    {
+      "name": "python_check_verifier_economy_json",
+      "command": "python3 scripts/check_verifier_economy.py --json",
+      "status": "PASS",
+      "detail": "152/152 checks passed on 2026-03-09. Replacement-critical guard windows for attestation signature verification, cached-key verification, and replay-capsule integrity all passed."
+    },
+    {
+      "name": "python_check_verifier_sdk_json",
+      "command": "python3 scripts/check_verifier_sdk.py --json",
+      "status": "PASS",
+      "detail": "65/65 checks passed on 2026-03-09. Replacement-critical guard windows for canonical migration signature verification and content-hash validation both passed."
+    },
+    {
+      "name": "python_unittest_verifier_regression_suite",
+      "command": "python3 -m unittest tests/test_check_verifier_economy.py tests/test_check_verifier_sdk.py",
+      "status": "PASS",
+      "detail": "74 tests passed in 0.223s. Includes regression mutations that fail on signature-present and hash-present shortcut reintroduction."
+    },
+    {
+      "name": "python_check_verifier_replay_operator_e2e_json",
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/check_verifier_replay_operator_e2e.py --json",
+      "status": "PASS",
+      "detail": "17/17 checks passed on 2026-03-09. The operator E2E bundle reports a single coherent trace id, five passing stages, complete CAPSULE_VERIFY_* / VERIFIER_SCORE_* coverage, and valid stage artifact paths."
+    },
+    {
+      "name": "python_unittest_operator_e2e_checker",
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest tests/test_check_verifier_replay_operator_e2e.py",
+      "status": "PASS",
+      "detail": "9 tests passed in 0.110s. Confirms the operator E2E checker continues to require the normalized passing bundle shape."
+    },
+    {
+      "name": "rch_clippy_tests_current_tree",
+      "command": "rch exec -- env CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=/data/projects/franken_node/target_rch_browncove_bd3gfa3_tests_clippy cargo clippy -p frankenengine-node --tests --message-format short -- -D warnings",
+      "build_id": 29747325727408129,
+      "status": "PASS",
+      "detail": "Completed remotely with exit_code=0 in 305429ms. Confirms the frankenengine-node test surface is clippy-clean on the current shared tree."
+    },
+    {
+      "name": "rch_verify_trust_state_probe",
+      "command": "rch exec -- cargo test -p frankenengine-node --lib -- verify_trust_state 2>&1",
+      "build_id": 29747325727408132,
+      "status": "PASS",
+      "detail": "Completed remotely with exit_code=0 in 425437ms. Provides fresh proof that a trust-state verification lane executes cleanly on the current shared tree."
+    },
+    {
+      "name": "rch_clippy_all_targets_current_tree",
+      "command": "rch exec -- env CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=/data/projects/franken_node/target_rch_browncove_bd3gfa3_alltargets_clippy cargo clippy -p frankenengine-node --all-targets --message-format short -- -D warnings",
+      "build_id": 29747325727408133,
+      "status": "PASS",
+      "detail": "Completed remotely with exit_code=0 in 375409ms after a narrow extension_registry.rs lint cleanup. Confirms the current frankenengine-node tree passes strict all-target clippy under rch."
+    },
+    {
+      "name": "rch_exact_verifier_name_probes",
+      "commands": [
+        "rch exec -- env CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=/tmp/rch_target_browncove_bd1z5a2_capsule cargo test -p frankenengine-node --lib test_register_replay_capsule_rejects_tampered_integrity_hash -- --nocapture",
+        "rch exec -- env CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=/tmp/rch_target_browncove_bd1z5a2_anchor cargo test -p frankenengine-node --lib test_verify_trust_state_timing_safe_anchor_comparison -- --nocapture"
+      ],
+      "build_ids": [
+        29747325727408159,
+        29747325727408160
+      ],
+      "status": "CANCELLED",
+      "detail": "Exploratory exact-name probes were cancelled once enough build evidence existed for the support artifact pack. Both had already reached the shared dependency compilation path, which currently emits unrelated franken_engine warning noise in this worktree."
+    }
+  ],
+  "acceptance_coverage": [
+    "Replacement-critical checker windows now fail if verifier-economy or connector verifier paths regress to signature-present or hash-present shortcut acceptance.",
+    "The current shared frankenengine-node tree has fresh rch evidence for strict all-target clippy, test-surface clippy, and a trust-state verification probe.",
+    "Deterministic replay and scoreboard evidence already exist at the section-10.17 layer via the universal capsule report and public trust scoreboard snapshot.",
+    "Rust conformance tests exist for the capsule report and scoreboard report, and the replacement-gap fixture index links them as reusable external-verification inputs.",
+    "The replacement-gap operator shell harness now exists under tests/e2e and produces a passing operator bundle with the required CAPSULE_VERIFY_* and VERIFIER_SCORE_* event families.",
+    "A machine-readable fraud-proof witness bundle now records the successful capsule_verify_fraud_proof stage, stable fraud_proof_id, trace binding, and source artifact references."
+  ],
+  "outstanding_gaps": [
+    "The parent bead remains in progress on the reserved core verifier Rust surfaces owned in other lanes.",
+    "This support artifact pack does not independently certify that the canonical verifier kernel implementation is complete; it records the external evidence state around the current shared tree."
+  ],
+  "notes": [
+    "This artifact pack is intentionally partial and support-scoped: it captures the truthful current state of verifier evidence while bd-1z5a core implementation work continues elsewhere.",
+    "The current replay fixture inventory now includes the dedicated replacement-gap operator harness, checker, structured log, and witness-reference bundle in addition to the section-10.17 reports and conformance tests.",
+    "The earlier bd-1z5a.2 gap statements about missing operator shell coverage, missing CAPSULE_VERIFY_* / VERIFIER_SCORE_* markers, and a missing fraud-proof bundle are now obsolete and have been replaced by concrete artifact paths in this refreshed pack."
+  ]
+}

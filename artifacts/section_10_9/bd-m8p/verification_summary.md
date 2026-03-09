@@ -1,16 +1,16 @@
 # Verification Summary: Verifier economy portal and external attestation publishing flow
 
 **Bead:** bd-m8p | **Section:** 10.9
-**Timestamp:** 2026-02-26T00:21:04.819146+00:00
+**Timestamp:** 2026-03-09T20:18:39.334119+00:00
 **Overall:** PASS
-**Checks:** 146/146 passed
+**Checks:** 152/152 passed
 
 ## Check Results
 
 - [PASS] file_exists: spec contract: exists: docs/specs/section_10_9/bd-m8p_contract.md
 - [PASS] file_exists: policy document: exists: docs/policy/verifier_economy.md
 - [PASS] file_exists: rust implementation: exists: crates/franken-node/src/verifier_economy/mod.rs
-- [PASS] main_rs: 'pub mod verifier_economy;': found
+- [PASS] module_registration: registered in lib.rs
 - [PASS] spec_event_codes: all 8 event codes present
 - [PASS] spec_invariants: all 4 invariants present
 - [PASS] spec_error_codes: all 5 error codes present
@@ -152,7 +152,13 @@
 - [PASS] rust_test: 'test_event_code_constants': found
 - [PASS] rust_test: 'test_invariant_constants': found
 - [PASS] rust_test: 'test_error_code_constants': found
-- [PASS] rust_test_count: 60 tests (minimum 50)
+- [PASS] replacement_critical:attestation_signature_path: required_markers: all required markers present
+- [PASS] replacement_critical:attestation_signature_path: no_shortcuts: no shortcut markers found
+- [PASS] replacement_critical:cached_verifying_key_path: required_markers: all required markers present
+- [PASS] replacement_critical:cached_verifying_key_path: no_shortcuts: no shortcut markers found
+- [PASS] replacement_critical:capsule_integrity_path: required_markers: all required markers present
+- [PASS] replacement_critical:capsule_integrity_path: no_shortcuts: no shortcut markers found
+- [PASS] rust_test_count: 68 tests (minimum 50)
 
 ## Artifacts
 

@@ -1,0 +1,86 @@
+  [2m2026-03-09T19:41:16.852364Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mSelected worker: vmi1149989 at ubuntu@212.90.121.76 (6 slots, speed 50.0)[0m
+    [2;3mat[0m rch/src/hook.rs:287 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:22.102680Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mStarting remote compilation pipeline for franken_node (hash: d67e3a77b680195a)[0m
+    [2;3mat[0m rch/src/hook.rs:4210 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:22.102780Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mPrepared dependency sync manifest for 7 roots[0m
+    [2;3mat[0m rch/src/hook.rs:4232 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:23.640742Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mSyncing project to worker vmi1149989...[0m
+    [2;3mat[0m rch/src/hook.rs:4256 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:23.640818Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSyncing /data/projects/asupersync/franken_decision -> /data/projects/asupersync/franken_decision on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:927 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:26.702067Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSync completed in 3061ms[0m
+    [2;3mat[0m rch/src/transfer.rs:996 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:26.702175Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSyncing /data/projects/asupersync/franken_evidence -> /data/projects/asupersync/franken_evidence on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:927 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:29.758922Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSync completed in 3056ms[0m
+    [2;3mat[0m rch/src/transfer.rs:996 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:29.759027Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSyncing /data/projects/asupersync/franken_kernel -> /data/projects/asupersync/franken_kernel on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:927 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:32.716089Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSync completed in 2957ms[0m
+    [2;3mat[0m rch/src/transfer.rs:996 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:32.716217Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSyncing /data/projects/franken_engine/crates/franken-engine -> /data/projects/franken_engine/crates/franken-engine on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:927 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:35.259637Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSync completed in 2543ms[0m
+    [2;3mat[0m rch/src/transfer.rs:996 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:35.259762Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSyncing /data/projects/franken_engine/crates/franken-extension-host -> /data/projects/franken_engine/crates/franken-extension-host on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:927 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:37.326538Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSync completed in 2066ms[0m
+    [2;3mat[0m rch/src/transfer.rs:996 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:37.326684Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSyncing /data/projects/franken_node -> /data/projects/franken_node on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:927 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:41.156334Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSync completed in 3829ms[0m
+    [2;3mat[0m rch/src/transfer.rs:996 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:41.156457Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSyncing /data/projects/franken_node/crates/franken-node -> /data/projects/franken_node/crates/franken-node on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:927 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:43.273576Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mSync completed in 2117ms[0m
+    [2;3mat[0m rch/src/transfer.rs:996 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:43.273656Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mSync complete: 12342 files, 3647048 bytes in 19629ms[0m
+    [2;3mat[0m rch/src/hook.rs:4402 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:49.696139Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mExecuting command remotely: env CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=/tmp/rch_franken_node_bd1z5a3_suite_rerun2 cargo test -p frankenengine-node test_events_contain_scoreboard_updated --lib -- --nocapture[0m
+    [2;3mat[0m rch/src/hook.rs:4429 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:49.696183Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mWrapping command with external timeout protection, [1;32mkind[0m[32m: cargo test, [1;32mtimeout_secs[0m[32m: 1800[0m
+    [2;3mat[0m rch/src/transfer.rs:688 [2;3mon[0m ThreadId(1)
+
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+[1m[92m     Running[0m unittests src/lib.rs (/tmp/rch_franken_node_bd1z5a3_suite_rerun2/debug/deps/frankenengine_node-9d57e22631bf48d3)
+
+running 1 test
+test connector::vef_claim_integration::tests::test_events_contain_scoreboard_updated ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5068 filtered out; finished in 0.00s
+
+  [2m2026-03-09T19:41:51.386744Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mRemote command finished: exit=0 in 1690ms[0m
+    [2;3mat[0m rch/src/hook.rs:4550 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:56.388800Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mRetrieving build artifacts...[0m
+    [2;3mat[0m rch/src/hook.rs:4599 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:56.388855Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mRetrieving artifacts from /data/projects/franken_node on vmi1149989[0m
+    [2;3mat[0m rch/src/transfer.rs:1541 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:59.013400Z[0m [32m INFO[0m [1;32mrch::transfer[0m[32m: [32mArtifacts retrieved in 2624ms (4508 files, 255 bytes)[0m
+    [2;3mat[0m rch/src/transfer.rs:1580 [2;3mon[0m ThreadId(1)
+
+  [2m2026-03-09T19:41:59.013462Z[0m [32m INFO[0m [1;32mrch::hook[0m[32m: [32mArtifacts retrieved: 4508 files, 255 bytes in 2624ms[0m
+    [2;3mat[0m rch/src/hook.rs:4632 [2;3mon[0m ThreadId(1)
+

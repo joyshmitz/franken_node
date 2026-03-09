@@ -230,6 +230,42 @@ class TestListChecks(unittest.TestCase):
         for r in results:
             self.assertTrue(r["pass"], f"Failed: {r['check']}")
 
+    def test_replacement_critical_guards_all_pass(self):
+        mod.RESULTS.clear()
+        results = mod.check_replacement_critical_guards()
+        for r in results:
+            self.assertTrue(r["pass"], f"Failed: {r['check']}: {r['detail']}")
+
+
+class TestReplacementCriticalGuardRegression(unittest.TestCase):
+    def test_detects_signature_presence_shortcut(self):
+        source = mod.RUST_IMPL.read_text(encoding="utf-8")
+        mutated = source.replace(
+            "verify_ed25519_signature_hex(expected_key, payload, &sig.value).is_ok()",
+            "!sig.value.is_empty()",
+            1,
+        )
+        results = mod._replacement_critical_guard_checks(mutated)
+        failing = [r for r in results if not r["pass"]]
+        self.assertTrue(
+            any("attestation_signature_path" in r["check"] for r in failing),
+            failing,
+        )
+
+    def test_detects_capsule_integrity_presence_shortcut(self):
+        source = mod.RUST_IMPL.read_text(encoding="utf-8")
+        mutated = source.replace(
+            "ct_eq(&capsule.integrity_hash, &expected_integrity)",
+            "!capsule.integrity_hash.is_empty()",
+            1,
+        )
+        results = mod._replacement_critical_guard_checks(mutated)
+        failing = [r for r in results if not r["pass"]]
+        self.assertTrue(
+            any("capsule_integrity_path" in r["check"] for r in failing),
+            failing,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Test: missing file detection

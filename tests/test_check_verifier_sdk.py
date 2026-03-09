@@ -137,6 +137,45 @@ class TestMissingEvidenceCausesFail(unittest.TestCase):
             mod.EVIDENCE_FILE = original
 
 
+class TestReplacementCriticalGuards(unittest.TestCase):
+    """Test regression checks for replacement-critical verifier paths."""
+
+    def test_guards_pass_on_current_source(self):
+        result = mod.run_all()
+        guard_checks = [c for c in result["checks"] if "Replacement-critical guard" in c["check"]]
+        self.assertGreater(len(guard_checks), 0)
+        for check in guard_checks:
+            self.assertTrue(check["passed"], f"Failed: {check['check']}: {check['detail']}")
+
+    def test_detects_signature_presence_shortcut(self):
+        source = mod.IMPL_FILE.read_text(encoding="utf-8")
+        mutated = source.replace(
+            "verify_ed25519_signature_hex(signer_public_key, &signature_payload, sig).is_ok()",
+            "!sig.is_empty()",
+            1,
+        )
+        checks = mod._replacement_critical_guard_checks(mutated)
+        failures = [c for c in checks if not c["passed"]]
+        self.assertTrue(
+            any("migration_signature_path" in c["check"] for c in failures),
+            failures,
+        )
+
+    def test_detects_hash_presence_shortcut(self):
+        source = mod.IMPL_FILE.read_text(encoding="utf-8")
+        mutated = source.replace(
+            "let ch_ok = is_sha256_hex(ch);",
+            "let ch_ok = !ch.is_empty();",
+            1,
+        )
+        checks = mod._replacement_critical_guard_checks(mutated)
+        failures = [c for c in checks if not c["passed"]]
+        self.assertTrue(
+            any("content_hash_path" in c["check"] for c in failures),
+            failures,
+        )
+
+
 class TestResultFields(unittest.TestCase):
     """Test that run_all returns all required fields."""
 

@@ -81,6 +81,34 @@ CORE_OPERATIONS = [
     "fn replay_capsule",
 ]
 
+REPLACEMENT_CRITICAL_GUARDS = [
+    {
+        "name": "migration_signature_path",
+        "anchor": "pub fn verify_migration_artifact(",
+        "required": [
+            "canonical_migration_artifact_payload(artifact)?",
+            "verify_ed25519_signature_hex(signer_public_key, &signature_payload, sig).is_ok()",
+        ],
+        "banned": [
+            "let sig_ok = !sig.is_empty()",
+            "let sig_ok = !signature.is_empty()",
+        ],
+        "span": 1600,
+    },
+    {
+        "name": "content_hash_path",
+        "anchor": "pub fn verify_migration_artifact(",
+        "required": [
+            "let ch_ok = is_sha256_hex(ch);",
+        ],
+        "banned": [
+            "let ch_ok = !ch.is_empty()",
+            "let ch_ok = ch.is_empty() == false",
+        ],
+        "span": 3200,
+    },
+]
+
 # -- Helpers -------------------------------------------------------------------
 
 
@@ -92,6 +120,42 @@ def _read(path: Path) -> str:
 
 def _check(name: str, ok: bool, detail: str = "") -> dict:
     return {"check": name, "passed": ok, "detail": detail or ("ok" if ok else "FAIL")}
+
+
+def _source_window(source: str, anchor: str, span: int) -> str:
+    start = source.find(anchor)
+    if start == -1:
+        return ""
+    return source[start : start + span]
+
+
+def _replacement_critical_guard_checks(source: str) -> list[dict]:
+    checks = []
+    for guard in REPLACEMENT_CRITICAL_GUARDS:
+        window = _source_window(source, guard["anchor"], guard["span"])
+        if not window:
+            checks.append(_check(
+                f"Replacement-critical guard {guard['name']} anchor",
+                False,
+                f"missing anchor: {guard['anchor']}",
+            ))
+            continue
+
+        missing = [marker for marker in guard["required"] if marker not in window]
+        checks.append(_check(
+            f"Replacement-critical guard {guard['name']} required markers",
+            len(missing) == 0,
+            "all required markers present" if not missing else f"missing: {missing}",
+        ))
+
+        present = [marker for marker in guard["banned"] if marker in window]
+        checks.append(_check(
+            f"Replacement-critical guard {guard['name']} no shortcuts",
+            len(present) == 0,
+            "no shortcut markers found" if not present else f"banned markers present: {present}",
+        ))
+
+    return checks
 
 
 # -- Check functions -----------------------------------------------------------
@@ -252,6 +316,8 @@ def _checks() -> list:
         test_count >= 25,
         f"{test_count} tests found",
     ))
+
+    checks.extend(_replacement_critical_guard_checks(src))
 
     # 21. Summary file exists
     checks.append(_check(

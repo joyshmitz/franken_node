@@ -24,6 +24,7 @@ from typing import Any
 SPEC = ROOT / "docs" / "specs" / "section_10_9" / "bd-m8p_contract.md"
 POLICY = ROOT / "docs" / "policy" / "verifier_economy.md"
 RUST_IMPL = ROOT / "crates" / "franken-node" / "src" / "verifier_economy" / "mod.rs"
+LIB_RS = ROOT / "crates" / "franken-node" / "src" / "lib.rs"
 MAIN_RS = ROOT / "crates" / "franken-node" / "src" / "main.rs"
 
 EVIDENCE_DIR = ROOT / "artifacts" / "section_10_9" / "bd-m8p"
@@ -157,6 +158,48 @@ REQUIRED_RUST_TESTS = [
     "test_error_code_constants",
 ]
 
+REPLACEMENT_CRITICAL_GUARDS = [
+    {
+        "name": "attestation_signature_path",
+        "anchor": "pub fn verify_signature(",
+        "required": [
+            "verify_ed25519_signature_hex(expected_key, payload, &sig.value).is_ok()",
+        ],
+        "banned": [
+            "&& !sig.value.is_empty()",
+            "return !sig.value.is_empty()",
+        ],
+        "span": 1200,
+    },
+    {
+        "name": "cached_verifying_key_path",
+        "anchor": "fn verify_signature_with_cached_key(",
+        "required": [
+            "verify_ed25519_signature_with_key_hex(verifying_key, payload, &sig.value).is_ok()",
+        ],
+        "banned": [
+            "&& !sig.value.is_empty()",
+            "return !sig.value.is_empty()",
+        ],
+        "span": 1200,
+    },
+    {
+        "name": "capsule_integrity_path",
+        "anchor": "pub fn verify_capsule_integrity(",
+        "required": [
+            "compute_capsule_integrity_hash(",
+            "ct_eq(&capsule.integrity_hash, &expected_integrity)",
+            "is_sha256_prefixed_hex(hash)",
+        ],
+        "banned": [
+            "return !capsule.integrity_hash.is_empty()",
+            "component_hashes.iter().all(|hash| !hash.is_empty())",
+            "!capsule.integrity_hash.is_empty()",
+        ],
+        "span": 1600,
+    },
+]
+
 REPUTATION_TIERS = ["Novice", "Active", "Established", "Trusted"]
 
 RESULTS: list[dict[str, Any]] = []
@@ -216,6 +259,51 @@ def _file_contains_all(path: Path, keywords: list[str], category: str) -> list[d
     return results
 
 
+def _source_window(source: str, anchor: str, span: int) -> str:
+    start = source.find(anchor)
+    if start == -1:
+        return ""
+    return source[start : start + span]
+
+
+def _replacement_critical_guard_checks(source: str) -> list[dict[str, Any]]:
+    checks = []
+    for guard in REPLACEMENT_CRITICAL_GUARDS:
+        window = _source_window(source, guard["anchor"], guard["span"])
+        if not window:
+            checks.append(
+                _check(
+                    f"replacement_critical:{guard['name']}: anchor",
+                    False,
+                    f"missing anchor: {guard['anchor']}",
+                )
+            )
+            continue
+
+        missing = [marker for marker in guard["required"] if marker not in window]
+        checks.append(
+            _check(
+                f"replacement_critical:{guard['name']}: required_markers",
+                len(missing) == 0,
+                "all required markers present"
+                if not missing
+                else f"missing: {missing}",
+            )
+        )
+
+        present = [marker for marker in guard["banned"] if marker in window]
+        checks.append(
+            _check(
+                f"replacement_critical:{guard['name']}: no_shortcuts",
+                len(present) == 0,
+                "no shortcut markers found"
+                if not present
+                else f"banned markers present: {present}",
+            )
+        )
+    return checks
+
+
 # ---------------------------------------------------------------------------
 # Individual check functions
 # ---------------------------------------------------------------------------
@@ -237,7 +325,11 @@ def check_rust_impl_exists() -> dict[str, Any]:
 
 def check_module_registered() -> dict[str, Any]:
     """C04: Module registered in main.rs."""
-    return _file_contains(MAIN_RS, "pub mod verifier_economy;", "main_rs")
+    lib_src = LIB_RS.read_text(encoding="utf-8") if LIB_RS.is_file() else ""
+    main_src = MAIN_RS.read_text(encoding="utf-8") if MAIN_RS.is_file() else ""
+    registered = "pub mod verifier_economy;" in lib_src or '"verifier_economy"' in main_src
+    detail = "registered in lib.rs" if "pub mod verifier_economy;" in lib_src else "registered in main.rs verifier list"
+    return _check("module_registration", registered, detail if registered else "verifier_economy not wired into lib.rs or main.rs")
 
 
 def check_spec_event_codes() -> dict[str, Any]:
@@ -407,6 +499,19 @@ def check_rust_tests() -> list[dict[str, Any]]:
     return _file_contains_all(RUST_IMPL, REQUIRED_RUST_TESTS, "rust_test")
 
 
+def check_replacement_critical_guards() -> list[dict[str, Any]]:
+    """C30: Replacement-critical verifier paths keep real verification guards."""
+    if not RUST_IMPL.is_file():
+        return [
+            _check(
+                "replacement_critical:source",
+                False,
+                f"missing: {_safe_rel(RUST_IMPL)}",
+            )
+        ]
+    return _replacement_critical_guard_checks(RUST_IMPL.read_text(encoding="utf-8"))
+
+
 # ---------------------------------------------------------------------------
 # All check functions
 # ---------------------------------------------------------------------------
@@ -443,6 +548,7 @@ LIST_CHECKS = [
     check_rust_invariant_constants,
     check_rust_error_codes,
     check_rust_tests,
+    check_replacement_critical_guards,
 ]
 
 
