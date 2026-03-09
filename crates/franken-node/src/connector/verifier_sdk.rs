@@ -23,6 +23,7 @@
 //! - **INV-VER-RESULT-SIGNED**: Every verification result carries a verifier signature.
 //! - **INV-VER-TRANSPARENCY-APPEND**: Transparency log entries are append-only and hash-chained.
 
+use ed25519_dalek::{Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -286,6 +287,90 @@ fn deterministic_hash(data: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
+fn append_length_prefixed(bytes: &mut Vec<u8>, value: &str) {
+    bytes.extend_from_slice(&(value.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(value.as_bytes());
+}
+
+fn hex_blob(raw: &str, expected_len: usize) -> Result<Vec<u8>, VerifierSdkError> {
+    let normalized = raw.trim().trim_start_matches("ed25519:").trim();
+    let decoded = hex::decode(normalized).map_err(|_| {
+        VerifierSdkError::SignatureInvalid("signature or public key is not valid hex".to_string())
+    })?;
+    if decoded.len() != expected_len {
+        return Err(VerifierSdkError::SignatureInvalid(format!(
+            "signature or public key has invalid length {} (expected {expected_len})",
+            decoded.len()
+        )));
+    }
+    Ok(decoded)
+}
+
+fn is_sha256_hex(value: &str) -> bool {
+    let normalized = value.strip_prefix("sha256:").unwrap_or(value);
+    normalized.len() == 64 && normalized.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+pub(crate) fn compute_capsule_integrity_hash(
+    capsule_id: &str,
+    attestation_id: &str,
+    input_state_hash: &str,
+    execution_trace_hash: &str,
+    output_state_hash: &str,
+    expected_result_hash: &str,
+) -> String {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(b"connector_signed_capsule_integrity_v1:");
+    for field in [
+        capsule_id,
+        attestation_id,
+        input_state_hash,
+        execution_trace_hash,
+        output_state_hash,
+        expected_result_hash,
+    ] {
+        append_length_prefixed(&mut payload, field);
+    }
+
+    format!("sha256:{}", hex::encode(Sha256::digest(payload)))
+}
+
+pub(crate) fn verify_ed25519_signature_hex(
+    public_key: &str,
+    payload: &[u8],
+    signature: &str,
+) -> Result<(), VerifierSdkError> {
+    let key_bytes = hex_blob(public_key, 32)?;
+    let signature_bytes = hex_blob(signature, 64)?;
+    let verifying_key = VerifyingKey::from_bytes(
+        &key_bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| VerifierSdkError::SignatureInvalid("invalid verifying key".to_string()))?,
+    )
+    .map_err(|_| VerifierSdkError::SignatureInvalid("invalid verifying key".to_string()))?;
+    let signature = ed25519_dalek::Signature::from_bytes(
+        &signature_bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| VerifierSdkError::SignatureInvalid("invalid signature".to_string()))?,
+    );
+    verifying_key
+        .verify(payload, &signature)
+        .map_err(|_| VerifierSdkError::SignatureInvalid("signature verification failed".to_string()))
+}
+
+fn canonical_migration_artifact_payload(
+    artifact: &BTreeMap<String, serde_json::Value>,
+) -> Result<Vec<u8>, VerifierSdkError> {
+    let mut canonical = artifact.clone();
+    canonical.remove("signature");
+    canonical.remove("signature_algorithm");
+    canonical.remove("signer_public_key");
+    serde_json::to_vec(&canonical)
+        .map_err(|err| VerifierSdkError::InvalidClaim(format!("artifact canonicalization failed: {err}")))
+}
+
 /// Compute a signature by binding a verifier identity to a binding hash.
 /// Uses length-prefixed encoding to prevent delimiter-collision ambiguity.
 fn compute_verifier_signature(verifier_identity: &str, binding_hash: &str) -> String {
@@ -478,14 +563,24 @@ pub fn verify_migration_artifact(
         .get("signature")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let sig_ok = !sig.is_empty();
+    let signature_algorithm = artifact
+        .get("signature_algorithm")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let signer_public_key = artifact
+        .get("signer_public_key")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let signature_payload = canonical_migration_artifact_payload(artifact)?;
+    let sig_ok = signature_algorithm.eq_ignore_ascii_case("ed25519")
+        && verify_ed25519_signature_hex(signer_public_key, &signature_payload, sig).is_ok();
     assertions.push(AssertionResult {
-        assertion: "signature_present".to_string(),
+        assertion: "signature_valid".to_string(),
         passed: sig_ok,
         detail: if sig_ok {
-            "signature present".to_string()
+            "ed25519 signature verified".to_string()
         } else {
-            "missing".to_string()
+            "signature missing or invalid".to_string()
         },
     });
 
@@ -520,14 +615,14 @@ pub fn verify_migration_artifact(
         .get("content_hash")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let ch_ok = ch.len() == 64;
+    let ch_ok = is_sha256_hex(ch);
     assertions.push(AssertionResult {
         assertion: "content_hash_valid".to_string(),
         passed: ch_ok,
         detail: if ch_ok {
-            "64-char hex hash".to_string()
+            "sha256 digest shape valid".to_string()
         } else {
-            format!("hash length={}", ch.len())
+            format!("invalid hash shape: {ch}")
         },
     });
 
@@ -538,8 +633,9 @@ pub fn verify_migration_artifact(
         Verdict::Fail
     };
     let confidence = if all_pass { 1.0 } else { 0.0 };
-    let canonical = serde_json::to_string(artifact).unwrap_or_else(|e| format!("__serde_err:{e}"));
-    let binding_hash = deterministic_hash(&canonical);
+    let binding_hash = deterministic_hash(
+        std::str::from_utf8(&signature_payload).unwrap_or("__non_utf8_artifact_payload"),
+    );
     let signature = compute_verifier_signature(verifier_identity, &binding_hash);
 
     Ok(VerificationResult {
@@ -829,6 +925,7 @@ pub fn generate_reference_verification_result() -> Result<VerificationResult, Ve
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
 
     // ── Reference generators ────────────────────────────────────────
 
@@ -975,9 +1072,9 @@ mod tests {
 
     #[test]
     fn test_verify_migration_artifact_pass() {
+        let signing_key = test_signing_key(7);
         let mut artifact = BTreeMap::new();
         artifact.insert("schema_version".to_string(), serde_json::json!("ma-v1.0"));
-        artifact.insert("signature".to_string(), serde_json::json!("sig_abc"));
         artifact.insert(
             "rollback_receipt".to_string(),
             serde_json::json!({"key": "val"}),
@@ -985,8 +1082,9 @@ mod tests {
         artifact.insert("preconditions".to_string(), serde_json::json!(["pre1"]));
         artifact.insert(
             "content_hash".to_string(),
-            serde_json::json!("aa".repeat(32)),
+            serde_json::json!(format!("sha256:{}", "aa".repeat(32))),
         );
+        sign_migration_artifact(&mut artifact, &signing_key);
         let result = verify_migration_artifact(&artifact, "v1").unwrap();
         assert_eq!(result.verdict, Verdict::Pass);
     }
@@ -1002,7 +1100,7 @@ mod tests {
         artifact.insert("preconditions".to_string(), serde_json::json!(["pre1"]));
         artifact.insert(
             "content_hash".to_string(),
-            serde_json::json!("aa".repeat(32)),
+            serde_json::json!(format!("sha256:{}", "aa".repeat(32))),
         );
         let result = verify_migration_artifact(&artifact, "v1").unwrap();
         assert_eq!(result.verdict, Verdict::Fail);
@@ -1011,18 +1109,46 @@ mod tests {
     #[test]
     fn test_verify_migration_artifact_deterministic() {
         // INV-VER-DETERMINISTIC
+        let signing_key = test_signing_key(9);
         let mut artifact = BTreeMap::new();
         artifact.insert("schema_version".to_string(), serde_json::json!("ma-v1.0"));
-        artifact.insert("signature".to_string(), serde_json::json!("sig"));
         artifact.insert("rollback_receipt".to_string(), serde_json::json!({}));
         artifact.insert("preconditions".to_string(), serde_json::json!([]));
         artifact.insert(
             "content_hash".to_string(),
-            serde_json::json!("cc".repeat(32)),
+            serde_json::json!(format!("sha256:{}", "cc".repeat(32))),
         );
+        sign_migration_artifact(&mut artifact, &signing_key);
         let r1 = verify_migration_artifact(&artifact, "v1").unwrap();
         let r2 = verify_migration_artifact(&artifact, "v1").unwrap();
         assert_eq!(r1.artifact_binding_hash, r2.artifact_binding_hash);
+    }
+
+    #[test]
+    fn test_verify_migration_artifact_tampered_signature_fails() {
+        let signing_key = test_signing_key(11);
+        let mut artifact = BTreeMap::new();
+        artifact.insert("schema_version".to_string(), serde_json::json!("ma-v1.0"));
+        artifact.insert("rollback_receipt".to_string(), serde_json::json!({}));
+        artifact.insert("preconditions".to_string(), serde_json::json!(["pre1"]));
+        artifact.insert(
+            "content_hash".to_string(),
+            serde_json::json!(format!("sha256:{}", "dd".repeat(32))),
+        );
+        sign_migration_artifact(&mut artifact, &signing_key);
+        artifact.insert(
+            "content_hash".to_string(),
+            serde_json::json!(format!("sha256:{}", "ee".repeat(32))),
+        );
+
+        let result = verify_migration_artifact(&artifact, "v1").unwrap();
+        assert_eq!(result.verdict, Verdict::Fail);
+        assert!(
+            result
+                .checked_assertions
+                .iter()
+                .any(|assertion| assertion.assertion == "signature_valid" && !assertion.passed)
+        );
     }
 
     // ── verify_trust_state ────────────────────────────────────────
@@ -1490,3 +1616,26 @@ mod tests {
         assert_eq!(result.verdict, Verdict::Fail);
     }
 }
+    fn test_signing_key(seed: u8) -> SigningKey {
+        SigningKey::from_bytes(&[seed; 32])
+    }
+
+    fn sign_migration_artifact(
+        artifact: &mut BTreeMap<String, serde_json::Value>,
+        signing_key: &SigningKey,
+    ) {
+        artifact.insert(
+            "signature_algorithm".to_string(),
+            serde_json::json!("ed25519"),
+        );
+        artifact.insert(
+            "signer_public_key".to_string(),
+            serde_json::json!(hex::encode(signing_key.verifying_key().to_bytes())),
+        );
+        let payload = canonical_migration_artifact_payload(artifact).unwrap();
+        let signature = signing_key.sign(&payload);
+        artifact.insert(
+            "signature".to_string(),
+            serde_json::json!(hex::encode(signature.to_bytes())),
+        );
+    }
