@@ -3848,8 +3848,7 @@ fn handle_trust_card_command(command: TrustCardCommand) -> Result<()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {

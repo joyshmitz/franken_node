@@ -361,7 +361,11 @@ impl HardeningStateMachine {
         let mut machine = Self::new();
         for record in log {
             machine.current_level = record.to_level;
-            machine.transition_log.push(record.clone());
+            push_bounded(
+                &mut machine.transition_log,
+                record.clone(),
+                MAX_TRANSITION_LOG_ENTRIES,
+            );
         }
         machine
     }

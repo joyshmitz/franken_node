@@ -170,6 +170,81 @@ Any ambient network, spawn, or privileged side effect is a defect.
 All authority flows through explicit capability grants. Capability
 grants are auditable and revocable.
 
+## 8.6 Selective Asupersync Leverage Decision Record
+
+**Bead:** bd-1now.1
+
+This section records the 2026-03-09 architecture decision on whether
+`franken_node` should adopt more native Asupersync machinery immediately.
+The conclusion is intentionally selective:
+
+- do not launch a crate-wide migration just because local modules use Asupersync-flavored vocabulary,
+- remove dead executor scaffolding where the downside is near-zero,
+- add guardrails so ambient runtime creep does not silently return,
+- focus substantive runtime-ownership work on the telemetry ingestion seam,
+- defer broader adoption until this crate owns a real async service boundary or an actor-style ownership topology that justifies it.
+
+### Direct Tokio Footprint At Audit Time
+
+| Surface | Evidence | Decision Impact |
+|---------|----------|-----------------|
+| `crates/franken-node/Cargo.toml` | Declares `tokio.workspace = true` | Tokio is still a direct dependency and must be justified by real runtime work, not inertia. |
+| `crates/franken-node/src/main.rs` | `#[tokio::main] async fn main()` | The CLI bootstrap currently requires Tokio only at the entry point. |
+| `crates/franken-node/src/**/*.rs` | Audit found no real `.await` sites in this crate; the only direct async function is `main()` | The executor shell is functionally dead scaffolding today, not a meaningful runtime substrate. |
+
+### Indirect Canonical Asupersync Leverage Already Present
+
+`franken_node` is not starting from zero. The upstream execution-side adapter in
+`/data/projects/franken_engine/crates/franken-engine/src/control_plane/mod.rs`
+already centralizes canonical imports from the Asupersync-owned crates:
+
+- `franken_kernel::{Budget, CapabilitySet, Cx, DecisionId, NoCaps, PolicyId, SchemaVersion, TraceId}`
+- `franken_decision::{DecisionContract, DecisionOutcome, EvalContext, FallbackPolicy, LossMatrix, Posterior}`
+- `franken_evidence::{EvidenceLedger, EvidenceLedgerBuilder}`
+
+That changes the adoption strategy. `franken_node` already benefits from the
+canonical correctness/control substrate indirectly through `franken_engine`, so
+additional node-side migration must clear a higher bar than "this looks like an
+Asupersync concept."
+
+## 8.7 Runtime Seam Classification And Adoption Boundaries
+
+### Surface Classification
+
+| Class | Files | Why It Belongs Here | Adoption Stance |
+|------|-------|---------------------|-----------------|
+| Live runtime seam | `crates/franken-node/src/ops/telemetry_bridge.rs`, `crates/franken-node/src/ops/engine_dispatcher.rs` | This is the one place the crate owns long-lived background work: `thread::spawn`, nested per-connection threads, Unix socket ingestion, and `Arc<Mutex<FrankensqliteAdapter>>` with no explicit stop/join contract. | Primary immediate refactor candidate for selective Asupersync leverage. |
+| Local semantic/model layer | `crates/franken-node/src/connector/region_ownership.rs`, `crates/franken-node/src/connector/supervision.rs`, `crates/franken-node/src/runtime/region_tree.rs` | These files model region ownership, supervision, quiescence, and deterministic lifecycle semantics, but they are mostly invariant/spec/data-structure surfaces rather than live async runtime boundaries. | Keep local unless semantic drift from canonical upstream adapters becomes costly or a real runtime topology appears underneath them. |
+| Skeleton/future service boundary | `crates/franken-node/src/api/service.rs` | The file assembles route metadata, middleware, metrics, and endpoint catalogs, but it is still a service skeleton rather than a live async HTTP or gRPC boundary. | Defer native Asupersync request-region/service-boundary migration until the service becomes real. |
+| Dead executor shell | `crates/franken-node/src/main.rs` | `#[tokio::main]` exists, but the crate does not currently exercise async work that justifies an executor. | Safe high-confidence cleanup candidate. |
+
+### Immediate Implementation Graph
+
+| Bead | Purpose | Why Now |
+|------|---------|---------|
+| `bd-1now.2` | Remove dead Tokio bootstrap from `frankenengine-node` CLI | Low-risk cleanup that matches the measured direct Tokio footprint. |
+| `bd-1now.3` | Add guardrail against ambient Tokio/runtime reintroduction | Prevents silent executor creep after the bootstrap cleanup lands. |
+| `bd-1now.4` | TelemetryBridge selective Asupersync adoption cluster | Highest-leverage seam for ownership, backpressure, shutdown, and supervision improvements. |
+| `bd-1now.5` | Decide local semantic twin policy versus canonical upstream adapters | Prevents semantic drift between local model layers and the upstream canonical control-plane substrate. |
+
+### Deferred Trigger Conditions
+
+| Bead | Trigger Condition | Why Deferred |
+|------|-------------------|--------------|
+| `bd-1now.6` | A real async HTTP or gRPC server boundary lands in `franken_node` | Native Asupersync request-region APIs are premature until this crate owns a live service boundary. |
+| `bd-1now.7` | A concrete actor-style ownership topology appears with restart, mailbox, or reply obligations | Replacing local mutex/singleton state with actor-style ownership only makes sense when the concurrency topology demands it. |
+
+### Widening Criteria
+
+Future contributors must not widen Asupersync adoption unless the target surface
+meets all of the following:
+
+1. The surface owns real long-lived work, backpressure, shutdown, restart, or reply obligations.
+2. The surface is not already receiving the needed guarantees indirectly through the upstream `franken_engine` adapter boundary.
+3. The migration yields a concrete correctness, robustness, or performance win that can be stated plainly.
+4. The work does not merely replace a local semantic model with a runtime substrate for aesthetic consistency.
+5. The resulting ownership boundary remains clearer, not blurrier, than the current three-kernel split.
+
 ## 8.8 Five Alignment Contracts
 
 ### AC-01: Scope Boundary

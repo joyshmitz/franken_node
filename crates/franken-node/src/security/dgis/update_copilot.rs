@@ -579,7 +579,9 @@ impl UpdateCopilot {
                 rationale: "Node is an articulation point; firewall prevents cascade".to_string(),
             });
         }
-        if delta.post_update.trust_bottleneck_score > 0.7 {
+        if !delta.post_update.trust_bottleneck_score.is_finite()
+            || delta.post_update.trust_bottleneck_score > 0.7
+        {
             barriers.push(BarrierRecommendation {
                 barrier_type: "sandbox_escalation".to_string(),
                 target_node: proposal.package_name.clone(),
@@ -1218,6 +1220,28 @@ mod tests {
         // (above 0.3 high threshold, below 0.6 critical threshold)
         assert_eq!(rec.risk_level, UpdateRiskLevel::High);
         assert!(rec.requires_acknowledgement);
+    }
+
+    #[test]
+    fn nan_trust_bottleneck_triggers_sandbox_escalation() {
+        // NaN trust_bottleneck_score must fail-closed: trigger the sandbox
+        // escalation barrier rather than silently skipping it.
+        let mut copilot = UpdateCopilot::default();
+        let mut proposal = make_low_risk_proposal();
+        proposal.post_update_metrics.trust_bottleneck_score = f64::NAN;
+        let rec = copilot.evaluate_proposal(&proposal, &make_trace_id());
+        let has_sandbox = rec.containment.recommended_barriers.iter().any(|b| b.barrier_type == "sandbox_escalation");
+        assert!(has_sandbox, "NaN trust_bottleneck_score must trigger sandbox_escalation barrier");
+    }
+
+    #[test]
+    fn inf_trust_bottleneck_triggers_sandbox_escalation() {
+        let mut copilot = UpdateCopilot::default();
+        let mut proposal = make_low_risk_proposal();
+        proposal.post_update_metrics.trust_bottleneck_score = f64::INFINITY;
+        let rec = copilot.evaluate_proposal(&proposal, &make_trace_id());
+        let has_sandbox = rec.containment.recommended_barriers.iter().any(|b| b.barrier_type == "sandbox_escalation");
+        assert!(has_sandbox, "Inf trust_bottleneck_score must trigger sandbox_escalation barrier");
     }
 
     // === No playbook for low risk ===

@@ -179,14 +179,33 @@ fn serialize_mac<S: serde::Serializer>(mac: &[u8; SIGNATURE_LEN], s: S) -> Resul
 
 fn deserialize_mac<'de, D: serde::Deserializer<'de>>(d: D) -> Result<[u8; SIGNATURE_LEN], D::Error> {
     let hex = String::deserialize(d)?;
-    let bytes: Vec<u8> = (0..hex.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0))
-        .collect();
+    if hex.len() != SIGNATURE_LEN * 2 {
+        return Err(serde::de::Error::custom(format!(
+            "MAC hex string must be exactly {} chars, got {}",
+            SIGNATURE_LEN * 2,
+            hex.len()
+        )));
+    }
     let mut arr = [0u8; SIGNATURE_LEN];
-    let copy_len = bytes.len().min(SIGNATURE_LEN);
-    arr[..copy_len].copy_from_slice(&bytes[..copy_len]);
+    for (i, chunk) in hex.as_bytes().chunks_exact(2).enumerate() {
+        let hi = hex_nibble(chunk[0]).ok_or_else(|| {
+            serde::de::Error::custom(format!("invalid hex char at position {}", i * 2))
+        })?;
+        let lo = hex_nibble(chunk[1]).ok_or_else(|| {
+            serde::de::Error::custom(format!("invalid hex char at position {}", i * 2 + 1))
+        })?;
+        arr[i] = (hi << 4) | lo;
+    }
     Ok(arr)
+}
+
+fn hex_nibble(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
 }
 
 impl AuthenticatedSession {
@@ -1968,5 +1987,37 @@ mod tests {
         let mac = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "payload-hash");
         let result = mgr.process_message("s1", MessageDirection::Send, 0, "payload-hash", &mac, 2000, "t");
         assert!(result.is_ok());
+    }
+
+    // ── Regression: deserialize_mac rejects malformed hex ──────────
+
+    fn session_json_with_mac(mac_hex: &str) -> String {
+        format!(
+            r#"{{"session_id":"s1","state":"Establishing","client_identity":"c","server_identity":"sv","encryption_key_id":"ek","signing_key_id":"sk","established_at":0,"send_seq":0,"recv_seq":0,"replay_window":0,"epoch":1,"handshake_mac":"{}"}}"#,
+            mac_hex
+        )
+    }
+
+    #[test]
+    fn deserialize_mac_rejects_odd_length_hex() {
+        // Old code would panic on odd-length hex due to out-of-bounds slice
+        let json = session_json_with_mac(&"a".repeat(SIGNATURE_LEN * 2 - 1));
+        let result: Result<AuthenticatedSession, _> = serde_json::from_str(&json);
+        assert!(result.is_err(), "odd-length hex must be rejected");
+    }
+
+    #[test]
+    fn deserialize_mac_rejects_invalid_hex_chars() {
+        let json = session_json_with_mac(&"zz".repeat(SIGNATURE_LEN));
+        let result: Result<AuthenticatedSession, _> = serde_json::from_str(&json);
+        assert!(result.is_err(), "non-hex chars must be rejected");
+    }
+
+    #[test]
+    fn deserialize_mac_accepts_valid_hex() {
+        let valid_hex: String = (0..SIGNATURE_LEN).map(|i| format!("{:02x}", i % 256)).collect();
+        let json = session_json_with_mac(&valid_hex);
+        let result: Result<AuthenticatedSession, _> = serde_json::from_str(&json);
+        assert!(result.is_ok(), "valid hex must be accepted");
     }
 }
