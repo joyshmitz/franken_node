@@ -2,7 +2,7 @@
   "bead_id": "bd-2nre",
   "section": "15",
   "title": "Section-wide verification gate: comprehensive unit+e2e+logging",
-  "generated_at": "2026-02-26T00:20:56.935241+00:00",
+  "generated_at": "2026-03-09T07:46:38.360235+00:00",
   "verdict": "PASS",
   "gate_pass": true,
   "beads_expected": 8,
@@ -216,7 +216,7 @@
             {
               "check": "test_coverage",
               "passed": true,
-              "detail": "Rust unit tests: 29 (target >= 25)"
+              "detail": "Rust unit tests: 42 (target >= 25)"
             }
           ]
         },
@@ -242,16 +242,20 @@
           "title": "Signed extension registry with provenance and revocation",
           "gate_script": "scripts/check_signed_extension_registry.py",
           "test_suite": "tests/test_check_signed_extension_registry.py",
-          "timestamp": "2026-02-21T06:05:00+00:00",
+          "timestamp": "2026-03-09T07:40:00Z",
           "verdict": "PASS",
           "implementation_artifacts": {
             "extension_registry": "crates/franken-node/src/supply_chain/extension_registry.rs",
+            "provenance": "crates/franken-node/src/supply_chain/provenance.rs",
+            "artifact_signing": "crates/franken-node/src/supply_chain/artifact_signing.rs",
+            "transparency_verifier": "crates/franken-node/src/supply_chain/transparency_verifier.rs",
+            "revocation_registry": "crates/franken-node/src/supply_chain/revocation_registry.rs",
             "supply_chain_mod": "crates/franken-node/src/supply_chain/mod.rs",
             "spec_contract": "docs/specs/section_15/bd-209w_contract.md",
             "verification_script": "scripts/check_signed_extension_registry.py",
             "unit_tests": "tests/test_check_signed_extension_registry.py"
           },
-          "rust_test_count": 29,
+          "rust_test_count": 42,
           "python_test_count": 20,
           "event_codes_defined": 13,
           "gate_checks_passed": 15,
@@ -262,7 +266,8 @@
             "INV-SER-REVOCABLE",
             "INV-SER-MONOTONIC",
             "INV-SER-AUDITABLE",
-            "INV-SER-DETERMINISTIC"
+            "INV-SER-DETERMINISTIC",
+            "INV-SER-NO-SHAPE-CHECKS"
           ],
           "capabilities_verified": {
             "extension_statuses": [
@@ -287,11 +292,17 @@
               "list",
               "version_lineage"
             ],
-            "signature_verification": true,
-            "provenance_validation": true,
+            "admission_kernel": true,
+            "ed25519_signature_verification": true,
+            "provenance_chain_validation": true,
+            "transparency_proof_verification": true,
             "monotonic_revocation": true,
             "content_hashing": true,
-            "audit_logging": true
+            "audit_logging": true,
+            "admission_receipts_with_negative_witnesses": true
+          },
+          "gap_closures": {
+            "bd-3hdn": "CLOSED \u2014 Canonical signed-manifest admission kernel replaces shape-only checks (Ed25519 verification, provenance chain validation, Merkle inclusion proofs)"
           }
         },
         "verdict": "PASS"
@@ -419,7 +430,7 @@
             {
               "check": "test_coverage",
               "passed": true,
-              "detail": "26 tests (>=26)"
+              "detail": "30 tests (>=26)"
             }
           ]
         },
@@ -2049,5 +2060,5 @@
       "adoption_metrics_total": 4
     }
   ],
-  "content_hash": "bff7e016df722e472479f2a5c4eec6b7e37248e80b5f1f7c311688b927df40ca"
+  "content_hash": "fe6f23fb083262bbf54cc96f192da9758a89bb4fbedf56dae8822a155a77d45c"
 }

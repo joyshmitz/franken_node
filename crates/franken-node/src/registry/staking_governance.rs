@@ -2183,11 +2183,17 @@ mod security_verifier_economy_integration_tests {
     use super::*;
     use crate::security::sybil_defense::{SybilDefensePipeline, TrustNode, TrustSignal};
     use crate::verifier_economy::{
-        AttestationClaim, AttestationEvidence, AttestationSignature, AttestationSubmission,
-        ReputationDimensions, VEP_001, VEP_002, VEP_004, VEP_005, VEP_006, VerificationDimension,
-        VerifierEconomyRegistry, VerifierRegistration, VerifierTier,
+        attestation_signature_payload, AttestationClaim, AttestationEvidence,
+        AttestationSignature, AttestationSubmission, ReputationDimensions, VEP_001, VEP_002,
+        VEP_004, VEP_005, VEP_006, VerificationDimension, VerifierEconomyRegistry,
+        VerifierRegistration, VerifierTier,
     };
+    use ed25519_dalek::{Signer, SigningKey};
     use std::collections::BTreeMap;
+
+    fn test_signing_key(seed: u8) -> SigningKey {
+        SigningKey::from_bytes(&[seed; 32])
+    }
 
     fn make_ledger_with_publisher(
         pub_id: &str,
@@ -2199,11 +2205,11 @@ mod security_verifier_economy_integration_tests {
         (ledger, stake_id)
     }
 
-    fn make_verifier_reg(name: &str, key: &str) -> VerifierRegistration {
+    fn make_verifier_reg(name: &str, signing_key: &SigningKey) -> VerifierRegistration {
         VerifierRegistration {
             name: name.to_string(),
             contact: format!("{}@example.com", name),
-            public_key: key.to_string(),
+            public_key: hex::encode(signing_key.verifying_key().to_bytes()),
             capabilities: vec![
                 VerificationDimension::Security,
                 VerificationDimension::Compatibility,
@@ -2212,8 +2218,12 @@ mod security_verifier_economy_integration_tests {
         }
     }
 
-    fn make_submission(verifier_id: &str, key: &str, trace: &str) -> AttestationSubmission {
-        AttestationSubmission {
+    fn make_submission(
+        verifier_id: &str,
+        signing_key: &SigningKey,
+        trace: &str,
+    ) -> AttestationSubmission {
+        let mut submission = AttestationSubmission {
             verifier_id: verifier_id.to_string(),
             claim: AttestationClaim {
                 dimension: VerificationDimension::Security,
@@ -2228,11 +2238,14 @@ mod security_verifier_economy_integration_tests {
             },
             signature: AttestationSignature {
                 algorithm: "ed25519".to_string(),
-                public_key: key.to_string(),
-                value: "sig-valid".to_string(),
+                public_key: hex::encode(signing_key.verifying_key().to_bytes()),
+                value: String::new(),
             },
             timestamp: "2026-02-20T12:00:00Z".to_string(),
-        }
+        };
+        let payload = attestation_signature_payload(&submission);
+        submission.signature.value = hex::encode(signing_key.sign(&payload).to_bytes());
+        submission
     }
 
     // -- 1. Staking validates stake → sybil defense scores trust --
@@ -2309,9 +2322,10 @@ mod security_verifier_economy_integration_tests {
         assert!(agg.value > 0.8);
 
         // Trust score high enough → register as verifier
+        let sk = test_signing_key(10);
         let mut registry = VerifierEconomyRegistry::new();
         let v = registry
-            .register_verifier(make_verifier_reg("TrustedVerifier", "key-tv-1"))
+            .register_verifier(make_verifier_reg("TrustedVerifier", &sk))
             .unwrap();
         assert!(v.active);
         assert!(registry.events().iter().any(|e| e.code == VEP_005));
@@ -2328,13 +2342,14 @@ mod security_verifier_economy_integration_tests {
         assert!(allowed);
 
         // Step 2: Register as verifier in economy
+        let sk = test_signing_key(20);
         let mut registry = VerifierEconomyRegistry::new();
         let v = registry
-            .register_verifier(make_verifier_reg("PubVerifier", "key-pv-1"))
+            .register_verifier(make_verifier_reg("PubVerifier", &sk))
             .unwrap();
 
         // Step 3: Submit and publish attestation
-        let sub = make_submission(&v.verifier_id, &v.public_key, "trace-hash-001");
+        let sub = make_submission(&v.verifier_id, &sk, "trace-hash-001");
         let att = registry.submit_attestation(sub).unwrap();
         registry.review_attestation(&att.attestation_id).unwrap();
         registry.publish_attestation(&att.attestation_id).unwrap();
@@ -2378,11 +2393,12 @@ mod security_verifier_economy_integration_tests {
         assert!(slash_event.slash_amount > 0);
 
         // In verifier economy: the same publisher's attestation is disputed
+        let sk = test_signing_key(30);
         let mut registry = VerifierEconomyRegistry::new();
         let v = registry
-            .register_verifier(make_verifier_reg("BadVerifier", "key-bv-1"))
+            .register_verifier(make_verifier_reg("BadVerifier", &sk))
             .unwrap();
-        let sub = make_submission(&v.verifier_id, &v.public_key, "trace-fraud");
+        let sub = make_submission(&v.verifier_id, &sk, "trace-fraud");
         let att = registry.submit_attestation(sub).unwrap();
         registry.review_attestation(&att.attestation_id).unwrap();
         registry.publish_attestation(&att.attestation_id).unwrap();
@@ -2502,13 +2518,14 @@ mod security_verifier_economy_integration_tests {
 
     #[test]
     fn selective_reporting_detected_across_systems() {
+        let sk = test_signing_key(40);
         let mut registry = VerifierEconomyRegistry::new();
         let v = registry
-            .register_verifier(make_verifier_reg("NarrowVerifier", "key-nv-1"))
+            .register_verifier(make_verifier_reg("NarrowVerifier", &sk))
             .unwrap();
 
         // Submit attestation in only one dimension
-        let sub = make_submission(&v.verifier_id, &v.public_key, "trace-narrow-1");
+        let sub = make_submission(&v.verifier_id, &sk, "trace-narrow-1");
         let att = registry.submit_attestation(sub).unwrap();
         registry.review_attestation(&att.attestation_id).unwrap();
         registry.publish_attestation(&att.attestation_id).unwrap();
@@ -2567,18 +2584,20 @@ mod security_verifier_economy_integration_tests {
 
     #[test]
     fn scoreboard_reflects_cross_system_reputation() {
+        let sk1 = test_signing_key(50);
+        let sk2 = test_signing_key(51);
         let mut registry = VerifierEconomyRegistry::new();
 
         // Register two verifiers
         let v1 = registry
-            .register_verifier(make_verifier_reg("TopVerifier", "key-top-1"))
+            .register_verifier(make_verifier_reg("TopVerifier", &sk1))
             .unwrap();
         let v2 = registry
-            .register_verifier(make_verifier_reg("NewVerifier", "key-new-1"))
+            .register_verifier(make_verifier_reg("NewVerifier", &sk2))
             .unwrap();
 
         // v1: publish attestation + high reputation
-        let sub1 = make_submission(&v1.verifier_id, &v1.public_key, "trace-top-1");
+        let sub1 = make_submission(&v1.verifier_id, &sk1, "trace-top-1");
         let att1 = registry.submit_attestation(sub1).unwrap();
         registry.review_attestation(&att1.attestation_id).unwrap();
         registry.publish_attestation(&att1.attestation_id).unwrap();
@@ -2630,23 +2649,24 @@ mod security_verifier_economy_integration_tests {
 
     #[test]
     fn anti_gaming_rate_limit_blocks_spam_submissions() {
+        let sk = test_signing_key(60);
         let mut registry = VerifierEconomyRegistry::new();
         // Set a low rate limit for testing
         registry.reset_submission_counts();
 
         let v = registry
-            .register_verifier(make_verifier_reg("SpamVerifier", "key-spam-1"))
+            .register_verifier(make_verifier_reg("SpamVerifier", &sk))
             .unwrap();
 
         // Submit many attestations up to the limit (default 100)
         // We'll simulate by checking that the anti-gaming event fires
         for i in 0..100 {
-            let sub = make_submission(&v.verifier_id, &v.public_key, &format!("trace-spam-{i}"));
+            let sub = make_submission(&v.verifier_id, &sk, &format!("trace-spam-{i}"));
             registry.submit_attestation(sub).unwrap();
         }
 
         // 101st submission should be blocked
-        let sub = make_submission(&v.verifier_id, &v.public_key, "trace-spam-overflow");
+        let sub = make_submission(&v.verifier_id, &sk, "trace-spam-overflow");
         let result = registry.submit_attestation(sub);
         assert!(result.is_err());
         assert!(registry.events().iter().any(|e| e.code == VEP_006));
@@ -2666,11 +2686,12 @@ mod security_verifier_economy_integration_tests {
         assert!(staking_audit.iter().any(|e| e.event_code == STAKE_001));
 
         // Verifier economy side
+        let sk = test_signing_key(70);
         let mut registry = VerifierEconomyRegistry::new();
         let v = registry
-            .register_verifier(make_verifier_reg("AuditVerifier", "key-au-1"))
+            .register_verifier(make_verifier_reg("AuditVerifier", &sk))
             .unwrap();
-        let sub = make_submission(&v.verifier_id, &v.public_key, "trace-audit-1");
+        let sub = make_submission(&v.verifier_id, &sk, "trace-audit-1");
         registry.submit_attestation(sub).unwrap();
 
         let vep_events = registry.events();

@@ -58,7 +58,7 @@ fn is_sha256_prefixed_hex(value: &str) -> bool {
     normalized.len() == 64 && normalized.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn attestation_signature_payload(submission: &AttestationSubmission) -> Vec<u8> {
+pub(crate) fn attestation_signature_payload(submission: &AttestationSubmission) -> Vec<u8> {
     let mut payload = Vec::new();
     payload.extend_from_slice(b"verifier_economy_attestation_v1:");
     push_length_prefixed(&mut payload, &submission.verifier_id);
