@@ -427,10 +427,11 @@ impl TrustCardRegistry {
             .clone();
 
         // Monotone upgrade enforcement: upgrading certification requires evidence.
-        if let Some(level) = mutation.certification_level {
-            if level > latest.certification_level && mutation.evidence_refs.is_none() {
-                return Err(TrustCardError::EvidenceRequiredForUpgrade);
-            }
+        if let Some(level) = mutation.certification_level
+            && level > latest.certification_level
+            && mutation.evidence_refs.is_none()
+        {
+            return Err(TrustCardError::EvidenceRequiredForUpgrade);
         }
 
         let mut next = latest.clone();
