@@ -547,20 +547,22 @@ impl EcosystemRegistry {
     }
 }
 
-/// Compute SHA-256 hash for an audit entry.
+/// Compute SHA-256 hash for an audit entry using length-prefixed encoding.
 fn compute_audit_hash(entry: &RegistryAuditEntry) -> String {
-    let payload = format!(
-        "{}:{}:{}:{}:{}:{}",
-        entry.sequence,
-        entry.prev_hash,
-        entry.timestamp,
-        entry.extension_id,
-        entry.event_code,
-        entry.detail,
-    );
-    let digest =
-        Sha256::digest([b"ecosystem_registry_hash_v1:" as &[u8], payload.as_bytes()].concat());
-    format!("sha256:{}", hex::encode(digest))
+    let mut hasher = Sha256::new();
+    hasher.update(b"ecosystem_registry_hash_v1:");
+    hasher.update(entry.sequence.to_le_bytes());
+    for field in [
+        &entry.prev_hash,
+        &entry.timestamp,
+        &entry.extension_id,
+        &entry.event_code,
+        &entry.detail,
+    ] {
+        hasher.update((field.len() as u64).to_le_bytes());
+        hasher.update(field.as_bytes());
+    }
+    format!("sha256:{}", hex::encode(hasher.finalize()))
 }
 
 /// Push an item to a bounded Vec, evicting oldest entries if at capacity.

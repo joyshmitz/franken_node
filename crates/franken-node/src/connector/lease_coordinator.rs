@@ -188,11 +188,12 @@ pub fn verify_quorum(
             continue;
         }
 
-        // Simulate signature verification: H(signer_id || ":" || content_hash)
+        // Simulate signature verification: H(signer_id || content_hash) length-prefixed
         let mut h = Sha256::new();
         h.update(b"lease_coord_sign_v1:");
+        h.update((sig.signer_id.len() as u64).to_le_bytes());
         h.update(sig.signer_id.as_bytes());
-        h.update(b":");
+        h.update((expected_content_hash.len() as u64).to_le_bytes());
         h.update(expected_content_hash.as_bytes());
         let digest = h.finalize();
         let expected_sig = format!(
@@ -237,8 +238,9 @@ pub fn verify_quorum(
 pub fn compute_test_signature(signer_id: &str, content_hash: &str) -> String {
     let mut h = Sha256::new();
     h.update(b"lease_coord_sign_v1:");
+    h.update((signer_id.len() as u64).to_le_bytes());
     h.update(signer_id.as_bytes());
-    h.update(b":");
+    h.update((content_hash.len() as u64).to_le_bytes());
     h.update(content_hash.as_bytes());
     let digest = h.finalize();
     format!(
