@@ -2,7 +2,7 @@
   "bead_id": "bd-137",
   "section": "10.5",
   "title": "Policy-visible compatibility gate APIs",
-  "timestamp": "2026-02-20T23:30:00Z",
+  "timestamp": "2026-03-09T08:06:00Z",
   "verdict": "PASS",
   "files": {
     "compat_gates": "crates/franken-node/src/policy/compat_gates.rs",
