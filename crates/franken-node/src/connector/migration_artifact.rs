@@ -442,12 +442,15 @@ fn sign_artifact(artifact: &MigrationArtifact) -> String {
 
 pub fn verify_artifact_signatures(artifact: &MigrationArtifact) -> bool {
     let expected_rollback_signature = sign_rollback_receipt(&artifact.rollback_receipt);
-    if artifact.rollback_receipt.signature != expected_rollback_signature {
+    if !crate::security::constant_time::ct_eq(
+        &artifact.rollback_receipt.signature,
+        &expected_rollback_signature,
+    ) {
         return false;
     }
 
     let expected_artifact_signature = sign_artifact(artifact);
-    artifact.signature == expected_artifact_signature
+    crate::security::constant_time::ct_eq(&artifact.signature, &expected_artifact_signature)
 }
 
 // ---------------------------------------------------------------------------
@@ -1075,5 +1078,30 @@ mod tests {
         assert!(!result.valid);
         // Should have multiple errors
         assert_eq!(result.errors.len(), 6);
+    }
+
+    #[test]
+    fn test_verify_signatures_timing_safe_near_match() {
+        // Regression: HMAC comparisons must use ct_eq, not ==.
+        // Forge a signature that differs only in the last byte.
+        let mut artifact = generate_reference_artifact();
+        assert!(verify_artifact_signatures(&artifact));
+
+        // Mutate last byte of artifact signature
+        let mut forged = artifact.signature.clone();
+        let last = forged.pop().unwrap();
+        let replacement = if last == 'a' { 'b' } else { 'a' };
+        forged.push(replacement);
+        artifact.signature = forged;
+        assert!(!verify_artifact_signatures(&artifact));
+
+        // Mutate last byte of rollback receipt signature
+        let mut artifact2 = generate_reference_artifact();
+        let mut forged_rb = artifact2.rollback_receipt.signature.clone();
+        let last_rb = forged_rb.pop().unwrap();
+        let replacement_rb = if last_rb == 'a' { 'b' } else { 'a' };
+        forged_rb.push(replacement_rb);
+        artifact2.rollback_receipt.signature = forged_rb;
+        assert!(!verify_artifact_signatures(&artifact2));
     }
 }

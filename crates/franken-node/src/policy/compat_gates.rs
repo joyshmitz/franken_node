@@ -227,7 +227,7 @@ pub(crate) fn compute_freshness_state(
     if expires.with_timezone(&Utc) <= issued.with_timezone(&Utc) {
         return CompatibilityFreshnessState::InvalidTimestamp;
     }
-    if Utc::now() <= expires.with_timezone(&Utc) {
+    if Utc::now() < expires.with_timezone(&Utc) {
         CompatibilityFreshnessState::Fresh
     } else {
         CompatibilityFreshnessState::Stale

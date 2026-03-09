@@ -1858,7 +1858,7 @@ fn sign_receipt(receipt: &MigrationReceipt) -> String {
 }
 
 pub fn verify_receipt_signature(receipt: &MigrationReceipt) -> bool {
-    receipt.signature == sign_receipt(receipt)
+    crate::security::constant_time::ct_eq(&receipt.signature, &sign_receipt(receipt))
 }
 
 /// Compute a cohort summary from a completed pipeline state.

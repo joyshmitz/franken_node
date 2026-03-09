@@ -211,7 +211,9 @@ impl AudienceBoundToken {
 
     /// Check if audience contains a specific service identity.
     pub fn audience_contains(&self, service_id: &str) -> bool {
-        self.audience.iter().any(|a| a == service_id)
+        self.audience
+            .iter()
+            .any(|a| crate::security::constant_time::ct_eq(a, service_id))
     }
 }
 

@@ -708,7 +708,7 @@ pub fn verify_trust_state(
     let mut chain_ok = true;
     for (key, expected) in anchor {
         let actual = state.get(key).map(|s| s.as_str()).unwrap_or("");
-        let matches = actual == expected;
+        let matches = crate::security::constant_time::ct_eq(actual, expected);
         assertions.push(AssertionResult {
             assertion: format!("chain_trust_{key}"),
             passed: matches,
@@ -1633,6 +1633,26 @@ mod tests {
         evidence[0].verification_procedure = String::new();
         let result = verify_claim(&claim, &evidence, "v1").unwrap();
         assert_eq!(result.verdict, Verdict::Fail);
+    }
+
+    #[test]
+    fn test_verify_trust_state_timing_safe_anchor_comparison() {
+        // Regression: anchor comparison must use ct_eq, not ==.
+        // A near-match anchor must still fail (timing-safe comparison
+        // prevents byte-by-byte leakage).
+        let mut state = BTreeMap::new();
+        state.insert("root_key".to_string(), "abcdef0123456789".to_string());
+        let mut anchor = BTreeMap::new();
+        // Off-by-one in last byte
+        anchor.insert("root_key".to_string(), "abcdef012345678a".to_string());
+        let result = verify_trust_state(&state, &anchor, "v1").unwrap();
+        assert_eq!(result.verdict, Verdict::Fail);
+
+        // Same-length, completely different values
+        let mut anchor2 = BTreeMap::new();
+        anchor2.insert("root_key".to_string(), "xxxxxxxxxxxxxxxx".to_string());
+        let result2 = verify_trust_state(&state, &anchor2, "v1").unwrap();
+        assert_eq!(result2.verdict, Verdict::Fail);
     }
 
     fn test_signing_key(seed: u8) -> SigningKey {
