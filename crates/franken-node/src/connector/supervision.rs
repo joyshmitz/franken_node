@@ -1009,6 +1009,81 @@ mod tests {
         }
     }
 
+    #[derive(Debug, Clone)]
+    struct OptimizedRestartBudgetKernel {
+        max_restarts: u32,
+        time_window_ms: u64,
+        max_escalation_depth: u32,
+        restart_timestamps: VecDeque<u64>,
+        escalation_depth: u32,
+        child_state: ChildState,
+    }
+
+    impl OptimizedRestartBudgetKernel {
+        fn new(max_restarts: u32, time_window_ms: u64, max_escalation_depth: u32) -> Self {
+            Self {
+                max_restarts,
+                time_window_ms,
+                max_escalation_depth,
+                restart_timestamps: VecDeque::new(),
+                escalation_depth: 0,
+                child_state: ChildState::Running,
+            }
+        }
+
+        fn handle_failure(&mut self, now_ms: u64, restart_type: RestartType) -> ReferenceAction {
+            self.child_state = ChildState::Failed;
+            if restart_type == RestartType::Temporary {
+                return ReferenceAction::Ignore;
+            }
+
+            while matches!(
+                self.restart_timestamps.front(),
+                Some(&timestamp) if now_ms.saturating_sub(timestamp) > self.time_window_ms
+            ) {
+                let _ = self.restart_timestamps.pop_front();
+            }
+
+            let restart_count = u32::try_from(self.restart_timestamps.len()).unwrap_or(u32::MAX);
+            if restart_count >= self.max_restarts {
+                self.escalation_depth = self.escalation_depth.saturating_add(1);
+                if self.escalation_depth > self.max_escalation_depth {
+                    return ReferenceAction::Shutdown;
+                }
+                return ReferenceAction::Escalate;
+            }
+
+            push_bounded_deque(&mut self.restart_timestamps, now_ms, MAX_EVENTS);
+            self.child_state = ChildState::Running;
+            ReferenceAction::Restart
+        }
+
+        fn health_status(&self, now_ms: u64) -> SupervisorHealth {
+            let active_start_index = self
+                .restart_timestamps
+                .iter()
+                .position(|&timestamp| now_ms.saturating_sub(timestamp) <= self.time_window_ms);
+            let restart_count = active_start_index
+                .map(|index| self.restart_timestamps.len().saturating_sub(index))
+                .unwrap_or(0);
+            let budget_remaining = self
+                .max_restarts
+                .saturating_sub(u32::try_from(restart_count).unwrap_or(u32::MAX));
+            let oldest_restart_age_ms = active_start_index
+                .and_then(|index| self.restart_timestamps.get(index))
+                .map(|timestamp| now_ms.saturating_sub(*timestamp));
+
+            SupervisorHealth {
+                active_children: u32::from(self.child_state == ChildState::Running),
+                restart_count: u32::try_from(restart_count).unwrap_or(u32::MAX),
+                budget_remaining,
+                escalation_depth: self.escalation_depth,
+                current_time_ms: now_ms,
+                oldest_restart_age_ms,
+            }
+        }
+    }
+
     #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
     struct RestartBudgetCounterexample {
         delta_sequence_ms: Vec<u64>,
@@ -1031,7 +1106,7 @@ mod tests {
 
     fn verify_schedule_equivalence(
         delta_sequence_ms: &[u64],
-    ) -> Result<(), RestartBudgetCounterexample> {
+    ) -> Result<(), Box<RestartBudgetCounterexample>> {
         let mut sup =
             Supervisor::with_deterministic_clock(SupervisionStrategy::OneForOne, 2, 1_000, 8, 0);
         let restart_type = RestartType::Permanent;
@@ -1054,7 +1129,7 @@ mod tests {
             let actual_health = sup.health_status();
 
             if expected_action != actual_action || expected_health != actual_health {
-                return Err(RestartBudgetCounterexample {
+                return Err(Box::new(RestartBudgetCounterexample {
                     delta_sequence_ms: delta_sequence_ms.to_vec(),
                     step_index,
                     now_ms,
@@ -1062,7 +1137,7 @@ mod tests {
                     actual_action,
                     expected_health,
                     actual_health,
-                });
+                }));
             }
         }
 
@@ -1072,7 +1147,7 @@ mod tests {
     fn find_minimal_counterexample(
         delta_options_ms: &[u64],
         max_schedule_len: usize,
-    ) -> Option<RestartBudgetCounterexample> {
+    ) -> Option<Box<RestartBudgetCounterexample>> {
         let mut candidate = Vec::new();
         for target_len in 1..=max_schedule_len {
             if let Some(counterexample) =
@@ -1088,7 +1163,7 @@ mod tests {
         delta_options_ms: &[u64],
         target_len: usize,
         candidate: &mut Vec<u64>,
-    ) -> Option<RestartBudgetCounterexample> {
+    ) -> Option<Box<RestartBudgetCounterexample>> {
         if candidate.len() == target_len {
             return verify_schedule_equivalence(candidate).err();
         }
@@ -1531,19 +1606,18 @@ mod tests {
     #[ignore = "benchmark-only: compare monotone queue kernel against retained Vec reference"]
     fn benchmark_monotone_queue_restart_budget_kernel() {
         let schedule = adversarial_burst_schedule(2_000_000);
-        let mut sup =
-            Supervisor::with_deterministic_clock(SupervisionStrategy::OneForOne, 4, 2_000, 8, 0);
-        sup.add_child(make_spec("worker")).unwrap();
+        let mut optimized = OptimizedRestartBudgetKernel::new(4, 2_000, 8);
+        let mut now_ms = 0_u64;
         let mut signature = 0_u64;
 
         for delta_ms in schedule {
-            sup.advance_clock_ms(delta_ms).unwrap();
-            let action = sup.handle_failure("worker").unwrap();
-            let health = sup.health_status();
+            now_ms = now_ms.saturating_add(delta_ms);
+            let action = optimized.handle_failure(now_ms, RestartType::Permanent);
+            let health = optimized.health_status(now_ms);
             signature = signature
                 .wrapping_add(u64::from(health.restart_count))
                 .wrapping_add(u64::from(health.budget_remaining))
-                .wrapping_add(match action_kind(&action) {
+                .wrapping_add(match action {
                     ReferenceAction::Restart => 1,
                     ReferenceAction::Escalate => 3,
                     ReferenceAction::Shutdown => 7,

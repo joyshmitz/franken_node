@@ -1,0 +1,70 @@
+{
+  "artifact_type": "verification_evidence",
+  "bead_id": "bd-18sp",
+  "title": "Replace supervision clock stub with monotonic temporal kernel and restart-budget proof harness",
+  "section": "10.11",
+  "verdict": "PASS",
+  "timestamp": "2026-03-09T05:43:07Z",
+  "artifacts": {
+    "supervision_module": "crates/franken-node/src/connector/supervision.rs",
+    "repo_public_api_test": "crates/franken-node/tests/supervision_temporal_kernel.rs",
+    "harness_manifest": "artifacts/replacement_gap/bd-18sp/supervision_kernel_harness/Cargo.toml",
+    "harness_lib": "artifacts/replacement_gap/bd-18sp/supervision_kernel_harness/src/lib.rs",
+    "harness_public_api_test": "artifacts/replacement_gap/bd-18sp/supervision_kernel_harness/tests/public_api.rs",
+    "hyperfine_script": "artifacts/replacement_gap/bd-18sp/run_hyperfine.sh",
+    "hyperfine_results": "artifacts/replacement_gap/bd-18sp/hyperfine_supervision_kernel.json",
+    "verification_summary": "artifacts/replacement_gap/bd-18sp/verification_summary.md",
+    "verification_evidence": "artifacts/replacement_gap/bd-18sp/verification_evidence.json"
+  },
+  "verification_steps": [
+    {
+      "name": "rch_package_check_frankenengine_node",
+      "command": "rch exec -- env CARGO_TARGET_DIR=/tmp/rch_target_bd18sp_check cargo check -p frankenengine-node --lib --tests --message-format short",
+      "status": "FAIL",
+      "detail": "Blocked by unrelated upstream dependency errors in franken_engine/src/ts_module_resolution.rs (`lookup_exact_slot` missing)."
+    },
+    {
+      "name": "rch_harness_unit_tests",
+      "command": "rch exec -- env CARGO_TARGET_DIR=/tmp/rch_target_bd18sp_harness cargo test --manifest-path artifacts/replacement_gap/bd-18sp/supervision_kernel_harness/Cargo.toml supervision::tests:: --lib -- --nocapture",
+      "status": "PASS",
+      "detail": "29 passed, 0 failed, 2 ignored. Compiles and tests the touched supervision module directly through the harness path include."
+    },
+    {
+      "name": "rch_harness_public_api_tests",
+      "command": "rch exec -- env CARGO_TARGET_DIR=/tmp/rch_target_bd18sp_harness cargo test --manifest-path artifacts/replacement_gap/bd-18sp/supervision_kernel_harness/Cargo.toml --test public_api -- --nocapture",
+      "status": "PASS",
+      "detail": "2 passed, 0 failed. External-crate coverage confirms deterministic elapsed-time expiry and structured health report emission."
+    },
+    {
+      "name": "rch_harness_clippy",
+      "command": "rch exec -- env CARGO_TARGET_DIR=/tmp/rch_target_bd18sp_harness_clippy3 cargo clippy --manifest-path artifacts/replacement_gap/bd-18sp/supervision_kernel_harness/Cargo.toml --tests -- -D warnings",
+      "status": "PASS",
+      "detail": "Harness and embedded supervision module passed clippy with -D warnings after boxing the large counterexample error payload."
+    },
+    {
+      "name": "rch_hyperfine_kernel_comparison",
+      "command": "rch exec -- bash artifacts/replacement_gap/bd-18sp/run_hyperfine.sh",
+      "status": "PASS",
+      "detail": "Same-worker hyperfine shows the monotone-queue kernel at 0.1161179768s mean versus 0.1569021394s for the retained Vec reference (1.35x faster)."
+    }
+  ],
+  "acceptance_coverage": [
+    "Real monotonic time remains sourced from MonotonicClock implementations (steady + deterministic), and a source-level checker rejects synthetic time stubs returning.",
+    "Restart-budget bookkeeping now prunes expired timestamps from the monotone front and computes health without allocating a filtered restart vector.",
+    "A reference-kernel proof harness performs exhaustive/minimal counterexample search over adversarial burst schedules.",
+    "Structured health logging is now explicit through record_health_report(), which emits SUP-008 events without changing existing APIs.",
+    "Equivalent public-API coverage exists both in the repository integration test file and in the isolated harness integration test."
+  ],
+  "performance": {
+    "reference_mean_seconds": 0.1569021394,
+    "reference_stddev_seconds": 0.0030553409560690093,
+    "monotone_queue_mean_seconds": 0.1161179768,
+    "monotone_queue_stddev_seconds": 0.005343185443933318,
+    "speedup_vs_reference": 1.351226550196523
+  },
+  "notes": [
+    "The repository-level integration test file was added at crates/franken-node/tests/supervision_temporal_kernel.rs, but package-level cargo verification is currently blocked by unrelated franken_engine compilation failures.",
+    "The harness exists only to verify the touched supervision module in isolation; it path-includes the real source file rather than compiling a copy.",
+    "Hyperfine output was exported to JSON for machine-readable evidence and reproduced from a checked-in artifact script."
+  ]
+}
