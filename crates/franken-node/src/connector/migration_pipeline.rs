@@ -27,9 +27,13 @@
 //! - **INV-PIPE-RECEIPT-SIGNED**: Every migration receipt carries a non-empty signature.
 //! - **INV-PIPE-STAGE-MONOTONIC**: Stage transitions are strictly forward (except rollback).
 
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::rollout_state::RolloutPhase;
+use crate::runtime::nversion_oracle::{BoundaryScope, RiskTier};
 
 // ---------------------------------------------------------------------------
 // Event codes
@@ -95,6 +99,12 @@ pub const SCHEMA_VERSION: &str = "pipe-v1.0";
 
 /// Verification pass-rate threshold (95%).
 pub const VERIFICATION_THRESHOLD: f64 = 0.95;
+const VERIFICATION_CONFIDENCE_LEVEL: f64 = 0.95;
+const DEFAULT_PHASE_CONFIDENCE_BPS: u16 = 7_000;
+const GUARDED_PHASE_CONFIDENCE_BPS: u16 = 5_500;
+const RECEIPT_SIGNING_KEY: &[u8] = b"franken_node.connector.migration_pipeline.receipt_sign_v1";
+
+type HmacSha256 = Hmac<Sha256>;
 
 // ---------------------------------------------------------------------------
 // PipelineStage
@@ -195,6 +205,8 @@ pub struct PipelineState {
     pub cohort_id: String,
     /// Extension-level state (BTreeMap for determinism).
     pub extensions: BTreeMap<String, String>,
+    /// Evidence-rich extension specifications preserved across the pipeline.
+    pub extension_specs: BTreeMap<String, ExtensionSpec>,
     /// History of stage transitions.
     pub stage_history: Vec<StageTransition>,
     /// Pipeline start time (RFC 3339).
@@ -247,6 +259,132 @@ pub struct ExtensionSpec {
     pub dependency_complexity: u32,
     /// Risk tier (1 = low, 2 = medium, 3 = high).
     pub risk_tier: u32,
+    /// Evidence captured for deterministic migration analysis.
+    #[serde(default)]
+    pub evidence: ExtensionEvidence,
+}
+
+/// Evidence inventory for a migration extension.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ExtensionEvidence {
+    /// Observed API/runtime surface from scanner inventory.
+    pub api_inventory: Vec<String>,
+    /// Direct dependencies discovered for this extension.
+    pub dependency_edges: Vec<String>,
+    /// Runtime targets expected to run this extension.
+    pub runtime_targets: Vec<String>,
+    /// Compatibility bands already observed across runtimes.
+    pub compatibility_bands: BTreeMap<String, String>,
+    /// Known runtime divergences from lockstep verification or audits.
+    pub known_divergences: Vec<KnownDivergence>,
+    /// Corpus coverage in basis points [0, 10_000].
+    pub corpus_coverage_bps: u16,
+    /// Capability requirements needed during migration/execution.
+    pub required_capabilities: Vec<String>,
+    /// Lockstep observations collected for this extension.
+    pub lockstep_samples: u32,
+    /// Lockstep observations that diverged.
+    pub lockstep_failures: u32,
+    /// Project validation observations for this extension.
+    pub validation_samples: u32,
+    /// Project validation failures for this extension.
+    pub validation_failures: u32,
+    /// Explicit evidence source availability flags.
+    pub evidence_sources: BTreeMap<String, bool>,
+}
+
+/// Known divergence recorded for an extension.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnownDivergence {
+    pub scope: BoundaryScope,
+    pub risk_tier: RiskTier,
+    pub detail: String,
+}
+
+/// Compatibility bucket derived from measured evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompatibilityBand {
+    Compatible,
+    Guarded,
+    Blocked,
+}
+
+/// Structured degraded-mode summary when evidence is incomplete.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DegradedModeReport {
+    pub missing_sources: Vec<String>,
+    pub confidence_penalty_bps: u16,
+    pub fail_closed: bool,
+    pub explanation: String,
+}
+
+/// Analysis result for a single extension.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CompatibilityFinding {
+    pub compatibility_band: CompatibilityBand,
+    pub risk_score: f64,
+    pub confidence_bps: u16,
+    pub rollback_cost_score: u32,
+    pub blockers: Vec<String>,
+    pub explanation_trace: Vec<String>,
+    pub degraded_mode: Option<DegradedModeReport>,
+}
+
+/// Machine-readable evidence emitted by the pipeline.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PipelineEvidenceArtifact {
+    pub artifact_id: String,
+    pub artifact_kind: String,
+    pub digest: String,
+    pub detail: String,
+}
+
+/// Rollback certificate attached to a rollout phase.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RollbackCertificate {
+    pub certificate_id: String,
+    pub rollback_procedure_hash: String,
+    pub rollback_cost_score: u32,
+    pub admitted_extensions: usize,
+    pub explanation: String,
+}
+
+/// Deterministic rollout phase with justification.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RolloutPhasePlan {
+    pub phase: RolloutPhase,
+    pub extension_names: Vec<String>,
+    pub rollback_certificate: RollbackCertificate,
+    pub explanation_trace: Vec<String>,
+}
+
+/// Deterministic uncertainty interval for verification results.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CalibrationInterval {
+    pub lower_bound: f64,
+    pub upper_bound: f64,
+    pub confidence_level: f64,
+}
+
+/// Minimal incompatibility witness emitted on failure.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CounterexampleWitness {
+    pub extension_name: String,
+    pub reason_code: String,
+    pub witness_kind: String,
+    pub minimal_slice: Vec<String>,
+    pub digest: String,
+}
+
+/// Verification details for a single extension.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExtensionVerification {
+    pub observed_pass_rate: f64,
+    pub success_interval: CalibrationInterval,
+    pub degraded_mode: Option<DegradedModeReport>,
+    pub explanation_trace: Vec<String>,
+    pub counterexample_witness: Option<CounterexampleWitness>,
 }
 
 // ---------------------------------------------------------------------------
@@ -262,6 +400,12 @@ pub struct CompatibilityReport {
     pub blockers: Vec<String>,
     /// Overall pass rate in [0.0, 1.0].
     pub overall_pass_rate: f64,
+    /// Evidence-backed findings for each extension.
+    pub findings: BTreeMap<String, CompatibilityFinding>,
+    /// Aggregate degraded-mode report when evidence is incomplete.
+    pub degraded_mode: Option<DegradedModeReport>,
+    /// Machine-readable evidence artifacts from analysis.
+    pub evidence_artifacts: Vec<PipelineEvidenceArtifact>,
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +423,12 @@ pub struct MigrationPlan {
     pub risk_score: f64,
     /// Rollback specification.
     pub rollback_spec: String,
+    /// Deterministic rollout phases.
+    pub phases: Vec<RolloutPhasePlan>,
+    /// Human/machine-readable explanation trace.
+    pub explanation_trace: Vec<String>,
+    /// Machine-readable evidence artifacts from planning.
+    pub evidence_artifacts: Vec<PipelineEvidenceArtifact>,
 }
 
 // ---------------------------------------------------------------------------
@@ -337,6 +487,14 @@ pub struct VerificationReport {
     pub per_extension_results: BTreeMap<String, bool>,
     /// Whether the 95% threshold was met.
     pub meets_threshold: bool,
+    /// Per-extension uncertainty and witness data.
+    pub extension_details: BTreeMap<String, ExtensionVerification>,
+    /// Aggregate degraded-mode report when evidence is incomplete.
+    pub degraded_mode: Option<DegradedModeReport>,
+    /// Minimal failure witnesses.
+    pub counterexample_witnesses: Vec<CounterexampleWitness>,
+    /// Machine-readable evidence artifacts from verification.
+    pub evidence_artifacts: Vec<PipelineEvidenceArtifact>,
 }
 
 // ---------------------------------------------------------------------------
@@ -363,6 +521,22 @@ pub struct MigrationReceipt {
     pub signature: String,
     /// Timestamp (RFC 3339).
     pub timestamp: String,
+    /// Evidence artifacts bound into the receipt.
+    pub evidence_artifact_ids: Vec<String>,
+    /// Degraded-mode summary when receipt issuance followed incomplete evidence.
+    pub degraded_mode_summary: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct UnsignedMigrationReceipt<'a> {
+    pre_migration_hash: &'a str,
+    plan_fingerprint: &'a str,
+    post_migration_hash: &'a str,
+    verification_summary: &'a str,
+    rollback_proof: &'a str,
+    timestamp: &'a str,
+    evidence_artifact_ids: &'a [String],
+    degraded_mode_summary: Option<&'a str>,
 }
 
 // ---------------------------------------------------------------------------
@@ -426,6 +600,7 @@ pub struct PipelineEvent {
 pub fn new(cohort: &CohortDefinition) -> Result<PipelineState, PipelineError> {
     // Check for duplicate extensions (ERR_PIPE_DUPLICATE_EXTENSION)
     let mut seen = std::collections::BTreeSet::new();
+    let mut extension_specs = BTreeMap::new();
     for ext in &cohort.extensions {
         if !seen.insert(&ext.name) {
             return Err(PipelineError {
@@ -433,6 +608,7 @@ pub fn new(cohort: &CohortDefinition) -> Result<PipelineState, PipelineError> {
                 message: format!("Duplicate extension: {}", ext.name),
             });
         }
+        extension_specs.insert(ext.name.clone(), ext.clone());
     }
 
     let mut extensions = BTreeMap::new();
@@ -446,6 +622,7 @@ pub fn new(cohort: &CohortDefinition) -> Result<PipelineState, PipelineError> {
         current_stage: PipelineStage::Intake,
         cohort_id: cohort.cohort_id.clone(),
         extensions,
+        extension_specs,
         stage_history: Vec::new(),
         started_at: "2026-02-21T00:00:00Z".to_string(),
         idempotency_key,
@@ -491,7 +668,7 @@ pub fn advance(mut state: PipelineState) -> Result<PipelineState, PipelineError>
                     code: error_codes::ERR_PIPE_INVALID_TRANSITION.to_string(),
                     message: "Cannot generate plan without compatibility report".to_string(),
                 })?;
-            let plan = generate_plan(&state.extensions, report);
+            let plan = generate_plan(&state, report);
             state.migration_plan = Some(plan);
         }
         PipelineStage::PlanReview => {
@@ -578,6 +755,7 @@ pub fn is_idempotent(a: &PipelineState, b: &PipelineState) -> bool {
         && a.cohort_id == b.cohort_id
         && crate::security::constant_time::ct_eq(&a.idempotency_key, &b.idempotency_key)
         && a.extensions == b.extensions
+        && a.extension_specs == b.extension_specs
         && a.schema_version == b.schema_version
 }
 
@@ -603,102 +781,784 @@ fn calculate_idempotency_key(cohort: &CohortDefinition) -> String {
     hex::encode(hasher.finalize())
 }
 
+impl CompatibilityBand {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Compatible => "compatible",
+            Self::Guarded => "guarded",
+            Self::Blocked => "blocked",
+        }
+    }
+}
+
+fn stable_digest(prefix: &str, parts: &[String]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(prefix.as_bytes());
+    for part in parts {
+        hasher.update((part.len() as u64).to_le_bytes());
+        hasher.update(part.as_bytes());
+    }
+    hex::encode(hasher.finalize())
+}
+
+fn unit_ratio(numerator: u32, denominator: u32) -> f64 {
+    if denominator == 0 {
+        0.0
+    } else {
+        f64::from(numerator) / f64::from(denominator)
+    }
+}
+
+fn ratio_bps(numerator: usize, denominator: usize) -> u16 {
+    if denominator == 0 {
+        return 0;
+    }
+    let scaled = numerator.saturating_mul(10_000) / denominator;
+    u16::try_from(scaled).unwrap_or(10_000)
+}
+
+fn clamp_bps(value: i32) -> u16 {
+    let clamped = value.clamp(0, 10_000);
+    u16::try_from(clamped).unwrap_or(0)
+}
+
+fn clamp_unit(value: f64) -> f64 {
+    value.clamp(0.0, 1.0)
+}
+
+fn weighted_confidence_bps(components: &[(u16, u16)]) -> u16 {
+    let total_weight: u32 = components
+        .iter()
+        .map(|(_, weight)| u32::from(*weight))
+        .sum();
+    if total_weight == 0 {
+        return 0;
+    }
+
+    let weighted_sum: u32 = components
+        .iter()
+        .map(|(value, weight)| u32::from(*value) * u32::from(*weight))
+        .sum();
+
+    u16::try_from(weighted_sum / total_weight).unwrap_or(10_000)
+}
+
+fn sample_confidence_bps(total_samples: u32) -> u16 {
+    let scaled = total_samples.saturating_mul(250).min(10_000);
+    u16::try_from(scaled).unwrap_or(10_000)
+}
+
+fn collect_missing_sources(spec: &ExtensionSpec) -> Vec<String> {
+    let mut missing = BTreeSet::new();
+    if spec.evidence.api_inventory.is_empty() {
+        missing.insert("scanner_api_inventory".to_string());
+    }
+    if spec.evidence.runtime_targets.is_empty() {
+        missing.insert("runtime_targets".to_string());
+    }
+    if spec.evidence.corpus_coverage_bps == 0 {
+        missing.insert("corpus_coverage".to_string());
+    }
+    if spec.evidence.lockstep_samples == 0 {
+        missing.insert("lockstep_observations".to_string());
+    }
+    if spec.evidence.validation_samples == 0 {
+        missing.insert("project_validation".to_string());
+    }
+    for (source, available) in &spec.evidence.evidence_sources {
+        if !available {
+            missing.insert(source.clone());
+        }
+    }
+    missing.into_iter().collect()
+}
+
+fn degraded_report(
+    context: &str,
+    missing_sources: &[String],
+    penalty_bps: u16,
+    fail_closed: bool,
+) -> Option<DegradedModeReport> {
+    if missing_sources.is_empty() {
+        return None;
+    }
+
+    Some(DegradedModeReport {
+        missing_sources: missing_sources.to_vec(),
+        confidence_penalty_bps: penalty_bps,
+        fail_closed,
+        explanation: format!(
+            "{context}: missing evidence sources [{}]",
+            missing_sources.join(", ")
+        ),
+    })
+}
+
+fn merge_degraded_reports<'a>(
+    reports: impl Iterator<Item = &'a DegradedModeReport>,
+    context: &str,
+) -> Option<DegradedModeReport> {
+    let mut missing = BTreeSet::new();
+    let mut penalty_bps = 0_u16;
+    let mut fail_closed = false;
+
+    for report in reports {
+        penalty_bps = penalty_bps.max(report.confidence_penalty_bps);
+        fail_closed |= report.fail_closed;
+        for source in &report.missing_sources {
+            missing.insert(source.clone());
+        }
+    }
+
+    if missing.is_empty() {
+        return None;
+    }
+
+    let missing_sources: Vec<String> = missing.into_iter().collect();
+    Some(DegradedModeReport {
+        missing_sources: missing_sources.clone(),
+        confidence_penalty_bps: penalty_bps,
+        fail_closed,
+        explanation: format!("{context}: {}", missing_sources.join(", ")),
+    })
+}
+
+fn impactful_api_weight(api: &str) -> f64 {
+    match api {
+        "child_process" | "fs" | "worker_threads" => 0.08,
+        "crypto" | "net" | "tls" => 0.06,
+        _ => 0.02,
+    }
+}
+
+fn capability_weight(capability: &str) -> f64 {
+    match capability {
+        "native-ffi" | "raw-net" | "kernel-fs" => 0.18,
+        "dynamic-loader" | "subprocess" => 0.08,
+        _ => 0.03,
+    }
+}
+
+fn divergence_weight(divergence: &KnownDivergence) -> f64 {
+    let base = match divergence.risk_tier {
+        RiskTier::Critical => 0.30,
+        RiskTier::High => 0.22,
+        RiskTier::Medium => 0.12,
+        RiskTier::Low => 0.06,
+        RiskTier::Info => 0.02,
+    };
+    base + match divergence.scope {
+        BoundaryScope::Security | BoundaryScope::Concurrency => 0.02,
+        BoundaryScope::IO => 0.01,
+        BoundaryScope::TypeSystem | BoundaryScope::Memory => 0.0,
+    }
+}
+
+fn choose_action(spec: &ExtensionSpec, finding: &CompatibilityFinding) -> TransformAction {
+    let has_dependency_or_security_pressure = spec.evidence.known_divergences.iter().any(|div| {
+        matches!(
+            div.scope,
+            BoundaryScope::Security | BoundaryScope::Concurrency | BoundaryScope::IO
+        )
+    });
+
+    if has_dependency_or_security_pressure {
+        TransformAction::DependencyRewire
+    } else if !spec.evidence.required_capabilities.is_empty()
+        || finding.compatibility_band == CompatibilityBand::Guarded
+    {
+        TransformAction::PolyfillInjection
+    } else {
+        TransformAction::ApiShim
+    }
+}
+
+fn internal_dependency_blocker(
+    spec: &ExtensionSpec,
+    findings: &BTreeMap<String, CompatibilityFinding>,
+) -> Option<String> {
+    spec.evidence
+        .dependency_edges
+        .iter()
+        .find_map(|dependency| {
+            findings.get(dependency).and_then(|finding| {
+                if finding.compatibility_band == CompatibilityBand::Blocked {
+                    Some(dependency.clone())
+                } else {
+                    None
+                }
+            })
+        })
+}
+
+fn build_rollback_certificate(
+    phase: RolloutPhase,
+    extension_names: &[String],
+    rollback_cost_score: u32,
+) -> RollbackCertificate {
+    let mut digest_inputs = vec![phase.as_str().to_string(), rollback_cost_score.to_string()];
+    digest_inputs.extend(extension_names.iter().cloned());
+    let digest = stable_digest("rollback_certificate_v1", &digest_inputs);
+
+    RollbackCertificate {
+        certificate_id: format!("rollback-{}-{}", phase.as_str(), &digest[..12]),
+        rollback_procedure_hash: digest,
+        rollback_cost_score,
+        admitted_extensions: extension_names.len(),
+        explanation: format!(
+            "{} phase rollback cost={} extensions={}",
+            phase.as_str(),
+            rollback_cost_score,
+            extension_names.len()
+        ),
+    }
+}
+
+fn build_counterexample(
+    extension_name: &str,
+    reason_code: &str,
+    witness_kind: &str,
+    minimal_slice: Vec<String>,
+) -> CounterexampleWitness {
+    let mut digest_inputs = vec![
+        extension_name.to_string(),
+        reason_code.to_string(),
+        witness_kind.to_string(),
+    ];
+    digest_inputs.extend(minimal_slice.iter().cloned());
+    let digest = stable_digest("counterexample_witness_v1", &digest_inputs);
+
+    CounterexampleWitness {
+        extension_name: extension_name.to_string(),
+        reason_code: reason_code.to_string(),
+        witness_kind: witness_kind.to_string(),
+        minimal_slice,
+        digest,
+    }
+}
+
+fn wilson_interval(successes: u32, total: u32, confidence_level: f64) -> CalibrationInterval {
+    if total == 0 {
+        return CalibrationInterval {
+            lower_bound: 0.0,
+            upper_bound: 1.0,
+            confidence_level,
+        };
+    }
+
+    let n = f64::from(total);
+    let p_hat = f64::from(successes) / n;
+    let z = 1.96_f64;
+    let z2_over_n = (z * z) / n;
+    let denominator = 1.0 + z2_over_n;
+    let center = (p_hat + (z * z) / (2.0 * n)) / denominator;
+    let radius =
+        (z / denominator) * ((p_hat * (1.0 - p_hat) / n) + ((z * z) / (4.0 * n * n))).sqrt();
+
+    CalibrationInterval {
+        lower_bound: clamp_unit(center - radius),
+        upper_bound: clamp_unit(center + radius),
+        confidence_level,
+    }
+}
+
 /// Run compatibility analysis on the extensions.
 fn run_analysis(state: &PipelineState) -> CompatibilityReport {
     let mut per_extension_results = BTreeMap::new();
     let mut blockers = Vec::new();
+    let mut findings = BTreeMap::new();
+    let mut evidence_artifacts = Vec::new();
 
-    for name in state.extensions.keys() {
-        // Deterministic: all extensions pass unless name starts with "blocked_"
-        let pass = !name.starts_with("blocked_");
+    for (name, spec) in &state.extension_specs {
+        let missing_sources = collect_missing_sources(spec);
+        let penalty_bps = clamp_bps(i32::try_from(missing_sources.len()).unwrap_or(i32::MAX) * 900);
+        let fail_closed =
+            spec.evidence.lockstep_samples == 0 || spec.evidence.validation_samples == 0;
+        let degraded_mode = degraded_report(
+            &format!("analysis:{name}"),
+            &missing_sources,
+            penalty_bps,
+            fail_closed,
+        );
+
+        let explicit_sources_total = spec.evidence.evidence_sources.len();
+        let explicit_sources_available = spec
+            .evidence
+            .evidence_sources
+            .values()
+            .filter(|value| **value)
+            .count();
+        let source_availability_bps = if explicit_sources_total == 0 {
+            ratio_bps(5_usize.saturating_sub(missing_sources.len()), 5)
+        } else {
+            ratio_bps(explicit_sources_available, explicit_sources_total)
+        };
+
+        let dependency_pressure = f64::from(spec.dependency_complexity.min(12)) * 0.035;
+        let api_pressure = spec
+            .evidence
+            .api_inventory
+            .iter()
+            .map(|api| impactful_api_weight(api))
+            .sum::<f64>()
+            .min(0.25);
+        let capability_pressure = spec
+            .evidence
+            .required_capabilities
+            .iter()
+            .map(|capability| capability_weight(capability))
+            .sum::<f64>()
+            .min(0.30);
+        let divergence_pressure = spec
+            .evidence
+            .known_divergences
+            .iter()
+            .map(divergence_weight)
+            .sum::<f64>()
+            .min(0.40);
+        let coverage_penalty = if spec.evidence.corpus_coverage_bps >= 8_000 {
+            0.0
+        } else {
+            f64::from(8_000_u16.saturating_sub(spec.evidence.corpus_coverage_bps)) / 10_000.0 * 0.25
+        };
+        let validation_failure_rate = unit_ratio(
+            spec.evidence.validation_failures,
+            spec.evidence.validation_samples.max(1),
+        );
+        let lockstep_failure_rate = unit_ratio(
+            spec.evidence.lockstep_failures,
+            spec.evidence.lockstep_samples.max(1),
+        );
+        let sample_penalty = validation_failure_rate * 0.35 + lockstep_failure_rate * 0.45;
+        let degraded_penalty = f64::from(penalty_bps) / 10_000.0;
+        let base_risk = f64::from(spec.risk_tier.min(4)) * 0.12;
+        let risk_score = clamp_unit(
+            base_risk
+                + dependency_pressure
+                + api_pressure
+                + capability_pressure
+                + divergence_pressure
+                + coverage_penalty
+                + sample_penalty
+                + degraded_penalty,
+        );
+
+        let confidence_components = [
+            (source_availability_bps, 35),
+            (spec.evidence.corpus_coverage_bps, 30),
+            (
+                sample_confidence_bps(
+                    spec.evidence
+                        .validation_samples
+                        .saturating_add(spec.evidence.lockstep_samples),
+                ),
+                20,
+            ),
+            (
+                clamp_bps(((1.0 - risk_score) * 10_000.0).round() as i32),
+                15,
+            ),
+        ];
+        let confidence_bps = clamp_bps(
+            i32::from(weighted_confidence_bps(&confidence_components)) - i32::from(penalty_bps),
+        );
+
+        let has_blocking_divergence =
+            spec.evidence.known_divergences.iter().any(|divergence| {
+                matches!(divergence.risk_tier, RiskTier::High | RiskTier::Critical)
+            });
+
+        let compatibility_band =
+            if has_blocking_divergence
+                || risk_score >= 0.78
+                || confidence_bps < 4_500
+                || spec.evidence.corpus_coverage_bps < 4_500
+                || source_availability_bps < 5_000
+            {
+                CompatibilityBand::Blocked
+            } else if risk_score >= 0.45
+                || confidence_bps < DEFAULT_PHASE_CONFIDENCE_BPS
+                || !missing_sources.is_empty()
+                || spec.evidence.known_divergences.iter().any(|divergence| {
+                    matches!(divergence.risk_tier, RiskTier::Medium | RiskTier::Low)
+                })
+            {
+                CompatibilityBand::Guarded
+            } else {
+                CompatibilityBand::Compatible
+            };
+
+        let rollback_cost_score = spec
+            .dependency_complexity
+            .saturating_mul(10)
+            .saturating_add(
+                u32::try_from(spec.evidence.required_capabilities.len())
+                    .unwrap_or(u32::MAX)
+                    .saturating_mul(15),
+            )
+            .saturating_add(
+                u32::try_from(spec.evidence.known_divergences.len())
+                    .unwrap_or(u32::MAX)
+                    .saturating_mul(20),
+            )
+            .saturating_add(
+                u32::try_from(spec.evidence.api_inventory.len())
+                    .unwrap_or(u32::MAX)
+                    .saturating_mul(4),
+            );
+
+        let mut explanation_trace = vec![
+            format!(
+                "risk_score={risk_score:.3} confidence_bps={} coverage_bps={}",
+                confidence_bps, spec.evidence.corpus_coverage_bps
+            ),
+            format!(
+                "lockstep_samples={} lockstep_failures={} validation_samples={} validation_failures={}",
+                spec.evidence.lockstep_samples,
+                spec.evidence.lockstep_failures,
+                spec.evidence.validation_samples,
+                spec.evidence.validation_failures
+            ),
+        ];
+        if !spec.evidence.api_inventory.is_empty() {
+            explanation_trace.push(format!(
+                "api_inventory={}",
+                spec.evidence.api_inventory.join(", ")
+            ));
+        }
+        if !spec.evidence.required_capabilities.is_empty() {
+            explanation_trace.push(format!(
+                "required_capabilities={}",
+                spec.evidence.required_capabilities.join(", ")
+            ));
+        }
+        if !spec.evidence.known_divergences.is_empty() {
+            explanation_trace.push(format!(
+                "known_divergences={}",
+                spec.evidence
+                    .known_divergences
+                    .iter()
+                    .map(|divergence| format!(
+                        "{}:{}:{}",
+                        divergence.scope, divergence.risk_tier, divergence.detail
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            ));
+        }
+
+        let mut extension_blockers = Vec::new();
+        if has_blocking_divergence {
+            extension_blockers.push(format!("{name} has high-risk lockstep divergence evidence"));
+        }
+        if spec.evidence.corpus_coverage_bps < 4_500 {
+            extension_blockers.push(format!(
+                "{name} coverage below rollout floor ({})",
+                spec.evidence.corpus_coverage_bps
+            ));
+        }
+        if fail_closed {
+            extension_blockers.push(format!(
+                "{name} missing critical evidence for fail-closed analysis"
+            ));
+        }
+        if compatibility_band == CompatibilityBand::Guarded && extension_blockers.is_empty() {
+            extension_blockers.push(format!(
+                "{name} requires guarded rollout due to confidence {}bps",
+                confidence_bps
+            ));
+        }
+
+        let pass = compatibility_band != CompatibilityBand::Blocked;
         per_extension_results.insert(name.clone(), pass);
         if !pass {
-            blockers.push(format!("Extension {} is incompatible", name));
+            blockers.extend(extension_blockers.iter().cloned());
         }
+
+        let artifact_detail = format!(
+            "{}:{}:{}:{}:{}",
+            name,
+            compatibility_band.label(),
+            confidence_bps,
+            spec.evidence.corpus_coverage_bps,
+            rollback_cost_score
+        );
+        let artifact_inputs = vec![artifact_detail.clone(), explanation_trace.join("|")];
+        evidence_artifacts.push(PipelineEvidenceArtifact {
+            artifact_id: format!("analysis-{name}"),
+            artifact_kind: "analysis".to_string(),
+            digest: stable_digest("analysis_artifact_v1", &artifact_inputs),
+            detail: artifact_detail,
+        });
+
+        findings.insert(
+            name.clone(),
+            CompatibilityFinding {
+                compatibility_band,
+                risk_score,
+                confidence_bps,
+                rollback_cost_score,
+                blockers: extension_blockers,
+                explanation_trace,
+                degraded_mode,
+            },
+        );
     }
 
     let total = per_extension_results.len() as f64;
     let passing = per_extension_results.values().filter(|v| **v).count() as f64;
     let overall_pass_rate = if total > 0.0 { passing / total } else { 0.0 };
+    let degraded_mode = merge_degraded_reports(
+        findings
+            .values()
+            .filter_map(|finding| finding.degraded_mode.as_ref()),
+        "analysis aggregate degraded-mode",
+    );
 
     CompatibilityReport {
         per_extension_results,
         blockers,
         overall_pass_rate,
+        findings,
+        degraded_mode,
+        evidence_artifacts,
     }
 }
 
 /// Generate a migration plan from compatibility results.
-fn generate_plan(
-    extensions: &BTreeMap<String, String>,
-    _report: &CompatibilityReport,
-) -> MigrationPlan {
+fn generate_plan(state: &PipelineState, report: &CompatibilityReport) -> MigrationPlan {
     let mut steps = Vec::new();
-    for (name, version) in extensions {
-        let pre_hash = {
-            let mut h = Sha256::new();
-            h.update(b"migration_pre_hash_v1:");
-            h.update((name.len() as u64).to_le_bytes());
-            h.update(name.as_bytes());
-            h.update((version.len() as u64).to_le_bytes());
-            h.update(version.as_bytes());
-            hex::encode(h.finalize())
+    for (name, spec) in &state.extension_specs {
+        let Some(finding) = report.findings.get(name) else {
+            continue;
         };
-        let post_hash = {
-            let mut h = Sha256::new();
-            h.update(b"migration_post_hash_v1:");
-            h.update((name.len() as u64).to_le_bytes());
-            h.update(name.as_bytes());
-            h.update(b"migrated");
-            hex::encode(h.finalize())
-        };
+
+        let pre_hash = stable_digest(
+            "migration_pre_hash_v2",
+            &[
+                name.clone(),
+                spec.source_version.clone(),
+                spec.target_version.clone(),
+                spec.risk_tier.to_string(),
+                spec.dependency_complexity.to_string(),
+            ],
+        );
+        let post_hash = stable_digest(
+            "migration_post_hash_v2",
+            &[
+                pre_hash.clone(),
+                finding.compatibility_band.label().to_string(),
+                finding.confidence_bps.to_string(),
+            ],
+        );
         steps.push(TransformationStep {
-            action: TransformAction::ApiShim,
+            action: choose_action(spec, finding),
             target: name.clone(),
             pre_state_hash: pre_hash,
             post_state_hash: post_hash,
         });
     }
 
-    let risk_score = steps.len() as f64 * 0.1;
-
-    // Deterministic plan ID from content
-    let plan_id = {
-        let mut h = Sha256::new();
-        h.update(b"migration_plan_id_v1:");
-        h.update((steps.len() as u64).to_le_bytes());
-        for step in &steps {
-            h.update((step.target.len() as u64).to_le_bytes());
-            h.update(step.target.as_bytes());
-            h.update((step.pre_state_hash.len() as u64).to_le_bytes());
-            h.update(step.pre_state_hash.as_bytes());
-            h.update((step.post_state_hash.len() as u64).to_le_bytes());
-            h.update(step.post_state_hash.as_bytes());
-        }
-        format!("plan-{}", &hex::encode(h.finalize())[..16])
+    let risk_score = if report.findings.is_empty() {
+        0.0
+    } else {
+        report
+            .findings
+            .values()
+            .map(|finding| finding.risk_score)
+            .sum::<f64>()
+            / report.findings.len() as f64
     };
+
+    let mut phases = Vec::new();
+    for phase in [
+        RolloutPhase::Shadow,
+        RolloutPhase::Canary,
+        RolloutPhase::Ramp,
+        RolloutPhase::Default,
+    ] {
+        let mut extension_names = Vec::new();
+        let mut explanation_trace = vec![format!(
+            "{} phase evaluates measured risk, dependency constraints, and rollback cost",
+            phase.as_str()
+        )];
+
+        for (name, spec) in &state.extension_specs {
+            let Some(finding) = report.findings.get(name) else {
+                continue;
+            };
+            let dependency_blocker = internal_dependency_blocker(spec, &report.findings);
+            let admit = match phase {
+                RolloutPhase::Shadow => true,
+                RolloutPhase::Canary => {
+                    finding.compatibility_band != CompatibilityBand::Blocked
+                        && dependency_blocker.is_none()
+                        && finding.confidence_bps >= GUARDED_PHASE_CONFIDENCE_BPS
+                }
+                RolloutPhase::Ramp => {
+                    finding.compatibility_band != CompatibilityBand::Blocked
+                        && dependency_blocker.is_none()
+                        && finding.rollback_cost_score <= 120
+                }
+                RolloutPhase::Default => {
+                    finding.compatibility_band == CompatibilityBand::Compatible
+                        && dependency_blocker.is_none()
+                        && finding.confidence_bps >= DEFAULT_PHASE_CONFIDENCE_BPS
+                }
+            };
+
+            if admit {
+                extension_names.push(name.clone());
+            } else if let Some(blocker) = dependency_blocker {
+                explanation_trace.push(format!(
+                    "{name} withheld from {} due to blocked dependency {blocker}",
+                    phase.as_str()
+                ));
+            }
+        }
+
+        extension_names.sort();
+        let rollback_cost_score = extension_names
+            .iter()
+            .filter_map(|name| report.findings.get(name))
+            .fold(0_u32, |acc, finding| {
+                acc.saturating_add(finding.rollback_cost_score)
+            });
+
+        explanation_trace.push(format!(
+            "{} admits {} extension(s) with rollback_cost={}",
+            phase.as_str(),
+            extension_names.len(),
+            rollback_cost_score
+        ));
+
+        let rollback_certificate =
+            build_rollback_certificate(phase, &extension_names, rollback_cost_score);
+
+        phases.push(RolloutPhasePlan {
+            phase,
+            extension_names,
+            rollback_certificate,
+            explanation_trace,
+        });
+    }
+
+    let mut explanation_trace = vec![
+        "rollout order is shadow -> canary -> ramp -> default".to_string(),
+        format!(
+            "plan risk_score={risk_score:.3} blocker_count={}",
+            report.blockers.len()
+        ),
+    ];
+    explanation_trace.extend(phases.iter().map(|phase| {
+        format!(
+            "{} certificate={} admitted={}",
+            phase.phase.as_str(),
+            phase.rollback_certificate.certificate_id,
+            phase.extension_names.len()
+        )
+    }));
+
+    let mut evidence_artifacts = Vec::new();
+    for phase in &phases {
+        let artifact_inputs = vec![
+            phase.phase.as_str().to_string(),
+            phase.rollback_certificate.certificate_id.clone(),
+            phase.extension_names.join(","),
+        ];
+        evidence_artifacts.push(PipelineEvidenceArtifact {
+            artifact_id: format!("plan-{}", phase.phase.as_str()),
+            artifact_kind: "rollout_plan".to_string(),
+            digest: stable_digest("migration_plan_phase_v1", &artifact_inputs),
+            detail: format!(
+                "{} phase extensions={}",
+                phase.phase.as_str(),
+                phase.extension_names.join(",")
+            ),
+        });
+    }
+
+    let mut plan_id_inputs = steps
+        .iter()
+        .map(|step| {
+            format!(
+                "{}:{}:{}:{}",
+                step.target,
+                step.pre_state_hash,
+                step.post_state_hash,
+                match step.action {
+                    TransformAction::ApiShim => "api_shim",
+                    TransformAction::PolyfillInjection => "polyfill_injection",
+                    TransformAction::DependencyRewire => "dependency_rewire",
+                }
+            )
+        })
+        .collect::<Vec<_>>();
+    plan_id_inputs.extend(
+        phases
+            .iter()
+            .map(|phase| phase.rollback_certificate.certificate_id.clone()),
+    );
+    let plan_digest = stable_digest("migration_plan_id_v2", &plan_id_inputs);
+    let plan_id = format!("plan-{}", &plan_digest[..16]);
 
     MigrationPlan {
         plan_id,
         steps,
         risk_score,
-        rollback_spec: "rollback_all_steps_in_reverse".to_string(),
+        rollback_spec: "rollback_all_steps_in_reverse_with_phase_certificates".to_string(),
+        phases,
+        explanation_trace,
+        evidence_artifacts,
     }
 }
 
 /// Execute migration steps and produce traces.
 fn run_execution(state: &PipelineState) -> Vec<ExecutionTrace> {
     let mut traces = Vec::new();
-    for name in state.extensions.keys() {
+    for (name, spec) in &state.extension_specs {
+        let planned_action = state
+            .migration_plan
+            .as_ref()
+            .and_then(|plan| plan.steps.iter().find(|step| step.target == *name))
+            .map(|step| match step.action {
+                TransformAction::ApiShim => "api_shim".to_string(),
+                TransformAction::PolyfillInjection => "polyfill_injection".to_string(),
+                TransformAction::DependencyRewire => "dependency_rewire".to_string(),
+            })
+            .unwrap_or_else(|| "api_shim".to_string());
+
+        let enrolled_phases = state
+            .migration_plan
+            .as_ref()
+            .map(|plan| {
+                plan.phases
+                    .iter()
+                    .filter(|phase| phase.extension_names.contains(name))
+                    .map(|phase| phase.phase.as_str().to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| vec!["shadow".to_string()]);
+
+        let mut state_transitions = vec![format!("{name}:pre_migration")];
+        state_transitions.extend(
+            enrolled_phases
+                .iter()
+                .map(|phase| format!("{name}:phase:{phase}")),
+        );
+        state_transitions.push(format!("{name}:post_migration"));
+
         traces.push(ExecutionTrace {
             extension_name: name.clone(),
-            state_transitions: vec![
-                format!("{}:pre_migration", name),
-                format!("{}:migrating", name),
-                format!("{}:post_migration", name),
-            ],
-            mutations: vec![format!("{}:api_shim_applied", name)],
-            duration_ms: 100,
+            state_transitions,
+            mutations: vec![format!("{name}:{planned_action}_applied")],
+            duration_ms: 50_u64
+                .saturating_add(u64::from(spec.dependency_complexity).saturating_mul(15))
+                .saturating_add(
+                    u64::try_from(enrolled_phases.len())
+                        .unwrap_or(u64::MAX)
+                        .saturating_mul(20),
+                ),
         });
     }
     traces
@@ -707,21 +1567,189 @@ fn run_execution(state: &PipelineState) -> Vec<ExecutionTrace> {
 /// Run verification and produce a report.
 fn run_verification(state: &PipelineState) -> VerificationReport {
     let mut per_extension_results = BTreeMap::new();
-    for name in state.extensions.keys() {
-        // Deterministic: all extensions pass unless name starts with "fail_verify_"
-        let pass = !name.starts_with("fail_verify_");
+    let mut extension_details = BTreeMap::new();
+    let mut counterexample_witnesses = Vec::new();
+    let mut evidence_artifacts = Vec::new();
+
+    let findings = state
+        .compatibility_report
+        .as_ref()
+        .map(|report| &report.findings)
+        .cloned()
+        .unwrap_or_default();
+
+    for (name, spec) in &state.extension_specs {
+        let finding = findings.get(name).cloned().unwrap_or(CompatibilityFinding {
+            compatibility_band: CompatibilityBand::Blocked,
+            risk_score: 1.0,
+            confidence_bps: 0,
+            rollback_cost_score: 0,
+            blockers: vec![format!("{name} missing analysis finding")],
+            explanation_trace: vec!["verification entered without analysis finding".to_string()],
+            degraded_mode: degraded_report(
+                &format!("verification:{name}"),
+                &["analysis_finding".to_string()],
+                4_000,
+                true,
+            ),
+        });
+
+        let total_samples = spec
+            .evidence
+            .validation_samples
+            .saturating_add(spec.evidence.lockstep_samples);
+        let total_failures = spec
+            .evidence
+            .validation_failures
+            .saturating_add(spec.evidence.lockstep_failures);
+        let successes = total_samples.saturating_sub(total_failures);
+        let observed_pass_rate = if total_samples == 0 {
+            0.0
+        } else {
+            f64::from(successes) / f64::from(total_samples)
+        };
+        let success_interval =
+            wilson_interval(successes, total_samples, VERIFICATION_CONFIDENCE_LEVEL);
+
+        let missing_sources = collect_missing_sources(spec);
+        let degraded_penalty_bps =
+            clamp_bps(i32::try_from(missing_sources.len()).unwrap_or(i32::MAX) * 900);
+        let degraded_mode = degraded_report(
+            &format!("verification:{name}"),
+            &missing_sources,
+            degraded_penalty_bps,
+            spec.evidence.lockstep_samples == 0 || spec.evidence.validation_samples == 0,
+        );
+
+        let fail_closed_due_to_degraded = degraded_mode.as_ref().is_some_and(|report| {
+            report.fail_closed && finding.confidence_bps < DEFAULT_PHASE_CONFIDENCE_BPS
+        });
+        let pass = finding.compatibility_band != CompatibilityBand::Blocked
+            && total_failures == 0
+            && observed_pass_rate >= VERIFICATION_THRESHOLD
+            && !fail_closed_due_to_degraded
+            && finding.confidence_bps >= GUARDED_PHASE_CONFIDENCE_BPS;
         per_extension_results.insert(name.clone(), pass);
+
+        let counterexample_witness = if pass {
+            None
+        } else {
+            let (reason_code, witness_kind, minimal_slice) =
+                if finding.compatibility_band == CompatibilityBand::Blocked {
+                    (
+                        "ERR_PIPE_ANALYSIS_BLOCKED",
+                        "analysis_failure",
+                        if !finding.blockers.is_empty() {
+                            vec![finding.blockers[0].clone()]
+                        } else {
+                            vec!["analysis classified extension as blocked".to_string()]
+                        },
+                    )
+                } else if fail_closed_due_to_degraded {
+                    (
+                        "ERR_PIPE_DEGRADED_MODE",
+                        "missing_evidence",
+                        missing_sources.iter().take(1).cloned().collect(),
+                    )
+                } else if total_failures > 0 {
+                    (
+                        "ERR_PIPE_VALIDATION_FAILURE",
+                        "validation_counterexample",
+                        spec.evidence
+                            .known_divergences
+                            .iter()
+                            .map(|divergence| divergence.detail.clone())
+                            .take(1)
+                            .collect::<Vec<_>>(),
+                    )
+                } else {
+                    (
+                        "ERR_PIPE_THRESHOLD_NOT_MET",
+                        "insufficient_confidence",
+                        vec![format!(
+                            "observed_pass_rate={observed_pass_rate:.3}, confidence_bps={}",
+                            finding.confidence_bps
+                        )],
+                    )
+                };
+
+            Some(build_counterexample(
+                name,
+                reason_code,
+                witness_kind,
+                if minimal_slice.is_empty() {
+                    vec!["no-minimal-slice-available".to_string()]
+                } else {
+                    minimal_slice
+                },
+            ))
+        };
+
+        if let Some(witness) = counterexample_witness.clone() {
+            counterexample_witnesses.push(witness);
+        }
+
+        let mut explanation_trace = finding.explanation_trace.clone();
+        explanation_trace.push(format!(
+            "observed_pass_rate={observed_pass_rate:.3} interval=[{:.3}, {:.3}] samples={} failures={}",
+            success_interval.lower_bound,
+            success_interval.upper_bound,
+            total_samples,
+            total_failures
+        ));
+        if let Some(report) = &degraded_mode {
+            explanation_trace.push(report.explanation.clone());
+        }
+
+        evidence_artifacts.push(PipelineEvidenceArtifact {
+            artifact_id: format!("verification-{name}"),
+            artifact_kind: "verification".to_string(),
+            digest: stable_digest(
+                "verification_artifact_v1",
+                &[
+                    name.clone(),
+                    format!("{observed_pass_rate:.5}"),
+                    format!("{:.5}", success_interval.lower_bound),
+                    format!("{:.5}", success_interval.upper_bound),
+                ],
+            ),
+            detail: format!(
+                "{} pass={} samples={} failures={}",
+                name, pass, total_samples, total_failures
+            ),
+        });
+
+        extension_details.insert(
+            name.clone(),
+            ExtensionVerification {
+                observed_pass_rate,
+                success_interval,
+                degraded_mode,
+                explanation_trace,
+                counterexample_witness,
+            },
+        );
     }
 
     let total = per_extension_results.len() as f64;
     let passing = per_extension_results.values().filter(|v| **v).count() as f64;
     let pass_rate = if total > 0.0 { passing / total } else { 0.0 };
     let meets_threshold = pass_rate >= VERIFICATION_THRESHOLD;
+    let degraded_mode = merge_degraded_reports(
+        extension_details
+            .values()
+            .filter_map(|detail| detail.degraded_mode.as_ref()),
+        "verification aggregate degraded-mode",
+    );
 
     VerificationReport {
         pass_rate,
         per_extension_results,
         meets_threshold,
+        extension_details,
+        degraded_mode,
+        counterexample_witnesses,
+        evidence_artifacts,
     }
 }
 
@@ -758,30 +1786,79 @@ fn issue_receipt(state: &PipelineState) -> MigrationReceipt {
     let verification_summary = state
         .verification_report
         .as_ref()
-        .map(|r| format!("pass_rate={:.2}%", r.pass_rate * 100.0))
+        .map(|report| {
+            format!(
+                "pass_rate={:.2}% witnesses={} degraded={}",
+                report.pass_rate * 100.0,
+                report.counterexample_witnesses.len(),
+                report.degraded_mode.is_some()
+            )
+        })
         .unwrap_or_default();
 
-    let signature = {
-        let mut h = Sha256::new();
-        h.update(b"migration_receipt_sig_v1:");
-        h.update((pre_hash.len() as u64).to_le_bytes());
-        h.update(pre_hash.as_bytes());
-        h.update((plan_fingerprint.len() as u64).to_le_bytes());
-        h.update(plan_fingerprint.as_bytes());
-        h.update((post_hash.len() as u64).to_le_bytes());
-        h.update(post_hash.as_bytes());
-        format!("sig_{}", hex::encode(h.finalize()))
-    };
+    let evidence_artifact_ids = state
+        .migration_plan
+        .as_ref()
+        .map(|plan| {
+            plan.evidence_artifacts
+                .iter()
+                .map(|artifact| artifact.artifact_id.clone())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
-    MigrationReceipt {
+    let degraded_mode_summary = state
+        .verification_report
+        .as_ref()
+        .and_then(|report| report.degraded_mode.as_ref())
+        .map(|report| report.explanation.clone());
+
+    let rollback_proof = state
+        .migration_plan
+        .as_ref()
+        .and_then(|plan| plan.phases.last())
+        .map(|phase| phase.rollback_certificate.certificate_id.clone())
+        .unwrap_or_else(|| "rollback_validated".to_string());
+
+    let mut receipt = MigrationReceipt {
         pre_migration_hash: pre_hash,
         plan_fingerprint,
         post_migration_hash: post_hash,
         verification_summary,
-        rollback_proof: "rollback_validated".to_string(),
-        signature,
+        rollback_proof,
+        signature: String::new(),
         timestamp: "2026-02-21T00:00:00Z".to_string(),
-    }
+        evidence_artifact_ids,
+        degraded_mode_summary,
+    };
+    receipt.signature = sign_receipt(&receipt);
+    receipt
+}
+
+fn canonical_receipt_payload(receipt: &MigrationReceipt) -> Vec<u8> {
+    serde_json::to_vec(&UnsignedMigrationReceipt {
+        pre_migration_hash: &receipt.pre_migration_hash,
+        plan_fingerprint: &receipt.plan_fingerprint,
+        post_migration_hash: &receipt.post_migration_hash,
+        verification_summary: &receipt.verification_summary,
+        rollback_proof: &receipt.rollback_proof,
+        timestamp: &receipt.timestamp,
+        evidence_artifact_ids: &receipt.evidence_artifact_ids,
+        degraded_mode_summary: receipt.degraded_mode_summary.as_deref(),
+    })
+    .unwrap_or_else(|error| format!("__receipt_serde_error:{error}").into_bytes())
+}
+
+fn sign_receipt(receipt: &MigrationReceipt) -> String {
+    let mut mac =
+        HmacSha256::new_from_slice(RECEIPT_SIGNING_KEY).expect("receipt signing key is valid");
+    mac.update(b"migration_receipt_sign_v1:");
+    mac.update(&canonical_receipt_payload(receipt));
+    hex::encode(mac.finalize().into_bytes())
+}
+
+pub fn verify_receipt_signature(receipt: &MigrationReceipt) -> bool {
+    receipt.signature == sign_receipt(receipt)
 }
 
 /// Compute a cohort summary from a completed pipeline state.
@@ -852,39 +1929,124 @@ mod tests {
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
+    fn healthy_evidence() -> ExtensionEvidence {
+        let mut compatibility_bands = BTreeMap::new();
+        compatibility_bands.insert("bun".to_string(), "compatible".to_string());
+        compatibility_bands.insert("franken-node".to_string(), "compatible".to_string());
+        compatibility_bands.insert("node".to_string(), "compatible".to_string());
+
+        let mut evidence_sources = BTreeMap::new();
+        evidence_sources.insert("scanner".to_string(), true);
+        evidence_sources.insert("lockstep".to_string(), true);
+        evidence_sources.insert("validation".to_string(), true);
+        evidence_sources.insert("corpus".to_string(), true);
+
+        ExtensionEvidence {
+            api_inventory: vec!["console".to_string()],
+            dependency_edges: Vec::new(),
+            runtime_targets: vec![
+                "node".to_string(),
+                "bun".to_string(),
+                "franken-node".to_string(),
+            ],
+            compatibility_bands,
+            known_divergences: Vec::new(),
+            corpus_coverage_bps: 9_400,
+            required_capabilities: Vec::new(),
+            lockstep_samples: 24,
+            lockstep_failures: 0,
+            validation_samples: 24,
+            validation_failures: 0,
+            evidence_sources,
+        }
+    }
+
+    fn high_risk_evidence() -> ExtensionEvidence {
+        let mut evidence = healthy_evidence();
+        evidence.api_inventory = vec!["child_process".to_string(), "fs".to_string()];
+        evidence.corpus_coverage_bps = 3_200;
+        evidence.required_capabilities = vec!["native-ffi".to_string()];
+        evidence.lockstep_samples = 14;
+        evidence.lockstep_failures = 4;
+        evidence.validation_samples = 12;
+        evidence.validation_failures = 2;
+        evidence.known_divergences = vec![KnownDivergence {
+            scope: BoundaryScope::Security,
+            risk_tier: RiskTier::High,
+            detail: "receipt canonicalization mismatch under strict mode".to_string(),
+        }];
+        evidence
+    }
+
+    fn degraded_evidence() -> ExtensionEvidence {
+        let mut evidence = healthy_evidence();
+        evidence.runtime_targets.clear();
+        evidence.corpus_coverage_bps = 6_200;
+        evidence.lockstep_samples = 0;
+        evidence.validation_samples = 0;
+        evidence
+            .evidence_sources
+            .insert("lockstep".to_string(), false);
+        evidence
+            .evidence_sources
+            .insert("validation".to_string(), false);
+        evidence
+    }
+
+    fn verification_failure_evidence() -> ExtensionEvidence {
+        let mut evidence = healthy_evidence();
+        evidence.validation_samples = 20;
+        evidence.validation_failures = 2;
+        evidence.lockstep_samples = 20;
+        evidence.lockstep_failures = 1;
+        evidence.known_divergences = vec![KnownDivergence {
+            scope: BoundaryScope::IO,
+            risk_tier: RiskTier::Medium,
+            detail: "shadow-mode lockstep mismatch for file-handle ordering".to_string(),
+        }];
+        evidence
+    }
+
+    fn ext(
+        name: &str,
+        source_version: &str,
+        target_version: &str,
+        dependency_complexity: u32,
+        risk_tier: u32,
+        evidence: ExtensionEvidence,
+    ) -> ExtensionSpec {
+        ExtensionSpec {
+            name: name.to_string(),
+            source_version: source_version.to_string(),
+            target_version: target_version.to_string(),
+            dependency_complexity,
+            risk_tier,
+            evidence,
+        }
+    }
+
     fn sample_cohort() -> CohortDefinition {
         CohortDefinition {
             cohort_id: "cohort-001".to_string(),
             extensions: vec![
-                ExtensionSpec {
-                    name: "ext_alpha".to_string(),
-                    source_version: "1.0.0".to_string(),
-                    target_version: "2.0.0".to_string(),
-                    dependency_complexity: 3,
-                    risk_tier: 1,
-                },
-                ExtensionSpec {
-                    name: "ext_beta".to_string(),
-                    source_version: "0.9.0".to_string(),
-                    target_version: "1.0.0".to_string(),
-                    dependency_complexity: 5,
-                    risk_tier: 2,
-                },
+                ext("ext_alpha", "1.0.0", "2.0.0", 3, 1, healthy_evidence()),
+                ext("ext_beta", "0.9.0", "1.0.0", 5, 2, healthy_evidence()),
             ],
             selection_criteria: "pilot_v1".to_string(),
         }
     }
 
     fn single_ext_cohort(name: &str) -> CohortDefinition {
+        single_ext_cohort_with_evidence(name, healthy_evidence())
+    }
+
+    fn single_ext_cohort_with_evidence(
+        name: &str,
+        evidence: ExtensionEvidence,
+    ) -> CohortDefinition {
         CohortDefinition {
             cohort_id: "cohort-single".to_string(),
-            extensions: vec![ExtensionSpec {
-                name: name.to_string(),
-                source_version: "1.0.0".to_string(),
-                target_version: "2.0.0".to_string(),
-                dependency_complexity: 1,
-                risk_tier: 1,
-            }],
+            extensions: vec![ext(name, "1.0.0", "2.0.0", 1, 1, evidence)],
             selection_criteria: "single".to_string(),
         }
     }
@@ -937,20 +2099,8 @@ mod tests {
         let cohort = CohortDefinition {
             cohort_id: "dup".to_string(),
             extensions: vec![
-                ExtensionSpec {
-                    name: "ext_a".to_string(),
-                    source_version: "1.0.0".to_string(),
-                    target_version: "2.0.0".to_string(),
-                    dependency_complexity: 1,
-                    risk_tier: 1,
-                },
-                ExtensionSpec {
-                    name: "ext_a".to_string(),
-                    source_version: "1.0.0".to_string(),
-                    target_version: "2.0.0".to_string(),
-                    dependency_complexity: 1,
-                    risk_tier: 1,
-                },
+                ext("ext_a", "1.0.0", "2.0.0", 1, 1, healthy_evidence()),
+                ext("ext_a", "1.0.0", "2.0.0", 1, 1, healthy_evidence()),
             ],
             selection_criteria: "dup".to_string(),
         };
@@ -1011,13 +2161,17 @@ mod tests {
 
     #[test]
     fn test_analysis_detects_blockers() {
-        let cohort = single_ext_cohort("blocked_ext");
+        let cohort = single_ext_cohort_with_evidence("needs_real_evidence", high_risk_evidence());
         let mut state = new(&cohort).unwrap();
         state = advance(state).unwrap(); // -> Analysis
         state = advance(state).unwrap(); // Analysis runs, produces report
         let report = state.compatibility_report.as_ref().unwrap();
         assert!(!report.blockers.is_empty());
         assert_eq!(report.overall_pass_rate, 0.0);
+        assert_eq!(
+            report.findings["needs_real_evidence"].compatibility_band,
+            CompatibilityBand::Blocked
+        );
     }
 
     // ── Plan generation ─────────────────────────────────────────────────
@@ -1031,6 +2185,31 @@ mod tests {
         let plan = state.migration_plan.as_ref().unwrap();
         assert!(!plan.plan_id.is_empty());
         assert!(!plan.steps.is_empty());
+        assert_eq!(plan.phases.len(), 4);
+    }
+
+    #[test]
+    fn test_plan_has_deterministic_rollout_phases_and_certificates() {
+        let mut state = new(&sample_cohort()).unwrap();
+        state = advance(state).unwrap();
+        state = advance(state).unwrap();
+        state = advance(state).unwrap();
+        let plan = state.migration_plan.as_ref().unwrap();
+        let phases: Vec<_> = plan.phases.iter().map(|phase| phase.phase).collect();
+        assert_eq!(
+            phases,
+            vec![
+                RolloutPhase::Shadow,
+                RolloutPhase::Canary,
+                RolloutPhase::Ramp,
+                RolloutPhase::Default
+            ]
+        );
+        assert!(
+            plan.phases
+                .iter()
+                .all(|phase| !phase.rollback_certificate.certificate_id.is_empty())
+        );
     }
 
     #[test]
@@ -1079,9 +2258,10 @@ mod tests {
 
     #[test]
     fn test_verification_threshold_enforced() {
-        // Create a cohort where >5% of extensions fail verification
-        // We need 1 failing out of 1 total = 0% pass rate (< 95%)
-        let cohort = single_ext_cohort("fail_verify_ext");
+        let cohort = single_ext_cohort_with_evidence(
+            "verification_regression",
+            verification_failure_evidence(),
+        );
         let mut state = new(&cohort).unwrap();
         // Advance to Verification
         for _ in 0..5 {
@@ -1091,6 +2271,38 @@ mod tests {
         // Try to advance past Verification -- should fail
         let err = advance(state).unwrap_err();
         assert_eq!(err.code, error_codes::ERR_PIPE_THRESHOLD_NOT_MET);
+    }
+
+    #[test]
+    fn test_verification_emits_counterexample_witness_for_failure() {
+        let cohort = single_ext_cohort_with_evidence(
+            "verification_regression",
+            verification_failure_evidence(),
+        );
+        let mut state = new(&cohort).unwrap();
+        for _ in 0..5 {
+            state = advance(state).unwrap();
+        }
+        let report = run_verification(&state);
+        assert_eq!(report.counterexample_witnesses.len(), 1);
+        assert_eq!(
+            report.counterexample_witnesses[0].extension_name,
+            "verification_regression"
+        );
+    }
+
+    #[test]
+    fn test_degraded_mode_is_reported_and_not_green() {
+        let cohort = single_ext_cohort_with_evidence("degraded_case", degraded_evidence());
+        let mut state = new(&cohort).unwrap();
+        state = advance(state).unwrap();
+        state = advance(state).unwrap();
+        let report = state.compatibility_report.as_ref().unwrap();
+        assert!(report.degraded_mode.is_some());
+        assert_eq!(
+            report.findings["degraded_case"].compatibility_band,
+            CompatibilityBand::Blocked
+        );
     }
 
     #[test]
@@ -1116,7 +2328,8 @@ mod tests {
         let state = run_full_pipeline(&sample_cohort()).unwrap();
         let receipt = state.migration_receipt.as_ref().unwrap();
         assert!(!receipt.signature.is_empty());
-        assert!(receipt.signature.starts_with("sig_"));
+        assert_eq!(receipt.signature.len(), 64);
+        assert!(verify_receipt_signature(receipt));
     }
 
     #[test]
@@ -1124,6 +2337,15 @@ mod tests {
         let state = run_full_pipeline(&sample_cohort()).unwrap();
         let receipt = state.migration_receipt.as_ref().unwrap();
         assert!(!receipt.verification_summary.is_empty());
+    }
+
+    #[test]
+    fn test_receipt_signature_detects_tampering() {
+        let state = run_full_pipeline(&sample_cohort()).unwrap();
+        let mut receipt = state.migration_receipt.as_ref().unwrap().clone();
+        assert!(verify_receipt_signature(&receipt));
+        receipt.verification_summary.push_str(" tampered");
+        assert!(!verify_receipt_signature(&receipt));
     }
 
     // ── Rollback ────────────────────────────────────────────────────────
@@ -1342,7 +2564,40 @@ mod tests {
         let report = state.verification_report.as_ref().unwrap();
         let json = serde_json::to_string(report).unwrap();
         let parsed: VerificationReport = serde_json::from_str(&json).unwrap();
-        assert_eq!(report, &parsed);
+        assert_eq!(report.pass_rate, parsed.pass_rate);
+        assert_eq!(report.per_extension_results, parsed.per_extension_results);
+        assert_eq!(report.meets_threshold, parsed.meets_threshold);
+        assert_eq!(report.degraded_mode, parsed.degraded_mode);
+        assert_eq!(
+            report.counterexample_witnesses,
+            parsed.counterexample_witnesses
+        );
+        assert_eq!(report.evidence_artifacts, parsed.evidence_artifacts);
+
+        for (name, detail) in &report.extension_details {
+            let parsed_detail = parsed.extension_details.get(name).unwrap();
+            assert_eq!(detail.observed_pass_rate, parsed_detail.observed_pass_rate);
+            assert!(
+                (detail.success_interval.lower_bound - parsed_detail.success_interval.lower_bound)
+                    .abs()
+                    < 1e-12
+            );
+            assert!(
+                (detail.success_interval.upper_bound - parsed_detail.success_interval.upper_bound)
+                    .abs()
+                    < 1e-12
+            );
+            assert_eq!(
+                detail.success_interval.confidence_level,
+                parsed_detail.success_interval.confidence_level
+            );
+            assert_eq!(detail.degraded_mode, parsed_detail.degraded_mode);
+            assert_eq!(detail.explanation_trace, parsed_detail.explanation_trace);
+            assert_eq!(
+                detail.counterexample_witness,
+                parsed_detail.counterexample_witness
+            );
+        }
     }
 
     #[test]
@@ -1524,5 +2779,14 @@ mod tests {
         let keys: Vec<_> = state.extensions.keys().collect();
         // BTreeMap ensures sorted order
         assert_eq!(keys, vec!["ext_alpha", "ext_beta"]);
+    }
+
+    #[test]
+    fn test_placeholder_prefix_shortcuts_absent_from_source() {
+        let source = include_str!("migration_pipeline.rs");
+        let legacy_analysis_marker = ["blocked", "_"].concat();
+        let legacy_verify_marker = ["fail", "_", "verify", "_"].concat();
+        assert!(!source.contains(&legacy_analysis_marker));
+        assert!(!source.contains(&legacy_verify_marker));
     }
 }

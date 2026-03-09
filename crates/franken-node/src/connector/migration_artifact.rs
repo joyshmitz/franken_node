@@ -24,9 +24,16 @@
 //!   capsule ref and one expected state hash.
 //! - **INV-MA-DETERMINISTIC**: Same inputs produce byte-identical serialized output.
 
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+
+const ROLLBACK_RECEIPT_SIGNING_KEY: &[u8] =
+    b"franken_node.connector.migration_artifact.rollback_receipt_sign_v1";
+const MIGRATION_ARTIFACT_SIGNING_KEY: &[u8] = b"franken_node.connector.migration_artifact.sign_v1";
+
+type HmacSha256 = Hmac<Sha256>;
 
 // ---------------------------------------------------------------------------
 // Event codes
@@ -159,6 +166,14 @@ pub struct RollbackReceipt {
     pub signature: String,
 }
 
+#[derive(Debug, Serialize)]
+struct UnsignedRollbackReceipt<'a> {
+    original_state_ref: &'a str,
+    rollback_procedure_hash: &'a str,
+    max_rollback_time_ms: u64,
+    signer_identity: &'a str,
+}
+
 // ---------------------------------------------------------------------------
 // ConfidenceInterval
 // ---------------------------------------------------------------------------
@@ -242,6 +257,20 @@ pub struct MigrationArtifact {
     pub content_hash: String,
     /// Timestamp of artifact creation (RFC 3339).
     pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+struct UnsignedMigrationArtifact<'a> {
+    schema_version: &'a str,
+    plan_id: &'a str,
+    plan_version: u64,
+    preconditions: &'a [String],
+    steps: &'a [MigrationStep],
+    rollback_receipt: &'a RollbackReceipt,
+    confidence_interval: &'a ConfidenceInterval,
+    verifier_metadata: &'a VerifierMetadata,
+    content_hash: &'a str,
+    created_at: &'a str,
 }
 
 // ---------------------------------------------------------------------------
@@ -369,6 +398,58 @@ pub fn compute_content_hash(artifact: &MigrationArtifact) -> String {
     ))
 }
 
+fn canonical_rollback_receipt_payload(receipt: &RollbackReceipt) -> Vec<u8> {
+    serde_json::to_vec(&UnsignedRollbackReceipt {
+        original_state_ref: &receipt.original_state_ref,
+        rollback_procedure_hash: &receipt.rollback_procedure_hash,
+        max_rollback_time_ms: receipt.max_rollback_time_ms,
+        signer_identity: &receipt.signer_identity,
+    })
+    .unwrap_or_else(|error| format!("__rollback_receipt_serde_error:{error}").into_bytes())
+}
+
+fn sign_rollback_receipt(receipt: &RollbackReceipt) -> String {
+    let mut mac = HmacSha256::new_from_slice(ROLLBACK_RECEIPT_SIGNING_KEY)
+        .expect("rollback receipt signing key is valid");
+    mac.update(b"migration_artifact_rollback_receipt_sign_v1:");
+    mac.update(&canonical_rollback_receipt_payload(receipt));
+    hex::encode(mac.finalize().into_bytes())
+}
+
+fn canonical_artifact_payload(artifact: &MigrationArtifact) -> Vec<u8> {
+    serde_json::to_vec(&UnsignedMigrationArtifact {
+        schema_version: &artifact.schema_version,
+        plan_id: &artifact.plan_id,
+        plan_version: artifact.plan_version,
+        preconditions: &artifact.preconditions,
+        steps: &artifact.steps,
+        rollback_receipt: &artifact.rollback_receipt,
+        confidence_interval: &artifact.confidence_interval,
+        verifier_metadata: &artifact.verifier_metadata,
+        content_hash: &artifact.content_hash,
+        created_at: &artifact.created_at,
+    })
+    .unwrap_or_else(|error| format!("__migration_artifact_serde_error:{error}").into_bytes())
+}
+
+fn sign_artifact(artifact: &MigrationArtifact) -> String {
+    let mut mac = HmacSha256::new_from_slice(MIGRATION_ARTIFACT_SIGNING_KEY)
+        .expect("migration artifact signing key is valid");
+    mac.update(b"migration_artifact_sign_v1:");
+    mac.update(&canonical_artifact_payload(artifact));
+    hex::encode(mac.finalize().into_bytes())
+}
+
+pub fn verify_artifact_signatures(artifact: &MigrationArtifact) -> bool {
+    let expected_rollback_signature = sign_rollback_receipt(&artifact.rollback_receipt);
+    if artifact.rollback_receipt.signature != expected_rollback_signature {
+        return false;
+    }
+
+    let expected_artifact_signature = sign_artifact(artifact);
+    artifact.signature == expected_artifact_signature
+}
+
 // ---------------------------------------------------------------------------
 // Reference artifact generator
 // ---------------------------------------------------------------------------
@@ -428,7 +509,7 @@ pub fn generate_reference_artifact() -> MigrationArtifact {
             rollback_procedure_hash: "1234abcd".repeat(8),
             max_rollback_time_ms: 60000,
             signer_identity: "operator://fleet-admin@example.com".to_string(),
-            signature: "sig_rollback_".to_string() + &"ab".repeat(32),
+            signature: String::new(),
         },
         confidence_interval: ConfidenceInterval {
             probability: 0.95,
@@ -449,12 +530,14 @@ pub fn generate_reference_artifact() -> MigrationArtifact {
                 "Verify rollback receipt signature against operator key".to_string(),
             ],
         },
-        signature: "sig_artifact_".to_string() + &"cd".repeat(32),
+        signature: String::new(),
         content_hash: String::new(),
         created_at: "2026-02-21T00:00:00Z".to_string(),
     };
 
+    artifact.rollback_receipt.signature = sign_rollback_receipt(&artifact.rollback_receipt);
     artifact.content_hash = compute_content_hash(&artifact);
+    artifact.signature = sign_artifact(&artifact);
     artifact
 }
 
@@ -505,6 +588,8 @@ mod tests {
     fn test_reference_artifact_has_signature() {
         let artifact = generate_reference_artifact();
         assert!(!artifact.signature.is_empty());
+        assert_eq!(artifact.signature.len(), 64);
+        assert!(verify_artifact_signatures(&artifact));
     }
 
     #[test]
@@ -520,6 +605,7 @@ mod tests {
         assert!(!artifact.rollback_receipt.rollback_procedure_hash.is_empty());
         assert!(!artifact.rollback_receipt.signer_identity.is_empty());
         assert!(!artifact.rollback_receipt.signature.is_empty());
+        assert_eq!(artifact.rollback_receipt.signature.len(), 64);
     }
 
     #[test]
@@ -547,6 +633,21 @@ mod tests {
         let result = validate_artifact(&artifact);
         assert!(result.valid, "errors: {:?}", result.errors);
         assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn test_reference_artifact_signature_detects_tampering() {
+        let mut artifact = generate_reference_artifact();
+        assert!(verify_artifact_signatures(&artifact));
+        artifact.steps[0].rollback_action.push_str("_tampered");
+        assert!(!verify_artifact_signatures(&artifact));
+    }
+
+    #[test]
+    fn test_reference_artifact_signatures_are_not_placeholder_prefixed() {
+        let artifact = generate_reference_artifact();
+        assert!(!artifact.signature.starts_with("sig_"));
+        assert!(!artifact.rollback_receipt.signature.starts_with("sig_"));
     }
 
     #[test]
