@@ -28,6 +28,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 // ---------------------------------------------------------------------------
 // Event codes
@@ -47,6 +48,12 @@ pub const SMO_004_DEGRADED_STATE_ENTERED: &str = "SMO-004";
 
 /// SMO-005: Safe-mode deactivated after verified recovery.
 pub const SMO_005_SAFE_MODE_DEACTIVATED: &str = "SMO-005";
+
+/// SMO-006: Trust re-verification completed on entry.
+pub const SMO_006_TRUST_REVERIFICATION: &str = "SMO-006";
+
+/// SMO-007: Safe-mode exit clearance receipt emitted.
+pub const SMO_007_EXIT_CLEARANCE: &str = "SMO-007";
 
 // ---------------------------------------------------------------------------
 // Invariant tags
@@ -385,6 +392,57 @@ impl Default for SafeModeConfig {
     }
 }
 
+/// Anomaly classification for trust verification findings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnomalyClassification {
+    /// Evidence ledger is empty — no trust state to verify.
+    EmptyEvidenceLedger,
+    /// Trust state hash is missing or empty.
+    MissingTrustHash,
+    /// Evidence entry failed integrity check (hash mismatch).
+    EvidenceIntegrityFailure { entry_index: usize, detail: String },
+    /// Trust state hash does not match computed digest.
+    TrustHashMismatch { expected: String, actual: String },
+    /// Evidence frontier is stale (last entry too old).
+    StaleFrontier { last_epoch: u64, current_epoch: u64 },
+    /// Crash loop pattern detected.
+    CrashLoopDetected { crash_count: u32, window_secs: u64 },
+    /// Control epoch mismatch with federation peers.
+    EpochMismatch { local_epoch: u64, peer_epoch: u64 },
+}
+
+/// Degraded-mode disposition: what the system should do about high-risk operations.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DegradedDisposition {
+    /// All checks passed; normal operation allowed.
+    Normal,
+    /// Uncertainty widened; non-essential operations blocked.
+    WidenUncertainty,
+    /// Fail-closed: all privileged operations blocked.
+    FailClosed,
+}
+
+/// Input to trust re-verification: the evidence state to walk.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrustVerificationInput {
+    /// The claimed trust state hash.
+    pub trust_state_hash: String,
+    /// Evidence entries to verify (each entry is a hash string).
+    pub evidence_entries: Vec<String>,
+    /// Current epoch for freshness checks.
+    pub current_epoch: u64,
+    /// Epoch of the last evidence entry (0 if unknown).
+    pub last_evidence_epoch: u64,
+    /// Staleness threshold in epoch units.
+    pub staleness_threshold: u64,
+    /// Entry reason triggering this verification.
+    pub entry_reason: SafeModeEntryReason,
+    /// Timestamp for the receipt (RFC-3339).
+    pub timestamp: String,
+}
+
 /// Receipt produced by trust re-verification on safe-mode entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SafeModeEntryReceipt {
@@ -392,23 +450,52 @@ pub struct SafeModeEntryReceipt {
     pub entry_reason: SafeModeEntryReason,
     pub trust_state_hash: String,
     pub inconsistencies: Vec<String>,
+    pub anomalies: Vec<AnomalyClassification>,
+    pub disposition: DegradedDisposition,
+    pub trust_proof_digest: String,
     pub pass: bool,
 }
 
 impl SafeModeEntryReceipt {
-    /// Create a new entry receipt.
+    /// Create a new entry receipt with anomaly classifications and disposition.
     pub fn new(
         timestamp: &str,
         entry_reason: SafeModeEntryReason,
         trust_state_hash: &str,
         inconsistencies: Vec<String>,
+        anomalies: Vec<AnomalyClassification>,
     ) -> Self {
-        let pass = inconsistencies.is_empty();
+        let pass = inconsistencies.is_empty() && anomalies.is_empty();
+        let disposition = if anomalies.is_empty() {
+            DegradedDisposition::Normal
+        } else if anomalies.iter().any(|a| {
+            matches!(
+                a,
+                AnomalyClassification::TrustHashMismatch { .. }
+                    | AnomalyClassification::EvidenceIntegrityFailure { .. }
+            )
+        }) {
+            DegradedDisposition::FailClosed
+        } else {
+            DegradedDisposition::WidenUncertainty
+        };
+
+        // Compute trust proof digest over state + anomalies.
+        let trust_proof_digest = compute_trust_proof_digest(
+            trust_state_hash,
+            &inconsistencies,
+            &anomalies,
+            timestamp,
+        );
+
         Self {
             timestamp: timestamp.to_string(),
             entry_reason,
             trust_state_hash: trust_state_hash.to_string(),
             inconsistencies,
+            anomalies,
+            disposition,
+            trust_proof_digest,
             pass,
         }
     }
@@ -602,9 +689,24 @@ impl SafeModeController {
         self.restricted_capabilities
             .insert(Capability::NonEssentialListeners);
 
-        // Create entry receipt.
-        let receipt =
-            SafeModeEntryReceipt::new(timestamp, reason.clone(), trust_state_hash, inconsistencies);
+        // Create entry receipt with anomaly classifications.
+        let mut anomalies = Vec::new();
+        if !inconsistencies.is_empty() {
+            // Classify caller-supplied inconsistencies as evidence integrity failures.
+            for (i, inc) in inconsistencies.iter().enumerate() {
+                anomalies.push(AnomalyClassification::EvidenceIntegrityFailure {
+                    entry_index: i,
+                    detail: inc.clone(),
+                });
+            }
+        }
+        let receipt = SafeModeEntryReceipt::new(
+            timestamp,
+            reason.clone(),
+            trust_state_hash,
+            inconsistencies,
+            anomalies,
+        );
         self.entry_receipt = Some(receipt);
 
         // Emit SMO-001 activation event.
@@ -688,6 +790,13 @@ impl SafeModeController {
         self.emit_event(SafeModeEvent {
             code: SMO_005_SAFE_MODE_DEACTIVATED.to_string(),
             message: "Safe mode deactivated".to_string(),
+            severity: EventSeverity::Info,
+        });
+
+        // Emit exit clearance receipt event.
+        self.emit_event(SafeModeEvent {
+            code: SMO_007_EXIT_CLEARANCE.to_string(),
+            message: format!("Exit clearance granted by operator {operator_id}"),
             severity: EventSeverity::Info,
         });
 
@@ -895,37 +1004,158 @@ impl SafeModeController {
         restricted
     }
 
-    /// Perform trust re-verification (placeholder for actual implementation).
-    pub fn verify_trust_state(
-        trust_state_hash: &str,
-        evidence_entries: &[&str],
-    ) -> SafeModeEntryReceipt {
+    /// Perform trust re-verification by walking evidence state and computing
+    /// a deterministic receipt with anomaly classifications.
+    ///
+    /// This is the real trust-verification path: it computes a SHA-256 digest
+    /// over all evidence entries, verifies the digest against the claimed
+    /// trust state hash, checks evidence freshness, and classifies anomalies.
+    pub fn verify_trust_state(input: &TrustVerificationInput) -> SafeModeEntryReceipt {
         let mut inconsistencies = Vec::new();
+        let mut anomalies = Vec::new();
 
-        // Verify evidence entries are non-empty.
-        if evidence_entries.is_empty() {
+        // 1. Evidence ledger must not be empty.
+        if input.evidence_entries.is_empty() {
             inconsistencies.push("evidence ledger is empty".to_string());
+            anomalies.push(AnomalyClassification::EmptyEvidenceLedger);
         }
 
-        // Verify hash is non-empty.
-        if trust_state_hash.is_empty() {
+        // 2. Trust state hash must not be empty.
+        if input.trust_state_hash.is_empty() {
             inconsistencies.push("trust state hash is empty".to_string());
+            anomalies.push(AnomalyClassification::MissingTrustHash);
+        }
+
+        // 3. Compute digest over all evidence entries and compare.
+        let computed_digest = {
+            let mut hasher = Sha256::new();
+            hasher.update(b"safe_mode_evidence_digest_v1:");
+            hasher.update((input.evidence_entries.len() as u64).to_le_bytes());
+            for (i, entry) in input.evidence_entries.iter().enumerate() {
+                hasher.update((i as u64).to_le_bytes());
+                hasher.update((entry.len() as u64).to_le_bytes());
+                hasher.update(entry.as_bytes());
+                // Validate each entry is non-empty (integrity check).
+                if entry.is_empty() {
+                    inconsistencies.push(format!("evidence entry {i} is empty"));
+                    anomalies.push(AnomalyClassification::EvidenceIntegrityFailure {
+                        entry_index: i,
+                        detail: "empty evidence entry".to_string(),
+                    });
+                }
+            }
+            format!("sha256:{}", hex::encode(hasher.finalize()))
+        };
+
+        // 4. Compare computed digest against claimed trust state hash.
+        if !input.trust_state_hash.is_empty()
+            && !input.evidence_entries.is_empty()
+            && !crate::security::constant_time::ct_eq(&input.trust_state_hash, &computed_digest)
+        {
+            inconsistencies.push(format!(
+                "trust state hash mismatch: expected {}, computed {}",
+                input.trust_state_hash, computed_digest
+            ));
+            anomalies.push(AnomalyClassification::TrustHashMismatch {
+                expected: input.trust_state_hash.clone(),
+                actual: computed_digest.clone(),
+            });
+        }
+
+        // 5. Check evidence freshness (staleness detection).
+        if input.last_evidence_epoch > 0
+            && input.current_epoch.saturating_sub(input.last_evidence_epoch)
+                > input.staleness_threshold
+        {
+            inconsistencies.push(format!(
+                "evidence frontier stale: last epoch {}, current epoch {}, threshold {}",
+                input.last_evidence_epoch, input.current_epoch, input.staleness_threshold
+            ));
+            anomalies.push(AnomalyClassification::StaleFrontier {
+                last_epoch: input.last_evidence_epoch,
+                current_epoch: input.current_epoch,
+            });
+        }
+
+        // 6. Classify entry-reason-specific anomalies.
+        match &input.entry_reason {
+            SafeModeEntryReason::CrashLoop {
+                crash_count,
+                window_secs,
+            } => {
+                anomalies.push(AnomalyClassification::CrashLoopDetected {
+                    crash_count: *crash_count,
+                    window_secs: *window_secs,
+                });
+            }
+            SafeModeEntryReason::EpochMismatch {
+                local_epoch,
+                peer_epoch,
+            } => {
+                anomalies.push(AnomalyClassification::EpochMismatch {
+                    local_epoch: *local_epoch,
+                    peer_epoch: *peer_epoch,
+                });
+            }
+            _ => {}
         }
 
         SafeModeEntryReceipt::new(
-            "2026-02-20T00:00:00Z",
-            SafeModeEntryReason::ExplicitFlag,
-            trust_state_hash,
+            &input.timestamp,
+            input.entry_reason.clone(),
+            &input.trust_state_hash,
             inconsistencies,
+            anomalies,
         )
+    }
+
+    /// Convenience: compute the evidence digest for a set of evidence entries.
+    /// This allows callers to produce a matching trust_state_hash.
+    pub fn compute_evidence_digest(evidence_entries: &[String]) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(b"safe_mode_evidence_digest_v1:");
+        hasher.update((evidence_entries.len() as u64).to_le_bytes());
+        for (i, entry) in evidence_entries.iter().enumerate() {
+            hasher.update((i as u64).to_le_bytes());
+            hasher.update((entry.len() as u64).to_le_bytes());
+            hasher.update(entry.as_bytes());
+        }
+        format!("sha256:{}", hex::encode(hasher.finalize()))
     }
 }
 
-/// Parse duration between two ISO timestamps (simplified: uses the last 10
-/// characters as epoch seconds if they parse, otherwise returns 0).
-fn parse_duration_between(_start: &str, _end: &str) -> Option<u64> {
-    // Simplified placeholder -- real implementation would parse ISO 8601.
-    Some(0)
+/// Parse duration in seconds between two RFC-3339 timestamps.
+/// Returns `None` if either timestamp cannot be parsed.
+fn parse_duration_between(start: &str, end: &str) -> Option<u64> {
+    let start_dt = chrono::DateTime::parse_from_rfc3339(start).ok()?;
+    let end_dt = chrono::DateTime::parse_from_rfc3339(end).ok()?;
+    let duration = end_dt.signed_duration_since(start_dt);
+    // Negative duration (end before start) is clamped to 0.
+    Some(u64::try_from(duration.num_seconds().max(0)).unwrap_or(u64::MAX))
+}
+
+/// Compute a domain-separated hash digest for a trust proof receipt.
+fn compute_trust_proof_digest(
+    trust_state_hash: &str,
+    inconsistencies: &[String],
+    anomalies: &[AnomalyClassification],
+    timestamp: &str,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"safe_mode_trust_proof_v1:");
+    hasher.update((timestamp.len() as u64).to_le_bytes());
+    hasher.update(timestamp.as_bytes());
+    hasher.update((trust_state_hash.len() as u64).to_le_bytes());
+    hasher.update(trust_state_hash.as_bytes());
+    hasher.update((inconsistencies.len() as u64).to_le_bytes());
+    for inc in inconsistencies {
+        hasher.update((inc.len() as u64).to_le_bytes());
+        hasher.update(inc.as_bytes());
+    }
+    let anomalies_json = serde_json::to_string(anomalies).unwrap_or_default();
+    hasher.update((anomalies_json.len() as u64).to_le_bytes());
+    hasher.update(anomalies_json.as_bytes());
+    format!("sha256:{}", hex::encode(hasher.finalize()))
 }
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
@@ -1206,8 +1436,10 @@ mod tests {
             SafeModeEntryReason::ExplicitFlag,
             "sha256:abc",
             Vec::new(),
+            Vec::new(),
         );
         assert!(receipt.pass);
+        assert_eq!(receipt.disposition, DegradedDisposition::Normal);
     }
 
     #[test]
@@ -1217,8 +1449,13 @@ mod tests {
             SafeModeEntryReason::TrustCorruption,
             "sha256:abc",
             vec!["missing entry".to_string()],
+            vec![AnomalyClassification::EvidenceIntegrityFailure {
+                entry_index: 0,
+                detail: "missing entry".to_string(),
+            }],
         );
         assert!(!receipt.pass);
+        assert_eq!(receipt.disposition, DegradedDisposition::FailClosed);
     }
 
     #[test]
@@ -1228,9 +1465,11 @@ mod tests {
             SafeModeEntryReason::ExplicitFlag,
             "sha256:abc",
             Vec::new(),
+            Vec::new(),
         );
         let json = receipt.to_json().unwrap();
         assert!(json.contains("sha256:abc"));
+        assert!(json.contains("trust_proof_digest"));
     }
 
     #[test]
@@ -1239,6 +1478,7 @@ mod tests {
             "2026-02-20T00:00:00Z",
             SafeModeEntryReason::ExplicitFlag,
             "sha256:abc",
+            Vec::new(),
             Vec::new(),
         );
         let json = serde_json::to_string(&receipt).unwrap();
@@ -1547,9 +1787,12 @@ mod tests {
         ctrl.exit_safe_mode(&verification, "operator-1", "2026-02-20T11:00:00Z")
             .unwrap();
 
-        let exit_event = ctrl.events().last().expect("exit event");
-        assert_eq!(exit_event.code, SMO_005_SAFE_MODE_DEACTIVATED);
-        assert_eq!(exit_event.message, "Safe mode deactivated");
+        assert!(
+            ctrl.events()
+                .iter()
+                .any(|e| e.code == SMO_005_SAFE_MODE_DEACTIVATED
+                    && e.message == "Safe mode deactivated")
+        );
     }
 
     #[test]
@@ -1889,22 +2132,134 @@ mod tests {
 
     #[test]
     fn test_verify_trust_state_pass() {
-        let receipt = SafeModeController::verify_trust_state("sha256:abc", &["entry1", "entry2"]);
+        let entries = vec!["entry1".to_string(), "entry2".to_string()];
+        let hash = SafeModeController::compute_evidence_digest(&entries);
+        let input = TrustVerificationInput {
+            trust_state_hash: hash,
+            evidence_entries: entries,
+            current_epoch: 100,
+            last_evidence_epoch: 95,
+            staleness_threshold: 10,
+            entry_reason: SafeModeEntryReason::ExplicitFlag,
+            timestamp: "2026-02-20T00:00:00Z".to_string(),
+        };
+        let receipt = SafeModeController::verify_trust_state(&input);
         assert!(receipt.pass);
         assert!(receipt.inconsistencies.is_empty());
+        assert_eq!(receipt.disposition, DegradedDisposition::Normal);
+        assert!(receipt.trust_proof_digest.starts_with("sha256:"));
     }
 
     #[test]
     fn test_verify_trust_state_empty_evidence() {
-        let receipt = SafeModeController::verify_trust_state("sha256:abc", &[]);
+        let input = TrustVerificationInput {
+            trust_state_hash: "sha256:abc".to_string(),
+            evidence_entries: vec![],
+            current_epoch: 100,
+            last_evidence_epoch: 0,
+            staleness_threshold: 10,
+            entry_reason: SafeModeEntryReason::ExplicitFlag,
+            timestamp: "2026-02-20T00:00:00Z".to_string(),
+        };
+        let receipt = SafeModeController::verify_trust_state(&input);
         assert!(!receipt.pass);
         assert!(!receipt.inconsistencies.is_empty());
+        assert!(receipt.anomalies.iter().any(|a| matches!(a, AnomalyClassification::EmptyEvidenceLedger)));
     }
 
     #[test]
     fn test_verify_trust_state_empty_hash() {
-        let receipt = SafeModeController::verify_trust_state("", &["entry1"]);
+        let input = TrustVerificationInput {
+            trust_state_hash: String::new(),
+            evidence_entries: vec!["entry1".to_string()],
+            current_epoch: 100,
+            last_evidence_epoch: 95,
+            staleness_threshold: 10,
+            entry_reason: SafeModeEntryReason::ExplicitFlag,
+            timestamp: "2026-02-20T00:00:00Z".to_string(),
+        };
+        let receipt = SafeModeController::verify_trust_state(&input);
         assert!(!receipt.pass);
+        assert!(receipt.anomalies.iter().any(|a| matches!(a, AnomalyClassification::MissingTrustHash)));
+    }
+
+    #[test]
+    fn test_verify_trust_state_hash_mismatch() {
+        let input = TrustVerificationInput {
+            trust_state_hash: "sha256:wrong".to_string(),
+            evidence_entries: vec!["entry1".to_string()],
+            current_epoch: 100,
+            last_evidence_epoch: 95,
+            staleness_threshold: 10,
+            entry_reason: SafeModeEntryReason::ExplicitFlag,
+            timestamp: "2026-02-20T00:00:00Z".to_string(),
+        };
+        let receipt = SafeModeController::verify_trust_state(&input);
+        assert!(!receipt.pass);
+        assert_eq!(receipt.disposition, DegradedDisposition::FailClosed);
+        assert!(receipt.anomalies.iter().any(|a| matches!(a, AnomalyClassification::TrustHashMismatch { .. })));
+    }
+
+    #[test]
+    fn test_verify_trust_state_stale_frontier() {
+        let entries = vec!["entry1".to_string()];
+        let hash = SafeModeController::compute_evidence_digest(&entries);
+        let input = TrustVerificationInput {
+            trust_state_hash: hash,
+            evidence_entries: entries,
+            current_epoch: 200,
+            last_evidence_epoch: 100,
+            staleness_threshold: 50,
+            entry_reason: SafeModeEntryReason::ExplicitFlag,
+            timestamp: "2026-02-20T00:00:00Z".to_string(),
+        };
+        let receipt = SafeModeController::verify_trust_state(&input);
+        assert!(!receipt.pass);
+        assert_eq!(receipt.disposition, DegradedDisposition::WidenUncertainty);
+        assert!(receipt.anomalies.iter().any(|a| matches!(a, AnomalyClassification::StaleFrontier { .. })));
+    }
+
+    #[test]
+    fn test_verify_trust_state_crash_loop_entry() {
+        let entries = vec!["entry1".to_string()];
+        let hash = SafeModeController::compute_evidence_digest(&entries);
+        let input = TrustVerificationInput {
+            trust_state_hash: hash,
+            evidence_entries: entries,
+            current_epoch: 100,
+            last_evidence_epoch: 99,
+            staleness_threshold: 10,
+            entry_reason: SafeModeEntryReason::CrashLoop {
+                crash_count: 5,
+                window_secs: 60,
+            },
+            timestamp: "2026-02-20T00:00:00Z".to_string(),
+        };
+        let receipt = SafeModeController::verify_trust_state(&input);
+        // Crash loop anomaly added but evidence is valid → pass is false because anomaly present.
+        assert!(!receipt.pass);
+        assert!(receipt.anomalies.iter().any(|a| matches!(a, AnomalyClassification::CrashLoopDetected { .. })));
+    }
+
+    #[test]
+    fn test_verify_trust_state_epoch_mismatch_entry() {
+        let entries = vec!["entry1".to_string()];
+        let hash = SafeModeController::compute_evidence_digest(&entries);
+        let input = TrustVerificationInput {
+            trust_state_hash: hash,
+            evidence_entries: entries,
+            current_epoch: 100,
+            last_evidence_epoch: 99,
+            staleness_threshold: 10,
+            entry_reason: SafeModeEntryReason::EpochMismatch {
+                local_epoch: 10,
+                peer_epoch: 15,
+            },
+            timestamp: "2026-02-20T00:00:00Z".to_string(),
+        };
+        let receipt = SafeModeController::verify_trust_state(&input);
+        assert!(!receipt.pass);
+        assert!(receipt.anomalies.iter().any(|a| matches!(a, AnomalyClassification::EpochMismatch { .. })));
     }
 
     // -- Event code constant tests ------------------------------------------
@@ -2059,5 +2414,164 @@ mod tests {
     fn test_flags_accessor() {
         let ctrl = SafeModeController::with_default_config();
         assert_eq!(*ctrl.flags(), OperationFlags::none());
+    }
+
+    // -- Duration parsing tests ----------------------------------------------
+
+    #[test]
+    fn test_parse_duration_between_valid() {
+        let duration =
+            parse_duration_between("2026-02-20T10:00:00Z", "2026-02-20T11:00:00Z").unwrap();
+        assert_eq!(duration, 3600);
+    }
+
+    #[test]
+    fn test_parse_duration_between_same_timestamp() {
+        let duration =
+            parse_duration_between("2026-02-20T10:00:00Z", "2026-02-20T10:00:00Z").unwrap();
+        assert_eq!(duration, 0);
+    }
+
+    #[test]
+    fn test_parse_duration_between_negative_clamps_to_zero() {
+        let duration =
+            parse_duration_between("2026-02-20T11:00:00Z", "2026-02-20T10:00:00Z").unwrap();
+        assert_eq!(duration, 0);
+    }
+
+    #[test]
+    fn test_parse_duration_between_invalid_returns_none() {
+        assert!(parse_duration_between("not-a-date", "2026-02-20T10:00:00Z").is_none());
+        assert!(parse_duration_between("2026-02-20T10:00:00Z", "bad").is_none());
+    }
+
+    #[test]
+    fn test_status_duration_computed_correctly() {
+        let mut ctrl = SafeModeController::with_default_config();
+        ctrl.enter_safe_mode(
+            SafeModeEntryReason::ExplicitFlag,
+            "2026-02-20T10:00:00Z",
+            "sha256:test",
+            Vec::new(),
+        );
+        let status = ctrl.status("2026-02-20T10:30:00Z");
+        assert_eq!(status.duration_seconds, 1800);
+    }
+
+    // -- Disposition tests ---------------------------------------------------
+
+    #[test]
+    fn test_disposition_normal_on_clean_receipt() {
+        let receipt = SafeModeEntryReceipt::new(
+            "2026-02-20T00:00:00Z",
+            SafeModeEntryReason::ExplicitFlag,
+            "sha256:abc",
+            Vec::new(),
+            Vec::new(),
+        );
+        assert_eq!(receipt.disposition, DegradedDisposition::Normal);
+    }
+
+    #[test]
+    fn test_disposition_fail_closed_on_integrity_failure() {
+        let receipt = SafeModeEntryReceipt::new(
+            "2026-02-20T00:00:00Z",
+            SafeModeEntryReason::TrustCorruption,
+            "sha256:abc",
+            Vec::new(),
+            vec![AnomalyClassification::TrustHashMismatch {
+                expected: "sha256:aaa".to_string(),
+                actual: "sha256:bbb".to_string(),
+            }],
+        );
+        assert_eq!(receipt.disposition, DegradedDisposition::FailClosed);
+    }
+
+    #[test]
+    fn test_disposition_widen_uncertainty_on_stale_frontier() {
+        let receipt = SafeModeEntryReceipt::new(
+            "2026-02-20T00:00:00Z",
+            SafeModeEntryReason::ExplicitFlag,
+            "sha256:abc",
+            Vec::new(),
+            vec![AnomalyClassification::StaleFrontier {
+                last_epoch: 50,
+                current_epoch: 200,
+            }],
+        );
+        assert_eq!(receipt.disposition, DegradedDisposition::WidenUncertainty);
+    }
+
+    // -- Trust proof digest tests --------------------------------------------
+
+    #[test]
+    fn test_trust_proof_digest_deterministic() {
+        let r1 = SafeModeEntryReceipt::new(
+            "2026-02-20T00:00:00Z",
+            SafeModeEntryReason::ExplicitFlag,
+            "sha256:abc",
+            Vec::new(),
+            Vec::new(),
+        );
+        let r2 = SafeModeEntryReceipt::new(
+            "2026-02-20T00:00:00Z",
+            SafeModeEntryReason::ExplicitFlag,
+            "sha256:abc",
+            Vec::new(),
+            Vec::new(),
+        );
+        assert_eq!(r1.trust_proof_digest, r2.trust_proof_digest);
+    }
+
+    #[test]
+    fn test_trust_proof_digest_changes_with_input() {
+        let r1 = SafeModeEntryReceipt::new(
+            "2026-02-20T00:00:00Z",
+            SafeModeEntryReason::ExplicitFlag,
+            "sha256:abc",
+            Vec::new(),
+            Vec::new(),
+        );
+        let r2 = SafeModeEntryReceipt::new(
+            "2026-02-20T00:00:00Z",
+            SafeModeEntryReason::ExplicitFlag,
+            "sha256:xyz",
+            Vec::new(),
+            Vec::new(),
+        );
+        assert_ne!(r1.trust_proof_digest, r2.trust_proof_digest);
+    }
+
+    #[test]
+    fn test_exit_emits_clearance_event() {
+        let mut ctrl = SafeModeController::with_default_config();
+        ctrl.enter_safe_mode(
+            SafeModeEntryReason::ExplicitFlag,
+            "2026-02-20T10:00:00Z",
+            "sha256:test",
+            Vec::new(),
+        );
+        let verification = ExitVerification {
+            trust_state_consistent: true,
+            no_unresolved_incidents: true,
+            evidence_ledger_intact: true,
+            operator_confirmed: true,
+        };
+        ctrl.exit_safe_mode(&verification, "operator-1", "2026-02-20T11:00:00Z")
+            .unwrap();
+        assert!(
+            ctrl.events()
+                .iter()
+                .any(|e| e.code == SMO_007_EXIT_CLEARANCE)
+        );
+    }
+
+    #[test]
+    fn test_compute_evidence_digest_deterministic() {
+        let entries = vec!["a".to_string(), "b".to_string()];
+        let d1 = SafeModeController::compute_evidence_digest(&entries);
+        let d2 = SafeModeController::compute_evidence_digest(&entries);
+        assert_eq!(d1, d2);
+        assert!(d1.starts_with("sha256:"));
     }
 }
