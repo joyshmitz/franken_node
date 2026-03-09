@@ -1,6 +1,6 @@
 # bd-oty: Session-Authenticated Control Channel Integration
 
-**Section:** 10.10 | **Verdict:** PASS | **Date:** 2026-02-21
+**Section:** 10.10 | **Verdict:** PASS | **Date:** 2026-03-09
 
 ## Metrics
 
@@ -8,7 +8,7 @@
 |----------|------|-------|
 | Python verification checks | 110 | 110 |
 | Python unit tests (pytest) | 35 | 35 |
-| Rust unit tests | 44 | 44 |
+| Rust unit tests | 55 | 55 |
 | Simulation checks | 9 | 9 |
 
 ## Implementation
@@ -85,6 +85,12 @@
 | Unit tests | `tests/test_check_session_auth.py` |
 | Evidence JSON | `artifacts/section_10_10/bd-oty/verification_evidence.json` |
 | This summary | `artifacts/section_10_10/bd-oty/verification_summary.md` |
+
+## Gap Closures
+
+| Bead | Description | Status |
+|------|-------------|--------|
+| bd-ac8j | Mutual-authenticated capability sessions (HMAC transcript binding) | CLOSED |
 
 ## Verification Commands
 

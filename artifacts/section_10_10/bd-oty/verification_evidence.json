@@ -2,7 +2,7 @@
   "bead_id": "bd-oty",
   "section": "10.10",
   "title": "Session-authenticated control channel integration",
-  "timestamp": "2026-02-21T01:20:00Z",
+  "timestamp": "2026-03-09T07:41:00Z",
   "verdict": "PASS",
   "files": {
     "spec": "docs/specs/section_10_10/bd-oty_contract.md",
@@ -17,7 +17,7 @@
     "python_checks_passing": 110,
     "python_checks_failing": 0,
     "python_unit_tests": 35,
-    "rust_unit_tests": 44,
+    "rust_unit_tests": 55,
     "structs_verified": 8,
     "event_codes_verified": 4,
     "error_codes_verified": 6,
@@ -33,21 +33,21 @@
     "direction_integration_checks": 3
   },
   "acceptance_criteria": {
-    "AC1_session_requirement": "PASS - every control message requires active authenticated session (INV-SCC-SESSION-AUTH)",
-    "AC2_sequence_monotonicity": "PASS - per-direction sequence enforcement with strict and windowed modes (INV-SCC-MONOTONIC)",
-    "AC3_replay_window": "PASS - configurable replay window (default=0 for strict monotonicity)",
-    "AC4_role_key_separation": "PASS - Encryption role for exchange, Signing role for auth (INV-SCC-ROLE-KEYS)",
-    "AC5_terminated_rejects": "PASS - terminated sessions reject all messages with ERR_SCC_SESSION_TERMINATED (INV-SCC-TERMINATED)",
-    "AC6_concurrent_session_limit": "PASS - SessionManager enforces max_sessions with ERR_SCC_MAX_SESSIONS",
-    "AC7_traced_events": "PASS - all events include trace_id and session_id",
-    "AC8_unit_test_coverage": "PASS - 44 Rust tests covering lifecycle, sequence, replay, role keys"
+    "AC1_session_requirement": "PASS — every control message requires active authenticated session (INV-SCC-SESSION-AUTH)",
+    "AC2_sequence_monotonicity": "PASS — per-direction sequence enforcement with strict and windowed modes (INV-SCC-MONOTONIC)",
+    "AC3_replay_window": "PASS — configurable replay window (default=0 for strict monotonicity)",
+    "AC4_role_key_separation": "PASS — Encryption role for exchange, Signing role for auth (INV-SCC-ROLE-KEYS)",
+    "AC5_terminated_rejects": "PASS — terminated sessions reject all messages with ERR_SCC_SESSION_TERMINATED (INV-SCC-TERMINATED)",
+    "AC6_concurrent_session_limit": "PASS — SessionManager enforces max_sessions with ERR_SCC_MAX_SESSIONS",
+    "AC7_traced_events": "PASS — all events include trace_id and session_id",
+    "AC8_unit_test_coverage": "PASS — 55 Rust tests covering lifecycle, sequence, replay, role keys, HMAC verification"
   },
-  "rust_compilation": {
-    "command": "rch exec 'cargo check --manifest-path crates/franken-node/Cargo.toml'",
-    "exit_code": 0
+  "gap_closures": {
+    "bd-ac8j": "CLOSED — Replaced placeholder session-auth with HMAC-SHA256 mutual-authenticated capability sessions (handshake transcript binding, per-message chain MAC, epoch-derived keys)"
   },
   "upstream_dependencies": {
-    "bd-v97o": "connector::control_channel::Direction (per-direction sequence monotonicity)",
-    "bd-364": "control_plane::key_role_separation::KeyRole (role-separated keys)"
+    "bd-v97o": "CLOSED — connector::control_channel::Direction (per-direction sequence monotonicity)",
+    "bd-364": "CLOSED — control_plane::key_role_separation::KeyRole (role-separated keys)",
+    "bd-ac8j": "CLOSED — mutual-authenticated sessions replace placeholder"
   }
 }
