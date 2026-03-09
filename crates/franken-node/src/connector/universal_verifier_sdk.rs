@@ -35,6 +35,17 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+/// Maximum number of verification steps per session.
+const MAX_SESSION_STEPS: usize = 4096;
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Schema version
 // ---------------------------------------------------------------------------
@@ -504,7 +515,7 @@ pub fn record_session_step(
         output_hash: result.actual_output_hash.clone(),
         timestamp: now_timestamp(),
     };
-    session.steps.push(step.clone());
+    push_bounded(&mut session.steps, step.clone(), MAX_SESSION_STEPS);
     Ok(step)
 }
 
