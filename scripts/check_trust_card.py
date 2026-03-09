@@ -24,6 +24,7 @@ API_IMPL = ROOT / "crates" / "franken-node" / "src" / "api" / "trust_card_routes
 API_MOD = ROOT / "crates" / "franken-node" / "src" / "api" / "mod.rs"
 CLI_IMPL = ROOT / "crates" / "franken-node" / "src" / "cli.rs"
 MAIN_IMPL = ROOT / "crates" / "franken-node" / "src" / "main.rs"
+LIB_IMPL = ROOT / "crates" / "franken-node" / "src" / "lib.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_4" / "bd-2yh_contract.md"
 
 REQUIRED_TRUST_CARD_PATTERNS = [
@@ -83,8 +84,11 @@ REQUIRED_CLI_PATTERNS = [
     "pub json: bool",
 ]
 
-REQUIRED_MAIN_PATTERNS = [
+REQUIRED_LIB_PATTERNS = [
     "pub mod api;",
+]
+
+REQUIRED_MAIN_PATTERNS = [
     "Command::TrustCard(sub)",
     "fn handle_trust_card_command(",
     "TrustCardCommand::Show",
@@ -272,6 +276,7 @@ def run_checks() -> dict[str, Any]:
     checks.extend(_contains(API_IMPL, p, "trust_card_routes.rs") for p in REQUIRED_API_PATTERNS)
     checks.extend(_contains(CLI_IMPL, p, "cli.rs") for p in REQUIRED_CLI_PATTERNS)
     checks.extend(_contains(MAIN_IMPL, p, "main.rs") for p in REQUIRED_MAIN_PATTERNS)
+    checks.extend(_contains(LIB_IMPL, p, "lib.rs") for p in REQUIRED_LIB_PATTERNS)
 
     if SUPPLY_CHAIN_MOD.is_file():
         content = SUPPLY_CHAIN_MOD.read_text(encoding="utf-8")
