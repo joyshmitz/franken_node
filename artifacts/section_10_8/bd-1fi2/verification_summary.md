@@ -1,6 +1,6 @@
 # bd-1fi2: Section 10.8 Verification Gate — Operational Readiness
 
-**Section:** 10.8 | **Verdict:** PASS | **Date:** 2026-02-21
+**Section:** 10.8 | **Verdict:** PASS | **Date:** 2026-03-09
 
 ## Metrics
 
@@ -21,14 +21,20 @@
 | bd-nr4 | Operator runbooks for high-severity trust incidents | PASS |
 | bd-3m6 | Disaster-recovery drills for control-plane failures | PASS |
 
+## Gap Closures
+
+| Bead | Description | Status |
+|------|-------------|--------|
+| bd-3ly7 | Replace placeholder safe-mode trust re-verification with ledger-backed deterministic checks | CLOSED |
+
 ## Key Capabilities Verified
 
-- **Fleet Control**: Quarantine/revocation with zone/tenant scoping, convergence tracking, safe-start mode
-- **Observability**: Structured events (FLEET-001..005, SMO-001..004) with stable error codes
-- **Safe-Mode**: Deterministic startup with operation flags, 93 Rust unit tests
+- **Fleet Control**: Quarantine/revocation with zone/tenant scoping, convergence tracking, safe-start mode (66 Rust tests)
+- **Observability**: Structured events (FLEET-001..005, SMO-001..007) with stable error codes
+- **Safe-Mode**: Deterministic startup with real trust verification (SHA-256 evidence digests, ct_eq hash comparison, anomaly classification, chrono RFC-3339 duration parsing), 110 Rust unit tests
 - **Incident Retention**: Bundle retention and export policy with 40 Rust unit tests
-- **Runbooks**: 6 operator runbooks for high-severity trust incidents
-- **DR Drills**: 5 disaster-recovery scenarios with SLOs
+- **Runbooks**: Operator runbooks for high-severity trust incidents
+- **DR Drills**: Disaster-recovery scenarios with SLOs
 
 ## Verification Commands
 
