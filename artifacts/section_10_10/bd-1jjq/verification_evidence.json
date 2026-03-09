@@ -3,6 +3,7 @@
   "title": "Section 10.10 verification gate: comprehensive unit+e2e+logging",
   "section": "10.10",
   "gate": true,
+  "timestamp": "2026-03-09T07:48:00Z",
   "verdict": "PASS",
   "overall_pass": true,
   "total": 51,
@@ -277,5 +278,8 @@
       "pass": true,
       "detail": "session_auth + revocation_freshness_gate registered"
     }
-  ]
+  ],
+  "gap_closures": {
+    "bd-ac8j": "CLOSED — Mutual-authenticated capability sessions replace placeholder (HMAC transcript binding, per-message chain MAC)"
+  }
 }
