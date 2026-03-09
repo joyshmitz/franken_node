@@ -1037,13 +1037,19 @@ mod tests {
     fn parse_canonical_rejects_invalid_size() {
         let malicious = "e3b0c44  legit.bin  not_a_number\n";
         let parsed = ChecksumManifest::parse_canonical(malicious);
-        assert!(parsed.is_empty(), "should reject entries with unparseable size");
+        assert!(
+            parsed.is_empty(),
+            "should reject entries with unparseable size"
+        );
     }
 
     #[test]
     fn parse_canonical_rejects_negative_size() {
         let malicious = "e3b0c44  legit.bin  -42\n";
         let parsed = ChecksumManifest::parse_canonical(malicious);
-        assert!(parsed.is_empty(), "should reject entries with negative size");
+        assert!(
+            parsed.is_empty(),
+            "should reject entries with negative size"
+        );
     }
 }

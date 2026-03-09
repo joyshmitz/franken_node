@@ -490,11 +490,8 @@ impl VerifierSdk {
 
         let format_ver_str = capsule.format_version.to_string();
         let inputs_len_str = capsule.inputs.len().to_string();
-        let binding_hash = deterministic_hash_fields(&[
-            &capsule.capsule_id,
-            &format_ver_str,
-            &inputs_len_str,
-        ]);
+        let binding_hash =
+            deterministic_hash_fields(&[&capsule.capsule_id, &format_ver_str, &inputs_len_str]);
 
         Ok(VerificationReport {
             request_id: format!("vcap-{}", &deterministic_hash(&capsule.capsule_id)[..24]),
@@ -1241,7 +1238,10 @@ mod tests {
         // "a|b" + "c" vs "a" + "b|c" must differ with length-prefixed encoding
         let h1 = deterministic_hash_fields(&["a|b", "c"]);
         let h2 = deterministic_hash_fields(&["a", "b|c"]);
-        assert_ne!(h1, h2, "length-prefixed hash must distinguish field boundaries");
+        assert_ne!(
+            h1, h2,
+            "length-prefixed hash must distinguish field boundaries"
+        );
     }
 
     #[test]
