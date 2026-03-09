@@ -3,6 +3,7 @@
   "bead_id": "bd-y4g",
   "section": "10.0",
   "title": "Trust cards for extensions and publishers",
+  "timestamp": "2026-03-09T07:30:00Z",
   "verdict": "PASS",
   "total": 20,
   "passed": 20,
@@ -28,5 +29,23 @@
     {"check": "quarantine_control", "pass": true},
     {"check": "distribution_security", "pass": true},
     {"check": "economic_model", "pass": true}
-  ]
+  ],
+  "gap_closures": {
+    "bd-1oju": "CLOSED — Trust cards and certification now bound to verified evidence (VerifiedEvidenceRef, DerivationMetadata), monotone upgrade enforcement, fail-closed on empty evidence"
+  },
+  "implementation_summary": {
+    "trust_card_module": "crates/franken-node/src/supply_chain/trust_card.rs (22 tests)",
+    "api_routes": "crates/franken-node/src/api/trust_card_routes.rs (15 tests)",
+    "features": [
+      "Trust card schema with provenance, behavioral profile, certification, reputation, revocation",
+      "API routes: GET by extension, GET by publisher, search, create, update, compare, compare_versions",
+      "HMAC-SHA256 registry signatures with tamper detection",
+      "Domain-separated SHA256 hashing with length-prefixed fields",
+      "Evidence-bound certification (fail-closed on empty evidence)",
+      "Monotone upgrade enforcement (upgrade requires evidence, demotion allowed without)",
+      "BTreeMap-based registry for deterministic ordering",
+      "Bounded audit history (256 entries max)",
+      "Pagination with configurable page sizes"
+    ]
+  }
 }
