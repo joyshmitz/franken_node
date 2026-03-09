@@ -1,23 +1,47 @@
-//! bd-oty: Session-authenticated control channel integration.
+//! bd-oty / bd-ac8j: Session-authenticated control channel integration.
 //!
-//! Integrates the canonical ControlChannel (bd-v97o) and KeyRoleRegistry
-//! (bd-364) into a unified session management layer wrapping all control
-//! API endpoints.
+//! Integrates the canonical ControlChannel (bd-v97o / bd-3cvu) and
+//! KeyRoleRegistry (bd-364) into a unified session management layer
+//! wrapping all control API endpoints.
+//!
+//! bd-ac8j replaces the placeholder authentication (record-only key IDs,
+//! pass-through signatures) with real transcript-bound HMAC-SHA256
+//! verification using epoch-scoped key derivation from the 10.13
+//! control-channel verifier.
 //!
 //! # Invariants
 //!
 //! - INV-SCC-SESSION-AUTH: Every control message requires an active
-//!   authenticated session.
+//!   authenticated session with a verified transcript-bound MAC.
 //! - INV-SCC-MONOTONIC: Per-direction sequence numbers are strictly monotonic.
 //! - INV-SCC-ROLE-KEYS: Session uses Encryption key for exchange, Signing key
 //!   for auth.
 //! - INV-SCC-TERMINATED: Terminated sessions reject all further messages.
+//! - INV-SCC-HANDSHAKE-BIND: Session ID is bound to the handshake transcript
+//!   via HMAC — callers must prove possession of the root secret.
+//! - INV-SCC-MSG-VERIFY: Message signatures are verified, not recorded.
 
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::connector::control_channel::Direction;
+use crate::control_plane::control_epoch::ControlEpoch;
 use crate::control_plane::key_role_separation::KeyRole;
+use crate::security::constant_time::ct_eq_bytes;
+use crate::security::epoch_scoped_keys::{derive_epoch_key, RootSecret, SIGNATURE_LEN};
+
+type HmacSha256 = Hmac<Sha256>;
+
+/// Domain separator for session-auth HMAC key derivation.
+const SESSION_AUTH_DOMAIN: &str = "session_auth";
+
+/// HMAC prefix for handshake transcript binding.
+const HANDSHAKE_HMAC_PREFIX: &[u8] = b"session_auth_handshake_v1:";
+
+/// HMAC prefix for per-message transcript binding.
+const MESSAGE_HMAC_PREFIX: &[u8] = b"session_auth_message_v1:";
 
 // ---------------------------------------------------------------------------
 // Event codes
@@ -135,10 +159,39 @@ pub struct AuthenticatedSession {
     pub recv_seq: u64,
     /// Configured replay window size.
     pub replay_window: u64,
+    /// Epoch under which this session was established.
+    pub epoch: u64,
+    /// HMAC binding the handshake transcript to the session ID.
+    ///
+    /// INV-SCC-HANDSHAKE-BIND: proves the session creator held the root
+    /// secret at establishment time.
+    #[serde(
+        serialize_with = "serialize_mac",
+        deserialize_with = "deserialize_mac"
+    )]
+    pub handshake_mac: [u8; SIGNATURE_LEN],
+}
+
+fn serialize_mac<S: serde::Serializer>(mac: &[u8; SIGNATURE_LEN], s: S) -> Result<S::Ok, S::Error> {
+    let hex: String = mac.iter().map(|b| format!("{b:02x}")).collect();
+    s.serialize_str(&hex)
+}
+
+fn deserialize_mac<'de, D: serde::Deserializer<'de>>(d: D) -> Result<[u8; SIGNATURE_LEN], D::Error> {
+    let hex = String::deserialize(d)?;
+    let bytes: Vec<u8> = (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0))
+        .collect();
+    let mut arr = [0u8; SIGNATURE_LEN];
+    let copy_len = bytes.len().min(SIGNATURE_LEN);
+    arr[..copy_len].copy_from_slice(&bytes[..copy_len]);
+    Ok(arr)
 }
 
 impl AuthenticatedSession {
     /// Create a new session in the Establishing state.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         session_id: String,
         client_identity: String,
@@ -146,6 +199,8 @@ impl AuthenticatedSession {
         encryption_key_id: String,
         signing_key_id: String,
         replay_window: u64,
+        epoch: u64,
+        handshake_mac: [u8; SIGNATURE_LEN],
     ) -> Self {
         Self {
             session_id,
@@ -158,6 +213,8 @@ impl AuthenticatedSession {
             send_seq: 0,
             recv_seq: 0,
             replay_window,
+            epoch,
+            handshake_mac,
         }
     }
 
@@ -219,8 +276,15 @@ pub struct AuthenticatedMessage {
     pub direction: MessageDirection,
     /// SHA-256 of payload.
     pub payload_hash: String,
-    /// Signature using Signing role key.
-    pub signature: String,
+    /// Verified HMAC-SHA256 over the message transcript.
+    ///
+    /// INV-SCC-MSG-VERIFY: this field is only populated after the MAC
+    /// has been verified against the session's root secret.
+    #[serde(
+        serialize_with = "serialize_mac",
+        deserialize_with = "deserialize_mac"
+    )]
+    pub verified_mac: [u8; SIGNATURE_LEN],
 }
 
 /// Direction of an authenticated message. Maps to connector::Direction.
@@ -235,6 +299,14 @@ impl MessageDirection {
         match self {
             Self::Send => "send",
             Self::Receive => "receive",
+        }
+    }
+
+    /// Single-byte direction tag for transcript binding.
+    fn tag(&self) -> u8 {
+        match self {
+            Self::Send => 0x01,
+            Self::Receive => 0x02,
         }
     }
 
@@ -398,8 +470,158 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Transcript HMAC helpers
+// ---------------------------------------------------------------------------
+
+/// Build the handshake transcript preimage.
+///
+/// Binds: session_id, client_identity, server_identity, encryption_key_id,
+/// signing_key_id, epoch, and timestamp into a length-prefixed preimage.
+fn build_handshake_preimage(
+    session_id: &str,
+    client_identity: &str,
+    server_identity: &str,
+    encryption_key_id: &str,
+    signing_key_id: &str,
+    epoch: u64,
+    timestamp: u64,
+) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(256);
+    fn append_lp(buf: &mut Vec<u8>, field: &[u8]) {
+        buf.extend_from_slice(&(field.len() as u64).to_le_bytes());
+        buf.extend_from_slice(field);
+    }
+    append_lp(&mut buf, session_id.as_bytes());
+    append_lp(&mut buf, client_identity.as_bytes());
+    append_lp(&mut buf, server_identity.as_bytes());
+    append_lp(&mut buf, encryption_key_id.as_bytes());
+    append_lp(&mut buf, signing_key_id.as_bytes());
+    buf.extend_from_slice(&epoch.to_le_bytes());
+    buf.extend_from_slice(&timestamp.to_le_bytes());
+    buf
+}
+
+/// Compute the handshake transcript HMAC.
+fn compute_handshake_mac(
+    preimage: &[u8],
+    epoch: ControlEpoch,
+    root_secret: &RootSecret,
+) -> [u8; SIGNATURE_LEN] {
+    let derived_key = derive_epoch_key(root_secret, epoch, SESSION_AUTH_DOMAIN);
+    let mut hmac =
+        HmacSha256::new_from_slice(derived_key.as_bytes()).expect("HMAC key length is constant");
+    hmac.update(HANDSHAKE_HMAC_PREFIX);
+    hmac.update(preimage);
+    let result = hmac.finalize().into_bytes();
+    let mut mac = [0u8; SIGNATURE_LEN];
+    mac.copy_from_slice(&result);
+    mac
+}
+
+/// Build the per-message transcript preimage.
+///
+/// Binds: session_id, direction, sequence, payload_hash, epoch, and the
+/// handshake_mac (chain binding) into a length-prefixed preimage.
+fn build_message_preimage(
+    session_id: &str,
+    direction: MessageDirection,
+    sequence: u64,
+    payload_hash: &str,
+    epoch: u64,
+    handshake_mac: &[u8; SIGNATURE_LEN],
+) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(256);
+    fn append_lp(buf: &mut Vec<u8>, field: &[u8]) {
+        buf.extend_from_slice(&(field.len() as u64).to_le_bytes());
+        buf.extend_from_slice(field);
+    }
+    append_lp(&mut buf, session_id.as_bytes());
+    buf.push(direction.tag());
+    buf.extend_from_slice(&sequence.to_le_bytes());
+    append_lp(&mut buf, payload_hash.as_bytes());
+    buf.extend_from_slice(&epoch.to_le_bytes());
+    // Chain-bind to the handshake MAC (fixed-length, no length prefix needed).
+    buf.extend_from_slice(handshake_mac);
+    buf
+}
+
+/// Compute the per-message transcript HMAC.
+fn compute_message_mac(
+    preimage: &[u8],
+    epoch: ControlEpoch,
+    root_secret: &RootSecret,
+) -> [u8; SIGNATURE_LEN] {
+    let derived_key = derive_epoch_key(root_secret, epoch, SESSION_AUTH_DOMAIN);
+    let mut hmac =
+        HmacSha256::new_from_slice(derived_key.as_bytes()).expect("HMAC key length is constant");
+    hmac.update(MESSAGE_HMAC_PREFIX);
+    hmac.update(preimage);
+    let result = hmac.finalize().into_bytes();
+    let mut mac = [0u8; SIGNATURE_LEN];
+    mac.copy_from_slice(&result);
+    mac
+}
+
+/// Sign a session message and produce a MAC for verification.
+///
+/// Public API for callers to produce the correct MAC before calling
+/// `process_message`. The caller must provide the session's handshake_mac
+/// (obtained from `AuthenticatedSession::handshake_mac` after establishment).
+#[allow(clippy::too_many_arguments)]
+pub fn sign_session_message(
+    session_id: &str,
+    direction: MessageDirection,
+    sequence: u64,
+    payload_hash: &str,
+    epoch: ControlEpoch,
+    handshake_mac: &[u8; SIGNATURE_LEN],
+    root_secret: &RootSecret,
+) -> [u8; SIGNATURE_LEN] {
+    let preimage = build_message_preimage(
+        session_id,
+        direction,
+        sequence,
+        payload_hash,
+        epoch.value(),
+        handshake_mac,
+    );
+    compute_message_mac(&preimage, epoch, root_secret)
+}
+
+/// Sign a session establishment handshake.
+///
+/// Public API for callers to produce the handshake MAC that must be
+/// provided to `establish_session`.
+#[allow(clippy::too_many_arguments)]
+pub fn sign_handshake(
+    session_id: &str,
+    client_identity: &str,
+    server_identity: &str,
+    encryption_key_id: &str,
+    signing_key_id: &str,
+    epoch: ControlEpoch,
+    timestamp: u64,
+    root_secret: &RootSecret,
+) -> [u8; SIGNATURE_LEN] {
+    let preimage = build_handshake_preimage(
+        session_id,
+        client_identity,
+        server_identity,
+        encryption_key_id,
+        signing_key_id,
+        epoch.value(),
+        timestamp,
+    );
+    compute_handshake_mac(&preimage, epoch, root_secret)
+}
+
 pub struct SessionManager {
     config: SessionConfig,
+    /// Root secret for HMAC key derivation.
+    root_secret: RootSecret,
+    /// Current epoch for key scoping.
+    epoch: ControlEpoch,
     sessions: BTreeMap<String, AuthenticatedSession>,
     /// Per-session, per-direction replay windows (for replay_window > 0).
     replay_windows: BTreeMap<(String, MessageDirection), BTreeSet<u64>>,
@@ -407,19 +629,16 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
-    /// Create a new SessionManager with the given config.
-    pub fn new(config: SessionConfig) -> Self {
+    /// Create a new SessionManager with the given config, root secret, and epoch.
+    pub fn new(config: SessionConfig, root_secret: RootSecret, epoch: ControlEpoch) -> Self {
         Self {
             config,
+            root_secret,
+            epoch,
             sessions: BTreeMap::new(),
             replay_windows: BTreeMap::new(),
             events: Vec::new(),
         }
-    }
-
-    /// Create with default config.
-    pub fn default_manager() -> Self {
-        Self::new(SessionConfig::default())
     }
 
     fn push_event(&mut self, event: SessionEvent) {
@@ -460,6 +679,12 @@ impl SessionManager {
     /// Caller must supply the correct role-bound key IDs. The manager
     /// records them but the actual key-role verification is done at a
     /// higher layer (KeyRoleRegistry).
+    ///
+    /// # INV-SCC-HANDSHAKE-BIND
+    /// The caller must provide a `handshake_mac` computed over the
+    /// establishment transcript using `sign_handshake()`. The manager
+    /// recomputes the HMAC and rejects the session if the MACs do not
+    /// match, proving the caller holds the correct root secret.
     #[allow(clippy::too_many_arguments)]
     pub fn establish_session(
         &mut self,
@@ -470,11 +695,38 @@ impl SessionManager {
         signing_key_id: String,
         timestamp: u64,
         trace_id: String,
+        handshake_mac: [u8; SIGNATURE_LEN],
     ) -> Result<&AuthenticatedSession, SessionError> {
         // Check max sessions
         if self.active_session_count() >= self.config.max_sessions {
             return Err(SessionError::MaxSessionsReached {
                 limit: self.config.max_sessions,
+            });
+        }
+
+        // INV-SCC-HANDSHAKE-BIND: verify handshake transcript MAC.
+        let preimage = build_handshake_preimage(
+            &session_id,
+            &client_identity,
+            &server_identity,
+            &encryption_key_id,
+            &signing_key_id,
+            self.epoch.value(),
+            timestamp,
+        );
+        let expected_mac = compute_handshake_mac(&preimage, self.epoch, &self.root_secret);
+
+        if !ct_eq_bytes(&handshake_mac, &expected_mac) {
+            self.push_event(SessionEvent {
+                event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
+                session_id: session_id.clone(),
+                trace_id,
+                detail: "handshake MAC verification failed".to_string(),
+                timestamp,
+            });
+            return Err(SessionError::AuthFailed {
+                session_id,
+                reason: "handshake MAC verification failed".into(),
             });
         }
 
@@ -485,6 +737,8 @@ impl SessionManager {
             encryption_key_id,
             signing_key_id,
             self.config.replay_window,
+            self.epoch.value(),
+            handshake_mac,
         );
         session.activate(timestamp);
 
@@ -508,6 +762,7 @@ impl SessionManager {
     /// Enforces:
     /// - Session existence (INV-SCC-SESSION-AUTH)
     /// - Session is Active (INV-SCC-TERMINATED)
+    /// - Transcript-bound MAC verification (INV-SCC-MSG-VERIFY)
     /// - Sequence monotonicity (INV-SCC-MONOTONIC)
     /// - Replay detection for windowed mode
     #[allow(clippy::too_many_arguments)]
@@ -517,7 +772,7 @@ impl SessionManager {
         direction: MessageDirection,
         sequence: u64,
         payload_hash: &str,
-        signature: &str,
+        message_mac: &[u8; SIGNATURE_LEN],
         timestamp: u64,
         trace_id: &str,
     ) -> Result<AuthenticatedMessage, SessionError> {
@@ -566,6 +821,39 @@ impl SessionManager {
             });
             return Err(SessionError::NoSession {
                 session_id: session_id.to_string(),
+            });
+        }
+
+        // INV-SCC-MSG-VERIFY: verify transcript-bound MAC.
+        // The MAC binds session_id, direction, sequence, payload_hash,
+        // epoch, and the handshake_mac (chain binding).
+        let handshake_mac = session.handshake_mac;
+        let session_epoch = session.epoch;
+        let preimage = build_message_preimage(
+            session_id,
+            direction,
+            sequence,
+            payload_hash,
+            session_epoch,
+            &handshake_mac,
+        );
+        let expected_mac = compute_message_mac(
+            &preimage,
+            ControlEpoch::from(session_epoch),
+            &self.root_secret,
+        );
+
+        if !ct_eq_bytes(message_mac, &expected_mac) {
+            self.push_event(SessionEvent {
+                event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
+                session_id: session_id.to_string(),
+                trace_id: trace_id.to_string(),
+                detail: "message MAC verification failed".to_string(),
+                timestamp,
+            });
+            return Err(SessionError::AuthFailed {
+                session_id: session_id.to_string(),
+                reason: "message MAC verification failed".into(),
             });
         }
 
@@ -662,7 +950,7 @@ impl SessionManager {
             sequence,
             direction,
             payload_hash: payload_hash.to_string(),
-            signature: signature.to_string(),
+            verified_mac: *message_mac,
         };
 
         self.push_event(SessionEvent {
@@ -744,7 +1032,14 @@ pub fn demo_session_lifecycle() -> Vec<SessionEvent> {
         max_sessions: 10,
         session_timeout_ms: 60_000,
     };
-    let mut mgr = SessionManager::new(config);
+    let root_secret = RootSecret::from_bytes([0xAA; 32]);
+    let epoch = ControlEpoch::from(1u64);
+    let mut mgr = SessionManager::new(config, root_secret.clone(), epoch);
+
+    let handshake_mac = sign_handshake(
+        "sess-001", "client-a", "server-1", "enc-key-001", "sign-key-001",
+        epoch, 1_000_000, &root_secret,
+    );
 
     // Establish session
     let _ = mgr.establish_session(
@@ -755,16 +1050,24 @@ pub fn demo_session_lifecycle() -> Vec<SessionEvent> {
         "sign-key-001".into(),
         1_000_000,
         "trace-001".into(),
+        handshake_mac,
     );
 
     // Send 3 messages with strict monotonicity
+    let session = mgr.get_session("sess-001").unwrap();
+    let hmac_ref = session.handshake_mac;
     for seq in 0..3 {
+        let ph = format!("hash-{seq}");
+        let mac = sign_session_message(
+            "sess-001", MessageDirection::Send, seq, &ph,
+            epoch, &hmac_ref, &root_secret,
+        );
         let _ = mgr.process_message(
             "sess-001",
             MessageDirection::Send,
             seq,
-            &format!("hash-{seq}"),
-            &format!("sig-{seq}"),
+            &ph,
+            &mac,
             1_000_000 + seq * 100,
             "trace-001",
         );
@@ -772,12 +1075,17 @@ pub fn demo_session_lifecycle() -> Vec<SessionEvent> {
 
     // Receive 2 messages
     for seq in 0..2 {
+        let ph = format!("recv-hash-{seq}");
+        let mac = sign_session_message(
+            "sess-001", MessageDirection::Receive, seq, &ph,
+            epoch, &hmac_ref, &root_secret,
+        );
         let _ = mgr.process_message(
             "sess-001",
             MessageDirection::Receive,
             seq,
-            &format!("recv-hash-{seq}"),
-            &format!("recv-sig-{seq}"),
+            &ph,
+            &mac,
             1_000_200 + seq * 100,
             "trace-001",
         );
@@ -796,7 +1104,14 @@ pub fn demo_windowed_replay() -> Vec<SessionEvent> {
         max_sessions: 10,
         session_timeout_ms: 60_000,
     };
-    let mut mgr = SessionManager::new(config);
+    let root_secret = RootSecret::from_bytes([0xBB; 32]);
+    let epoch = ControlEpoch::from(1u64);
+    let mut mgr = SessionManager::new(config, root_secret.clone(), epoch);
+
+    let handshake_mac = sign_handshake(
+        "sess-win", "client-b", "server-2", "enc-key-002", "sign-key-002",
+        epoch, 2_000_000, &root_secret,
+    );
 
     let _ = mgr.establish_session(
         "sess-win".into(),
@@ -806,47 +1121,24 @@ pub fn demo_windowed_replay() -> Vec<SessionEvent> {
         "sign-key-002".into(),
         2_000_000,
         "trace-002".into(),
+        handshake_mac,
     );
+
+    let hmac_ref = mgr.get_session("sess-win").unwrap().handshake_mac;
 
     // Send out-of-order within window
-    let _ = mgr.process_message(
-        "sess-win",
-        MessageDirection::Send,
-        0,
-        "hash-0",
-        "sig-0",
-        2_000_100,
-        "trace-002",
-    );
-    let _ = mgr.process_message(
-        "sess-win",
-        MessageDirection::Send,
-        2,
-        "hash-2",
-        "sig-2",
-        2_000_200,
-        "trace-002",
-    );
-    let _ = mgr.process_message(
-        "sess-win",
-        MessageDirection::Send,
-        1,
-        "hash-1",
-        "sig-1",
-        2_000_300,
-        "trace-002",
-    );
+    let mac0 = sign_session_message("sess-win", MessageDirection::Send, 0, "hash-0", epoch, &hmac_ref, &root_secret);
+    let _ = mgr.process_message("sess-win", MessageDirection::Send, 0, "hash-0", &mac0, 2_000_100, "trace-002");
 
-    // Attempt replay of seq 2 — should be rejected
-    let _ = mgr.process_message(
-        "sess-win",
-        MessageDirection::Send,
-        2,
-        "hash-2-dup",
-        "sig-2-dup",
-        2_000_400,
-        "trace-002",
-    );
+    let mac2 = sign_session_message("sess-win", MessageDirection::Send, 2, "hash-2", epoch, &hmac_ref, &root_secret);
+    let _ = mgr.process_message("sess-win", MessageDirection::Send, 2, "hash-2", &mac2, 2_000_200, "trace-002");
+
+    let mac1 = sign_session_message("sess-win", MessageDirection::Send, 1, "hash-1", epoch, &hmac_ref, &root_secret);
+    let _ = mgr.process_message("sess-win", MessageDirection::Send, 1, "hash-1", &mac1, 2_000_300, "trace-002");
+
+    // Attempt replay of seq 2 — should be rejected (same MAC, different payload)
+    let mac2_dup = sign_session_message("sess-win", MessageDirection::Send, 2, "hash-2-dup", epoch, &hmac_ref, &root_secret);
+    let _ = mgr.process_message("sess-win", MessageDirection::Send, 2, "hash-2-dup", &mac2_dup, 2_000_400, "trace-002");
 
     let _ = mgr.terminate_session("sess-win", 2_001_000, "trace-002");
 
@@ -861,15 +1153,35 @@ pub fn demo_windowed_replay() -> Vec<SessionEvent> {
 mod tests {
     use super::*;
 
+    const TEST_SECRET: [u8; 32] = [0xAA; 32];
+
+    fn test_root_secret() -> RootSecret {
+        RootSecret::from_bytes(TEST_SECRET)
+    }
+
+    fn test_epoch() -> ControlEpoch {
+        ControlEpoch::from(1u64)
+    }
+
     fn default_manager() -> SessionManager {
-        SessionManager::new(SessionConfig {
-            replay_window: 0,
-            max_sessions: 10,
-            session_timeout_ms: 60_000,
-        })
+        SessionManager::new(
+            SessionConfig {
+                replay_window: 0,
+                max_sessions: 10,
+                session_timeout_ms: 60_000,
+            },
+            test_root_secret(),
+            test_epoch(),
+        )
     }
 
     fn establish_test_session(mgr: &mut SessionManager, sid: &str) {
+        let rs = test_root_secret();
+        let epoch = test_epoch();
+        let mac = sign_handshake(
+            sid, "client-a", "server-1", "enc-key", "sign-key",
+            epoch, 1_000_000, &rs,
+        );
         mgr.establish_session(
             sid.to_string(),
             "client-a".into(),
@@ -878,8 +1190,24 @@ mod tests {
             "sign-key".into(),
             1_000_000,
             "trace-test".into(),
+            mac,
         )
         .unwrap();
+    }
+
+    /// Sign a message for a test session (retrieves handshake_mac from the session).
+    fn sign_msg(
+        mgr: &SessionManager,
+        sid: &str,
+        dir: MessageDirection,
+        seq: u64,
+        payload_hash: &str,
+    ) -> [u8; SIGNATURE_LEN] {
+        let session = mgr.get_session(sid).unwrap();
+        sign_session_message(
+            sid, dir, seq, payload_hash,
+            test_epoch(), &session.handshake_mac, &test_root_secret(),
+        )
     }
 
     // ── SessionState tests ──────────────────────────────────────────
@@ -915,12 +1243,8 @@ mod tests {
     #[test]
     fn test_session_new_is_establishing() {
         let s = AuthenticatedSession::new(
-            "s1".into(),
-            "c".into(),
-            "sv".into(),
-            "e".into(),
-            "sg".into(),
-            0,
+            "s1".into(), "c".into(), "sv".into(), "e".into(), "sg".into(),
+            0, 1, [0u8; SIGNATURE_LEN],
         );
         assert_eq!(s.state, SessionState::Establishing);
         assert_eq!(s.send_seq, 0);
@@ -930,12 +1254,8 @@ mod tests {
     #[test]
     fn test_session_activate() {
         let mut s = AuthenticatedSession::new(
-            "s1".into(),
-            "c".into(),
-            "sv".into(),
-            "e".into(),
-            "sg".into(),
-            0,
+            "s1".into(), "c".into(), "sv".into(), "e".into(), "sg".into(),
+            0, 1, [0u8; SIGNATURE_LEN],
         );
         s.activate(42);
         assert_eq!(s.state, SessionState::Active);
@@ -945,12 +1265,8 @@ mod tests {
     #[test]
     fn test_session_lifecycle_transitions() {
         let mut s = AuthenticatedSession::new(
-            "s1".into(),
-            "c".into(),
-            "sv".into(),
-            "e".into(),
-            "sg".into(),
-            0,
+            "s1".into(), "c".into(), "sv".into(), "e".into(), "sg".into(),
+            0, 1, [0u8; SIGNATURE_LEN],
         );
         s.activate(1);
         assert_eq!(s.state, SessionState::Active);
@@ -963,12 +1279,8 @@ mod tests {
     #[test]
     fn test_next_send_seq_monotonic() {
         let mut s = AuthenticatedSession::new(
-            "s1".into(),
-            "c".into(),
-            "sv".into(),
-            "e".into(),
-            "sg".into(),
-            0,
+            "s1".into(), "c".into(), "sv".into(), "e".into(), "sg".into(),
+            0, 1, [0u8; SIGNATURE_LEN],
         );
         assert_eq!(s.next_send_seq(), 0);
         assert_eq!(s.next_send_seq(), 1);
@@ -978,12 +1290,8 @@ mod tests {
     #[test]
     fn test_next_recv_seq_monotonic() {
         let mut s = AuthenticatedSession::new(
-            "s1".into(),
-            "c".into(),
-            "sv".into(),
-            "e".into(),
-            "sg".into(),
-            0,
+            "s1".into(), "c".into(), "sv".into(), "e".into(), "sg".into(),
+            0, 1, [0u8; SIGNATURE_LEN],
         );
         assert_eq!(s.next_recv_seq(), 0);
         assert_eq!(s.next_recv_seq(), 1);
@@ -1013,35 +1321,25 @@ mod tests {
 
     #[test]
     fn test_error_codes() {
-        let e1 = SessionError::NoSession {
-            session_id: "s".into(),
-        };
+        let e1 = SessionError::NoSession { session_id: "s".into() };
         assert_eq!(e1.code(), "ERR_SCC_NO_SESSION");
 
         let e2 = SessionError::SequenceViolation {
-            session_id: "s".into(),
-            direction: MessageDirection::Send,
-            expected_min: 5,
-            got: 3,
+            session_id: "s".into(), direction: MessageDirection::Send,
+            expected_min: 5, got: 3,
         };
         assert_eq!(e2.code(), "ERR_SCC_SEQUENCE_VIOLATION");
 
-        let e3 = SessionError::SessionTerminated {
-            session_id: "s".into(),
-        };
+        let e3 = SessionError::SessionTerminated { session_id: "s".into() };
         assert_eq!(e3.code(), "ERR_SCC_SESSION_TERMINATED");
 
         let e4 = SessionError::RoleMismatch {
-            session_id: "s".into(),
-            expected_role: "Signing".into(),
+            session_id: "s".into(), expected_role: "Signing".into(),
             actual_role: "Encryption".into(),
         };
         assert_eq!(e4.code(), "ERR_SCC_ROLE_MISMATCH");
 
-        let e5 = SessionError::AuthFailed {
-            session_id: "s".into(),
-            reason: "bad sig".into(),
-        };
+        let e5 = SessionError::AuthFailed { session_id: "s".into(), reason: "bad sig".into() };
         assert_eq!(e5.code(), "ERR_SCC_AUTH_FAILED");
 
         let e6 = SessionError::MaxSessionsReached { limit: 10 };
@@ -1050,11 +1348,8 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        let e = SessionError::NoSession {
-            session_id: "s1".into(),
-        };
+        let e = SessionError::NoSession { session_id: "s1".into() };
         assert!(e.to_string().contains("s1"));
-
         let e = SessionError::MaxSessionsReached { limit: 42 };
         assert!(e.to_string().contains("42"));
     }
@@ -1064,14 +1359,12 @@ mod tests {
     #[test]
     fn test_establish_session() {
         let mut mgr = default_manager();
+        let rs = test_root_secret();
+        let epoch = test_epoch();
+        let mac = sign_handshake("s1", "c", "sv", "ek", "sk", epoch, 1000, &rs);
         let result = mgr.establish_session(
-            "s1".into(),
-            "c".into(),
-            "sv".into(),
-            "ek".into(),
-            "sk".into(),
-            1000,
-            "t1".into(),
+            "s1".into(), "c".into(), "sv".into(), "ek".into(), "sk".into(),
+            1000, "t1".into(), mac,
         );
         assert!(result.is_ok());
         let s = result.unwrap();
@@ -1082,15 +1375,7 @@ mod tests {
     #[test]
     fn test_establish_session_emits_event() {
         let mut mgr = default_manager();
-        let _ = mgr.establish_session(
-            "s1".into(),
-            "c".into(),
-            "sv".into(),
-            "ek".into(),
-            "sk".into(),
-            1000,
-            "t1".into(),
-        );
+        establish_test_session(&mut mgr, "s1");
         let events = mgr.events();
         assert!(!events.is_empty());
         assert_eq!(events[0].event_code, event_codes::SCC_SESSION_ESTABLISHED);
@@ -1099,39 +1384,24 @@ mod tests {
     #[test]
     fn test_max_sessions_enforced() {
         let config = SessionConfig {
-            replay_window: 0,
-            max_sessions: 2,
-            session_timeout_ms: 60_000,
+            replay_window: 0, max_sessions: 2, session_timeout_ms: 60_000,
         };
-        let mut mgr = SessionManager::new(config);
-        mgr.establish_session(
-            "s1".into(),
-            "c".into(),
-            "sv".into(),
-            "e".into(),
-            "s".into(),
-            1,
-            "t".into(),
-        )
-        .unwrap();
-        mgr.establish_session(
-            "s2".into(),
-            "c".into(),
-            "sv".into(),
-            "e".into(),
-            "s".into(),
-            2,
-            "t".into(),
-        )
-        .unwrap();
+        let rs = test_root_secret();
+        let epoch = test_epoch();
+        let mut mgr = SessionManager::new(config, rs.clone(), epoch);
+
+        for (i, sid) in ["s1", "s2"].iter().enumerate() {
+            let mac = sign_handshake(sid, "c", "sv", "e", "s", epoch, i as u64, &rs);
+            mgr.establish_session(
+                sid.to_string(), "c".into(), "sv".into(), "e".into(), "s".into(),
+                i as u64, "t".into(), mac,
+            ).unwrap();
+        }
+
+        let mac3 = sign_handshake("s3", "c", "sv", "e", "s", epoch, 3, &rs);
         let result = mgr.establish_session(
-            "s3".into(),
-            "c".into(),
-            "sv".into(),
-            "e".into(),
-            "s".into(),
-            3,
-            "t".into(),
+            "s3".into(), "c".into(), "sv".into(), "e".into(), "s".into(),
+            3, "t".into(), mac3,
         );
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -1147,15 +1417,15 @@ mod tests {
         let mut mgr = default_manager();
         establish_test_session(&mut mgr, "s1");
 
-        let r0 = mgr.process_message("s1", MessageDirection::Send, 0, "h0", "sig0", 2000, "t");
-        assert!(r0.is_ok());
+        let mac0 = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h0");
+        assert!(mgr.process_message("s1", MessageDirection::Send, 0, "h0", &mac0, 2000, "t").is_ok());
 
-        let r1 = mgr.process_message("s1", MessageDirection::Send, 1, "h1", "sig1", 3000, "t");
-        assert!(r1.is_ok());
+        let mac1 = sign_msg(&mgr, "s1", MessageDirection::Send, 1, "h1");
+        assert!(mgr.process_message("s1", MessageDirection::Send, 1, "h1", &mac1, 3000, "t").is_ok());
 
-        // seq 1 again should fail (expected 2)
-        let r_dup = mgr.process_message("s1", MessageDirection::Send, 1, "h1", "sig1", 4000, "t");
-        assert!(r_dup.is_err());
+        // seq 1 again should fail (expected 2) — even with valid MAC for seq 1
+        let mac1_dup = sign_msg(&mgr, "s1", MessageDirection::Send, 1, "h1");
+        assert!(mgr.process_message("s1", MessageDirection::Send, 1, "h1", &mac1_dup, 4000, "t").is_err());
     }
 
     #[test]
@@ -1163,12 +1433,12 @@ mod tests {
         let mut mgr = default_manager();
         establish_test_session(&mut mgr, "s1");
 
-        let r0 = mgr.process_message("s1", MessageDirection::Receive, 0, "h0", "sig0", 2000, "t");
-        assert!(r0.is_ok());
+        let mac0 = sign_msg(&mgr, "s1", MessageDirection::Receive, 0, "h0");
+        assert!(mgr.process_message("s1", MessageDirection::Receive, 0, "h0", &mac0, 2000, "t").is_ok());
 
         // Skip seq 1 — should fail
-        let r2 = mgr.process_message("s1", MessageDirection::Receive, 2, "h2", "sig2", 3000, "t");
-        assert!(r2.is_err());
+        let mac2 = sign_msg(&mgr, "s1", MessageDirection::Receive, 2, "h2");
+        assert!(mgr.process_message("s1", MessageDirection::Receive, 2, "h2", &mac2, 3000, "t").is_err());
     }
 
     #[test]
@@ -1176,41 +1446,27 @@ mod tests {
         let mut mgr = default_manager();
         establish_test_session(&mut mgr, "s1");
 
-        // Send seq 0
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 0, "h", "s", 1, "t",)
-                .is_ok()
-        );
+        let mac_s0 = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
+        assert!(mgr.process_message("s1", MessageDirection::Send, 0, "h", &mac_s0, 1, "t").is_ok());
 
-        // Recv seq 0 — independent counter
-        assert!(
-            mgr.process_message("s1", MessageDirection::Receive, 0, "h", "s", 2, "t",)
-                .is_ok()
-        );
+        let mac_r0 = sign_msg(&mgr, "s1", MessageDirection::Receive, 0, "h");
+        assert!(mgr.process_message("s1", MessageDirection::Receive, 0, "h", &mac_r0, 2, "t").is_ok());
 
-        // Send seq 1
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 1, "h", "s", 3, "t",)
-                .is_ok()
-        );
+        let mac_s1 = sign_msg(&mgr, "s1", MessageDirection::Send, 1, "h");
+        assert!(mgr.process_message("s1", MessageDirection::Send, 1, "h", &mac_s1, 3, "t").is_ok());
 
-        // Recv seq 1
-        assert!(
-            mgr.process_message("s1", MessageDirection::Receive, 1, "h", "s", 4, "t",)
-                .is_ok()
-        );
+        let mac_r1 = sign_msg(&mgr, "s1", MessageDirection::Receive, 1, "h");
+        assert!(mgr.process_message("s1", MessageDirection::Receive, 1, "h", &mac_r1, 4, "t").is_ok());
     }
 
     #[test]
     fn test_no_session_rejected() {
         let mut mgr = default_manager();
-        let result =
-            mgr.process_message("nonexistent", MessageDirection::Send, 0, "h", "s", 1, "t");
+        let fake_mac = [0u8; SIGNATURE_LEN];
+        let result = mgr.process_message("nonexistent", MessageDirection::Send, 0, "h", &fake_mac, 1, "t");
         assert!(result.is_err());
         match result.unwrap_err() {
-            SessionError::NoSession { session_id } => {
-                assert_eq!(session_id, "nonexistent");
-            }
+            SessionError::NoSession { session_id } => assert_eq!(session_id, "nonexistent"),
             other => panic!("unexpected: {other}"),
         }
     }
@@ -1221,14 +1477,13 @@ mod tests {
     fn test_terminated_session_rejects_messages() {
         let mut mgr = default_manager();
         establish_test_session(&mut mgr, "s1");
+        let mac = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
         mgr.terminate_session("s1", 5000, "t").unwrap();
 
-        let result = mgr.process_message("s1", MessageDirection::Send, 0, "h", "s", 6000, "t");
+        let result = mgr.process_message("s1", MessageDirection::Send, 0, "h", &mac, 6000, "t");
         assert!(result.is_err());
         match result.unwrap_err() {
-            SessionError::SessionTerminated { session_id } => {
-                assert_eq!(session_id, "s1");
-            }
+            SessionError::SessionTerminated { session_id } => assert_eq!(session_id, "s1"),
             other => panic!("unexpected: {other}"),
         }
     }
@@ -1239,9 +1494,7 @@ mod tests {
         establish_test_session(&mut mgr, "s1");
         mgr.terminate_session("s1", 5000, "t").unwrap();
 
-        let term_events: Vec<_> = mgr
-            .events()
-            .iter()
+        let term_events: Vec<_> = mgr.events().iter()
             .filter(|e| e.event_code == event_codes::SCC_SESSION_TERMINATED)
             .collect();
         assert_eq!(term_events.len(), 1);
@@ -1258,50 +1511,36 @@ mod tests {
 
     #[test]
     fn test_windowed_out_of_order_accepted() {
-        let config = SessionConfig {
-            replay_window: 4,
-            max_sessions: 10,
-            session_timeout_ms: 60_000,
-        };
-        let mut mgr = SessionManager::new(config);
+        let config = SessionConfig { replay_window: 4, max_sessions: 10, session_timeout_ms: 60_000 };
+        let rs = test_root_secret();
+        let epoch = test_epoch();
+        let mut mgr = SessionManager::new(config, rs.clone(), epoch);
         establish_test_session(&mut mgr, "s1");
 
-        // seq 0 ok
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 0, "h", "s", 1, "t",)
-                .is_ok()
-        );
+        let mac0 = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
+        assert!(mgr.process_message("s1", MessageDirection::Send, 0, "h", &mac0, 1, "t").is_ok());
 
-        // seq 2 ok (skip 1)
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 2, "h", "s", 2, "t",)
-                .is_ok()
-        );
+        let mac2 = sign_msg(&mgr, "s1", MessageDirection::Send, 2, "h");
+        assert!(mgr.process_message("s1", MessageDirection::Send, 2, "h", &mac2, 2, "t").is_ok());
 
-        // seq 1 ok (within window)
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 1, "h", "s", 3, "t",)
-                .is_ok()
-        );
+        let mac1 = sign_msg(&mgr, "s1", MessageDirection::Send, 1, "h");
+        assert!(mgr.process_message("s1", MessageDirection::Send, 1, "h", &mac1, 3, "t").is_ok());
     }
 
     #[test]
     fn test_windowed_replay_rejected() {
-        let config = SessionConfig {
-            replay_window: 4,
-            max_sessions: 10,
-            session_timeout_ms: 60_000,
-        };
-        let mut mgr = SessionManager::new(config);
+        let config = SessionConfig { replay_window: 4, max_sessions: 10, session_timeout_ms: 60_000 };
+        let rs = test_root_secret();
+        let epoch = test_epoch();
+        let mut mgr = SessionManager::new(config, rs.clone(), epoch);
         establish_test_session(&mut mgr, "s1");
 
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 0, "h", "s", 1, "t",)
-                .is_ok()
-        );
+        let mac0 = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
+        assert!(mgr.process_message("s1", MessageDirection::Send, 0, "h", &mac0, 1, "t").is_ok());
 
         // Replay seq 0
-        let result = mgr.process_message("s1", MessageDirection::Send, 0, "h", "s", 2, "t");
+        let mac0_dup = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
+        let result = mgr.process_message("s1", MessageDirection::Send, 0, "h", &mac0_dup, 2, "t");
         assert!(result.is_err());
         match result.unwrap_err() {
             SessionError::ReplayDetected { sequence, .. } => assert_eq!(sequence, 0),
@@ -1311,25 +1550,21 @@ mod tests {
 
     #[test]
     fn test_windowed_regress_below_floor_rejected() {
-        let config = SessionConfig {
-            replay_window: 2,
-            max_sessions: 10,
-            session_timeout_ms: 60_000,
-        };
-        let mut mgr = SessionManager::new(config);
+        let config = SessionConfig { replay_window: 2, max_sessions: 10, session_timeout_ms: 60_000 };
+        let rs = test_root_secret();
+        let epoch = test_epoch();
+        let mut mgr = SessionManager::new(config, rs.clone(), epoch);
         establish_test_session(&mut mgr, "s1");
 
-        // Advance to seq 5
         for seq in 0..6 {
-            assert!(
-                mgr.process_message("s1", MessageDirection::Send, seq, "h", "s", 100 + seq, "t",)
-                    .is_ok()
-            );
+            let ph = format!("h{seq}");
+            let mac = sign_msg(&mgr, "s1", MessageDirection::Send, seq, &ph);
+            assert!(mgr.process_message("s1", MessageDirection::Send, seq, &ph, &mac, 100 + seq, "t").is_ok());
         }
 
-        // Seq 2 should be rejected (below floor = 6)
-        let result = mgr.process_message("s1", MessageDirection::Send, 2, "h", "s", 200, "t");
-        assert!(result.is_err());
+        // Seq 2 should be rejected (below floor)
+        let mac_old = sign_msg(&mgr, "s1", MessageDirection::Send, 2, "h2");
+        assert!(mgr.process_message("s1", MessageDirection::Send, 2, "h2", &mac_old, 200, "t").is_err());
     }
 
     // ── SessionManager: key role validation ─────────────────────────
@@ -1345,9 +1580,7 @@ mod tests {
         let result = SessionManager::validate_key_roles(KeyRole::Signing, KeyRole::Signing);
         assert!(result.is_err());
         match result.unwrap_err() {
-            SessionError::RoleMismatch { expected_role, .. } => {
-                assert_eq!(expected_role, "Encryption");
-            }
+            SessionError::RoleMismatch { expected_role, .. } => assert_eq!(expected_role, "Encryption"),
             other => panic!("unexpected: {other}"),
         }
     }
@@ -1357,9 +1590,7 @@ mod tests {
         let result = SessionManager::validate_key_roles(KeyRole::Encryption, KeyRole::Issuance);
         assert!(result.is_err());
         match result.unwrap_err() {
-            SessionError::RoleMismatch { expected_role, .. } => {
-                assert_eq!(expected_role, "Signing");
-            }
+            SessionError::RoleMismatch { expected_role, .. } => assert_eq!(expected_role, "Signing"),
             other => panic!("unexpected: {other}"),
         }
     }
@@ -1396,12 +1627,6 @@ mod tests {
         assert!(ids.contains(&"s2".to_string()));
     }
 
-    #[test]
-    fn test_default_manager_fn() {
-        let mgr = SessionManager::default_manager();
-        assert_eq!(mgr.config().max_sessions, 256);
-    }
-
     // ── Demo functions ──────────────────────────────────────────────
 
     #[test]
@@ -1418,8 +1643,7 @@ mod tests {
         let events = demo_windowed_replay();
         // 1 establish + 3 accepted + 1 rejected + 1 terminate = 6
         assert_eq!(events.len(), 6);
-        let rejected: Vec<_> = events
-            .iter()
+        let rejected: Vec<_> = events.iter()
             .filter(|e| e.event_code == event_codes::SCC_MESSAGE_REJECTED)
             .collect();
         assert_eq!(rejected.len(), 1);
@@ -1433,22 +1657,16 @@ mod tests {
         establish_test_session(&mut mgr, "s1");
         establish_test_session(&mut mgr, "s2");
 
-        // Both can send seq 0 independently
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 0, "h", "s", 1, "t",)
-                .is_ok()
-        );
-        assert!(
-            mgr.process_message("s2", MessageDirection::Send, 0, "h", "s", 2, "t",)
-                .is_ok()
-        );
+        let mac_s1 = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
+        assert!(mgr.process_message("s1", MessageDirection::Send, 0, "h", &mac_s1, 1, "t").is_ok());
 
-        // Terminating s1 doesn't affect s2
+        let mac_s2 = sign_msg(&mgr, "s2", MessageDirection::Send, 0, "h");
+        assert!(mgr.process_message("s2", MessageDirection::Send, 0, "h", &mac_s2, 2, "t").is_ok());
+
         mgr.terminate_session("s1", 100, "t").unwrap();
-        assert!(
-            mgr.process_message("s2", MessageDirection::Send, 1, "h", "s", 3, "t",)
-                .is_ok()
-        );
+
+        let mac_s2b = sign_msg(&mgr, "s2", MessageDirection::Send, 1, "h");
+        assert!(mgr.process_message("s2", MessageDirection::Send, 1, "h", &mac_s2b, 3, "t").is_ok());
     }
 
     // ── AuthenticatedMessage fields ─────────────────────────────────
@@ -1458,22 +1676,13 @@ mod tests {
         let mut mgr = default_manager();
         establish_test_session(&mut mgr, "s1");
 
-        let msg = mgr
-            .process_message(
-                "s1",
-                MessageDirection::Send,
-                0,
-                "hash123",
-                "sig456",
-                1000,
-                "t",
-            )
-            .unwrap();
+        let mac = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "hash123");
+        let msg = mgr.process_message("s1", MessageDirection::Send, 0, "hash123", &mac, 1000, "t").unwrap();
 
         assert_eq!(msg.session_id, "s1");
         assert_eq!(msg.sequence, 0);
         assert_eq!(msg.payload_hash, "hash123");
-        assert_eq!(msg.signature, "sig456");
+        assert_eq!(msg.verified_mac, mac);
     }
 
     // ── Event audit trail ───────────────────────────────────────────
@@ -1495,12 +1704,11 @@ mod tests {
         let mut mgr = default_manager();
         establish_test_session(&mut mgr, "s1");
 
-        // Skip seq 0, try seq 5
-        let _ = mgr.process_message("s1", MessageDirection::Send, 5, "h", "s", 1, "t");
+        // Skip seq 0, try seq 5 — valid MAC but wrong sequence
+        let mac5 = sign_msg(&mgr, "s1", MessageDirection::Send, 5, "h");
+        let _ = mgr.process_message("s1", MessageDirection::Send, 5, "h", &mac5, 1, "t");
 
-        let reject_events: Vec<_> = mgr
-            .events()
-            .iter()
+        let reject_events: Vec<_> = mgr.events().iter()
             .filter(|e| e.event_code == event_codes::SCC_MESSAGE_REJECTED)
             .collect();
         assert_eq!(reject_events.len(), 1);
@@ -1527,18 +1735,15 @@ mod tests {
     #[test]
     fn test_authenticated_session_serde() {
         let mut s = AuthenticatedSession::new(
-            "s1".into(),
-            "c".into(),
-            "sv".into(),
-            "e".into(),
-            "sg".into(),
-            0,
+            "s1".into(), "c".into(), "sv".into(), "e".into(), "sg".into(),
+            0, 1, [0xABu8; SIGNATURE_LEN],
         );
         s.activate(42);
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AuthenticatedSession = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.session_id, "s1");
         assert_eq!(parsed.state, SessionState::Active);
+        assert_eq!(parsed.handshake_mac, [0xABu8; SIGNATURE_LEN]);
     }
 
     #[test]
@@ -1581,5 +1786,187 @@ mod tests {
         assert_sync::<SessionConfig>();
         assert_send::<SessionError>();
         assert_sync::<SessionError>();
+    }
+
+    // ── Adversarial: handshake MAC verification ─────────────────────
+
+    #[test]
+    fn adversarial_forged_handshake_mac_rejected() {
+        let mut mgr = default_manager();
+        let forged_mac = [0xFF; SIGNATURE_LEN];
+        let result = mgr.establish_session(
+            "s1".into(), "c".into(), "sv".into(), "ek".into(), "sk".into(),
+            1000, "t".into(), forged_mac,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SessionError::AuthFailed { reason, .. } => {
+                assert!(reason.contains("handshake MAC"));
+            }
+            other => panic!("expected AuthFailed, got: {other}"),
+        }
+    }
+
+    #[test]
+    fn adversarial_wrong_secret_handshake_rejected() {
+        let wrong_secret = RootSecret::from_bytes([0xCC; 32]);
+        let epoch = test_epoch();
+        // Sign with wrong secret
+        let mac = sign_handshake("s1", "c", "sv", "ek", "sk", epoch, 1000, &wrong_secret);
+        let mut mgr = default_manager(); // uses test_root_secret()
+        let result = mgr.establish_session(
+            "s1".into(), "c".into(), "sv".into(), "ek".into(), "sk".into(),
+            1000, "t".into(), mac,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SessionError::AuthFailed { .. } => {}
+            other => panic!("expected AuthFailed, got: {other}"),
+        }
+    }
+
+    #[test]
+    fn adversarial_session_id_swap_handshake_rejected() {
+        let mut mgr = default_manager();
+        let rs = test_root_secret();
+        let epoch = test_epoch();
+        // Sign for session "s1" but establish as "s2"
+        let mac = sign_handshake("s1", "c", "sv", "ek", "sk", epoch, 1000, &rs);
+        let result = mgr.establish_session(
+            "s2".into(), "c".into(), "sv".into(), "ek".into(), "sk".into(),
+            1000, "t".into(), mac,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn adversarial_identity_swap_handshake_rejected() {
+        let mut mgr = default_manager();
+        let rs = test_root_secret();
+        let epoch = test_epoch();
+        // Sign for client "alice" but establish as "eve"
+        let mac = sign_handshake("s1", "alice", "sv", "ek", "sk", epoch, 1000, &rs);
+        let result = mgr.establish_session(
+            "s1".into(), "eve".into(), "sv".into(), "ek".into(), "sk".into(),
+            1000, "t".into(), mac,
+        );
+        assert!(result.is_err());
+    }
+
+    // ── Adversarial: message MAC verification ───────────────────────
+
+    #[test]
+    fn adversarial_forged_message_mac_rejected() {
+        let mut mgr = default_manager();
+        establish_test_session(&mut mgr, "s1");
+
+        let forged = [0xFF; SIGNATURE_LEN];
+        let result = mgr.process_message("s1", MessageDirection::Send, 0, "h", &forged, 2000, "t");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SessionError::AuthFailed { reason, .. } => {
+                assert!(reason.contains("message MAC"));
+            }
+            other => panic!("expected AuthFailed, got: {other}"),
+        }
+    }
+
+    #[test]
+    fn adversarial_payload_swap_under_valid_mac_rejected() {
+        let mut mgr = default_manager();
+        establish_test_session(&mut mgr, "s1");
+
+        // Sign for payload "real" but submit with payload "fake"
+        let mac = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "real");
+        let result = mgr.process_message("s1", MessageDirection::Send, 0, "fake", &mac, 2000, "t");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SessionError::AuthFailed { .. } => {}
+            other => panic!("expected AuthFailed, got: {other}"),
+        }
+    }
+
+    #[test]
+    fn adversarial_cross_session_mac_rejected() {
+        let mut mgr = default_manager();
+        establish_test_session(&mut mgr, "s1");
+        establish_test_session(&mut mgr, "s2");
+
+        // Sign for session s1 but submit to session s2
+        let mac_s1 = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
+        let result = mgr.process_message("s2", MessageDirection::Send, 0, "h", &mac_s1, 2000, "t");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SessionError::AuthFailed { .. } => {}
+            other => panic!("expected AuthFailed, got: {other}"),
+        }
+    }
+
+    #[test]
+    fn adversarial_direction_swap_rejected() {
+        let mut mgr = default_manager();
+        establish_test_session(&mut mgr, "s1");
+
+        // Sign for Send but submit as Receive
+        let mac = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
+        let result = mgr.process_message("s1", MessageDirection::Receive, 0, "h", &mac, 2000, "t");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn adversarial_wrong_secret_message_rejected() {
+        let mut mgr = default_manager();
+        establish_test_session(&mut mgr, "s1");
+
+        let wrong_secret = RootSecret::from_bytes([0xCC; 32]);
+        let session = mgr.get_session("s1").unwrap();
+        let mac = sign_session_message(
+            "s1", MessageDirection::Send, 0, "h",
+            test_epoch(), &session.handshake_mac, &wrong_secret,
+        );
+        let result = mgr.process_message("s1", MessageDirection::Send, 0, "h", &mac, 2000, "t");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn regression_opaque_signature_no_longer_accepted() {
+        // The old API accepted any string as a "signature" and recorded it.
+        // The new API requires a verified HMAC. This test ensures an arbitrary
+        // byte pattern is rejected.
+        let mut mgr = default_manager();
+        establish_test_session(&mut mgr, "s1");
+
+        let bogus = [0x42; SIGNATURE_LEN];
+        let result = mgr.process_message("s1", MessageDirection::Send, 0, "h", &bogus, 2000, "t");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SessionError::AuthFailed { .. } => {}
+            other => panic!("expected AuthFailed, got: {other}"),
+        }
+    }
+
+    // ── Sign/verify round-trip ──────────────────────────────────────
+
+    #[test]
+    fn sign_verify_handshake_round_trip() {
+        let rs = test_root_secret();
+        let epoch = test_epoch();
+        let mac = sign_handshake("sess-rt", "alice", "bob", "ek1", "sk1", epoch, 9999, &rs);
+        let mut mgr = default_manager();
+        let result = mgr.establish_session(
+            "sess-rt".into(), "alice".into(), "bob".into(), "ek1".into(), "sk1".into(),
+            9999, "t".into(), mac,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn sign_verify_message_round_trip() {
+        let mut mgr = default_manager();
+        establish_test_session(&mut mgr, "s1");
+
+        let mac = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "payload-hash");
+        let result = mgr.process_message("s1", MessageDirection::Send, 0, "payload-hash", &mac, 2000, "t");
+        assert!(result.is_ok());
     }
 }
