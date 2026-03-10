@@ -267,6 +267,9 @@ impl PartnerLighthousePrograms {
             );
             return Err(format!("duplicate outcome: {}", outcome.outcome_id));
         }
+        if !outcome.metric_value.is_finite() {
+            return Err("metric_value must be finite".to_string());
+        }
         if !self
             .deployments
             .iter()
