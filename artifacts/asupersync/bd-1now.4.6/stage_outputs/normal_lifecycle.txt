@@ -1,0 +1,17 @@
+warning: unused import: `BTreeSet`
+  --> /data/projects/franken_engine/crates/franken-engine/src/budgeted_synthesis_engine.rs:20:34
+   |
+20 | use std::collections::{BTreeMap, BTreeSet};
+   |                                  ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `frankenengine-engine` (lib) generated 1 warning (run `cargo fix --lib -p frankenengine-engine` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running unittests src/lib.rs (target/debug/deps/frankenengine_node-7c64ac79f6cac33b)
+
+running 1 test
+test ops::telemetry_bridge::tests::end_to_end_single_event_ingestion ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5137 filtered out; finished in 0.20s
+

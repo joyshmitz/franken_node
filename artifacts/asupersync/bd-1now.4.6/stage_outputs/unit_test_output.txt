@@ -1,0 +1,101 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling unicode-ident v1.0.24
+   Compiling cfg-if v1warning: unused import: `BTreeSet`
+  --> /data/projects/franken_engine/crates/franken-engine/src/budgeted_synthesis_engine.rs:20:34
+   |
+20 | use std::collections::{BTreeMap, BTreeSet};
+   |                                  ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `frankenengine-engine` (lib) generated 1 warning (run `cargo fix --lib -p frankenengine-engine` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6m 54s
+     Running unittests src/lib.rs (target/debug/deps/frankenengine_node-7c64ac79f6cac33b)
+
+running 36 tests
+test ops::telemetry_bridge::tests::connection_cap_enforcement ... ok
+test ops::telemetry_bridge::tests::disconnected_queue_records_explicit_drop_reason ... ok
+test ops::telemetry_bridge::tests::bridge_id_is_unique_per_instance ... ok
+test ops::telemetry_bridge::tests::enqueue_timeout_records_shed_when_queue_stays_full ... ok
+test ops::telemetry_bridge::tests::lifecycle_state_roundtrip ... ok
+test ops::telemetry_bridge::tests::lifecycle_starts_cold ... ok
+test ops::telemetry_bridge::tests::lifecycle_terminal_states ... ok
+test ops::telemetry_bridge::tests::handle_stop_transitions_to_draining ... ok
+test ops::telemetry_bridge::tests::events_have_debug_representation ... ok
+test ops::telemetry_bridge::tests::engine_exit_code_mapped_to_shutdown_reason ... ok
+test ops::telemetry_bridge::tests::lifecycle_transitions_are_recorded_in_events ... ok
+test ops::telemetry_bridge::tests::handle_snapshot_reflects_idle_state ... ok
+test ops::telemetry_bridge::tests::no_orphan_workers_after_stop_and_join ... ok
+test ops::telemetry_bridge::tests::report_field_completeness ... ok
+test ops::telemetry_bridge::tests::push_bounded_caps_at_limit ... ok
+test ops::telemetry_bridge::tests::persistence_loop_updates_single_owner_counters ... ok
+test ops::telemetry_bridge::tests::snapshot_field_completeness ... ok
+test ops::telemetry_bridge::tests::snapshot_starts_with_empty_counters ... ok
+test ops::telemetry_bridge::tests::shutdown_reason_variants_are_distinct ... ok
+test ops::telemetry_bridge::tests::runtime_report_contains_bridge_id ... ok
+test ops::telemetry_bridge::tests::start_twice_fails ... ok
+test ops::telemetry_bridge::tests::socket_cleaned_up_after_engine_exit_failure ... ok
+test ops::telemetry_bridge::tests::socket_cleaned_up_after_normal_shutdown ... ok
+test ops::telemetry_bridge::tests::socket_cleaned_up_after_engine_signal_kill ... ok
+test ops::telemetry_bridge::tests::start_returns_handle_with_running_state ... ok
+test ops::telemetry_bridge::tests::structured_events_contain_required_fields ... ok
+test ops::telemetry_bridge::tests::stop_and_join_convenience_method ... ok
+test ops::telemetry_bridge::tests::stale_socket_cleanup_before_start ... ok
+test ops::telemetry_bridge::tests::drain_timeout_reports_failure ... ok
+test ops::telemetry_bridge::tests::connection_accepted_event_has_connection_id ... ok
+test ops::telemetry_bridge::tests::end_to_end_single_event_ingestion ... ok
+test ops::telemetry_bridge::tests::end_to_end_multiple_events_ingestion ... ok
+test ops::telemetry_bridge::tests::oversized_event_rejected_with_shed ... ok
+test ops::telemetry_bridge::tests::persistence_key_format_is_sequential ... ok
+test ops::telemetry_bridge::tests::multi_connection_concurrent_ingestion ... ok
+test ops::telemetry_bridge::tests::backpressure_burst_events_shed_cleanly ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 5102 filtered out; finished in 0.61s
+
+run `cargo fix --lib -p frankenengine-engine` to apply 1 suggestion)
+   Compiling frankenengine-node v0.1.0 (/data/projects/franken_node/crates/franken-node)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6m 53s
+     Running unittests src/lib.rs (target/debug/deps/frankenengine_node-7c64ac79f6cac33b)
+
+running 36 tests
+test ops::telemetry_bridge::tests::connection_cap_enforcement ... ok
+test ops::telemetry_bridge::tests::disconnected_queue_records_explicit_drop_reason ... ok
+test ops::telemetry_bridge::tests::bridge_id_is_unique_per_instance ... ok
+test ops::telemetry_bridge::tests::enqueue_timeout_records_shed_when_queue_stays_full ... ok
+test ops::telemetry_bridge::tests::lifecycle_starts_cold ... ok
+test ops::telemetry_bridge::tests::lifecycle_terminal_states ... ok
+test ops::telemetry_bridge::tests::lifecycle_state_roundtrip ... ok
+test ops::telemetry_bridge::tests::drain_timeout_reports_failure ... ok
+test ops::telemetry_bridge::tests::engine_exit_code_mapped_to_shutdown_reason ... ok
+test ops::telemetry_bridge::tests::events_have_debug_representation ... ok
+test ops::telemetry_bridge::tests::handle_snapshot_reflects_idle_state ... ok
+test ops::telemetry_bridge::tests::handle_stop_transitions_to_draining ... ok
+test ops::telemetry_bridge::tests::report_field_completeness ... ok
+test ops::telemetry_bridge::tests::push_bounded_caps_at_limit ... ok
+test ops::telemetry_bridge::tests::lifecycle_transitions_are_recorded_in_events ... ok
+test ops::telemetry_bridge::tests::persistence_loop_updates_single_owner_counters ... ok
+test ops::telemetry_bridge::tests::shutdown_reason_variants_are_distinct ... ok
+test ops::telemetry_bridge::tests::snapshot_starts_with_empty_counters ... ok
+test ops::telemetry_bridge::tests::snapshot_field_completeness ... ok
+test ops::telemetry_bridge::tests::runtime_report_contains_bridge_id ... ok
+test ops::telemetry_bridge::tests::socket_cleaned_up_after_engine_exit_failure ... ok
+test ops::telemetry_bridge::tests::start_twice_fails ... ok
+test ops::telemetry_bridge::tests::socket_cleaned_up_after_engine_signal_kill ... ok
+test ops::telemetry_bridge::tests::socket_cleaned_up_after_normal_shutdown ... ok
+test ops::telemetry_bridge::tests::stale_socket_cleanup_before_start ... ok
+test ops::telemetry_bridge::tests::start_returns_handle_with_running_state ... ok
+test ops::telemetry_bridge::tests::structured_events_contain_required_fields ... ok
+test ops::telemetry_bridge::tests::stop_and_join_convenience_method ... ok
+test ops::telemetry_bridge::tests::no_orphan_workers_after_stop_and_join ... ok
+test ops::telemetry_bridge::tests::connection_accepted_event_has_connection_id ... ok
+test ops::telemetry_bridge::tests::end_to_end_single_event_ingestion ... ok
+test ops::telemetry_bridge::tests::end_to_end_multiple_events_ingestion ... ok
+test ops::telemetry_bridge::tests::oversized_event_rejected_with_shed ... ok
+test ops::telemetry_bridge::tests::persistence_key_format_is_sequential ... ok
+test ops::telemetry_bridge::tests::multi_connection_concurrent_ingestion ... ok
+test ops::telemetry_bridge::tests::backpressure_burst_events_shed_cleanly ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 5102 filtered out; finished in 0.61s
+

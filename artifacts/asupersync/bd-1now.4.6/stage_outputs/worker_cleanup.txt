@@ -1,0 +1,35 @@
+    Blocking waiting for file lock on package cache
+warning: unused import: `BTreeSet`
+  --> /data/projects/franken_engine/crates/franken-engine/src/budgeted_synthesis_engine.rs:20:34
+   |
+20 | use std::collections::{BTreeMap, BTreeSet};
+   |                                  ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `frankenengine-engine` (lib) generated 1 warning (run `cargo fix --lib -p frankenengine-engine` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+     Running unittests src/lib.rs (target/debug/deps/frankenengine_node-7c64ac79f6cac33b)
+
+running 1 test
+test ops::telemetry_bridge::tests::socket_cleaned_up_after_normal_shutdown ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5137 filtered out; finished in 0.01s
+
+warning: unused import: `BTreeSet`
+  --> /data/projects/franken_engine/crates/franken-engine/src/budgeted_synthesis_engine.rs:20:34
+   |
+20 | use std::collections::{BTreeMap, BTreeSet};
+   |                                  ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `frankenengine-engine` (lib) generated 1 warning (run `cargo fix --lib -p frankenengine-engine` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running unittests src/lib.rs (target/debug/deps/frankenengine_node-7c64ac79f6cac33b)
+
+running 1 test
+test ops::telemetry_bridge::tests::no_orphan_workers_after_stop_and_join ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5137 filtered out; finished in 0.01s
+
