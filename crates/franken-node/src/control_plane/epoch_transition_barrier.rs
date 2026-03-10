@@ -66,6 +66,7 @@ pub mod error_codes {
     pub const ERR_BARRIER_ALREADY_COMPLETE: &str = "ERR_BARRIER_ALREADY_COMPLETE";
     pub const ERR_BARRIER_INVALID_PHASE: &str = "ERR_BARRIER_INVALID_PHASE";
     pub const ERR_BARRIER_UNKNOWN_PARTICIPANT: &str = "ERR_BARRIER_UNKNOWN_PARTICIPANT";
+    pub const ERR_BARRIER_ID_MISMATCH: &str = "ERR_BARRIER_ID_MISMATCH";
     pub const ERR_BARRIER_EPOCH_MISMATCH: &str = "ERR_BARRIER_EPOCH_MISMATCH";
 }
 
@@ -179,6 +180,11 @@ pub enum BarrierError {
     },
     /// Unknown participant ID.
     UnknownParticipant { participant_id: ParticipantId },
+    /// Drain ACK references the wrong barrier instance.
+    BarrierIdMismatch {
+        expected: BarrierId,
+        provided: BarrierId,
+    },
     /// Target epoch does not match expected next epoch.
     EpochMismatch { expected: u64, provided: u64 },
 }
@@ -193,6 +199,7 @@ impl BarrierError {
             Self::AlreadyComplete { .. } => error_codes::ERR_BARRIER_ALREADY_COMPLETE,
             Self::InvalidPhase { .. } => error_codes::ERR_BARRIER_INVALID_PHASE,
             Self::UnknownParticipant { .. } => error_codes::ERR_BARRIER_UNKNOWN_PARTICIPANT,
+            Self::BarrierIdMismatch { .. } => error_codes::ERR_BARRIER_ID_MISMATCH,
             Self::EpochMismatch { .. } => error_codes::ERR_BARRIER_EPOCH_MISMATCH,
         }
     }
@@ -262,6 +269,15 @@ impl fmt::Display for BarrierError {
             }
             Self::UnknownParticipant { participant_id } => {
                 write!(f, "{}: unknown participant {}", self.code(), participant_id)
+            }
+            Self::BarrierIdMismatch { expected, provided } => {
+                write!(
+                    f,
+                    "{}: expected barrier {} but got {}",
+                    self.code(),
+                    expected,
+                    provided
+                )
             }
             Self::EpochMismatch { expected, provided } => {
                 write!(
@@ -607,6 +623,13 @@ impl EpochTransitionBarrier {
                 barrier_id: barrier.barrier_id.clone(),
                 current: barrier.phase,
                 attempted: BarrierPhase::Draining,
+            });
+        }
+
+        if ack.barrier_id != barrier.barrier_id {
+            return Err(BarrierError::BarrierIdMismatch {
+                expected: barrier.barrier_id.clone(),
+                provided: ack.barrier_id.clone(),
             });
         }
 
@@ -1084,6 +1107,18 @@ mod tests {
         assert_eq!(err.code(), error_codes::ERR_BARRIER_UNKNOWN_PARTICIPANT);
     }
 
+    #[test]
+    fn ack_with_wrong_barrier_id_rejected() {
+        let mut b = make_barrier(2);
+        b.propose(5, 6, 1000, "t1").unwrap();
+
+        let err = b
+            .record_drain_ack(make_ack("svc-0", "barrier-999999", 50))
+            .unwrap_err();
+        assert_eq!(err.code(), error_codes::ERR_BARRIER_ID_MISMATCH);
+        assert_eq!(b.active_barrier().unwrap().ack_count(), 0);
+    }
+
     // ---- Operations on completed barrier ----
 
     #[test]
@@ -1379,6 +1414,10 @@ mod tests {
             },
             BarrierError::UnknownParticipant {
                 participant_id: "svc-z".into(),
+            },
+            BarrierError::BarrierIdMismatch {
+                expected: "b6".into(),
+                provided: "b7".into(),
             },
             BarrierError::EpochMismatch {
                 expected: 6,

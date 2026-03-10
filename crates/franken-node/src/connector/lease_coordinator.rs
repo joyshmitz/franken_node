@@ -4,7 +4,7 @@
 //! Quorum thresholds vary by safety tier. Failures are classified.
 
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A candidate node for coordinator selection.
 #[derive(Debug, Clone)]
@@ -171,20 +171,13 @@ pub fn verify_quorum(
     let threshold = config.threshold_for_tier(tier);
     let known_set: BTreeSet<&str> = known_signers.iter().map(|s| s.as_str()).collect();
     let mut failures = Vec::new();
-    let mut valid_count: u32 = 0;
-    let mut seen_signers = BTreeSet::new();
+    let mut signer_validity: BTreeMap<String, bool> = BTreeMap::new();
+    let mut unknown_signers = BTreeSet::new();
 
     for sig in signatures {
         // Check for unknown signer
         if !known_set.contains(sig.signer_id.as_str()) {
-            failures.push(VerificationFailure::UnknownSigner {
-                signer_id: sig.signer_id.clone(),
-            });
-            continue;
-        }
-
-        // Skip duplicate signers
-        if !seen_signers.insert(sig.signer_id.clone()) {
+            unknown_signers.insert(sig.signer_id.clone());
             continue;
         }
 
@@ -202,13 +195,36 @@ pub fn verify_quorum(
         );
 
         if crate::security::constant_time::ct_eq(&sig.signature, &expected_sig) {
-            valid_count = valid_count.saturating_add(1);
-        } else {
-            failures.push(VerificationFailure::InvalidSignature {
-                signer_id: sig.signer_id.clone(),
-            });
+            signer_validity.insert(sig.signer_id.clone(), true);
+            continue;
         }
+
+        signer_validity
+            .entry(sig.signer_id.clone())
+            .or_insert(false);
     }
+
+    failures.extend(
+        unknown_signers
+            .into_iter()
+            .map(|signer_id| VerificationFailure::UnknownSigner { signer_id }),
+    );
+
+    failures.extend(
+        signer_validity
+            .iter()
+            .filter(|(_, valid)| !**valid)
+            .map(|(signer_id, _)| VerificationFailure::InvalidSignature {
+                signer_id: signer_id.clone(),
+            }),
+    );
+
+    let valid_count = signer_validity
+        .values()
+        .filter(|valid| **valid)
+        .count()
+        .try_into()
+        .unwrap_or(u32::MAX);
 
     if valid_count < threshold {
         failures.push(VerificationFailure::BelowQuorum {
@@ -445,6 +461,26 @@ mod tests {
         let sigs = vec![valid_sig("s1", "h"), valid_sig("s1", "h")];
         let v = verify_quorum(&qconfig(), "l1", "Standard", &sigs, &known, "h", "tr", "ts");
         assert_eq!(v.received, 1); // deduped
+    }
+
+    #[test]
+    fn duplicate_signer_valid_later_still_counts() {
+        let known = vec!["s1".to_string()];
+        let sigs = vec![
+            QuorumSignature {
+                signer_id: "s1".into(),
+                signature: "wrong".into(),
+            },
+            valid_sig("s1", "h"),
+        ];
+        let v = verify_quorum(&qconfig(), "l1", "Standard", &sigs, &known, "h", "tr", "ts");
+        assert!(v.passed);
+        assert_eq!(v.received, 1);
+        assert!(
+            !v.failures
+                .iter()
+                .any(|f| matches!(f, VerificationFailure::InvalidSignature { .. }))
+        );
     }
 
     #[test]

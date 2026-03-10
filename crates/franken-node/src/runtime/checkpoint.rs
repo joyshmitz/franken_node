@@ -349,7 +349,7 @@ impl<B: CheckpointBackend> CheckpointWriter<B> {
                 epoch: meta.epoch,
                 trace_id: trace_id.to_string(),
                 contract_status: "valid".to_string(),
-                wall_clock_time: now_unix_secs(),
+                wall_clock_time: now_unix_ms(),
             });
         } else {
             events.push(CheckpointEvent {
@@ -363,7 +363,7 @@ impl<B: CheckpointBackend> CheckpointWriter<B> {
                 epoch: 0,
                 trace_id: trace_id.to_string(),
                 contract_status: "missing".to_string(),
-                wall_clock_time: now_unix_secs(),
+                wall_clock_time: now_unix_ms(),
             });
         }
 
@@ -407,7 +407,7 @@ impl<B: CheckpointBackend> CheckpointContract for CheckpointWriter<B> {
                     epoch,
                     trace_id: trace_id.to_string(),
                     contract_status: "idempotent".to_string(),
-                    wall_clock_time: now_unix_secs(),
+                    wall_clock_time: now_unix_ms(),
                 },
                 MAX_EVENTS,
             );
@@ -425,7 +425,7 @@ impl<B: CheckpointBackend> CheckpointContract for CheckpointWriter<B> {
                     epoch,
                     trace_id: trace_id.to_string(),
                     contract_status: "appended".to_string(),
-                    wall_clock_time: now_unix_secs(),
+                    wall_clock_time: now_unix_ms(),
                 },
                 MAX_EVENTS,
             );
@@ -447,7 +447,7 @@ impl<B: CheckpointBackend> CheckpointContract for CheckpointWriter<B> {
             orchestration_id: orchestration_id.to_string(),
             iteration_count,
             epoch,
-            wall_clock_time: now_unix_secs(),
+            wall_clock_time: now_unix_ms(),
             progress_state_json,
             progress_state_hash: progress_state_hash.clone(),
             previous_checkpoint_hash: previous_checkpoint_hash.clone(),
@@ -482,7 +482,7 @@ impl<B: CheckpointBackend> CheckpointContract for CheckpointWriter<B> {
                 epoch,
                 trace_id: trace_id.to_string(),
                 contract_status: contract_status.to_string(),
-                wall_clock_time: now_unix_secs(),
+                wall_clock_time: now_unix_ms(),
             },
             MAX_EVENTS,
         );
@@ -500,7 +500,7 @@ impl<B: CheckpointBackend> CheckpointContract for CheckpointWriter<B> {
                 epoch,
                 trace_id: trace_id.to_string(),
                 contract_status: "appended".to_string(),
-                wall_clock_time: now_unix_secs(),
+                wall_clock_time: now_unix_ms(),
             },
             MAX_EVENTS,
         );
@@ -600,7 +600,7 @@ fn verify_chain(
             epoch: record.epoch,
             trace_id: trace_id.to_string(),
             contract_status: format!("invalid:{reason}"),
-            wall_clock_time: now_unix_secs(),
+            wall_clock_time: now_unix_ms(),
         });
     }
 
@@ -637,10 +637,12 @@ fn hash_hex(bytes: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-fn now_unix_secs() -> u64 {
+fn now_unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_secs())
+        .map_or(0, |duration| {
+            u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+        })
 }
 
 #[cfg(test)]
@@ -670,7 +672,25 @@ mod tests {
         assert_eq!(restored.meta.checkpoint_id, checkpoint_id);
         assert_eq!(restored.meta.iteration_count, 100);
         assert_eq!(restored.meta.epoch, 7);
+        assert!(restored.meta.wall_clock_time >= 1_000_000_000_000);
         assert_eq!(restored.state.get("phase"), Some(&"scan".to_string()));
+
+        let save_event = writer
+            .decision_stream()
+            .iter()
+            .find(|event| event.event_code == FN_CK_001_CHECKPOINT_SAVE)
+            .expect("save event");
+        assert!(save_event.wall_clock_time >= 1_000_000_000_000);
+
+        let read = writer
+            .read_latest_valid("trace-ck-1", "orch-1")
+            .expect("read latest valid");
+        let restore_event = read
+            .events
+            .iter()
+            .find(|event| event.event_name == CHECKPOINT_RESTORE)
+            .expect("restore event");
+        assert!(restore_event.wall_clock_time >= 1_000_000_000_000);
     }
 
     #[test]

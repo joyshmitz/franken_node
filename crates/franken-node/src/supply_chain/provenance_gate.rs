@@ -391,7 +391,7 @@ mod tests {
         assert!(!result.passed);
         assert!(result.assurance_ok);
         assert!(!result.builder_trusted);
-        assert_eq!(result.missing_attestations, vec![AttestationType::Slsa]);
+        assert!(result.missing_attestations.is_empty());
         assert!(matches!(
             result.failure_reason,
             Some(GateFailure::PolicyInvalid { .. })

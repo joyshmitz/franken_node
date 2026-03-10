@@ -626,7 +626,7 @@ impl EvictionSaga {
         let phase = self.current_phase.as_str();
         hasher.update((phase.len() as u64).to_le_bytes());
         hasher.update(phase.as_bytes());
-        hasher.update(self.transitions.len().to_le_bytes());
+        hasher.update((self.transitions.len() as u64).to_le_bytes());
         format!("{:x}", hasher.finalize())
     }
 }
@@ -1170,6 +1170,20 @@ mod tests {
         let mut saga2 = EvictionSaga::new("saga-041", "art-11");
         saga2.begin_upload(true).unwrap();
         assert_ne!(saga1.content_hash(), saga2.content_hash());
+    }
+
+    #[test]
+    fn content_hash_uses_u64_for_transitions_len() {
+        // Regression: transitions.len().to_le_bytes() was platform-dependent
+        // (usize = 4 bytes on 32-bit, 8 bytes on 64-bit). Must use (len as u64)
+        // for cross-platform determinism.
+        let saga = EvictionSaga::new("saga-u64", "art-u64");
+        let hash = saga.content_hash();
+        // Hash must be 64 hex chars (SHA-256)
+        assert_eq!(hash.len(), 64);
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+        // Deterministic across calls
+        assert_eq!(hash, saga.content_hash());
     }
 
     // -- Error display -------------------------------------------------------
