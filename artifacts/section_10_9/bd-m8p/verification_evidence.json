@@ -2,12 +2,12 @@
   "bead_id": "bd-m8p",
   "title": "Verifier economy portal and external attestation publishing flow",
   "section": "10.9",
-  "timestamp": "2026-03-10T05:20:20.668107+00:00",
-  "verdict": "FAIL",
-  "overall_pass": false,
+  "timestamp": "2026-03-10T05:22:21.900233+00:00",
+  "verdict": "PASS",
+  "overall_pass": true,
   "total": 152,
-  "passed": 151,
-  "failed": 1,
+  "passed": 152,
+  "failed": 0,
   "checks": [
     {
       "check": "file_exists: spec contract",
@@ -756,8 +756,8 @@
     },
     {
       "check": "replacement_critical:capsule_integrity_path: required_markers",
-      "pass": false,
-      "detail": "missing: ['compute_capsule_integrity_hash(', 'ct_eq(&capsule.integrity_hash, &expected_integrity)']"
+      "pass": true,
+      "detail": "all required markers present"
     },
     {
       "check": "replacement_critical:capsule_integrity_path: no_shortcuts",

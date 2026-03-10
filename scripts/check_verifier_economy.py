@@ -263,6 +263,20 @@ def _source_window(source: str, anchor: str, span: int) -> str:
     start = source.find(anchor)
     if start == -1:
         return ""
+    body_start = source.find("{", start)
+    if body_start == -1:
+        return source[start : start + span]
+
+    depth = 0
+    for index in range(body_start, len(source)):
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start : index + 1]
+
     return source[start : start + span]
 
 

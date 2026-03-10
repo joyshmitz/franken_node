@@ -18,9 +18,11 @@ use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ed25519_dalek::VerifyingKey;
+use sha2::{Digest, Sha256};
 
 use crate::connector::verifier_sdk::{
-    compute_capsule_integrity_hash, parse_ed25519_verifying_key_hex, verify_ed25519_signature_hex,
+    compute_capsule_integrity_hash, compute_trace_commitment_root,
+    parse_ed25519_verifying_key_hex, verify_ed25519_signature_hex,
     verify_ed25519_signature_with_key_hex,
 };
 use crate::security::constant_time::ct_eq;
@@ -40,6 +42,9 @@ const MAX_DISPUTES: usize = 2048;
 /// Maximum replay capsules before oldest are evicted.
 const MAX_REPLAY_CAPSULES: usize = 2048;
 
+const REPLAY_CAPSULE_SCHEMA_VERSION: &str = "vep-replay-capsule-v2";
+const MAX_REPLAY_CAPSULE_FRESHNESS_SECS: i64 = 3600;
+
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     items.push(item);
     if items.len() > cap {
@@ -56,6 +61,34 @@ fn push_length_prefixed(bytes: &mut Vec<u8>, value: &str) {
 fn is_sha256_prefixed_hex(value: &str) -> bool {
     let normalized = value.strip_prefix("sha256:").unwrap_or(value);
     normalized.len() == 64 && normalized.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn compute_claim_metadata_hash(
+    dimension: &VerificationDimension,
+    statement: &str,
+    score: f64,
+    suite_id: &str,
+) -> String {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(b"verifier_economy_replay_claim_v1:");
+    push_length_prefixed(&mut payload, &dimension.to_string());
+    push_length_prefixed(&mut payload, statement);
+    payload.extend_from_slice(&score.to_bits().to_le_bytes());
+    push_length_prefixed(&mut payload, suite_id);
+    format!("sha256:{}", hex::encode(Sha256::digest(payload)))
+}
+
+fn replay_capsule_freshness_window_valid(issued_at: &str, expires_at: &str) -> bool {
+    let issued_at = match chrono::DateTime::parse_from_rfc3339(issued_at) {
+        Ok(ts) => ts,
+        Err(_) => return false,
+    };
+    let expires_at = match chrono::DateTime::parse_from_rfc3339(expires_at) {
+        Ok(ts) => ts,
+        Err(_) => return false,
+    };
+    let window = expires_at.signed_duration_since(issued_at).num_seconds();
+    (0..=MAX_REPLAY_CAPSULE_FRESHNESS_SECS).contains(&window)
 }
 
 pub(crate) fn attestation_signature_payload(submission: &AttestationSubmission) -> Vec<u8> {
@@ -328,9 +361,15 @@ pub struct Dispute {
 #[derive(Debug, Clone)]
 pub struct ReplayCapsule {
     pub capsule_id: String,
+    pub schema_version: String,
     pub attestation_id: String,
+    pub verifier_id: String,
+    pub claim_metadata_hash: String,
+    pub issued_at: String,
+    pub expires_at: String,
     pub input_state_hash: String,
-    pub execution_trace_hash: String,
+    pub trace_chunk_hashes: Vec<String>,
+    pub trace_commitment_root: String,
     pub output_state_hash: String,
     pub expected_result_hash: String,
     pub integrity_hash: String,
@@ -961,13 +1000,29 @@ impl VerifierEconomyRegistry {
 
     /// Verify replay capsule integrity by checking hash consistency.
     pub fn verify_capsule_integrity(capsule: &ReplayCapsule) -> bool {
-        if capsule.capsule_id.is_empty() || capsule.attestation_id.is_empty() {
+        if capsule.capsule_id.is_empty()
+            || capsule.schema_version.is_empty()
+            || capsule.attestation_id.is_empty()
+            || capsule.verifier_id.is_empty()
+            || capsule.issued_at.is_empty()
+            || capsule.expires_at.is_empty()
+        {
+            return false;
+        }
+        if capsule.schema_version != REPLAY_CAPSULE_SCHEMA_VERSION {
+            return false;
+        }
+        if !replay_capsule_freshness_window_valid(&capsule.issued_at, &capsule.expires_at) {
+            return false;
+        }
+        if capsule.trace_chunk_hashes.is_empty() {
             return false;
         }
 
         let component_hashes = [
+            &capsule.claim_metadata_hash,
             &capsule.input_state_hash,
-            &capsule.execution_trace_hash,
+            &capsule.trace_commitment_root,
             &capsule.output_state_hash,
             &capsule.expected_result_hash,
             &capsule.integrity_hash,
@@ -978,12 +1033,31 @@ impl VerifierEconomyRegistry {
         {
             return false;
         }
+        if capsule
+            .trace_chunk_hashes
+            .iter()
+            .any(|hash| !is_sha256_prefixed_hex(hash))
+        {
+            return false;
+        }
+        let Some(expected_trace_root) = compute_trace_commitment_root(&capsule.trace_chunk_hashes)
+        else {
+            return false;
+        };
+        if !ct_eq(&capsule.trace_commitment_root, &expected_trace_root) {
+            return false;
+        }
 
         let expected_integrity = compute_capsule_integrity_hash(
             &capsule.capsule_id,
+            &capsule.schema_version,
             &capsule.attestation_id,
+            &capsule.verifier_id,
+            &capsule.claim_metadata_hash,
+            &capsule.issued_at,
+            &capsule.expires_at,
             &capsule.input_state_hash,
-            &capsule.execution_trace_hash,
+            &capsule.trace_commitment_root,
             &capsule.output_state_hash,
             &capsule.expected_result_hash,
         );
@@ -1166,22 +1240,47 @@ mod tests {
 
     fn make_capsule(capsule_id: &str, attestation_id: &str, label: &str) -> ReplayCapsule {
         let input_state_hash = sample_sha256(&format!("{label}:input"));
-        let execution_trace_hash = sample_sha256(&format!("{label}:trace"));
+        let trace_chunk_hashes = vec![
+            sample_sha256(&format!("{label}:trace:chunk-0")),
+            sample_sha256(&format!("{label}:trace:chunk-1")),
+            sample_sha256(&format!("{label}:trace:chunk-2")),
+        ];
+        let trace_commitment_root = compute_trace_commitment_root(&trace_chunk_hashes)
+            .expect("trace chunks should produce a commitment root");
         let output_state_hash = sample_sha256(&format!("{label}:output"));
         let expected_result_hash = sample_sha256(&format!("{label}:expected"));
+        let claim_metadata_hash = compute_claim_metadata_hash(
+            &VerificationDimension::Compatibility,
+            &format!("{label} compatibility claim"),
+            0.95,
+            &format!("{label}:suite"),
+        );
+        let issued_at = "2026-03-10T00:00:00Z".to_string();
+        let expires_at = "2026-03-10T01:00:00Z".to_string();
         let integrity_hash = compute_capsule_integrity_hash(
             capsule_id,
+            REPLAY_CAPSULE_SCHEMA_VERSION,
             attestation_id,
+            &format!("verifier-{label}"),
+            &claim_metadata_hash,
+            &issued_at,
+            &expires_at,
             &input_state_hash,
-            &execution_trace_hash,
+            &trace_commitment_root,
             &output_state_hash,
             &expected_result_hash,
         );
         ReplayCapsule {
             capsule_id: capsule_id.to_string(),
+            schema_version: REPLAY_CAPSULE_SCHEMA_VERSION.to_string(),
             attestation_id: attestation_id.to_string(),
+            verifier_id: format!("verifier-{label}"),
+            claim_metadata_hash,
+            issued_at,
+            expires_at,
             input_state_hash,
-            execution_trace_hash,
+            trace_chunk_hashes,
+            trace_commitment_root,
             output_state_hash,
             expected_result_hash,
             integrity_hash,
@@ -1631,6 +1730,47 @@ mod tests {
         capsule.integrity_hash = sample_sha256("tampered-integrity");
         let error = reg.register_replay_capsule(capsule).unwrap_err();
         assert_eq!(error.code, ERR_VEP_INVALID_CAPSULE);
+    }
+
+    #[test]
+    fn test_capsule_integrity_rejects_tampered_verifier_id() {
+        let mut capsule = make_capsule("cap-006", "att-006", "capsule-006");
+        capsule.verifier_id = "verifier-tampered".to_string();
+        assert!(!VerifierEconomyRegistry::verify_capsule_integrity(&capsule));
+    }
+
+    #[test]
+    fn test_capsule_integrity_rejects_invalid_freshness_window() {
+        let mut capsule = make_capsule("cap-007", "att-007", "capsule-007");
+        capsule.expires_at = "2026-03-10T03:30:00Z".to_string();
+        assert!(!VerifierEconomyRegistry::verify_capsule_integrity(&capsule));
+    }
+
+    #[test]
+    fn test_capsule_integrity_rejects_tampered_trace_chunk_hash() {
+        let mut capsule = make_capsule("cap-008", "att-008", "capsule-008");
+        capsule.trace_chunk_hashes[1] = sample_sha256("tampered-trace-chunk");
+        assert!(!VerifierEconomyRegistry::verify_capsule_integrity(&capsule));
+    }
+
+    #[test]
+    fn test_capsule_trace_commitment_proof_roundtrip() {
+        let capsule = make_capsule("cap-009", "att-009", "capsule-009");
+        let proof = crate::connector::verifier_sdk::build_trace_commitment_proof(
+            &capsule.trace_chunk_hashes,
+            1,
+        )
+        .expect("proof exists");
+        assert!(crate::connector::verifier_sdk::verify_trace_commitment_proof(
+            &capsule.trace_chunk_hashes[1],
+            &proof,
+            &capsule.trace_commitment_root
+        ));
+        assert!(!crate::connector::verifier_sdk::verify_trace_commitment_proof(
+            &capsule.trace_chunk_hashes[0],
+            &proof,
+            &capsule.trace_commitment_root
+        ));
     }
 
     // -- Scoreboard tests -----------------------------------------------------

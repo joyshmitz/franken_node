@@ -345,21 +345,153 @@ fn is_sha256_hex(value: &str) -> bool {
     normalized.len() == 64 && normalized.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
+fn normalize_sha256_prefixed(value: &str) -> Option<String> {
+    if !is_sha256_hex(value) {
+        return None;
+    }
+    Some(match value.strip_prefix("sha256:") {
+        Some(normalized) => format!("sha256:{normalized}"),
+        None => format!("sha256:{value}"),
+    })
+}
+
+fn hash_trace_commitment_pair(left: &str, right: &str) -> String {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(b"connector_trace_commitment_v1:");
+    append_length_prefixed(&mut payload, left);
+    append_length_prefixed(&mut payload, right);
+    format!("sha256:{}", hex::encode(Sha256::digest(payload)))
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TraceCommitmentProofStep {
+    pub sibling_hash: String,
+    pub sibling_on_left: bool,
+}
+
+pub(crate) fn compute_trace_commitment_root(trace_chunk_hashes: &[String]) -> Option<String> {
+    if trace_chunk_hashes.is_empty() {
+        return None;
+    }
+
+    let mut level = trace_chunk_hashes
+        .iter()
+        .map(|hash| normalize_sha256_prefixed(hash))
+        .collect::<Option<Vec<_>>>()?;
+
+    while level.len() > 1 {
+        let mut next_level = Vec::with_capacity(level.len().div_ceil(2));
+        let mut index = 0;
+        while index < level.len() {
+            let left = &level[index];
+            let right = level.get(index + 1).unwrap_or(left);
+            next_level.push(hash_trace_commitment_pair(left, right));
+            index += 2;
+        }
+        level = next_level;
+    }
+
+    level.into_iter().next()
+}
+
+#[cfg(test)]
+pub(crate) fn build_trace_commitment_proof(
+    trace_chunk_hashes: &[String],
+    leaf_index: usize,
+) -> Option<Vec<TraceCommitmentProofStep>> {
+    if trace_chunk_hashes.is_empty() || leaf_index >= trace_chunk_hashes.len() {
+        return None;
+    }
+
+    let mut level = trace_chunk_hashes
+        .iter()
+        .map(|hash| normalize_sha256_prefixed(hash))
+        .collect::<Option<Vec<_>>>()?;
+    let mut proof = Vec::new();
+    let mut index = leaf_index;
+
+    while level.len() > 1 {
+        let sibling_index = if index % 2 == 0 {
+            (index + 1).min(level.len() - 1)
+        } else {
+            index - 1
+        };
+        proof.push(TraceCommitmentProofStep {
+            sibling_hash: level[sibling_index].clone(),
+            sibling_on_left: sibling_index < index,
+        });
+
+        let mut next_level = Vec::with_capacity(level.len().div_ceil(2));
+        let mut pair_index = 0;
+        while pair_index < level.len() {
+            let left = &level[pair_index];
+            let right = level.get(pair_index + 1).unwrap_or(left);
+            next_level.push(hash_trace_commitment_pair(left, right));
+            pair_index += 2;
+        }
+        index /= 2;
+        level = next_level;
+    }
+
+    Some(proof)
+}
+
+#[cfg(test)]
+pub(crate) fn verify_trace_commitment_proof(
+    trace_chunk_hash: &str,
+    proof: &[TraceCommitmentProofStep],
+    expected_root: &str,
+) -> bool {
+    let mut current = match normalize_sha256_prefixed(trace_chunk_hash) {
+        Some(hash) => hash,
+        None => return false,
+    };
+    let expected_root = match normalize_sha256_prefixed(expected_root) {
+        Some(hash) => hash,
+        None => return false,
+    };
+
+    for step in proof {
+        let sibling_hash = match normalize_sha256_prefixed(&step.sibling_hash) {
+            Some(hash) => hash,
+            None => return false,
+        };
+        current = if step.sibling_on_left {
+            hash_trace_commitment_pair(&sibling_hash, &current)
+        } else {
+            hash_trace_commitment_pair(&current, &sibling_hash)
+        };
+    }
+
+    crate::security::constant_time::ct_eq(&current, &expected_root)
+}
+
 pub(crate) fn compute_capsule_integrity_hash(
     capsule_id: &str,
+    schema_version: &str,
     attestation_id: &str,
+    verifier_id: &str,
+    claim_metadata_hash: &str,
+    issued_at: &str,
+    expires_at: &str,
     input_state_hash: &str,
-    execution_trace_hash: &str,
+    trace_commitment_root: &str,
     output_state_hash: &str,
     expected_result_hash: &str,
 ) -> String {
     let mut payload = Vec::new();
-    payload.extend_from_slice(b"connector_signed_capsule_integrity_v1:");
+    payload.extend_from_slice(b"connector_signed_capsule_integrity_v2:");
     for field in [
         capsule_id,
+        schema_version,
         attestation_id,
+        verifier_id,
+        claim_metadata_hash,
+        issued_at,
+        expires_at,
         input_state_hash,
-        execution_trace_hash,
+        trace_commitment_root,
         output_state_hash,
         expected_result_hash,
     ] {
@@ -1827,6 +1959,82 @@ mod tests {
             .expect_err("invalid signature must be rejected");
         assert!(matches!(err, VerifierSdkError::SignatureInvalid(_)));
         assert!(log.is_empty());
+    }
+
+    #[test]
+    fn test_compute_trace_commitment_root_rejects_empty_input() {
+        assert!(compute_trace_commitment_root(&[]).is_none());
+    }
+
+    #[test]
+    fn test_trace_commitment_proof_roundtrip() {
+        let trace_chunk_hashes = vec![
+            "sha256:".to_string() + &"11".repeat(32),
+            "sha256:".to_string() + &"22".repeat(32),
+            "sha256:".to_string() + &"33".repeat(32),
+        ];
+        let root = compute_trace_commitment_root(&trace_chunk_hashes).unwrap();
+        let proof = build_trace_commitment_proof(&trace_chunk_hashes, 1).unwrap();
+        assert!(verify_trace_commitment_proof(
+            &trace_chunk_hashes[1],
+            &proof,
+            &root
+        ));
+        assert!(!verify_trace_commitment_proof(
+            &trace_chunk_hashes[0],
+            &proof,
+            &root
+        ));
+    }
+
+    #[test]
+    fn test_compute_capsule_integrity_hash_binds_metadata_fields() {
+        let trace_chunk_hashes = vec![
+            "sha256:".to_string() + &"44".repeat(32),
+            "sha256:".to_string() + &"55".repeat(32),
+        ];
+        let trace_commitment_root = compute_trace_commitment_root(&trace_chunk_hashes).unwrap();
+        let baseline = compute_capsule_integrity_hash(
+            "cap-1",
+            "vep-replay-capsule-v2",
+            "att-1",
+            "ver-1",
+            &("sha256:".to_string() + &"66".repeat(32)),
+            "2026-03-10T00:00:00Z",
+            "2026-03-10T01:00:00Z",
+            &("sha256:".to_string() + &"77".repeat(32)),
+            &trace_commitment_root,
+            &("sha256:".to_string() + &"88".repeat(32)),
+            &("sha256:".to_string() + &"99".repeat(32)),
+        );
+        let changed_verifier = compute_capsule_integrity_hash(
+            "cap-1",
+            "vep-replay-capsule-v2",
+            "att-1",
+            "ver-2",
+            &("sha256:".to_string() + &"66".repeat(32)),
+            "2026-03-10T00:00:00Z",
+            "2026-03-10T01:00:00Z",
+            &("sha256:".to_string() + &"77".repeat(32)),
+            &trace_commitment_root,
+            &("sha256:".to_string() + &"88".repeat(32)),
+            &("sha256:".to_string() + &"99".repeat(32)),
+        );
+        let changed_trace_root = compute_capsule_integrity_hash(
+            "cap-1",
+            "vep-replay-capsule-v2",
+            "att-1",
+            "ver-1",
+            &("sha256:".to_string() + &"66".repeat(32)),
+            "2026-03-10T00:00:00Z",
+            "2026-03-10T01:00:00Z",
+            &("sha256:".to_string() + &"77".repeat(32)),
+            &("sha256:".to_string() + &"aa".repeat(32)),
+            &("sha256:".to_string() + &"88".repeat(32)),
+            &("sha256:".to_string() + &"99".repeat(32)),
+        );
+        assert_ne!(baseline, changed_verifier);
+        assert_ne!(baseline, changed_trace_root);
     }
 
     fn test_signing_key(seed: u8) -> SigningKey {
