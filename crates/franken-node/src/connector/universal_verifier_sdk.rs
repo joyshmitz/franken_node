@@ -315,6 +315,26 @@ fn deterministic_hash(data: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
+/// Compute the deterministic replay hash for a capsule's payload and inputs.
+///
+/// Uses length-prefixed encoding to prevent payload-input delimiter collision:
+/// without length-prefixing, a payload containing "|N:key=M:value" would hash
+/// identically to a shorter payload with that key-value pair in inputs.
+fn compute_replay_hash(payload: &str, inputs: &BTreeMap<String, String>) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"universal_verifier_sdk_replay_v1:");
+    hasher.update((payload.len() as u64).to_le_bytes());
+    hasher.update(payload.as_bytes());
+    hasher.update((inputs.len() as u64).to_le_bytes());
+    for (k, v) in inputs {
+        hasher.update((k.len() as u64).to_le_bytes());
+        hasher.update(k.as_bytes());
+        hasher.update((v.len() as u64).to_le_bytes());
+        hasher.update(v.as_bytes());
+    }
+    hex::encode(hasher.finalize())
+}
+
 fn now_timestamp() -> String {
     "2026-02-21T00:00:00Z".to_string()
 }
@@ -442,12 +462,7 @@ pub fn replay_capsule(
     }
 
     // Step 4: Compute actual output hash (deterministic)
-    // Length-prefixed encoding prevents delimiter-collision ambiguity.
-    let mut replay_input = capsule.payload.clone();
-    for (k, v) in &capsule.inputs {
-        replay_input.push_str(&format!("|{}:{}={}:{}", k.len(), k, v.len(), v));
-    }
-    let actual_hash = deterministic_hash(&replay_input);
+    let actual_hash = compute_replay_hash(&capsule.payload, &capsule.inputs);
 
     // Step 5: Compare
     let verdict = if crate::security::constant_time::ct_eq(
@@ -584,12 +599,7 @@ pub fn build_reference_capsule() -> ReplayCapsule {
     let payload = "reference_payload_data".to_string();
 
     // Compute expected output hash exactly as replay_capsule does
-    // Length-prefixed encoding prevents delimiter-collision ambiguity.
-    let mut replay_input = payload.clone();
-    for (k, v) in &inputs {
-        replay_input.push_str(&format!("|{}:{}={}:{}", k.len(), k, v.len(), v));
-    }
-    let expected_hash = deterministic_hash(&replay_input);
+    let expected_hash = compute_replay_hash(&payload, &inputs);
 
     let manifest = CapsuleManifest {
         schema_version: VSDK_SCHEMA_VERSION.to_string(),
@@ -1158,6 +1168,39 @@ mod tests {
         let mut sorted = keys.clone();
         sorted.sort();
         assert_eq!(keys, sorted, "BTreeMap should iterate in sorted order");
+    }
+
+    // ── replay hash collision resistance ────────────────────────────
+
+    #[test]
+    fn test_replay_hash_payload_input_collision_resistance() {
+        // A payload containing "|10:artifact_a=12:content_of_a" must NOT
+        // hash identically to a shorter payload with that key-value pair
+        // in the inputs map. This was a real collision vector before
+        // length-prefixed encoding was applied.
+        let mut inputs = BTreeMap::new();
+        inputs.insert("artifact_a".to_string(), "content_of_a".to_string());
+
+        let hash_with_inputs = compute_replay_hash("hello", &inputs);
+        let hash_payload_only = compute_replay_hash(
+            "hello|10:artifact_a=12:content_of_a",
+            &BTreeMap::new(),
+        );
+
+        assert_ne!(
+            hash_with_inputs, hash_payload_only,
+            "payload-input delimiter collision must not produce identical hashes"
+        );
+    }
+
+    #[test]
+    fn test_replay_hash_deterministic() {
+        let mut inputs = BTreeMap::new();
+        inputs.insert("k".to_string(), "v".to_string());
+        let h1 = compute_replay_hash("payload", &inputs);
+        let h2 = compute_replay_hash("payload", &inputs);
+        assert_eq!(h1, h2);
+        assert_eq!(h1.len(), 64);
     }
 
     // ── deterministic hash helper ──────────────────────────────────
