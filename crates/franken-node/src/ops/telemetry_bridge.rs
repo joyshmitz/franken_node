@@ -1777,4 +1777,341 @@ mod tests {
             .expect("stop_and_join");
         assert!(report.drain_completed);
     }
+
+    // ---- bd-1now.4.7: Performance characterization tests ----
+
+    #[test]
+    fn perf_steady_state_throughput() {
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let sock = tmp.path().join("perf_steady.sock");
+        let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+        let bridge = TelemetryBridge::new(sock.to_str().expect("utf8"), adapter);
+        let handle = bridge.start().expect("start");
+
+        let event_count: u64 = 500;
+        let start = Instant::now();
+        let mut stream = UnixStream::connect(&sock).expect("connect");
+        for i in 0..event_count {
+            writeln!(stream, r#"{{"perf":"steady","i":{i}}}"#).expect("write");
+        }
+        drop(stream);
+        let send_elapsed = start.elapsed();
+
+        thread::sleep(Duration::from_millis(500));
+
+        let report = handle
+            .stop_and_join(ShutdownReason::Requested)
+            .expect("stop_and_join");
+        let total_elapsed = start.elapsed();
+
+        assert!(report.drain_completed);
+        assert_eq!(report.accepted_total, event_count);
+        assert_eq!(report.persisted_total, event_count);
+
+        // Performance characterization output (captured by --nocapture)
+        let send_rate = event_count as f64 / send_elapsed.as_secs_f64();
+        let total_rate = event_count as f64 / total_elapsed.as_secs_f64();
+        eprintln!("[perf_steady_state_throughput]");
+        eprintln!("  events_sent: {event_count}");
+        eprintln!("  send_elapsed_ms: {}", send_elapsed.as_millis());
+        eprintln!("  total_elapsed_ms: {}", total_elapsed.as_millis());
+        eprintln!("  send_rate_events_per_sec: {send_rate:.0}");
+        eprintln!("  total_rate_events_per_sec: {total_rate:.0}");
+        eprintln!("  drain_duration_ms: {}", report.drain_duration_ms);
+        eprintln!("  shed_total: {}", report.shed_total);
+        eprintln!("  retry_total: {}", report.retry_total);
+
+        // Sanity: should process at least 100 events/sec
+        assert!(
+            total_rate > 100.0,
+            "steady-state throughput ({total_rate:.0} ev/s) below 100 ev/s minimum"
+        );
+    }
+
+    #[test]
+    fn perf_burst_beyond_queue_capacity() {
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let sock = tmp.path().join("perf_burst.sock");
+        let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+        let bridge = TelemetryBridge::new(sock.to_str().expect("utf8"), adapter);
+        let handle = bridge.start().expect("start");
+
+        let burst_size: u64 = (PERSIST_QUEUE_CAPACITY * 4) as u64;
+        let start = Instant::now();
+        let mut stream = UnixStream::connect(&sock).expect("connect");
+        for i in 0..burst_size {
+            writeln!(
+                stream,
+                r#"{{"perf":"burst","i":{i},"pad":"{}"}}"#,
+                "B".repeat(500)
+            )
+            .expect("write");
+        }
+        drop(stream);
+        let send_elapsed = start.elapsed();
+
+        thread::sleep(Duration::from_millis(500));
+
+        let report = handle
+            .stop_and_join(ShutdownReason::Requested)
+            .expect("stop_and_join");
+        let total_elapsed = start.elapsed();
+
+        assert!(report.drain_completed);
+
+        let accepted = report.accepted_total;
+        let shed = report.shed_total;
+        let dropped = report.dropped_total;
+        let total_accounted = accepted.saturating_add(shed).saturating_add(dropped);
+
+        eprintln!("[perf_burst_beyond_queue_capacity]");
+        eprintln!("  burst_size: {burst_size}");
+        eprintln!("  queue_capacity: {PERSIST_QUEUE_CAPACITY}");
+        eprintln!("  send_elapsed_ms: {}", send_elapsed.as_millis());
+        eprintln!("  total_elapsed_ms: {}", total_elapsed.as_millis());
+        eprintln!("  accepted: {accepted}");
+        eprintln!("  persisted: {}", report.persisted_total);
+        eprintln!("  shed: {shed}");
+        eprintln!("  dropped: {dropped}");
+        eprintln!("  retry_total: {}", report.retry_total);
+        eprintln!("  drain_duration_ms: {}", report.drain_duration_ms);
+        eprintln!(
+            "  acceptance_rate_pct: {:.1}",
+            accepted as f64 / burst_size as f64 * 100.0
+        );
+
+        assert_eq!(
+            total_accounted, burst_size,
+            "accepted + shed + dropped must equal burst_size"
+        );
+        assert_eq!(
+            report.persisted_total, accepted,
+            "all accepted events must be persisted after clean drain"
+        );
+        // Under 4× burst, some shedding is expected
+        assert!(
+            shed > 0 || accepted == burst_size,
+            "burst should either shed some events or accept all"
+        );
+    }
+
+    #[test]
+    fn perf_drain_shutdown_latency() {
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let sock = tmp.path().join("perf_drain.sock");
+        let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+        let bridge = TelemetryBridge::new(sock.to_str().expect("utf8"), adapter);
+        let handle = bridge.start().expect("start");
+
+        // Load the queue with some work
+        let event_count = 100;
+        let mut stream = UnixStream::connect(&sock).expect("connect");
+        for i in 0..event_count {
+            writeln!(stream, r#"{{"perf":"drain","i":{i}}}"#).expect("write");
+        }
+        drop(stream);
+        thread::sleep(Duration::from_millis(200));
+
+        // Measure drain time
+        let drain_start = Instant::now();
+        let report = handle
+            .stop_and_join(ShutdownReason::Requested)
+            .expect("stop_and_join");
+        let drain_elapsed = drain_start.elapsed();
+
+        assert!(report.drain_completed);
+
+        eprintln!("[perf_drain_shutdown_latency]");
+        eprintln!("  events_before_drain: {event_count}");
+        eprintln!("  drain_elapsed_ms: {}", drain_elapsed.as_millis());
+        eprintln!("  report_drain_duration_ms: {}", report.drain_duration_ms);
+        eprintln!("  persisted: {}", report.persisted_total);
+        eprintln!("  final_state: {:?}", report.final_state);
+
+        // Drain should complete within 2 seconds for 100 events
+        assert!(
+            drain_elapsed < Duration::from_secs(2),
+            "drain took {}ms, expected < 2000ms",
+            drain_elapsed.as_millis()
+        );
+    }
+
+    #[test]
+    fn perf_queue_depth_evolution() {
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let sock = tmp.path().join("perf_depth.sock");
+        let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+        let bridge = TelemetryBridge::new(sock.to_str().expect("utf8"), adapter);
+        let handle = bridge.start().expect("start");
+
+        // Snapshot before load
+        let snap_before = handle.snapshot();
+        assert_eq!(snap_before.queue_depth, 0);
+
+        // Send events
+        let event_count = 50;
+        let mut stream = UnixStream::connect(&sock).expect("connect");
+        for i in 0..event_count {
+            writeln!(stream, r#"{{"perf":"depth","i":{i}}}"#).expect("write");
+        }
+        drop(stream);
+
+        // Brief pause then snapshot during processing
+        thread::sleep(Duration::from_millis(50));
+        let snap_during = handle.snapshot();
+
+        // Wait for processing
+        thread::sleep(Duration::from_millis(500));
+        let snap_after = handle.snapshot();
+
+        let report = handle
+            .stop_and_join(ShutdownReason::Requested)
+            .expect("stop_and_join");
+
+        eprintln!("[perf_queue_depth_evolution]");
+        eprintln!("  events_sent: {event_count}");
+        eprintln!("  queue_depth_before: {}", snap_before.queue_depth);
+        eprintln!("  queue_depth_during: {}", snap_during.queue_depth);
+        eprintln!("  queue_depth_after: {}", snap_after.queue_depth);
+        eprintln!("  queue_capacity: {}", snap_before.queue_capacity);
+        eprintln!("  accepted: {}", report.accepted_total);
+        eprintln!("  persisted: {}", report.persisted_total);
+
+        assert!(report.drain_completed);
+        // After processing, queue should be drained
+        assert_eq!(
+            snap_after.queue_depth, 0,
+            "queue should be empty after processing"
+        );
+        assert_eq!(snap_before.queue_capacity, PERSIST_QUEUE_CAPACITY);
+    }
+
+    #[test]
+    fn perf_enqueue_latency_under_light_load() {
+        let state = test_state(PERSIST_QUEUE_CAPACITY);
+        let (sender, receiver) = mpsc::sync_channel(PERSIST_QUEUE_CAPACITY);
+        let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+        let state_for_worker = Arc::clone(&state);
+        let worker = thread::spawn(move || {
+            TelemetryBridge::run_persistence_loop(receiver, adapter, state_for_worker);
+        });
+
+        let iterations = 100;
+        let mut latencies_us = Vec::with_capacity(iterations);
+        for i in 0..iterations {
+            let start = Instant::now();
+            let admitted = TelemetryBridge::enqueue_with_timeout(
+                &sender,
+                PersistEnvelope {
+                    connection_id: 1,
+                    bridge_seq: i as u64,
+                    payload: br#"{"perf":"latency"}"#.to_vec(),
+                },
+                &state,
+                Duration::from_millis(ENQUEUE_TIMEOUT_MS),
+            );
+            let elapsed = start.elapsed();
+            assert!(admitted);
+            latencies_us.push(elapsed.as_micros() as u64);
+        }
+        drop(sender);
+        worker.join().expect("persistence worker");
+
+        latencies_us.sort();
+        let p50 = latencies_us[iterations / 2];
+        let p99 = latencies_us[iterations * 99 / 100];
+        let max = latencies_us[iterations - 1];
+
+        eprintln!("[perf_enqueue_latency_under_light_load]");
+        eprintln!("  iterations: {iterations}");
+        eprintln!("  p50_us: {p50}");
+        eprintln!("  p99_us: {p99}");
+        eprintln!("  max_us: {max}");
+
+        let snap = state.lock().expect("state").snapshot();
+        assert_eq!(snap.accepted_total, iterations as u64);
+        assert_eq!(snap.persisted_total, iterations as u64);
+
+        // p99 enqueue latency should be under 10ms
+        assert!(
+            p99 < 10_000,
+            "p99 enqueue latency ({p99}us) exceeds 10ms budget"
+        );
+    }
+
+    #[test]
+    fn perf_multi_connection_throughput() {
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let sock = tmp.path().join("perf_multi_conn.sock");
+        let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+        let bridge = TelemetryBridge::new(sock.to_str().expect("utf8"), adapter);
+        let handle = bridge.start().expect("start");
+
+        let connections = 10;
+        let events_per_conn = 50;
+        let total_events: u64 = (connections * events_per_conn) as u64;
+
+        let start = Instant::now();
+        let mut conn_handles = Vec::new();
+        for conn_idx in 0..connections {
+            let sock_path = sock.clone();
+            let h = thread::spawn(move || {
+                let mut stream = UnixStream::connect(&sock_path).expect("connect");
+                for ev_idx in 0..events_per_conn {
+                    writeln!(stream, r#"{{"perf":"multi","c":{conn_idx},"e":{ev_idx}}}"#)
+                        .expect("write");
+                }
+                drop(stream);
+            });
+            conn_handles.push(h);
+        }
+        for h in conn_handles {
+            h.join().expect("connection thread");
+        }
+        let send_elapsed = start.elapsed();
+
+        thread::sleep(Duration::from_millis(500));
+
+        let report = handle
+            .stop_and_join(ShutdownReason::Requested)
+            .expect("stop_and_join");
+        let total_elapsed = start.elapsed();
+
+        assert!(report.drain_completed);
+
+        let multi_rate = total_events as f64 / total_elapsed.as_secs_f64();
+
+        eprintln!("[perf_multi_connection_throughput]");
+        eprintln!("  connections: {connections}");
+        eprintln!("  events_per_conn: {events_per_conn}");
+        eprintln!("  total_events: {total_events}");
+        eprintln!("  send_elapsed_ms: {}", send_elapsed.as_millis());
+        eprintln!("  total_elapsed_ms: {}", total_elapsed.as_millis());
+        eprintln!("  throughput_events_per_sec: {multi_rate:.0}");
+        eprintln!("  accepted: {}", report.accepted_total);
+        eprintln!("  persisted: {}", report.persisted_total);
+        eprintln!("  shed: {}", report.shed_total);
+        eprintln!("  retry_total: {}", report.retry_total);
+
+        let total_accounted = report
+            .accepted_total
+            .saturating_add(report.shed_total)
+            .saturating_add(report.dropped_total);
+        assert_eq!(total_accounted, total_events);
+    }
 }
