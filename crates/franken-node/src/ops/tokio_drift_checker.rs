@@ -37,6 +37,8 @@ const BANNED_IMPORT_PATTERNS: &[&str] = &["use tokio::", "use tokio;", "extern c
 
 /// Structured exception marker prefix. Must be followed by `(bd-XXXX): <text>`.
 const EXCEPTION_PREFIX: &str = "// TOKIO_DRIFT_EXCEPTION(";
+/// TOML-style exception marker prefix (Cargo.toml uses `#` comments).
+const EXCEPTION_PREFIX_TOML: &str = "# TOKIO_DRIFT_EXCEPTION(";
 
 /// A single violation found by the drift checker.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,7 +92,10 @@ fn is_valid_exception(preceding_line: Option<&str>) -> bool {
         return false;
     };
     let trimmed = line.trim();
-    let Some(rest) = trimmed.strip_prefix(EXCEPTION_PREFIX) else {
+    let Some(rest) = trimmed
+        .strip_prefix(EXCEPTION_PREFIX)
+        .or_else(|| trimmed.strip_prefix(EXCEPTION_PREFIX_TOML))
+    else {
         return false;
     };
     // Must have closing ): with bead ref inside
@@ -252,7 +257,7 @@ fn check_cargo_toml(
             && (trimmed.starts_with("tokio") && (trimmed.contains('=') || trimmed.contains('{')))
         {
             let preceding = if idx > 0 { Some(lines[idx - 1]) } else { None };
-            if is_valid_exception(preceding.map(|s| *s)) {
+            if is_valid_exception(preceding) {
                 *exceptions_honored = exceptions_honored.saturating_add(1);
                 continue;
             }
@@ -270,23 +275,24 @@ fn check_cargo_toml(
 
         // Dev-dependencies with tokio are allowed (for test infrastructure)
         // but we note them if someone tries to sneak runtime features in
-        if in_dev_dependencies && trimmed.starts_with("tokio") {
-            if trimmed.contains("rt-multi-thread") || trimmed.contains("rt\"") {
-                let preceding = if idx > 0 { Some(lines[idx - 1]) } else { None };
-                if is_valid_exception(preceding.map(|s| *s)) {
-                    *exceptions_honored = exceptions_honored.saturating_add(1);
-                    continue;
-                }
-                violations.push(DriftViolation {
-                    file: cargo_toml_path.to_path_buf(),
-                    line_number: idx.saturating_add(1),
-                    line_content: line.to_string(),
-                    pattern: "tokio runtime features in [dev-dependencies]".to_string(),
-                    reason: "Tokio runtime features in dev-dependencies may mask \
-                             ambient executor reintroduction. Use explicit feature \
-                             gates or add a TOKIO_DRIFT_EXCEPTION marker.",
-                });
+        if in_dev_dependencies
+            && trimmed.starts_with("tokio")
+            && (trimmed.contains("rt-multi-thread") || trimmed.contains("rt\""))
+        {
+            let preceding = if idx > 0 { Some(lines[idx - 1]) } else { None };
+            if is_valid_exception(preceding) {
+                *exceptions_honored = exceptions_honored.saturating_add(1);
+                continue;
             }
+            violations.push(DriftViolation {
+                file: cargo_toml_path.to_path_buf(),
+                line_number: idx.saturating_add(1),
+                line_content: line.to_string(),
+                pattern: "tokio runtime features in [dev-dependencies]".to_string(),
+                reason: "Tokio runtime features in dev-dependencies may mask \
+                         ambient executor reintroduction. Use explicit feature \
+                         gates or add a TOKIO_DRIFT_EXCEPTION marker.",
+            });
         }
     }
 }
@@ -475,7 +481,7 @@ mod tests {
     #[test]
     fn pattern_inside_string_literal_detected() {
         assert!(is_inside_string_literal(
-            r#"    "#[tokio::main]","#,
+            r##"    "#[tokio::main]","##,
             "#[tokio::main]"
         ));
     }
@@ -492,7 +498,7 @@ mod tests {
     fn string_literal_does_not_trigger_violation() {
         let lines = vec![
             "const BANNED: &[&str] = &[",
-            r#"    "#[tokio::main]","#,
+            r##"    "#[tokio::main]","##,
             "];",
         ];
         let mut violations = Vec::new();

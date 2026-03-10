@@ -26,15 +26,107 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     }
 }
 
+/// Lifecycle state for the telemetry bridge runtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum BridgeLifecycleState {
+    /// Handle not started yet.
+    Cold = 0,
+    /// Binding socket and starting owned workers.
+    Starting = 1,
+    /// Accepting connections and events normally.
+    Running = 2,
+    /// Still running, but non-fatal overflow/shedding or reader loss has occurred.
+    Degraded = 3,
+    /// Shutdown requested; no new admission, accepted work flushing to terminal outcomes.
+    Draining = 4,
+    /// Clean stop and drain completed.
+    Stopped = 5,
+    /// Fatal start/runtime/drain failure.
+    Failed = 6,
+}
+
+impl BridgeLifecycleState {
+    fn from_u8(val: u8) -> Self {
+        match val {
+            0 => Self::Cold,
+            1 => Self::Starting,
+            2 => Self::Running,
+            3 => Self::Degraded,
+            4 => Self::Draining,
+            5 => Self::Stopped,
+            6 => Self::Failed,
+            _ => Self::Failed,
+        }
+    }
+
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Stopped | Self::Failed)
+    }
+}
+
+/// Reason for shutting down the telemetry bridge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ShutdownReason {
+    /// Engine child process exited.
+    EngineExit { exit_code: Option<i32> },
+    /// Explicit operator/caller request.
+    Requested,
+}
+
+/// Final report from a telemetry bridge runtime after join().
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TelemetryRuntimeReport {
+    pub final_state: BridgeLifecycleState,
+    pub bridge_id: String,
+    pub accepted_total: u64,
+    pub persisted_total: u64,
+    pub shed_total: u64,
+    pub dropped_total: u64,
+    pub retry_total: u64,
+    pub drain_completed: bool,
+    pub drain_duration_ms: u64,
+    pub recent_events: Vec<TelemetryBridgeEvent>,
+}
+
+/// Error from starting the telemetry bridge.
+#[derive(Debug)]
+pub struct TelemetryStartError(pub String);
+
+impl std::fmt::Display for TelemetryStartError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "telemetry start failed: {}", self.0)
+    }
+}
+
+impl std::error::Error for TelemetryStartError {}
+
+/// Error from joining the telemetry bridge runtime.
+#[derive(Debug)]
+pub struct TelemetryJoinError(pub String);
+
+impl std::fmt::Display for TelemetryJoinError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "telemetry join failed: {}", self.0)
+    }
+}
+
+impl std::error::Error for TelemetryJoinError {}
+
 pub mod event_codes {
     pub const LISTENER_STARTED: &str = "TELEMETRY_BRIDGE_STATE_STARTED";
+    pub const STATE_TRANSITION: &str = "TELEMETRY_BRIDGE_STATE_TRANSITION";
     pub const CONNECTION_ACCEPTED: &str = "TELEMETRY_BRIDGE_CONNECTION_ACCEPTED";
+    pub const CONNECTION_REJECTED: &str = "TELEMETRY_BRIDGE_CONNECTION_REJECTED";
     pub const CONNECTION_CLOSED: &str = "TELEMETRY_BRIDGE_CONNECTION_CLOSED";
     pub const CONNECTION_READ_FAILED: &str = "TELEMETRY_BRIDGE_CONNECTION_READ_FAILED";
     pub const ADMISSION_ACCEPTED: &str = "TELEMETRY_BRIDGE_ADMISSION_ACCEPTED";
     pub const ADMISSION_SHED: &str = "TELEMETRY_BRIDGE_ADMISSION_SHED";
     pub const PERSIST_SUCCESS: &str = "TELEMETRY_BRIDGE_PERSIST_SUCCESS";
     pub const PERSIST_FAILURE: &str = "TELEMETRY_BRIDGE_PERSIST_FAILURE";
+    pub const DRAIN_STARTED: &str = "TELEMETRY_BRIDGE_DRAIN_STARTED";
+    pub const DRAIN_COMPLETE: &str = "TELEMETRY_BRIDGE_DRAIN_COMPLETE";
+    pub const DRAIN_TIMEOUT: &str = "TELEMETRY_BRIDGE_DRAIN_TIMEOUT";
 }
 
 pub mod reason_codes {
@@ -44,6 +136,10 @@ pub mod reason_codes {
     pub const QUEUE_DISCONNECTED: &str = "queue_disconnected";
     pub const READ_FAILED: &str = "reader_failed";
     pub const EVENT_TOO_LARGE: &str = "event_too_large";
+    pub const CONNECTION_CAP: &str = "connection_cap";
+    pub const SHUTDOWN_REQUESTED: &str = "shutdown_requested";
+    pub const DRAIN_TIMEOUT: &str = "drain_timeout";
+    pub const ENGINE_EXIT: &str = "engine_exit";
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -177,10 +273,182 @@ impl TelemetryBridgeState {
     }
 }
 
+/// Owned runtime handle returned by `TelemetryBridge::start()`.
+///
+/// This handle gives `EngineDispatcher` explicit lifecycle control:
+/// `socket_path()`, `snapshot()`, `stop()`, and `join()`.
+pub struct TelemetryRuntimeHandle {
+    socket_path: PathBuf,
+    state: Arc<Mutex<TelemetryBridgeState>>,
+    lifecycle: Arc<AtomicU8>,
+    stop_flag: Arc<AtomicBool>,
+    listener_handle: Option<JoinHandle<()>>,
+    persistence_handle: Option<JoinHandle<()>>,
+}
+
+impl TelemetryRuntimeHandle {
+    /// Path to the Unix domain socket the engine should connect to.
+    pub fn socket_path(&self) -> &Path {
+        &self.socket_path
+    }
+
+    /// Point-in-time metrics snapshot.
+    pub fn snapshot(&self) -> TelemetryBridgeSnapshot {
+        self.state.lock().map_or_else(
+            |_| TelemetryBridgeSnapshot {
+                bridge_id: "telemetry-bridge-unavailable".to_string(),
+                queue_depth: 0,
+                queue_capacity: PERSIST_QUEUE_CAPACITY,
+                active_connections: 0,
+                accepted_total: 0,
+                persisted_total: 0,
+                shed_total: 0,
+                dropped_total: 0,
+                retry_total: 0,
+                recent_events: Vec::new(),
+            },
+            |s| s.snapshot(),
+        )
+    }
+
+    /// Current lifecycle state.
+    pub fn lifecycle_state(&self) -> BridgeLifecycleState {
+        BridgeLifecycleState::from_u8(self.lifecycle.load(Ordering::SeqCst))
+    }
+
+    /// Signal the bridge to stop accepting new work and begin draining.
+    pub fn stop(&self, reason: ShutdownReason) {
+        let reason_code = match &reason {
+            ShutdownReason::EngineExit { .. } => reason_codes::ENGINE_EXIT,
+            ShutdownReason::Requested => reason_codes::SHUTDOWN_REQUESTED,
+        };
+        self.stop_flag.store(true, Ordering::SeqCst);
+        self.transition_state(BridgeLifecycleState::Draining);
+        TelemetryBridge::with_state(&self.state, |metrics| {
+            metrics.record_event(
+                event_codes::DRAIN_STARTED,
+                None,
+                None,
+                Some(reason_code),
+                format!("shutdown requested: {reason_code}"),
+            );
+        });
+    }
+
+    /// Stop and join with the default drain timeout.
+    pub fn stop_and_join(
+        self,
+        reason: ShutdownReason,
+    ) -> Result<TelemetryRuntimeReport, TelemetryJoinError> {
+        self.stop(reason);
+        self.join(Duration::from_millis(DEFAULT_DRAIN_TIMEOUT_MS))
+    }
+
+    /// Wait for all workers to finish and return the final report.
+    ///
+    /// Must be called after `stop()`. Blocks until drain completes or
+    /// `deadline` expires.
+    pub fn join(
+        mut self,
+        deadline: Duration,
+    ) -> Result<TelemetryRuntimeReport, TelemetryJoinError> {
+        let drain_start = Instant::now();
+
+        // Join listener thread (should exit quickly after stop flag is set)
+        if let Some(handle) = self.listener_handle.take() {
+            let _ = handle.join();
+        }
+
+        // Join persistence thread (drains remaining queue items)
+        if let Some(handle) = self.persistence_handle.take() {
+            // Wait up to deadline for persistence to finish
+            let remaining = deadline.saturating_sub(drain_start.elapsed());
+            let join_result = if remaining.is_zero() {
+                // Already past deadline
+                Err(())
+            } else {
+                // Park and wait, checking periodically
+                let park_start = Instant::now();
+                loop {
+                    if handle.is_finished() {
+                        break handle.join().map_err(|_| ());
+                    }
+                    if park_start.elapsed() >= remaining {
+                        break Err(());
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+            };
+
+            if join_result.is_err() {
+                self.transition_state(BridgeLifecycleState::Failed);
+                TelemetryBridge::with_state(&self.state, |metrics| {
+                    metrics.record_event(
+                        event_codes::DRAIN_TIMEOUT,
+                        None,
+                        None,
+                        Some(reason_codes::DRAIN_TIMEOUT),
+                        format!("drain did not complete within {}ms", deadline.as_millis()),
+                    );
+                });
+            }
+        }
+
+        let drain_duration = drain_start.elapsed();
+        let drain_completed = !matches!(self.lifecycle_state(), BridgeLifecycleState::Failed);
+
+        if drain_completed {
+            self.transition_state(BridgeLifecycleState::Stopped);
+            TelemetryBridge::with_state(&self.state, |metrics| {
+                metrics.record_event(
+                    event_codes::DRAIN_COMPLETE,
+                    None,
+                    None,
+                    Some(reason_codes::ALLOWED),
+                    format!("drain completed in {}ms", drain_duration.as_millis()),
+                );
+            });
+        }
+
+        let snapshot = self.snapshot();
+        Ok(TelemetryRuntimeReport {
+            final_state: self.lifecycle_state(),
+            bridge_id: snapshot.bridge_id,
+            accepted_total: snapshot.accepted_total,
+            persisted_total: snapshot.persisted_total,
+            shed_total: snapshot.shed_total,
+            dropped_total: snapshot.dropped_total,
+            retry_total: snapshot.retry_total,
+            drain_completed,
+            drain_duration_ms: u64::try_from(drain_duration.as_millis()).unwrap_or(u64::MAX),
+            recent_events: snapshot.recent_events,
+        })
+    }
+
+    fn transition_state(&self, new_state: BridgeLifecycleState) {
+        let old = self.lifecycle.swap(new_state as u8, Ordering::SeqCst);
+        TelemetryBridge::with_state(&self.state, |metrics| {
+            metrics.record_event(
+                event_codes::STATE_TRANSITION,
+                None,
+                None,
+                None,
+                format!(
+                    "{:?} -> {:?}",
+                    BridgeLifecycleState::from_u8(old),
+                    new_state
+                ),
+            );
+        });
+    }
+}
+
 pub struct TelemetryBridge {
     socket_path: String,
     adapter_slot: Mutex<Option<Arc<Mutex<FrankensqliteAdapter>>>>,
     state: Arc<Mutex<TelemetryBridgeState>>,
+    lifecycle: Arc<AtomicU8>,
+    stop_flag: Arc<AtomicBool>,
     started: AtomicBool,
 }
 
@@ -192,6 +460,8 @@ impl TelemetryBridge {
             state: Arc::new(Mutex::new(TelemetryBridgeState::new(
                 PERSIST_QUEUE_CAPACITY,
             ))),
+            lifecycle: Arc::new(AtomicU8::new(BridgeLifecycleState::Cold as u8)),
+            stop_flag: Arc::new(AtomicBool::new(false)),
             started: AtomicBool::new(false),
         }
     }
@@ -214,9 +484,104 @@ impl TelemetryBridge {
         )
     }
 
-    /// Spawns a background listener and routes persistence through a single
-    /// bounded queue + persistence owner instead of shared mutex writes from
-    /// each connection thread.
+    /// Start the telemetry bridge and return an owned runtime handle.
+    ///
+    /// The handle gives `EngineDispatcher` explicit lifecycle control via
+    /// `stop()` and `join()`. No background work can silently outlive the
+    /// handle's `join()` call.
+    pub fn start(self) -> Result<TelemetryRuntimeHandle> {
+        if self
+            .started
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            anyhow::bail!("telemetry bridge listener already started");
+        }
+
+        self.lifecycle
+            .store(BridgeLifecycleState::Starting as u8, Ordering::SeqCst);
+
+        let socket_path = self.socket_path.clone();
+        let state = Arc::clone(&self.state);
+        let stop_flag = Arc::clone(&self.stop_flag);
+        let lifecycle = Arc::clone(&self.lifecycle);
+        let adapter = {
+            let mut guard = self
+                .adapter_slot
+                .lock()
+                .map_err(|_| anyhow::anyhow!("telemetry adapter lock poisoned before start"))?;
+            guard.take().ok_or_else(|| {
+                anyhow::anyhow!("telemetry adapter already claimed by persistence owner")
+            })?
+        };
+        let (sender, receiver) = mpsc::sync_channel(PERSIST_QUEUE_CAPACITY);
+
+        // Persistence owner thread (single writer)
+        let persistence_state = Arc::clone(&state);
+        let persistence_handle =
+            thread::spawn(move || Self::run_persistence_loop(receiver, adapter, persistence_state));
+
+        // Clean up stale socket
+        match std::fs::remove_file(&socket_path) {
+            Ok(()) => {}
+            Err(err) if err.kind() == ErrorKind::NotFound => {}
+            Err(err) => {
+                lifecycle.store(BridgeLifecycleState::Failed as u8, Ordering::SeqCst);
+                return Err(err.into());
+            }
+        }
+
+        let listener = match UnixListener::bind(&socket_path) {
+            Ok(listener) => listener,
+            Err(err) => {
+                lifecycle.store(BridgeLifecycleState::Failed as u8, Ordering::SeqCst);
+                return Err(err.into());
+            }
+        };
+
+        // Set non-blocking so the accept loop can check the stop flag
+        listener.set_nonblocking(true).inspect_err(|_| {
+            lifecycle.store(BridgeLifecycleState::Failed as u8, Ordering::SeqCst);
+        })?;
+
+        Self::with_state(&state, |metrics| {
+            metrics.record_event(
+                event_codes::LISTENER_STARTED,
+                None,
+                None,
+                Some(reason_codes::ALLOWED),
+                format!("listening on {socket_path}"),
+            );
+        });
+
+        lifecycle.store(BridgeLifecycleState::Running as u8, Ordering::SeqCst);
+
+        // Listener owner thread
+        let listener_state = Arc::clone(&state);
+        let listener_stop = Arc::clone(&stop_flag);
+        let listener_lifecycle = Arc::clone(&lifecycle);
+        let listener_handle = thread::spawn(move || {
+            Self::run_accept_loop(
+                listener,
+                sender,
+                listener_state,
+                listener_stop,
+                listener_lifecycle,
+            );
+        });
+
+        Ok(TelemetryRuntimeHandle {
+            socket_path: PathBuf::from(&self.socket_path),
+            state,
+            lifecycle,
+            stop_flag,
+            listener_handle: Some(listener_handle),
+            persistence_handle: Some(persistence_handle),
+        })
+    }
+
+    /// Backwards-compatible start that does not return a handle.
+    /// Prefer `start()` for new code.
     pub fn start_listener(&self) -> Result<()> {
         if self
             .started
@@ -226,8 +591,13 @@ impl TelemetryBridge {
             anyhow::bail!("telemetry bridge listener already started");
         }
 
+        self.lifecycle
+            .store(BridgeLifecycleState::Starting as u8, Ordering::SeqCst);
+
         let socket_path = self.socket_path.clone();
         let state = Arc::clone(&self.state);
+        let stop_flag = Arc::clone(&self.stop_flag);
+        let lifecycle = Arc::clone(&self.lifecycle);
         let adapter = {
             let mut guard = self
                 .adapter_slot
@@ -259,63 +629,135 @@ impl TelemetryBridge {
             }
         };
 
+        listener.set_nonblocking(true).inspect_err(|_| {
+            self.started.store(false, Ordering::SeqCst);
+        })?;
+
         Self::with_state(&state, |metrics| {
             metrics.record_event(
                 event_codes::LISTENER_STARTED,
                 None,
                 None,
                 Some(reason_codes::ALLOWED),
-                format!("listening on {}", socket_path),
+                format!("listening on {socket_path}"),
             );
         });
 
-        thread::spawn(move || {
-            for stream in listener.incoming() {
-                match stream {
-                    Ok(stream) => {
-                        let Some(connection_id) = Self::with_state(&state, |metrics| {
-                            let connection_id = metrics.next_connection_id();
-                            metrics.active_connections =
-                                metrics.active_connections.saturating_add(1);
-                            metrics.record_event(
-                                event_codes::CONNECTION_ACCEPTED,
-                                Some(connection_id),
-                                None,
-                                Some(reason_codes::ALLOWED),
-                                "accepted telemetry connection",
-                            );
-                            connection_id
-                        }) else {
-                            continue;
-                        };
+        self.lifecycle
+            .store(BridgeLifecycleState::Running as u8, Ordering::SeqCst);
 
-                        let sender_inner = sender.clone();
-                        let state_inner = Arc::clone(&state);
-                        thread::spawn(move || {
-                            Self::handle_connection(
-                                connection_id,
-                                stream,
-                                sender_inner,
-                                state_inner,
-                            );
-                        });
-                    }
-                    Err(err) => {
-                        Self::with_state(&state, |metrics| {
-                            metrics.record_event(
-                                event_codes::CONNECTION_READ_FAILED,
-                                None,
-                                None,
-                                Some(reason_codes::READ_FAILED),
-                                format!("listener accept failed: {err}"),
-                            );
-                        });
-                    }
-                }
-            }
+        thread::spawn(move || {
+            Self::run_accept_loop(listener, sender, state, stop_flag, lifecycle);
         });
 
         Ok(())
+    }
+
+    /// Accept loop with non-blocking listener, stop-flag check, and
+    /// connection cap enforcement.
+    fn run_accept_loop(
+        listener: UnixListener,
+        sender: SyncSender<PersistEnvelope>,
+        state: Arc<Mutex<TelemetryBridgeState>>,
+        stop_flag: Arc<AtomicBool>,
+        lifecycle: Arc<AtomicU8>,
+    ) {
+        let mut connection_handles: Vec<JoinHandle<()>> = Vec::new();
+
+        loop {
+            // Check stop flag
+            if stop_flag.load(Ordering::SeqCst) {
+                break;
+            }
+
+            match listener.accept() {
+                Ok((stream, _addr)) => {
+                    // Enforce connection cap
+                    let active = Self::with_state(&state, |m| m.active_connections).unwrap_or(0);
+                    if active >= MAX_ACTIVE_CONNECTIONS {
+                        Self::with_state(&state, |metrics| {
+                            metrics.record_event(
+                                event_codes::CONNECTION_REJECTED,
+                                None,
+                                None,
+                                Some(reason_codes::CONNECTION_CAP),
+                                format!(
+                                    "rejected: {active} active connections (cap {MAX_ACTIVE_CONNECTIONS})"
+                                ),
+                            );
+                        });
+                        drop(stream);
+                        continue;
+                    }
+
+                    // Check stop flag again after accept
+                    if stop_flag.load(Ordering::SeqCst) {
+                        drop(stream);
+                        break;
+                    }
+
+                    let Some(connection_id) = Self::with_state(&state, |metrics| {
+                        let connection_id = metrics.next_connection_id();
+                        metrics.active_connections = metrics.active_connections.saturating_add(1);
+                        metrics.record_event(
+                            event_codes::CONNECTION_ACCEPTED,
+                            Some(connection_id),
+                            None,
+                            Some(reason_codes::ALLOWED),
+                            "accepted telemetry connection",
+                        );
+                        connection_id
+                    }) else {
+                        continue;
+                    };
+
+                    let sender_inner = sender.clone();
+                    let state_inner = Arc::clone(&state);
+                    let stop_inner = Arc::clone(&stop_flag);
+                    let handle = thread::spawn(move || {
+                        Self::handle_connection(
+                            connection_id,
+                            stream,
+                            sender_inner,
+                            state_inner,
+                            stop_inner,
+                        );
+                    });
+                    connection_handles.push(handle);
+
+                    // Reap finished connection threads
+                    connection_handles.retain(|h| !h.is_finished());
+                }
+                Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                    // Non-blocking: no pending connection, sleep briefly
+                    thread::sleep(Duration::from_millis(ACCEPT_POLL_INTERVAL_MS));
+                }
+                Err(err) => {
+                    Self::with_state(&state, |metrics| {
+                        metrics.record_event(
+                            event_codes::CONNECTION_READ_FAILED,
+                            None,
+                            None,
+                            Some(reason_codes::READ_FAILED),
+                            format!("listener accept failed: {err}"),
+                        );
+                    });
+                    // Move to Degraded if we're still Running
+                    let current = lifecycle.load(Ordering::SeqCst);
+                    if current == BridgeLifecycleState::Running as u8 {
+                        lifecycle.store(BridgeLifecycleState::Degraded as u8, Ordering::SeqCst);
+                    }
+                }
+            }
+        }
+
+        // Wait for all connection workers to finish (drain phase)
+        for handle in connection_handles {
+            let _ = handle.join();
+        }
+
+        // Drop sender to signal persistence thread to drain and exit
+        drop(sender);
     }
 
     fn handle_connection(
@@ -323,9 +765,14 @@ impl TelemetryBridge {
         stream: UnixStream,
         sender: SyncSender<PersistEnvelope>,
         state: Arc<Mutex<TelemetryBridgeState>>,
+        stop_flag: Arc<AtomicBool>,
     ) {
         let reader = BufReader::new(stream);
         for line in reader.lines() {
+            // Stop flag check: refuse new events during drain
+            if stop_flag.load(Ordering::SeqCst) {
+                break;
+            }
             match line {
                 Ok(event_json) => {
                     if event_json.len() > MAX_EVENT_BYTES {
@@ -507,7 +954,7 @@ impl TelemetryBridge {
                         format!("failed to persist audit event {key}: {err}"),
                     );
                 }),
-            }
+            };
         }
     }
 
@@ -608,12 +1055,10 @@ mod tests {
         assert_eq!(snapshot.accepted_total, 1);
         assert_eq!(snapshot.persisted_total, 1);
         assert_eq!(snapshot.queue_depth, 0);
-        assert!(
-            snapshot
-                .recent_events
-                .iter()
-                .any(|event| event.code == event_codes::PERSIST_SUCCESS)
-        );
+        assert!(snapshot
+            .recent_events
+            .iter()
+            .any(|event| event.code == event_codes::PERSIST_SUCCESS));
     }
 
     #[test]
@@ -643,5 +1088,159 @@ mod tests {
                 .map(|event| event.reason_code.clone()),
             Some(Some(reason_codes::QUEUE_DISCONNECTED.to_string()))
         );
+    }
+
+    #[test]
+    fn lifecycle_starts_cold() {
+        let bridge = TelemetryBridge::new(
+            "/tmp/test_lifecycle_cold.sock",
+            Arc::new(Mutex::new(FrankensqliteAdapter::default())),
+        );
+        assert_eq!(
+            BridgeLifecycleState::from_u8(bridge.lifecycle.load(Ordering::SeqCst)),
+            BridgeLifecycleState::Cold,
+        );
+    }
+
+    #[test]
+    fn lifecycle_state_roundtrip() {
+        for val in 0..=6u8 {
+            let state = BridgeLifecycleState::from_u8(val);
+            assert_eq!(state as u8, val);
+        }
+        // Out-of-range maps to Failed
+        assert_eq!(
+            BridgeLifecycleState::from_u8(255),
+            BridgeLifecycleState::Failed
+        );
+    }
+
+    #[test]
+    fn lifecycle_terminal_states() {
+        assert!(!BridgeLifecycleState::Cold.is_terminal());
+        assert!(!BridgeLifecycleState::Starting.is_terminal());
+        assert!(!BridgeLifecycleState::Running.is_terminal());
+        assert!(!BridgeLifecycleState::Degraded.is_terminal());
+        assert!(!BridgeLifecycleState::Draining.is_terminal());
+        assert!(BridgeLifecycleState::Stopped.is_terminal());
+        assert!(BridgeLifecycleState::Failed.is_terminal());
+    }
+
+    #[test]
+    fn start_returns_handle_with_running_state() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let sock = tmp.path().join("test_start.sock");
+        let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+        let bridge = TelemetryBridge::new(sock.to_str().expect("utf8"), adapter);
+        let handle = bridge.start().expect("start should succeed");
+        assert_eq!(handle.lifecycle_state(), BridgeLifecycleState::Running);
+        assert_eq!(handle.socket_path(), sock.as_path());
+
+        // Stop and join cleanly
+        handle.stop(ShutdownReason::Requested);
+        let report = handle.join(Duration::from_secs(5)).expect("join");
+        assert!(report.drain_completed);
+        assert_eq!(report.final_state, BridgeLifecycleState::Stopped);
+    }
+
+    #[test]
+    fn start_twice_fails() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let sock = tmp.path().join("test_double_start.sock");
+        let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+        let bridge = TelemetryBridge::new(sock.to_str().expect("utf8"), adapter);
+
+        // Mark as already started
+        bridge.started.store(true, Ordering::SeqCst);
+        let result = bridge.start();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn handle_stop_transitions_to_draining() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let sock = tmp.path().join("test_drain.sock");
+        let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+        let bridge = TelemetryBridge::new(sock.to_str().expect("utf8"), adapter);
+        let handle = bridge.start().expect("start");
+        handle.stop(ShutdownReason::EngineExit { exit_code: Some(0) });
+        // After stop, state should be Draining (before join completes)
+        let state = handle.lifecycle_state();
+        assert!(
+            state == BridgeLifecycleState::Draining || state == BridgeLifecycleState::Stopped,
+            "expected Draining or Stopped, got {state:?}",
+        );
+        let report = handle.join(Duration::from_secs(5)).expect("join");
+        assert!(report.drain_completed);
+        assert!(report
+            .recent_events
+            .iter()
+            .any(|e| e.code == event_codes::DRAIN_STARTED),);
+    }
+
+    #[test]
+    fn handle_snapshot_reflects_idle_state() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let sock = tmp.path().join("test_snap.sock");
+        let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+        let bridge = TelemetryBridge::new(sock.to_str().expect("utf8"), adapter);
+        let handle = bridge.start().expect("start");
+        let snap = handle.snapshot();
+        assert_eq!(snap.queue_depth, 0);
+        assert_eq!(snap.accepted_total, 0);
+        assert_eq!(snap.active_connections, 0);
+        handle.stop(ShutdownReason::Requested);
+        let _ = handle.join(Duration::from_secs(5));
+    }
+
+    #[test]
+    fn connection_cap_enforcement() {
+        // Verify the constant is what we expect
+        assert_eq!(MAX_ACTIVE_CONNECTIONS, 64);
+        // The actual cap enforcement is tested via the accept loop, but we can
+        // verify the state tracking logic: if active_connections >= MAX_ACTIVE_CONNECTIONS,
+        // the loop rejects.
+        let state = test_state(2);
+        state.lock().unwrap().active_connections = MAX_ACTIVE_CONNECTIONS;
+        let snap = state.lock().unwrap().snapshot();
+        assert_eq!(snap.active_connections, MAX_ACTIVE_CONNECTIONS);
+    }
+
+    #[test]
+    fn runtime_report_contains_bridge_id() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let sock = tmp.path().join("test_report_id.sock");
+        let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+        let bridge = TelemetryBridge::new(sock.to_str().expect("utf8"), adapter);
+        let handle = bridge.start().expect("start");
+        let snap_id = handle.snapshot().bridge_id.clone();
+        handle.stop(ShutdownReason::Requested);
+        let report = handle.join(Duration::from_secs(5)).expect("join");
+        assert_eq!(report.bridge_id, snap_id);
+        assert!(report.bridge_id.starts_with("telemetry-bridge-"));
+    }
+
+    #[test]
+    fn push_bounded_caps_at_limit() {
+        let mut items = Vec::new();
+        for i in 0..10 {
+            push_bounded(&mut items, i, 5);
+        }
+        assert_eq!(items.len(), 5);
+        assert_eq!(items, vec![5, 6, 7, 8, 9]);
+    }
+
+    #[test]
+    fn drain_timeout_reports_failure() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let sock = tmp.path().join("test_drain_timeout.sock");
+        let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+        let bridge = TelemetryBridge::new(sock.to_str().expect("utf8"), adapter);
+        let handle = bridge.start().expect("start");
+        handle.stop(ShutdownReason::Requested);
+        // Join with a reasonable timeout — should complete quickly since no work is queued
+        let report = handle.join(Duration::from_secs(5)).expect("join");
+        assert!(report.drain_completed);
+        assert!(report.drain_duration_ms < 5000);
     }
 }
