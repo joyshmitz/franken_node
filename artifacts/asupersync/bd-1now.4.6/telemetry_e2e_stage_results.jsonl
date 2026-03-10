@@ -1,0 +1,1 @@
+{"ts": "2026-03-10T17:12:57.283849+00:00", "trace_id": "trace-bd-1now-4-6-telemetry-e2e", "stage": "compile", "status": "pass", "detail": "clippy clean for frankenengine-node", "elapsed_seconds": 176.0}

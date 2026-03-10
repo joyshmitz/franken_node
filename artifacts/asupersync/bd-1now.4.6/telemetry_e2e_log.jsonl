@@ -1,2 +1,4 @@
 {"ts": "2026-03-10T17:10:01.547924+00:00", "trace_id": "trace-bd-1now-4-6-telemetry-e2e", "event_code": "E2E_SUITE_START", "stage": "init", "status": "running", "detail": "starting telemetry E2E suite"}
 {"ts": "2026-03-10T17:10:01.579685+00:00", "trace_id": "trace-bd-1now-4-6-telemetry-e2e", "event_code": "E2E_STAGE_START", "stage": "compile", "status": "running", "detail": "Verify telemetry_bridge module compiles with clippy"}
+{"ts": "2026-03-10T17:12:57.254839+00:00", "trace_id": "trace-bd-1now-4-6-telemetry-e2e", "event_code": "E2E_STAGE_COMPLETE", "stage": "compile", "status": "pass", "detail": "clippy clean for frankenengine-node"}
+{"ts": "2026-03-10T17:12:57.319358+00:00", "trace_id": "trace-bd-1now-4-6-telemetry-e2e", "event_code": "E2E_STAGE_START", "stage": "unit-baseline", "status": "running", "detail": "Run all telemetry_bridge unit tests"}

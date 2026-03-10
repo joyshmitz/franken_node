@@ -1298,10 +1298,13 @@ mod tests {
     #[test]
     fn test_structural_only_markers_are_stable() {
         assert_eq!(
-            STRUCTURAL_ONLY_SECURITY_POSTURE,
+            super::STRUCTURAL_ONLY_SECURITY_POSTURE,
             "structural_only_not_replacement_critical"
         );
-        assert_eq!(STRUCTURAL_ONLY_RULE_ID, "VERIFIER_SHORTCUT_GUARD::SDK_VERIFIER");
+        assert_eq!(
+            super::STRUCTURAL_ONLY_RULE_ID,
+            "VERIFIER_SHORTCUT_GUARD::SDK_VERIFIER"
+        );
         assert_eq!(
             super::super::replay_capsule::STRUCTURAL_ONLY_SECURITY_POSTURE,
             "structural_only_not_replacement_critical"
@@ -1353,10 +1356,10 @@ mod tests {
         );
 
         assert_guard_contains(
-            STRUCTURAL_ONLY_RULE_ID,
+            super::STRUCTURAL_ONLY_RULE_ID,
             "src/sdk/verifier_sdk.rs",
             SDK_VERIFIER_SOURCE,
-            STRUCTURAL_ONLY_SECURITY_POSTURE,
+            super::STRUCTURAL_ONLY_SECURITY_POSTURE,
         );
         assert_guard_contains(
             super::super::replay_capsule::STRUCTURAL_ONLY_RULE_ID,
