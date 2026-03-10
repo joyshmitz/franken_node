@@ -413,7 +413,7 @@ pub fn detect_regressions(
                     * 100.0
             };
 
-            if change_pct > threshold_pct {
+            if !change_pct.is_finite() || change_pct > threshold_pct {
                 findings.push(RegressionFinding {
                     scenario_name: current_scenario.name.clone(),
                     dimension: current_scenario.dimension,
