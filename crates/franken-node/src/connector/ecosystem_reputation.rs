@@ -225,7 +225,7 @@ pub fn is_anomalous_delta(delta: f64, history: &[f64], config: &AnomalyConfig) -
     if !delta.is_finite() {
         return true;
     }
-    if history.len() < 2 {
+    if history.len() < 2 || config.window_size == 0 {
         return false; // Not enough history for anomaly detection.
     }
 
