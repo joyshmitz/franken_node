@@ -1,17 +1,73 @@
-warning: unused import: `BTreeSet`
-  --> /data/projects/franken_engine/crates/franken-engine/src/budgeted_synthesis_engine.rs:20:34
-   |
-20 | use std::collections::{BTreeMap, BTreeSet};
-   |                                  ^^^^^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+warning: unused variable: `old`
+    --> /data/projects/franken_engine/crates/franken-engine/src/s3_fifo_cache_gate.rs:1619:13
+     |
+1619 |         let old = self.current_epoch;
+     |             ^^^ help: if this is intentional, prefix it with an underscore: `_old`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
 
-warning: `frankenengine-engine` (lib) generated 1 warning (run `cargo fix --lib -p frankenengine-engine` to apply 1 suggestion)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+warning: function `hex_encode` is never used
+  --> /data/projects/franken_engine/crates/franken-engine/src/allocation_elision_gate.rs:74:4
+   |
+74 | fn hex_encode(bytes: &[u8]) -> String {
+   |    ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `hex_encode` is never used
+   --> /data/projects/franken_engine/crates/franken-engine/src/calibration_sentinel.rs:975:4
+    |
+975 | fn hex_encode(bytes: &[u8]) -> String {
+    |    ^^^^^^^^^^
+
+warning: function `sha256_bytes` is never used
+   --> /data/projects/franken_engine/crates/franken-engine/src/calibration_sentinel.rs:984:4
+    |
+984 | fn sha256_bytes(data: &[u8]) -> [u8; 32] {
+    |    ^^^^^^^^^^^^
+
+warning: function `make_test_region` is never used
+    --> /data/projects/franken_engine/crates/franken-engine/src/dark_matter_saturation_gate.rs:1421:4
+     |
+1421 | fn make_test_region(
+     |    ^^^^^^^^^^^^^^^^
+
+warning: function `make_test_observations` is never used
+    --> /data/projects/franken_engine/crates/franken-engine/src/dark_matter_saturation_gate.rs:1439:4
+     |
+1439 | fn make_test_observations(
+     |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `make_test_evaluator` is never used
+    --> /data/projects/franken_engine/crates/franken-engine/src/dark_matter_saturation_gate.rs:1469:4
+     |
+1469 | fn make_test_evaluator(
+     |    ^^^^^^^^^^^^^^^^^^^
+
+warning: method `total_ops` is never used
+   --> /data/projects/franken_engine/crates/franken-engine/src/s3_fifo_cache_gate.rs:833:8
+    |
+796 | impl LruReference {
+    | ----------------- method in this implementation
+...
+833 |     fn total_ops(&self) -> u64 {
+    |        ^^^^^^^^^
+
+warning: method `total_ops` is never used
+   --> /data/projects/franken_engine/crates/franken-engine/src/s3_fifo_cache_gate.rs:914:8
+    |
+860 | impl ClockReference {
+    | ------------------- method in this implementation
+...
+914 |     fn total_ops(&self) -> u64 {
+    |        ^^^^^^^^^
+
+warning: `frankenengine-engine` (lib) generated 9 warnings (run `cargo fix --lib -p frankenengine-engine` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
      Running unittests src/lib.rs (target/debug/deps/frankenengine_node-7c64ac79f6cac33b)
 
 running 1 test
 test ops::telemetry_bridge::tests::oversized_event_rejected_with_shed ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5137 filtered out; finished in 0.31s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5143 filtered out; finished in 0.31s
 

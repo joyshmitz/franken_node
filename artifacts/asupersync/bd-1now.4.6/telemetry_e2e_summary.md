@@ -9,29 +9,16 @@
 
 | Stage | Status | Detail | Elapsed |
 |-------|--------|--------|---------|
-| compile | + PASS | clippy clean for frankenengine-node | 191.0s |
-| compile | + PASS | clippy clean for frankenengine-node | 145.0s |
-| unit-baseline | + PASS | 36 unit tests passed | 415.0s |
-| normal-lifecycle | + PASS | single event ingested and persisted | 1.0s |
-| unit-baseline | + PASS | 72 unit tests passed | 416.0s |
-| multi-event | + PASS | 10 events ingested sequentially | 0.0s |
-| normal-lifecycle | + PASS | single event ingested and persisted | 1.0s |
-| abnormal-exit | + PASS | clean shutdown after engine failure and signal kill | 1.0s |
-| multi-event | + PASS | 10 events ingested sequentially | 0.0s |
-| abnormal-exit | + PASS | clean shutdown after engine failure and signal kill | 1.0s |
+| compile | + PASS | clippy clean for frankenengine-node | 201.0s |
+| unit-baseline | + PASS | 42 unit tests passed | 308.0s |
+| normal-lifecycle | + PASS | single event ingested and persisted | 0.0s |
+| multi-event | + PASS | 10 events ingested sequentially | 1.0s |
+| abnormal-exit | + PASS | clean shutdown after engine failure and signal kill | 0.0s |
 | backpressure | + PASS | burst events shed cleanly under backpressure | 1.0s |
-| oversized-reject | + PASS | oversized event rejected with shed counter | 0.0s |
-| backpressure | + PASS | burst events shed cleanly under backpressure | 1.0s |
-| multi-conn | + PASS | 15 events from 5 connections ingested concurrently | 1.0s |
-| oversized-reject | + PASS | oversized event rejected with shed counter | 0.0s |
+| oversized-reject | + PASS | oversized event rejected with shed counter | 1.0s |
+| multi-conn | + PASS | 15 events from 5 connections ingested concurrently | 0.0s |
 | worker-cleanup | + PASS | workers joined and state refs released | 1.0s |
 | transitions | + PASS | LISTENER_STARTED → STATE_TRANSITION → DRAIN_STARTED → DRAIN_COMPLETE | 0.0s |
-| multi-conn | + PASS | 15 events from 5 connections ingested concurrently | 1.0s |
-| worker-cleanup | + PASS | workers joined and state refs released | 1.0s |
-| key-format | + PASS | keys follow telemetry_NNNNN format | 1.0s |
-| stale-recovery | + PASS | stale socket cleaned up before bind | 0.0s |
-| transitions | + PASS | LISTENER_STARTED → STATE_TRANSITION → DRAIN_STARTED → DRAIN_COMPLETE | 0.0s |
-| event-fields | + PASS | bridge_id, code, detail, queue_capacity present | 0.0s |
 | key-format | + PASS | keys follow telemetry_NNNNN format | 1.0s |
 | stale-recovery | + PASS | stale socket cleaned up before bind | 0.0s |
 | event-fields | + PASS | bridge_id, code, detail, queue_capacity present | 0.0s |

@@ -22,11 +22,11 @@
 | Metric | Value |
 |--------|-------|
 | events_sent | 500 |
-| send_elapsed_ms | 4 |
+| send_elapsed_ms | 3 |
 | total_elapsed_ms | 611 |
-| send_rate_events_per_sec | 111359 |
+| send_rate_events_per_sec | 139073 |
 | total_rate_events_per_sec | 818 |
-| drain_duration_ms | 106 |
+| drain_duration_ms | 107 |
 | shed_total | 0 |
 | retry_total | 0 |
 
@@ -36,14 +36,14 @@
 |--------|-------|
 | burst_size | 1024 |
 | queue_capacity | 256 |
-| send_elapsed_ms | 11 |
+| send_elapsed_ms | 7 |
 | total_elapsed_ms | 611 |
 | accepted | 1024 |
 | persisted | 1024 |
 | shed | 0 |
 | dropped | 0 |
 | retry_total | 0 |
-| drain_duration_ms | 99 |
+| drain_duration_ms | 102 |
 | acceptance_rate_pct | 100.0 |
 
 ### Drain Shutdown Latency
@@ -51,8 +51,8 @@
 | Metric | Value |
 |--------|-------|
 | events_before_drain | 100 |
-| drain_elapsed_ms | 110 |
-| report_drain_duration_ms | 109 |
+| drain_elapsed_ms | 100 |
+| report_drain_duration_ms | 99 |
 | persisted | 100 |
 | final_state | Stopped |
 
@@ -74,8 +74,8 @@
 |--------|-------|
 | iterations | 100 |
 | p50_us | 0 |
-| p99_us | 12 |
-| max_us | 12 |
+| p99_us | 11 |
+| max_us | 11 |
 
 ### Multi Connection Throughput
 
@@ -85,12 +85,12 @@
 | events_per_conn | 50 |
 | total_events | 500 |
 | send_elapsed_ms | 1 |
-| total_elapsed_ms | 611 |
+| total_elapsed_ms | 612 |
 | throughput_events_per_sec | 817 |
 | accepted | 500 |
 | persisted | 500 |
 | shed | 0 |
-| retry_total | 10 |
+| retry_total | 11 |
 
 ## Operator Notes
 
