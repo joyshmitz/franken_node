@@ -1,8 +1,8 @@
-{"ts": "2026-03-10T05:11:33.155357+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-001", "stage": "suite", "status": "start", "detail": "starting tokio bootstrap guardrail e2e suite"}
-{"ts": "2026-03-10T05:11:33.194492+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-010", "stage": "allowed_clean_tree", "status": "start", "detail": "stage start"}
-{"ts": "2026-03-10T05:11:33.312444+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-020", "stage": "allowed_clean_tree", "status": "pass", "detail": "stage pass"}
-{"ts": "2026-03-10T05:11:33.360247+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-010", "stage": "forbidden_tokio_main", "status": "start", "detail": "stage start"}
-{"ts": "2026-03-10T05:11:33.488940+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-020", "stage": "forbidden_tokio_main", "status": "pass", "detail": "stage pass"}
-{"ts": "2026-03-10T05:11:33.526667+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-010", "stage": "forbidden_aliased_builder", "status": "start", "detail": "stage start"}
-{"ts": "2026-03-10T05:11:33.645725+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-020", "stage": "forbidden_aliased_builder", "status": "pass", "detail": "stage pass"}
-{"ts": "2026-03-10T05:11:33.701818+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-999", "stage": "suite", "status": "pass", "detail": "tokio bootstrap guardrail e2e suite complete"}
+{"ts": "2026-03-10T16:53:28.984744+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-001", "stage": "suite", "status": "start", "detail": "starting tokio bootstrap guardrail e2e suite"}
+{"ts": "2026-03-10T16:53:29.018642+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-010", "stage": "allowed_clean_tree", "status": "start", "detail": "stage start"}
+{"ts": "2026-03-10T16:53:29.132225+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-020", "stage": "allowed_clean_tree", "status": "pass", "detail": "stage pass"}
+{"ts": "2026-03-10T16:53:29.167786+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-010", "stage": "forbidden_tokio_main", "status": "start", "detail": "stage start"}
+{"ts": "2026-03-10T16:53:29.279820+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-020", "stage": "forbidden_tokio_main", "status": "pass", "detail": "stage pass"}
+{"ts": "2026-03-10T16:53:29.315560+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-010", "stage": "forbidden_aliased_builder", "status": "start", "detail": "stage start"}
+{"ts": "2026-03-10T16:53:29.428362+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-020", "stage": "forbidden_aliased_builder", "status": "pass", "detail": "stage pass"}
+{"ts": "2026-03-10T16:53:29.484917+00:00", "trace_id": "trace-bd-1now-3-2-tokio-guardrail", "event_code": "TKG-E2E-999", "stage": "suite", "status": "pass", "detail": "tokio bootstrap guardrail e2e suite complete"}
