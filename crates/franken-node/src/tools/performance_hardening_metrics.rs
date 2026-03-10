@@ -244,6 +244,26 @@ impl PerformanceHardeningMetrics {
             return Err("Percentiles must be ordered: p50 <= p95 <= p99".to_string());
         }
 
+        if !metric.cold_start_ms.is_finite()
+            || !metric.warm_start_ms.is_finite()
+            || !metric.baseline.p50_ms.is_finite()
+            || !metric.baseline.p95_ms.is_finite()
+            || !metric.baseline.p99_ms.is_finite()
+            || !metric.hardened.p50_ms.is_finite()
+            || !metric.hardened.p95_ms.is_finite()
+            || !metric.hardened.p99_ms.is_finite()
+        {
+            self.log(
+                event_codes::PHM_ERR_INVALID_METRIC,
+                trace_id,
+                serde_json::json!({
+                    "metric_id": &metric.metric_id,
+                    "reason": "non-finite float in metric fields",
+                }),
+            );
+            return Err("All metric fields must be finite".to_string());
+        }
+
         if metric.sample_count == 0 {
             self.log(
                 event_codes::PHM_ERR_INVALID_METRIC,
