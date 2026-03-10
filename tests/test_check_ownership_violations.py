@@ -27,6 +27,21 @@ def test_implementation_indicators_populated():
     assert len(mod.IMPLEMENTATION_INDICATORS) > 0
 
 
+def test_semantic_boundary_families_populated():
+    assert len(mod.SEMANTIC_BOUNDARY_FAMILIES) > 0
+    family_ids = {family["family_id"] for family in mod.SEMANTIC_BOUNDARY_FAMILIES}
+    assert "cancellation-protocol" in family_ids
+    assert "lane-semantics" in family_ids
+
+
+def test_rule_catalog_populated():
+    assert [rule["rule_id"] for rule in mod.RULE_CATALOG] == [
+        "OWN-SEMB-001",
+        "OWN-SEMB-002",
+        "OWN-SEMB-003",
+    ]
+
+
 # ---------------------------------------------------------------------------
 # load_waivers
 # ---------------------------------------------------------------------------
@@ -118,6 +133,63 @@ class TestCheckFileOwnership:
         filepath = ROOT / "crates" / "franken-node" / "src" / "fcp_revocation.rs"
         violations = mod.check_file_ownership(filepath, {"capabilities": []})
         assert len(violations) == 0
+
+
+# ---------------------------------------------------------------------------
+# semantic-boundary anti-drift checks
+# ---------------------------------------------------------------------------
+
+class TestSemanticBoundaryDrift:
+    def test_documented_path_no_violation(self):
+        filepath = ROOT / "crates" / "franken-node" / "src" / "connector" / "cancellation_protocol.rs"
+        violations = mod.check_semantic_boundary_drift(filepath)
+        assert violations == []
+
+    def test_duplicate_family_path_detected(self, tmp_path):
+        project_root = tmp_path
+        filepath = project_root / "crates" / "franken-node" / "src" / "runtime" / "cancellation_protocol.rs"
+        filepath.parent.mkdir(parents=True)
+        filepath.write_text("// duplicate family path\n")
+
+        violations = mod.check_semantic_boundary_drift(filepath, project_root=project_root)
+
+        assert len(violations) == 1
+        violation = violations[0]
+        assert violation["rule_id"] == "OWN-SEMB-002"
+        assert violation["reason_code"] == "UNDOCUMENTED_SEMANTIC_FAMILY"
+        assert violation["family_id"] == "cancellation-protocol"
+        assert "connector/cancellation_protocol.rs" in " ".join(violation["documented_paths"])
+
+    def test_contract_alignment_accepts_current_contract(self):
+        contract_text = mod.load_policy_contract_text()
+        violations = mod.check_contract_alignment(contract_text)
+        assert violations == []
+
+
+class TestForbiddenInternalImports:
+    def test_internal_import_detected(self, tmp_path):
+        project_root = tmp_path
+        filepath = project_root / "crates" / "franken-node" / "src" / "connector" / "internal_probe.rs"
+        filepath.parent.mkdir(parents=True)
+        filepath.write_text("use franken_engine::scheduler_internal::Queue;\n")
+
+        violations = mod.check_forbidden_internal_imports(filepath, project_root=project_root)
+
+        assert len(violations) == 1
+        violation = violations[0]
+        assert violation["rule_id"] == "OWN-SEMB-003"
+        assert violation["reason_code"] == "FORBIDDEN_INTERNAL_BOUNDARY_CROSSING"
+        assert "scheduler_internal" in violation["import_snippet"]
+
+    def test_public_import_allowed(self, tmp_path):
+        project_root = tmp_path
+        filepath = project_root / "crates" / "franken-node" / "src" / "connector" / "public_probe.rs"
+        filepath.parent.mkdir(parents=True)
+        filepath.write_text("use franken_engine::control_plane::Cx;\n")
+
+        violations = mod.check_forbidden_internal_imports(filepath, project_root=project_root)
+
+        assert violations == []
 
 
 # ---------------------------------------------------------------------------

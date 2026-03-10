@@ -227,6 +227,12 @@ Asupersync concept."
 | `bd-1now.4` | TelemetryBridge selective Asupersync adoption cluster | Highest-leverage seam for ownership, backpressure, shutdown, and supervision improvements. |
 | `bd-1now.5` | Decide local semantic twin policy versus canonical upstream adapters | Prevents semantic drift between local model layers and the upstream canonical control-plane substrate. |
 
+The row-level semantic-twin policy for `bd-1now.5` lives in
+`docs/architecture/tri_kernel_ownership_contract.md` under
+`Semantic Twin Inventory And Classification Matrix` (`bd-1now.5.1`). Future
+boundary or anti-drift work should extend that matrix and its proof surfaces
+instead of creating a second policy table here.
+
 ### Deferred Trigger Conditions
 
 | Bead | Trigger Condition | Why Deferred |
