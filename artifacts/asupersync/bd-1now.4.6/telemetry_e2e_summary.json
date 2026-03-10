@@ -1,111 +1,111 @@
 {
-  "ts": "2026-03-10T17:07:22.816490+00:00",
+  "ts": "2026-03-10T17:43:24.761412+00:00",
   "trace_id": "trace-bd-1now-4-6-telemetry-e2e",
   "suite": "telemetry_lifecycle_e2e",
   "bead": "bd-1now.4.6",
   "total_stages": 13,
-  "passed": 13,
-  "failed": 0,
-  "verdict": "PASS",
+  "passed": 7,
+  "failed": 6,
+  "verdict": "FAIL",
   "stages": [
     {
-      "ts": "2026-03-10T17:02:09.164573+00:00",
+      "ts": "2026-03-10T17:12:57.283849+00:00",
       "trace_id": "trace-bd-1now-4-6-telemetry-e2e",
       "stage": "compile",
       "status": "pass",
       "detail": "clippy clean for frankenengine-node",
-      "elapsed_seconds": 201.0
+      "elapsed_seconds": 176.0
     },
     {
-      "ts": "2026-03-10T17:07:17.167111+00:00",
+      "ts": "2026-03-10T17:20:31.754677+00:00",
       "trace_id": "trace-bd-1now-4-6-telemetry-e2e",
       "stage": "unit-baseline",
       "status": "pass",
       "detail": "42 unit tests passed",
-      "elapsed_seconds": 308.0
+      "elapsed_seconds": 454.0
     },
     {
-      "ts": "2026-03-10T17:07:17.658853+00:00",
+      "ts": "2026-03-10T17:22:02.219277+00:00",
       "trace_id": "trace-bd-1now-4-6-telemetry-e2e",
       "stage": "normal-lifecycle",
       "status": "pass",
       "detail": "single event ingested and persisted",
-      "elapsed_seconds": 0.0
+      "elapsed_seconds": 91.0
     },
     {
-      "ts": "2026-03-10T17:07:18.232877+00:00",
+      "ts": "2026-03-10T17:24:30.629685+00:00",
       "trace_id": "trace-bd-1now-4-6-telemetry-e2e",
       "stage": "multi-event",
-      "status": "pass",
-      "detail": "10 events ingested sequentially",
-      "elapsed_seconds": 1.0
+      "status": "fail",
+      "detail": "multi-event ingestion failed",
+      "elapsed_seconds": 148.0
     },
     {
-      "ts": "2026-03-10T17:07:18.671820+00:00",
+      "ts": "2026-03-10T17:27:00.354690+00:00",
       "trace_id": "trace-bd-1now-4-6-telemetry-e2e",
       "stage": "abnormal-exit",
-      "status": "pass",
-      "detail": "clean shutdown after engine failure and signal kill",
-      "elapsed_seconds": 0.0
+      "status": "fail",
+      "detail": "abnormal exit handling broken",
+      "elapsed_seconds": 150.0
     },
     {
-      "ts": "2026-03-10T17:07:19.550060+00:00",
+      "ts": "2026-03-10T17:29:20.194670+00:00",
       "trace_id": "trace-bd-1now-4-6-telemetry-e2e",
       "stage": "backpressure",
-      "status": "pass",
-      "detail": "burst events shed cleanly under backpressure",
-      "elapsed_seconds": 1.0
+      "status": "fail",
+      "detail": "backpressure handling broken",
+      "elapsed_seconds": 140.0
     },
     {
-      "ts": "2026-03-10T17:07:20.131927+00:00",
+      "ts": "2026-03-10T17:31:52.035766+00:00",
       "trace_id": "trace-bd-1now-4-6-telemetry-e2e",
       "stage": "oversized-reject",
-      "status": "pass",
-      "detail": "oversized event rejected with shed counter",
-      "elapsed_seconds": 1.0
+      "status": "fail",
+      "detail": "oversized event not properly rejected",
+      "elapsed_seconds": 151.0
     },
     {
-      "ts": "2026-03-10T17:07:20.918543+00:00",
+      "ts": "2026-03-10T17:34:19.716147+00:00",
       "trace_id": "trace-bd-1now-4-6-telemetry-e2e",
       "stage": "multi-conn",
-      "status": "pass",
-      "detail": "15 events from 5 connections ingested concurrently",
-      "elapsed_seconds": 0.0
+      "status": "fail",
+      "detail": "concurrent ingestion failed",
+      "elapsed_seconds": 147.0
     },
     {
-      "ts": "2026-03-10T17:07:21.375629+00:00",
+      "ts": "2026-03-10T17:36:41.944040+00:00",
       "trace_id": "trace-bd-1now-4-6-telemetry-e2e",
       "stage": "worker-cleanup",
-      "status": "pass",
-      "detail": "workers joined and state refs released",
-      "elapsed_seconds": 1.0
+      "status": "fail",
+      "detail": "orphan worker or cleanup failure",
+      "elapsed_seconds": 142.0
     },
     {
-      "ts": "2026-03-10T17:07:21.650241+00:00",
+      "ts": "2026-03-10T17:40:36.574037+00:00",
       "trace_id": "trace-bd-1now-4-6-telemetry-e2e",
       "stage": "transitions",
       "status": "pass",
       "detail": "LISTENER_STARTED \u2192 STATE_TRANSITION \u2192 DRAIN_STARTED \u2192 DRAIN_COMPLETE",
-      "elapsed_seconds": 0.0
+      "elapsed_seconds": 235.0
     },
     {
-      "ts": "2026-03-10T17:07:22.222027+00:00",
+      "ts": "2026-03-10T17:42:05.836371+00:00",
       "trace_id": "trace-bd-1now-4-6-telemetry-e2e",
       "stage": "key-format",
       "status": "pass",
       "detail": "keys follow telemetry_NNNNN format",
-      "elapsed_seconds": 1.0
+      "elapsed_seconds": 89.0
     },
     {
-      "ts": "2026-03-10T17:07:22.506715+00:00",
+      "ts": "2026-03-10T17:43:24.463276+00:00",
       "trace_id": "trace-bd-1now-4-6-telemetry-e2e",
       "stage": "stale-recovery",
       "status": "pass",
       "detail": "stale socket cleaned up before bind",
-      "elapsed_seconds": 0.0
+      "elapsed_seconds": 79.0
     },
     {
-      "ts": "2026-03-10T17:07:22.786132+00:00",
+      "ts": "2026-03-10T17:43:24.733128+00:00",
       "trace_id": "trace-bd-1now-4-6-telemetry-e2e",
       "stage": "event-fields",
       "status": "pass",

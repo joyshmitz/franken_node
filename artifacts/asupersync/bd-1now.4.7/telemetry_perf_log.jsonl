@@ -1,1 +1,2 @@
 {"ts": "2026-03-10T17:12:09.601646+00:00", "trace_id": "trace-bd-1now-4-7-telemetry-perf", "event_code": "PERF_SUITE_START", "detail": "starting telemetry performance characterization"}
+{"ts": "2026-03-10T17:16:55.645946+00:00", "trace_id": "trace-bd-1now-4-7-telemetry-perf", "event_code": "PERF_SUITE_COMPLETE", "detail": "characterization complete"}

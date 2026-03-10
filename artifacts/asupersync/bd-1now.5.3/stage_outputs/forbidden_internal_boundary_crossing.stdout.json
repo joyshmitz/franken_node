@@ -1,7 +1,7 @@
 {
   "schema_version": "ownership-check/v2",
   "verdict": "FAIL",
-  "timestamp": "2026-03-10T17:08:14.104509+00:00",
+  "timestamp": "2026-03-10T17:43:52.963229+00:00",
   "policy_contract": {
     "path": "docs/architecture/tri_kernel_ownership_contract.md",
     "policy_matrix_heading": "## Semantic Twin Inventory And Classification Matrix",

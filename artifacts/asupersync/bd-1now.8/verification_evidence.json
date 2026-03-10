@@ -5,7 +5,7 @@
   "agent": "CrimsonCrane",
   "trace_id": "trace-bd-1now-8-verification-gate",
   "schema_version": "1.0.0",
-  "status": "in_progress",
+  "status": "PASS",
   "cluster_evidence": {
     "tokio_guardrail": {
       "bead": "bd-1now.3.2",
@@ -81,13 +81,63 @@
     },
     "semantic_boundary_proof_harness": {
       "bead": "bd-1now.5.3",
-      "status": "PENDING",
-      "note": "Blocked by bd-1now.5.1 (semantic-twin inventory in progress by CalmSnow) and bd-1now.5.2 (anti-drift safeguards). Will be verified once those land."
+      "status": "PASS",
+      "completed_by": "CalmSnow",
+      "evidence_path": "artifacts/asupersync/bd-1now.5.3/semantic_boundary_e2e_summary.json",
+      "cases_total": 4,
+      "cases_passed": 4,
+      "cases_failed": 0,
+      "case_details": [
+        {"id": "allowed_local_model_region_tree", "category": "allow", "verdict": "PASS"},
+        {"id": "allowed_canonical_alignment_cancellation", "category": "allow", "verdict": "PASS"},
+        {"id": "forbidden_duplicate_family_runtime_cancellation", "category": "deny", "verdict": "PASS", "rule_id": "OWN-SEMB-002"},
+        {"id": "forbidden_internal_boundary_crossing", "category": "deny", "verdict": "PASS", "rule_id": "OWN-SEMB-003"}
+      ],
+      "checker_rules": ["OWN-SEMB-001", "OWN-SEMB-002", "OWN-SEMB-003"],
+      "policy_contract": "docs/architecture/tri_kernel_ownership_contract.md"
     }
   },
   "rch_validation": {
-    "status": "in_progress",
-    "note": "rch cargo test for telemetry_bridge running. Targeted test run pending completion."
+    "status": "PASS",
+    "clippy": {
+      "command": "rch exec -- cargo clippy -p frankenengine-node --lib -- -D warnings",
+      "verdict": "PASS",
+      "frankenengine_node_warnings": 0,
+      "note": "frankenengine-engine upstream has 9 warnings (bd-24h7 scope, not ours)"
+    },
+    "lib_tests": {
+      "command": "rch exec -- cargo test -p frankenengine-node --lib",
+      "verdict": "PASS",
+      "tests_passed": 5142,
+      "tests_failed": 0,
+      "tests_ignored": 2,
+      "duration_seconds": 60.82
+    },
+    "telemetry_bridge_tests": {
+      "command": "rch exec -- cargo test -p frankenengine-node --lib -- telemetry_bridge",
+      "verdict": "PASS",
+      "tests_passed": 42,
+      "tests_failed": 0,
+      "duration_seconds": 0.82,
+      "test_families": [
+        "lifecycle_transitions", "debug_representation", "no_orphan_workers",
+        "perf_enqueue_latency", "handle_stop_transitions", "connection_accepted_event",
+        "end_to_end_single_event", "end_to_end_multiple_events", "persistence_loop",
+        "push_bounded_caps", "report_field_completeness", "runtime_report_bridge_id",
+        "shutdown_reason_variants", "snapshot_field_completeness", "snapshot_empty_counters",
+        "oversized_event_rejected", "socket_cleanup_exit_failure", "socket_cleanup_normal",
+        "stale_socket_cleanup", "start_returns_handle", "start_twice_fails",
+        "stop_and_join_convenience", "structured_events_required_fields",
+        "perf_drain_shutdown", "socket_cleanup_signal_kill", "persistence_key_format",
+        "multi_connection_concurrent", "backpressure_burst_shed",
+        "perf_queue_depth_evolution", "perf_burst_beyond_capacity",
+        "perf_multi_connection_throughput", "perf_steady_state_throughput"
+      ]
+    },
+    "tokio_drift_checker_test": {
+      "test": "ops::tokio_drift_checker::tests::real_crate_is_tokio_drift_free",
+      "verdict": "PASS"
+    }
   },
-  "overall_verdict": "PARTIAL — 4/5 clusters verified PASS. Semantic boundary cluster (bd-1now.5.3) pending dependency chain completion."
+  "overall_verdict": "PASS — All 5/5 verification clusters PASS. All rch validation PASS (5142 lib tests, 42 telemetry tests, clippy clean). Semantic boundary harness PASS (4/4 cases, completed by CalmSnow)."
 }

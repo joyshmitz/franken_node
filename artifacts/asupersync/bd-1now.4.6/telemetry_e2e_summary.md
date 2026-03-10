@@ -2,25 +2,25 @@
 
 - **Trace ID**: `trace-bd-1now-4-6-telemetry-e2e`
 - **Bead**: bd-1now.4.6
-- **Verdict**: PASS
-- **Stages**: 13/13 passed
+- **Verdict**: FAIL
+- **Stages**: 7/13 passed
 
 ## Stage Results
 
 | Stage | Status | Detail | Elapsed |
 |-------|--------|--------|---------|
-| compile | + PASS | clippy clean for frankenengine-node | 201.0s |
-| unit-baseline | + PASS | 42 unit tests passed | 308.0s |
-| normal-lifecycle | + PASS | single event ingested and persisted | 0.0s |
-| multi-event | + PASS | 10 events ingested sequentially | 1.0s |
-| abnormal-exit | + PASS | clean shutdown after engine failure and signal kill | 0.0s |
-| backpressure | + PASS | burst events shed cleanly under backpressure | 1.0s |
-| oversized-reject | + PASS | oversized event rejected with shed counter | 1.0s |
-| multi-conn | + PASS | 15 events from 5 connections ingested concurrently | 0.0s |
-| worker-cleanup | + PASS | workers joined and state refs released | 1.0s |
-| transitions | + PASS | LISTENER_STARTED → STATE_TRANSITION → DRAIN_STARTED → DRAIN_COMPLETE | 0.0s |
-| key-format | + PASS | keys follow telemetry_NNNNN format | 1.0s |
-| stale-recovery | + PASS | stale socket cleaned up before bind | 0.0s |
+| compile | + PASS | clippy clean for frankenengine-node | 176.0s |
+| unit-baseline | + PASS | 42 unit tests passed | 454.0s |
+| normal-lifecycle | + PASS | single event ingested and persisted | 91.0s |
+| multi-event | X FAIL | multi-event ingestion failed | 148.0s |
+| abnormal-exit | X FAIL | abnormal exit handling broken | 150.0s |
+| backpressure | X FAIL | backpressure handling broken | 140.0s |
+| oversized-reject | X FAIL | oversized event not properly rejected | 151.0s |
+| multi-conn | X FAIL | concurrent ingestion failed | 147.0s |
+| worker-cleanup | X FAIL | orphan worker or cleanup failure | 142.0s |
+| transitions | + PASS | LISTENER_STARTED → STATE_TRANSITION → DRAIN_STARTED → DRAIN_COMPLETE | 235.0s |
+| key-format | + PASS | keys follow telemetry_NNNNN format | 89.0s |
+| stale-recovery | + PASS | stale socket cleaned up before bind | 79.0s |
 | event-fields | + PASS | bridge_id, code, detail, queue_capacity present | 0.0s |
 
 ## Artifact Locations

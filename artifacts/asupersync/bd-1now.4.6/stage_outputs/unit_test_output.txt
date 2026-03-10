@@ -1,1 +1,174 @@
     Blocking waiting for file lock on artifact directory
+   Compiling frankenengine-engine v0.1.0 (/data/projects/franken_engine/crates/franken-engine)
+warning: unused variable: `old`
+    --> /data/projects/franken_engine/crates/franken-engine/src/s3_fifo_cache_gate.rs:1619:13
+     |
+1619 |         let old = self.current_epoch;
+     |             ^^^ help: if this is intentional, prefix it with an underscore: `_old`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `hex_encode` is never used
+  --> /data/projects/franken_engine/crates/franken-engine/src/allocation_elision_gate.rs:74:4
+   |
+74 | fn hex_encode(bytes: &[u8]) -> String {
+   |    ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `hex_encode` is never used
+   --> /data/projects/franken_engine/crates/franken-engine/src/calibration_sentinel.rs:975:4
+    |
+975 | fn hex_encode(bytes: &[u8]) -> String {
+    |    ^^^^^^^^^^
+
+warning: function `sha256_bytes` is never used
+   --> /data/projects/franken_engine/crates/franken-engine/src/calibration_sentinel.rs:984:4
+    |
+984 | fn sha256_bytes(data: &[u8]) -> [u8; 32] {
+    |    ^^^^^^^^^^^^
+
+warning: function `sha256_bytes` is never used
+  --> /data/projects/franken_engine/crates/franken-engine/src/cliff_margin_certificate.rs:71:4
+   |
+71 | fn sha256_bytes(data: &[u8]) -> [u8; 32] {
+   |    ^^^^^^^^^^^^
+
+warning: function `make_test_region` is never used
+    --> /data/projects/franken_engine/crates/franken-engine/src/dark_matter_saturation_gate.rs:1421:4
+     |
+1421 | fn make_test_region(
+     |    ^^^^^^^^^^^^^^^^
+
+warning: function `make_test_observations` is never used
+    --> /data/projects/franken_engine/crates/franken-engine/src/dark_matter_saturation_gate.rs:1439:4
+     |
+1439 | fn make_test_observations(
+     |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `make_test_evaluator` is never used
+    --> /data/projects/franken_engine/crates/franken-engine/src/dark_matter_saturation_gate.rs:1469:4
+     |
+1469 | fn make_test_evaluator(
+     |    ^^^^^^^^^^^^^^^^^^^
+
+warning: method `total_ops` is never used
+   --> /data/projects/franken_engine/crates/franken-engine/src/s3_fifo_cache_gate.rs:833:8
+    |
+796 | impl LruReference {
+    | ----------------- method in this implementation
+...
+833 |     fn total_ops(&self) -> u64 {
+    |        ^^^^^^^^^
+
+warning: method `total_ops` is never used
+   --> /data/projects/franken_engine/crates/franken-engine/src/s3_fifo_cache_gate.rs:914:8
+    |
+860 | impl ClockReference {
+    | ------------------- method in this implementation
+...
+914 |     fn total_ops(&self) -> u64 {
+    |        ^^^^^^^^^
+
+warning: `frankenengine-engine` (lib) generated 10 warnings (run `cargo fix --lib -p frankenengine-engine` to apply 1 suggestion)
+   Compiling frankenengine-node v0.1.0 (/data/projects/franken_node/crates/franken-node)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7m 33s
+     Running unittests src/lib.rs (target/debug/deps/frankenengine_node-7c64ac79f6cac33b)
+
+running 42 tests
+[perf_enqueue_latency_under_light_load]
+  iterations: 100
+  p50_us: 0
+  p99_us: 20
+  max_us: 20
+test ops::telemetry_bridge::tests::connection_cap_enforcement ... ok
+test ops::telemetry_bridge::tests::disconnected_queue_records_explicit_drop_reason ... ok
+test ops::telemetry_bridge::tests::enqueue_timeout_records_shed_when_queue_stays_full ... ok
+test ops::telemetry_bridge::tests::bridge_id_is_unique_per_instance ... ok
+test ops::telemetry_bridge::tests::lifecycle_starts_cold ... ok
+test ops::telemetry_bridge::tests::lifecycle_state_roundtrip ... ok
+test ops::telemetry_bridge::tests::lifecycle_terminal_states ... ok
+test ops::telemetry_bridge::tests::drain_timeout_reports_failure ... ok
+test ops::telemetry_bridge::tests::engine_exit_code_mapped_to_shutdown_reason ... ok
+test ops::telemetry_bridge::tests::handle_snapshot_reflects_idle_state ... ok
+test ops::telemetry_bridge::tests::events_have_debug_representation ... ok
+test ops::telemetry_bridge::tests::handle_stop_transitions_to_draining ... ok
+test ops::telemetry_bridge::tests::no_orphan_workers_after_stop_and_join ... ok
+test ops::telemetry_bridge::tests::perf_enqueue_latency_under_light_load ... ok
+test ops::telemetry_bridge::tests::push_bounded_caps_at_limit ... ok
+test ops::telemetry_bridge::tests::report_field_completeness ... ok
+test ops::telemetry_bridge::tests::persistence_loop_updates_single_owner_counters ... ok
+test ops::telemetry_bridge::tests::snapshot_field_completeness ... ok
+test ops::telemetry_bridge::tests::shutdown_reason_variants_are_distinct ... ok
+test ops::telemetry_bridge::tests::snapshot_starts_with_empty_counters ... ok
+test ops::telemetry_bridge::tests::runtime_report_contains_bridge_id ... ok
+test ops::telemetry_bridge::tests::socket_cleaned_up_after_engine_exit_failure ... ok
+test ops::telemetry_bridge::tests::socket_cleaned_up_after_engine_signal_kill ... ok
+test ops::telemetry_bridge::tests::start_twice_fails ... ok
+test ops::telemetry_bridge::tests::socket_cleaned_up_after_normal_shutdown ... ok
+test ops::telemetry_bridge::tests::stop_and_join_convenience_method ... ok
+test ops::telemetry_bridge::tests::stale_socket_cleanup_before_start ... ok
+test ops::telemetry_bridge::tests::start_returns_handle_with_running_state ... ok
+test ops::telemetry_bridge::tests::structured_events_contain_required_fields ... ok
+test ops::telemetry_bridge::tests::lifecycle_transitions_are_recorded_in_events ... ok
+test ops::telemetry_bridge::tests::end_to_end_single_event_ingestion ... ok
+test ops::telemetry_bridge::tests::connection_accepted_event_has_connection_id ... ok
+test ops::telemetry_bridge::tests::end_to_end_multiple_events_ingestion ... ok
+test ops::telemetry_bridge::tests::oversized_event_rejected_with_shed ... ok
+test ops::telemetry_bridge::tests::persistence_key_format_is_sequential ... ok
+[perf_drain_shutdown_latency]
+  events_before_drain: 100
+  drain_elapsed_ms: 109
+  report_drain_duration_ms: 109
+  persisted: 100
+  final_state: Stopped
+test ops::telemetry_bridge::tests::perf_drain_shutdown_latency ... ok
+test ops::telemetry_bridge::tests::multi_connection_concurrent_ingestion ... ok
+[perf_steady_state_throughput]
+  events_sent: 500
+  send_elapsed_ms: 3
+  total_elapsed_ms: 601
+  send_rate_events_per_sec: 138765
+[perf_queue_depth_evolution]
+  events_sent: 50
+  queue_depth_before: 0
+  queue_depth_during: 0
+  queue_depth_after: 0
+  total_rate_events_per_sec: 831
+  drain_duration_ms: 97
+  shed_total: 0
+  retry_total: 0
+  queue_capacity: 256
+  accepted: 50
+  persisted: 50
+test ops::telemetry_bridge::tests::perf_steady_state_throughput ... ok
+test ops::telemetry_bridge::tests::perf_queue_depth_evolution ... ok
+test ops::telemetry_bridge::tests::backpressure_burst_events_shed_cleanly ... ok
+[perf_burst_beyond_queue_capacity]
+  burst_size: 1024
+  queue_capacity: 256
+  send_elapsed_ms: 16
+  total_elapsed_ms: 611
+  accepted: 1024
+  persisted: 1024
+  shed: 0
+  dropped: 0
+  retry_total: 0
+  drain_duration_ms: 94
+  acceptance_rate_pct: 100.0
+test ops::telemetry_bridge::tests::perf_burst_beyond_queue_capacity ... ok
+[perf_multi_connection_throughput]
+  connections: 10
+  events_per_conn: 50
+  total_events: 500
+  send_elapsed_ms: 4
+  total_elapsed_ms: 612
+  throughput_events_per_sec: 816
+  accepted: 500
+  persisted: 500
+  shed: 0
+  retry_total: 12
+test ops::telemetry_bridge::tests::perf_multi_connection_throughput ... ok
+
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 5102 filtered out; finished in 0.62s
+

@@ -64,3 +64,69 @@ warning: method `total_ops` is never used
 914 |     fn total_ops(&self) -> u64 {
     |        ^^^^^^^^^
 
+warning: `frankenengine-engine` (lib) generated 9 warnings (run `cargo fix --lib -p frankenengine-engine` to apply 1 suggestion)
+   Compiling frankenengine-node v0.1.0 (/data/projects/franken_node/crates/franken-node)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 43s
+     Running unittests src/lib.rs (target/debug/deps/frankenengine_node-7c64ac79f6cac33b)
+
+running 6 tests
+test ops::telemetry_bridge::tests::perf_burst_beyond_queue_capacity ... [perf_burst_beyond_queue_capacity]
+  burst_size: 1024
+  queue_capacity: 256
+  send_elapsed_ms: 109
+  total_elapsed_ms: 711
+  accepted: 1024
+  persisted: 1024
+  shed: 0
+  dropped: 0
+  retry_total: 0
+  drain_duration_ms: 101
+  acceptance_rate_pct: 100.0
+ok
+test ops::telemetry_bridge::tests::perf_drain_shutdown_latency ... [perf_drain_shutdown_latency]
+  events_before_drain: 100
+  drain_elapsed_ms: 110
+  report_drain_duration_ms: 110
+  persisted: 100
+  final_state: Stopped
+ok
+test ops::telemetry_bridge::tests::perf_enqueue_latency_under_light_load ... [perf_enqueue_latency_under_light_load]
+  iterations: 100
+  p50_us: 1
+  p99_us: 21
+  max_us: 21
+ok
+test ops::telemetry_bridge::tests::perf_multi_connection_throughput ... [perf_multi_connection_throughput]
+  connections: 10
+  events_per_conn: 50
+  total_events: 500
+  send_elapsed_ms: 1
+  total_elapsed_ms: 611
+  throughput_events_per_sec: 817
+  accepted: 500
+  persisted: 500
+  shed: 0
+  retry_total: 9
+ok
+test ops::telemetry_bridge::tests::perf_queue_depth_evolution ... [perf_queue_depth_evolution]
+  events_sent: 50
+  queue_depth_before: 0
+  queue_depth_during: 0
+  queue_depth_after: 0
+  queue_capacity: 256
+  accepted: 50
+  persisted: 50
+ok
+test ops::telemetry_bridge::tests::perf_steady_state_throughput ... [perf_steady_state_throughput]
+  events_sent: 500
+  send_elapsed_ms: 3
+  total_elapsed_ms: 610
+  send_rate_events_per_sec: 133097
+  total_rate_events_per_sec: 818
+  drain_duration_ms: 106
+  shed_total: 0
+  retry_total: 0
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 5138 filtered out; finished in 2.86s
+

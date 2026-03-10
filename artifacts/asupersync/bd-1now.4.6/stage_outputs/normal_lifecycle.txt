@@ -1,3 +1,4 @@
+   Compiling frankenengine-engine v0.1.0 (/data/projects/franken_engine/crates/franken-engine)
 warning: unused variable: `old`
     --> /data/projects/franken_engine/crates/franken-engine/src/s3_fifo_cache_gate.rs:1619:13
      |
@@ -25,6 +26,12 @@ warning: function `sha256_bytes` is never used
     |
 984 | fn sha256_bytes(data: &[u8]) -> [u8; 32] {
     |    ^^^^^^^^^^^^
+
+warning: function `sha256_bytes` is never used
+  --> /data/projects/franken_engine/crates/franken-engine/src/cliff_margin_certificate.rs:71:4
+   |
+71 | fn sha256_bytes(data: &[u8]) -> [u8; 32] {
+   |    ^^^^^^^^^^^^
 
 warning: function `make_test_region` is never used
     --> /data/projects/franken_engine/crates/franken-engine/src/dark_matter_saturation_gate.rs:1421:4
@@ -62,12 +69,13 @@ warning: method `total_ops` is never used
 914 |     fn total_ops(&self) -> u64 {
     |        ^^^^^^^^^
 
-warning: `frankenengine-engine` (lib) generated 9 warnings (run `cargo fix --lib -p frankenengine-engine` to apply 1 suggestion)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+warning: `frankenengine-engine` (lib) generated 10 warnings (run `cargo fix --lib -p frankenengine-engine` to apply 1 suggestion)
+   Compiling frankenengine-node v0.1.0 (/data/projects/franken_node/crates/franken-node)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 30s
      Running unittests src/lib.rs (target/debug/deps/frankenengine_node-7c64ac79f6cac33b)
 
 running 1 test
 test ops::telemetry_bridge::tests::end_to_end_single_event_ingestion ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5143 filtered out; finished in 0.20s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5143 filtered out; finished in 0.21s
 
