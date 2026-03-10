@@ -1,0 +1,75 @@
+{
+  "bead_id": "bd-1now.3.1",
+  "title": "Implement deterministic Tokio/bootstrap drift checker and explicit exception path",
+  "checks": [
+    {
+      "check": "source_root_exists",
+      "pass": true,
+      "detail": "path=artifacts/asupersync/bd-1now.3.2/workspaces/trace-bd-1now-3-2-tokio-guardrail/src"
+    },
+    {
+      "check": "blueprint_decision_record_present",
+      "pass": true,
+      "detail": "path=artifacts/asupersync/bd-1now.3.2/workspaces/trace-bd-1now-3-2-tokio-guardrail/blueprint.md section=present"
+    },
+    {
+      "check": "blueprint_exception_path_present",
+      "pass": true,
+      "detail": "path=artifacts/asupersync/bd-1now.3.2/workspaces/trace-bd-1now-3-2-tokio-guardrail/blueprint.md section=present"
+    },
+    {
+      "check": "source_scan_has_coverage",
+      "pass": true,
+      "detail": "scanned_files=1 excluded_dirs=['testing']"
+    },
+    {
+      "check": "exception_registry_consistent",
+      "pass": true,
+      "detail": "blank_reasons=[] missing_paths=[]"
+    },
+    {
+      "check": "no_unapproved_tokio_bootstrap_patterns",
+      "pass": false,
+      "detail": "unapproved_violations=1 approved_exception_hits=0"
+    },
+    {
+      "check": "rule_catalog_present",
+      "pass": true,
+      "detail": "rules=['tokio-attr-main', 'tokio-runtime-direct', 'tokio-builder-direct-current-thread', 'tokio-builder-direct-multi-thread']"
+    }
+  ],
+  "violations": [
+    {
+      "path": "artifacts/asupersync/bd-1now.3.2/workspaces/trace-bd-1now-3-2-tokio-guardrail/src/main.rs",
+      "line": 3,
+      "column": 13,
+      "rule_id": "tokio-builder-aliased-current-thread",
+      "reason_code": "TKG-006",
+      "description": "aliased tokio Builder::new_current_thread recreates an ambient executor shell",
+      "excerpt": "let _ = TokioBuilder::new_current_thread();",
+      "remediation": "If a real async boundary now exists, update docs/architecture/blueprint.md (Selective Asupersync decision record + Runtime Guardrail Exception Path), then add an intentional exception entry to scripts/check_tokio_bootstrap_guardrail.py and land matching proof in bd-1now.3.2 or its successor.",
+      "approved_exception": false
+    }
+  ],
+  "total": 7,
+  "passed": 6,
+  "failed": 1,
+  "overall_pass": false,
+  "verdict": "FAIL",
+  "status": "fail",
+  "metrics": {
+    "scanned_files": 1,
+    "excluded_dirs": [
+      "testing"
+    ],
+    "rule_count": 7,
+    "unapproved_violation_count": 1,
+    "approved_exception_count": 0,
+    "registered_exceptions": 0
+  },
+  "exception_path": {
+    "blueprint": "artifacts/asupersync/bd-1now.3.2/workspaces/trace-bd-1now-3-2-tokio-guardrail/blueprint.md",
+    "section": "### Runtime Guardrail Exception Path",
+    "guidance": "If a real async boundary now exists, update docs/architecture/blueprint.md (Selective Asupersync decision record + Runtime Guardrail Exception Path), then add an intentional exception entry to scripts/check_tokio_bootstrap_guardrail.py and land matching proof in bd-1now.3.2 or its successor."
+  }
+}

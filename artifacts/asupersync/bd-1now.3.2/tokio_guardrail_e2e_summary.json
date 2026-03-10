@@ -1,0 +1,50 @@
+{
+  "trace_id": "trace-bd-1now-3-2-tokio-guardrail",
+  "generated_at": "2026-03-10T05:11:33.673981+00:00",
+  "stage_count": 3,
+  "pass_count": 3,
+  "fail_count": 0,
+  "stages": [
+    {
+      "stage_id": "allowed_clean_tree",
+      "expected_exit": 0,
+      "actual_exit": 0,
+      "expected_verdict": "PASS",
+      "actual_verdict": "PASS",
+      "expected_reason": null,
+      "reason_codes": [],
+      "status": "pass",
+      "stdout_path": "/data/projects/franken_node/artifacts/asupersync/bd-1now.3.2/stage_outputs/allowed_clean_tree.stdout.json",
+      "stderr_path": "/data/projects/franken_node/artifacts/asupersync/bd-1now.3.2/stage_outputs/allowed_clean_tree.stderr.log"
+    },
+    {
+      "stage_id": "forbidden_tokio_main",
+      "expected_exit": 1,
+      "actual_exit": 1,
+      "expected_verdict": "FAIL",
+      "actual_verdict": "FAIL",
+      "expected_reason": "TKG-001",
+      "reason_codes": [
+        "TKG-001"
+      ],
+      "status": "pass",
+      "stdout_path": "/data/projects/franken_node/artifacts/asupersync/bd-1now.3.2/stage_outputs/forbidden_tokio_main.stdout.json",
+      "stderr_path": "/data/projects/franken_node/artifacts/asupersync/bd-1now.3.2/stage_outputs/forbidden_tokio_main.stderr.log"
+    },
+    {
+      "stage_id": "forbidden_aliased_builder",
+      "expected_exit": 1,
+      "actual_exit": 1,
+      "expected_verdict": "FAIL",
+      "actual_verdict": "FAIL",
+      "expected_reason": "TKG-006",
+      "reason_codes": [
+        "TKG-006"
+      ],
+      "status": "pass",
+      "stdout_path": "/data/projects/franken_node/artifacts/asupersync/bd-1now.3.2/stage_outputs/forbidden_aliased_builder.stdout.json",
+      "stderr_path": "/data/projects/franken_node/artifacts/asupersync/bd-1now.3.2/stage_outputs/forbidden_aliased_builder.stderr.log"
+    }
+  ],
+  "verdict": "PASS"
+}
