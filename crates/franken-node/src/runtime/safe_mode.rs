@@ -758,6 +758,14 @@ impl SafeModeController {
         operator_id: &str,
         timestamp: &str,
     ) -> Result<(), SafeModeError> {
+        // INV-SMO-RECOVERY: exit requires safe mode to actually be active.
+        if !self.active {
+            return Err(SafeModeError::ExitPreconditionFailed {
+                reason: "safe mode is not active".to_string(),
+                recovery_hint: "Enter safe mode before attempting to exit".to_string(),
+            });
+        }
+
         if !verification.all_passed() {
             let failed = verification.failed_checks();
             self.emit_audit(SafeModeAuditEntry {
@@ -2592,5 +2600,26 @@ mod tests {
         let d2 = SafeModeController::compute_evidence_digest(&entries);
         assert_eq!(d1, d2);
         assert!(d1.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn exit_safe_mode_rejects_when_not_active() {
+        // Regression: exit_safe_mode() lacked a state guard checking self.active,
+        // allowing "exit" of safe mode that was never entered.
+        let mut ctrl = SafeModeController::with_default_config();
+        assert!(!ctrl.is_active());
+        let verification = ExitVerification {
+            trust_state_consistent: true,
+            no_unresolved_incidents: true,
+            evidence_ledger_intact: true,
+            operator_confirmed: true,
+        };
+        let result = ctrl.exit_safe_mode(&verification, "op", "ts");
+        assert!(result.is_err(), "exit_safe_mode should fail when not active");
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("not active"),
+            "error should mention 'not active': {err}"
+        );
     }
 }
