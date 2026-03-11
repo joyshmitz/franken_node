@@ -165,16 +165,21 @@ def run_all_checks() -> list[dict]:
         in sdk_capsule_src
         and "structural signature digest" in sdk_capsule_src
     )
-    workspace_docs_structural_only = (
-        "structural-only" in sdk_doc_src and "structural signature digest" in sdk_doc_src
-    )
-    workspace_docs_avoid_overclaim = all(
-        marker not in sdk_doc_src
+    workspace_docs_structural_only = all(
+        marker in sdk_doc_src
         for marker in (
-            "cryptographic signature",
-            "signature integrity",
-            "signed capsules",
-            "self-contained, signed unit",
+            "The standalone workspace crate `sdk/verifier` is structural-only.",
+            "structural signature digest helpers",
+            "not the replacement-critical canonical verifier",
+            "does not claim detached cryptographic verification authority",
+        )
+    )
+    connector_docs_detached_signature_authority = all(
+        marker in sdk_doc_src
+        for marker in (
+            "`connector::universal_verifier_sdk`",
+            "detached Ed25519 signature",
+            "canonical signing payload",
         )
     )
     workspace_metadata_structural_only = (
@@ -236,15 +241,15 @@ def run_all_checks() -> list[dict]:
     ))
 
     checks.append(_check(
-        "Public SDK docs mark structural-only posture",
+        "Public docs distinguish structural-only workspace SDK",
         workspace_docs_structural_only,
-        "replay capsule spec and bd-nbwo contract carry structural-only posture markers",
+        "replay capsule spec and bd-nbwo contract describe the structural-only workspace companion",
     ))
 
     checks.append(_check(
-        "Public SDK docs avoid cryptographic overclaim",
-        workspace_docs_avoid_overclaim,
-        "spec/contract avoid signed-capsule or cryptographic-signature wording",
+        "Public docs describe connector detached Ed25519 signature authority",
+        connector_docs_detached_signature_authority,
+        "replay capsule spec and bd-nbwo contract describe detached Ed25519 signatures over the canonical signing payload",
     ))
 
     checks.append(_check(
@@ -412,17 +417,21 @@ def run_all() -> dict:
             "no_privileged_access": True,
             "schema_versioned": True,
             "signature_bound": True,
-            "structural_only_posture_explicit": all(
+            "workspace_sdk_structural_only_posture_explicit": all(
                 check["passed"]
                 for check in checks
                 if check["check"] in {
                     "Workspace SDK structural-only posture explicit",
                     "Workspace replay capsule structural-only posture explicit",
-                    "Public SDK docs mark structural-only posture",
-                    "Public SDK docs avoid cryptographic overclaim",
+                    "Public docs distinguish structural-only workspace SDK",
                     "SDK package metadata marks structural-only posture",
                     "SDK package metadata avoids signed-capsule overclaim",
                 }
+            ),
+            "connector_signature_authority_explicit": all(
+                check["passed"]
+                for check in checks
+                if check["check"] == "Public docs describe connector detached Ed25519 signature authority"
             ),
         },
         "events": events,

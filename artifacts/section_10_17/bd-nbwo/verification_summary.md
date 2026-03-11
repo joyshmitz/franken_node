@@ -10,6 +10,12 @@ enables external verifiers to replay signed capsules and reproduce claim
 verdicts without privileged internal access. The capsule schema (`vsdk-v1.0`)
 and verification APIs are stable and versioned.
 
+The replacement-critical implementation surface is
+`connector::universal_verifier_sdk`, which uses detached Ed25519 signatures
+over a canonical signing payload. The standalone workspace crate
+`sdk/verifier` remains structural-only and is documented as a companion
+tooling surface rather than detached cryptographic authority.
+
 ## Deliverables
 
 | Deliverable                | Path                                                               | Status |
@@ -44,8 +50,8 @@ and verification APIs are stable and versioned.
 ### Core Operations (8)
 
 - `validate_manifest` -- Validate capsule manifest completeness and schema version
-- `verify_capsule_signature` -- Verify capsule signature covers full payload
-- `sign_capsule` -- Compute and set capsule signature
+- `verify_capsule_signature` -- Verify the detached Ed25519 capsule signature
+- `sign_capsule` -- Compute and set the detached Ed25519 capsule signature
 - `replay_capsule` -- Replay capsule and produce verdict
 - `create_session` -- Create new verification session
 - `record_session_step` -- Append replay result to session
@@ -103,9 +109,9 @@ same-length signatures, payload swap under reused signature, and cross-claim rep
 
 ## Verification
 
-- Check script: `scripts/check_verifier_sdk_capsule.py` -- 70/70 checks PASS
+- Check script: `scripts/check_verifier_sdk_capsule.py` -- 78/78 checks PASS
 - Self-test: 15/15 checks PASS
-- Unit tests: `tests/test_check_verifier_sdk_capsule.py` -- 13/13 tests PASS
+- Unit tests: `tests/test_check_verifier_sdk_capsule.py` -- 14/14 tests PASS
 - Rust unit tests: 54 inline tests in implementation, 37 in SDK facade crate
 - Clippy: 0 warnings with `-D warnings`
 - All types are Send + Sync, serde-serializable, BTreeMap for determinism
@@ -114,5 +120,10 @@ same-length signatures, payload swap under reused signature, and cross-claim rep
 
 This module extends the verifier-economy SDK (`connector::verifier_sdk`, bd-3c2,
 Section 10.12) with universally accessible capsule replay. Where bd-3c2 provides
-claim/evidence/bundle verification primitives, bd-nbwo adds signed replay
-capsules, verification sessions, and a stable external API surface.
+claim/evidence/bundle verification primitives, bd-nbwo adds detached-signature-
+bound replay capsules, verification sessions, and a stable external API surface.
+
+The workspace `sdk/verifier` crate stays in the repo as a structural-only
+companion package for deterministic schema/replay tooling. It is explicitly not
+the replacement-critical canonical verifier, which prevents the docs and
+package metadata from overstating the trust posture of that helper surface.

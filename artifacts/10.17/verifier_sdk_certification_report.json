@@ -4,14 +4,24 @@
   "title": "Universal Verifier SDK and Replay Capsule Format",
   "section": "10.17",
   "verdict": "PASS",
-  "total": 70,
-  "passed": 70,
+  "total": 78,
+  "passed": 78,
   "failed": 0,
   "checks": [
     {
       "check": "Spec file exists",
       "passed": true,
       "detail": "/data/projects/franken_node/docs/specs/replay_capsule_format.md"
+    },
+    {
+      "check": "Contract file exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/docs/specs/section_10_17/bd-nbwo_contract.md"
+    },
+    {
+      "check": "SDK Cargo.toml exists",
+      "passed": true,
+      "detail": "/data/projects/franken_node/sdk/verifier/Cargo.toml"
     },
     {
       "check": "Implementation file exists",
@@ -117,6 +127,36 @@
       "check": "Invariant INV-CAPSULE-VERDICT-REPRODUCIBLE",
       "passed": true,
       "detail": "INV-CAPSULE-VERDICT-REPRODUCIBLE"
+    },
+    {
+      "check": "Workspace SDK structural-only posture explicit",
+      "passed": true,
+      "detail": "sdk/verifier/src/lib.rs structural-only posture markers"
+    },
+    {
+      "check": "Workspace replay capsule structural-only posture explicit",
+      "passed": true,
+      "detail": "sdk/verifier/src/capsule.rs structural-only posture markers"
+    },
+    {
+      "check": "Public docs distinguish structural-only workspace SDK",
+      "passed": true,
+      "detail": "replay capsule spec and bd-nbwo contract describe the structural-only workspace companion"
+    },
+    {
+      "check": "Public docs describe connector detached Ed25519 signature authority",
+      "passed": true,
+      "detail": "replay capsule spec and bd-nbwo contract describe detached Ed25519 signatures over the canonical signing payload"
+    },
+    {
+      "check": "SDK package metadata marks structural-only posture",
+      "passed": true,
+      "detail": "sdk/verifier/Cargo.toml description aligns with structural-only posture"
+    },
+    {
+      "check": "SDK package metadata avoids signed-capsule overclaim",
+      "passed": true,
+      "detail": "sdk/verifier/Cargo.toml avoids signed-capsule or authority overclaim wording"
     },
     {
       "check": "Impl event code VSDK_001",
@@ -316,12 +356,12 @@
     {
       "check": "Rust unit tests >= 20",
       "passed": true,
-      "detail": "found 54"
+      "detail": "found 58"
     },
     {
       "check": "SDK facade tests >= 8",
       "passed": true,
-      "detail": "found 37"
+      "detail": "found 39"
     },
     {
       "check": "ReplayCapsule has signature field",
@@ -384,7 +424,9 @@
     "capsule_replay_deterministic": true,
     "no_privileged_access": true,
     "schema_versioned": true,
-    "signature_bound": true
+    "signature_bound": true,
+    "workspace_sdk_structural_only_posture_explicit": true,
+    "connector_signature_authority_explicit": true
   },
   "events": [
     {
@@ -408,6 +450,6 @@
       "status": "defined"
     }
   ],
-  "summary": "bd-nbwo: Universal Verifier SDK and Replay Capsule Format\nChecks: 70/70 passing\nVerdict: PASS",
-  "timestamp": "2026-03-10T18:10:33.269557+00:00"
+  "summary": "bd-nbwo: Universal Verifier SDK and Replay Capsule Format\nChecks: 78/78 passing\nVerdict: PASS",
+  "timestamp": "2026-03-11T10:15:57.705820+00:00"
 }

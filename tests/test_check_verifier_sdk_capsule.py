@@ -72,11 +72,17 @@ class TestCapsuleContract(unittest.TestCase):
         self.assertTrue(contract["no_privileged_access"])
         self.assertTrue(contract["schema_versioned"])
         self.assertTrue(contract["signature_bound"])
-        self.assertTrue(contract["structural_only_posture_explicit"])
+        self.assertTrue(contract["workspace_sdk_structural_only_posture_explicit"])
+        self.assertTrue(contract["connector_signature_authority_explicit"])
 
-    def test_package_metadata_checks_present(self):
+    def test_doc_and_metadata_checks_present(self):
         result = mod.run_all()
         check_names = {check["check"] for check in result["checks"]}
+        self.assertIn("Public docs distinguish structural-only workspace SDK", check_names)
+        self.assertIn(
+            "Public docs describe connector detached Ed25519 signature authority",
+            check_names,
+        )
         self.assertIn("SDK package metadata marks structural-only posture", check_names)
         self.assertIn("SDK package metadata avoids signed-capsule overclaim", check_names)
 

@@ -7,7 +7,7 @@
 ## Objective
 
 Publish a universal verifier SDK and replay capsule format that enables external
-verifiers to replay structurally bound capsules and reproduce claim verdicts without
+verifiers to replay detached-signature-bound capsules and reproduce claim verdicts without
 privileged internal access. The capsule schema and verification APIs must be
 stable and versioned.
 
@@ -17,9 +17,14 @@ signature digest binding for external tooling, but they are not the
 replacement-critical canonical verifier and must not be presented as detached
 cryptographic authority.
 
+The replacement-critical implementation surface is
+`connector::universal_verifier_sdk`. That module signs and verifies capsules
+with detached Ed25519 signatures over a canonical signing payload that binds
+manifest fields, signer metadata, payload, and ordered inputs.
+
 ## Acceptance Criteria
 
-1. External verifiers can replay structurally bound capsules and reproduce claim verdicts
+1. External verifiers can replay detached-signature-bound capsules and reproduce claim verdicts
    without privileged internal access.
 2. Capsule schema and verification APIs are stable and versioned
    (`VSDK_SCHEMA_VERSION = "vsdk-v1.0"`).
@@ -78,13 +83,13 @@ cryptographic authority.
 | INV-VSDK-NO-PRIVILEGE        | No privileged internal access required     |
 | INV-VSDK-SCHEMA-VERSIONED    | Every capsule carries schema version       |
 | INV-VSDK-SESSION-MONOTONIC   | Session steps are append-only              |
-| INV-VSDK-SIGNATURE-BOUND     | Structural signature digest binds full capsule payload |
+| INV-VSDK-SIGNATURE-BOUND     | Detached Ed25519 signature binds full capsule payload |
 
 ### Core Operations
 
 - `validate_manifest(manifest)` -- validate capsule manifest completeness
-- `verify_capsule_signature(capsule)` -- verify capsule structural signature digest
-- `sign_capsule(capsule)` -- compute and set capsule structural signature digest
+- `verify_capsule_signature(capsule)` -- verify the detached Ed25519 capsule signature
+- `sign_capsule(capsule)` -- compute and set the detached Ed25519 capsule signature
 - `replay_capsule(capsule, verifier_identity)` -- replay and produce verdict
 - `create_session(id, verifier)` -- create new verification session
 - `record_session_step(session, result)` -- append replay result to session

@@ -22,7 +22,7 @@
     "command": "python3 scripts/check_verifier_sdk_capsule.py --build-report --json",
     "exit_code": 0,
     "report_path": "artifacts/10.17/verifier_sdk_certification_report.json",
-    "passed_checks": 70,
+    "passed_checks": 78,
     "failed_checks": 0
   },
   "self_test": {
@@ -30,14 +30,16 @@
     "exit_code": 0
   },
   "unit_tests": {
-    "command": "python3 -m pytest tests/test_check_verifier_sdk_capsule.py -v",
+    "command": "python3 -m unittest tests/test_check_verifier_sdk_capsule.py",
     "exit_code": 0
   },
   "capsule_contract": {
     "capsule_replay_deterministic": true,
     "no_privileged_access": true,
     "schema_versioned": true,
-    "signature_bound": true
+    "signature_bound": true,
+    "workspace_sdk_structural_only_posture_explicit": true,
+    "connector_signature_authority_explicit": true
   },
   "event_codes": {
     "public_facing": [
@@ -103,11 +105,11 @@
     "adversarial_regression_tests": 6
   },
   "notes": [
-    "The universal_verifier_sdk module (connector) provides the internal implementation.",
-    "The sdk/verifier/ crate provides the public-facing SDK surface as a proper Cargo crate.",
-    "External verifiers can replay signed capsules without privileged access.",
+    "The connector universal_verifier_sdk module is the replacement-critical implementation and uses detached Ed25519 signatures over a canonical signing payload.",
+    "The sdk/verifier crate is a structural-only companion surface for external tooling and does not claim detached cryptographic verification authority.",
+    "External verifiers can replay signed capsules without privileged access through connector::universal_verifier_sdk.",
     "Schema version vsdk-v1.0 is stable and versioned.",
-    "54 inline Rust tests in the implementation, 37 in the SDK facade crate.",
+    "54 inline Rust tests in the implementation, 39 in the SDK facade crate.",
     "SDK facade hardened: XOR hash -> SHA-256, pipe-delimited -> length-prefixed, != -> ct_eq.",
     "6 adversarial regression tests: collision resistance, cross-claim replay, payload swap, forged sig."
   ]
