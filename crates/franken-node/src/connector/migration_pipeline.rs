@@ -1038,10 +1038,10 @@ fn build_counterexample(
 }
 
 fn wilson_interval(successes: u32, total: u32, confidence_level: f64) -> CalibrationInterval {
-    if total == 0 {
+    if total == 0 || successes > total {
         return CalibrationInterval {
             lower_bound: 0.0,
-            upper_bound: 1.0,
+            upper_bound: if total == 0 { 1.0 } else { 0.0 },
             confidence_level,
         };
     }
@@ -1054,6 +1054,15 @@ fn wilson_interval(successes: u32, total: u32, confidence_level: f64) -> Calibra
     let center = (p_hat + (z * z) / (2.0 * n)) / denominator;
     let radius =
         (z / denominator) * ((p_hat * (1.0 - p_hat) / n) + ((z * z) / (4.0 * n * n))).sqrt();
+
+    // Defense in depth: clamp NaN/Inf to safe defaults.
+    if !center.is_finite() || !radius.is_finite() {
+        return CalibrationInterval {
+            lower_bound: 0.0,
+            upper_bound: 1.0,
+            confidence_level,
+        };
+    }
 
     CalibrationInterval {
         lower_bound: clamp_unit(center - radius),
@@ -2788,5 +2797,45 @@ mod tests {
         let legacy_verify_marker = ["fail", "_", "verify", "_"].concat();
         assert!(!source.contains(&legacy_analysis_marker));
         assert!(!source.contains(&legacy_verify_marker));
+    }
+
+    #[test]
+    fn wilson_interval_zero_total_returns_full_range() {
+        let ci = wilson_interval(0, 0, 0.95);
+        assert_eq!(ci.lower_bound, 0.0);
+        assert_eq!(ci.upper_bound, 1.0);
+    }
+
+    #[test]
+    fn wilson_interval_successes_exceed_total_returns_zero() {
+        let ci = wilson_interval(10, 5, 0.95);
+        assert_eq!(ci.lower_bound, 0.0);
+        assert_eq!(ci.upper_bound, 0.0);
+    }
+
+    #[test]
+    fn wilson_interval_normal_produces_finite_bounds() {
+        let ci = wilson_interval(80, 100, 0.95);
+        assert!(ci.lower_bound.is_finite());
+        assert!(ci.upper_bound.is_finite());
+        assert!(ci.lower_bound >= 0.0);
+        assert!(ci.upper_bound <= 1.0);
+        assert!(ci.lower_bound <= ci.upper_bound);
+    }
+
+    #[test]
+    fn wilson_interval_all_pass_produces_finite_bounds() {
+        let ci = wilson_interval(100, 100, 0.95);
+        assert!(ci.lower_bound.is_finite());
+        assert!(ci.upper_bound.is_finite());
+        assert!(ci.upper_bound <= 1.0);
+    }
+
+    #[test]
+    fn wilson_interval_all_fail_produces_finite_bounds() {
+        let ci = wilson_interval(0, 100, 0.95);
+        assert!(ci.lower_bound.is_finite());
+        assert!(ci.upper_bound.is_finite());
+        assert!(ci.lower_bound >= 0.0);
     }
 }
