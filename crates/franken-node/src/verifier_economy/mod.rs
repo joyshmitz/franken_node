@@ -1181,7 +1181,9 @@ impl VerifierEconomyRegistry {
         let dims: std::collections::BTreeSet<_> = self
             .attestations
             .values()
-            .filter(|a| a.verifier_id == verifier_id)
+            .filter(|a| {
+                a.verifier_id == verifier_id && a.state == AttestationState::Published
+            })
             .map(|a| a.claim.dimension.clone())
             .collect();
 
@@ -2135,9 +2137,11 @@ mod tests {
         let v = reg.register_verifier(make_registration()).unwrap();
         let signing_key = registration_signing_key();
 
-        // Submit attestations in two different dimensions
+        // Submit and publish attestations in two different dimensions
         let sub1 = make_submission(&v.verifier_id, &signing_key);
-        reg.submit_attestation(sub1).unwrap();
+        let att1 = reg.submit_attestation(sub1).unwrap();
+        reg.review_attestation(&att1.attestation_id).unwrap();
+        reg.publish_attestation(&att1.attestation_id).unwrap();
 
         let sub2 = make_submission_with(
             &v.verifier_id,
@@ -2149,12 +2153,59 @@ mod tests {
             "trace-unique",
             "2026-02-20T12:01:00Z",
         );
+        let att2 = reg.submit_attestation(sub2).unwrap();
+        reg.review_attestation(&att2.attestation_id).unwrap();
+        reg.publish_attestation(&att2.attestation_id).unwrap();
+
+        // With 2 published dimensions: 2 >= 2, no selective reporting
+        assert!(!reg.check_selective_reporting(&v.verifier_id, 2));
+        // With 2 published dimensions: 2 < 3, selective reporting detected
+        assert!(reg.check_selective_reporting(&v.verifier_id, 3));
+    }
+
+    #[test]
+    fn test_selective_reporting_ignores_unpublished_attestations() {
+        let mut reg = make_registry();
+        let v = reg.register_verifier(make_registration()).unwrap();
+        let signing_key = registration_signing_key();
+
+        // Submit attestation in one dimension and publish it
+        let sub1 = make_submission(&v.verifier_id, &signing_key);
+        let att1 = reg.submit_attestation(sub1).unwrap();
+        reg.review_attestation(&att1.attestation_id).unwrap();
+        reg.publish_attestation(&att1.attestation_id).unwrap();
+
+        // Submit attestation in another dimension but leave it in Submitted state
+        let sub2 = make_submission_with(
+            &v.verifier_id,
+            &signing_key,
+            VerificationDimension::Security,
+            "Security claim unpublished",
+            0.8,
+            "suite-sec-unp",
+            "trace-unp",
+            "2026-02-20T12:02:00Z",
+        );
         reg.submit_attestation(sub2).unwrap();
 
-        // With 2 dimensions submitted: 2 >= 2, no selective reporting
-        assert!(!reg.check_selective_reporting(&v.verifier_id, 2));
-        // With 2 dimensions submitted: 2 < 3, selective reporting detected
-        assert!(reg.check_selective_reporting(&v.verifier_id, 3));
+        // Submit attestation in third dimension and reject it
+        let sub3 = make_submission_with(
+            &v.verifier_id,
+            &signing_key,
+            VerificationDimension::Determinism,
+            "Determinism claim rejected",
+            0.7,
+            "suite-det-rej",
+            "trace-rej",
+            "2026-02-20T12:03:00Z",
+        );
+        let att3 = reg.submit_attestation(sub3).unwrap();
+        reg.review_attestation(&att3.attestation_id).unwrap();
+        reg.reject_attestation(&att3.attestation_id).unwrap();
+
+        // Only 1 published dimension — unpublished and rejected don't count
+        assert!(!reg.check_selective_reporting(&v.verifier_id, 1));
+        assert!(reg.check_selective_reporting(&v.verifier_id, 2));
     }
 
     #[test]
