@@ -489,7 +489,9 @@ fn emit_migration_audit_report(rendered: &str, out_path: Option<&Path>) -> Resul
 fn handle_bench_run(args: &cli::BenchRunArgs) -> Result<()> {
     let report = benchmark_suite_run_default_suite(args.scenario.as_deref())
         .map_err(|err| anyhow::anyhow!("benchmark suite run failed: {err}"))?;
-    println!("{}", benchmark_suite_to_json(&report));
+    let rendered =
+        benchmark_suite_to_json(&report).context("failed serializing benchmark suite report")?;
+    println!("{rendered}");
     eprintln!("{}", benchmark_suite_render_human_summary(&report));
     Ok(())
 }
@@ -2339,18 +2341,16 @@ fn build_registry_seed_request(
         output_hash: attestation_hash.clone(),
         slsa_level_claim: 2,
         envelope_format: supply_chain::provenance::AttestationEnvelopeFormat::FrankenNodeEnvelopeV1,
-        links: vec![
-            supply_chain::provenance::AttestationLink {
-                role: supply_chain::provenance::ChainLinkRole::Publisher,
-                signer_id: publisher_id.to_string(),
-                signer_version: version.to_string(),
-                signature: String::new(),
-                signed_payload_hash: attestation_hash,
-                issued_at_epoch: now_epoch.saturating_sub(60),
-                expires_at_epoch: now_epoch.saturating_add(86400),
-                revoked: false,
-            },
-        ],
+        links: vec![supply_chain::provenance::AttestationLink {
+            role: supply_chain::provenance::ChainLinkRole::Publisher,
+            signer_id: publisher_id.to_string(),
+            signer_version: version.to_string(),
+            signature: String::new(),
+            signed_payload_hash: attestation_hash,
+            issued_at_epoch: now_epoch.saturating_sub(60),
+            expires_at_epoch: now_epoch.saturating_add(86400),
+            revoked: false,
+        }],
         custom_claims: std::collections::BTreeMap::new(),
     };
     let _ = supply_chain::provenance::sign_links_in_place(&mut provenance);
@@ -2549,18 +2549,16 @@ fn build_registry_publish_request(package_path: &Path, content_hash: &str) -> Re
         output_hash: content_hash.to_string(),
         slsa_level_claim: 1,
         envelope_format: supply_chain::provenance::AttestationEnvelopeFormat::FrankenNodeEnvelopeV1,
-        links: vec![
-            supply_chain::provenance::AttestationLink {
-                role: supply_chain::provenance::ChainLinkRole::Publisher,
-                signer_id: publisher_id,
-                signer_version: "1.0.0".to_string(),
-                signature: String::new(),
-                signed_payload_hash: content_hash.to_string(),
-                issued_at_epoch: now_epoch.saturating_sub(60),
-                expires_at_epoch: now_epoch.saturating_add(86400),
-                revoked: false,
-            },
-        ],
+        links: vec![supply_chain::provenance::AttestationLink {
+            role: supply_chain::provenance::ChainLinkRole::Publisher,
+            signer_id: publisher_id,
+            signer_version: "1.0.0".to_string(),
+            signature: String::new(),
+            signed_payload_hash: content_hash.to_string(),
+            issued_at_epoch: now_epoch.saturating_sub(60),
+            expires_at_epoch: now_epoch.saturating_add(86400),
+            revoked: false,
+        }],
         custom_claims: std::collections::BTreeMap::new(),
     };
     let _ = supply_chain::provenance::sign_links_in_place(&mut provenance);

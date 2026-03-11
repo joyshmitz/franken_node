@@ -341,6 +341,18 @@ pub struct RegressionFinding {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BenchRunError {
     EmptyScenarioFilter,
+    EmptyMeasurements {
+        scenario: String,
+    },
+    NonFiniteMeasurement {
+        scenario: String,
+    },
+    NonFiniteReportValue {
+        detail: String,
+    },
+    SerializeReport {
+        detail: String,
+    },
     UnknownScenario {
         requested: Vec<String>,
         available: Vec<String>,
@@ -351,6 +363,21 @@ impl fmt::Display for BenchRunError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyScenarioFilter => write!(f, "scenario filter cannot be empty"),
+            Self::EmptyMeasurements { scenario } => {
+                write!(
+                    f,
+                    "scenario `{scenario}` requires at least one finite measurement"
+                )
+            }
+            Self::NonFiniteMeasurement { scenario } => {
+                write!(f, "scenario `{scenario}` contains a non-finite measurement")
+            }
+            Self::NonFiniteReportValue { detail } => {
+                write!(f, "benchmark report contains a non-finite value: {detail}")
+            }
+            Self::SerializeReport { detail } => {
+                write!(f, "failed serializing benchmark report: {detail}")
+            }
             Self::UnknownScenario {
                 requested,
                 available,
@@ -389,6 +416,13 @@ pub fn detect_regressions(
     current: &BenchmarkReport,
     threshold_pct: f64,
 ) -> Vec<RegressionFinding> {
+    // NaN/Inf thresholds would make `> threshold_pct` comparisons silently
+    // return false. Fail closed by treating invalid thresholds as 0%.
+    let threshold_pct = if threshold_pct.is_finite() {
+        threshold_pct.max(0.0)
+    } else {
+        0.0
+    };
     let mut findings = Vec::new();
 
     for current_scenario in &current.scenarios {
@@ -427,6 +461,49 @@ pub fn detect_regressions(
     }
 
     findings
+}
+
+fn validate_measurements(
+    scenario: &ScenarioDefinition,
+    raw_measurements: &[f64],
+) -> Result<(), BenchRunError> {
+    if raw_measurements.is_empty() {
+        return Err(BenchRunError::EmptyMeasurements {
+            scenario: scenario.name.clone(),
+        });
+    }
+    if raw_measurements.iter().any(|value| !value.is_finite()) {
+        return Err(BenchRunError::NonFiniteMeasurement {
+            scenario: scenario.name.clone(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_report(report: &BenchmarkReport) -> Result<(), BenchRunError> {
+    for scenario in &report.scenarios {
+        if !scenario.raw_value.is_finite() {
+            return Err(BenchRunError::NonFiniteReportValue {
+                detail: format!("scenario `{}` raw_value", scenario.name),
+            });
+        }
+        if !scenario.confidence_interval.lower.is_finite() {
+            return Err(BenchRunError::NonFiniteReportValue {
+                detail: format!("scenario `{}` confidence_interval.lower", scenario.name),
+            });
+        }
+        if !scenario.confidence_interval.upper.is_finite() {
+            return Err(BenchRunError::NonFiniteReportValue {
+                detail: format!("scenario `{}` confidence_interval.upper", scenario.name),
+            });
+        }
+        if !scenario.variance_pct.is_finite() {
+            return Err(BenchRunError::NonFiniteReportValue {
+                detail: format!("scenario `{}` variance_pct", scenario.name),
+            });
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -712,7 +789,9 @@ impl BenchmarkSuite {
         &mut self,
         scenario: &ScenarioDefinition,
         raw_measurements: &[f64],
-    ) -> ScenarioResult {
+    ) -> Result<ScenarioResult, BenchRunError> {
+        validate_measurements(scenario, raw_measurements)?;
+
         self.emit_event(
             BS_SCENARIO_STARTED,
             Some(&scenario.name),
@@ -750,7 +829,7 @@ impl BenchmarkSuite {
             );
         }
 
-        ScenarioResult {
+        Ok(ScenarioResult {
             dimension: scenario.dimension,
             name: scenario.name.clone(),
             raw_value: m,
@@ -759,7 +838,7 @@ impl BenchmarkSuite {
             score,
             iterations: u32::try_from(raw_measurements.len()).unwrap_or(u32::MAX),
             variance_pct: cv,
-        }
+        })
     }
 
     /// Execute all scenarios with provided measurement data and produce a report.
@@ -768,12 +847,12 @@ impl BenchmarkSuite {
     pub fn run(
         &mut self,
         measurements: &std::collections::BTreeMap<String, Vec<f64>>,
-    ) -> BenchmarkReport {
+    ) -> Result<BenchmarkReport, BenchRunError> {
         let mut results = Vec::new();
 
         for scenario in &self.scenarios.clone() {
             if let Some(raw) = measurements.get(&scenario.name) {
-                let result = self.execute_scenario(scenario, raw);
+                let result = self.execute_scenario(scenario, raw)?;
                 results.push(result);
             }
         }
@@ -809,7 +888,7 @@ impl BenchmarkSuite {
         };
 
         report.provenance_hash = report.compute_provenance_hash();
-        report
+        Ok(report)
     }
 
     /// Get all events emitted during execution.
@@ -840,8 +919,11 @@ impl BenchmarkSuite {
 // ---------------------------------------------------------------------------
 
 /// Serialize a report to canonical JSON.
-pub fn to_canonical_json(report: &BenchmarkReport) -> String {
-    serde_json::to_string_pretty(report).unwrap_or_default()
+pub fn to_canonical_json(report: &BenchmarkReport) -> Result<String, BenchRunError> {
+    validate_report(report)?;
+    serde_json::to_string_pretty(report).map_err(|err| BenchRunError::SerializeReport {
+        detail: err.to_string(),
+    })
 }
 
 /// Deserialize a report from JSON.
@@ -965,7 +1047,7 @@ pub fn run_default_suite_with_config(
         runner.add_scenario(scenario);
     }
 
-    Ok(runner.run(&measurements))
+    runner.run(&measurements)
 }
 
 pub fn run_default_suite(scenario_filter: Option<&str>) -> Result<BenchmarkReport, BenchRunError> {
@@ -1152,7 +1234,9 @@ mod tests {
             measurements.insert(s.name.clone(), vec![150.0, 152.0, 148.0, 151.0, 149.0]);
         }
 
-        let report = suite.run(&measurements);
+        let report = suite
+            .run(&measurements)
+            .expect("finite benchmark data should run");
         assert_eq!(report.suite_version, SUITE_VERSION);
         assert_eq!(report.scoring_formula_version, SCORING_FORMULA_VERSION);
         assert!(!report.scenarios.is_empty());
@@ -1170,7 +1254,9 @@ mod tests {
             measurements.insert(s.name.clone(), vec![50.0; 5]);
         }
 
-        let report = suite.run(&measurements);
+        let report = suite
+            .run(&measurements)
+            .expect("finite benchmark data should run");
         assert!(
             report.has_full_coverage(),
             "Report should cover all 6 dimensions"
@@ -1210,7 +1296,7 @@ mod tests {
             provenance_hash: "sha256:test".to_string(),
         };
 
-        let json = to_canonical_json(&report);
+        let json = to_canonical_json(&report).expect("finite report should serialize");
         let roundtrip = from_json(&json).unwrap();
         assert_eq!(report.suite_version, roundtrip.suite_version);
         assert_eq!(report.scenarios.len(), roundtrip.scenarios.len());
@@ -1309,6 +1395,96 @@ mod tests {
     }
 
     #[test]
+    fn test_regression_detection_nan_threshold_fails_closed() {
+        let baseline = BenchmarkReport {
+            suite_version: SUITE_VERSION.to_string(),
+            scoring_formula_version: SCORING_FORMULA_VERSION.to_string(),
+            timestamp_utc: "2026-02-20T00:00:00Z".to_string(),
+            hardware_profile: HardwareProfile {
+                cpu: "test".to_string(),
+                memory_mb: 8192,
+                os: "linux".to_string(),
+            },
+            runtime_versions: RuntimeVersions {
+                franken_node: "0.1.0".to_string(),
+                node: None,
+                bun: None,
+            },
+            scenarios: vec![ScenarioResult {
+                dimension: BenchmarkDimension::PerformanceUnderHardening,
+                name: "cold_start_latency".to_string(),
+                raw_value: 200.0,
+                unit: "ms".to_string(),
+                confidence_interval: ConfidenceInterval {
+                    lower: 195.0,
+                    upper: 205.0,
+                },
+                score: 75,
+                iterations: 5,
+                variance_pct: 2.0,
+            }],
+            aggregate_score: 75,
+            provenance_hash: String::new(),
+        };
+
+        let current = BenchmarkReport {
+            scenarios: vec![ScenarioResult {
+                raw_value: 350.0,
+                ..baseline.scenarios[0].clone()
+            }],
+            ..baseline.clone()
+        };
+
+        let findings = detect_regressions(&baseline, &current, f64::NAN);
+        assert_eq!(findings.len(), 1);
+    }
+
+    #[test]
+    fn test_regression_detection_infinite_threshold_fails_closed() {
+        let baseline = BenchmarkReport {
+            suite_version: SUITE_VERSION.to_string(),
+            scoring_formula_version: SCORING_FORMULA_VERSION.to_string(),
+            timestamp_utc: "2026-02-20T00:00:00Z".to_string(),
+            hardware_profile: HardwareProfile {
+                cpu: "test".to_string(),
+                memory_mb: 8192,
+                os: "linux".to_string(),
+            },
+            runtime_versions: RuntimeVersions {
+                franken_node: "0.1.0".to_string(),
+                node: None,
+                bun: None,
+            },
+            scenarios: vec![ScenarioResult {
+                dimension: BenchmarkDimension::PerformanceUnderHardening,
+                name: "cold_start_latency".to_string(),
+                raw_value: 200.0,
+                unit: "ms".to_string(),
+                confidence_interval: ConfidenceInterval {
+                    lower: 195.0,
+                    upper: 205.0,
+                },
+                score: 75,
+                iterations: 5,
+                variance_pct: 2.0,
+            }],
+            aggregate_score: 75,
+            provenance_hash: String::new(),
+        };
+
+        let current = BenchmarkReport {
+            scenarios: vec![ScenarioResult {
+                raw_value: 350.0,
+                ..baseline.scenarios[0].clone()
+            }],
+            ..baseline.clone()
+        };
+
+        let findings = detect_regressions(&baseline, &current, f64::INFINITY);
+        assert_eq!(findings.len(), 1);
+    }
+
+    #[test]
     fn test_events_emitted_during_run() {
         let config = SuiteConfig::with_defaults();
         let mut suite = BenchmarkSuite::new(config);
@@ -1324,7 +1500,9 @@ mod tests {
 
         let mut measurements = BTreeMap::new();
         measurements.insert("test_scenario".to_string(), vec![5.0; 5]);
-        let _report = suite.run(&measurements);
+        let _report = suite
+            .run(&measurements)
+            .expect("finite benchmark data should run");
 
         let event_codes: Vec<&str> = suite.events().iter().map(|e| e.code.as_str()).collect();
         assert!(event_codes.contains(&BS_SUITE_INITIALIZED));
@@ -1402,8 +1580,92 @@ mod tests {
         // migration: 1000 fixtures/s = ideal = score 100
         measurements.insert("migration_scanner_throughput".to_string(), vec![1000.0; 5]);
 
-        let report = suite.run(&measurements);
+        let report = suite
+            .run(&measurements)
+            .expect("finite benchmark data should run");
         assert_eq!(report.aggregate_score, 100);
+    }
+
+    #[test]
+    fn test_execute_scenario_rejects_non_finite_measurements() {
+        let config = SuiteConfig::with_defaults();
+        let mut suite = BenchmarkSuite::new(config);
+        let scenario = ScenarioDefinition {
+            dimension: BenchmarkDimension::PerformanceUnderHardening,
+            name: "test_scenario".to_string(),
+            unit: "ms".to_string(),
+            iterations: 2,
+            warmup_iterations: 0,
+            sandbox_required: true,
+            scoring: ScoringConfig::lower_is_better(1.0, 10.0),
+        };
+
+        let err = suite
+            .execute_scenario(&scenario, &[1.0, f64::NAN])
+            .expect_err("NaN input must fail closed");
+        assert!(matches!(err, BenchRunError::NonFiniteMeasurement { .. }));
+    }
+
+    #[test]
+    fn test_run_rejects_empty_measurements() {
+        let config = SuiteConfig::with_defaults();
+        let mut suite = BenchmarkSuite::new(config);
+        suite.add_scenario(ScenarioDefinition {
+            dimension: BenchmarkDimension::PerformanceUnderHardening,
+            name: "test_scenario".to_string(),
+            unit: "ms".to_string(),
+            iterations: 1,
+            warmup_iterations: 0,
+            sandbox_required: true,
+            scoring: ScoringConfig::lower_is_better(1.0, 10.0),
+        });
+
+        let mut measurements = BTreeMap::new();
+        measurements.insert("test_scenario".to_string(), Vec::new());
+
+        let err = suite
+            .run(&measurements)
+            .expect_err("empty measurement sets must fail closed");
+        assert!(matches!(err, BenchRunError::EmptyMeasurements { .. }));
+    }
+
+    #[test]
+    fn test_to_canonical_json_rejects_non_finite_report() {
+        let report = BenchmarkReport {
+            suite_version: SUITE_VERSION.to_string(),
+            scoring_formula_version: SCORING_FORMULA_VERSION.to_string(),
+            timestamp_utc: "2026-02-21T00:00:00Z".to_string(),
+            hardware_profile: HardwareProfile {
+                cpu: "test".to_string(),
+                memory_mb: 8192,
+                os: "linux".to_string(),
+            },
+            runtime_versions: RuntimeVersions {
+                franken_node: "0.1.0".to_string(),
+                node: None,
+                bun: None,
+            },
+            scenarios: vec![ScenarioResult {
+                dimension: BenchmarkDimension::PerformanceUnderHardening,
+                name: "cold_start_latency".to_string(),
+                raw_value: f64::INFINITY,
+                unit: "ms".to_string(),
+                confidence_interval: ConfidenceInterval {
+                    lower: 1.0,
+                    upper: 2.0,
+                },
+                score: 0,
+                iterations: 1,
+                variance_pct: 0.0,
+            }],
+            aggregate_score: 0,
+            provenance_hash: String::new(),
+        };
+
+        assert!(
+            to_canonical_json(&report).is_err(),
+            "non-finite reports must return an error instead of empty JSON"
+        );
     }
 
     #[test]
