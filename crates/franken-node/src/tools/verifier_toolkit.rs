@@ -626,26 +626,33 @@ impl VerifierToolkit {
 
     fn check_metrics_thresholds(&self, claim: &VerifiableClaim) -> bool {
         for (metric_key, value) in &claim.metric_values {
-            if let Some(threshold) = claim.thresholds.get(metric_key)
-                && value < threshold
-            {
+            // NaN/Inf metric values are invalid — fail closed.
+            if !value.is_finite() {
                 return false;
+            }
+            if let Some(threshold) = claim.thresholds.get(metric_key) {
+                // NaN/Inf thresholds are invalid — fail closed.
+                if !threshold.is_finite() {
+                    return false;
+                }
+                if value < threshold {
+                    return false;
+                }
             }
         }
         true
     }
 
     fn cross_check_claim(&self, claim: &VerifiableClaim) -> bool {
-        // Cross-check: all metrics must be in [0, 1] for normalized claims
-        // or non-negative for absolute metrics
+        // Cross-check: all metrics must be finite and non-negative.
         for value in claim.metric_values.values() {
-            if *value < 0.0 {
+            if !value.is_finite() || *value < 0.0 {
                 return false;
             }
         }
-        // Verify thresholds are reasonable
+        // Verify thresholds are finite and in [0, 1].
         for threshold in claim.thresholds.values() {
-            if *threshold < 0.0 || *threshold > 1.0 {
+            if !threshold.is_finite() || *threshold < 0.0 || *threshold > 1.0 {
                 return false;
             }
         }
@@ -1054,5 +1061,64 @@ mod tests {
         let mut claim = sample_claim("test");
         claim.evidence_hash = String::new();
         assert!(toolkit.verify_evidence_hash(&claim));
+    }
+
+    // === NaN/Inf guards ===
+
+    #[test]
+    fn nan_metric_value_fails_threshold_check() {
+        let toolkit = VerifierToolkit::default();
+        let mut claim = sample_claim("nan-val");
+        claim.metric_values.insert("score".to_string(), f64::NAN);
+        assert!(!toolkit.check_metrics_thresholds(&claim));
+    }
+
+    #[test]
+    fn nan_threshold_fails_threshold_check() {
+        let toolkit = VerifierToolkit::default();
+        let mut claim = sample_claim("nan-thr");
+        claim.thresholds.insert("score".to_string(), f64::NAN);
+        assert!(!toolkit.check_metrics_thresholds(&claim));
+    }
+
+    #[test]
+    fn infinity_metric_value_fails_threshold_check() {
+        let toolkit = VerifierToolkit::default();
+        let mut claim = sample_claim("inf-val");
+        claim.metric_values.insert("score".to_string(), f64::INFINITY);
+        assert!(!toolkit.check_metrics_thresholds(&claim));
+    }
+
+    #[test]
+    fn nan_metric_fails_crosscheck() {
+        let toolkit = VerifierToolkit::default();
+        let mut claim = sample_claim("nan-cross");
+        claim.metric_values.insert("score".to_string(), f64::NAN);
+        assert!(!toolkit.cross_check_claim(&claim));
+    }
+
+    #[test]
+    fn nan_threshold_fails_crosscheck() {
+        let toolkit = VerifierToolkit::default();
+        let mut claim = sample_claim("nan-thr-cross");
+        claim.thresholds.insert("score".to_string(), f64::NAN);
+        assert!(!toolkit.cross_check_claim(&claim));
+    }
+
+    #[test]
+    fn infinity_threshold_fails_crosscheck() {
+        let toolkit = VerifierToolkit::default();
+        let mut claim = sample_claim("inf-thr-cross");
+        claim.thresholds.insert("score".to_string(), f64::INFINITY);
+        assert!(!toolkit.cross_check_claim(&claim));
+    }
+
+    #[test]
+    fn nan_metric_fails_full_validation() {
+        let mut toolkit = VerifierToolkit::default();
+        let mut claim = sample_claim("nan-full");
+        claim.metric_values.insert("score".to_string(), f64::NAN);
+        let report = toolkit.validate_claims(&[claim], &make_trace());
+        assert_eq!(report.overall_verdict, ValidationVerdict::Fail);
     }
 }

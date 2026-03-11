@@ -44,10 +44,16 @@ impl ThresholdConfig {
             });
         }
         let mut seen_key_ids = BTreeSet::new();
+        let mut seen_public_keys = BTreeSet::new();
         for signer in &self.signer_keys {
             if !seen_key_ids.insert(signer.key_id.as_str()) {
                 return Err(ThresholdError::ConfigInvalid {
                     reason: format!("duplicate signer key_id {}", signer.key_id),
+                });
+            }
+            if !seen_public_keys.insert(signer.public_key_hex.as_str()) {
+                return Err(ThresholdError::ConfigInvalid {
+                    reason: format!("duplicate signer public_key_hex {}", signer.public_key_hex),
                 });
             }
         }
@@ -394,6 +400,18 @@ mod tests {
         );
     }
 
+    #[test]
+    fn config_duplicate_public_keys_invalid() {
+        let mut c = test_config(2, 3);
+        c.signer_keys[1].public_key_hex = c.signer_keys[0].public_key_hex.clone();
+        assert_eq!(
+            c.validate(),
+            Err(ThresholdError::ConfigInvalid {
+                reason: "duplicate signer public_key_hex pubkey_0000".to_string(),
+            })
+        );
+    }
+
     // === Threshold verification ===
 
     #[test]
@@ -443,6 +461,32 @@ mod tests {
             result.failure_reason,
             Some(FailureReason::ConfigInvalid {
                 reason: "threshold must be > 0".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn duplicate_public_key_config_fails_closed_before_quorum_count() {
+        let mut config = test_config(2, 2);
+        config.signer_keys[1].public_key_hex = config.signer_keys[0].public_key_hex.clone();
+
+        let artifact = PublicationArtifact {
+            artifact_id: "art-dup-pubkey".into(),
+            connector_id: "conn-1".into(),
+            content_hash: "hash-abc".into(),
+            signatures: vec![
+                sign(&config.signer_keys[0], "hash-abc"),
+                sign(&config.signer_keys[1], "hash-abc"),
+            ],
+        };
+
+        let result = verify_threshold(&config, &artifact, "t4-dup-pubkey", "ts");
+        assert!(!result.verified);
+        assert_eq!(result.valid_signatures, 0);
+        assert_eq!(
+            result.failure_reason,
+            Some(FailureReason::ConfigInvalid {
+                reason: "duplicate signer public_key_hex pubkey_0000".to_string(),
             })
         );
     }
