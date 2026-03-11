@@ -33,7 +33,7 @@
     }
   ],
   "failed_witnesses": 0,
-  "generated_at": "2026-03-10T18:56:50+00:00",
+  "generated_at": "2026-03-11T05:21:31+00:00",
   "notes": [
     "This support shard intentionally excludes the verifier/capsule Rust files currently reserved under bd-1z5a.8.",
     "bd-3tw7.2 extends the static seed to the standalone sdk/verifier workspace crate and its public verifier contract docs.",
@@ -42,7 +42,7 @@
     "Each witness links to concrete source anchors already present in the shared tree so regressions fail on exact guarded paths, not vague heuristics."
   ],
   "overall_pass": true,
-  "passed_witnesses": 11,
+  "passed_witnesses": 13,
   "schema_version": "replacement-truthfulness-gate-v1.0",
   "support_bead_ids": [
     "bd-3tw7.1",
@@ -51,7 +51,7 @@
     "bd-3tw7.5"
   ],
   "title": "Replacement-critical truthfulness gate static seed",
-  "total_witnesses": 11,
+  "total_witnesses": 13,
   "verdict": "PASS",
   "verification_method": "python3 scripts/check_replacement_truthfulness_gate.py --json",
   "witness_matrix": [
@@ -267,6 +267,44 @@
       "surface": "workspace_verifier_sdk_metadata",
       "witness_family": "public verifier sdk package metadata must remain structural-only",
       "witness_id": "workspace_verifier_sdk_package_metadata_truthfulness"
+    },
+    {
+      "detail": "all 4 required anchor(s) present",
+      "missing_required_markers": [],
+      "offending_path": "crates/franken-node/src/connector/supervision.rs",
+      "pass": true,
+      "present_banned_markers": [],
+      "reason_code": "TRUTHFULNESS_GATE_STATIC_PASS",
+      "related_checkers": [
+        "scripts/check_supervision.py"
+      ],
+      "remediation_bead": "bd-3tw7",
+      "source_paths": [
+        "crates/franken-node/src/connector/supervision.rs"
+      ],
+      "support_bead": "bd-3tw7.1",
+      "surface": "supervision",
+      "witness_family": "supervision time/budget logic uses real monotonic clocks, not synthetic stubs",
+      "witness_id": "supervision_time_budget_real_clock"
+    },
+    {
+      "detail": "all 5 required anchor(s) present",
+      "missing_required_markers": [],
+      "offending_path": "crates/franken-node/src/connector/migration_artifact.rs",
+      "pass": true,
+      "present_banned_markers": [],
+      "reason_code": "TRUTHFULNESS_GATE_STATIC_PASS",
+      "related_checkers": [
+        "scripts/check_migration_artifact.py"
+      ],
+      "remediation_bead": "bd-3tw7",
+      "source_paths": [
+        "crates/franken-node/src/connector/migration_artifact.rs"
+      ],
+      "support_bead": "bd-3tw7.1",
+      "surface": "migration_artifact",
+      "witness_family": "migration artifacts use real HMAC signatures, not presence-only shortcuts",
+      "witness_id": "migration_artifact_real_signature_verification"
     }
   ]
 }

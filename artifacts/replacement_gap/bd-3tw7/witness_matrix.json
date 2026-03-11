@@ -211,5 +211,43 @@
     "surface": "workspace_verifier_sdk_metadata",
     "witness_family": "public verifier sdk package metadata must remain structural-only",
     "witness_id": "workspace_verifier_sdk_package_metadata_truthfulness"
+  },
+  {
+    "detail": "all 4 required anchor(s) present",
+    "missing_required_markers": [],
+    "offending_path": "crates/franken-node/src/connector/supervision.rs",
+    "pass": true,
+    "present_banned_markers": [],
+    "reason_code": "TRUTHFULNESS_GATE_STATIC_PASS",
+    "related_checkers": [
+      "scripts/check_supervision.py"
+    ],
+    "remediation_bead": "bd-3tw7",
+    "source_paths": [
+      "crates/franken-node/src/connector/supervision.rs"
+    ],
+    "support_bead": "bd-3tw7.1",
+    "surface": "supervision",
+    "witness_family": "supervision time/budget logic uses real monotonic clocks, not synthetic stubs",
+    "witness_id": "supervision_time_budget_real_clock"
+  },
+  {
+    "detail": "all 5 required anchor(s) present",
+    "missing_required_markers": [],
+    "offending_path": "crates/franken-node/src/connector/migration_artifact.rs",
+    "pass": true,
+    "present_banned_markers": [],
+    "reason_code": "TRUTHFULNESS_GATE_STATIC_PASS",
+    "related_checkers": [
+      "scripts/check_migration_artifact.py"
+    ],
+    "remediation_bead": "bd-3tw7",
+    "source_paths": [
+      "crates/franken-node/src/connector/migration_artifact.rs"
+    ],
+    "support_bead": "bd-3tw7.1",
+    "surface": "migration_artifact",
+    "witness_family": "migration artifacts use real HMAC signatures, not presence-only shortcuts",
+    "witness_id": "migration_artifact_real_signature_verification"
   }
 ]

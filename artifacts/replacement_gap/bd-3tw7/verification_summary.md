@@ -19,6 +19,8 @@
 - `certification_evidence_binding` (supply_chain_certification): `PASS` via `TRUTHFULNESS_GATE_STATIC_PASS`
 - `workspace_verifier_sdk_structural_only_posture` (workspace_verifier_sdk): `PASS` via `TRUTHFULNESS_GATE_STATIC_PASS`
 - `workspace_verifier_sdk_package_metadata_truthfulness` (workspace_verifier_sdk_metadata): `PASS` via `TRUTHFULNESS_GATE_STATIC_PASS`
+- `supervision_time_budget_real_clock` (supervision): `PASS` via `TRUTHFULNESS_GATE_STATIC_PASS`
+- `migration_artifact_real_signature_verification` (migration_artifact): `PASS` via `TRUTHFULNESS_GATE_STATIC_PASS`
 
 ## Excluded Reserved Surfaces
 

@@ -238,6 +238,44 @@ WITNESS_SPECS = (
         related_checkers=("scripts/check_verifier_sdk_capsule.py",),
         support_bead="bd-3tw7.4",
     ),
+    WitnessSpec(
+        witness_id="supervision_time_budget_real_clock",
+        surface="supervision",
+        witness_family="supervision time/budget logic uses real monotonic clocks, not synthetic stubs",
+        source_paths=("crates/franken-node/src/connector/supervision.rs",),
+        required_markers=(
+            "fn test_supervision_source_rejects_synthetic_time_stubs()",
+            "INV_SUP_BUDGET_BOUND",
+            "fn prune_expired_restarts(",
+            "SteadyMonotonicClock",
+        ),
+        banned_markers=(
+            "computed_now_ms",
+            "synthetic_now_ms",
+            "proxy_now_ms",
+            "stub_now_ms",
+        ),
+        related_checkers=("scripts/check_supervision.py",),
+    ),
+    WitnessSpec(
+        witness_id="migration_artifact_real_signature_verification",
+        surface="migration_artifact",
+        witness_family="migration artifacts use real HMAC signatures, not presence-only shortcuts",
+        source_paths=("crates/franken-node/src/connector/migration_artifact.rs",),
+        required_markers=(
+            "fn verify_artifact_signatures(",
+            "fn canonical_rollback_receipt_payload(",
+            "fn canonical_artifact_payload(",
+            "MIGRATION_ARTIFACT_SIGNING_KEY",
+            "ct_eq(",
+        ),
+        banned_markers=(
+            "!sig.is_empty()",
+            "!signature.is_empty()",
+            "sig_placeholder",
+        ),
+        related_checkers=("scripts/check_migration_artifact.py",),
+    ),
 )
 
 
