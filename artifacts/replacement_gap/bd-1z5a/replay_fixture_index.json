@@ -1,7 +1,7 @@
 {
   "bead_id": "bd-1z5a",
-  "support_bead_id": "bd-1z5a.10",
-  "generated_at": "2026-03-10T18:44:07Z",
+  "support_bead_id": "bd-1z5a.14",
+  "generated_at": "2026-03-11T10:39:51Z",
   "fixtures": [
     {
       "id": "capsule_certification_report",
@@ -151,6 +151,19 @@
       ]
     },
     {
+      "id": "rch_tractability_benchmarks",
+      "kind": "machine_readable_benchmark_report",
+      "path": "artifacts/replacement_gap/bd-1z5a/rch_tractability_benchmarks.json",
+      "coverage": [
+        "representative external replay verification tractability",
+        "representative trust-score update tractability",
+        "current-tree rch build ids and durations"
+      ],
+      "consumed_by": [
+        "scripts/check_bd_1z5a_evidence_pack.py"
+      ]
+    },
+    {
       "id": "evidence_pack_coherence_checker",
       "kind": "python_checker",
       "path": "scripts/check_bd_1z5a_evidence_pack.py",
@@ -158,6 +171,7 @@
         "artifacts/replacement_gap/bd-1z5a/verification_evidence.json",
         "artifacts/replacement_gap/bd-1z5a/verification_summary.md",
         "artifacts/replacement_gap/bd-1z5a/replay_fixture_index.json",
+        "artifacts/replacement_gap/bd-1z5a/rch_tractability_benchmarks.json",
         "artifacts/replacement_gap/bd-1z5a/operator_e2e_summary.json",
         "artifacts/replacement_gap/bd-1z5a/operator_e2e_summary.md",
         "artifacts/replacement_gap/bd-1z5a/operator_e2e_bundle.json",
@@ -169,6 +183,7 @@
         "fixture-index reference paths stay coherent",
         "operator bundle, structured log, and fraud witness agree on trace and fraud-proof identity",
         "operator summary markdown stays canonical",
+        "tractability benchmark build ids and durations stay machine-verifiable",
         "stale gap language does not return to the evidence pack"
       ],
       "paired_tests": [
@@ -190,6 +205,30 @@
     {
       "build_id": 29747325727408133,
       "command": "cargo clippy -p frankenengine-node --all-targets --message-format short -- -D warnings",
+      "status": "PASS"
+    },
+    {
+      "build_id": 29747594884285383,
+      "command": "cargo test -p frankenengine-node --features extended-surfaces test_replay_capsule_match --lib -- --nocapture",
+      "status": "PASS"
+    },
+    {
+      "build_id": 29747594884285343,
+      "command": "cargo test -p frankenengine-node test_events_contain_scoreboard_updated --lib -- --nocapture",
+      "status": "PASS"
+    }
+  ],
+  "rch_tractability_benchmarks": [
+    {
+      "id": "external_replay_verification",
+      "build_id": 29747594884285383,
+      "duration_ms": 475466,
+      "status": "PASS"
+    },
+    {
+      "id": "trust_score_update_publication",
+      "build_id": 29747594884285343,
+      "duration_ms": 465686,
       "status": "PASS"
     }
   ],

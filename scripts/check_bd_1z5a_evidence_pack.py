@@ -16,13 +16,14 @@ from scripts.lib.test_logger import configure_test_logging
 
 
 PARENT_BEAD = "bd-1z5a"
-SUPPORT_BEAD = "bd-1z5a.9"
+SUPPORT_BEAD = "bd-1z5a.14"
 TITLE = "bd-1z5a replacement-gap evidence pack coherence"
 
 ARTIFACT_DIR = ROOT / "artifacts" / "replacement_gap" / PARENT_BEAD
 VERIFICATION_EVIDENCE = ARTIFACT_DIR / "verification_evidence.json"
 VERIFICATION_SUMMARY = ARTIFACT_DIR / "verification_summary.md"
 REPLAY_FIXTURE_INDEX = ARTIFACT_DIR / "replay_fixture_index.json"
+TRACTABILITY_BENCHMARKS = ARTIFACT_DIR / "rch_tractability_benchmarks.json"
 OPERATOR_SUMMARY_JSON = ARTIFACT_DIR / "operator_e2e_summary.json"
 OPERATOR_SUMMARY_MD = ARTIFACT_DIR / "operator_e2e_summary.md"
 OPERATOR_BUNDLE = ARTIFACT_DIR / "operator_e2e_bundle.json"
@@ -41,6 +42,7 @@ REQUIRED_FIXTURE_IDS = {
     "operator_e2e_bundle",
     "fraud_proof_witness_bundle",
     "evidence_pack_coherence_checker",
+    "rch_tractability_benchmarks",
 }
 
 REQUIRED_STAGE_IDS = [
@@ -50,6 +52,11 @@ REQUIRED_STAGE_IDS = [
     "capsule_verify_quarantine_replay",
     "verifier_score_update",
 ]
+
+REQUIRED_BENCHMARK_IDS = {
+    "external_replay_verification": "test_replay_capsule_match",
+    "trust_score_update_publication": "test_events_contain_scoreboard_updated",
+}
 
 STALE_GAP_PHRASES = [
     "missing operator shell coverage",
@@ -106,6 +113,25 @@ def _fixture_reference_paths(entry: dict[str, Any]) -> list[str]:
         if isinstance(value, list):
             refs.extend(item for item in value if isinstance(item, str))
     return refs
+
+
+def _benchmark_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = report.get("benchmarks")
+    return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+
+def _benchmark_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    summary: list[dict[str, Any]] = []
+    for row in rows:
+        summary.append(
+            {
+                "id": row.get("id"),
+                "build_id": row.get("build_id"),
+                "duration_ms": row.get("duration_ms"),
+                "status": row.get("status"),
+            }
+        )
+    return sorted(summary, key=lambda item: str(item.get("id", "")))
 
 
 def _markdown_build_ids(summary_json: dict[str, Any]) -> str:
@@ -176,6 +202,7 @@ def _evaluate(root: Path) -> dict[str, Any]:
             VERIFICATION_EVIDENCE,
             VERIFICATION_SUMMARY,
             REPLAY_FIXTURE_INDEX,
+            TRACTABILITY_BENCHMARKS,
             OPERATOR_SUMMARY_JSON,
             OPERATOR_SUMMARY_MD,
             OPERATOR_BUNDLE,
@@ -190,7 +217,7 @@ def _evaluate(root: Path) -> dict[str, Any]:
         passed = sum(1 for item in checks if item["passed"])
         failed = len(checks) - passed
         return {
-            "schema_version": "bd-1z5a-evidence-pack-check-v1.0",
+            "schema_version": "bd-1z5a-evidence-pack-check-v1.1",
             "bead_id": SUPPORT_BEAD,
             "parent_bead": PARENT_BEAD,
             "title": TITLE,
@@ -204,6 +231,7 @@ def _evaluate(root: Path) -> dict[str, Any]:
 
     evidence = _read_json(root / VERIFICATION_EVIDENCE.relative_to(ROOT))
     fixture_index = _read_json(root / REPLAY_FIXTURE_INDEX.relative_to(ROOT))
+    benchmark_report = _read_json(root / TRACTABILITY_BENCHMARKS.relative_to(ROOT))
     summary_json = _read_json(root / OPERATOR_SUMMARY_JSON.relative_to(ROOT))
     bundle = _read_json(root / OPERATOR_BUNDLE.relative_to(ROOT))
     fraud_bundle = _read_json(root / FRAUD_PROOF_BUNDLE.relative_to(ROOT))
@@ -220,6 +248,23 @@ def _evaluate(root: Path) -> dict[str, Any]:
             "verification_evidence artifact paths resolve",
             not missing_artifact_refs,
             "ok" if not missing_artifact_refs else ",".join(missing_artifact_refs),
+        )
+    )
+
+    evidence_metadata_ok = (
+        evidence.get("bead_id") == PARENT_BEAD and evidence.get("support_bead_id") == SUPPORT_BEAD
+    )
+    checks.append(
+        _check(
+            "verification evidence metadata matches current support shard",
+            evidence_metadata_ok,
+            json.dumps(
+                {
+                    "bead_id": evidence.get("bead_id"),
+                    "support_bead_id": evidence.get("support_bead_id"),
+                },
+                sort_keys=True,
+            ),
         )
     )
 
@@ -250,6 +295,171 @@ def _evaluate(root: Path) -> dict[str, Any]:
             "replay fixture index reference paths resolve",
             not missing_fixture_paths,
             "ok" if not missing_fixture_paths else ",".join(sorted(set(missing_fixture_paths))),
+        )
+    )
+
+    fixture_index_metadata_ok = (
+        fixture_index.get("bead_id") == PARENT_BEAD
+        and fixture_index.get("support_bead_id") == SUPPORT_BEAD
+    )
+    checks.append(
+        _check(
+            "replay fixture index metadata matches current support shard",
+            fixture_index_metadata_ok,
+            json.dumps(
+                {
+                    "bead_id": fixture_index.get("bead_id"),
+                    "support_bead_id": fixture_index.get("support_bead_id"),
+                },
+                sort_keys=True,
+            ),
+        )
+    )
+
+    benchmark_rows = _benchmark_rows(benchmark_report)
+    benchmark_metadata_ok = (
+        benchmark_report.get("artifact_type") == "rch_tractability_benchmarks"
+        and benchmark_report.get("bead_id") == PARENT_BEAD
+        and benchmark_report.get("support_bead_id") == SUPPORT_BEAD
+        and benchmark_report.get("verdict") == "PASS"
+    )
+    checks.append(
+        _check(
+            "tractability benchmark metadata matches current support shard",
+            benchmark_metadata_ok,
+            json.dumps(
+                {
+                    "artifact_type": benchmark_report.get("artifact_type"),
+                    "bead_id": benchmark_report.get("bead_id"),
+                    "support_bead_id": benchmark_report.get("support_bead_id"),
+                    "verdict": benchmark_report.get("verdict"),
+                },
+                sort_keys=True,
+            ),
+        )
+    )
+
+    benchmark_ids = {
+        row.get("id")
+        for row in benchmark_rows
+        if isinstance(row.get("id"), str)
+    }
+    missing_benchmark_ids = sorted(set(REQUIRED_BENCHMARK_IDS) - benchmark_ids)
+    checks.append(
+        _check(
+            "tractability benchmark report exposes required lane ids",
+            not missing_benchmark_ids,
+            "ok" if not missing_benchmark_ids else ",".join(missing_benchmark_ids),
+        )
+    )
+
+    measurement_policy = benchmark_report.get("measurement_policy")
+    budget_ms = (
+        measurement_policy.get("max_duration_ms")
+        if isinstance(measurement_policy, dict)
+        else None
+    )
+    budget_valid = isinstance(budget_ms, int) and budget_ms > 0
+    checks.append(
+        _check(
+            "tractability benchmark report declares positive budget",
+            budget_valid,
+            json.dumps({"max_duration_ms": budget_ms}, sort_keys=True),
+        )
+    )
+
+    command_mismatches: list[str] = []
+    benchmark_failures: list[dict[str, Any]] = []
+    benchmark_row_map = {
+        row["id"]: row
+        for row in benchmark_rows
+        if isinstance(row.get("id"), str)
+    }
+    for benchmark_id, expected_probe in REQUIRED_BENCHMARK_IDS.items():
+        row = benchmark_row_map.get(benchmark_id)
+        if not isinstance(row, dict):
+            continue
+        command = row.get("command")
+        if not isinstance(command, str) or expected_probe not in command:
+            command_mismatches.append(benchmark_id)
+
+        duration_ms = row.get("duration_ms")
+        build_id = row.get("build_id")
+        exit_code = row.get("exit_code")
+        status = row.get("status")
+        timing = row.get("timing")
+        timing_total = timing.get("total") if isinstance(timing, dict) else None
+        timing_total_matches = (
+            timing_total is None
+            or (
+                isinstance(timing_total, int)
+                and isinstance(duration_ms, int)
+                and abs(timing_total - duration_ms) <= 1
+            )
+        )
+        passed = (
+            isinstance(build_id, int)
+            and build_id > 0
+            and status == "PASS"
+            and exit_code == 0
+            and isinstance(duration_ms, int)
+            and duration_ms > 0
+            and budget_valid
+            and duration_ms <= budget_ms
+            and timing_total_matches
+        )
+        if not passed:
+            benchmark_failures.append(
+                {
+                    "id": benchmark_id,
+                    "build_id": build_id,
+                    "duration_ms": duration_ms,
+                    "exit_code": exit_code,
+                    "status": status,
+                    "timing_total": timing_total,
+                }
+            )
+
+    checks.append(
+        _check(
+            "tractability benchmark commands match expected probes",
+            not command_mismatches,
+            "ok" if not command_mismatches else ",".join(command_mismatches),
+        )
+    )
+    checks.append(
+        _check(
+            "tractability benchmark lanes pass within declared budget",
+            not benchmark_failures,
+            "ok" if not benchmark_failures else json.dumps(benchmark_failures, sort_keys=True),
+        )
+    )
+
+    fixture_benchmark_summary = fixture_index.get("rch_tractability_benchmarks")
+    fixture_benchmark_summary_ok = isinstance(fixture_benchmark_summary, list) and _benchmark_summary(
+        [row for row in fixture_benchmark_summary if isinstance(row, dict)]
+    ) == _benchmark_summary(benchmark_rows)
+    checks.append(
+        _check(
+            "fixture index benchmark summary matches benchmark report",
+            fixture_benchmark_summary_ok,
+            json.dumps(fixture_benchmark_summary, sort_keys=True),
+        )
+    )
+
+    benchmark_summary_referenced = (
+        "rch_tractability_benchmarks.json" in verification_summary_text
+        and all(
+            str(row.get("build_id")) in verification_summary_text
+            for row in benchmark_rows
+            if isinstance(row.get("build_id"), int)
+        )
+    )
+    checks.append(
+        _check(
+            "verification summary references tractability benchmark artifact and build ids",
+            benchmark_summary_referenced,
+            "ok" if benchmark_summary_referenced else "verification_summary.md missing benchmark artifact path or build ids",
         )
     )
 
@@ -400,12 +610,21 @@ def _evaluate(root: Path) -> dict[str, Any]:
         "fraud_witness_links_consistent": fraud_links_ok and not missing_fraud_source_paths,
         "summary_markdown_matches_bundle": summary_md_text == expected_summary_md and summary_rows_ok,
         "stale_gap_language_absent": not stale_phrases_found,
+        "tractability_benchmarks_resolve": (
+            benchmark_metadata_ok
+            and not missing_benchmark_ids
+            and budget_valid
+            and not command_mismatches
+            and not benchmark_failures
+            and fixture_benchmark_summary_ok
+            and benchmark_summary_referenced
+        ),
     }
 
     passed = sum(1 for item in checks if item["passed"])
     failed = len(checks) - passed
     return {
-        "schema_version": "bd-1z5a-evidence-pack-check-v1.0",
+        "schema_version": "bd-1z5a-evidence-pack-check-v1.1",
         "bead_id": SUPPORT_BEAD,
         "parent_bead": PARENT_BEAD,
         "title": TITLE,
@@ -431,6 +650,7 @@ def _write_text(root: Path, rel: str, content: str) -> None:
 def _materialize_self_test_fixture(root: Path) -> None:
     evidence = _read_json(VERIFICATION_EVIDENCE)
     fixture_index = _read_json(REPLAY_FIXTURE_INDEX)
+    benchmark_report = _read_json(TRACTABILITY_BENCHMARKS)
     summary_json = _read_json(OPERATOR_SUMMARY_JSON)
     bundle = _read_json(OPERATOR_BUNDLE)
     fraud_bundle = _read_json(FRAUD_PROOF_BUNDLE)
@@ -439,6 +659,7 @@ def _materialize_self_test_fixture(root: Path) -> None:
 
     _write_text(root, str(VERIFICATION_EVIDENCE.relative_to(ROOT)), json.dumps(evidence, indent=2, sort_keys=True) + "\n")
     _write_text(root, str(REPLAY_FIXTURE_INDEX.relative_to(ROOT)), json.dumps(fixture_index, indent=2, sort_keys=True) + "\n")
+    _write_text(root, str(TRACTABILITY_BENCHMARKS.relative_to(ROOT)), json.dumps(benchmark_report, indent=2, sort_keys=True) + "\n")
     _write_text(root, str(OPERATOR_SUMMARY_JSON.relative_to(ROOT)), json.dumps(summary_json, indent=2, sort_keys=True) + "\n")
     _write_text(root, str(OPERATOR_BUNDLE.relative_to(ROOT)), json.dumps(bundle, indent=2, sort_keys=True) + "\n")
     _write_text(root, str(FRAUD_PROOF_BUNDLE.relative_to(ROOT)), json.dumps(fraud_bundle, indent=2, sort_keys=True) + "\n")
@@ -472,6 +693,7 @@ def _materialize_self_test_fixture(root: Path) -> None:
     already_written = {
         str(VERIFICATION_EVIDENCE.relative_to(ROOT)),
         str(REPLAY_FIXTURE_INDEX.relative_to(ROOT)),
+        str(TRACTABILITY_BENCHMARKS.relative_to(ROOT)),
         str(OPERATOR_SUMMARY_JSON.relative_to(ROOT)),
         str(OPERATOR_SUMMARY_MD.relative_to(ROOT)),
         str(OPERATOR_BUNDLE.relative_to(ROOT)),

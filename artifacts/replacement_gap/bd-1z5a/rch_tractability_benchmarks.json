@@ -1,0 +1,69 @@
+{
+  "artifact_type": "rch_tractability_benchmarks",
+  "bead_id": "bd-1z5a",
+  "support_bead_id": "bd-1z5a.14",
+  "generated_at": "2026-03-11T10:39:51Z",
+  "verdict": "PASS",
+  "measurement_policy": {
+    "runner": "rch exec --json -- ...",
+    "max_duration_ms": 900000,
+    "notes": [
+      "Durations are remote end-to-end wall-clock timings reported by rch, including sync and compile.",
+      "These benchmarks cover one representative external replay verification lane and one trust-score update lane; correctness of the broader reject, quarantine, and fraud-proof matrix stays anchored in the existing operator E2E artifacts."
+    ]
+  },
+  "benchmarks": [
+    {
+      "id": "external_replay_verification",
+      "scenario": "successful replay capsule verification remains tractable for an external verifier on the current shared tree",
+      "command": "env TMPDIR=/data/tmp CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=/data/tmp/rch_target_navyriver_bd1z5a14_match_u2 cargo test -p frankenengine-node --features extended-surfaces test_replay_capsule_match --lib -- --nocapture",
+      "build_id": 29747594884285383,
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_ms": 475466,
+      "started_at": "2026-03-11T10:31:36.419249891+00:00",
+      "completed_at": "2026-03-11T10:39:31.885565768+00:00",
+      "worker_id": "vmi1149989",
+      "timing": {
+        "classify": null,
+        "cleanup": null,
+        "exec": 409597,
+        "select": null,
+        "sync_down": 3121,
+        "sync_up": 25074,
+        "total": 475465
+      },
+      "coverage": [
+        "canonical replay capsule verification",
+        "extended-surfaces verifier replay path",
+        "external re-check tractability proof"
+      ]
+    },
+    {
+      "id": "trust_score_update_publication",
+      "scenario": "verified trust-score update publication remains tractable on the current shared tree",
+      "command": "env CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=/tmp/rch_target_navyriver_bd1z5a14_score cargo test -p frankenengine-node test_events_contain_scoreboard_updated --lib -- --nocapture",
+      "build_id": 29747594884285343,
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_ms": 465686,
+      "started_at": "2026-03-11T10:01:56.393470232+00:00",
+      "completed_at": "2026-03-11T10:09:42.079857957+00:00",
+      "worker_id": "vmi1149989",
+      "timing": {
+        "classify": null,
+        "cleanup": null,
+        "exec": 402078,
+        "select": null,
+        "sync_down": 3467,
+        "sync_up": 19066,
+        "total": 465686
+      },
+      "coverage": [
+        "verified scoreboard update emission",
+        "public trust score publication path",
+        "trust-score update tractability proof"
+      ]
+    }
+  ]
+}

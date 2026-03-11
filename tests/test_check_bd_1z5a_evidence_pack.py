@@ -54,6 +54,7 @@ class TestRunChecks(unittest.TestCase):
         self.assertTrue(contract["fraud_witness_links_consistent"])
         self.assertTrue(contract["summary_markdown_matches_bundle"])
         self.assertTrue(contract["stale_gap_language_absent"])
+        self.assertTrue(contract["tractability_benchmarks_resolve"])
 
     def _failing(self, result):
         failures = [check for check in result["checks"] if not check["passed"]]
@@ -135,6 +136,51 @@ class TestMutations(unittest.TestCase):
         details = "\n".join(check["check"] for check in result["checks"] if not check["passed"])
         self.assertIn("summary markdown matches canonical bundle rendering", details)
 
+    def test_missing_tractability_fixture_fails(self):
+        root, tmpdir = fixture_root()
+        self.addCleanup(tmpdir.cleanup)
+        fixture_index_path = root / "artifacts/replacement_gap/bd-1z5a/replay_fixture_index.json"
+        payload = json.loads(fixture_index_path.read_text(encoding="utf-8"))
+        payload["fixtures"] = [
+            fixture
+            for fixture in payload["fixtures"]
+            if fixture.get("id") != "rch_tractability_benchmarks"
+        ]
+        fixture_index_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        result = mod.run_checks(root)
+        self.assertEqual(result["verdict"], "FAIL")
+        details = "\n".join(check["detail"] for check in result["checks"] if not check["passed"])
+        self.assertIn("rch_tractability_benchmarks", details)
+
+    def test_tractability_budget_regression_fails(self):
+        root, tmpdir = fixture_root()
+        self.addCleanup(tmpdir.cleanup)
+        benchmark_path = root / "artifacts/replacement_gap/bd-1z5a/rch_tractability_benchmarks.json"
+        payload = json.loads(benchmark_path.read_text(encoding="utf-8"))
+        payload["benchmarks"][0]["duration_ms"] = payload["measurement_policy"]["max_duration_ms"] + 1
+        payload["benchmarks"][0]["timing"]["total"] = payload["benchmarks"][0]["duration_ms"]
+        benchmark_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        fixture_index_path = root / "artifacts/replacement_gap/bd-1z5a/replay_fixture_index.json"
+        fixture_index = json.loads(fixture_index_path.read_text(encoding="utf-8"))
+        fixture_index["rch_tractability_benchmarks"][0]["duration_ms"] = payload["benchmarks"][0]["duration_ms"]
+        fixture_index_path.write_text(
+            json.dumps(fixture_index, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        result = mod.run_checks(root)
+        self.assertEqual(result["verdict"], "FAIL")
+        details = "\n".join(check["check"] for check in result["checks"] if not check["passed"])
+        self.assertIn("tractability benchmark lanes pass within declared budget", details)
+
 
 class TestSelfTest(unittest.TestCase):
     def test_self_test_passes(self):
@@ -152,7 +198,7 @@ class TestCli(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         payload = json.loads(proc.stdout)
-        self.assertEqual(payload["bead_id"], "bd-1z5a.9")
+        self.assertEqual(payload["bead_id"], "bd-1z5a.14")
 
     def test_self_test_exit_zero(self):
         proc = subprocess.run(

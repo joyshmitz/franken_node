@@ -1,7 +1,7 @@
 # bd-1z5a Replacement-Gap Evidence Pack
 
 **Section:** 10.17  
-**Support bead:** `bd-1z5a.10`  
+**Support bead:** `bd-1z5a.14`  
 **Verdict:** PARTIAL
 
 ## Scope Of This Support Slice
@@ -15,11 +15,13 @@ What this support slice adds:
 - a refreshed evidence pack that now points at the passing operator E2E bundle
   and structured event log
 - a deterministic replay fixture index that includes the operator shell harness,
-  checker, machine-readable fraud-proof witness bundle, and the new
-  evidence-pack coherence checker
-- fresh local checker evidence and prior `rch` build IDs that prove the current
-  shared `frankenengine-node` tree remains materially healthier than the
-  original surrogate-path bug report
+  checker, machine-readable fraud-proof witness bundle, the evidence-pack
+  coherence checker, and a first-class `rch_tractability_benchmarks.json`
+  report
+- explicit `rch` build IDs and durations for one representative external replay
+  verification lane and one representative trust-score update lane
+- a tighter evidence-pack checker that fails if the benchmark report, budget,
+  fixture-index summary, or human-readable references drift
 
 ## Fresh Evidence Gathered
 
@@ -37,15 +39,16 @@ What this support slice adds:
   events, and valid stage artifact paths.
 - `PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest tests/test_check_verifier_replay_operator_e2e.py`
   passed `9` tests.
-- `python3 scripts/check_bd_1z5a_evidence_pack.py --json` passed `19/19`
-  checks. It now verifies that replacement-gap artifact paths, required fixture
-  ids, operator bundle/log linkage, fraud-proof witness references, canonical
-  summary markdown, and stale-gap regression phrases all stay coherent.
+- `python3 scripts/check_bd_1z5a_evidence_pack.py --json` now passes `28/28`
+  checks. It verifies replacement-gap artifact paths, required fixture ids,
+  current support-shard metadata, operator bundle/log linkage, fraud-proof
+  witness references, canonical summary markdown, tractability benchmark build
+  IDs/durations, and stale-gap regression phrases.
 - `python3 scripts/check_bd_1z5a_evidence_pack.py --self-test --json` passed.
   Its internal mutation harness still forces a failure when stale-gap text is
   reintroduced.
-- `python3 -m unittest tests/test_check_bd_1z5a_evidence_pack.py` passed `11`
-  tests.
+- `python3 -m unittest tests/test_check_bd_1z5a_evidence_pack.py` now passes
+  `13` tests, including tractability-benchmark fixture and budget regressions.
 - `python3 -m py_compile scripts/check_bd_1z5a_evidence_pack.py tests/test_check_bd_1z5a_evidence_pack.py`
   passed.
 - `rch` build `29747325727408129` passed strict test-surface clippy for
@@ -55,6 +58,21 @@ What this support slice adds:
 - `rch` build `29747325727408133` passed strict
   `cargo clippy -p frankenengine-node --all-targets -- -D warnings` on the
   current shared tree.
+- `rch` build `29747594884285383` passed the representative external replay
+  verification lane in `475466ms`.
+- `rch` build `29747594884285343` passed the representative trust-score update
+  lane in `465686ms`.
+
+## Tractability Benchmark Snapshot
+
+The dedicated machine-readable report lives at
+`artifacts/replacement_gap/bd-1z5a/rch_tractability_benchmarks.json` and
+declares a per-lane tractability budget of `900000ms`.
+
+| Lane | Build ID | Duration (ms) | Result |
+|---|---:|---:|---|
+| `external_replay_verification` | `29747594884285383` | `475466` | `PASS` |
+| `trust_score_update_publication` | `29747594884285343` | `465686` | `PASS` |
 
 ## Replay / Score / Witness Inventory
 
@@ -72,21 +90,23 @@ reports, conformance tests, and replacement-gap operator artifacts:
 - `artifacts/replacement_gap/bd-1z5a/operator_e2e_bundle.json`
 - `artifacts/replacement_gap/bd-1z5a/operator_e2e_log.jsonl`
 - `artifacts/replacement_gap/bd-1z5a/fraud_proof_bundle.json`
+- `artifacts/replacement_gap/bd-1z5a/rch_tractability_benchmarks.json`
 - the replacement-critical Python checker + unittest pairs for
   `verifier_economy`, `connector/verifier_sdk`, and the replacement-gap
   evidence pack itself
 
 That now gives us deterministic capsule-report, scoreboard-report, operator E2E,
-structured event-log, witness-reference, and artifact-coherence inputs in the
-replacement-gap lane.
+structured event-log, witness-reference, artifact-coherence, and
+benchmark-budget inputs in the replacement-gap lane.
 
 ## Remaining Gaps
 
 - The parent bead remains in progress on the canonical shared verifier kernel
   itself, in the reserved Rust surfaces owned on RoseMountain's lane.
 - This support pack proves the external replay / quarantine / scoreboard
-  evidence path and records a machine-readable fraud-proof witness reference,
-  but it does not independently declare the underlying core verifier
+  evidence path, records a machine-readable fraud-proof witness reference, and
+  now includes explicit tractability proof for representative replay/score
+  lanes, but it does not independently declare the underlying core verifier
   implementation complete.
 
 ## Notes
@@ -95,8 +115,9 @@ replacement-gap lane.
   acceptance-specific event-family artifacts, and a replacement-gap witness
   bundle are now closed by the passing operator E2E bundle and
   `fraud_proof_bundle.json`.
-- This refresh makes the `bd-1z5a.9` coherence guard discoverable directly from
-  the replacement-gap pack instead of only from agent-mail thread history.
+- This refresh makes both the older `bd-1z5a.9` coherence guard and the newer
+  `bd-1z5a.14` tractability proof discoverable directly from the replacement-gap
+  pack instead of only from agent-mail thread history.
 - The operator bundle is normalized to one coherent trace id:
   `trace-bd-1z5a-operator-e2e-final`.
 - The witness bundle is intentionally truthful and minimal: it records the
