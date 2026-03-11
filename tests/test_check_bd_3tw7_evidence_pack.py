@@ -25,6 +25,20 @@ def fixture_root() -> tuple[Path, tempfile.TemporaryDirectory[str]]:
     return root, tmpdir
 
 
+def remove_issue_id(root: Path, bead_id: str) -> None:
+    issues_path = root / ".beads/issues.jsonl"
+    rows = [
+        json.loads(line)
+        for line in issues_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    rows = [row for row in rows if row.get("id") != bead_id]
+    issues_path.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+
+
 class TestRunChecks(unittest.TestCase):
     def test_verdict_passes(self):
         result = mod.run_checks()
@@ -50,9 +64,11 @@ class TestRunChecks(unittest.TestCase):
         result = mod.run_checks()
         contract = result["coherence_contract"]
         self.assertTrue(contract["artifact_paths_resolve"])
+        self.assertTrue(contract["operator_e2e_contract_consistent"])
         self.assertTrue(contract["witness_matrix_matches_evidence"])
         self.assertTrue(contract["source_paths_resolve"])
         self.assertTrue(contract["support_bead_contract_consistent"])
+        self.assertTrue(contract["bead_references_resolve"])
         self.assertTrue(contract["summary_markdown_matches_source"])
         self.assertTrue(contract["static_seed_notes_present"])
 
@@ -74,6 +90,62 @@ class TestMutations(unittest.TestCase):
         self.assertEqual(result["verdict"], "FAIL")
         details = "\n".join(check["check"] for check in result["checks"] if not check["passed"])
         self.assertIn("support bead ids", details)
+
+    def test_missing_operator_e2e_contract_fails(self):
+        root, tmpdir = fixture_root()
+        self.addCleanup(tmpdir.cleanup)
+        evidence_path = root / "artifacts/replacement_gap/bd-3tw7/verification_evidence.json"
+        payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+        payload["artifacts"].pop("operator_e2e_suite", None)
+        payload["operator_e2e"] = {}
+        evidence_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+        result = mod.run_checks(root)
+        self.assertEqual(result["verdict"], "FAIL")
+        details = "\n".join(
+            check["check"] for check in result["checks"] if not check["passed"]
+        )
+        self.assertIn("operator E2E metadata matches primary truthfulness gate contract", details)
+
+    def test_missing_support_bead_in_export_fails(self):
+        root, tmpdir = fixture_root()
+        self.addCleanup(tmpdir.cleanup)
+        remove_issue_id(root, "bd-3tw7.1")
+
+        result = mod.run_checks(root)
+        self.assertEqual(result["verdict"], "FAIL")
+        details = "\n".join(
+            check["check"] for check in result["checks"] if not check["passed"]
+        )
+        self.assertIn("referenced bead ids resolve in Beads export", details)
+
+    def test_missing_parent_bead_in_export_fails(self):
+        root, tmpdir = fixture_root()
+        self.addCleanup(tmpdir.cleanup)
+        remove_issue_id(root, "bd-3tw7")
+
+        result = mod.run_checks(root)
+        self.assertEqual(result["verdict"], "FAIL")
+        failing = next(check for check in result["checks"] if not check["passed"])
+        self.assertEqual(
+            failing["check"],
+            "referenced bead ids resolve in Beads export",
+        )
+        self.assertIn("bd-3tw7", failing["detail"])
+
+    def test_missing_checker_bead_in_export_fails(self):
+        root, tmpdir = fixture_root()
+        self.addCleanup(tmpdir.cleanup)
+        remove_issue_id(root, "bd-3tw7.5")
+
+        result = mod.run_checks(root)
+        self.assertEqual(result["verdict"], "FAIL")
+        failing = next(check for check in result["checks"] if not check["passed"])
+        self.assertEqual(
+            failing["check"],
+            "referenced bead ids resolve in Beads export",
+        )
+        self.assertIn("bd-3tw7.5", failing["detail"])
 
     def test_witness_matrix_drift_fails(self):
         root, tmpdir = fixture_root()

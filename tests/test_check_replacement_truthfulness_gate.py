@@ -138,7 +138,7 @@ class RealRepoTests(unittest.TestCase):
         payload = mod.run_all()
         self.assertEqual(
             payload["support_bead_ids"],
-            ["bd-3tw7.1", "bd-3tw7.2", "bd-3tw7.4", "bd-3tw7.5", "bd-3tw7.6"],
+            ["bd-3tw7.1", "bd-3tw7.2", "bd-3tw7.4", "bd-3tw7.5", "bd-3tw7.6", "bd-3tw7.8"],
         )
 
     def test_artifact_checker_refs_include_evidence_pack_guard(self) -> None:
@@ -151,6 +151,30 @@ class RealRepoTests(unittest.TestCase):
             payload["artifacts"]["evidence_pack_checker_tests"],
             "tests/test_check_bd_3tw7_evidence_pack.py",
         )
+        self.assertEqual(
+            payload["artifacts"]["operator_e2e_suite"],
+            "tests/e2e/replacement_truthfulness_gate_suite.sh",
+        )
+
+    def test_operator_e2e_metadata_is_present(self) -> None:
+        payload = mod.run_all()
+        self.assertEqual(
+            payload["operator_e2e"]["suite"],
+            "tests/e2e/replacement_truthfulness_gate_suite.sh",
+        )
+        self.assertEqual(
+            payload["operator_e2e"]["default_trace_id"],
+            "trace-bd-3tw7-operator-e2e",
+        )
+        self.assertEqual(
+            payload["operator_e2e"]["verification_method"],
+            "TRACE_ID=trace-bd-3tw7-operator-e2e tests/e2e/replacement_truthfulness_gate_suite.sh",
+        )
+
+    def test_operator_e2e_suite_exists(self) -> None:
+        payload = mod.run_all()
+        suite_path = ROOT / payload["operator_e2e"]["suite"]
+        self.assertTrue(suite_path.is_file())
 
     def test_workspace_sdk_witness_owned_by_follow_on_bead(self) -> None:
         payload = mod.run_all()

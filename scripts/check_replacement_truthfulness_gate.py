@@ -26,11 +26,13 @@ from scripts.lib.test_logger import configure_test_logging
 
 PARENT_BEAD = "bd-3tw7"
 SUPPORT_BEAD = "bd-3tw7.1"
-ARTIFACT_SUPPORT_BEADS = ("bd-3tw7.5",)
+ARTIFACT_SUPPORT_BEADS = ("bd-3tw7.5", "bd-3tw7.8")
 ARTIFACT_DIR = ROOT / "artifacts" / "replacement_gap" / PARENT_BEAD
 WITNESS_MATRIX_PATH = ARTIFACT_DIR / "witness_matrix.json"
 EVIDENCE_PATH = ARTIFACT_DIR / "verification_evidence.json"
 SUMMARY_PATH = ARTIFACT_DIR / "verification_summary.md"
+OPERATOR_E2E_SUITE = "tests/e2e/replacement_truthfulness_gate_suite.sh"
+OPERATOR_E2E_TRACE_ID = "trace-bd-3tw7-operator-e2e"
 
 SURROGATE_REINTRODUCED = "TRUTHFULNESS_GATE_SURROGATE_REINTRODUCED"
 MISSING_ANCHOR = "TRUTHFULNESS_GATE_MISSING_ANCHOR"
@@ -426,6 +428,12 @@ def run_all(root: Path = ROOT) -> dict[str, Any]:
             "checker_tests": "tests/test_check_replacement_truthfulness_gate.py",
             "evidence_pack_checker": "scripts/check_bd_3tw7_evidence_pack.py",
             "evidence_pack_checker_tests": "tests/test_check_bd_3tw7_evidence_pack.py",
+            "operator_e2e_suite": OPERATOR_E2E_SUITE,
+        },
+        "operator_e2e": {
+            "suite": OPERATOR_E2E_SUITE,
+            "default_trace_id": OPERATOR_E2E_TRACE_ID,
+            "verification_method": f"TRACE_ID={OPERATOR_E2E_TRACE_ID} {OPERATOR_E2E_SUITE}",
         },
         "excluded_surfaces": EXCLUDED_SURFACES,
         "witness_matrix": witness_matrix,
@@ -436,6 +444,7 @@ def run_all(root: Path = ROOT) -> dict[str, Any]:
             "This support shard still excludes the replacement-critical verifier/capsule Rust files currently reserved under bd-1z5a.8: crates/franken-node/src/verifier_economy/mod.rs and crates/franken-node/src/connector/verifier_sdk.rs.",
             "bd-3tw7.2 extends the static seed to the standalone sdk/verifier workspace crate and its public verifier contract docs.",
             "bd-3tw7.6 extends the static seed to the in-crate SDK verifier/replay helper surfaces so their structural-only posture is explicit and replacement-critical import drift fails closed.",
+            "bd-3tw7.8 adds a deterministic operator E2E suite that exercises the truthfulness-gate seed in isolated temporary workspaces.",
             "The witness matrix is a static seed for bd-3tw7, not a claim that the full parent dynamic/e2e truthfulness gate is complete.",
             "bd-3tw7.5 adds deterministic evidence-pack coherence coverage so artifact drift fails closed.",
             "Each witness links to concrete source anchors already present in the shared tree so regressions fail on exact guarded paths, not vague heuristics.",

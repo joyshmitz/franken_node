@@ -1,7 +1,7 @@
 # bd-3tw7 Static Truthfulness Gate Seed
 
 - Parent bead: `bd-3tw7`
-- Support beads: `bd-3tw7.1, bd-3tw7.2, bd-3tw7.4, bd-3tw7.5, bd-3tw7.6`
+- Support beads: `bd-3tw7.1, bd-3tw7.2, bd-3tw7.4, bd-3tw7.5, bd-3tw7.6, bd-3tw7.8`
 - Verdict: `PASS`
 - Scope: Static cross-surface surrogate scanner and witness-matrix seed for currently unreserved replacement-critical surfaces plus explicit in-crate SDK structural-only helper witnesses.
 - Static-seed disclaimer: this pack does not claim the full parent dynamic/e2e truthfulness gate is complete.

@@ -12,6 +12,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from scripts import check_replacement_truthfulness_gate as truthfulness_gate
 from scripts.lib.test_logger import configure_test_logging
 
 
@@ -19,6 +20,7 @@ PARENT_BEAD = "bd-3tw7"
 SUPPORT_BEAD = "bd-3tw7.5"
 TITLE = "bd-3tw7 truthfulness-gate evidence pack coherence"
 
+ISSUES_EXPORT = ROOT / ".beads" / "issues.jsonl"
 ARTIFACT_DIR = ROOT / "artifacts" / "replacement_gap" / PARENT_BEAD
 VERIFICATION_EVIDENCE = ARTIFACT_DIR / "verification_evidence.json"
 VERIFICATION_SUMMARY = ARTIFACT_DIR / "verification_summary.md"
@@ -32,6 +34,7 @@ EXPECTED_ARTIFACT_KEYS = {
     "checker_tests",
     "evidence_pack_checker",
     "evidence_pack_checker_tests",
+    "operator_e2e_suite",
     "verification_evidence",
     "verification_summary",
     "witness_matrix",
@@ -53,6 +56,18 @@ def _read(path: Path) -> str:
 
 def _read_json(path: Path) -> Any:
     return json.loads(_read(path))
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        row = json.loads(stripped)
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
 
 
 def _write_text(root: Path, rel: str, content: str) -> None:
@@ -92,6 +107,20 @@ def _excluded_surface_paths(evidence: dict[str, Any]) -> list[str]:
         if isinstance(entry, dict) and isinstance(entry.get("path"), str):
             paths.append(entry["path"])
     return paths
+
+
+def _referenced_bead_ids(evidence: dict[str, Any]) -> list[str]:
+    bead_ids: set[str] = set()
+    for field in ("bead_id", "parent_bead"):
+        value = evidence.get(field)
+        if isinstance(value, str) and value:
+            bead_ids.add(value)
+    support_beads = evidence.get("support_bead_ids", [])
+    if isinstance(support_beads, list):
+        bead_ids.update(
+            bead_id for bead_id in support_beads if isinstance(bead_id, str) and bead_id
+        )
+    return sorted(bead_ids)
 
 
 def _expected_summary_markdown(
@@ -155,6 +184,7 @@ def _evaluate(root: Path) -> dict[str, Any]:
         str(path.relative_to(ROOT))
         for path in (VERIFICATION_EVIDENCE, VERIFICATION_SUMMARY, WITNESS_MATRIX)
     ]
+    tracked_files.append(str(ISSUES_EXPORT.relative_to(ROOT)))
     checks = [_ensure_file(root, rel) for rel in tracked_files]
 
     required_paths = [root / rel for rel in tracked_files]
@@ -177,6 +207,12 @@ def _evaluate(root: Path) -> dict[str, Any]:
     evidence = _read_json(root / VERIFICATION_EVIDENCE.relative_to(ROOT))
     summary_text = _read(root / VERIFICATION_SUMMARY.relative_to(ROOT))
     witness_matrix = _read_json(root / WITNESS_MATRIX.relative_to(ROOT))
+    issues_export_rows = _read_jsonl(root / ISSUES_EXPORT.relative_to(ROOT))
+    exported_bead_ids = {
+        row["id"]
+        for row in issues_export_rows
+        if isinstance(row.get("id"), str) and row["id"]
+    }
 
     artifacts = evidence.get("artifacts", {})
     artifact_keys_ok = (
@@ -192,6 +228,31 @@ def _evaluate(root: Path) -> dict[str, Any]:
             "ok"
             if artifact_keys_ok
             else json.dumps(sorted(artifacts.keys()) if isinstance(artifacts, dict) else [], sort_keys=True),
+        )
+    )
+
+    operator_e2e = evidence.get("operator_e2e", {})
+    operator_e2e_ok = (
+        isinstance(operator_e2e, dict)
+        and operator_e2e.get("suite") == truthfulness_gate.OPERATOR_E2E_SUITE
+        and artifacts.get("operator_e2e_suite") == truthfulness_gate.OPERATOR_E2E_SUITE
+        and operator_e2e.get("default_trace_id") == truthfulness_gate.OPERATOR_E2E_TRACE_ID
+        and operator_e2e.get("verification_method")
+        == f"TRACE_ID={truthfulness_gate.OPERATOR_E2E_TRACE_ID} {truthfulness_gate.OPERATOR_E2E_SUITE}"
+    )
+    checks.append(
+        _check(
+            "operator E2E metadata matches primary truthfulness gate contract",
+            operator_e2e_ok,
+            "ok"
+            if operator_e2e_ok
+            else json.dumps(
+                {
+                    "artifacts_operator_e2e_suite": artifacts.get("operator_e2e_suite"),
+                    "operator_e2e": operator_e2e,
+                },
+                sort_keys=True,
+            ),
         )
     )
 
@@ -263,17 +324,40 @@ def _evaluate(root: Path) -> dict[str, Any]:
             if isinstance(witness, dict) and isinstance(witness.get("support_bead"), str)
         }
     )
-    expected_support_beads = sorted(set(witness_support_beads) | {SUPPORT_BEAD})
+    expected_support_beads = sorted(
+        set(witness_support_beads) | set(truthfulness_gate.ARTIFACT_SUPPORT_BEADS)
+    )
     support_bead_ids = evidence.get("support_bead_ids")
     support_beads_ok = isinstance(support_bead_ids, list) and support_bead_ids == expected_support_beads
     checks.append(
         _check(
-            "support bead ids include witness owners plus evidence-pack guard shard",
+            "support bead ids include witness owners plus artifact-side guard shards",
             support_beads_ok,
             json.dumps(
                 {
                     "expected": expected_support_beads,
                     "observed": support_bead_ids,
+                },
+                sort_keys=True,
+            ),
+        )
+    )
+
+    referenced_bead_ids = _referenced_bead_ids(evidence)
+    missing_bead_ids = sorted(
+        bead_id for bead_id in referenced_bead_ids if bead_id not in exported_bead_ids
+    )
+    bead_references_ok = not missing_bead_ids
+    checks.append(
+        _check(
+            "referenced bead ids resolve in Beads export",
+            bead_references_ok,
+            "ok"
+            if bead_references_ok
+            else json.dumps(
+                {
+                    "issues_export": str(ISSUES_EXPORT.relative_to(ROOT)),
+                    "missing": missing_bead_ids,
                 },
                 sort_keys=True,
             ),
@@ -320,9 +404,11 @@ def _evaluate(root: Path) -> dict[str, Any]:
 
     coherence_contract = {
         "artifact_paths_resolve": not missing_artifact_paths,
+        "operator_e2e_contract_consistent": operator_e2e_ok,
         "witness_matrix_matches_evidence": witness_matrix_ok,
         "source_paths_resolve": not missing_source_paths,
         "support_bead_contract_consistent": support_beads_ok,
+        "bead_references_resolve": bead_references_ok,
         "summary_markdown_matches_source": summary_ok,
         "static_seed_notes_present": notes_ok,
     }
@@ -366,6 +452,15 @@ def _materialize_self_test_fixture(root: Path) -> None:
         str(VERIFICATION_SUMMARY.relative_to(ROOT)),
         _expected_summary_markdown(evidence, witness_matrix),
     )
+    issue_export_rows = [
+        {"id": bead_id, "title": bead_id, "status": "open"}
+        for bead_id in _referenced_bead_ids(evidence)
+    ]
+    _write_text(
+        root,
+        str(ISSUES_EXPORT.relative_to(ROOT)),
+        "\n".join(json.dumps(row, sort_keys=True) for row in issue_export_rows) + "\n",
+    )
 
     placeholder_paths = set(_artifact_paths_from_evidence(evidence))
     placeholder_paths.update(_source_paths_from_witnesses(witness_matrix))
@@ -374,6 +469,7 @@ def _materialize_self_test_fixture(root: Path) -> None:
         str(VERIFICATION_EVIDENCE.relative_to(ROOT)),
         str(VERIFICATION_SUMMARY.relative_to(ROOT)),
         str(WITNESS_MATRIX.relative_to(ROOT)),
+        str(ISSUES_EXPORT.relative_to(ROOT)),
     }
     for rel in sorted(path for path in placeholder_paths if path):
         if rel in already_written:
@@ -389,10 +485,17 @@ def self_test() -> dict[str, Any]:
         if baseline["verdict"] != "PASS":
             return {"verdict": "FAIL", "detail": "baseline fixture did not pass", "baseline": baseline}
 
-        evidence_path = root / VERIFICATION_EVIDENCE.relative_to(ROOT)
-        evidence = _read_json(evidence_path)
-        evidence["support_bead_ids"] = [bead for bead in evidence["support_bead_ids"] if bead != SUPPORT_BEAD]
-        evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        issues_export_path = root / ISSUES_EXPORT.relative_to(ROOT)
+        rows = _read_jsonl(issues_export_path)
+        rows = [
+            row
+            for row in rows
+            if row.get("id") != SUPPORT_BEAD
+        ]
+        issues_export_path.write_text(
+            "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n",
+            encoding="utf-8",
+        )
         mutated = run_checks(root)
         return {
             "verdict": "PASS" if mutated["verdict"] == "FAIL" else "FAIL",
