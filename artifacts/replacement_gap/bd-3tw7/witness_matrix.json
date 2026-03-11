@@ -213,6 +213,44 @@
     "witness_id": "workspace_verifier_sdk_package_metadata_truthfulness"
   },
   {
+    "detail": "all 5 required anchor(s) present",
+    "missing_required_markers": [],
+    "offending_path": "crates/franken-node/src/sdk/verifier_sdk.rs",
+    "pass": true,
+    "present_banned_markers": [],
+    "reason_code": "TRUTHFULNESS_GATE_STATIC_PASS",
+    "related_checkers": [
+      "scripts/check_replacement_truthfulness_gate.py"
+    ],
+    "remediation_bead": "bd-3tw7",
+    "source_paths": [
+      "crates/franken-node/src/sdk/verifier_sdk.rs"
+    ],
+    "support_bead": "bd-3tw7.6",
+    "surface": "incrate_sdk_verifier",
+    "witness_family": "in-crate sdk verifier helper must stay structural-only and avoid replacement-critical imports",
+    "witness_id": "incrate_sdk_verifier_structural_only_posture"
+  },
+  {
+    "detail": "all 3 required anchor(s) present",
+    "missing_required_markers": [],
+    "offending_path": "crates/franken-node/src/sdk/replay_capsule.rs",
+    "pass": true,
+    "present_banned_markers": [],
+    "reason_code": "TRUTHFULNESS_GATE_STATIC_PASS",
+    "related_checkers": [
+      "scripts/check_replacement_truthfulness_gate.py"
+    ],
+    "remediation_bead": "bd-3tw7",
+    "source_paths": [
+      "crates/franken-node/src/sdk/replay_capsule.rs"
+    ],
+    "support_bead": "bd-3tw7.6",
+    "surface": "incrate_sdk_replay_capsule",
+    "witness_family": "in-crate replay capsule helper must stay structural-only and avoid replacement-critical imports",
+    "witness_id": "incrate_sdk_replay_capsule_structural_only_posture"
+  },
+  {
     "detail": "all 4 required anchor(s) present",
     "missing_required_markers": [],
     "offending_path": "crates/franken-node/src/connector/supervision.rs",

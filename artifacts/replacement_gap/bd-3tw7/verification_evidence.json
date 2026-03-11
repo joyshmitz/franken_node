@@ -1,5 +1,5 @@
 {
-  "artifact_scope": "Static cross-surface surrogate scanner and witness-matrix seed for currently unreserved replacement-critical surfaces.",
+  "artifact_scope": "Static cross-surface surrogate scanner and witness-matrix seed for currently unreserved replacement-critical surfaces plus explicit in-crate SDK structural-only helper witnesses.",
   "artifacts": {
     "checker": "scripts/check_replacement_truthfulness_gate.py",
     "checker_tests": "tests/test_check_replacement_truthfulness_gate.py",
@@ -20,38 +20,30 @@
       "owner": "RoseRidge",
       "path": "crates/franken-node/src/connector/verifier_sdk.rs",
       "reason": "Reserved under bd-1z5a.8"
-    },
-    {
-      "owner": "RoseRidge",
-      "path": "crates/franken-node/src/sdk/verifier_sdk.rs",
-      "reason": "Reserved under bd-1z5a.8"
-    },
-    {
-      "owner": "RoseRidge",
-      "path": "crates/franken-node/src/sdk/replay_capsule.rs",
-      "reason": "Reserved under bd-1z5a.8"
     }
   ],
   "failed_witnesses": 0,
-  "generated_at": "2026-03-11T05:21:31+00:00",
+  "generated_at": "2026-03-11T05:31:16+00:00",
   "notes": [
-    "This support shard intentionally excludes the verifier/capsule Rust files currently reserved under bd-1z5a.8.",
+    "This support shard still excludes the replacement-critical verifier/capsule Rust files currently reserved under bd-1z5a.8: crates/franken-node/src/verifier_economy/mod.rs and crates/franken-node/src/connector/verifier_sdk.rs.",
     "bd-3tw7.2 extends the static seed to the standalone sdk/verifier workspace crate and its public verifier contract docs.",
+    "bd-3tw7.6 extends the static seed to the in-crate SDK verifier/replay helper surfaces so their structural-only posture is explicit and replacement-critical import drift fails closed.",
     "The witness matrix is a static seed for bd-3tw7, not a claim that the full parent dynamic/e2e truthfulness gate is complete.",
     "bd-3tw7.5 adds deterministic evidence-pack coherence coverage so artifact drift fails closed.",
     "Each witness links to concrete source anchors already present in the shared tree so regressions fail on exact guarded paths, not vague heuristics."
   ],
   "overall_pass": true,
-  "passed_witnesses": 13,
+  "passed_witnesses": 15,
   "schema_version": "replacement-truthfulness-gate-v1.0",
   "support_bead_ids": [
     "bd-3tw7.1",
     "bd-3tw7.2",
     "bd-3tw7.4",
-    "bd-3tw7.5"
+    "bd-3tw7.5",
+    "bd-3tw7.6"
   ],
   "title": "Replacement-critical truthfulness gate static seed",
-  "total_witnesses": 13,
+  "total_witnesses": 15,
   "verdict": "PASS",
   "verification_method": "python3 scripts/check_replacement_truthfulness_gate.py --json",
   "witness_matrix": [
@@ -267,6 +259,44 @@
       "surface": "workspace_verifier_sdk_metadata",
       "witness_family": "public verifier sdk package metadata must remain structural-only",
       "witness_id": "workspace_verifier_sdk_package_metadata_truthfulness"
+    },
+    {
+      "detail": "all 5 required anchor(s) present",
+      "missing_required_markers": [],
+      "offending_path": "crates/franken-node/src/sdk/verifier_sdk.rs",
+      "pass": true,
+      "present_banned_markers": [],
+      "reason_code": "TRUTHFULNESS_GATE_STATIC_PASS",
+      "related_checkers": [
+        "scripts/check_replacement_truthfulness_gate.py"
+      ],
+      "remediation_bead": "bd-3tw7",
+      "source_paths": [
+        "crates/franken-node/src/sdk/verifier_sdk.rs"
+      ],
+      "support_bead": "bd-3tw7.6",
+      "surface": "incrate_sdk_verifier",
+      "witness_family": "in-crate sdk verifier helper must stay structural-only and avoid replacement-critical imports",
+      "witness_id": "incrate_sdk_verifier_structural_only_posture"
+    },
+    {
+      "detail": "all 3 required anchor(s) present",
+      "missing_required_markers": [],
+      "offending_path": "crates/franken-node/src/sdk/replay_capsule.rs",
+      "pass": true,
+      "present_banned_markers": [],
+      "reason_code": "TRUTHFULNESS_GATE_STATIC_PASS",
+      "related_checkers": [
+        "scripts/check_replacement_truthfulness_gate.py"
+      ],
+      "remediation_bead": "bd-3tw7",
+      "source_paths": [
+        "crates/franken-node/src/sdk/replay_capsule.rs"
+      ],
+      "support_bead": "bd-3tw7.6",
+      "surface": "incrate_sdk_replay_capsule",
+      "witness_family": "in-crate replay capsule helper must stay structural-only and avoid replacement-critical imports",
+      "witness_id": "incrate_sdk_replay_capsule_structural_only_posture"
     },
     {
       "detail": "all 4 required anchor(s) present",

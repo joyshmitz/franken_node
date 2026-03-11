@@ -13,6 +13,17 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import check_replacement_truthfulness_gate as mod
 
 
+def _witness_spec(witness_id: str) -> mod.WitnessSpec:
+    return next(spec for spec in mod.WITNESS_SPECS if spec.witness_id == witness_id)
+
+
+def _materialize_spec_sources(spec: mod.WitnessSpec, root: Path) -> None:
+    for rel in spec.source_paths:
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text((ROOT / rel).read_text(encoding="utf-8"), encoding="utf-8")
+
+
 class EvaluateWitnessTests(unittest.TestCase):
     def test_banned_marker_in_code_fails(self) -> None:
         spec = mod.WitnessSpec(
@@ -70,6 +81,40 @@ class EvaluateWitnessTests(unittest.TestCase):
         self.assertFalse(result["pass"])
         self.assertEqual(result["reason_code"], mod.MISSING_ANCHOR)
 
+    def test_incrate_sdk_verifier_witness_fails_on_replacement_critical_import(self) -> None:
+        spec = _witness_spec("incrate_sdk_verifier_structural_only_posture")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            _materialize_spec_sources(spec, root)
+            target = root / "crates/franken-node/src/sdk/verifier_sdk.rs"
+            target.write_text(
+                target.read_text(encoding="utf-8")
+                + "\nuse crate::connector::verifier_sdk::verify_verification_result_signature;\n",
+                encoding="utf-8",
+            )
+            result = mod.evaluate_witness(spec, root)
+        self.assertFalse(result["pass"])
+        self.assertEqual(result["reason_code"], mod.SURROGATE_REINTRODUCED)
+        self.assertEqual(result["offending_path"], "crates/franken-node/src/sdk/verifier_sdk.rs")
+
+    def test_incrate_sdk_replay_capsule_witness_fails_on_missing_structural_marker(self) -> None:
+        spec = _witness_spec("incrate_sdk_replay_capsule_structural_only_posture")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            _materialize_spec_sources(spec, root)
+            target = root / "crates/franken-node/src/sdk/replay_capsule.rs"
+            target.write_text(
+                target.read_text(encoding="utf-8").replace(
+                    'pub const STRUCTURAL_ONLY_RULE_ID: &str = "VERIFIER_SHORTCUT_GUARD::SDK_REPLAY_CAPSULE";',
+                    'pub const STRUCTURAL_ONLY_RULE_ID: &str = "VERIFIER_SHORTCUT_GUARD::BROKEN";',
+                ),
+                encoding="utf-8",
+            )
+            result = mod.evaluate_witness(spec, root)
+        self.assertFalse(result["pass"])
+        self.assertEqual(result["reason_code"], mod.MISSING_ANCHOR)
+        self.assertIn("SDK_REPLAY_CAPSULE", result["detail"])
+
 
 class RealRepoTests(unittest.TestCase):
     def test_run_all_passes_on_shared_tree(self) -> None:
@@ -86,12 +131,14 @@ class RealRepoTests(unittest.TestCase):
         self.assertIn("session_auth_opaque_signature_regression", witness_ids)
         self.assertIn("certification_evidence_binding", witness_ids)
         self.assertIn("workspace_verifier_sdk_structural_only_posture", witness_ids)
+        self.assertIn("incrate_sdk_verifier_structural_only_posture", witness_ids)
+        self.assertIn("incrate_sdk_replay_capsule_structural_only_posture", witness_ids)
 
     def test_support_bead_ids_include_sdk_follow_on(self) -> None:
         payload = mod.run_all()
         self.assertEqual(
             payload["support_bead_ids"],
-            ["bd-3tw7.1", "bd-3tw7.2", "bd-3tw7.4", "bd-3tw7.5"],
+            ["bd-3tw7.1", "bd-3tw7.2", "bd-3tw7.4", "bd-3tw7.5", "bd-3tw7.6"],
         )
 
     def test_artifact_checker_refs_include_evidence_pack_guard(self) -> None:
@@ -124,11 +171,36 @@ class RealRepoTests(unittest.TestCase):
         self.assertEqual(metadata_witness["support_bead"], "bd-3tw7.4")
         self.assertEqual(metadata_witness["source_paths"], ["sdk/verifier/Cargo.toml"])
 
+    def test_incrate_sdk_witnesses_owned_by_follow_on_bead(self) -> None:
+        payload = mod.run_all()
+        verifier_witness = next(
+            item
+            for item in payload["witness_matrix"]
+            if item["witness_id"] == "incrate_sdk_verifier_structural_only_posture"
+        )
+        replay_witness = next(
+            item
+            for item in payload["witness_matrix"]
+            if item["witness_id"] == "incrate_sdk_replay_capsule_structural_only_posture"
+        )
+        self.assertEqual(verifier_witness["support_bead"], "bd-3tw7.6")
+        self.assertEqual(
+            verifier_witness["source_paths"],
+            ["crates/franken-node/src/sdk/verifier_sdk.rs"],
+        )
+        self.assertEqual(replay_witness["support_bead"], "bd-3tw7.6")
+        self.assertEqual(
+            replay_witness["source_paths"],
+            ["crates/franken-node/src/sdk/replay_capsule.rs"],
+        )
+
     def test_excluded_verifier_surfaces_listed(self) -> None:
         payload = mod.run_all()
         excluded = {entry["path"] for entry in payload["excluded_surfaces"]}
         self.assertIn("crates/franken-node/src/verifier_economy/mod.rs", excluded)
-        self.assertIn("crates/franken-node/src/sdk/replay_capsule.rs", excluded)
+        self.assertIn("crates/franken-node/src/connector/verifier_sdk.rs", excluded)
+        self.assertNotIn("crates/franken-node/src/sdk/verifier_sdk.rs", excluded)
+        self.assertNotIn("crates/franken-node/src/sdk/replay_capsule.rs", excluded)
 
 
 class ArtifactWriteTests(unittest.TestCase):

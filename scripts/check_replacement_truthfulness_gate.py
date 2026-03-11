@@ -62,16 +62,6 @@ EXCLUDED_SURFACES = [
         "owner": "RoseRidge",
         "reason": "Reserved under bd-1z5a.8",
     },
-    {
-        "path": "crates/franken-node/src/sdk/verifier_sdk.rs",
-        "owner": "RoseRidge",
-        "reason": "Reserved under bd-1z5a.8",
-    },
-    {
-        "path": "crates/franken-node/src/sdk/replay_capsule.rs",
-        "owner": "RoseRidge",
-        "reason": "Reserved under bd-1z5a.8",
-    },
 ]
 
 
@@ -239,6 +229,42 @@ WITNESS_SPECS = (
         support_bead="bd-3tw7.4",
     ),
     WitnessSpec(
+        witness_id="incrate_sdk_verifier_structural_only_posture",
+        surface="incrate_sdk_verifier",
+        witness_family="in-crate sdk verifier helper must stay structural-only and avoid replacement-critical imports",
+        source_paths=("crates/franken-node/src/sdk/verifier_sdk.rs",),
+        required_markers=(
+            'pub const STRUCTURAL_ONLY_SECURITY_POSTURE: &str =',
+            'pub const STRUCTURAL_ONLY_RULE_ID: &str = "VERIFIER_SHORTCUT_GUARD::SDK_VERIFIER";',
+            "fn test_structural_only_markers_are_stable()",
+            "fn test_shortcut_regression_guard_keeps_strong_verifier_anchors()",
+            '"VERIFIER_SHORTCUT_GUARD::NO_SDK_CAPSULE_IMPORT_IN_CONNECTOR"',
+        ),
+        banned_markers=(
+            "crate::connector::verifier_sdk",
+            "crate::verifier_economy",
+        ),
+        related_checkers=("scripts/check_replacement_truthfulness_gate.py",),
+        support_bead="bd-3tw7.6",
+    ),
+    WitnessSpec(
+        witness_id="incrate_sdk_replay_capsule_structural_only_posture",
+        surface="incrate_sdk_replay_capsule",
+        witness_family="in-crate replay capsule helper must stay structural-only and avoid replacement-critical imports",
+        source_paths=("crates/franken-node/src/sdk/replay_capsule.rs",),
+        required_markers=(
+            'pub const STRUCTURAL_ONLY_SECURITY_POSTURE: &str =',
+            'pub const STRUCTURAL_ONLY_RULE_ID: &str = "VERIFIER_SHORTCUT_GUARD::SDK_REPLAY_CAPSULE";',
+            "pub fn to_canonical_json(capsule: &ReplayCapsule) -> Result<String, serde_json::Error> {",
+        ),
+        banned_markers=(
+            "crate::connector::verifier_sdk",
+            "crate::verifier_economy",
+        ),
+        related_checkers=("scripts/check_replacement_truthfulness_gate.py",),
+        support_bead="bd-3tw7.6",
+    ),
+    WitnessSpec(
         witness_id="supervision_time_budget_real_clock",
         surface="supervision",
         witness_family="supervision time/budget logic uses real monotonic clocks, not synthetic stubs",
@@ -389,7 +415,7 @@ def run_all(root: Path = ROOT) -> dict[str, Any]:
         "title": "Replacement-critical truthfulness gate static seed",
         "verdict": "PASS" if overall_pass else "FAIL",
         "overall_pass": overall_pass,
-        "artifact_scope": "Static cross-surface surrogate scanner and witness-matrix seed for currently unreserved replacement-critical surfaces.",
+        "artifact_scope": "Static cross-surface surrogate scanner and witness-matrix seed for currently unreserved replacement-critical surfaces plus explicit in-crate SDK structural-only helper witnesses.",
         "generated_at": _now(),
         "verification_method": "python3 scripts/check_replacement_truthfulness_gate.py --json",
         "artifacts": {
@@ -407,8 +433,9 @@ def run_all(root: Path = ROOT) -> dict[str, Any]:
         "passed_witnesses": passed,
         "failed_witnesses": failed,
         "notes": [
-            "This support shard intentionally excludes the verifier/capsule Rust files currently reserved under bd-1z5a.8.",
+            "This support shard still excludes the replacement-critical verifier/capsule Rust files currently reserved under bd-1z5a.8: crates/franken-node/src/verifier_economy/mod.rs and crates/franken-node/src/connector/verifier_sdk.rs.",
             "bd-3tw7.2 extends the static seed to the standalone sdk/verifier workspace crate and its public verifier contract docs.",
+            "bd-3tw7.6 extends the static seed to the in-crate SDK verifier/replay helper surfaces so their structural-only posture is explicit and replacement-critical import drift fails closed.",
             "The witness matrix is a static seed for bd-3tw7, not a claim that the full parent dynamic/e2e truthfulness gate is complete.",
             "bd-3tw7.5 adds deterministic evidence-pack coherence coverage so artifact drift fails closed.",
             "Each witness links to concrete source anchors already present in the shared tree so regressions fail on exact guarded paths, not vague heuristics.",

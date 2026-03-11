@@ -1,9 +1,9 @@
 # bd-3tw7 Static Truthfulness Gate Seed
 
 - Parent bead: `bd-3tw7`
-- Support beads: `bd-3tw7.1, bd-3tw7.2, bd-3tw7.4, bd-3tw7.5`
+- Support beads: `bd-3tw7.1, bd-3tw7.2, bd-3tw7.4, bd-3tw7.5, bd-3tw7.6`
 - Verdict: `PASS`
-- Scope: Static cross-surface surrogate scanner and witness-matrix seed for currently unreserved replacement-critical surfaces.
+- Scope: Static cross-surface surrogate scanner and witness-matrix seed for currently unreserved replacement-critical surfaces plus explicit in-crate SDK structural-only helper witnesses.
 - Static-seed disclaimer: this pack does not claim the full parent dynamic/e2e truthfulness gate is complete.
 
 ## Guarded Witnesses
@@ -19,6 +19,8 @@
 - `certification_evidence_binding` (supply_chain_certification): `PASS` via `TRUTHFULNESS_GATE_STATIC_PASS`
 - `workspace_verifier_sdk_structural_only_posture` (workspace_verifier_sdk): `PASS` via `TRUTHFULNESS_GATE_STATIC_PASS`
 - `workspace_verifier_sdk_package_metadata_truthfulness` (workspace_verifier_sdk_metadata): `PASS` via `TRUTHFULNESS_GATE_STATIC_PASS`
+- `incrate_sdk_verifier_structural_only_posture` (incrate_sdk_verifier): `PASS` via `TRUTHFULNESS_GATE_STATIC_PASS`
+- `incrate_sdk_replay_capsule_structural_only_posture` (incrate_sdk_replay_capsule): `PASS` via `TRUTHFULNESS_GATE_STATIC_PASS`
 - `supervision_time_budget_real_clock` (supervision): `PASS` via `TRUTHFULNESS_GATE_STATIC_PASS`
 - `migration_artifact_real_signature_verification` (migration_artifact): `PASS` via `TRUTHFULNESS_GATE_STATIC_PASS`
 
@@ -26,8 +28,6 @@
 
 - `crates/franken-node/src/verifier_economy/mod.rs` excluded because Reserved under bd-1z5a.8 (`RoseRidge`).
 - `crates/franken-node/src/connector/verifier_sdk.rs` excluded because Reserved under bd-1z5a.8 (`RoseRidge`).
-- `crates/franken-node/src/sdk/verifier_sdk.rs` excluded because Reserved under bd-1z5a.8 (`RoseRidge`).
-- `crates/franken-node/src/sdk/replay_capsule.rs` excluded because Reserved under bd-1z5a.8 (`RoseRidge`).
 
 ## Guard Checkers
 
