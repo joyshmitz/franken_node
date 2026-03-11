@@ -589,6 +589,13 @@ pub fn validate_bundle(bundle: &ReproBundle) -> Result<(), Vec<SchemaError>> {
                 errors.push(SchemaError::NonPortablePath(eref.relative_path.clone()));
             }
         }
+        for (key, value) in &bundle.config.entries {
+            if value.starts_with('/') || value.contains(":\\") {
+                errors.push(SchemaError::NonPortablePath(format!(
+                    "config.{key}={value}"
+                )));
+            }
+        }
     }
 
     if errors.is_empty() {
@@ -1158,6 +1165,22 @@ mod tests {
             errs.iter()
                 .any(|e| matches!(e, SchemaError::NonPortablePath(_)))
         );
+    }
+
+    #[test]
+    fn non_portable_config_value_rejected() {
+        let mut ctx = make_context();
+        ctx.config = ctx
+            .config
+            .with_entry("artifact_root", "/var/lib/franken-node");
+        let bundle = generate_repro_bundle(&ctx);
+
+        let errs = validate_bundle(&bundle).unwrap_err();
+        assert!(errs.iter().any(|e| match e {
+            SchemaError::NonPortablePath(path) =>
+                path == "config.artifact_root=/var/lib/franken-node",
+            _ => false,
+        }));
     }
 
     #[test]
