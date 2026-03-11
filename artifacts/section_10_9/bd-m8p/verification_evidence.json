@@ -2,7 +2,7 @@
   "bead_id": "bd-m8p",
   "title": "Verifier economy portal and external attestation publishing flow",
   "section": "10.9",
-  "timestamp": "2026-03-10T05:22:21.900233+00:00",
+  "timestamp": "2026-03-11T09:47:10.971840+00:00",
   "verdict": "PASS",
   "overall_pass": true,
   "total": 152,
@@ -767,7 +767,7 @@
     {
       "check": "rust_test_count",
       "pass": true,
-      "detail": "72 tests (minimum 50)"
+      "detail": "78 tests (minimum 50)"
     }
   ]
 }

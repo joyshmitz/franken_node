@@ -4,6 +4,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -87,8 +88,8 @@ class TestRunAllChecks(unittest.TestCase):
 
     def test_check_count(self):
         results = mod.run_all_checks()
-        # 15 evidence + 15 summary + 2 aggregate + 14 artifacts + 4 gate + 13 domain = 63
-        self.assertGreaterEqual(len(results), 60)
+        # 15 evidence + 15 summary + 4 aggregate + 14 artifacts + 4 gate + 13 domain = 65
+        self.assertGreaterEqual(len(results), 65)
 
     def test_all_checks_have_required_keys(self):
         results = mod.run_all_checks()
@@ -97,11 +98,11 @@ class TestRunAllChecks(unittest.TestCase):
             self.assertIn("pass", r)
             self.assertIn("detail", r)
 
-    def test_all_checks_pass(self):
+    def test_contains_live_tracker_checks(self):
         results = mod.run_all_checks()
-        failures = [r for r in results if not r["pass"]]
-        self.assertEqual(len(failures), 0,
-                         "\n".join(f"  FAIL: {r['check']}: {r['detail']}" for r in failures))
+        names = {r["check"] for r in results}
+        self.assertIn("all_upstream_beads_closed", names)
+        self.assertIn("all_upstream_blockers_closed", names)
 
 
 class TestRunAll(unittest.TestCase):
@@ -121,17 +122,17 @@ class TestRunAll(unittest.TestCase):
         result = mod.run_all()
         self.assertTrue(result["gate"])
 
-    def test_verdict_pass(self):
+    def test_verdict_matches_live_tracker_state(self):
         result = mod.run_all()
-        self.assertEqual(result["verdict"], "PASS", self._failing(result))
-
-    def test_overall_pass(self):
-        result = mod.run_all()
-        self.assertTrue(result["overall_pass"])
-
-    def test_zero_failed(self):
-        result = mod.run_all()
-        self.assertEqual(result["failed"], 0, self._failing(result))
+        issue_index = mod._load_issue_index()
+        expected_blocked = bool(
+            mod._open_upstream_beads(issue_index)
+            or mod._open_upstream_blockers(issue_index)
+        )
+        if expected_blocked:
+            self.assertEqual(result["verdict"], "FAIL", self._failing(result))
+            self.assertFalse(result["overall_pass"])
+            self.assertGreater(result["failed"], 0)
 
     def test_section_beads_list(self):
         result = mod.run_all()
@@ -139,10 +140,17 @@ class TestRunAll(unittest.TestCase):
         self.assertIn("bd-1nl1", result["section_beads"])
         self.assertIn("bd-2kd9", result["section_beads"])
 
+    def test_open_upstream_fields_present(self):
+        result = mod.run_all()
+        self.assertIn("open_upstream_beads", result)
+        self.assertIn("open_upstream_blockers", result)
+        self.assertIsInstance(result["open_upstream_beads"], list)
+        self.assertIsInstance(result["open_upstream_blockers"], list)
+
     def test_checks_list(self):
         result = mod.run_all()
         self.assertIsInstance(result["checks"], list)
-        self.assertGreaterEqual(len(result["checks"]), 60)
+        self.assertGreaterEqual(len(result["checks"]), 65)
 
     def _failing(self, result):
         failures = [c for c in result["checks"] if not c["pass"]]
@@ -182,16 +190,25 @@ class TestPerBeadChecks(unittest.TestCase):
         check = next(r for r in results if r["check"] == "all_evidence_present")
         self.assertTrue(check["pass"])
 
-    def test_all_verdicts_pass(self):
+    def test_open_upstream_beads_check_matches_issue_index(self):
         results = mod.run_all_checks()
-        check = next(r for r in results if r["check"] == "all_verdicts_pass")
-        self.assertTrue(check["pass"])
+        check = next(r for r in results if r["check"] == "all_upstream_beads_closed")
+        issue_index = mod._load_issue_index()
+        open_beads = mod._open_upstream_beads(issue_index)
+        self.assertEqual(check["pass"], not open_beads)
+        for bead_id, _status in open_beads:
+            self.assertIn(bead_id, check["detail"])
 
-    def test_each_evidence_passes(self):
+    def test_open_upstream_blockers_check_matches_issue_index(self):
         results = mod.run_all_checks()
-        for bead_id, _ in mod.SECTION_BEADS:
-            check = next(r for r in results if r["check"] == f"evidence_{bead_id}")
-            self.assertTrue(check["pass"], f"{bead_id} evidence not PASS")
+        check = next(r for r in results if r["check"] == "all_upstream_blockers_closed")
+        issue_index = mod._load_issue_index()
+        blocker_map = mod._open_upstream_blockers(issue_index)
+        self.assertEqual(check["pass"], not blocker_map)
+        for bead_id, blockers in blocker_map.items():
+            self.assertIn(bead_id, check["detail"])
+            for blocker in blockers:
+                self.assertIn(blocker, check["detail"])
 
     def test_each_summary_exists(self):
         results = mod.run_all_checks()
@@ -242,6 +259,72 @@ class TestGateDeliverables(unittest.TestCase):
         results = mod.run_all_checks()
         check = next(r for r in results if r["check"] == "gate_tests")
         self.assertTrue(check["pass"])
+
+
+class TestIssueIndexHelpers(unittest.TestCase):
+    def test_load_issue_index_parses_jsonl(self):
+        fake_path = mock.Mock()
+        fake_path.is_file.return_value = True
+        fake_path.read_text.return_value = "\n".join([
+            json.dumps({"id": "bd-a", "status": "closed"}),
+            json.dumps({"id": "bd-b", "status": "open"}),
+        ])
+
+        index = mod._load_issue_index(fake_path)
+
+        self.assertEqual(index["bd-a"]["status"], "closed")
+        self.assertEqual(index["bd-b"]["status"], "open")
+
+
+class TestBeadGateState(unittest.TestCase):
+    def _issue(self, issue_id, status="closed", dependencies=None):
+        return {
+            "id": issue_id,
+            "status": status,
+            "dependencies": dependencies or [],
+        }
+
+    def test_evaluate_bead_gate_state_passes_for_closed_issue(self):
+        issue_index = {"bd-demo": self._issue("bd-demo")}
+        with mock.patch.object(mod, "_find_evidence", return_value=Path("dummy.json")), mock.patch.object(
+            mod, "_load_evidence", return_value={"verdict": "PASS"}
+        ):
+            passed, detail = mod._evaluate_bead_gate_state(
+                "bd-demo", "Demo bead", issue_index
+            )
+
+        self.assertTrue(passed)
+        self.assertIn("PASS", detail)
+
+    def test_evaluate_bead_gate_state_rejects_open_tracker_status(self):
+        issue_index = {"bd-demo": self._issue("bd-demo", status="open")}
+        with mock.patch.object(mod, "_find_evidence", return_value=Path("dummy.json")), mock.patch.object(
+            mod, "_load_evidence", return_value={"verdict": "PASS"}
+        ):
+            passed, detail = mod._evaluate_bead_gate_state(
+                "bd-demo", "Demo bead", issue_index
+            )
+
+        self.assertFalse(passed)
+        self.assertIn("tracker status=open", detail)
+
+    def test_evaluate_bead_gate_state_rejects_open_blockers(self):
+        issue_index = {
+            "bd-demo": self._issue(
+                "bd-demo",
+                dependencies=[{"type": "blocks", "depends_on_id": "bd-blocker"}],
+            ),
+            "bd-blocker": self._issue("bd-blocker", status="in_progress"),
+        }
+        with mock.patch.object(mod, "_find_evidence", return_value=Path("dummy.json")), mock.patch.object(
+            mod, "_load_evidence", return_value={"verdict": "PASS"}
+        ):
+            passed, detail = mod._evaluate_bead_gate_state(
+                "bd-demo", "Demo bead", issue_index
+            )
+
+        self.assertFalse(passed)
+        self.assertIn("bd-blocker", detail)
 
 
 if __name__ == "__main__":

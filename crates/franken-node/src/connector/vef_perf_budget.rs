@@ -348,6 +348,33 @@ impl VefOverheadGate {
                 continue;
             };
 
+            // Non-finite measurements (NaN, ±Inf) fail closed: NaN cv would
+            // bypass noise detection, and -Inf latency would pass budget checks.
+            let all_finite = measurement.p95_ms.is_finite()
+                && measurement.p99_ms.is_finite()
+                && measurement.cold_start_ms.is_finite()
+                && measurement.cv.is_finite();
+
+            if !all_finite {
+                events.push(VefPerfEvent {
+                    code: event_codes::VEF_PERF_ERR_001.to_string(),
+                    hot_path: measurement.hot_path.label().to_string(),
+                    mode: measurement.mode.label().to_string(),
+                    detail: "non-finite measurement value".to_string(),
+                });
+                path_results.push(VefPathResult {
+                    hot_path: measurement.hot_path,
+                    mode: measurement.mode,
+                    p95_pass: false,
+                    p99_pass: false,
+                    cold_start_pass: false,
+                    noisy: true,
+                    overall_pass: false,
+                    detail: "non-finite measurement value — fail closed".to_string(),
+                });
+                continue;
+            }
+
             let noisy = measurement.cv > self.policy.max_cv_pct / 100.0;
             let p95_pass = measurement.p95_ms <= effective.p95_overhead_ms;
             let p99_pass = measurement.p99_ms <= effective.p99_overhead_ms;
@@ -817,5 +844,60 @@ mod tests {
         let json = serde_json::to_string(&policy).unwrap();
         let parsed: VefBudgetPolicy = serde_json::from_str(&json).unwrap();
         assert_eq!(policy, parsed);
+    }
+
+    #[test]
+    fn nan_measurement_fails_closed() {
+        let gate = VefOverheadGate::with_default_policy();
+        let measurements = vec![VefMeasurement {
+            hot_path: VefHotPath::ReceiptEmission,
+            mode: VefBudgetMode::Normal,
+            p95_ms: f64::NAN,
+            p99_ms: 1.0,
+            cold_start_ms: 5.0,
+            cv: 0.05,
+            iterations: 1000,
+        }];
+        let result = gate.evaluate(&measurements);
+        assert!(!result.overall_pass, "NaN measurement must fail closed");
+        assert!(!result.path_results[0].overall_pass);
+    }
+
+    #[test]
+    fn neg_inf_measurement_fails_closed() {
+        let gate = VefOverheadGate::with_default_policy();
+        let measurements = vec![VefMeasurement {
+            hot_path: VefHotPath::ReceiptEmission,
+            mode: VefBudgetMode::Normal,
+            p95_ms: f64::NEG_INFINITY,
+            p99_ms: f64::NEG_INFINITY,
+            cold_start_ms: f64::NEG_INFINITY,
+            cv: 0.05,
+            iterations: 1000,
+        }];
+        let result = gate.evaluate(&measurements);
+        assert!(
+            !result.overall_pass,
+            "-Inf must not bypass budget gate"
+        );
+    }
+
+    #[test]
+    fn nan_cv_fails_closed() {
+        let gate = VefOverheadGate::with_default_policy();
+        let measurements = vec![VefMeasurement {
+            hot_path: VefHotPath::ReceiptEmission,
+            mode: VefBudgetMode::Normal,
+            p95_ms: 0.5,
+            p99_ms: 1.0,
+            cold_start_ms: 5.0,
+            cv: f64::NAN,
+            iterations: 1000,
+        }];
+        let result = gate.evaluate(&measurements);
+        assert!(
+            !result.overall_pass,
+            "NaN cv must not bypass noise detection"
+        );
     }
 }

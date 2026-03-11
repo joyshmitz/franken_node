@@ -15,15 +15,16 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
-from pathlib import Path
-from typing import Any
 
 
 BEAD = "bd-3t08"
 SECTION = "10.17"
+ISSUES_EXPORT = ROOT / ".beads" / "issues.jsonl"
 
 # Section 10.17 beads (all upstream dependencies of bd-3t08)
 SECTION_BEADS = [
@@ -108,6 +109,84 @@ def _safe_relative(path: Path) -> str:
     return str(path)
 
 
+def _load_issue_index(path: Path = ISSUES_EXPORT) -> dict[str, dict[str, Any]]:
+    if not path.is_file():
+        return {}
+
+    issues: dict[str, dict[str, Any]] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        try:
+            issue = json.loads(raw_line)
+        except json.JSONDecodeError:
+            continue
+        issue_id = str(issue.get("id", "")).strip()
+        if issue_id:
+            issues[issue_id] = issue
+    return issues
+
+
+def _issue_status(issue: dict[str, Any] | None) -> str:
+    if issue is None:
+        return "missing"
+    status = str(issue.get("status", "")).strip().lower()
+    return status or "missing"
+
+
+def _dependency_target(dep: dict[str, Any]) -> str:
+    return str(dep.get("depends_on_id") or dep.get("id") or "").strip()
+
+
+def _dependency_type(dep: dict[str, Any]) -> str:
+    return str(dep.get("type") or dep.get("dependency_type") or "").strip().lower()
+
+
+def _open_blockers(
+    issue: dict[str, Any] | None,
+    issue_index: dict[str, dict[str, Any]],
+) -> list[str]:
+    if issue is None:
+        return []
+
+    blockers: list[str] = []
+    for dep in issue.get("dependencies", []):
+        dep_type = _dependency_type(dep)
+        if dep_type != "blocks":
+            continue
+        target_id = _dependency_target(dep)
+        if not target_id:
+            continue
+        target_issue = issue_index.get(target_id)
+        target_status = _issue_status(target_issue or dep)
+        if target_status != "closed":
+            blockers.append(target_id)
+    return blockers
+
+
+def _open_upstream_beads(
+    issue_index: dict[str, dict[str, Any]],
+) -> list[tuple[str, str]]:
+    open_beads: list[tuple[str, str]] = []
+    for bead_id, _ in SECTION_BEADS:
+        status = _issue_status(issue_index.get(bead_id))
+        if status != "closed":
+            open_beads.append((bead_id, status))
+    return open_beads
+
+
+def _open_upstream_blockers(
+    issue_index: dict[str, dict[str, Any]],
+) -> dict[str, list[str]]:
+    blocker_map: dict[str, list[str]] = {}
+    for bead_id, _ in SECTION_BEADS:
+        blockers = _open_blockers(issue_index.get(bead_id), issue_index)
+        if blockers:
+            blocker_map[bead_id] = blockers
+    return blocker_map
+
+
 def _find_evidence(bead_id: str) -> Path | None:
     """Locate evidence file, trying verification_evidence.json then check_report.json."""
     base = ROOT / "artifacts" / "section_10_17" / bead_id
@@ -125,20 +204,41 @@ def _load_evidence(path: Path) -> dict[str, Any] | None:
         return None
 
 
-def check_bead_evidence(bead_id: str, title: str) -> dict[str, Any]:
+def _evaluate_bead_gate_state(
+    bead_id: str,
+    title: str,
+    issue_index: dict[str, dict[str, Any]],
+) -> tuple[bool, str]:
     evidence_path = _find_evidence(bead_id)
     if evidence_path is None:
         fallback = ROOT / "artifacts" / "section_10_17" / bead_id / "verification_evidence.json"
-        return _check(f"evidence_{bead_id}", False, f"missing: {_safe_relative(fallback)}")
+        return False, f"missing: {_safe_relative(fallback)}"
     data = _load_evidence(evidence_path)
     if data is None:
-        return _check(f"evidence_{bead_id}", False, f"parse error: {_safe_relative(evidence_path)}")
-    passed = _evidence_pass(data)
-    return _check(
-        f"evidence_{bead_id}",
-        passed,
-        f"PASS: {title[:60]}" if passed else f"FAIL: {title[:60]}",
-    )
+        return False, f"parse error: {_safe_relative(evidence_path)}"
+
+    if not _evidence_pass(data):
+        return False, f"FAIL artifact: {title[:60]}"
+
+    issue = issue_index.get(bead_id)
+    tracker_status = _issue_status(issue)
+    if tracker_status != "closed":
+        return False, f"stale PASS artifact: tracker status={tracker_status}"
+
+    blockers = _open_blockers(issue, issue_index)
+    if blockers:
+        return False, f"stale PASS artifact: open blockers {', '.join(blockers)}"
+
+    return True, f"PASS: {title[:60]}"
+
+
+def check_bead_evidence(
+    bead_id: str,
+    title: str,
+    issue_index: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    passed, detail = _evaluate_bead_gate_state(bead_id, title, issue_index)
+    return _check(f"evidence_{bead_id}", passed, detail)
 
 
 def check_bead_summary(bead_id: str) -> dict[str, Any]:
@@ -160,22 +260,47 @@ def check_all_evidence_present() -> dict[str, Any]:
     return _check("all_evidence_present", passed, f"{count}/{len(SECTION_BEADS)} beads have evidence")
 
 
-def check_all_verdicts_pass() -> dict[str, Any]:
+def check_all_verdicts_pass(issue_index: dict[str, dict[str, Any]]) -> dict[str, Any]:
     pass_count = 0
     fail_list: list[str] = []
     for bead_id, _ in SECTION_BEADS:
-        evidence_path = _find_evidence(bead_id)
-        if evidence_path is not None:
-            data = _load_evidence(evidence_path)
-            if data is not None and _evidence_pass(data):
-                pass_count += 1
-            else:
-                fail_list.append(bead_id)
+        passed, _detail = _evaluate_bead_gate_state(bead_id, bead_id, issue_index)
+        if passed:
+            pass_count += 1
         else:
             fail_list.append(bead_id)
     passed = pass_count == len(SECTION_BEADS)
     detail = f"{pass_count}/{len(SECTION_BEADS)} PASS" if passed else f"FAIL: {', '.join(fail_list)}"
     return _check("all_verdicts_pass", passed, detail)
+
+
+def check_all_upstream_beads_closed(
+    issue_index: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    open_beads = _open_upstream_beads(issue_index)
+    passed = not open_beads
+    if passed:
+        detail = "all upstream section beads are closed"
+    else:
+        detail = "open/reopened upstream beads: " + ", ".join(
+            f"{bead_id}={status}" for bead_id, status in open_beads
+        )
+    return _check("all_upstream_beads_closed", passed, detail)
+
+
+def check_all_upstream_blockers_closed(
+    issue_index: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    blocker_map = _open_upstream_blockers(issue_index)
+    passed = not blocker_map
+    if passed:
+        detail = "all upstream bead blockers are closed"
+    else:
+        detail = "open blocker chain: " + "; ".join(
+            f"{bead_id}->{', '.join(blockers)}"
+            for bead_id, blockers in blocker_map.items()
+        )
+    return _check("all_upstream_blockers_closed", passed, detail)
 
 
 def check_key_artifacts() -> list[dict[str, Any]]:
@@ -226,17 +351,17 @@ def check_gate_deliverables() -> list[dict[str, Any]]:
     return checks
 
 
-def check_domain_coverage() -> list[dict[str, Any]]:
+def check_domain_coverage(
+    issue_index: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Verify all domain groups have passing beads."""
     checks = []
     for domain, bead_ids in DOMAIN_GROUPS.items():
         passing = 0
         for bead_id in bead_ids:
-            evidence_path = _find_evidence(bead_id)
-            if evidence_path is not None:
-                data = _load_evidence(evidence_path)
-                if data is not None and _evidence_pass(data):
-                    passing += 1
+            passed, _detail = _evaluate_bead_gate_state(bead_id, bead_id, issue_index)
+            if passed:
+                passing += 1
         all_pass = passing == len(bead_ids)
         checks.append(_check(
             f"domain_{domain}_coverage",
@@ -248,28 +373,40 @@ def check_domain_coverage() -> list[dict[str, Any]]:
 
 def run_all_checks() -> list[dict[str, Any]]:
     RESULTS.clear()
+    issue_index = _load_issue_index()
 
     for bead_id, title in SECTION_BEADS:
-        check_bead_evidence(bead_id, title)
+        check_bead_evidence(bead_id, title, issue_index)
 
     for bead_id, _ in SECTION_BEADS:
         check_bead_summary(bead_id)
 
     check_all_evidence_present()
-    check_all_verdicts_pass()
+    check_all_verdicts_pass(issue_index)
+    check_all_upstream_beads_closed(issue_index)
+    check_all_upstream_blockers_closed(issue_index)
     check_key_artifacts()
     check_gate_deliverables()
-    check_domain_coverage()
+    check_domain_coverage(issue_index)
 
     return RESULTS
 
 
 def run_all() -> dict[str, Any]:
+    issue_index = _load_issue_index()
     results = run_all_checks()
     total = len(results)
     passed = sum(1 for r in results if r["pass"])
     failed = total - passed
     overall = failed == 0
+    open_upstream_beads = [
+        {"bead_id": bead_id, "status": status}
+        for bead_id, status in _open_upstream_beads(issue_index)
+    ]
+    open_upstream_blockers = [
+        {"bead_id": bead_id, "blockers": blockers}
+        for bead_id, blockers in _open_upstream_blockers(issue_index).items()
+    ]
     return {
         "bead_id": BEAD,
         "title": f"Section {SECTION} verification gate: Radical Expansion Execution Track",
@@ -281,6 +418,9 @@ def run_all() -> dict[str, Any]:
         "passed": passed,
         "failed": failed,
         "section_beads": [b[0] for b in SECTION_BEADS],
+        "issues_export": _safe_relative(ISSUES_EXPORT),
+        "open_upstream_beads": open_upstream_beads,
+        "open_upstream_blockers": open_upstream_blockers,
         "checks": results,
     }
 

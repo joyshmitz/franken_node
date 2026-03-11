@@ -1,54 +1,172 @@
 {
-  "schema_version": "gate-v1.0",
+  "schema_version": "gate-v1.1",
   "bead_id": "bd-3t08",
   "section": "10.17",
   "title": "Section 10.17 verification gate",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "gate_type": "section",
+  "issues_export": ".beads/issues.jsonl",
   "upstream_beads": [
-    {"bead_id": "bd-274s", "verdict": "PASS"},
-    {"bead_id": "bd-1nl1", "verdict": "PASS"},
-    {"bead_id": "bd-1xbc", "verdict": "PASS"},
-    {"bead_id": "bd-3ku8", "verdict": "PASS"},
-    {"bead_id": "bd-gad3", "verdict": "PASS"},
-    {"bead_id": "bd-kcg9", "verdict": "PASS"},
-    {"bead_id": "bd-al8i", "verdict": "PASS"},
-    {"bead_id": "bd-26mk", "verdict": "PASS"},
-    {"bead_id": "bd-21fo", "verdict": "PASS"},
-    {"bead_id": "bd-3l2p", "verdict": "PASS"},
-    {"bead_id": "bd-2iyk", "verdict": "PASS"},
-    {"bead_id": "bd-nbwo", "verdict": "PASS"},
-    {"bead_id": "bd-2o8b", "verdict": "PASS"},
-    {"bead_id": "bd-383z", "verdict": "PASS"},
-    {"bead_id": "bd-2kd9", "verdict": "PASS"}
+    {
+      "bead_id": "bd-274s",
+      "tracker_status": "closed",
+      "verdict": "PASS"
+    },
+    {
+      "bead_id": "bd-1nl1",
+      "tracker_status": "closed",
+      "verdict": "PASS"
+    },
+    {
+      "bead_id": "bd-1xbc",
+      "tracker_status": "closed",
+      "verdict": "PASS"
+    },
+    {
+      "bead_id": "bd-3ku8",
+      "tracker_status": "closed",
+      "verdict": "PASS"
+    },
+    {
+      "bead_id": "bd-gad3",
+      "tracker_status": "closed",
+      "verdict": "PASS"
+    },
+    {
+      "bead_id": "bd-kcg9",
+      "tracker_status": "closed",
+      "verdict": "PASS"
+    },
+    {
+      "bead_id": "bd-al8i",
+      "tracker_status": "closed",
+      "verdict": "PASS"
+    },
+    {
+      "bead_id": "bd-26mk",
+      "tracker_status": "closed",
+      "verdict": "PASS"
+    },
+    {
+      "bead_id": "bd-21fo",
+      "tracker_status": "closed",
+      "verdict": "PASS"
+    },
+    {
+      "bead_id": "bd-3l2p",
+      "tracker_status": "closed",
+      "verdict": "PASS"
+    },
+    {
+      "bead_id": "bd-2iyk",
+      "tracker_status": "closed",
+      "verdict": "PASS"
+    },
+    {
+      "bead_id": "bd-nbwo",
+      "tracker_status": "open",
+      "verdict": "FAIL",
+      "reason": "stale PASS artifact: tracker status=open",
+      "live_blockers": [
+        "bd-1z5a"
+      ]
+    },
+    {
+      "bead_id": "bd-2o8b",
+      "tracker_status": "closed",
+      "verdict": "FAIL",
+      "reason": "stale PASS artifact: open blockers bd-nbwo",
+      "live_blockers": [
+        "bd-nbwo"
+      ]
+    },
+    {
+      "bead_id": "bd-383z",
+      "tracker_status": "closed",
+      "verdict": "PASS"
+    },
+    {
+      "bead_id": "bd-2kd9",
+      "tracker_status": "open",
+      "verdict": "FAIL",
+      "reason": "stale PASS artifact: tracker status=open",
+      "live_blockers": [
+        "bd-1z5a",
+        "bd-nbwo"
+      ]
+    }
   ],
   "domain_coverage": {
-    "adversarial_graph_telemetry": "bd-274s",
-    "exfiltration_detection": "bd-1nl1",
-    "time_travel_replay": "bd-1xbc",
-    "capability_artifact_format": "bd-3ku8",
-    "isolation_mesh": "bd-gad3",
-    "zk_attestation": "bd-kcg9",
-    "semantic_oracle": "bd-al8i",
-    "staking_governance": "bd-26mk",
-    "optimization_governor": "bd-21fo",
-    "intent_firewall": "bd-3l2p",
-    "lineage_sentinel": "bd-2iyk",
-    "verifier_sdk": "bd-nbwo",
-    "hardware_planner": "bd-2o8b",
-    "counterfactual_lab": "bd-383z",
-    "claim_compiler": "bd-2kd9"
+    "adversarial_graph_telemetry": "PASS",
+    "exfiltration_detection": "PASS",
+    "time_travel_replay": "PASS",
+    "capability_artifact_format": "PASS",
+    "isolation_mesh": "PASS",
+    "zk_attestation": "PASS",
+    "semantic_oracle": "PASS",
+    "staking_governance": "PASS",
+    "optimization_governor": "PASS",
+    "intent_firewall": "PASS",
+    "lineage_sentinel": "PASS",
+    "verifier_sdk": "FAIL",
+    "hardware_planner": "FAIL",
+    "counterfactual_lab": "PASS",
+    "claim_compiler": "FAIL"
   },
-  "checks_total": 63,
-  "checks_passed": 63,
-  "checks_failed": 0,
+  "open_upstream_beads": [
+    {
+      "bead_id": "bd-nbwo",
+      "status": "open"
+    },
+    {
+      "bead_id": "bd-2kd9",
+      "status": "open"
+    }
+  ],
+  "open_upstream_blockers": [
+    {
+      "bead_id": "bd-nbwo",
+      "blockers": [
+        "bd-1z5a"
+      ]
+    },
+    {
+      "bead_id": "bd-2o8b",
+      "blockers": [
+        "bd-nbwo"
+      ]
+    },
+    {
+      "bead_id": "bd-2kd9",
+      "blockers": [
+        "bd-1z5a",
+        "bd-nbwo"
+      ]
+    }
+  ],
+  "checks_total": 65,
+  "checks_passed": 56,
+  "checks_failed": 9,
+  "failing_checks": [
+    "evidence_bd-nbwo",
+    "evidence_bd-2o8b",
+    "evidence_bd-2kd9",
+    "all_verdicts_pass",
+    "all_upstream_beads_closed",
+    "all_upstream_blockers_closed",
+    "domain_verifier_sdk_coverage",
+    "domain_hardware_planner_coverage",
+    "domain_claim_compiler_coverage"
+  ],
   "invariants_validated": [
-    "INV-GATE-ALL-PASS",
     "INV-GATE-EVIDENCE-COMPLETE",
-    "INV-GATE-DOMAIN-COVERAGE",
     "INV-GATE-ARTIFACT-PRESENT",
     "INV-GATE-SCHEMA-VERSIONED"
   ],
-  "verification_method": "scripts/check_section_10_17_gate.py --json",
-  "test_suite": "tests/test_check_section_10_17_gate.py"
+  "invariants_blocked": [
+    "INV-GATE-ALL-PASS",
+    "INV-GATE-DOMAIN-COVERAGE"
+  ],
+  "verification_method": "python3 scripts/check_section_10_17_gate.py --json",
+  "test_suite": "python3 -m unittest tests/test_check_section_10_17_gate.py"
 }
