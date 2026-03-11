@@ -336,8 +336,9 @@ pub fn evaluate_certification(input: &CertificationInput) -> CertificationResult
     } else {
         unsatisfied.push("reproducible_build_evidence".to_owned());
     }
-    let adequate_coverage =
-        input.test_coverage_pct.is_some_and(|pct| pct.is_finite() && pct >= 80.0);
+    let adequate_coverage = input
+        .test_coverage_pct
+        .is_some_and(|pct| pct.is_finite() && pct >= 80.0);
     if input.has_test_coverage_evidence && adequate_coverage {
         satisfied.push("test_coverage_above_80pct".to_owned());
     } else {
@@ -384,8 +385,7 @@ pub fn evaluate_certification(input: &CertificationInput) -> CertificationResult
         unsatisfied.len(),
     );
 
-    let derivation_hash =
-        compute_derivation_hash(&input.evidence_refs, 0);
+    let derivation_hash = compute_derivation_hash(&input.evidence_refs, 0);
     let derivation = DerivationMetadata {
         evidence_refs: input.evidence_refs.clone(),
         derived_at_epoch: 0, // Caller-supplied via evaluate_and_register timestamp
@@ -481,7 +481,9 @@ pub struct CertificationRecord {
     pub level: CertificationLevel,
     /// Timestamp of last evaluation.
     pub evaluated_at: String,
-    /// Full evaluation result.
+    /// Latest evaluation snapshot. Manual promotions/demotions update the
+    /// adjudicated level and explanation, but preserve evidence-derived criteria,
+    /// derivation metadata, and maximum achievable level.
     pub evaluation: CertificationResult,
 }
 
@@ -613,6 +615,12 @@ impl CertificationRegistry {
 
         record.level = new_level;
         record.evaluated_at = timestamp.to_owned();
+        Self::refresh_manual_evaluation(
+            record,
+            old_level,
+            new_level,
+            &format!("promotion recorded with evidence ref `{evidence_ref}`"),
+        );
 
         self.append_audit_entry(
             extension_id,
@@ -658,6 +666,12 @@ impl CertificationRegistry {
 
         record.level = new_level;
         record.evaluated_at = timestamp.to_owned();
+        Self::refresh_manual_evaluation(
+            record,
+            old_level,
+            new_level,
+            &format!("demotion recorded: {reason}"),
+        );
 
         self.append_audit_entry(
             extension_id,
@@ -807,6 +821,27 @@ impl CertificationRegistry {
             self.chain_anchor_hash = Some(self.audit_trail[overflow - 1].entry_hash.clone());
             self.audit_trail.drain(0..overflow);
         }
+    }
+
+    fn refresh_manual_evaluation(
+        record: &mut CertificationRecord,
+        old_level: CertificationLevel,
+        new_level: CertificationLevel,
+        detail: &str,
+    ) {
+        let evidence_max = record.evaluation.max_achievable;
+        record.evaluation.level = new_level;
+        record.evaluation.explanation = format!(
+            "Extension '{}' v{} manually adjusted from '{}' to '{}' at {}: {}. \
+             Evidence-derived max remains '{}'; criteria and derivation are unchanged.",
+            record.extension_id,
+            record.version,
+            old_level,
+            new_level,
+            record.evaluated_at,
+            detail,
+            evidence_max
+        );
     }
 }
 
@@ -1092,6 +1127,45 @@ mod tests {
     }
 
     #[test]
+    fn test_promotion_refreshes_embedded_evaluation_snapshot() {
+        let mut reg = CertificationRegistry::new();
+        let input = make_input(
+            "ext-1",
+            ProvenanceLevel::PublisherSigned,
+            ReputationTier::Established,
+            60.0,
+        );
+        reg.evaluate_and_register(&input, &ts(1));
+        let before = reg.get_record("ext-1", "1.0.0").unwrap().evaluation.clone();
+
+        reg.promote(
+            "ext-1",
+            "1.0.0",
+            CertificationLevel::Verified,
+            "ev-ref",
+            &ts(2),
+        )
+        .unwrap();
+
+        let record = reg.get_record("ext-1", "1.0.0").unwrap();
+        assert_eq!(record.level, CertificationLevel::Verified);
+        assert_eq!(record.evaluation.level, CertificationLevel::Verified);
+        assert_eq!(record.evaluation.max_achievable, before.max_achievable);
+        assert_eq!(
+            record.evaluation.satisfied_criteria,
+            before.satisfied_criteria
+        );
+        assert_eq!(
+            record.evaluation.unsatisfied_criteria,
+            before.unsatisfied_criteria
+        );
+        assert_eq!(record.evaluation.derivation, before.derivation);
+        assert!(record.evaluation.explanation.contains("manually adjusted"));
+        assert!(record.evaluation.explanation.contains("max remains"));
+        assert!(record.evaluation.explanation.contains("verified"));
+    }
+
+    #[test]
     fn test_demotion_on_trust_degradation() {
         let mut reg = CertificationRegistry::new();
         let input = make_input(
@@ -1119,6 +1193,45 @@ mod tests {
             reg.get_record("ext-1", "1.0.0").unwrap().level,
             CertificationLevel::Basic
         );
+    }
+
+    #[test]
+    fn test_demotion_refreshes_embedded_evaluation_snapshot() {
+        let mut reg = CertificationRegistry::new();
+        let input = make_input(
+            "ext-1",
+            ProvenanceLevel::PublisherSigned,
+            ReputationTier::Established,
+            60.0,
+        );
+        reg.evaluate_and_register(&input, &ts(1));
+        let before = reg.get_record("ext-1", "1.0.0").unwrap().evaluation.clone();
+
+        reg.demote(
+            "ext-1",
+            "1.0.0",
+            CertificationLevel::Basic,
+            "trust degradation",
+            &ts(2),
+        )
+        .unwrap();
+
+        let record = reg.get_record("ext-1", "1.0.0").unwrap();
+        assert_eq!(record.level, CertificationLevel::Basic);
+        assert_eq!(record.evaluation.level, CertificationLevel::Basic);
+        assert_eq!(record.evaluation.max_achievable, before.max_achievable);
+        assert_eq!(
+            record.evaluation.satisfied_criteria,
+            before.satisfied_criteria
+        );
+        assert_eq!(
+            record.evaluation.unsatisfied_criteria,
+            before.unsatisfied_criteria
+        );
+        assert_eq!(record.evaluation.derivation, before.derivation);
+        assert!(record.evaluation.explanation.contains("trust degradation"));
+        assert!(record.evaluation.explanation.contains("max remains"));
+        assert!(record.evaluation.explanation.contains("basic"));
     }
 
     #[test]
@@ -1345,7 +1458,10 @@ mod tests {
             30.0,
         );
         let result = evaluate_certification(&input);
-        let derivation = result.derivation.as_ref().expect("derivation must be present");
+        let derivation = result
+            .derivation
+            .as_ref()
+            .expect("derivation must be present");
         assert_eq!(derivation.evidence_refs.len(), 2);
         assert!(derivation.derivation_chain_hash.starts_with("sha256:"));
     }

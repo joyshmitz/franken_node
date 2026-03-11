@@ -303,6 +303,7 @@ pub struct LaneCounters {
     pub lane: SchedulerLane,
     pub active_count: usize,
     pub queued_count: usize,
+    pub first_queued_at_ms: Option<u64>,
     pub completed_total: u64,
     pub rejected_total: u64,
     pub starvation_events: u64,
@@ -315,6 +316,7 @@ impl LaneCounters {
             lane,
             active_count: 0,
             queued_count: 0,
+            first_queued_at_ms: None,
             completed_total: 0,
             rejected_total: 0,
             starvation_events: 0,
@@ -529,7 +531,11 @@ impl LaneScheduler {
 
         // INV-LANE-CAP-ENFORCE
         if counters.active_count >= config.concurrency_cap {
+            if counters.queued_count == 0 {
+                counters.first_queued_at_ms = Some(timestamp_ms);
+            }
             counters.queued_count = counters.queued_count.saturating_add(1);
+            counters.rejected_total = counters.rejected_total.saturating_add(1);
             return Err(LaneSchedulerError::CapExceeded {
                 lane,
                 cap: config.concurrency_cap,
@@ -540,6 +546,13 @@ impl LaneScheduler {
         // A newly admitted task consumes one pending queue slot, if any.
         if counters.queued_count > 0 {
             counters.queued_count = counters.queued_count.saturating_sub(1);
+            if counters.queued_count == 0 {
+                counters.first_queued_at_ms = None;
+            } else {
+                // We only track aggregate queue depth, so once one queued task is
+                // admitted the remaining blocked work is rebased on that progress.
+                counters.first_queued_at_ms = Some(timestamp_ms);
+            }
         }
         self.task_counter = self.task_counter.saturating_add(1);
         let task_id = format!("task-{:08}", self.task_counter);
@@ -594,6 +607,9 @@ impl LaneScheduler {
         counters.active_count = counters.active_count.saturating_sub(1);
         counters.completed_total = counters.completed_total.saturating_add(1);
         counters.last_completion_ms = Some(timestamp_ms);
+        if counters.queued_count == 0 {
+            counters.first_queued_at_ms = None;
+        }
 
         self.push_audit_record(LaneAuditRecord {
             event_code: event_codes::LANE_TASK_COMPLETED.to_string(),
@@ -618,15 +634,18 @@ impl LaneScheduler {
         let mut starved = Vec::new();
 
         // Collect starvation info first with immutable borrows.
-        // A lane that has never completed a task (last_completion_ms == None) is
-        // not considered starved — it may simply be newly created.
+        // This scheduler tracks queue depth, not per-item enqueue timestamps, so
+        // `first_queued_at_ms` is the blocked-queue baseline: it starts when a
+        // lane first blocks work and is rebased only when queued work is
+        // actually admitted.
         let mut starvation_info: Vec<(SchedulerLane, usize, u64)> = Vec::new();
         for config in self.policy.lane_configs.values() {
             let counters = &self.counters[config.lane.as_str()];
             if counters.queued_count > 0
-                && let Some(last) = counters.last_completion_ms
+                && let Some(first_queued_at_ms) =
+                    counters.first_queued_at_ms.or(counters.last_completion_ms)
             {
-                let elapsed = current_ms.saturating_sub(last);
+                let elapsed = current_ms.saturating_sub(first_queued_at_ms);
                 if elapsed >= config.starvation_window_ms {
                     starvation_info.push((config.lane, counters.queued_count, elapsed));
                 }
@@ -934,6 +953,9 @@ mod tests {
             .assign_task(&task_classes::log_rotation(), 1001, "t2")
             .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_LANE_CAP_EXCEEDED);
+        let counters = s.lane_counter(SchedulerLane::Background).unwrap();
+        assert_eq!(counters.rejected_total, 1);
+        assert_eq!(counters.first_queued_at_ms, Some(1001));
     }
 
     #[test]
@@ -950,10 +972,12 @@ mod tests {
 
         let before = s.lane_counter(SchedulerLane::Background).unwrap();
         assert_eq!(before.queued_count, 1);
+        assert_eq!(before.first_queued_at_ms, Some(1001));
 
         s.complete_task(&active.task_id, 1002, "t3").unwrap();
         let after = s.lane_counter(SchedulerLane::Background).unwrap();
         assert_eq!(after.queued_count, 1);
+        assert_eq!(after.first_queued_at_ms, Some(1001));
     }
 
     #[test]
@@ -970,6 +994,7 @@ mod tests {
         let _ = s.assign_task(&task_classes::log_rotation(), 1002, "t3");
         let before = s.lane_counter(SchedulerLane::Background).unwrap();
         assert_eq!(before.queued_count, 2);
+        assert_eq!(before.first_queued_at_ms, Some(1001));
 
         s.complete_task(&active.task_id, 1003, "t4").unwrap();
         let admitted = s
@@ -979,6 +1004,7 @@ mod tests {
 
         let after = s.lane_counter(SchedulerLane::Background).unwrap();
         assert_eq!(after.queued_count, 1);
+        assert_eq!(after.first_queued_at_ms, Some(1004));
     }
 
     // ---- Task completion ----
@@ -1004,9 +1030,7 @@ mod tests {
     // ---- Starvation detection ----
 
     #[test]
-    fn no_starvation_when_queued_but_never_completed() {
-        // A lane that has never completed any task should NOT trigger starvation,
-        // even if items are queued — the lane may simply be newly created.
+    fn no_starvation_before_window_when_queued_but_never_completed() {
         let mut p = LaneMappingPolicy::new();
         let mut cfg = LaneConfig::new(SchedulerLane::Background, 10, 1);
         cfg.starvation_window_ms = 100;
@@ -1020,12 +1044,47 @@ mod tests {
         // Try to assign another (will be rejected/queued)
         let _ = s.assign_task(&task_classes::log_rotation(), 1001, "t2");
 
-        // No starvation because last_completion_ms is None (never completed)
-        let starved = s.check_starvation(1200, "t3");
+        let starved = s.check_starvation(1099, "t3");
         assert!(starved.is_empty());
 
         let counters = s.lane_counter(SchedulerLane::Background).unwrap();
         assert_eq!(counters.starvation_events, 0);
+    }
+
+    #[test]
+    fn starvation_detected_when_queued_before_first_completion_and_window_elapsed() {
+        let mut p = LaneMappingPolicy::new();
+        let mut cfg = LaneConfig::new(SchedulerLane::Background, 10, 1);
+        cfg.starvation_window_ms = 100;
+        p.add_lane(cfg);
+        p.add_rule(&task_classes::log_rotation(), SchedulerLane::Background);
+        let mut s = LaneScheduler::new(p).unwrap();
+
+        // Fill and queue without any completion history.
+        let a = s
+            .assign_task(&task_classes::log_rotation(), 1000, "t1")
+            .unwrap();
+        assert_eq!(a.assigned_at_ms, 1000);
+        let _ = s.assign_task(&task_classes::log_rotation(), 1001, "t2");
+
+        let starved = s.check_starvation(1200, "t3");
+        assert_eq!(
+            starved,
+            vec![LaneSchedulerError::Starvation {
+                lane: SchedulerLane::Background,
+                queue_depth: 1,
+                elapsed_ms: 199,
+            }]
+        );
+
+        let counters = s.lane_counter(SchedulerLane::Background).unwrap();
+        assert_eq!(counters.starvation_events, 1);
+        assert_eq!(counters.first_queued_at_ms, Some(1001));
+
+        let audit = s.audit_log().last().unwrap();
+        assert_eq!(audit.event_code, event_codes::LANE_STARVED);
+        assert!(audit.detail.contains("queue_depth=1"));
+        assert!(audit.detail.contains("elapsed=199ms"));
     }
 
     #[test]
@@ -1048,12 +1107,48 @@ mod tests {
             .unwrap();
         let _ = s.assign_task(&task_classes::log_rotation(), 1061, "t3");
 
-        // Starvation detected: last_completion_ms = 1050, window = 100
+        // Starvation detected from the first blocked queue timestamp.
         let starved = s.check_starvation(1200, "t4");
-        assert!(!starved.is_empty());
+        assert_eq!(
+            starved,
+            vec![LaneSchedulerError::Starvation {
+                lane: SchedulerLane::Background,
+                queue_depth: 1,
+                elapsed_ms: 139,
+            }]
+        );
 
         let counters = s.lane_counter(SchedulerLane::Background).unwrap();
         assert_eq!(counters.starvation_events, 1);
+        assert_eq!(counters.first_queued_at_ms, Some(1061));
+    }
+
+    #[test]
+    fn starvation_baseline_does_not_reset_on_completion_while_queue_remains_blocked() {
+        let mut p = LaneMappingPolicy::new();
+        let mut cfg = LaneConfig::new(SchedulerLane::Background, 10, 1);
+        cfg.starvation_window_ms = 150;
+        p.add_lane(cfg);
+        p.add_rule(&task_classes::log_rotation(), SchedulerLane::Background);
+        let mut s = LaneScheduler::new(p).unwrap();
+
+        let active = s
+            .assign_task(&task_classes::log_rotation(), 1000, "t1")
+            .unwrap();
+        let _ = s.assign_task(&task_classes::log_rotation(), 1001, "t2");
+        let _ = s.assign_task(&task_classes::log_rotation(), 1002, "t3");
+
+        s.complete_task(&active.task_id, 1100, "t4").unwrap();
+
+        let starved = s.check_starvation(1151, "t5");
+        assert_eq!(
+            starved,
+            vec![LaneSchedulerError::Starvation {
+                lane: SchedulerLane::Background,
+                queue_depth: 2,
+                elapsed_ms: 150,
+            }]
+        );
     }
 
     #[test]
