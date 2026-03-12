@@ -224,6 +224,12 @@ class TestListChecks(unittest.TestCase):
         for r in results:
             self.assertTrue(r["pass"], f"Failed: {r['check']}")
 
+    def test_rust_capsule_reason_codes_all_pass(self):
+        mod.RESULTS.clear()
+        results = mod.check_rust_capsule_reason_codes()
+        for r in results:
+            self.assertTrue(r["pass"], f"Failed: {r['check']}")
+
     def test_rust_tests_all_pass(self):
         mod.RESULTS.clear()
         results = mod.check_rust_tests()
@@ -263,6 +269,16 @@ class TestReplacementCriticalGuardRegression(unittest.TestCase):
         failing = [r for r in results if not r["pass"]]
         self.assertTrue(
             any("capsule_integrity_path" in r["check"] for r in failing),
+            failing,
+        )
+
+    def test_detects_missing_capsule_reason_code_surface(self):
+        source = mod.RUST_IMPL.read_text(encoding="utf-8")
+        mutated = source.replace("reason_code={}; ", "", 1)
+        results = mod._replacement_critical_guard_checks(mutated)
+        failing = [r for r in results if not r["pass"]]
+        self.assertTrue(
+            any("capsule_rejection_error_surface" in r["check"] for r in failing),
             failing,
         )
 
@@ -327,6 +343,9 @@ class TestConstants(unittest.TestCase):
     def test_error_codes_count(self):
         self.assertEqual(len(mod.ERROR_CODES), 5)
 
+    def test_capsule_reason_codes_count(self):
+        self.assertEqual(len(mod.CAPSULE_REASON_CODES), 10)
+
     def test_reputation_tiers_count(self):
         self.assertEqual(len(mod.REPUTATION_TIERS), 4)
 
@@ -341,6 +360,9 @@ class TestConstants(unittest.TestCase):
 
     def test_all_checks_count(self):
         self.assertEqual(len(mod.ALL_CHECKS), 22)
+
+    def test_list_checks_count(self):
+        self.assertEqual(len(mod.LIST_CHECKS), 8)
 
 
 # ---------------------------------------------------------------------------

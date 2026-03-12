@@ -43,12 +43,27 @@ ERROR_CODES = [
     "ERR-VEP-ANTI-GAMING",
 ]
 
+# bd-1h2w4: Stable capsule verification reason codes
+CAPSULE_REASON_CODES = [
+    "ERR-VEP-CAPSULE-SCHEMA",
+    "ERR-VEP-CAPSULE-FRESHNESS",
+    "ERR-VEP-CAPSULE-ATTESTATION-BINDING",
+    "ERR-VEP-CAPSULE-TRACE-COMMITMENT",
+    "ERR-VEP-CAPSULE-INTEGRITY-HASH",
+    "ERR-VEP-CAPSULE-SIGNATURE",
+    "ERR-VEP-CAPSULE-MISSING-FIELDS",
+    "ERR-VEP-CAPSULE-HASH-FORMAT",
+    "ERR-VEP-CAPSULE-VERIFIER-MISMATCH",
+    "ERR-VEP-CAPSULE-CLAIM-MISMATCH",
+]
+
 REQUIRED_RUST_TYPES = [
     "pub enum VerificationDimension",
     "pub enum VerifierTier",
     "pub enum ReputationTier",
     "pub enum AttestationState",
     "pub enum DisputeOutcome",
+    "pub enum CapsuleVerificationFailure",
     "pub struct AttestationClaim",
     "pub struct AttestationEvidence",
     "pub struct AttestationSignature",
@@ -156,6 +171,12 @@ REQUIRED_RUST_TESTS = [
     "test_event_code_constants",
     "test_invariant_constants",
     "test_error_code_constants",
+    "test_capsule_reason_code_constants",
+    "test_capsule_rejection_missing_capsule_id",
+    "test_access_capsule_rejection_freshness_reason_code",
+    "test_access_capsule_rejection_attestation_binding_reason_code",
+    "test_capsule_verification_failure_display",
+    "test_capsule_verification_failure_codes_deterministic",
 ]
 
 REPLACEMENT_CRITICAL_GUARDS = [
@@ -197,6 +218,19 @@ REPLACEMENT_CRITICAL_GUARDS = [
             "!capsule.integrity_hash.is_empty()",
         ],
         "span": 1600,
+    },
+    {
+        "name": "capsule_rejection_error_surface",
+        "anchor": "fn replay_capsule_rejection_error(",
+        "required": [
+            "reason_code={};",
+            "failure.code()",
+            "failure.detail()",
+        ],
+        "banned": [
+            "\"Replay capsule {} rejected: {}\"",
+        ],
+        "span": 800,
     },
 ]
 
@@ -497,6 +531,11 @@ def check_rust_error_codes() -> list[dict[str, Any]]:
     return _file_contains_all(RUST_IMPL, ERROR_CODES, "rust_error_code")
 
 
+def check_rust_capsule_reason_codes() -> list[dict[str, Any]]:
+    """C27b: All capsule verification reason codes are defined in Rust (bd-1h2w4)."""
+    return _file_contains_all(RUST_IMPL, CAPSULE_REASON_CODES, "rust_capsule_reason_code")
+
+
 def check_rust_test_count() -> dict[str, Any]:
     """C28: Rust implementation has at least 50 tests."""
     if not RUST_IMPL.is_file():
@@ -561,6 +600,7 @@ LIST_CHECKS = [
     check_rust_event_codes,
     check_rust_invariant_constants,
     check_rust_error_codes,
+    check_rust_capsule_reason_codes,
     check_rust_tests,
     check_replacement_critical_guards,
 ]
