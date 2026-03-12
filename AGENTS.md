@@ -67,7 +67,7 @@ If any later section mentions legacy `dcg` paths like `src/main.rs` at repo root
 
 We only use **Cargo** in this project, NEVER any other package manager.
 
-- **Edition:** Rust 2024 (nightly required — see `rust-toolchain.toml`)
+- **Edition:** Rust 2024 (the current tree does not pin a `rust-toolchain.toml`; use a compatible stable toolchain unless a specific task proves otherwise)
 - **Dependency versions:** Explicit versions for stability
 - **Configuration:** Workspace at root `Cargo.toml`, with primary crate under `crates/franken-node/`
 - **Unsafe code:** Forbidden (`#![forbid(unsafe_code)]`)
@@ -288,7 +288,7 @@ JSON Input → Parse → Quick Reject (memchr) → Normalize → Safe Patterns �
 | `src/lib.rs` | Library re-exports |
 | `Cargo.toml` | Dependencies and release optimizations |
 | `build.rs` | Build script for version metadata (vergen) |
-| `rust-toolchain.toml` | Nightly toolchain requirement |
+| `rust-toolchain.toml` | Historical toolchain pin reference (not currently checked into this repo) |
 | `tests/e2e/*.sh` + `scripts/program_e2e_orchestrator.py` | End-to-end shell suites + program-level orchestrator |
 
 ### Output Style

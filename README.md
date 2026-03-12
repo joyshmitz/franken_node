@@ -99,32 +99,39 @@ See the [Product Charter](docs/PRODUCT_CHARTER.md) for scope boundaries, governa
 
 ## Installation
 
+Important: this repository is not a standalone Rust workspace. `crates/franken-node/Cargo.toml`
+consumes sibling engine crates from `../franken_engine` per the engine split contract, so
+local source builds require both repositories checked out side-by-side.
+
 ### Option 1: One-line installer
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/franken_node/main/install.sh | bash
 ```
 
-### Option 2: Cargo
-
-```bash
-cargo install frankenengine-node
-```
-
-### Option 3: Homebrew
+### Option 2: Homebrew
 
 ```bash
 brew tap dicklesworthstone/tap
 brew install franken-node
 ```
 
-### Option 4: Build from source
+### Option 3: Build from source (split repo layout required)
 
 ```bash
+git clone https://github.com/Dicklesworthstone/franken_engine.git
 git clone https://github.com/Dicklesworthstone/franken_node.git
 cd franken_node
 cargo build --release -p frankenengine-node
 ./target/release/franken-node --version
+```
+
+Expected local layout:
+
+```text
+<parent>/
+  franken_engine/
+  franken_node/
 ```
 
 ## Quick Start

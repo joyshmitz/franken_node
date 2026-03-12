@@ -48,7 +48,7 @@ detectable.
 
 External parties need only:
 - A POSIX-compatible system (Linux/macOS)
-- Rust toolchain (stable or nightly as specified in `rust-toolchain.toml`)
+- Rust toolchain compatible with the checked-out revision (the current tree targets Rust 2024 on a stable toolchain and does not ship a `rust-toolchain.toml`)
 - Python 3.11+ (for verification scripts)
 - No proprietary dependencies, internal APIs, or privileged network access
 
