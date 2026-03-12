@@ -148,6 +148,15 @@ impl LockstepHarness {
             return None;
         }
 
+        // Reject path traversal in untrusted package.json main field:
+        // absolute paths, ".." segments, and backslashes.
+        if normalized.starts_with('/')
+            || normalized.contains('\\')
+            || normalized.split('/').any(|seg| seg == "..")
+        {
+            return None;
+        }
+
         let candidate = project_dir.join(normalized);
         if candidate.is_file() {
             return Some(candidate);
@@ -872,6 +881,35 @@ mod tests {
             .expect_err("missing directory entrypoint must fail");
         let message = format!("{err:#}");
         assert!(message.contains("no executable JS entrypoint found"));
+    }
+
+    // ── path traversal regression ─────────────────────────────────────
+
+    #[test]
+    fn resolve_entry_candidate_rejects_path_traversal() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        // ".." segments
+        assert!(
+            LockstepHarness::resolve_entry_candidate(temp_dir.path(), "../../etc/passwd").is_none(),
+            "must reject .. traversal"
+        );
+        // absolute path
+        assert!(
+            LockstepHarness::resolve_entry_candidate(temp_dir.path(), "/etc/passwd").is_none(),
+            "must reject absolute path"
+        );
+        // backslash
+        assert!(
+            LockstepHarness::resolve_entry_candidate(temp_dir.path(), "..\\..\\etc\\passwd")
+                .is_none(),
+            "must reject backslash traversal"
+        );
+        // embedded ".." in deeper path
+        assert!(
+            LockstepHarness::resolve_entry_candidate(temp_dir.path(), "dist/../../../etc/passwd")
+                .is_none(),
+            "must reject embedded .. traversal"
+        );
     }
 
     // ── sanitize_strace_output ───────────────────────────────────────
