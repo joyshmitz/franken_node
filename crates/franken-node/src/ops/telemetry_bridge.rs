@@ -940,7 +940,7 @@ mod tests {
         drop(receiver);
 
         assert!(!admitted);
-        let snapshot = state.lock().expect("state").snapshot();
+        let snapshot = state.lock().map(|s| s.snapshot()).unwrap_or_else(|_| panic!("state lock poisoned"));
         assert_eq!(snapshot.accepted_total, 0);
         assert_eq!(snapshot.shed_total, 1);
         assert_eq!(
@@ -978,7 +978,7 @@ mod tests {
             .join()
             .expect("persistence worker should exit cleanly");
 
-        let snapshot = state.lock().expect("state").snapshot();
+        let snapshot = state.lock().map(|s| s.snapshot()).unwrap_or_else(|_| panic!("state lock poisoned"));
         assert_eq!(snapshot.accepted_total, 1);
         assert_eq!(snapshot.persisted_total, 1);
         assert_eq!(snapshot.queue_depth, 0);
@@ -1006,7 +1006,7 @@ mod tests {
         );
 
         assert!(!admitted);
-        let snapshot = state.lock().expect("state").snapshot();
+        let snapshot = state.lock().map(|s| s.snapshot()).unwrap_or_else(|_| panic!("state lock poisoned"));
         assert_eq!(snapshot.dropped_total, 1);
         assert_eq!(
             snapshot
@@ -1128,8 +1128,8 @@ mod tests {
         // verify the state tracking logic: if active_connections >= MAX_ACTIVE_CONNECTIONS,
         // the loop rejects.
         let state = test_state(2);
-        state.lock().unwrap().active_connections = MAX_ACTIVE_CONNECTIONS;
-        let snap = state.lock().unwrap().snapshot();
+        state.lock().unwrap_or_else(|_| panic!("state lock poisoned")).active_connections = MAX_ACTIVE_CONNECTIONS;
+        let snap = state.lock().unwrap_or_else(|_| panic!("state lock poisoned")).snapshot();
         assert_eq!(snap.active_connections, MAX_ACTIVE_CONNECTIONS);
     }
 
