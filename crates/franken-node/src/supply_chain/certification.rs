@@ -276,6 +276,18 @@ pub struct CertificationResult {
     pub max_achievable: CertificationLevel,
     /// Derivation metadata linking this result to verified upstream evidence.
     pub derivation: Option<DerivationMetadata>,
+    /// Whether this level was set by a manual promotion/demotion rather than
+    /// evidence-based evaluation. When `true`, `satisfied_criteria` and
+    /// `unsatisfied_criteria` reflect the *original* evidence-derived
+    /// evaluation, not the current (manually adjusted) level. Downstream
+    /// readers must use `evidence_derived_level` (not `level`) to interpret
+    /// the criteria lists.
+    pub manually_adjusted: bool,
+    /// The certification level that the evidence actually supports.
+    /// Equals `level` for evidence-based evaluations; after a manual
+    /// promotion or demotion this preserves the original evidence-derived
+    /// level so downstream readers can detect the gap.
+    pub evidence_derived_level: CertificationLevel,
 }
 
 /// Evaluate the certification level for an extension.
@@ -296,6 +308,8 @@ pub fn evaluate_certification(input: &CertificationInput) -> CertificationResult
             unsatisfied_criteria: vec!["evidence_binding_present".to_owned()],
             max_achievable: CertificationLevel::Uncertified,
             derivation: None,
+            manually_adjusted: false,
+            evidence_derived_level: CertificationLevel::Uncertified,
         };
     }
 
@@ -400,6 +414,8 @@ pub fn evaluate_certification(input: &CertificationInput) -> CertificationResult
         unsatisfied_criteria: unsatisfied,
         max_achievable,
         derivation: Some(derivation),
+        manually_adjusted: false,
+        evidence_derived_level: level,
     }
 }
 
@@ -830,7 +846,12 @@ impl CertificationRegistry {
         detail: &str,
     ) {
         let evidence_max = record.evaluation.max_achievable;
+        // Preserve the evidence-derived level before overwriting.
+        if !record.evaluation.manually_adjusted {
+            record.evaluation.evidence_derived_level = record.evaluation.level;
+        }
         record.evaluation.level = new_level;
+        record.evaluation.manually_adjusted = true;
         record.evaluation.explanation = format!(
             "Extension '{}' v{} manually adjusted from '{}' to '{}' at {}: {}. \
              Evidence-derived max remains '{}'; criteria and derivation remain \
@@ -1165,6 +1186,13 @@ mod tests {
         assert!(record.evaluation.explanation.contains("max remains"));
         assert!(record.evaluation.explanation.contains("remain bound"));
         assert!(record.evaluation.explanation.contains("verified"));
+        // bd-1wpq: manually_adjusted flag and evidence_derived_level
+        assert!(record.evaluation.manually_adjusted);
+        assert_eq!(
+            record.evaluation.evidence_derived_level,
+            before.level,
+            "evidence_derived_level must preserve the original evidence-backed level"
+        );
     }
 
     #[test]
@@ -1235,6 +1263,13 @@ mod tests {
         assert!(record.evaluation.explanation.contains("max remains"));
         assert!(record.evaluation.explanation.contains("remain bound"));
         assert!(record.evaluation.explanation.contains("basic"));
+        // bd-1wpq: manually_adjusted flag and evidence_derived_level
+        assert!(record.evaluation.manually_adjusted);
+        assert_eq!(
+            record.evaluation.evidence_derived_level,
+            before.level,
+            "evidence_derived_level must preserve the original evidence-backed level"
+        );
     }
 
     #[test]
@@ -1519,6 +1554,8 @@ mod tests {
         );
         assert_eq!(after.evaluation.max_achievable, before.max_achievable);
         assert_eq!(after.evaluation.derivation, before.derivation);
+        assert!(after.evaluation.manually_adjusted);
+        assert_eq!(after.evaluation.evidence_derived_level, before.level);
     }
 
     #[test]
@@ -1560,5 +1597,63 @@ mod tests {
         );
         assert_eq!(after.evaluation.max_achievable, before.max_achievable);
         assert_eq!(after.evaluation.derivation, before.derivation);
+        assert!(after.evaluation.manually_adjusted);
+        assert_eq!(after.evaluation.evidence_derived_level, before.level);
+    }
+
+    #[test]
+    fn test_evaluate_sets_consistent_evidence_derived_level() {
+        // Evidence-based evaluation: manually_adjusted is false and
+        // evidence_derived_level equals level.
+        let mut reg = CertificationRegistry::new();
+        let input = make_input(
+            "ext-ev",
+            ProvenanceLevel::PublisherSigned,
+            ReputationTier::Established,
+            60.0,
+        );
+        let result = reg.evaluate_and_register(&input, &ts(1));
+        assert!(!result.manually_adjusted);
+        assert_eq!(result.evidence_derived_level, result.level);
+        assert_eq!(result.evidence_derived_level, CertificationLevel::Standard);
+    }
+
+    #[test]
+    fn test_promote_demote_preserves_evidence_derived_level_across_adjustments() {
+        // Promote then demote: evidence_derived_level stays at the original
+        // evidence-backed level throughout.
+        let mut reg = CertificationRegistry::new();
+        let input = make_input(
+            "ext-pd",
+            ProvenanceLevel::PublisherSigned,
+            ReputationTier::Established,
+            60.0,
+        );
+        reg.evaluate_and_register(&input, &ts(1));
+        let original_level = reg.get_record("ext-pd", "1.0.0").unwrap().evaluation.level;
+        assert_eq!(original_level, CertificationLevel::Standard);
+
+        // Promote Standard -> Verified
+        reg.promote("ext-pd", "1.0.0", CertificationLevel::Verified, "ev1", &ts(2))
+            .unwrap();
+        let after_promote = reg.get_record("ext-pd", "1.0.0").unwrap();
+        assert_eq!(after_promote.evaluation.level, CertificationLevel::Verified);
+        assert!(after_promote.evaluation.manually_adjusted);
+        assert_eq!(
+            after_promote.evaluation.evidence_derived_level,
+            CertificationLevel::Standard
+        );
+
+        // Demote Verified -> Standard
+        reg.demote("ext-pd", "1.0.0", CertificationLevel::Standard, "reason", &ts(3))
+            .unwrap();
+        let after_demote = reg.get_record("ext-pd", "1.0.0").unwrap();
+        assert_eq!(after_demote.evaluation.level, CertificationLevel::Standard);
+        assert!(after_demote.evaluation.manually_adjusted);
+        // evidence_derived_level remains at the original evidence-backed level
+        assert_eq!(
+            after_demote.evaluation.evidence_derived_level,
+            CertificationLevel::Standard
+        );
     }
 }
