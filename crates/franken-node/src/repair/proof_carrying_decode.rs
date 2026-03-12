@@ -622,7 +622,7 @@ mod tests {
                 "t-1",
             )
             .unwrap();
-        let proof = result.proof.unwrap();
+        let proof = result.proof.expect("proof should be present");
         assert_eq!(proof.object_id, "obj-001");
         assert_eq!(proof.fragment_count, 3);
         assert_eq!(proof.input_fragment_hashes.len(), 3);
@@ -715,7 +715,7 @@ mod tests {
                 "t-1",
             )
             .unwrap();
-        let proof = result.proof.unwrap();
+        let proof = result.proof.expect("proof should be present");
         assert!(proof.proof_id.starts_with("rp-"));
     }
 
@@ -843,7 +843,7 @@ mod tests {
                 "t-1",
             )
             .unwrap();
-        let proof = result.proof.unwrap();
+        let proof = result.proof.expect("proof should be present");
 
         let api = verification_api();
         let original_hashes: Vec<String> = frags.iter().map(|f| hex::encode(f.hash())).collect();
@@ -872,7 +872,7 @@ mod tests {
                 "t-1",
             )
             .unwrap();
-        let proof = result.proof.unwrap();
+        let proof = result.proof.expect("proof should be present");
 
         let api = verification_api();
         let mut original_hashes: Vec<String> =
@@ -905,7 +905,7 @@ mod tests {
                 "t-1",
             )
             .unwrap();
-        let mut proof = result.proof.unwrap();
+        let mut proof = result.proof.expect("proof should be present");
         proof.algorithm_id = AlgorithmId::new("nonexistent_algo");
 
         let api = verification_api();
@@ -927,7 +927,7 @@ mod tests {
                 "t-1",
             )
             .unwrap();
-        let proof = result.proof.unwrap();
+        let proof = result.proof.expect("proof should be present");
 
         let api = verification_api();
         let original_hashes: Vec<String> = frags.iter().map(|f| hex::encode(f.hash())).collect();
@@ -955,7 +955,7 @@ mod tests {
                 "t-1",
             )
             .unwrap();
-        let mut proof = result.proof.unwrap();
+        let mut proof = result.proof.expect("proof should be present");
         let mut tampered = proof.attestation.signature.clone();
         let replacement = if tampered.starts_with('a') { "b" } else { "a" };
         tampered.replace_range(0..1, replacement);
@@ -988,7 +988,7 @@ mod tests {
                 "t-1",
             )
             .unwrap();
-        let mut proof = result.proof.unwrap();
+        let mut proof = result.proof.expect("proof should be present");
         let mut tampered = proof.attestation.payload_hash.clone();
         let replacement = if tampered.starts_with('a') { "b" } else { "a" };
         tampered.replace_range(0..1, replacement);
@@ -1076,7 +1076,7 @@ mod tests {
                 "t-1",
             )
             .unwrap();
-        let proof = result.proof.unwrap();
+        let proof = result.proof.expect("proof should be present");
         let json = serde_json::to_string(&proof).unwrap();
         let parsed: RepairProof = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.object_id, proof.object_id);

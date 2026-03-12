@@ -87,21 +87,12 @@
       "ambient_api": "std::time::Instant",
       "line": 139,
       "callsite": "started_at: Instant::now(),",
-      "status": "violation",
-      "allowlist_entry_id": null,
-      "event_code": "AMB-002"
+      "status": "allowlisted",
+      "allowlist_entry_id": "AAL-008",
+      "event_code": "AMB-003"
     }
   ],
-  "violations": [
-    {
-      "module_path": "crates/franken-node/src/connector/supervision.rs",
-      "ambient_api": "std::time::Instant",
-      "line": 139,
-      "callsite": "started_at: Instant::now(),",
-      "reason": "ambient authority API usage without allowlist entry",
-      "event_code": "AMB-002"
-    }
-  ],
+  "violations": [],
   "events": [
     {
       "module_path": "crates/franken-node/src/conformance/connector_method_validator.rs",
@@ -590,8 +581,8 @@
       "module_path": "crates/franken-node/src/connector/supervision.rs",
       "ambient_api": "std::time::Instant",
       "line": 139,
-      "event_code": "AMB-002",
-      "message": "ambient authority API usage without allowlist entry"
+      "event_code": "AMB-003",
+      "message": "allowlist exception AAL-008 applied"
     },
     {
       "module_path": "crates/franken-node/src/connector/telemetry_namespace.rs",
@@ -688,8 +679,8 @@
   "summary": {
     "modules_scanned": 80,
     "findings_total": 10,
-    "violations": 1,
-    "allowlisted": 9,
+    "violations": 0,
+    "allowlisted": 10,
     "expired_allowlist": 0,
     "invalid_allowlist": 0,
     "clean_modules": 73
