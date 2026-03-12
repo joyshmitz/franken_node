@@ -55,6 +55,18 @@ class TestRunChecks(unittest.TestCase):
         self.assertTrue(checks["OP-E2E-BUNDLE-FILE"]["pass"])
         self.assertTrue(checks["OP-E2E-LOG-FILE"]["pass"])
 
+    def test_stage_build_ids_are_present(self):
+        result = mod.run_checks()
+        checks = {check["id"]: check for check in result["checks"]}
+        self.assertTrue(checks["OP-E2E-STAGE-BUILD-IDS"]["pass"], checks["OP-E2E-STAGE-BUILD-IDS"]["detail"])
+        self.assertTrue(checks["OP-E2E-STAGE-PROVENANCE"]["pass"], checks["OP-E2E-STAGE-PROVENANCE"]["detail"])
+        self.assertTrue(checks["OP-E2E-LOG-BUILD-IDS"]["pass"], checks["OP-E2E-LOG-BUILD-IDS"]["detail"])
+        self.assertTrue(checks["OP-E2E-LOG-PROVENANCE"]["pass"], checks["OP-E2E-LOG-PROVENANCE"]["detail"])
+        self.assertTrue(checks["OP-E2E-BUILD-IDS"]["pass"], checks["OP-E2E-BUILD-IDS"]["detail"])
+        self.assertTrue(
+            checks["OP-E2E-SUMMARY-PROVENANCE"]["pass"], checks["OP-E2E-SUMMARY-PROVENANCE"]["detail"]
+        )
+
     def _failing(self, result):
         failures = [check for check in result["checks"] if not check["pass"]]
         return "\n".join(f"FAIL: {check['id']} :: {check['detail']}" for check in failures[:10])

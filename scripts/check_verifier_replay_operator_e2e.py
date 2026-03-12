@@ -49,6 +49,8 @@ REQUIRED_OPERATOR_FIELDS = [
     "fraud_proof_id",
 ]
 
+ALLOWED_BUILD_ID_KINDS = {"daemon_build_id", "telemetry_test_run_id"}
+
 
 def check_file(path: Path, check_id: str, label: str) -> dict[str, Any]:
     exists = path.is_file()
@@ -84,6 +86,25 @@ def load_jsonl(path: Path) -> tuple[bool, list[dict[str, Any]]]:
     return True, rows
 
 
+def valid_stage_provenance(row: dict[str, Any]) -> bool:
+    build_id_kind = row.get("build_id_kind")
+    worker_id = row.get("worker_id")
+    completed_at = row.get("completed_at")
+    duration_ms = row.get("duration_ms")
+    rch_outcome = row.get("rch_outcome")
+    return (
+        isinstance(build_id_kind, str)
+        and build_id_kind in ALLOWED_BUILD_ID_KINDS
+        and isinstance(worker_id, str)
+        and bool(worker_id)
+        and isinstance(completed_at, str)
+        and bool(completed_at)
+        and isinstance(duration_ms, int)
+        and duration_ms > 0
+        and rch_outcome == "remote"
+    )
+
+
 def evaluate(summary: dict[str, Any], bundle: dict[str, Any], logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
 
@@ -109,6 +130,41 @@ def evaluate(summary: dict[str, Any], bundle: dict[str, Any], logs: list[dict[st
             "id": "OP-E2E-STAGE-STATUS",
             "pass": stage_pass and len(stage_results) >= len(REQUIRED_STAGE_IDS),
             "detail": f"count={len(stage_results)}",
+        }
+    )
+
+    stage_build_ids: dict[str, int] = {}
+    stage_provenance: dict[str, dict[str, Any]] = {}
+    missing_stage_build_ids: list[str] = []
+    invalid_stage_provenance: list[str] = []
+    for row in stage_results:
+        if not isinstance(row, dict):
+            continue
+        stage_id = str(row.get("stage_id", ""))
+        if stage_id not in REQUIRED_STAGE_IDS:
+            continue
+        build_id = row.get("build_id")
+        if isinstance(build_id, int) and build_id > 0:
+            stage_build_ids[stage_id] = build_id
+            stage_provenance[stage_id] = row
+        else:
+            missing_stage_build_ids.append(stage_id)
+        if stage_id in REQUIRED_STAGE_IDS and not valid_stage_provenance(row):
+            invalid_stage_provenance.append(stage_id)
+    checks.append(
+        {
+            "check": "operator stage results carry concrete build ids",
+            "id": "OP-E2E-STAGE-BUILD-IDS",
+            "pass": not missing_stage_build_ids and len(stage_build_ids) == len(REQUIRED_STAGE_IDS),
+            "detail": "ok" if not missing_stage_build_ids else ",".join(sorted(missing_stage_build_ids)),
+        }
+    )
+    checks.append(
+        {
+            "check": "operator stage results preserve remote provenance metadata",
+            "id": "OP-E2E-STAGE-PROVENANCE",
+            "pass": not invalid_stage_provenance and len(stage_provenance) == len(REQUIRED_STAGE_IDS),
+            "detail": "ok" if not invalid_stage_provenance else ",".join(sorted(set(invalid_stage_provenance))),
         }
     )
 
@@ -150,6 +206,51 @@ def evaluate(summary: dict[str, Any], bundle: dict[str, Any], logs: list[dict[st
             "id": "OP-E2E-TRACE",
             "pass": len(trace_ids) == 1,
             "detail": f"trace_ids={sorted(trace_ids)}",
+        }
+    )
+
+    missing_log_build_ids: list[str] = []
+    mismatched_log_build_ids: list[str] = []
+    invalid_log_provenance: list[str] = []
+    for row in operator_logs:
+        stage_id = str(row.get("stage_id", ""))
+        if stage_id not in REQUIRED_STAGE_IDS:
+            continue
+        build_id = row.get("build_id")
+        expected_build_id = stage_build_ids.get(stage_id)
+        if not isinstance(build_id, int) or build_id <= 0:
+            missing_log_build_ids.append(f"{stage_id}:{row.get('event_code', '?')}")
+            continue
+        if expected_build_id is not None and build_id != expected_build_id:
+            mismatched_log_build_ids.append(f"{stage_id}:{build_id}!={expected_build_id}")
+        expected_stage = stage_provenance.get(stage_id)
+        if not valid_stage_provenance(row):
+            invalid_log_provenance.append(f"{stage_id}:{row.get('event_code', '?')}")
+            continue
+        if expected_stage is not None:
+            for field in ("build_id_kind", "worker_id", "completed_at", "duration_ms", "rch_outcome"):
+                if row.get(field) != expected_stage.get(field):
+                    invalid_log_provenance.append(f"{stage_id}:{field}")
+    log_build_id_ok = not missing_log_build_ids and not mismatched_log_build_ids
+    log_build_id_detail = "ok"
+    if missing_log_build_ids:
+        log_build_id_detail = ";".join(missing_log_build_ids[:8])
+    elif mismatched_log_build_ids:
+        log_build_id_detail = ";".join(mismatched_log_build_ids[:8])
+    checks.append(
+        {
+            "check": "operator log rows preserve stage build ids",
+            "id": "OP-E2E-LOG-BUILD-IDS",
+            "pass": log_build_id_ok,
+            "detail": log_build_id_detail,
+        }
+    )
+    checks.append(
+        {
+            "check": "operator log rows preserve stage provenance metadata",
+            "id": "OP-E2E-LOG-PROVENANCE",
+            "pass": not invalid_log_provenance,
+            "detail": "ok" if not invalid_log_provenance else ";".join(invalid_log_provenance[:8]),
         }
     )
 
@@ -210,12 +311,47 @@ def evaluate(summary: dict[str, Any], bundle: dict[str, Any], logs: list[dict[st
     )
 
     build_ids = summary.get("build_ids")
+    expected_build_ids = [stage_build_ids[stage_id] for stage_id in REQUIRED_STAGE_IDS if stage_id in stage_build_ids]
+    summary_build_ids_ok = (
+        isinstance(build_ids, list)
+        and len(build_ids) == len(REQUIRED_STAGE_IDS)
+        and all(isinstance(build_id, int) and build_id > 0 for build_id in build_ids)
+        and sorted(build_ids) == sorted(expected_build_ids)
+    )
     checks.append(
         {
-            "check": "summary exposes build_ids list",
+            "check": "summary exposes complete concrete build_ids list",
             "id": "OP-E2E-BUILD-IDS",
-            "pass": isinstance(build_ids, list),
+            "pass": summary_build_ids_ok,
             "detail": json.dumps(build_ids),
+        }
+    )
+
+    summary_stage_provenance = summary.get("stage_provenance")
+    summary_build_id_kinds = summary.get("build_id_kinds")
+    invalid_summary_provenance: list[str] = []
+    if not isinstance(summary_stage_provenance, dict):
+        invalid_summary_provenance.append("stage_provenance")
+    else:
+        for stage_id in REQUIRED_STAGE_IDS:
+            row = summary_stage_provenance.get(stage_id)
+            if not isinstance(row, dict) or not valid_stage_provenance(row):
+                invalid_summary_provenance.append(stage_id)
+                continue
+            if row.get("build_id") != stage_build_ids.get(stage_id):
+                invalid_summary_provenance.append(f"{stage_id}:build_id")
+    if (
+        not isinstance(summary_build_id_kinds, list)
+        or len(summary_build_id_kinds) != len(REQUIRED_STAGE_IDS)
+        or any(kind not in ALLOWED_BUILD_ID_KINDS for kind in summary_build_id_kinds)
+    ):
+        invalid_summary_provenance.append("build_id_kinds")
+    checks.append(
+        {
+            "check": "summary preserves stage provenance metadata",
+            "id": "OP-E2E-SUMMARY-PROVENANCE",
+            "pass": not invalid_summary_provenance,
+            "detail": "ok" if not invalid_summary_provenance else ";".join(invalid_summary_provenance[:8]),
         }
     )
 

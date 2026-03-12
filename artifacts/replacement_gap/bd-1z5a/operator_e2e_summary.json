@@ -24,12 +24,70 @@
     "VERIFIER_SCORE_UPDATED"
   ],
   "missing_event_codes": [],
-  "build_ids": [],
+  "build_ids": [
+    4270,
+    4271,
+    4266,
+    4268,
+    4269
+  ],
   "stage_ids": [
     "capsule_verify_success",
     "capsule_verify_reject_tampered",
     "capsule_verify_fraud_proof",
     "capsule_verify_quarantine_replay",
     "verifier_score_update"
-  ]
+  ],
+  "build_id_kinds": [
+    "telemetry_test_run_id",
+    "telemetry_test_run_id",
+    "telemetry_test_run_id",
+    "telemetry_test_run_id",
+    "telemetry_test_run_id"
+  ],
+  "missing_build_stage_ids": [],
+  "non_remote_stage_ids": [],
+  "missing_provenance_stage_ids": [],
+  "stage_provenance": {
+    "capsule_verify_success": {
+      "build_id": 4270,
+      "build_id_kind": "telemetry_test_run_id",
+      "worker_id": "vmi1264463",
+      "completed_at": "2026-03-09T19:25:24Z",
+      "duration_ms": 849796,
+      "rch_outcome": "remote"
+    },
+    "capsule_verify_reject_tampered": {
+      "build_id": 4271,
+      "build_id_kind": "telemetry_test_run_id",
+      "worker_id": "vmi1149989",
+      "completed_at": "2026-03-09T19:27:17Z",
+      "duration_ms": 324934,
+      "rch_outcome": "remote"
+    },
+    "capsule_verify_fraud_proof": {
+      "build_id": 4266,
+      "build_id_kind": "telemetry_test_run_id",
+      "worker_id": "vmi1264463",
+      "completed_at": "2026-03-09T19:12:43Z",
+      "duration_ms": 748318,
+      "rch_outcome": "remote"
+    },
+    "capsule_verify_quarantine_replay": {
+      "build_id": 4268,
+      "build_id_kind": "telemetry_test_run_id",
+      "worker_id": "vmi1149989",
+      "completed_at": "2026-03-09T19:18:29Z",
+      "duration_ms": 292656,
+      "rch_outcome": "remote"
+    },
+    "verifier_score_update": {
+      "build_id": 4269,
+      "build_id_kind": "telemetry_test_run_id",
+      "worker_id": "vmi1149989",
+      "completed_at": "2026-03-09T19:19:20Z",
+      "duration_ms": 1763,
+      "rch_outcome": "remote"
+    }
+  }
 }
