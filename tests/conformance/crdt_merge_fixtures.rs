@@ -47,9 +47,9 @@ fn lww_map_idempotency() {
 #[test]
 fn or_set_commutativity() {
     let mut a = OrSet::new();
-    a.add("x".into());
+    a.add("replica-a", "x".into());
     let mut b = OrSet::new();
-    b.add("y".into());
+    b.add("replica-b", "y".into());
 
     let ab = a.merge(&b).unwrap();
     let ba = b.merge(&a).unwrap();
@@ -59,11 +59,11 @@ fn or_set_commutativity() {
 #[test]
 fn or_set_associativity() {
     let mut a = OrSet::new();
-    a.add("x".into());
+    a.add("replica-a", "x".into());
     let mut b = OrSet::new();
-    b.add("y".into());
+    b.add("replica-b", "y".into());
     let mut c = OrSet::new();
-    c.add("z".into());
+    c.add("replica-c", "z".into());
     c.remove("x".into());
 
     let ab_c = a.merge(&b).unwrap().merge(&c).unwrap();
@@ -74,8 +74,8 @@ fn or_set_associativity() {
 #[test]
 fn or_set_idempotency() {
     let mut a = OrSet::new();
-    a.add("x".into());
-    a.add("y".into());
+    a.add("replica-a", "x".into());
+    a.add("replica-a", "y".into());
     a.remove("y".into());
     let aa = a.merge(&a).unwrap();
     assert_eq!(aa.elements(), a.elements());
