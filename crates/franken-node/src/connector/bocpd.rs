@@ -545,23 +545,31 @@ impl BocpdDetector {
             }
         }
         // Reset stats for run length 0 (new regime).
-        if !self.gaussian_stats.is_empty() {
-            self.gaussian_stats[0] = GaussianSuffStats::new();
-            self.gaussian_stats[0].update(x);
-        }
-        if !self.poisson_stats.is_empty() {
-            self.poisson_stats[0] = PoissonSuffStats::new();
-            self.poisson_stats[0].update(x.max(0.0));
-        }
-        if !self.categorical_stats.is_empty() {
-            let k = self.categorical_stats[0].counts.len();
-            self.categorical_stats[0] = CategoricalSuffStats::new(k);
-            let cat = if x < 0.0 || x.is_nan() {
-                usize::MAX
-            } else {
-                x as usize
-            };
-            self.categorical_stats[0].update(cat);
+        match &self.model {
+            ObservationModel::Gaussian(_) => {
+                if !self.gaussian_stats.is_empty() {
+                    self.gaussian_stats[0] = GaussianSuffStats::new();
+                    self.gaussian_stats[0].update(x);
+                }
+            }
+            ObservationModel::Poisson(_) => {
+                if !self.poisson_stats.is_empty() {
+                    self.poisson_stats[0] = PoissonSuffStats::new();
+                    self.poisson_stats[0].update(x.max(0.0));
+                }
+            }
+            ObservationModel::Categorical(_) => {
+                if !self.categorical_stats.is_empty() {
+                    let k = self.categorical_stats[0].counts.len();
+                    self.categorical_stats[0] = CategoricalSuffStats::new(k);
+                    let cat = if x < 0.0 || x.is_nan() {
+                        usize::MAX
+                    } else {
+                        x as usize
+                    };
+                    self.categorical_stats[0].update(cat);
+                }
+            }
         }
 
         // Track regime statistics.

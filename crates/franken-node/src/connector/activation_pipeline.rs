@@ -319,7 +319,7 @@ pub fn transcripts_match(a: &ActivationTranscript, b: &ActivationTranscript) -> 
         return false;
     }
     for (sa, sb) in a.stages.iter().zip(b.stages.iter()) {
-        if sa.stage != sb.stage || sa.success != sb.success {
+        if sa.stage != sb.stage || sa.success != sb.success || sa.error != sb.error || sa.timestamp != sb.timestamp {
             return false;
         }
     }

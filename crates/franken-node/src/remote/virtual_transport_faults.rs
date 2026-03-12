@@ -94,14 +94,22 @@ pub struct FaultConfig {
 
 impl FaultConfig {
     pub fn validate(&self) -> Result<(), String> {
-        if self.drop_probability < 0.0 || self.drop_probability > 1.0 {
+        if !self.drop_probability.is_finite() || !(0.0..=1.0).contains(&self.drop_probability) {
             return Err("drop_probability must be in [0, 1]".to_string());
         }
-        if self.reorder_probability < 0.0 || self.reorder_probability > 1.0 {
+        if !self.reorder_probability.is_finite() || !(0.0..=1.0).contains(&self.reorder_probability)
+        {
             return Err("reorder_probability must be in [0, 1]".to_string());
         }
-        if self.corrupt_probability < 0.0 || self.corrupt_probability > 1.0 {
+        if !self.corrupt_probability.is_finite() || !(0.0..=1.0).contains(&self.corrupt_probability)
+        {
             return Err("corrupt_probability must be in [0, 1]".to_string());
+        }
+        if self.reorder_probability > 0.0 && self.reorder_max_depth == 0 {
+            return Err("reorder_max_depth must be > 0 when reorder_probability > 0".to_string());
+        }
+        if self.corrupt_probability > 0.0 && self.corrupt_bit_count == 0 {
+            return Err("corrupt_bit_count must be > 0 when corrupt_probability > 0".to_string());
         }
         if self.max_faults == 0 {
             return Err("max_faults must be > 0".to_string());
@@ -248,6 +256,13 @@ impl FaultSchedule {
             total_messages,
         }
     }
+
+    fn fault_at(&self, msg_idx: usize) -> Option<&ScheduledFault> {
+        self.faults
+            .binary_search_by_key(&msg_idx, |fault| fault.message_index)
+            .ok()
+            .map(|idx| &self.faults[idx])
+    }
 }
 
 /// Campaign results.
@@ -283,6 +298,17 @@ pub struct VirtualTransportFaultHarness {
     audit_log: Vec<VtfAuditRecord>,
     #[serde(skip, default = "default_max_audit_log_entries")]
     max_audit_log_entries: usize,
+}
+
+fn campaign_message_payload(message_id: u64) -> Vec<u8> {
+    format!("vtf-msg-{message_id}").into_bytes()
+}
+
+fn payload_hash(payload: &[u8]) -> String {
+    format!(
+        "{:x}",
+        Sha256::digest([b"virtual_transport_faults_payload_v1:" as &[u8], payload].concat())
+    )
 }
 
 impl VirtualTransportFaultHarness {
@@ -437,8 +463,7 @@ impl VirtualTransportFaultHarness {
         payload: &[u8],
         trace_id: &str,
     ) -> Option<Vec<u8>> {
-        let fault = schedule.faults.iter().find(|f| f.message_index == msg_idx);
-        match fault {
+        match schedule.fault_at(msg_idx) {
             Some(sf) => match &sf.fault {
                 FaultClass::Drop => self.apply_drop(message_id, payload, trace_id),
                 FaultClass::Reorder { depth } => {
@@ -474,6 +499,15 @@ impl VirtualTransportFaultHarness {
         );
 
         let schedule = FaultSchedule::from_seed(self.seed, config, total_messages);
+        self.log_audit(
+            event_codes::FAULT_SCHEDULE_CREATED,
+            trace_id,
+            serde_json::json!({
+                "scenario": scenario_name,
+                "seed": self.seed,
+                "faults": schedule.faults.len(),
+            }),
+        );
 
         let drops = schedule
             .faults
@@ -491,18 +525,42 @@ impl VirtualTransportFaultHarness {
             .filter(|f| matches!(f.fault, FaultClass::Corrupt { .. }))
             .count();
 
-        let hash_input =
+        let mut delivered_payload_hashes = Vec::with_capacity(total_messages);
+        for msg_idx in 0..total_messages {
+            let message_id = msg_idx as u64 + 1;
+            if let Some(scheduled_fault) = schedule.fault_at(msg_idx) {
+                self.log_audit(
+                    event_codes::FAULT_INJECTED,
+                    trace_id,
+                    serde_json::json!({
+                        "scenario": scenario_name,
+                        "message_id": message_id,
+                        "fault": format!("{}", scheduled_fault.fault),
+                    }),
+                );
+            }
+            let payload = campaign_message_payload(message_id);
+            if let Some(processed) =
+                self.process_message(&schedule, msg_idx, message_id, &payload, trace_id)
+            {
+                delivered_payload_hashes.push(payload_hash(&processed));
+            }
+        }
+        for payload in self.flush_reorder_buffer() {
+            delivered_payload_hashes.push(payload_hash(&payload));
+        }
+
+        let schedule_json =
             serde_json::to_string(&schedule.faults).unwrap_or_else(|e| format!("__serde_err:{e}"));
-        let content_hash = format!(
-            "{:x}",
-            Sha256::digest(
-                [
-                    b"virtual_transport_faults_content_v1:" as &[u8],
-                    hash_input.as_bytes()
-                ]
-                .concat()
-            )
-        );
+        let delivered_json = serde_json::to_string(&delivered_payload_hashes)
+            .unwrap_or_else(|e| format!("__serde_err:{e}"));
+        let mut hasher = Sha256::new();
+        hasher.update(b"virtual_transport_faults_content_v1:");
+        hasher.update((schedule_json.len() as u64).to_le_bytes());
+        hasher.update(schedule_json.as_bytes());
+        hasher.update((delivered_json.len() as u64).to_le_bytes());
+        hasher.update(delivered_json.as_bytes());
+        let content_hash = format!("{:x}", hasher.finalize());
 
         self.log_audit(
             event_codes::FAULT_CAMPAIGN_COMPLETE,
@@ -511,6 +569,17 @@ impl VirtualTransportFaultHarness {
                 "scenario": scenario_name,
                 "total_faults": schedule.faults.len(),
                 "total_messages": total_messages,
+                "delivered_messages": delivered_payload_hashes.len(),
+            }),
+        );
+        self.log_audit(
+            event_codes::FAULT_SCENARIO_END,
+            trace_id,
+            serde_json::json!({
+                "scenario": scenario_name,
+                "total_faults": schedule.faults.len(),
+                "total_messages": total_messages,
+                "delivered_messages": delivered_payload_hashes.len(),
             }),
         );
 
@@ -719,6 +788,40 @@ mod tests {
     }
 
     #[test]
+    fn test_campaign_executes_schedule_and_populates_fault_log() {
+        let mut harness = VirtualTransportFaultHarness::new(42);
+        let config = chaos();
+        let result = harness.run_campaign("chaos", &config, 100, "t1");
+        assert_eq!(harness.fault_count(), result.total_faults);
+        assert!(
+            harness
+                .audit_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::FAULT_SCHEDULE_CREATED)
+        );
+        assert!(
+            harness
+                .audit_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::FAULT_INJECTED)
+        );
+        assert!(
+            harness
+                .audit_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::FAULT_SCENARIO_END)
+        );
+    }
+
+    #[test]
+    fn test_campaign_flushes_reorder_buffer() {
+        let mut harness = VirtualTransportFaultHarness::new(42);
+        let result = harness.run_campaign("reorder", &heavy_reorder(), 100, "t1");
+        assert!(result.reorders > 0);
+        assert!(harness.reorder_buffer.is_empty());
+    }
+
+    #[test]
     fn test_fault_config_validation() {
         assert!(no_faults().validate().is_ok());
         assert!(chaos().validate().is_ok());
@@ -742,6 +845,45 @@ mod tests {
             corrupt_probability: 0.0,
             corrupt_bit_count: 0,
             max_faults: 0,
+        };
+        assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn test_fault_config_rejects_nan_probability() {
+        let bad = FaultConfig {
+            drop_probability: f64::NAN,
+            reorder_probability: 0.0,
+            reorder_max_depth: 0,
+            corrupt_probability: 0.0,
+            corrupt_bit_count: 0,
+            max_faults: 1,
+        };
+        assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn test_fault_config_rejects_reorder_without_depth() {
+        let bad = FaultConfig {
+            drop_probability: 0.0,
+            reorder_probability: 0.5,
+            reorder_max_depth: 0,
+            corrupt_probability: 0.0,
+            corrupt_bit_count: 0,
+            max_faults: 1,
+        };
+        assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn test_fault_config_rejects_corruption_without_bits() {
+        let bad = FaultConfig {
+            drop_probability: 0.0,
+            reorder_probability: 0.0,
+            reorder_max_depth: 0,
+            corrupt_probability: 0.5,
+            corrupt_bit_count: 0,
+            max_faults: 1,
         };
         assert!(bad.validate().is_err());
     }

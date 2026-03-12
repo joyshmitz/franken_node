@@ -241,7 +241,6 @@ pub fn evaluate_admission(
         ),
     )];
 
-
     // NaN/Inf fail-closed: non-finite values must trigger the most restrictive path
     let needs_evidence = !delta.instability_delta.is_finite()
         || delta.instability_delta > thresholds.max_instability_delta_for_direct_admit

@@ -52,8 +52,7 @@ pub const SCHEMA_TAG: &str = "vsk-v1.0";
 /// Replacement-critical verifier work must use the stronger connector and
 /// verifier-economy signed-capsule paths until the canonical shared kernel
 /// lands under bd-1z5a.
-pub const STRUCTURAL_ONLY_SECURITY_POSTURE: &str =
-    "structural_only_not_replacement_critical";
+pub const STRUCTURAL_ONLY_SECURITY_POSTURE: &str = "structural_only_not_replacement_critical";
 
 /// Stable rule id used by shortcut-regression guardrails.
 pub const STRUCTURAL_ONLY_RULE_ID: &str = "VERIFIER_SHORTCUT_GUARD::SDK_VERIFIER";
@@ -415,7 +414,7 @@ impl VerifierSdk {
         });
 
         // format_version check
-        let version_ok = capsule.format_version == 1;
+        let version_ok = super::replay_capsule::is_version_supported(capsule.format_version);
         evidence.push(EvidenceEntry {
             check_name: "format_version_valid".to_string(),
             passed: version_ok,
@@ -439,11 +438,15 @@ impl VerifierSdk {
         });
 
         // environment present
-        let env_ok = !capsule.environment.runtime_version.is_empty();
+        let env_ok = !capsule.environment.runtime_version.is_empty()
+            && !capsule.environment.platform.is_empty();
         evidence.push(EvidenceEntry {
             check_name: "environment_present".to_string(),
             passed: env_ok,
-            detail: format!("runtime_version={}", capsule.environment.runtime_version),
+            detail: format!(
+                "runtime_version={}, platform={}",
+                capsule.environment.runtime_version, capsule.environment.platform
+            ),
         });
 
         // Sequence monotonicity check on inputs
@@ -462,27 +465,24 @@ impl VerifierSdk {
             },
         });
 
-        // Replay: compute deterministic hash of all inputs, compare to first expected output hash
-        let input_data: String = capsule
-            .inputs
-            .iter()
-            .map(|inp| format!("{}:{}", inp.seq, hex::encode(&inp.data)))
-            .collect::<Vec<_>>()
-            .join("|");
-        let replay_hash = deterministic_hash(&input_data);
-
-        let replay_match = if let Some(first_output) = capsule.expected_outputs.first() {
-            crate::security::constant_time::ct_eq(&first_output.output_hash, &replay_hash)
-        } else {
-            false
+        // Replay through the canonical capsule path so SDK verification cannot
+        // drift from the shared replay semantics.
+        let replay_result = super::replay_capsule::replay(capsule);
+        let replay_match = match (&replay_result, capsule.expected_outputs.first()) {
+            (Ok(replay_hash), Some(first_output)) => {
+                crate::security::constant_time::ct_eq(&first_output.output_hash, replay_hash)
+            }
+            _ => false,
         };
         evidence.push(EvidenceEntry {
             check_name: "replay_deterministic_match".to_string(),
             passed: replay_match,
-            detail: if replay_match {
-                "replay hash matches expected output".to_string()
-            } else {
-                format!("replay_hash={replay_hash}")
+            detail: match replay_result {
+                Ok(replay_hash) if replay_match => {
+                    "replay hash matches expected output".to_string()
+                }
+                Ok(replay_hash) => format!("replay_hash={replay_hash}"),
+                Err(err) => err.to_string(),
             },
         });
 
@@ -499,10 +499,10 @@ impl VerifierSdk {
             VerifyVerdict::Fail(failures)
         };
 
-        let format_ver_str = capsule.format_version.to_string();
-        let inputs_len_str = capsule.inputs.len().to_string();
-        let binding_hash =
-            deterministic_hash_fields(&[&capsule.capsule_id, &format_ver_str, &inputs_len_str]);
+        let capsule_json = super::replay_capsule::to_canonical_json(capsule).map_err(|err| {
+            SdkError::MalformedCapsule(format!("canonical capsule serialization failed: {err}"))
+        })?;
+        let binding_hash = deterministic_hash_fields(&[&capsule_json]);
 
         Ok(VerificationReport {
             request_id: format!("vcap-{}", &deterministic_hash(&capsule.capsule_id)[..24]),
@@ -659,14 +659,22 @@ mod tests {
     use super::super::replay_capsule::*;
     use super::*;
 
-    const SDK_VERIFIER_SOURCE: &str =
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/sdk/verifier_sdk.rs"));
-    const SDK_REPLAY_CAPSULE_SOURCE: &str =
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/sdk/replay_capsule.rs"));
-    const CONNECTOR_VERIFIER_SOURCE: &str =
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/connector/verifier_sdk.rs"));
-    const VERIFIER_ECONOMY_SOURCE: &str =
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/verifier_economy/mod.rs"));
+    const SDK_VERIFIER_SOURCE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/sdk/verifier_sdk.rs"
+    ));
+    const SDK_REPLAY_CAPSULE_SOURCE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/sdk/replay_capsule.rs"
+    ));
+    const CONNECTOR_VERIFIER_SOURCE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/connector/verifier_sdk.rs"
+    ));
+    const VERIFIER_ECONOMY_SOURCE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/verifier_economy/mod.rs"
+    ));
 
     fn assert_guard_contains(rule_id: &str, path: &str, source: &str, needle: &str) {
         assert!(
@@ -998,6 +1006,21 @@ mod tests {
         assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
     }
 
+    #[test]
+    fn test_verify_capsule_empty_platform_fails() {
+        let sdk = test_sdk();
+        let mut cap = valid_capsule();
+        cap.environment.platform = String::new();
+        let report = sdk.verify_capsule(&cap).unwrap();
+        assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
+        assert!(
+            report
+                .evidence
+                .iter()
+                .any(|entry| entry.check_name == "environment_present" && !entry.passed)
+        );
+    }
+
     // ── verify_capsule: determinism ─────────────────────────────────
 
     #[test]
@@ -1010,6 +1033,24 @@ mod tests {
         assert_eq!(r1.verdict, r2.verdict);
         assert_eq!(r1.binding_hash, r2.binding_hash);
         assert_eq!(r1.evidence.len(), r2.evidence.len());
+    }
+
+    #[test]
+    fn test_verify_capsule_binding_hash_changes_with_environment() {
+        let sdk = test_sdk();
+        let cap1 = valid_capsule();
+        let mut cap2 = valid_capsule();
+        cap2.environment.platform = "darwin-aarch64".to_string();
+
+        let r1 = sdk.verify_capsule(&cap1).unwrap();
+        let r2 = sdk.verify_capsule(&cap2).unwrap();
+
+        assert_eq!(r1.verdict, VerifyVerdict::Pass);
+        assert_eq!(r2.verdict, VerifyVerdict::Pass);
+        assert_ne!(
+            r1.binding_hash, r2.binding_hash,
+            "binding hash must change when capsule environment changes"
+        );
     }
 
     // ── verify_chain: happy path ────────────────────────────────────
