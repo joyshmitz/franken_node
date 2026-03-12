@@ -350,24 +350,29 @@ impl KeyRoleRegistry {
         trace_id: &str,
     ) -> Result<&KeyRoleBinding, KeyRoleSeparationError> {
         // Check INV-KRS-ROLE-EXCLUSIVITY: same key cannot serve two roles.
-        if let Some(existing) = self.active.get(key_id) {
-            if existing.role != role {
+        // Extract data from existing binding before any mutable borrow.
+        if let Some((existing_role, material_matches)) = self
+            .active
+            .get(key_id)
+            .map(|b| (b.role, b.public_key_bytes == public_key_bytes))
+        {
+            if existing_role != role {
                 self.push_event(KeyRoleEvent::violation(
                     key_id,
                     role,
-                    existing.role,
+                    existing_role,
                     trace_id,
                 ));
                 return Err(KeyRoleSeparationError::RoleSeparationViolation {
                     key_id: key_id.to_string(),
-                    existing_role: existing.role,
+                    existing_role,
                     attempted_role: role,
                 });
             }
             // Re-binding to the same role: fail closed if the public key
             // material differs — the caller may believe the new key is
             // active when the old material would silently persist.
-            if existing.public_key_bytes != public_key_bytes {
+            if !material_matches {
                 return Err(KeyRoleSeparationError::KeyMaterialMismatch {
                     key_id: key_id.to_string(),
                     role,
