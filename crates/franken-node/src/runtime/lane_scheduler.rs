@@ -646,11 +646,12 @@ impl LaneScheduler {
         // `first_queued_at_ms` is the blocked-queue baseline: it starts when a
         // lane first blocks work and is rebased only when queued work is
         // actually admitted.
-        let mut starvation_info: Vec<(
+        type StarvationRow = (
             SchedulerLane,
             Option<(usize, u64)>,
             Option<StarvationTransition>,
-        )> = Vec::new();
+        );
+        let mut starvation_info: Vec<StarvationRow> = Vec::new();
         for config in self.policy.lane_configs.values() {
             let counters = &self.counters[config.lane.as_str()];
             let current_starvation = if counters.queued_count > 0 {

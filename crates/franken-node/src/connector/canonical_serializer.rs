@@ -606,7 +606,7 @@ fn contains_float_marker(payload: &[u8]) -> bool {
                         backslashes = backslashes.saturating_add(1);
                         j -= 1;
                     }
-                    if backslashes % 2 == 0 {
+                    if backslashes.is_multiple_of(2) {
                         // Unescaped quote — toggle string state
                         in_string = !in_string;
                     }

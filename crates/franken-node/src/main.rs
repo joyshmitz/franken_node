@@ -2045,13 +2045,24 @@ mod registry_command_tests {
         std::fs::write(&package, "artifact").expect("write package");
         let hash = "a".repeat(64);
 
-        let request = build_registry_publish_request(&package, &hash);
+        let request = build_registry_publish_request(&package, &hash).expect("publish request");
         assert!(!request.name.is_empty());
         assert!(request.name.chars().all(|ch| {
             ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '_'
         }));
         assert_eq!(request.initial_version.content_hash, hash);
         assert_eq!(request.signature.signature_bytes.len(), 64);
+    }
+
+    #[test]
+    fn build_registry_publish_request_handles_short_hashes_without_panicking() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let package = temp.path().join("demo.tar.gz");
+        std::fs::write(&package, "artifact").expect("write package");
+
+        let request = build_registry_publish_request(&package, "abc123").expect("publish request");
+        assert_eq!(request.initial_version.content_hash, "abc123");
+        assert_eq!(request.provenance.vcs_commit_sha, "abc123");
     }
 }
 
@@ -2287,13 +2298,17 @@ fn trust_card_cli_registry() -> Result<TrustCardRegistry> {
     demo_trust_registry(now_unix_secs()).map_err(Into::into)
 }
 
+fn provenance_commit_prefix(digest: &str) -> String {
+    digest.chars().take(12).collect()
+}
+
 fn build_registry_seed_request(
     name: &str,
     description: &str,
     publisher_id: &str,
     version: &str,
     tags: &[&str],
-) -> RegistrationRequest {
+) -> Result<RegistrationRequest> {
     // Length-prefixed encoding prevents delimiter-collision ambiguity.
     let attestation_hash = {
         use sha2::Digest;
@@ -2334,7 +2349,7 @@ fn build_registry_seed_request(
         build_system_identifier: "github-actions".to_string(),
         builder_identity: publisher_id.to_string(),
         builder_version: version.to_string(),
-        vcs_commit_sha: attestation_hash[..12].to_string(),
+        vcs_commit_sha: provenance_commit_prefix(&attestation_hash),
         build_timestamp_epoch: now_epoch.saturating_sub(60),
         reproducibility_hash: attestation_hash.clone(),
         input_hash: attestation_hash.clone(),
@@ -2353,9 +2368,10 @@ fn build_registry_seed_request(
         }],
         custom_claims: std::collections::BTreeMap::new(),
     };
-    let _ = supply_chain::provenance::sign_links_in_place(&mut provenance);
+    supply_chain::provenance::sign_links_in_place(&mut provenance)
+        .map_err(|e| anyhow::anyhow!("failed signing registry seed provenance links: {e}"))?;
 
-    RegistrationRequest {
+    Ok(RegistrationRequest {
         name: name.to_string(),
         description: description.to_string(),
         publisher_id: publisher_id.to_string(),
@@ -2384,7 +2400,7 @@ fn build_registry_seed_request(
         tags: tags.iter().map(|tag| (*tag).to_string()).collect(),
         manifest_bytes,
         transparency_proof: None,
-    }
+    })
 }
 
 fn registry_cli_registry() -> Result<SignedExtensionRegistry> {
@@ -2431,21 +2447,21 @@ fn registry_cli_registry() -> Result<SignedExtensionRegistry> {
             "acme-sec",
             "1.4.0",
             &["auth", "security", "policy"],
-        ),
+        )?,
         build_registry_seed_request(
             "telemetry-bridge",
             "Telemetry fan-out and export bridge",
             "beta-observability",
             "2.1.3",
             &["telemetry", "metrics", "export"],
-        ),
+        )?,
         build_registry_seed_request(
             "sandbox-runner",
             "Sandboxed task execution runtime",
             "gamma-runtime",
             "0.9.2",
             &["runtime", "sandbox", "worker"],
-        ),
+        )?,
     ];
 
     let mut ids = Vec::new();
@@ -2502,7 +2518,10 @@ fn normalize_registry_name(raw: &str) -> String {
     }
 }
 
-fn build_registry_publish_request(package_path: &Path, content_hash: &str) -> RegistrationRequest {
+fn build_registry_publish_request(
+    package_path: &Path,
+    content_hash: &str,
+) -> Result<RegistrationRequest> {
     let inferred_name = package_path
         .file_stem()
         .and_then(std::ffi::OsStr::to_str)
@@ -2542,7 +2561,7 @@ fn build_registry_publish_request(package_path: &Path, content_hash: &str) -> Re
         build_system_identifier: "franken-node-cli".to_string(),
         builder_identity: publisher_id.clone(),
         builder_version: "1.0.0".to_string(),
-        vcs_commit_sha: content_hash[..12].to_string(),
+        vcs_commit_sha: provenance_commit_prefix(content_hash),
         build_timestamp_epoch: now_epoch.saturating_sub(60),
         reproducibility_hash: content_hash.to_string(),
         input_hash: content_hash.to_string(),
@@ -2561,9 +2580,10 @@ fn build_registry_publish_request(package_path: &Path, content_hash: &str) -> Re
         }],
         custom_claims: std::collections::BTreeMap::new(),
     };
-    let _ = supply_chain::provenance::sign_links_in_place(&mut provenance);
+    supply_chain::provenance::sign_links_in_place(&mut provenance)
+        .map_err(|e| anyhow::anyhow!("failed signing registry publish provenance links: {e}"))?;
 
-    RegistrationRequest {
+    Ok(RegistrationRequest {
         name,
         description: format!("CLI-published artifact from {}", package_path.display()),
         publisher_id: provenance.builder_identity.clone(),
@@ -2584,7 +2604,7 @@ fn build_registry_publish_request(package_path: &Path, content_hash: &str) -> Re
         tags: vec!["cli-publish".to_string(), "local".to_string()],
         manifest_bytes,
         transparency_proof: None,
-    }
+    })
 }
 
 fn parse_min_assurance(raw: Option<u8>) -> Result<Option<u8>> {
@@ -2723,7 +2743,7 @@ fn handle_registry_publish(args: &cli::RegistryPublishArgs) -> Result<()> {
     let content_hash = hex::encode(sha2::Sha256::digest(
         [b"registry_publish_content_v1:" as &[u8], &package_bytes[..]].concat(),
     ));
-    let request = build_registry_publish_request(&args.package_path, &content_hash);
+    let request = build_registry_publish_request(&args.package_path, &content_hash)?;
 
     let mut registry = registry_cli_registry()?;
     // Register the publisher's key in the admission kernel so the signature can be verified
