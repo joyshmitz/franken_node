@@ -337,8 +337,21 @@ fn append_length_prefixed(bytes: &mut Vec<u8>, value: &str) {
     bytes.extend_from_slice(value.as_bytes());
 }
 
+fn strip_ed25519_prefix(raw: &str) -> &str {
+    let trimmed = raw.trim();
+    if trimmed
+        .as_bytes()
+        .get(0..8)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"ed25519:"))
+    {
+        &trimmed[8..]
+    } else {
+        trimmed
+    }
+}
+
 fn hex_blob(raw: &str, expected_len: usize) -> Result<Vec<u8>, VerifierSdkError> {
-    let normalized = raw.trim().trim_start_matches("ed25519:").trim();
+    let normalized = strip_ed25519_prefix(raw);
     let decoded = hex::decode(normalized).map_err(|_| {
         VerifierSdkError::SignatureInvalid("signature or public key is not valid hex".to_string())
     })?;
@@ -349,6 +362,10 @@ fn hex_blob(raw: &str, expected_len: usize) -> Result<Vec<u8>, VerifierSdkError>
         )));
     }
     Ok(decoded)
+}
+
+fn canonicalize_ed25519_public_key_hex(public_key: &str) -> Result<String, VerifierSdkError> {
+    Ok(hex::encode(hex_blob(public_key, 32)?))
 }
 
 fn is_sha256_hex(value: &str) -> bool {
@@ -611,12 +628,15 @@ fn migration_artifact_binding_hash(
     canonical_payload: &[u8],
     expected_signer_public_key: &str,
 ) -> String {
+    let canonical_signer_public_key =
+        canonicalize_ed25519_public_key_hex(expected_signer_public_key)
+            .unwrap_or_else(|_| expected_signer_public_key.trim().to_string());
     let mut hasher = Sha256::new();
     hasher.update(b"connector_verifier_sdk_migration_binding_v2:");
     hasher.update((canonical_payload.len() as u64).to_le_bytes());
     hasher.update(canonical_payload);
-    hasher.update((expected_signer_public_key.len() as u64).to_le_bytes());
-    hasher.update(expected_signer_public_key.as_bytes());
+    hasher.update((canonical_signer_public_key.len() as u64).to_le_bytes());
+    hasher.update(canonical_signer_public_key.as_bytes());
     hex::encode(hasher.finalize())
 }
 
@@ -915,8 +935,16 @@ pub fn verify_migration_artifact(
         .and_then(|v| v.as_str())
         .unwrap_or("");
     let signature_payload = canonical_migration_artifact_payload(artifact)?;
+    let canonical_expected_signer_public_key =
+        canonicalize_ed25519_public_key_hex(expected_signer_public_key).ok();
+    let canonical_signer_public_key = canonicalize_ed25519_public_key_hex(signer_public_key).ok();
     let signer_key_matches_expected = !expected_signer_public_key.is_empty()
-        && crate::security::constant_time::ct_eq(signer_public_key, expected_signer_public_key);
+        && canonical_expected_signer_public_key
+            .as_deref()
+            .zip(canonical_signer_public_key.as_deref())
+            .is_some_and(|(expected, actual)| {
+                crate::security::constant_time::ct_eq(actual, expected)
+            });
     let sig_ok = signature_algorithm.eq_ignore_ascii_case("ed25519")
         && signer_key_matches_expected
         && verify_ed25519_signature_hex(signer_public_key, &signature_payload, sig).is_ok();
@@ -928,7 +956,12 @@ pub fn verify_migration_artifact(
         } else {
             format!(
                 "trusted signer mismatch: expected={}, actual={}",
-                expected_signer_public_key, signer_public_key
+                canonical_expected_signer_public_key
+                    .as_deref()
+                    .unwrap_or(expected_signer_public_key),
+                canonical_signer_public_key
+                    .as_deref()
+                    .unwrap_or(signer_public_key)
             )
         },
     });
@@ -1536,17 +1569,42 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result.verdict, Verdict::Fail);
-        assert!(
-            result
-                .checked_assertions
-                .iter()
-                .any(|assertion| assertion.assertion == "signature_valid" && !assertion.passed)
+        assert!(result
+            .checked_assertions
+            .iter()
+            .any(|assertion| assertion.assertion == "signature_valid" && !assertion.passed));
+    }
+
+    #[test]
+    fn test_verify_migration_artifact_accepts_uppercase_embedded_signer_key() {
+        let signing_key = test_signing_key(12);
+        let mut artifact = BTreeMap::new();
+        artifact.insert("schema_version".to_string(), serde_json::json!("ma-v1.0"));
+        artifact.insert("rollback_receipt".to_string(), serde_json::json!({}));
+        artifact.insert("preconditions".to_string(), serde_json::json!(["pre1"]));
+        artifact.insert(
+            "content_hash".to_string(),
+            serde_json::json!(format!("sha256:{}", "ef".repeat(32))),
         );
+        sign_migration_artifact(&mut artifact, &signing_key);
+        artifact.insert(
+            "signer_public_key".to_string(),
+            serde_json::json!(hex::encode(signing_key.verifying_key().to_bytes()).to_uppercase()),
+        );
+
+        let signer = test_verifier_signer("v1", 1);
+        let trusted_key = hex::encode(signing_key.verifying_key().to_bytes());
+        let result = verify_migration_artifact(&artifact, &trusted_key, &signer).unwrap();
+
+        assert_eq!(result.verdict, Verdict::Pass);
+        assert!(result.checked_assertions.iter().any(|assertion| {
+            assertion.assertion == "signer_public_key_matches_expected" && assertion.passed
+        }));
     }
 
     #[test]
     fn test_verify_migration_artifact_untrusted_embedded_key_fails() {
-        let signing_key = test_signing_key(12);
+        let signing_key = test_signing_key(13);
         let mut artifact = BTreeMap::new();
         artifact.insert("schema_version".to_string(), serde_json::json!("ma-v1.0"));
         artifact.insert("rollback_receipt".to_string(), serde_json::json!({}));
@@ -1567,8 +1625,8 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_migration_artifact_binding_hash_depends_on_trusted_key() {
-        let signing_key = test_signing_key(13);
+    fn test_migration_artifact_binding_hash_canonicalizes_equivalent_key_encodings() {
+        let signing_key = test_signing_key(14);
         let mut artifact = BTreeMap::new();
         artifact.insert("schema_version".to_string(), serde_json::json!("ma-v1.0"));
         artifact.insert("rollback_receipt".to_string(), serde_json::json!({}));
@@ -1579,13 +1637,44 @@ mod tests {
         );
         sign_migration_artifact(&mut artifact, &signing_key);
 
+        let signature_payload = canonical_migration_artifact_payload(&artifact).unwrap();
+        let trusted_key = hex::encode(signing_key.verifying_key().to_bytes());
+        let uppercase_key = trusted_key.to_uppercase();
+        let prefixed_uppercase_key = format!("ED25519:{uppercase_key}");
+
+        let canonical_hash = migration_artifact_binding_hash(&signature_payload, &trusted_key);
+        let uppercase_hash = migration_artifact_binding_hash(&signature_payload, &uppercase_key);
+        let prefixed_hash =
+            migration_artifact_binding_hash(&signature_payload, &prefixed_uppercase_key);
+
+        assert_eq!(canonical_hash, uppercase_hash);
+        assert_eq!(canonical_hash, prefixed_hash);
+    }
+
+    #[test]
+    fn test_verify_migration_artifact_binding_hash_depends_on_trusted_key_bytes() {
+        let signing_key = test_signing_key(15);
+        let mut artifact = BTreeMap::new();
+        artifact.insert("schema_version".to_string(), serde_json::json!("ma-v1.0"));
+        artifact.insert("rollback_receipt".to_string(), serde_json::json!({}));
+        artifact.insert("preconditions".to_string(), serde_json::json!(["pre1"]));
+        artifact.insert(
+            "content_hash".to_string(),
+            serde_json::json!(format!("sha256:{}", "f1".repeat(32))),
+        );
+        sign_migration_artifact(&mut artifact, &signing_key);
+
         let signer = test_verifier_signer("v1", 1);
         let trusted_key = hex::encode(signing_key.verifying_key().to_bytes());
-        let other_key = hex::encode(test_signing_key(14).verifying_key().to_bytes());
+        let other_key = format!(
+            "ed25519:{}",
+            hex::encode(test_signing_key(16).verifying_key().to_bytes()).to_uppercase()
+        );
         let trusted = verify_migration_artifact(&artifact, &trusted_key, &signer).unwrap();
         let other = verify_migration_artifact(&artifact, &other_key, &signer).unwrap();
 
         assert_ne!(trusted.artifact_binding_hash, other.artifact_binding_hash);
+        assert_eq!(other.verdict, Verdict::Fail);
     }
 
     // ── verify_trust_state ────────────────────────────────────────

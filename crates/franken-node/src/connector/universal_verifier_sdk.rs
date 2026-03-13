@@ -399,6 +399,15 @@ fn capsule_signer_public_key(capsule: &ReplayCapsule) -> Result<&str, VsdkError>
         })
 }
 
+fn validate_capsule_signer_public_key(public_key: &str) -> Result<(), VsdkError> {
+    crate::connector::verifier_sdk::parse_ed25519_verifying_key_hex(public_key).map_err(|_| {
+        VsdkError::ManifestIncomplete(format!(
+            "metadata {CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY} must be a valid 32-byte hex ed25519 public key"
+        ))
+    })?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Core operations
 // ---------------------------------------------------------------------------
@@ -472,6 +481,7 @@ pub fn validate_manifest(manifest: &CapsuleManifest) -> Result<(), VsdkError> {
             "metadata {CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY} is empty"
         )));
     }
+    validate_capsule_signer_public_key(signer_public_key)?;
     Ok(())
 }
 
@@ -483,6 +493,7 @@ pub fn validate_manifest(manifest: &CapsuleManifest) -> Result<(), VsdkError> {
 /// INV-VSDK-SIGNATURE-BOUND: signature covers full capsule payload.
 pub fn verify_capsule_signature(capsule: &ReplayCapsule) -> Result<(), VsdkError> {
     let signer_public_key = capsule_signer_public_key(capsule)?;
+    validate_capsule_signer_public_key(signer_public_key)?;
     let payload = canonical_capsule_signature_payload(capsule);
     if crate::connector::verifier_sdk::verify_ed25519_signature_hex(
         signer_public_key,
@@ -942,6 +953,22 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_manifest_malformed_signer_key() {
+        let mut manifest = build_reference_manifest();
+        manifest.metadata.insert(
+            CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY.to_string(),
+            "not-a-valid-key".to_string(),
+        );
+        match validate_manifest(&manifest) {
+            Err(VsdkError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains(CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY));
+                assert!(msg.contains("ed25519"));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_validate_manifest_wrong_signature_algorithm() {
         let mut manifest = build_reference_manifest();
         manifest.metadata.insert(
@@ -1037,6 +1064,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_verify_capsule_signature_rejects_malformed_signer_key() {
+        let mut capsule = build_reference_capsule();
+        capsule.manifest.metadata.insert(
+            CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY.to_string(),
+            "not-a-valid-key".to_string(),
+        );
+        match verify_capsule_signature(&capsule) {
+            Err(VsdkError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains(CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
     // ── replay_capsule ─────────────────────────────────────────────
 
     #[test]
@@ -1078,6 +1120,21 @@ mod tests {
         match replay_capsule(&capsule, "v1") {
             Err(VsdkError::ManifestIncomplete(msg)) => {
                 assert!(msg.contains("expected_output_hash"));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_replay_capsule_rejects_malformed_signer_key() {
+        let mut capsule = build_reference_capsule();
+        capsule.manifest.metadata.insert(
+            CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY.to_string(),
+            "not-a-valid-key".to_string(),
+        );
+        match replay_capsule(&capsule, "v1") {
+            Err(VsdkError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains(CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY));
             }
             other => panic!("expected ManifestIncomplete, got {other:?}"),
         }
