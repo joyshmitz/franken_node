@@ -1292,7 +1292,8 @@ fn run_analysis(state: &PipelineState) -> CompatibilityReport {
             spec.evidence.corpus_coverage_bps,
             rollback_cost_score
         );
-        let artifact_inputs = vec![artifact_detail.clone(), explanation_trace.join("|")];
+        let mut artifact_inputs = vec![artifact_detail.clone()];
+        artifact_inputs.extend(explanation_trace.iter().cloned());
         evidence_artifacts.push(PipelineEvidenceArtifact {
             artifact_id: format!("analysis-{name}"),
             artifact_kind: "analysis".to_string(),

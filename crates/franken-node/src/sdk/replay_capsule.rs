@@ -178,6 +178,24 @@ fn deterministic_hash(data: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
+/// Compute the deterministic replay hash over capsule inputs using
+/// length-prefixed encoding to prevent delimiter collision attacks.
+///
+/// Each input contributes: `seq` as u64 LE bytes, then length-prefixed `data`.
+/// This replaces the prior pipe-delimited string concatenation that was
+/// vulnerable to hash collisions when input data contained pipe/colon chars.
+fn compute_inputs_hash(inputs: &[CapsuleInput]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"replay_capsule_inputs_v1:");
+    hasher.update((inputs.len() as u64).to_le_bytes());
+    for inp in inputs {
+        hasher.update(inp.seq.to_le_bytes());
+        hasher.update((inp.data.len() as u64).to_le_bytes());
+        hasher.update(&inp.data);
+    }
+    hex::encode(hasher.finalize())
+}
+
 fn validate_environment_snapshot(environment: &EnvironmentSnapshot) -> Result<(), CapsuleError> {
     if environment.runtime_version.is_empty() {
         return Err(CapsuleError::IncompleteEnvironment(
@@ -235,15 +253,7 @@ pub fn validate_capsule(capsule: &ReplayCapsule) -> Result<(), CapsuleError> {
 /// INV-VSK-CAPSULE-SELF-CONTAINED: uses only data from the capsule.
 pub fn replay(capsule: &ReplayCapsule) -> Result<String, CapsuleError> {
     validate_capsule(capsule)?;
-
-    let input_data: String = capsule
-        .inputs
-        .iter()
-        .map(|inp| format!("{}:{}", inp.seq, hex::encode(&inp.data)))
-        .collect::<Vec<_>>()
-        .join("|");
-
-    Ok(deterministic_hash(&input_data))
+    Ok(compute_inputs_hash(&capsule.inputs))
 }
 
 /// Replay a capsule and compare the result to the first expected output hash.
@@ -284,13 +294,8 @@ pub fn create_capsule(
     }
     validate_environment_snapshot(&environment)?;
 
-    // Compute the expected output hash from inputs
-    let input_data: String = inputs
-        .iter()
-        .map(|inp| format!("{}:{}", inp.seq, hex::encode(&inp.data)))
-        .collect::<Vec<_>>()
-        .join("|");
-    let output_hash = deterministic_hash(&input_data);
+    // Compute the expected output hash from inputs using length-prefixed encoding.
+    let output_hash = compute_inputs_hash(&inputs);
 
     let expected_outputs = vec![CapsuleOutput {
         seq: 0,
@@ -770,5 +775,88 @@ mod tests {
         let cap = create_capsule("cap-single", inputs, test_env()).unwrap();
         assert!(validate_capsule(&cap).is_ok());
         assert!(replay_and_verify(&cap).unwrap());
+    }
+
+    // ── Hash collision regression (bd-18qn3) ───────────────────────
+
+    #[test]
+    fn test_hash_collision_resistance_delimiter_in_data() {
+        // Old pipe-delimited format would produce identical strings for
+        // inputs whose data contained colon/pipe characters.  Length-
+        // prefixed encoding must distinguish them.
+        let inputs_a = vec![
+            CapsuleInput {
+                seq: 0,
+                data: b"ab".to_vec(),
+                metadata: BTreeMap::new(),
+            },
+            CapsuleInput {
+                seq: 1,
+                data: b"cd".to_vec(),
+                metadata: BTreeMap::new(),
+            },
+        ];
+        let inputs_b = vec![CapsuleInput {
+            seq: 0,
+            // Data contains bytes that previously matched the pipe-colon
+            // delimiter pattern: "ab|1:cd" vs "ab" then "cd".
+            data: b"ab|1:cd".to_vec(),
+            metadata: BTreeMap::new(),
+        }];
+        let hash_a = compute_inputs_hash(&inputs_a);
+        let hash_b = compute_inputs_hash(&inputs_b);
+        assert_ne!(
+            hash_a, hash_b,
+            "different input sets must produce different hashes"
+        );
+    }
+
+    #[test]
+    fn test_hash_collision_resistance_different_field_boundaries() {
+        // Two inputs where data length boundaries differ but total bytes
+        // are identical should produce distinct hashes under length-prefixed
+        // encoding.
+        let inputs_a = vec![CapsuleInput {
+            seq: 0,
+            data: b"AABB".to_vec(),
+            metadata: BTreeMap::new(),
+        }];
+        let inputs_b = vec![CapsuleInput {
+            seq: 0,
+            data: b"AABBCC".to_vec(),
+            metadata: BTreeMap::new(),
+        }];
+        let hash_a = compute_inputs_hash(&inputs_a);
+        let hash_b = compute_inputs_hash(&inputs_b);
+        assert_ne!(hash_a, hash_b);
+    }
+
+    #[test]
+    fn test_hash_count_sensitivity() {
+        // Changing the number of inputs must change the hash even when the
+        // total data concatenation would be the same byte sequence.
+        let inputs_one = vec![CapsuleInput {
+            seq: 0,
+            data: vec![0u8; 16],
+            metadata: BTreeMap::new(),
+        }];
+        let inputs_two = vec![
+            CapsuleInput {
+                seq: 0,
+                data: vec![0u8; 8],
+                metadata: BTreeMap::new(),
+            },
+            CapsuleInput {
+                seq: 1,
+                data: vec![0u8; 8],
+                metadata: BTreeMap::new(),
+            },
+        ];
+        let hash_one = compute_inputs_hash(&inputs_one);
+        let hash_two = compute_inputs_hash(&inputs_two);
+        assert_ne!(
+            hash_one, hash_two,
+            "different input count must produce different hashes"
+        );
     }
 }

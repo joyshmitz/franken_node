@@ -546,6 +546,26 @@ impl ClaimCompiler {
             }
         }
 
+        // Verify compilation digests bind claim text to evidence (INV-CLMC-SIGNED-EVIDENCE).
+        // Without this check, a caller could tamper with normalised_text or evidence_links
+        // after compilation while keeping a stale compilation_digest.
+        for claim in claims {
+            let expected_digest =
+                compute_compilation_digest(&claim.normalised_text, &claim.evidence_links);
+            if !ct_eq(&claim.compilation_digest, &expected_digest) {
+                self.emit(
+                    event_codes::CLMC_006,
+                    &claim.claim_id,
+                    "compilation digest mismatch, rolled back",
+                    &trace_id,
+                );
+                return Err(ClaimCompilerError::DigestMismatch {
+                    expected: expected_digest,
+                    actual: claim.compilation_digest.clone(),
+                });
+            }
+        }
+
         // All validations passed; commit (INV-CLMC-SCOREBOARD-ATOMIC)
         for claim in claims {
             let summary = summarize_claim_text(&claim.normalised_text);
@@ -1175,5 +1195,44 @@ mod tests {
             .unwrap();
         compiler.publish_batch(&[c]).unwrap();
         assert_eq!(compiler.capacity_remaining(), 4);
+    }
+
+    // -- Compilation digest verification (bd-2tztq) ────────────────
+
+    #[test]
+    fn publish_batch_rejects_tampered_claim_text() {
+        let mut compiler = make_compiler();
+        let mut compiled = compiler.compile_claim(&valid_raw_claim("tamper-1")).unwrap();
+        // Tamper with the claim text after compilation
+        compiled.normalised_text = "TAMPERED claim text".to_string();
+        let err = compiler.publish_batch(&[compiled]).unwrap_err();
+        assert!(
+            matches!(err, ClaimCompilerError::DigestMismatch { .. }),
+            "expected DigestMismatch for tampered claim text"
+        );
+    }
+
+    #[test]
+    fn publish_batch_rejects_tampered_evidence_links() {
+        let mut compiler = make_compiler();
+        let mut compiled = compiler.compile_claim(&valid_raw_claim("tamper-2")).unwrap();
+        // Tamper with evidence after compilation
+        if let Some(link) = compiled.evidence_links.first_mut() {
+            link.uri = "https://evil.example.com/forged".to_string();
+        }
+        let err = compiler.publish_batch(&[compiled]).unwrap_err();
+        assert!(
+            matches!(err, ClaimCompilerError::DigestMismatch { .. }),
+            "expected DigestMismatch for tampered evidence links"
+        );
+    }
+
+    #[test]
+    fn publish_batch_accepts_unmodified_compiled_claim() {
+        let mut compiler = make_compiler();
+        let compiled = compiler.compile_claim(&valid_raw_claim("clean-1")).unwrap();
+        // Unmodified claim should pass digest verification
+        let snapshot = compiler.publish_batch(&[compiled]).unwrap();
+        assert_eq!(snapshot.entry_count, 1);
     }
 }
