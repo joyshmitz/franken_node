@@ -2207,6 +2207,12 @@ mod security_verifier_economy_integration_tests {
         }
     }
 
+    fn canonical_trace_hash(label: &str) -> String {
+        use sha2::{Digest, Sha256};
+        let hash = Sha256::digest(label.as_bytes());
+        format!("sha256:{}", hex::encode(hash))
+    }
+
     fn make_submission(
         verifier_id: &str,
         signing_key: &SigningKey,
@@ -2222,7 +2228,7 @@ mod security_verifier_economy_integration_tests {
             evidence: AttestationEvidence {
                 suite_id: "sec-suite-v1".to_string(),
                 measurements: vec!["cve-scan: clean".to_string()],
-                execution_trace_hash: trace.to_string(),
+                execution_trace_hash: canonical_trace_hash(trace),
                 environment: BTreeMap::from([("os".to_string(), "linux".to_string())]),
             },
             signature: AttestationSignature {
