@@ -7,10 +7,10 @@
 //!
 //! - `INV-CLP-EVERY-CLASS-MAPPED`: Every well-known task class resolves to a lane.
 //! - `INV-CLP-BUDGET-SUM`: Minimum budget allocations sum to ≤ 100%.
-//! - `INV-CLP-CANCEL-BEFORE-READY`: Cancel-tier tasks are always scheduled
-//!   before Ready-tier tasks when both are pending.
-//! - `INV-CLP-CANCEL-NEVER-STARVED`: Cancel-tier tasks are not starved even
-//!   under heavy Ready-tier load.
+//! - `INV-CLP-CANCEL-BEFORE-READY`: Cancel-tier tasks map to the highest-priority
+//!   lane and remain admissible even when Ready-tier lanes are saturated.
+//! - `INV-CLP-CANCEL-NEVER-STARVED`: Cancel-tier tasks remain admissible even
+//!   under heavy non-cancel load.
 
 use frankenengine_node::runtime::lane_scheduler::{
     self, LaneScheduler, SchedulerLane, TaskClass, default_policy, task_classes,
@@ -139,13 +139,13 @@ fn priority_weights_reflect_cancel_gt_timed_gt_ready() {
 // ── INV-CLP-CANCEL-BEFORE-READY ────────────────────────────────────────
 
 #[test]
-fn cancel_lane_tasks_scheduled_before_ready_under_mixed_load() {
+fn cancel_lane_tasks_remain_admissible_under_ready_load() {
     let policy = default_policy();
     let mut sched = LaneScheduler::new(policy).expect("valid policy");
     let mut ts = 1000_u64;
 
-    // Submit a mix of Ready-tier and Cancel-tier tasks.
-    // Ready tasks first (to attempt to starve Cancel).
+    // Submit Ready-tier work first, then verify the Cancel-tier task still has
+    // capacity on its own higher-priority lane.
     let bg_class = task_classes::telemetry_export();
     let cancel_class = task_classes::epoch_transition();
 
@@ -156,7 +156,9 @@ fn cancel_lane_tasks_scheduled_before_ready_under_mixed_load() {
         ts += 1;
     }
 
-    // Now submit Cancel-tier task — should succeed despite Background load.
+    // Now submit Cancel-tier task. This API does not expose a global dequeue
+    // order, so the conformance check here is lane isolation plus successful
+    // admission under Ready-tier pressure.
     let result = sched.assign_task(&cancel_class, ts, "test");
     assert!(
         result.is_ok(),
@@ -170,7 +172,7 @@ fn cancel_lane_tasks_scheduled_before_ready_under_mixed_load() {
 // ── INV-CLP-CANCEL-NEVER-STARVED ───────────────────────────────────────
 
 #[test]
-fn cancel_lane_not_starved_under_heavy_ready_load() {
+fn cancel_lane_remains_admissible_under_heavy_non_cancel_load() {
     let policy = default_policy();
     let mut sched = LaneScheduler::new(policy).expect("valid policy");
     let mut ts = 1000_u64;
