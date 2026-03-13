@@ -279,7 +279,13 @@ fn workload_simulation_produces_metrics() {
     assert!(timed_runs > 0, "Timed tier must receive scheduling slots");
     assert!(ready_runs > 0, "Ready tier must receive scheduling slots");
 
-    // Cancel tier should have the most or equal runs (highest priority).
+    // Cancel tier should have the most or equal runs versus lower-priority lanes.
+    assert!(
+        cancel_runs >= timed_runs,
+        "Cancel runs ({}) should be >= Timed runs ({})",
+        cancel_runs,
+        timed_runs
+    );
     assert!(
         cancel_runs >= ready_runs,
         "Cancel runs ({}) should be >= Ready runs ({})",
