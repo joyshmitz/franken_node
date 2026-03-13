@@ -320,7 +320,13 @@ impl IncidentLab {
                 ),
             });
         }
-        if !self.config.accepted_signers.contains_key(&plan.signer_id) {
+        if !self
+            .config
+            .accepted_signers
+            .get(&plan.signer_id)
+            .copied()
+            .unwrap_or(false)
+        {
             return Err(LabError {
                 code: error_codes::ERR_ILAB_MITIGATION_INVALID.to_string(),
                 message: format!("Signer '{}' not in accepted signers", plan.signer_id),
@@ -555,7 +561,7 @@ mod tests {
             integrity_hash: String::new(),
             metadata: BTreeMap::new(),
         };
-        let err = lab.validate_trace(&trace).unwrap_err();
+        let err = lab.validate_trace(&trace).expect_err("should fail");
         assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_EMPTY);
     }
 
@@ -564,7 +570,7 @@ mod tests {
         let lab = lab();
         let mut trace = make_test_trace("t-corrupt", 3);
         trace.integrity_hash = "badhash".to_string();
-        let err = lab.validate_trace(&trace).unwrap_err();
+        let err = lab.validate_trace(&trace).expect_err("should fail");
         assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_CORRUPT);
     }
 
@@ -575,7 +581,7 @@ mod tests {
         let mut chars: Vec<char> = trace.integrity_hash.chars().collect();
         chars[0] = if chars[0] == '0' { '1' } else { '0' };
         trace.integrity_hash = chars.into_iter().collect();
-        let err = lab.validate_trace(&trace).unwrap_err();
+        let err = lab.validate_trace(&trace).expect_err("should fail");
         assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_CORRUPT);
     }
 
@@ -611,7 +617,7 @@ mod tests {
         let lab = lab();
         let mut plan = make_test_plan("p1", "validator-A", 0.5);
         plan.description = String::new();
-        let err = lab.validate_mitigation(&plan).unwrap_err();
+        let err = lab.validate_mitigation(&plan).expect_err("should fail");
         assert_eq!(err.code, error_codes::ERR_ILAB_MITIGATION_INVALID);
     }
 
@@ -620,7 +626,7 @@ mod tests {
         let lab = lab();
         let mut plan = make_test_plan("p2", "validator-A", 0.5);
         plan.steps.clear();
-        let err = lab.validate_mitigation(&plan).unwrap_err();
+        let err = lab.validate_mitigation(&plan).expect_err("should fail");
         assert_eq!(err.code, error_codes::ERR_ILAB_MITIGATION_INVALID);
     }
 
@@ -628,7 +634,7 @@ mod tests {
     fn test_reduction_out_of_range_rejected() {
         let lab = lab();
         let plan = make_test_plan("p3", "validator-A", 1.5);
-        let err = lab.validate_mitigation(&plan).unwrap_err();
+        let err = lab.validate_mitigation(&plan).expect_err("should fail");
         assert_eq!(err.code, error_codes::ERR_ILAB_MITIGATION_INVALID);
     }
 
@@ -636,8 +642,22 @@ mod tests {
     fn test_unknown_signer_rejected() {
         let lab = lab();
         let plan = make_test_plan("p4", "unknown-signer", 0.5);
-        let err = lab.validate_mitigation(&plan).unwrap_err();
+        let err = lab.validate_mitigation(&plan).expect_err("should fail");
         assert_eq!(err.code, error_codes::ERR_ILAB_MITIGATION_INVALID);
+    }
+
+    #[test]
+    fn test_disabled_signer_rejected() {
+        let mut config = LabConfig::default()
+            .with_signer("validator-A")
+            .with_threshold(0.05);
+        // Manually disable the signer by setting the bool to false.
+        config.accepted_signers.insert("validator-A".to_string(), false);
+        let lab = IncidentLab::new(config);
+        let plan = make_test_plan("p-disabled", "validator-A", 0.5);
+        let err = lab.validate_mitigation(&plan).expect_err("disabled signer should be rejected");
+        assert_eq!(err.code, error_codes::ERR_ILAB_MITIGATION_INVALID);
+        assert!(err.message.contains("validator-A"));
     }
 
     #[test]
@@ -653,8 +673,8 @@ mod tests {
     fn test_replay_produces_deterministic_digest() {
         let lab = lab();
         let trace = make_test_trace("t-replay", 5);
-        let r1 = lab.replay_trace(&trace).unwrap();
-        let r2 = lab.replay_trace(&trace).unwrap();
+        let r1 = lab.replay_trace(&trace).expect("should succeed");
+        let r2 = lab.replay_trace(&trace).expect("should succeed");
         assert_eq!(r1.replay_digest, r2.replay_digest);
     }
 
@@ -679,7 +699,7 @@ mod tests {
     fn test_delta_computed_correctly() {
         let lab = lab();
         let scenario = make_test_scenario("t-d1", "p-d1", "validator-A", 0.3, 100.0, 5.0);
-        let result = lab.compute_delta(&scenario).unwrap();
+        let result = lab.compute_delta(&scenario).expect("should succeed");
         assert!((result.expected_loss_delta - 30.0).abs() < 1e-9);
         assert!((result.mitigated_loss - 70.0).abs() < 1e-9);
     }
@@ -688,7 +708,7 @@ mod tests {
     fn test_mitigation_promoted_above_threshold() {
         let lab = lab();
         let scenario = make_test_scenario("t-p1", "p-p1", "validator-A", 0.5, 100.0, 10.0);
-        let result = lab.compute_delta(&scenario).unwrap();
+        let result = lab.compute_delta(&scenario).expect("should succeed");
         assert!(result.promoted);
         assert_eq!(result.event_code, event_codes::ILAB_004);
     }
@@ -697,7 +717,7 @@ mod tests {
     fn test_mitigation_rejected_below_threshold() {
         let lab = lab();
         let scenario = make_test_scenario("t-r1", "p-r1", "validator-A", 0.01, 100.0, 10.0);
-        let result = lab.compute_delta(&scenario).unwrap();
+        let result = lab.compute_delta(&scenario).expect("should succeed");
         assert!(!result.promoted);
         assert_eq!(result.event_code, event_codes::ILAB_005);
     }
@@ -706,7 +726,7 @@ mod tests {
     fn test_zero_reduction_not_promoted() {
         let lab = lab();
         let scenario = make_test_scenario("t-z1", "p-z1", "validator-A", 0.0, 100.0, 5.0);
-        let result = lab.compute_delta(&scenario).unwrap();
+        let result = lab.compute_delta(&scenario).expect("should succeed");
         assert!(!result.promoted);
     }
 
@@ -716,11 +736,11 @@ mod tests {
     fn test_rollout_contract_generated_for_promoted() {
         let lab = lab();
         let scenario = make_test_scenario("t-rc1", "p-rc1", "validator-A", 0.5, 100.0, 10.0);
-        let synthesis = lab.compute_delta(&scenario).unwrap();
+        let synthesis = lab.compute_delta(&scenario).expect("should succeed");
         assert!(synthesis.promoted);
         let contract = lab
             .generate_rollout_contract(&synthesis, &scenario.mitigation)
-            .unwrap();
+            .expect("should succeed");
         assert!(!contract.signature.is_empty());
         assert_eq!(contract.plan_id, "p-rc1");
         assert_eq!(contract.signer_id, "validator-A");
@@ -730,10 +750,10 @@ mod tests {
     fn test_rollout_contract_has_rollback_clause() {
         let lab = lab();
         let scenario = make_test_scenario("t-rb1", "p-rb1", "validator-A", 0.5, 100.0, 10.0);
-        let synthesis = lab.compute_delta(&scenario).unwrap();
+        let synthesis = lab.compute_delta(&scenario).expect("should succeed");
         let contract = lab
             .generate_rollout_contract(&synthesis, &scenario.mitigation)
-            .unwrap();
+            .expect("should succeed");
         assert!(!contract.rollback_clause.trigger_conditions.is_empty());
         assert!(contract.rollback_clause.rollback_window_secs > 0);
         assert_eq!(contract.rollback_clause.event_code, event_codes::ILAB_006);
@@ -743,11 +763,11 @@ mod tests {
     fn test_rollout_contract_rejected_for_non_promoted() {
         let lab = lab();
         let scenario = make_test_scenario("t-nrc", "p-nrc", "validator-A", 0.01, 100.0, 10.0);
-        let synthesis = lab.compute_delta(&scenario).unwrap();
+        let synthesis = lab.compute_delta(&scenario).expect("should succeed");
         assert!(!synthesis.promoted);
         let err = lab
             .generate_rollout_contract(&synthesis, &scenario.mitigation)
-            .unwrap_err();
+            .expect_err("should fail");
         assert_eq!(err.code, error_codes::ERR_ILAB_CONTRACT_UNSIGNED);
     }
 
@@ -757,11 +777,11 @@ mod tests {
     fn test_evaluate_scenario_promotes_good_mitigation() {
         let lab = lab();
         let scenario = make_test_scenario("t-e2e-1", "p-e2e-1", "validator-A", 0.5, 100.0, 10.0);
-        let (replay, synthesis, contract) = lab.evaluate_scenario(&scenario).unwrap();
+        let (replay, synthesis, contract) = lab.evaluate_scenario(&scenario).expect("should succeed");
         assert!(!replay.replay_digest.is_empty());
         assert!(synthesis.promoted);
         assert!(contract.is_some());
-        let c = contract.unwrap();
+        let c = contract.expect("should succeed");
         assert_eq!(c.event_code, event_codes::ILAB_004);
     }
 
@@ -769,7 +789,7 @@ mod tests {
     fn test_evaluate_scenario_rejects_weak_mitigation() {
         let lab = lab();
         let scenario = make_test_scenario("t-e2e-2", "p-e2e-2", "validator-A", 0.01, 100.0, 10.0);
-        let (_, synthesis, contract) = lab.evaluate_scenario(&scenario).unwrap();
+        let (_, synthesis, contract) = lab.evaluate_scenario(&scenario).expect("should succeed");
         assert!(!synthesis.promoted);
         assert!(contract.is_none());
     }
@@ -780,7 +800,7 @@ mod tests {
         let mut scenario =
             make_test_scenario("t-e2e-3", "p-e2e-3", "validator-A", 0.5, 100.0, 10.0);
         scenario.trace.integrity_hash = "bad".to_string();
-        let err = lab.evaluate_scenario(&scenario).unwrap_err();
+        let err = lab.evaluate_scenario(&scenario).expect_err("should fail");
         assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_CORRUPT);
     }
 
@@ -845,8 +865,8 @@ mod tests {
         let mut m2 = BTreeMap::new();
         m2.insert("a".to_string(), "2".to_string());
         m2.insert("z".to_string(), "1".to_string());
-        let s1 = serde_json::to_string(&m1).unwrap();
-        let s2 = serde_json::to_string(&m2).unwrap();
+        let s1 = serde_json::to_string(&m1).expect("should succeed");
+        let s2 = serde_json::to_string(&m2).expect("should succeed");
         assert_eq!(s1, s2);
     }
 }

@@ -68,10 +68,13 @@ pub enum CertificationError {
 // ── Certification levels ─────────────────────────────────────────────────────
 
 /// Extension certification levels, from least to most trusted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum CertificationLevel {
     /// No certification. Extension has not been evaluated.
+    #[default]
     Uncertified,
     /// Basic: publisher identity verified, manifest declared.
     Basic,
@@ -124,12 +127,6 @@ impl std::fmt::Display for CertificationLevel {
             Self::Verified => write!(f, "verified"),
             Self::Audited => write!(f, "audited"),
         }
-    }
-}
-
-impl Default for CertificationLevel {
-    fn default() -> Self {
-        Self::Uncertified
     }
 }
 
@@ -368,7 +365,17 @@ pub fn evaluate_certification(input: &CertificationInput) -> CertificationResult
     }
 
     // Audited criteria: third-party attestation.
-    if input.has_audit_attestation && input.audit_attestation.is_some() {
+    // Validate attestation structure: auditor_id, scope, and hash format must
+    // be non-trivial to prevent acceptance of obviously-fake attestations.
+    let attestation_valid = input.has_audit_attestation
+        && input.audit_attestation.as_ref().is_some_and(|att| {
+            !att.auditor_id.is_empty()
+                && !att.scope.is_empty()
+                && att.attestation_hash.starts_with("sha256:")
+                && att.attestation_hash.len() == 71 // "sha256:" (7) + 64 hex chars
+                && att.attestation_hash[7..].bytes().all(|b| b.is_ascii_hexdigit())
+        });
+    if attestation_valid {
         satisfied.push("third_party_audit_attestation".to_owned());
     } else {
         unsatisfied.push("third_party_audit_attestation".to_owned());
@@ -381,8 +388,7 @@ pub fn evaluate_certification(input: &CertificationInput) -> CertificationResult
         && input.has_reproducible_build_evidence
         && input.has_test_coverage_evidence
         && adequate_coverage;
-    let audited_met =
-        verified_met && input.has_audit_attestation && input.audit_attestation.is_some();
+    let audited_met = verified_met && attestation_valid;
 
     let level = if audited_met {
         CertificationLevel::Audited
@@ -1029,10 +1035,58 @@ mod tests {
             audit_date: "2026-01-15".to_owned(),
             scope: "full security audit".to_owned(),
             findings_summary: "no critical findings".to_owned(),
-            attestation_hash: "sha256:abc123".to_owned(),
+            attestation_hash: "sha256:a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90".to_owned(),
         });
         let result = evaluate_certification(&input);
         assert_eq!(result.level, CertificationLevel::Audited);
+    }
+
+    #[test]
+    fn test_audited_rejects_fake_attestation_hash() {
+        let mut input = make_input(
+            "ext-1",
+            ProvenanceLevel::IndependentReproduced,
+            ReputationTier::Trusted,
+            90.0,
+        );
+        input.has_reproducible_build_evidence = true;
+        input.has_test_coverage_evidence = true;
+        input.test_coverage_pct = Some(95.0);
+        input.has_audit_attestation = true;
+        input.audit_attestation = Some(AuditAttestation {
+            auditor_id: "auditor-1".to_owned(),
+            audit_date: "2026-01-15".to_owned(),
+            scope: "full security audit".to_owned(),
+            findings_summary: "no critical findings".to_owned(),
+            attestation_hash: "sha256:abc123".to_owned(), // too short — fake
+        });
+        let result = evaluate_certification(&input);
+        // Must NOT reach Audited with a malformed hash.
+        assert_ne!(result.level, CertificationLevel::Audited);
+        assert_eq!(result.level, CertificationLevel::Verified);
+    }
+
+    #[test]
+    fn test_audited_rejects_empty_auditor_id() {
+        let mut input = make_input(
+            "ext-1",
+            ProvenanceLevel::IndependentReproduced,
+            ReputationTier::Trusted,
+            90.0,
+        );
+        input.has_reproducible_build_evidence = true;
+        input.has_test_coverage_evidence = true;
+        input.test_coverage_pct = Some(95.0);
+        input.has_audit_attestation = true;
+        input.audit_attestation = Some(AuditAttestation {
+            auditor_id: String::new(), // empty auditor
+            audit_date: "2026-01-15".to_owned(),
+            scope: "full security audit".to_owned(),
+            findings_summary: "no critical findings".to_owned(),
+            attestation_hash: "sha256:a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90".to_owned(),
+        });
+        let result = evaluate_certification(&input);
+        assert_ne!(result.level, CertificationLevel::Audited);
     }
 
     #[test]
@@ -1197,8 +1251,7 @@ mod tests {
         // bd-1wpq: manually_adjusted flag and evidence_derived_level
         assert!(record.evaluation.manually_adjusted);
         assert_eq!(
-            record.evaluation.evidence_derived_level,
-            before.level,
+            record.evaluation.evidence_derived_level, before.level,
             "evidence_derived_level must preserve the original evidence-backed level"
         );
     }
@@ -1274,8 +1327,7 @@ mod tests {
         // bd-1wpq: manually_adjusted flag and evidence_derived_level
         assert!(record.evaluation.manually_adjusted);
         assert_eq!(
-            record.evaluation.evidence_derived_level,
-            before.level,
+            record.evaluation.evidence_derived_level, before.level,
             "evidence_derived_level must preserve the original evidence-backed level"
         );
     }
@@ -1642,8 +1694,14 @@ mod tests {
         assert_eq!(original_level, CertificationLevel::Standard);
 
         // Promote Standard -> Verified
-        reg.promote("ext-pd", "1.0.0", CertificationLevel::Verified, "ev1", &ts(2))
-            .unwrap();
+        reg.promote(
+            "ext-pd",
+            "1.0.0",
+            CertificationLevel::Verified,
+            "ev1",
+            &ts(2),
+        )
+        .unwrap();
         let after_promote = reg.get_record("ext-pd", "1.0.0").unwrap();
         assert_eq!(after_promote.evaluation.level, CertificationLevel::Verified);
         assert!(after_promote.evaluation.manually_adjusted);
@@ -1653,8 +1711,14 @@ mod tests {
         );
 
         // Demote Verified -> Standard
-        reg.demote("ext-pd", "1.0.0", CertificationLevel::Standard, "reason", &ts(3))
-            .unwrap();
+        reg.demote(
+            "ext-pd",
+            "1.0.0",
+            CertificationLevel::Standard,
+            "reason",
+            &ts(3),
+        )
+        .unwrap();
         let after_demote = reg.get_record("ext-pd", "1.0.0").unwrap();
         assert_eq!(after_demote.evaluation.level, CertificationLevel::Standard);
         assert!(after_demote.evaluation.manually_adjusted);

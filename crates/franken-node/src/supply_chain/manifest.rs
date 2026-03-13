@@ -305,6 +305,11 @@ fn validate_entrypoint_path(entrypoint: &str) -> Result<(), ManifestSchemaError>
             reason: "entrypoint must not contain backslash characters".to_string(),
         });
     }
+    if entrypoint.contains('\0') {
+        return Err(ManifestSchemaError::EntrypointPathTraversal {
+            reason: "entrypoint must not contain null bytes".to_string(),
+        });
+    }
     if entrypoint.split('/').any(|seg| seg == "..") {
         return Err(ManifestSchemaError::EntrypointPathTraversal {
             reason: "entrypoint must not contain '..' path segments".to_string(),
@@ -696,6 +701,14 @@ mod tests {
     fn entrypoint_rejects_backslash() {
         let mut manifest = valid_manifest();
         manifest.entrypoint = "dist\\main.js".to_string();
+        let error = validate_signed_manifest(&manifest).expect_err("should fail");
+        assert_eq!(error.code(), "EMS_ENTRYPOINT_PATH_TRAVERSAL");
+    }
+
+    #[test]
+    fn entrypoint_rejects_null_byte() {
+        let mut manifest = valid_manifest();
+        manifest.entrypoint = "dist/main\0.js".to_string();
         let error = validate_signed_manifest(&manifest).expect_err("should fail");
         assert_eq!(error.code(), "EMS_ENTRYPOINT_PATH_TRAVERSAL");
     }
