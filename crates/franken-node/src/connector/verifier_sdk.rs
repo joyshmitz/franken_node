@@ -832,6 +832,38 @@ pub fn verify_claim(
         detail: format!("{} evidence items", evidence.len()),
     });
 
+    // INV-VER-EVIDENCE-BOUND: Bind claim.evidence_refs to actual evidence_ids.
+    // Every declared evidence_ref must have a matching evidence item, and every
+    // evidence item must be declared in evidence_refs.
+    {
+        let declared: std::collections::BTreeSet<&str> =
+            claim.evidence_refs.iter().map(|s| s.as_str()).collect();
+        let provided: std::collections::BTreeSet<&str> =
+            evidence.iter().map(|e| e.evidence_id.as_str()).collect();
+
+        let undeclared: Vec<&str> = provided.difference(&declared).copied().collect();
+        let missing: Vec<&str> = declared.difference(&provided).copied().collect();
+
+        let refs_bound = undeclared.is_empty() && missing.is_empty();
+        assertions.push(AssertionResult {
+            assertion: "evidence_refs_binding".to_string(),
+            passed: refs_bound,
+            detail: if refs_bound {
+                "all evidence_refs match provided evidence_ids".to_string()
+            } else {
+                format!(
+                    "evidence_refs mismatch: undeclared={undeclared:?}, missing={missing:?}"
+                )
+            },
+        });
+
+        if !refs_bound {
+            return Err(VerifierSdkError::EvidenceMissing(format!(
+                "evidence_refs binding failed: undeclared={undeclared:?}, missing={missing:?}"
+            )));
+        }
+    }
+
     // Check each evidence item
     let mut all_pass = true;
     for ev in evidence {
@@ -1172,6 +1204,26 @@ pub fn validate_bundle(bundle: &EvidenceBundle) -> Result<(), VerifierSdkError> 
                 ev.evidence_id, ev.claim_ref, bundle.claim.claim_id
             )));
         }
+    }
+    // INV-VER-EVIDENCE-BOUND: every declared evidence_ref must have a matching
+    // evidence item, and every evidence item must appear in evidence_refs.
+    let declared: std::collections::BTreeSet<&str> = bundle
+        .claim
+        .evidence_refs
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
+    let provided: std::collections::BTreeSet<&str> = bundle
+        .evidence_items
+        .iter()
+        .map(|e| e.evidence_id.as_str())
+        .collect();
+    if declared != provided {
+        let undeclared: Vec<&str> = provided.difference(&declared).copied().collect();
+        let missing: Vec<&str> = declared.difference(&provided).copied().collect();
+        return Err(VerifierSdkError::BundleIncomplete(format!(
+            "evidence_refs binding failed: undeclared={undeclared:?}, missing={missing:?}"
+        )));
     }
     Ok(())
 }
@@ -2342,5 +2394,46 @@ mod tests {
         );
         assert_eq!(result.confidence_score, 0.0);
         assert!(verify_verification_result_signature(&result).is_ok());
+    }
+
+    // ── evidence_refs binding regression (bd-1z5a.21) ───────────────
+
+    /// verify_claim rejects when evidence_refs declares refs not in evidence.
+    #[test]
+    fn test_verify_claim_rejects_undeclared_evidence() {
+        let mut claim = generate_reference_claim();
+        let evidence = generate_reference_evidence();
+        // Add a phantom ref not backed by evidence.
+        claim.evidence_refs.push("ev-phantom".to_string());
+        let signer = test_verifier_signer("v1", 1);
+        let err = verify_claim(&claim, &evidence, &signer);
+        assert!(err.is_err(), "should reject missing evidence for declared ref");
+    }
+
+    /// verify_claim rejects when evidence item is not declared in evidence_refs.
+    #[test]
+    fn test_verify_claim_rejects_extra_evidence() {
+        let claim = generate_reference_claim();
+        let mut evidence = generate_reference_evidence();
+        // Add an evidence item not declared in evidence_refs.
+        evidence.push(Evidence {
+            evidence_id: "ev-extra".to_string(),
+            claim_ref: claim.claim_id.clone(),
+            artifacts: BTreeMap::from([("hash".to_string(), "aa".repeat(32))]),
+            verification_procedure: "extra check".to_string(),
+        });
+        let signer = test_verifier_signer("v1", 1);
+        let err = verify_claim(&claim, &evidence, &signer);
+        assert!(err.is_err(), "should reject undeclared evidence item");
+    }
+
+    /// validate_bundle rejects mismatched evidence_refs.
+    #[test]
+    fn test_validate_bundle_rejects_evidence_refs_mismatch() {
+        let mut bundle = generate_reference_bundle();
+        bundle.claim.evidence_refs = vec!["ev-ref-001".to_string()];
+        // Bundle still has 2 evidence items but claim only declares 1 ref.
+        let err = validate_bundle(&bundle);
+        assert!(err.is_err(), "should reject when evidence_refs subset of evidence items");
     }
 }
