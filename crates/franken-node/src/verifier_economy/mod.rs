@@ -78,6 +78,22 @@ fn compute_claim_metadata_hash(
     format!("sha256:{}", hex::encode(Sha256::digest(payload)))
 }
 
+fn canonicalize_ed25519_public_key_hex(public_key: &str) -> Result<String, String> {
+    parse_ed25519_verifying_key_hex(public_key)
+        .map(|key| hex::encode(key.to_bytes()))
+        .map_err(|err| err.to_string())
+}
+
+fn canonicalized_ed25519_public_keys_match(expected_key: &str, actual_key: &str) -> bool {
+    match (
+        canonicalize_ed25519_public_key_hex(expected_key),
+        canonicalize_ed25519_public_key_hex(actual_key),
+    ) {
+        (Ok(expected), Ok(actual)) => ct_eq(&expected, &actual),
+        _ => false,
+    }
+}
+
 fn replay_capsule_freshness_window_valid(issued_at: &str, expires_at: &str) -> bool {
     let issued_at = match chrono::DateTime::parse_from_rfc3339(issued_at) {
         Ok(ts) => ts.with_timezone(&chrono::Utc),
@@ -147,6 +163,7 @@ pub const INV_VEP_PUBLISH: &str = "INV-VEP-PUBLISH";
 // ---------------------------------------------------------------------------
 
 pub const ERR_VEP_INVALID_SIGNATURE: &str = "ERR-VEP-INVALID-SIGNATURE";
+pub const ERR_VEP_INVALID_PUBLIC_KEY: &str = "ERR-VEP-INVALID-PUBLIC-KEY";
 pub const ERR_VEP_INVALID_CAPSULE: &str = "ERR-VEP-INVALID-CAPSULE";
 pub const ERR_VEP_DUPLICATE_SUBMISSION: &str = "ERR-VEP-DUPLICATE-SUBMISSION";
 pub const ERR_VEP_UNREGISTERED_VERIFIER: &str = "ERR-VEP-UNREGISTERED-VERIFIER";
@@ -611,8 +628,14 @@ impl VerifierEconomyRegistry {
     // -- Verifier registration -----------------------------------------------
 
     pub fn register_verifier(&mut self, reg: VerifierRegistration) -> VepResult<Verifier> {
+        let canonical_public_key =
+            canonicalize_ed25519_public_key_hex(&reg.public_key).map_err(|message| VepError {
+                code: ERR_VEP_INVALID_PUBLIC_KEY.to_string(),
+                message: format!("Verifier public key invalid: {message}"),
+            })?;
+
         // Check for duplicate public key
-        if self.registered_public_keys.contains(&reg.public_key) {
+        if self.registered_public_keys.contains(&canonical_public_key) {
             return Err(VepError {
                 code: ERR_VEP_DUPLICATE_SUBMISSION.to_string(),
                 message: "A verifier with this public key is already registered".to_string(),
@@ -626,7 +649,7 @@ impl VerifierEconomyRegistry {
             verifier_id: verifier_id.clone(),
             name: reg.name,
             contact: reg.contact,
-            public_key: reg.public_key,
+            public_key: canonical_public_key,
             capabilities: reg.capabilities,
             tier: reg.tier,
             reputation_score: 0,
@@ -898,8 +921,12 @@ impl VerifierEconomyRegistry {
         payload: &[u8],
     ) -> bool {
         sig.algorithm.eq_ignore_ascii_case("ed25519")
-            && ct_eq(&sig.public_key, expected_key)
-            && verify_ed25519_signature_hex(expected_key, payload, &sig.value).is_ok()
+            && canonicalized_ed25519_public_keys_match(expected_key, &sig.public_key)
+            && canonicalize_ed25519_public_key_hex(expected_key)
+                .ok()
+                .is_some_and(|canonical_expected| {
+                    verify_ed25519_signature_hex(&canonical_expected, payload, &sig.value).is_ok()
+                })
     }
 
     fn verify_signature_with_cached_key(
@@ -909,7 +936,9 @@ impl VerifierEconomyRegistry {
         expected_key: &str,
         payload: &[u8],
     ) -> bool {
-        if !sig.algorithm.eq_ignore_ascii_case("ed25519") || !ct_eq(&sig.public_key, expected_key) {
+        if !sig.algorithm.eq_ignore_ascii_case("ed25519")
+            || !canonicalized_ed25519_public_keys_match(expected_key, &sig.public_key)
+        {
             return false;
         }
 
@@ -918,7 +947,11 @@ impl VerifierEconomyRegistry {
                 .is_ok();
         }
 
-        let parsed_key = match parse_ed25519_verifying_key_hex(expected_key) {
+        let canonical_expected = match canonicalize_ed25519_public_key_hex(expected_key) {
+            Ok(key) => key,
+            Err(_) => return false,
+        };
+        let parsed_key = match parse_ed25519_verifying_key_hex(&canonical_expected) {
             Ok(key) => key,
             Err(_) => return false,
         };
@@ -1380,6 +1413,13 @@ mod tests {
         }
     }
 
+    fn prefixed_uppercase_public_key(signing_key: &SigningKey) -> String {
+        format!(
+            "ed25519:{}",
+            hex::encode(signing_key.verifying_key().to_bytes()).to_uppercase()
+        )
+    }
+
     fn sign_submission(submission: &mut AttestationSubmission, signing_key: &SigningKey) {
         submission.signature.algorithm = "ed25519".to_string();
         submission.signature.public_key = hex::encode(signing_key.verifying_key().to_bytes());
@@ -1561,6 +1601,32 @@ mod tests {
     }
 
     #[test]
+    fn test_duplicate_public_key_rejected_under_mixed_encodings() {
+        let mut reg = make_registry();
+        let signing_key = registration_signing_key();
+        let mut canonical = make_registration();
+        canonical.public_key = hex::encode(signing_key.verifying_key().to_bytes());
+        reg.register_verifier(canonical).unwrap();
+
+        let mut prefixed_uppercase = make_registration();
+        prefixed_uppercase.public_key = prefixed_uppercase_public_key(&signing_key);
+        let result = reg.register_verifier(prefixed_uppercase);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, ERR_VEP_DUPLICATE_SUBMISSION);
+    }
+
+    #[test]
+    fn test_register_verifier_rejects_malformed_public_key() {
+        let mut reg = make_registry();
+        let mut registration = make_registration();
+        registration.public_key = "ed25519:not-hex".to_string();
+
+        let result = reg.register_verifier(registration);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, ERR_VEP_INVALID_PUBLIC_KEY);
+    }
+
+    #[test]
     fn test_verifier_count() {
         let mut reg = make_registry();
         assert_eq!(reg.verifier_count(), 0);
@@ -1620,6 +1686,18 @@ mod tests {
         let result = reg.submit_attestation(sub);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code, ERR_VEP_INVALID_SIGNATURE);
+    }
+
+    #[test]
+    fn test_submit_attestation_accepts_equivalent_public_key_encoding() {
+        let mut reg = make_registry();
+        let signing_key = registration_signing_key();
+        let mut registration = make_registration();
+        registration.public_key = prefixed_uppercase_public_key(&signing_key);
+        let verifier = reg.register_verifier(registration).unwrap();
+
+        let result = reg.submit_attestation(make_submission(&verifier.verifier_id, &signing_key));
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -2140,6 +2218,23 @@ mod tests {
         capsule.signature.value = "00".repeat(64);
         let error = reg.register_replay_capsule(capsule).unwrap_err();
         assert_eq!(error.code, ERR_VEP_CAPSULE_SIGNATURE);
+    }
+
+    #[test]
+    fn test_register_replay_capsule_accepts_equivalent_public_key_encoding() {
+        let mut reg = make_registry();
+        let (verifier, attestation) = register_and_submit(&mut reg);
+        let mut capsule = make_capsule(
+            "cap-010a",
+            &verifier.verifier_id,
+            &attestation,
+            &registration_signing_key(),
+            "capsule-010a",
+        );
+        capsule.signature.public_key = prefixed_uppercase_public_key(&registration_signing_key());
+
+        let result = reg.register_replay_capsule(capsule);
+        assert!(result.is_ok());
     }
 
     #[test]

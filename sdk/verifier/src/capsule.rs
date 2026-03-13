@@ -164,6 +164,11 @@ pub fn deterministic_hash(data: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
+fn push_length_prefixed(hasher: &mut Sha256, value: &str) {
+    hasher.update((value.len() as u64).to_le_bytes());
+    hasher.update(value.as_bytes());
+}
+
 /// Compute the deterministic replay hash for a capsule's payload and inputs.
 ///
 /// Uses length-prefixed encoding to prevent payload-input delimiter collision:
@@ -196,18 +201,28 @@ fn compute_signing_payload(capsule: &ReplayCapsule) -> String {
     for field in [
         capsule.manifest.capsule_id.as_str(),
         capsule.manifest.schema_version.as_str(),
+        capsule.manifest.description.as_str(),
+        capsule.manifest.claim_type.as_str(),
         capsule.manifest.expected_output_hash.as_str(),
+        capsule.manifest.created_at.as_str(),
+        capsule.manifest.creator_identity.as_str(),
         capsule.payload.as_str(),
     ] {
-        hasher.update((field.len() as u64).to_le_bytes());
-        hasher.update(field.as_bytes());
+        push_length_prefixed(&mut hasher, field);
+    }
+    hasher.update((capsule.manifest.input_refs.len() as u64).to_le_bytes());
+    for input_ref in &capsule.manifest.input_refs {
+        push_length_prefixed(&mut hasher, input_ref);
+    }
+    hasher.update((capsule.manifest.metadata.len() as u64).to_le_bytes());
+    for (key, value) in &capsule.manifest.metadata {
+        push_length_prefixed(&mut hasher, key);
+        push_length_prefixed(&mut hasher, value);
     }
     hasher.update((capsule.inputs.len() as u64).to_le_bytes());
     for (k, v) in &capsule.inputs {
-        hasher.update((k.len() as u64).to_le_bytes());
-        hasher.update(k.as_bytes());
-        hasher.update((v.len() as u64).to_le_bytes());
-        hasher.update(v.as_bytes());
+        push_length_prefixed(&mut hasher, k);
+        push_length_prefixed(&mut hasher, v);
     }
     hex::encode(hasher.finalize())
 }
@@ -233,10 +248,14 @@ pub fn validate_manifest(manifest: &CapsuleManifest) -> Result<(), CapsuleError>
         )));
     }
     if manifest.capsule_id.is_empty() {
-        return Err(CapsuleError::ManifestIncomplete("capsule_id is empty".into()));
+        return Err(CapsuleError::ManifestIncomplete(
+            "capsule_id is empty".into(),
+        ));
     }
     if manifest.claim_type.is_empty() {
-        return Err(CapsuleError::ManifestIncomplete("claim_type is empty".into()));
+        return Err(CapsuleError::ManifestIncomplete(
+            "claim_type is empty".into(),
+        ));
     }
     if manifest.expected_output_hash.is_empty() {
         return Err(CapsuleError::ManifestIncomplete(
@@ -363,6 +382,16 @@ pub fn build_reference_capsule() -> ReplayCapsule {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_manifest_tamper_rejected(case: &str, mutate: impl FnOnce(&mut ReplayCapsule)) {
+        let capsule = build_reference_capsule();
+        let mut tampered = capsule.clone();
+        mutate(&mut tampered);
+        match verify_signature(&tampered) {
+            Err(CapsuleError::SignatureInvalid(_)) => {}
+            other => panic!("expected SignatureInvalid for {case} tamper, got {other:?}"),
+        }
+    }
 
     #[test]
     fn test_structural_only_posture_markers_defined() {
@@ -555,7 +584,10 @@ mod tests {
         // making strings that differ only in repeated chars collide.
         let h3 = deterministic_hash("aaa");
         let h4 = deterministic_hash("a");
-        assert_ne!(h3, h4, "hash must distinguish different-length same-char inputs");
+        assert_ne!(
+            h3, h4,
+            "hash must distinguish different-length same-char inputs"
+        );
     }
 
     #[test]
@@ -632,6 +664,44 @@ mod tests {
             Err(CapsuleError::SignatureInvalid(_)) => {}
             other => panic!("expected SignatureInvalid for swapped payload, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_claim_type_tamper_under_reused_signature_rejected() {
+        assert_manifest_tamper_rejected("claim_type", |capsule| {
+            capsule.manifest.claim_type = "runtime_safety".to_string();
+        });
+    }
+
+    #[test]
+    fn test_input_refs_tamper_under_reused_signature_rejected() {
+        assert_manifest_tamper_rejected("input_refs", |capsule| {
+            capsule.manifest.input_refs.push("artifact_c".to_string());
+        });
+    }
+
+    #[test]
+    fn test_created_at_tamper_under_reused_signature_rejected() {
+        assert_manifest_tamper_rejected("created_at", |capsule| {
+            capsule.manifest.created_at = "2026-02-22T00:00:00Z".to_string();
+        });
+    }
+
+    #[test]
+    fn test_creator_identity_tamper_under_reused_signature_rejected() {
+        assert_manifest_tamper_rejected("creator_identity", |capsule| {
+            capsule.manifest.creator_identity = "creator://attacker@example.com".to_string();
+        });
+    }
+
+    #[test]
+    fn test_metadata_tamper_under_reused_signature_rejected() {
+        assert_manifest_tamper_rejected("metadata", |capsule| {
+            capsule
+                .manifest
+                .metadata
+                .insert("tampered".to_string(), "true".to_string());
+        });
     }
 
     #[test]
