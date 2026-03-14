@@ -1190,7 +1190,7 @@ mod tests {
         let trace = test_trace();
         let err = mgr
             .quarantine("ext-1", &scope, &identity, &trace)
-            .unwrap_err();
+            .expect_err("should fail");
         assert_eq!(err.error_code(), FLEET_NOT_ACTIVATED);
     }
 
@@ -1200,7 +1200,7 @@ mod tests {
         let scope = test_revocation_scope();
         let identity = admin_identity();
         let trace = test_trace();
-        let err = mgr.revoke("ext-1", &scope, &identity, &trace).unwrap_err();
+        let err = mgr.revoke("ext-1", &scope, &identity, &trace).expect_err("should fail");
         assert_eq!(err.error_code(), FLEET_NOT_ACTIVATED);
     }
 
@@ -1209,7 +1209,7 @@ mod tests {
         let mut mgr = FleetControlManager::new();
         let identity = admin_identity();
         let trace = test_trace();
-        let err = mgr.release("inc-1", &identity, &trace).unwrap_err();
+        let err = mgr.release("inc-1", &identity, &trace).expect_err("should fail");
         assert_eq!(err.error_code(), FLEET_NOT_ACTIVATED);
     }
 
@@ -1218,7 +1218,7 @@ mod tests {
         let mut mgr = FleetControlManager::new();
         let identity = admin_identity();
         let trace = test_trace();
-        let err = mgr.reconcile(&identity, &trace).unwrap_err();
+        let err = mgr.reconcile(&identity, &trace).expect_err("should fail");
         assert_eq!(err.error_code(), FLEET_NOT_ACTIVATED);
     }
 
@@ -1245,7 +1245,7 @@ mod tests {
         };
         let err = mgr
             .quarantine("ext-1", &scope, &admin_identity(), &test_trace())
-            .unwrap_err();
+            .expect_err("should fail");
         assert_eq!(err.error_code(), FLEET_SCOPE_INVALID);
     }
 
@@ -1261,14 +1261,14 @@ mod tests {
         };
         let err = mgr
             .revoke("ext-1", &scope, &admin_identity(), &test_trace())
-            .unwrap_err();
+            .expect_err("should fail");
         assert_eq!(err.error_code(), FLEET_SCOPE_INVALID);
     }
 
     #[test]
     fn status_rejects_empty_zone() {
         let mgr = FleetControlManager::new();
-        let err = mgr.status("").unwrap_err();
+        let err = mgr.status("").expect_err("should fail");
         assert_eq!(err.error_code(), FLEET_SCOPE_INVALID);
     }
 
@@ -1471,7 +1471,7 @@ mod tests {
         mgr.activate();
         let err = mgr
             .release("inc-nonexistent", &admin_identity(), &test_trace())
-            .unwrap_err();
+            .expect_err("should fail");
         assert_eq!(err.error_code(), FLEET_ROLLBACK_FAILED);
     }
 

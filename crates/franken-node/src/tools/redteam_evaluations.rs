@@ -581,8 +581,8 @@ mod tests {
         let mut engine = RedTeamEvaluations::default();
         engine
             .create_engagement(sample_engagement("eng-1"), &trace())
-            .unwrap();
-        let stored = engine.engagements().get("eng-1").unwrap();
+            .expect("should succeed");
+        let stored = engine.engagements().get("eng-1").expect("should exist");
         assert_eq!(stored.schema_version, SCHEMA_VERSION);
     }
 
@@ -591,7 +591,7 @@ mod tests {
         let mut engine = RedTeamEvaluations::default();
         engine
             .create_engagement(sample_engagement("eng-1"), &trace())
-            .unwrap();
+            .expect("should succeed");
         assert!(
             engine
                 .add_finding(
@@ -622,14 +622,14 @@ mod tests {
         let mut engine = RedTeamEvaluations::default();
         engine
             .create_engagement(sample_engagement("eng-1"), &trace())
-            .unwrap();
+            .expect("should succeed");
         engine
             .add_finding(
                 "eng-1",
                 sample_finding("f-1", FindingSeverity::High),
                 &trace(),
             )
-            .unwrap();
+            .expect("should succeed");
         assert!(
             engine
                 .update_remediation("eng-1", "f-1", RemediationStatus::InProgress, &trace())
@@ -642,14 +642,14 @@ mod tests {
         let mut engine = RedTeamEvaluations::default();
         engine
             .create_engagement(sample_engagement("eng-1"), &trace())
-            .unwrap();
+            .expect("should succeed");
         engine
             .add_finding(
                 "eng-1",
                 sample_finding("f-1", FindingSeverity::High),
                 &trace(),
             )
-            .unwrap();
+            .expect("should succeed");
         assert!(
             engine
                 .update_remediation("eng-1", "f-1", RemediationStatus::Verified, &trace())
@@ -669,21 +669,21 @@ mod tests {
         let mut engine = RedTeamEvaluations::default();
         engine
             .create_engagement(sample_engagement("eng-1"), &trace())
-            .unwrap();
+            .expect("should succeed");
         engine
             .add_finding(
                 "eng-1",
                 sample_finding("f-1", FindingSeverity::High),
                 &trace(),
             )
-            .unwrap();
+            .expect("should succeed");
         engine
             .add_finding(
                 "eng-1",
                 sample_finding("f-2", FindingSeverity::Low),
                 &trace(),
             )
-            .unwrap();
+            .expect("should succeed");
         let catalog = engine.generate_catalog(&trace());
         assert_eq!(catalog.total_engagements, 1);
         assert_eq!(catalog.total_findings, 2);
@@ -710,7 +710,7 @@ mod tests {
         let mut engine = RedTeamEvaluations::default();
         engine
             .create_engagement(sample_engagement("eng-1"), &trace())
-            .unwrap();
+            .expect("should succeed");
         let catalog = engine.generate_catalog(&trace());
         assert!(catalog.by_type.contains_key("red_team"));
     }
@@ -720,14 +720,14 @@ mod tests {
         let mut engine = RedTeamEvaluations::default();
         engine
             .create_engagement(sample_engagement("eng-1"), &trace())
-            .unwrap();
+            .expect("should succeed");
         engine
             .add_finding(
                 "eng-1",
                 sample_finding("f-1", FindingSeverity::Critical),
                 &trace(),
             )
-            .unwrap();
+            .expect("should succeed");
         let catalog = engine.generate_catalog(&trace());
         assert!(catalog.by_severity.contains_key("critical"));
     }
@@ -737,8 +737,8 @@ mod tests {
         let mut engine = RedTeamEvaluations::default();
         engine
             .create_engagement(sample_engagement("eng-1"), &trace())
-            .unwrap();
-        let stored = engine.engagements().get("eng-1").unwrap();
+            .expect("should succeed");
+        let stored = engine.engagements().get("eng-1").expect("should exist");
         assert!(!stored.created_at.is_empty());
     }
 
@@ -747,24 +747,24 @@ mod tests {
         let mut engine = RedTeamEvaluations::default();
         engine
             .create_engagement(sample_engagement("eng-1"), &trace())
-            .unwrap();
+            .expect("should succeed");
         engine
             .add_finding(
                 "eng-1",
                 sample_finding("f-1", FindingSeverity::High),
                 &trace(),
             )
-            .unwrap();
+            .expect("should succeed");
         engine
             .update_remediation("eng-1", "f-1", RemediationStatus::InProgress, &trace())
-            .unwrap();
+            .expect("should succeed");
         engine
             .update_remediation("eng-1", "f-1", RemediationStatus::Resolved, &trace())
-            .unwrap();
+            .expect("should succeed");
         engine
             .update_remediation("eng-1", "f-1", RemediationStatus::Verified, &trace())
-            .unwrap();
-        let eng = engine.engagements().get("eng-1").unwrap();
+            .expect("should succeed");
+        let eng = engine.engagements().get("eng-1").expect("should exist");
         let f = &eng.findings[0];
         assert_eq!(f.remediation_status, RemediationStatus::Verified);
     }
@@ -774,7 +774,7 @@ mod tests {
         let mut engine = RedTeamEvaluations::default();
         engine
             .create_engagement(sample_engagement("eng-1"), &trace())
-            .unwrap();
+            .expect("should succeed");
         assert_eq!(engine.audit_log().len(), 4);
     }
 
@@ -783,9 +783,9 @@ mod tests {
         let mut engine = RedTeamEvaluations::default();
         engine
             .create_engagement(sample_engagement("eng-1"), &trace())
-            .unwrap();
-        let jsonl = engine.export_audit_log_jsonl().unwrap();
-        let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+            .expect("should succeed");
+        let jsonl = engine.export_audit_log_jsonl().expect("jsonl export should succeed");
+        let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().expect("should have at least one line")).expect("json parse should succeed");
         assert!(first["event_code"].is_string());
     }
 }

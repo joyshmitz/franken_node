@@ -1607,9 +1607,9 @@ mod tests {
     }
 
     fn register_and_submit(reg: &mut VerifierEconomyRegistry) -> (Verifier, Attestation) {
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let sub = make_submission(&v.verifier_id, &registration_signing_key());
-        let att = reg.submit_attestation(sub).unwrap();
+        let att = reg.submit_attestation(sub).expect("should succeed");
         (v, att)
     }
 
@@ -1618,7 +1618,7 @@ mod tests {
     #[test]
     fn test_register_verifier() {
         let mut reg = make_registry();
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         assert!(v.verifier_id.starts_with("ver-"));
         assert_eq!(v.reputation_score, 0);
         assert_eq!(v.reputation_tier, ReputationTier::Novice);
@@ -1628,7 +1628,7 @@ mod tests {
     #[test]
     fn test_register_emits_vep005() {
         let mut reg = make_registry();
-        reg.register_verifier(make_registration()).unwrap();
+        reg.register_verifier(make_registration()).expect("should succeed");
         let events = reg.events();
         assert!(events.iter().any(|e| e.code == VEP_005));
     }
@@ -1636,10 +1636,10 @@ mod tests {
     #[test]
     fn test_duplicate_public_key_rejected() {
         let mut reg = make_registry();
-        reg.register_verifier(make_registration()).unwrap();
+        reg.register_verifier(make_registration()).expect("should succeed");
         let result = reg.register_verifier(make_registration());
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code, ERR_VEP_DUPLICATE_SUBMISSION);
+        assert_eq!(result.expect_err("should fail").code, ERR_VEP_DUPLICATE_SUBMISSION);
     }
 
     #[test]
@@ -1654,7 +1654,7 @@ mod tests {
         prefixed_uppercase.public_key = prefixed_uppercase_public_key(&signing_key);
         let result = reg.register_verifier(prefixed_uppercase);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code, ERR_VEP_DUPLICATE_SUBMISSION);
+        assert_eq!(result.expect_err("should fail").code, ERR_VEP_DUPLICATE_SUBMISSION);
     }
 
     #[test]
@@ -1665,21 +1665,21 @@ mod tests {
 
         let result = reg.register_verifier(registration);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code, ERR_VEP_INVALID_PUBLIC_KEY);
+        assert_eq!(result.expect_err("should fail").code, ERR_VEP_INVALID_PUBLIC_KEY);
     }
 
     #[test]
     fn test_verifier_count() {
         let mut reg = make_registry();
         assert_eq!(reg.verifier_count(), 0);
-        reg.register_verifier(make_registration()).unwrap();
+        reg.register_verifier(make_registration()).expect("should succeed");
         assert_eq!(reg.verifier_count(), 1);
     }
 
     #[test]
     fn test_get_verifier() {
         let mut reg = make_registry();
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let found = reg.get_verifier(&v.verifier_id);
         assert!(found.is_some());
         assert_eq!(found.unwrap().name, "Acme Verifiers");
@@ -1688,7 +1688,7 @@ mod tests {
     #[test]
     fn test_list_verifiers() {
         let mut reg = make_registry();
-        reg.register_verifier(make_registration()).unwrap();
+        reg.register_verifier(make_registration()).expect("should succeed");
         assert_eq!(reg.list_verifiers().len(), 1);
     }
 
@@ -1722,12 +1722,12 @@ mod tests {
     #[test]
     fn test_submit_invalid_signature_rejected() {
         let mut reg = make_registry();
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let mut sub = make_submission(&v.verifier_id, &registration_signing_key());
         sub.signature.algorithm = "rsa".to_string(); // Wrong algorithm
         let result = reg.submit_attestation(sub);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code, ERR_VEP_INVALID_SIGNATURE);
+        assert_eq!(result.expect_err("should fail").code, ERR_VEP_INVALID_SIGNATURE);
     }
 
     #[test]
@@ -1745,18 +1745,18 @@ mod tests {
     #[test]
     fn test_submit_tampered_payload_rejected() {
         let mut reg = make_registry();
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let mut sub = make_submission(&v.verifier_id, &registration_signing_key());
         sub.claim.statement.push_str(" but tampered after signing");
         let result = reg.submit_attestation(sub);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code, ERR_VEP_INVALID_SIGNATURE);
+        assert_eq!(result.expect_err("should fail").code, ERR_VEP_INVALID_SIGNATURE);
     }
 
     #[test]
     fn test_submit_empty_statement_rejected() {
         let mut reg = make_registry();
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let mut sub = make_submission(&v.verifier_id, &registration_signing_key());
         sub.claim.statement = String::new();
         sign_submission(&mut sub, &registration_signing_key());
@@ -1768,7 +1768,7 @@ mod tests {
     #[test]
     fn test_submit_empty_suite_id_rejected() {
         let mut reg = make_registry();
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let mut sub = make_submission(&v.verifier_id, &registration_signing_key());
         sub.evidence.suite_id = String::new();
         sign_submission(&mut sub, &registration_signing_key());
@@ -1780,19 +1780,19 @@ mod tests {
     #[test]
     fn test_submit_duplicate_rejected() {
         let mut reg = make_registry();
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let sub1 = make_submission(&v.verifier_id, &registration_signing_key());
-        reg.submit_attestation(sub1).unwrap();
+        reg.submit_attestation(sub1).expect("should succeed");
         let sub2 = make_submission(&v.verifier_id, &registration_signing_key());
         let result = reg.submit_attestation(sub2);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code, ERR_VEP_DUPLICATE_SUBMISSION);
+        assert_eq!(result.expect_err("should fail").code, ERR_VEP_DUPLICATE_SUBMISSION);
     }
 
     #[test]
     fn test_submit_uppercase_execution_trace_hash_rejected() {
         let mut reg = make_registry();
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let mut sub = make_submission(&v.verifier_id, &registration_signing_key());
         sub.evidence.execution_trace_hash = sub.evidence.execution_trace_hash.to_uppercase();
         sign_submission(&mut sub, &registration_signing_key());
@@ -1807,7 +1807,7 @@ mod tests {
     #[test]
     fn test_submit_prefixless_execution_trace_hash_rejected() {
         let mut reg = make_registry();
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let mut sub = make_submission(&v.verifier_id, &registration_signing_key());
         sub.evidence.execution_trace_hash = sub
             .evidence
@@ -1826,7 +1826,7 @@ mod tests {
     #[test]
     fn test_submit_duplicate_cannot_bypass_with_hash_encoding_variant() {
         let mut reg = make_registry();
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         reg.submit_attestation(make_submission(&v.verifier_id, &registration_signing_key()))
             .unwrap();
 
@@ -1848,17 +1848,17 @@ mod tests {
     #[test]
     fn test_submit_duplicate_rejected_after_publish_state_change() {
         let mut reg = make_registry();
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let sub1 = make_submission(&v.verifier_id, &registration_signing_key());
-        let attestation = reg.submit_attestation(sub1).unwrap();
-        reg.review_attestation(&attestation.attestation_id).unwrap();
+        let attestation = reg.submit_attestation(sub1).expect("should succeed");
+        reg.review_attestation(&attestation.attestation_id).expect("should succeed");
         reg.publish_attestation(&attestation.attestation_id)
-            .unwrap();
+            .expect("should succeed");
 
         let sub2 = make_submission(&v.verifier_id, &registration_signing_key());
         let result = reg.submit_attestation(sub2);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code, ERR_VEP_DUPLICATE_SUBMISSION);
+        assert_eq!(result.expect_err("should fail").code, ERR_VEP_DUPLICATE_SUBMISSION);
     }
 
     // -- Publishing flow tests (INV-VEP-PUBLISH) ------------------------------
@@ -1978,7 +1978,7 @@ mod tests {
     #[test]
     fn test_update_reputation() {
         let mut reg = make_registry();
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let dims = ReputationDimensions {
             consistency: 0.8,
             coverage: 0.6,
@@ -1994,7 +1994,7 @@ mod tests {
     #[test]
     fn test_update_reputation_emits_vep004() {
         let mut reg = make_registry();
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let dims = ReputationDimensions {
             consistency: 0.5,
             coverage: 0.5,
@@ -2459,7 +2459,7 @@ mod tests {
         let mut reg = make_registry();
         reg.max_submissions_per_window = 2;
 
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let signing_key = registration_signing_key();
 
         let sub1 = make_submission_with(
@@ -2472,7 +2472,7 @@ mod tests {
             "trace-1",
             "2026-02-20T12:00:00Z",
         );
-        reg.submit_attestation(sub1).unwrap();
+        reg.submit_attestation(sub1).expect("should succeed");
 
         let sub2 = make_submission_with(
             &v.verifier_id,
@@ -2507,7 +2507,7 @@ mod tests {
         let mut reg = make_registry();
         reg.max_submissions_per_window = 0; // Trigger immediately
 
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let sub = make_submission(&v.verifier_id, &registration_signing_key());
         let _ = reg.submit_attestation(sub);
         assert!(reg.events().iter().any(|e| e.code == VEP_006));
@@ -2516,14 +2516,14 @@ mod tests {
     #[test]
     fn test_selective_reporting_check_passes() {
         let mut reg = make_registry();
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let signing_key = registration_signing_key();
 
         // Submit and publish attestations in two different dimensions
         let sub1 = make_submission(&v.verifier_id, &signing_key);
-        let att1 = reg.submit_attestation(sub1).unwrap();
-        reg.review_attestation(&att1.attestation_id).unwrap();
-        reg.publish_attestation(&att1.attestation_id).unwrap();
+        let att1 = reg.submit_attestation(sub1).expect("should succeed");
+        reg.review_attestation(&att1.attestation_id).expect("should succeed");
+        reg.publish_attestation(&att1.attestation_id).expect("should succeed");
 
         let sub2 = make_submission_with(
             &v.verifier_id,
@@ -2535,9 +2535,9 @@ mod tests {
             "trace-unique",
             "2026-02-20T12:01:00Z",
         );
-        let att2 = reg.submit_attestation(sub2).unwrap();
-        reg.review_attestation(&att2.attestation_id).unwrap();
-        reg.publish_attestation(&att2.attestation_id).unwrap();
+        let att2 = reg.submit_attestation(sub2).expect("should succeed");
+        reg.review_attestation(&att2.attestation_id).expect("should succeed");
+        reg.publish_attestation(&att2.attestation_id).expect("should succeed");
 
         // With 2 published dimensions: 2 >= 2, no selective reporting
         assert!(!reg.check_selective_reporting(&v.verifier_id, 2));
@@ -2548,14 +2548,14 @@ mod tests {
     #[test]
     fn test_selective_reporting_ignores_unpublished_attestations() {
         let mut reg = make_registry();
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let signing_key = registration_signing_key();
 
         // Submit attestation in one dimension and publish it
         let sub1 = make_submission(&v.verifier_id, &signing_key);
-        let att1 = reg.submit_attestation(sub1).unwrap();
-        reg.review_attestation(&att1.attestation_id).unwrap();
-        reg.publish_attestation(&att1.attestation_id).unwrap();
+        let att1 = reg.submit_attestation(sub1).expect("should succeed");
+        reg.review_attestation(&att1.attestation_id).expect("should succeed");
+        reg.publish_attestation(&att1.attestation_id).expect("should succeed");
 
         // Submit attestation in another dimension but leave it in Submitted state
         let sub2 = make_submission_with(
@@ -2594,10 +2594,10 @@ mod tests {
     fn test_reset_submission_counts() {
         let mut reg = make_registry();
         reg.max_submissions_per_window = 1;
-        let v = reg.register_verifier(make_registration()).unwrap();
+        let v = reg.register_verifier(make_registration()).expect("should succeed");
         let signing_key = registration_signing_key();
         let sub = make_submission(&v.verifier_id, &signing_key);
-        reg.submit_attestation(sub).unwrap();
+        reg.submit_attestation(sub).expect("should succeed");
 
         // Reset and try again with different trace hash
         reg.reset_submission_counts();
@@ -2620,7 +2620,7 @@ mod tests {
     #[test]
     fn test_take_events_drains() {
         let mut reg = make_registry();
-        reg.register_verifier(make_registration()).unwrap();
+        reg.register_verifier(make_registration()).expect("should succeed");
         let events = reg.take_events();
         assert!(!events.is_empty());
         assert!(reg.events().is_empty());

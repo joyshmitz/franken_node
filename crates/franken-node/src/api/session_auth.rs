@@ -1164,7 +1164,7 @@ pub fn demo_session_lifecycle() -> Vec<SessionEvent> {
     );
 
     // Send 3 messages with strict monotonicity
-    let session = mgr.get_session("sess-001").unwrap();
+    let session = mgr.get_session("sess-001").expect("should exist");
     let hmac_ref = session.handshake_mac;
     for seq in 0..3 {
         let ph = format!("hash-{seq}");
@@ -1250,7 +1250,7 @@ pub fn demo_windowed_replay() -> Vec<SessionEvent> {
         handshake_mac,
     );
 
-    let hmac_ref = mgr.get_session("sess-win").unwrap().handshake_mac;
+    let hmac_ref = mgr.get_session("sess-win").expect("should exist").handshake_mac;
 
     // Send out-of-order within window
     let mac0 = sign_session_message(
@@ -1392,7 +1392,7 @@ mod tests {
         seq: u64,
         payload_hash: &str,
     ) -> [u8; SIGNATURE_LEN] {
-        let session = mgr.get_session(sid).unwrap();
+        let session = mgr.get_session(sid).expect("should exist");
         sign_session_message(
             sid,
             dir,
@@ -1623,7 +1623,7 @@ mod tests {
             mac,
         );
         assert!(result.is_ok());
-        let s = result.unwrap();
+        let s = result.expect("should succeed");
         assert_eq!(s.session_id, "s1");
         assert_eq!(s.state, SessionState::Active);
     }
@@ -1675,7 +1675,7 @@ mod tests {
             mac3,
         );
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.expect_err("should fail") {
             SessionError::MaxSessionsReached { limit } => assert_eq!(limit, 2),
             other => unreachable!("unexpected error: {other}"),
         }
@@ -1811,7 +1811,7 @@ mod tests {
             "t",
         );
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.expect_err("should fail") {
             SessionError::NoSession { session_id } => assert_eq!(session_id, "nonexistent"),
             other => unreachable!("unexpected: {other}"),
         }
@@ -1824,11 +1824,11 @@ mod tests {
         let mut mgr = default_manager();
         establish_test_session(&mut mgr, "s1");
         let mac = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
-        mgr.terminate_session("s1", 5000, "t").unwrap();
+        mgr.terminate_session("s1", 5000, "t").expect("should succeed");
 
         let result = mgr.process_message("s1", MessageDirection::Send, 0, "h", &mac, 6000, "t");
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.expect_err("should fail") {
             SessionError::SessionTerminated { session_id } => assert_eq!(session_id, "s1"),
             other => unreachable!("unexpected: {other}"),
         }
@@ -1868,7 +1868,7 @@ mod tests {
             "trace-expired",
         );
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.expect_err("should fail") {
             SessionError::SessionExpired { session_id } => assert_eq!(session_id, "s1"),
             other => unreachable!("unexpected: {other}"),
         }
@@ -1885,7 +1885,7 @@ mod tests {
     fn test_terminate_emits_event() {
         let mut mgr = default_manager();
         establish_test_session(&mut mgr, "s1");
-        mgr.terminate_session("s1", 5000, "t").unwrap();
+        mgr.terminate_session("s1", 5000, "t").expect("should succeed");
 
         let term_events: Vec<_> = mgr
             .events()
@@ -1957,7 +1957,7 @@ mod tests {
         let mac0_dup = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
         let result = mgr.process_message("s1", MessageDirection::Send, 0, "h", &mac0_dup, 2, "t");
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.expect_err("should fail") {
             SessionError::ReplayDetected { sequence, .. } => assert_eq!(sequence, 0),
             other => unreachable!("unexpected: {other}"),
         }
@@ -2004,7 +2004,7 @@ mod tests {
     fn test_validate_key_roles_wrong_encryption() {
         let result = SessionManager::validate_key_roles(KeyRole::Signing, KeyRole::Signing);
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.expect_err("should fail") {
             SessionError::RoleMismatch { expected_role, .. } => {
                 assert_eq!(expected_role, "Encryption")
             }
@@ -2016,7 +2016,7 @@ mod tests {
     fn test_validate_key_roles_wrong_signing() {
         let result = SessionManager::validate_key_roles(KeyRole::Encryption, KeyRole::Issuance);
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.expect_err("should fail") {
             SessionError::RoleMismatch { expected_role, .. } => {
                 assert_eq!(expected_role, "Signing")
             }
@@ -2034,7 +2034,7 @@ mod tests {
         assert_eq!(mgr.active_session_count(), 1);
         establish_test_session(&mut mgr, "s2");
         assert_eq!(mgr.active_session_count(), 2);
-        mgr.terminate_session("s1", 9999, "t").unwrap();
+        mgr.terminate_session("s1", 9999, "t").expect("should succeed");
         assert_eq!(mgr.active_session_count(), 1);
     }
 
@@ -2161,16 +2161,16 @@ mod tests {
 
     #[test]
     fn test_session_state_serde() {
-        let json = serde_json::to_string(&SessionState::Active).unwrap();
-        let parsed: SessionState = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&SessionState::Active).expect("serialize");
+        let parsed: SessionState = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, SessionState::Active);
     }
 
     #[test]
     fn test_session_config_serde() {
         let cfg = SessionConfig::default();
-        let json = serde_json::to_string(&cfg).unwrap();
-        let parsed: SessionConfig = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&cfg).expect("serialize");
+        let parsed: SessionConfig = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed.replay_window, cfg.replay_window);
         assert_eq!(parsed.max_sessions, cfg.max_sessions);
     }
@@ -2188,8 +2188,8 @@ mod tests {
             [0xABu8; SIGNATURE_LEN],
         );
         s.activate(42);
-        let json = serde_json::to_string(&s).unwrap();
-        let parsed: AuthenticatedSession = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&s).expect("serialize");
+        let parsed: AuthenticatedSession = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed.session_id, "s1");
         assert_eq!(parsed.state, SessionState::Active);
         assert_eq!(parsed.handshake_mac, [0xABu8; SIGNATURE_LEN]);
@@ -2198,8 +2198,8 @@ mod tests {
 
     #[test]
     fn test_message_direction_serde() {
-        let json = serde_json::to_string(&MessageDirection::Send).unwrap();
-        let parsed: MessageDirection = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&MessageDirection::Send).expect("serialize");
+        let parsed: MessageDirection = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, MessageDirection::Send);
     }
 
@@ -2212,8 +2212,8 @@ mod tests {
             detail: "test".to_string(),
             timestamp: 100,
         };
-        let json = serde_json::to_string(&e).unwrap();
-        let parsed: SessionEvent = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&e).expect("serialize");
+        let parsed: SessionEvent = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed.event_code, "SCC-001");
     }
 
@@ -2255,7 +2255,7 @@ mod tests {
             forged_mac,
         );
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.expect_err("should fail") {
             SessionError::AuthFailed { reason, .. } => {
                 assert!(reason.contains("handshake MAC"));
             }
@@ -2281,7 +2281,7 @@ mod tests {
             mac,
         );
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.expect_err("should fail") {
             SessionError::AuthFailed { .. } => {}
             other => unreachable!("expected AuthFailed, got: {other}"),
         }
@@ -2337,7 +2337,7 @@ mod tests {
         let forged = [0xFF; SIGNATURE_LEN];
         let result = mgr.process_message("s1", MessageDirection::Send, 0, "h", &forged, 2000, "t");
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.expect_err("should fail") {
             SessionError::AuthFailed { reason, .. } => {
                 assert!(reason.contains("message MAC"));
             }
@@ -2354,7 +2354,7 @@ mod tests {
         let mac = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "real");
         let result = mgr.process_message("s1", MessageDirection::Send, 0, "fake", &mac, 2000, "t");
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.expect_err("should fail") {
             SessionError::AuthFailed { .. } => {}
             other => unreachable!("expected AuthFailed, got: {other}"),
         }
@@ -2370,7 +2370,7 @@ mod tests {
         let mac_s1 = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
         let result = mgr.process_message("s2", MessageDirection::Send, 0, "h", &mac_s1, 2000, "t");
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.expect_err("should fail") {
             SessionError::AuthFailed { .. } => {}
             other => unreachable!("expected AuthFailed, got: {other}"),
         }
@@ -2418,7 +2418,7 @@ mod tests {
         let bogus = [0x42; SIGNATURE_LEN];
         let result = mgr.process_message("s1", MessageDirection::Send, 0, "h", &bogus, 2000, "t");
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.expect_err("should fail") {
             SessionError::AuthFailed { .. } => {}
             other => unreachable!("expected AuthFailed, got: {other}"),
         }

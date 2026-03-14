@@ -668,7 +668,7 @@ mod tests {
         let mut gate = GovernorGate::with_defaults();
         let result = gate.reject_engine_internal_adjustment("engine_core::gc_threshold");
         assert!(result.is_err());
-        let err_msg = result.unwrap_err();
+        let err_msg = result.expect_err("should fail");
         assert!(err_msg.contains(error_codes::ERR_GOVERNOR_ENGINE_BOUNDARY_VIOLATION));
     }
 
@@ -791,7 +791,7 @@ mod tests {
     fn test_enumerate_knobs_has_concurrency_limit() {
         let mut gate = GovernorGate::with_defaults();
         let enumeration = gate.enumerate_knobs();
-        let desc = enumeration.get(&RuntimeKnob::ConcurrencyLimit).unwrap();
+        let desc = enumeration.get(&RuntimeKnob::ConcurrencyLimit).expect("should exist");
         assert_eq!(desc.current_value, 64);
         assert!(!desc.locked);
         assert_eq!(desc.label, "concurrency_limit");
@@ -801,7 +801,7 @@ mod tests {
     fn test_enumerate_knobs_has_batch_size() {
         let mut gate = GovernorGate::with_defaults();
         let enumeration = gate.enumerate_knobs();
-        let desc = enumeration.get(&RuntimeKnob::BatchSize).unwrap();
+        let desc = enumeration.get(&RuntimeKnob::BatchSize).expect("should exist");
         assert_eq!(desc.current_value, 128);
     }
 
@@ -824,7 +824,7 @@ mod tests {
         gov.lock_knob(RuntimeKnob::RetryBudget);
         let mut gate = GovernorGate::new(gov);
         let enumeration = gate.enumerate_knobs();
-        let retry = enumeration.get(&RuntimeKnob::RetryBudget).unwrap();
+        let retry = enumeration.get(&RuntimeKnob::RetryBudget).expect("should exist");
         assert!(retry.locked);
         assert_eq!(enumeration.locked().len(), 1);
         assert_eq!(enumeration.unlocked().len(), 4);
@@ -854,7 +854,7 @@ mod tests {
         let mut gate = GovernorGate::with_defaults();
         gate.submit(good_proposal("p1")); // ConcurrencyLimit 64 → 128
         let enumeration = gate.enumerate_knobs();
-        let desc = enumeration.get(&RuntimeKnob::ConcurrencyLimit).unwrap();
+        let desc = enumeration.get(&RuntimeKnob::ConcurrencyLimit).expect("should exist");
         assert_eq!(desc.current_value, 128);
     }
 
@@ -862,8 +862,8 @@ mod tests {
     fn test_knob_enumeration_serde_roundtrip() {
         let mut gate = GovernorGate::with_defaults();
         let enumeration = gate.enumerate_knobs();
-        let json = serde_json::to_string(&enumeration).unwrap();
-        let parsed: KnobEnumeration = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&enumeration).expect("serialize");
+        let parsed: KnobEnumeration = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed.count(), 5);
         assert_eq!(parsed.schema_version, SCHEMA_VERSION);
     }
@@ -962,8 +962,8 @@ mod tests {
     fn test_dispatch_payload_serde_roundtrip() {
         let mut gate = GovernorGate::with_defaults();
         let payload = gate.build_dispatch_payload();
-        let json = serde_json::to_string(&payload).unwrap();
-        let parsed: DispatchHookPayload = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&payload).expect("serialize");
+        let parsed: DispatchHookPayload = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed.env_vars.len(), payload.env_vars.len());
     }
 
@@ -975,7 +975,7 @@ mod tests {
         let (decision, payload) = gate.submit_and_dispatch(good_proposal("p1"));
         assert!(matches!(decision, GovernorDecision::Approved));
         assert!(payload.is_some());
-        let payload = payload.unwrap();
+        let payload = payload.expect("should have payload");
         assert_eq!(payload.env_vars["FRANKEN_GOV_CONCURRENCY_LIMIT"], "128");
     }
 
@@ -1022,7 +1022,7 @@ mod tests {
         assert_eq!(
             enum_before
                 .get(&RuntimeKnob::ConcurrencyLimit)
-                .unwrap()
+                .expect("should have env vars")
                 .current_value,
             64
         );
@@ -1030,7 +1030,7 @@ mod tests {
         // 2. Submit and dispatch
         let (decision, payload) = gate.submit_and_dispatch(good_proposal("p1"));
         assert!(matches!(decision, GovernorDecision::Approved));
-        let payload = payload.unwrap();
+        let payload = payload.expect("should have payload");
         assert_eq!(payload.env_vars["FRANKEN_GOV_CONCURRENCY_LIMIT"], "128");
 
         // 3. Enumerate again — reflects new value
@@ -1038,7 +1038,7 @@ mod tests {
         assert_eq!(
             enum_after
                 .get(&RuntimeKnob::ConcurrencyLimit)
-                .unwrap()
+                .expect("should have env vars")
                 .current_value,
             128
         );
@@ -1086,8 +1086,8 @@ mod tests {
             min_value: 1,
             max_value: 8192,
         };
-        let json = serde_json::to_string(&desc).unwrap();
-        let parsed: KnobDescriptor = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&desc).expect("serialize");
+        let parsed: KnobDescriptor = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, desc);
     }
 
@@ -1100,8 +1100,8 @@ mod tests {
             knob: Some(RuntimeKnob::ConcurrencyLimit),
             detail: "dispatched".to_string(),
         };
-        let json = serde_json::to_string(&record).unwrap();
-        let parsed: DispatchHookRecord = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&record).expect("serialize");
+        let parsed: DispatchHookRecord = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, record);
     }
 
@@ -1117,8 +1117,8 @@ mod tests {
             dispatch_payload,
             applied_count: 0,
         };
-        let json = serde_json::to_string(&snap).unwrap();
-        let parsed: GovernorDispatchSnapshot = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&snap).expect("serialize");
+        let parsed: GovernorDispatchSnapshot = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed.enumeration.count(), 5);
     }
 }

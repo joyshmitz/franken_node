@@ -2061,19 +2061,19 @@ mod tests {
 
     #[test]
     fn test_new_pipeline_starts_at_intake() {
-        let state = new(&sample_cohort()).unwrap();
+        let state = new(&sample_cohort()).expect("should succeed");
         assert_eq!(state.current_stage, PipelineStage::Intake);
     }
 
     #[test]
     fn test_new_pipeline_has_cohort_id() {
-        let state = new(&sample_cohort()).unwrap();
+        let state = new(&sample_cohort()).expect("should succeed");
         assert_eq!(state.cohort_id, "cohort-001");
     }
 
     #[test]
     fn test_new_pipeline_has_extensions() {
-        let state = new(&sample_cohort()).unwrap();
+        let state = new(&sample_cohort()).expect("should succeed");
         assert_eq!(state.extensions.len(), 2);
         assert!(state.extensions.contains_key("ext_alpha"));
         assert!(state.extensions.contains_key("ext_beta"));
@@ -2081,20 +2081,20 @@ mod tests {
 
     #[test]
     fn test_new_pipeline_has_idempotency_key() {
-        let state = new(&sample_cohort()).unwrap();
+        let state = new(&sample_cohort()).expect("should succeed");
         assert!(!state.idempotency_key.is_empty());
         assert_eq!(state.idempotency_key.len(), 64); // SHA-256 hex
     }
 
     #[test]
     fn test_new_pipeline_has_schema_version() {
-        let state = new(&sample_cohort()).unwrap();
+        let state = new(&sample_cohort()).expect("should succeed");
         assert_eq!(state.schema_version, SCHEMA_VERSION);
     }
 
     #[test]
     fn test_new_pipeline_empty_history() {
-        let state = new(&sample_cohort()).unwrap();
+        let state = new(&sample_cohort()).expect("should succeed");
         assert!(state.stage_history.is_empty());
     }
 
@@ -2118,27 +2118,27 @@ mod tests {
 
     #[test]
     fn test_advance_intake_to_analysis() {
-        let state = new(&sample_cohort()).unwrap();
+        let state = new(&sample_cohort()).expect("should succeed");
         let state = advance(state).unwrap();
         assert_eq!(state.current_stage, PipelineStage::Analysis);
     }
 
     #[test]
     fn test_advance_through_all_stages() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
         assert_eq!(state.current_stage, PipelineStage::Complete);
     }
 
     #[test]
     fn test_stage_history_recorded() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
         // 7 transitions: Intake->Analysis->PlanGen->PlanReview->Exec->Verif->Receipt->Complete
         assert_eq!(state.stage_history.len(), 7);
     }
 
     #[test]
     fn test_cannot_advance_from_complete() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
         let err = advance(state).unwrap_err();
         assert_eq!(err.code, error_codes::ERR_PIPE_INVALID_TRANSITION);
     }
@@ -2156,10 +2156,10 @@ mod tests {
 
     #[test]
     fn test_analysis_produces_report() {
-        let mut state = new(&sample_cohort()).unwrap();
-        state = advance(state).unwrap(); // Intake -> Analysis
-        state = advance(state).unwrap(); // Analysis -> PlanGeneration (report generated)
-        let report = state.compatibility_report.as_ref().unwrap();
+        let mut state = new(&sample_cohort()).expect("should succeed");
+        state = advance(state).expect("should succeed"); // Intake -> Analysis
+        state = advance(state).expect("should succeed"); // Analysis -> PlanGeneration (report generated)
+        let report = state.compatibility_report.as_ref().expect("should have report");
         assert_eq!(report.per_extension_results.len(), 2);
         assert!(report.blockers.is_empty());
         assert!((report.overall_pass_rate - 1.0).abs() < f64::EPSILON);
@@ -2168,10 +2168,10 @@ mod tests {
     #[test]
     fn test_analysis_detects_blockers() {
         let cohort = single_ext_cohort_with_evidence("needs_real_evidence", high_risk_evidence());
-        let mut state = new(&cohort).unwrap();
-        state = advance(state).unwrap(); // -> Analysis
-        state = advance(state).unwrap(); // Analysis runs, produces report
-        let report = state.compatibility_report.as_ref().unwrap();
+        let mut state = new(&cohort).expect("should succeed");
+        state = advance(state).expect("should succeed"); // -> Analysis
+        state = advance(state).expect("should succeed"); // Analysis runs, produces report
+        let report = state.compatibility_report.as_ref().expect("should have report");
         assert!(!report.blockers.is_empty());
         assert_eq!(report.overall_pass_rate, 0.0);
         assert_eq!(
@@ -2184,11 +2184,11 @@ mod tests {
 
     #[test]
     fn test_plan_generated() {
-        let mut state = new(&sample_cohort()).unwrap();
-        state = advance(state).unwrap(); // -> Analysis
-        state = advance(state).unwrap(); // -> PlanGeneration
-        state = advance(state).unwrap(); // -> PlanReview (plan generated)
-        let plan = state.migration_plan.as_ref().unwrap();
+        let mut state = new(&sample_cohort()).expect("should succeed");
+        state = advance(state).expect("should succeed"); // -> Analysis
+        state = advance(state).expect("should succeed"); // -> PlanGeneration
+        state = advance(state).expect("should succeed"); // -> PlanReview (plan generated)
+        let plan = state.migration_plan.as_ref().expect("should have plan");
         assert!(!plan.plan_id.is_empty());
         assert!(!plan.steps.is_empty());
         assert_eq!(plan.phases.len(), 4);
@@ -2196,11 +2196,11 @@ mod tests {
 
     #[test]
     fn test_plan_has_deterministic_rollout_phases_and_certificates() {
-        let mut state = new(&sample_cohort()).unwrap();
-        state = advance(state).unwrap();
-        state = advance(state).unwrap();
-        state = advance(state).unwrap();
-        let plan = state.migration_plan.as_ref().unwrap();
+        let mut state = new(&sample_cohort()).expect("should succeed");
+        state = advance(state).expect("should succeed");
+        state = advance(state).expect("should succeed");
+        state = advance(state).expect("should succeed");
+        let plan = state.migration_plan.as_ref().expect("should have plan");
         let phases: Vec<_> = plan.phases.iter().map(|phase| phase.phase).collect();
         assert_eq!(
             phases,
@@ -2221,8 +2221,8 @@ mod tests {
     #[test]
     fn test_plan_id_deterministic() {
         let cohort = sample_cohort();
-        let s1 = run_full_pipeline(&cohort).unwrap();
-        let s2 = run_full_pipeline(&cohort).unwrap();
+        let s1 = run_full_pipeline(&cohort).expect("should succeed");
+        let s2 = run_full_pipeline(&cohort).expect("should succeed");
         assert_eq!(
             s1.migration_plan.as_ref().unwrap().plan_id,
             s2.migration_plan.as_ref().unwrap().plan_id
@@ -2236,7 +2236,7 @@ mod tests {
         let mut state = new(&sample_cohort()).unwrap();
         // Advance to Execution, then past it
         for _ in 0..5 {
-            state = advance(state).unwrap();
+            state = advance(state).expect("should succeed");
         }
         // Now at Verification, execution traces should exist
         assert_eq!(state.execution_traces.len(), 2);
@@ -2244,7 +2244,7 @@ mod tests {
 
     #[test]
     fn test_execution_trace_has_transitions() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
         for trace in &state.execution_traces {
             assert!(!trace.state_transitions.is_empty());
             assert!(!trace.mutations.is_empty());
@@ -2256,8 +2256,8 @@ mod tests {
 
     #[test]
     fn test_verification_passes_for_good_cohort() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
-        let report = state.verification_report.as_ref().unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        let report = state.verification_report.as_ref().expect("should have report");
         assert!(report.meets_threshold);
         assert!((report.pass_rate - 1.0).abs() < f64::EPSILON);
     }
@@ -2271,7 +2271,7 @@ mod tests {
         let mut state = new(&cohort).unwrap();
         // Advance to Verification
         for _ in 0..5 {
-            state = advance(state).unwrap();
+            state = advance(state).expect("should succeed");
         }
         assert_eq!(state.current_stage, PipelineStage::Verification);
         // Try to advance past Verification -- should fail
@@ -2287,7 +2287,7 @@ mod tests {
         );
         let mut state = new(&cohort).unwrap();
         for _ in 0..5 {
-            state = advance(state).unwrap();
+            state = advance(state).expect("should succeed");
         }
         let report = run_verification(&state);
         assert_eq!(report.counterexample_witnesses.len(), 1);
@@ -2300,10 +2300,10 @@ mod tests {
     #[test]
     fn test_degraded_mode_is_reported_and_not_green() {
         let cohort = single_ext_cohort_with_evidence("degraded_case", degraded_evidence());
-        let mut state = new(&cohort).unwrap();
-        state = advance(state).unwrap();
-        state = advance(state).unwrap();
-        let report = state.compatibility_report.as_ref().unwrap();
+        let mut state = new(&cohort).expect("should succeed");
+        state = advance(state).expect("should succeed");
+        state = advance(state).expect("should succeed");
+        let report = state.compatibility_report.as_ref().expect("should have report");
         assert!(report.degraded_mode.is_some());
         assert_eq!(
             report.findings["degraded_case"].compatibility_band,
@@ -2313,8 +2313,8 @@ mod tests {
 
     #[test]
     fn test_verification_report_has_per_extension() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
-        let report = state.verification_report.as_ref().unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        let report = state.verification_report.as_ref().expect("should have report");
         assert_eq!(report.per_extension_results.len(), 2);
     }
 
@@ -2322,8 +2322,8 @@ mod tests {
 
     #[test]
     fn test_receipt_issued() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
-        let receipt = state.migration_receipt.as_ref().unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        let receipt = state.migration_receipt.as_ref().expect("should have receipt");
         assert!(!receipt.pre_migration_hash.is_empty());
         assert!(!receipt.post_migration_hash.is_empty());
         assert!(!receipt.plan_fingerprint.is_empty());
@@ -2331,8 +2331,8 @@ mod tests {
 
     #[test]
     fn test_receipt_signed() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
-        let receipt = state.migration_receipt.as_ref().unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        let receipt = state.migration_receipt.as_ref().expect("should have receipt");
         assert!(!receipt.signature.is_empty());
         assert_eq!(receipt.signature.len(), 64);
         assert!(verify_receipt_signature(receipt));
@@ -2340,15 +2340,15 @@ mod tests {
 
     #[test]
     fn test_receipt_has_verification_summary() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
-        let receipt = state.migration_receipt.as_ref().unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        let receipt = state.migration_receipt.as_ref().expect("should have receipt");
         assert!(!receipt.verification_summary.is_empty());
     }
 
     #[test]
     fn test_receipt_signature_detects_tampering() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
-        let mut receipt = state.migration_receipt.as_ref().unwrap().clone();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        let mut receipt = state.migration_receipt.as_ref().expect("should have receipt").clone();
         assert!(verify_receipt_signature(&receipt));
         receipt.verification_summary.push_str(" tampered");
         assert!(!verify_receipt_signature(&receipt));
@@ -2368,7 +2368,7 @@ mod tests {
     fn test_rollback_from_execution() {
         let mut state = new(&sample_cohort()).unwrap();
         for _ in 0..4 {
-            state = advance(state).unwrap(); // -> Execution
+            state = advance(state).expect("should succeed"); // -> Execution
         }
         assert_eq!(state.current_stage, PipelineStage::Execution);
         state = rollback(state).unwrap();
@@ -2379,7 +2379,7 @@ mod tests {
     fn test_rollback_from_verification() {
         let mut state = new(&sample_cohort()).unwrap();
         for _ in 0..5 {
-            state = advance(state).unwrap(); // -> Verification
+            state = advance(state).expect("should succeed"); // -> Verification
         }
         assert_eq!(state.current_stage, PipelineStage::Verification);
         state = rollback(state).unwrap();
@@ -2388,14 +2388,14 @@ mod tests {
 
     #[test]
     fn test_cannot_rollback_from_intake() {
-        let state = new(&sample_cohort()).unwrap();
+        let state = new(&sample_cohort()).expect("should succeed");
         let err = rollback(state).unwrap_err();
         assert_eq!(err.code, error_codes::ERR_PIPE_ROLLBACK_FAILED);
     }
 
     #[test]
     fn test_cannot_rollback_from_complete() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
         let err = rollback(state).unwrap_err();
         assert_eq!(err.code, error_codes::ERR_PIPE_ROLLBACK_FAILED);
     }
@@ -2449,8 +2449,8 @@ mod tests {
     #[test]
     fn test_deterministic_full_pipeline() {
         let cohort = sample_cohort();
-        let s1 = run_full_pipeline(&cohort).unwrap();
-        let s2 = run_full_pipeline(&cohort).unwrap();
+        let s1 = run_full_pipeline(&cohort).expect("should succeed");
+        let s2 = run_full_pipeline(&cohort).expect("should succeed");
         // Same receipt
         assert_eq!(
             s1.migration_receipt.as_ref().unwrap().signature,
@@ -2469,28 +2469,28 @@ mod tests {
 
     #[test]
     fn test_cohort_summary_success_rate() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
         let summary = compute_cohort_summary(&state);
         assert!((summary.success_rate - 1.0).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_cohort_summary_rollback_rate() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
         let summary = compute_cohort_summary(&state);
         assert!((summary.rollback_rate - 0.0).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_cohort_summary_throughput() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
         let summary = compute_cohort_summary(&state);
         assert!(summary.throughput > 0.0);
     }
 
     #[test]
     fn test_cohort_summary_mean_time() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
         let summary = compute_cohort_summary(&state);
         assert!(summary.mean_time_to_migrate_ms > 0);
     }
@@ -2539,9 +2539,9 @@ mod tests {
 
     #[test]
     fn test_pipeline_state_serde_roundtrip() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
-        let json = serde_json::to_string(&state).unwrap();
-        let parsed: PipelineState = serde_json::from_str(&json).unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        let json = serde_json::to_string(&state).expect("serialize should succeed");
+        let parsed: PipelineState = serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(state.current_stage, parsed.current_stage);
         assert_eq!(state.cohort_id, parsed.cohort_id);
         assert_eq!(state.idempotency_key, parsed.idempotency_key);
@@ -2550,26 +2550,26 @@ mod tests {
     #[test]
     fn test_cohort_definition_serde_roundtrip() {
         let cohort = sample_cohort();
-        let json = serde_json::to_string(&cohort).unwrap();
-        let parsed: CohortDefinition = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&cohort).expect("serialize should succeed");
+        let parsed: CohortDefinition = serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(cohort, parsed);
     }
 
     #[test]
     fn test_migration_receipt_serde_roundtrip() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
-        let receipt = state.migration_receipt.as_ref().unwrap();
-        let json = serde_json::to_string(receipt).unwrap();
-        let parsed: MigrationReceipt = serde_json::from_str(&json).unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        let receipt = state.migration_receipt.as_ref().expect("should have receipt");
+        let json = serde_json::to_string(receipt).expect("serialize should succeed");
+        let parsed: MigrationReceipt = serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(receipt, &parsed);
     }
 
     #[test]
     fn test_verification_report_serde_roundtrip() {
-        let state = run_full_pipeline(&sample_cohort()).unwrap();
-        let report = state.verification_report.as_ref().unwrap();
-        let json = serde_json::to_string(report).unwrap();
-        let parsed: VerificationReport = serde_json::from_str(&json).unwrap();
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        let report = state.verification_report.as_ref().expect("should have report");
+        let json = serde_json::to_string(report).expect("serialize should succeed");
+        let parsed: VerificationReport = serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(report.pass_rate, parsed.pass_rate);
         assert_eq!(report.per_extension_results, parsed.per_extension_results);
         assert_eq!(report.meets_threshold, parsed.meets_threshold);
@@ -2767,7 +2767,7 @@ mod tests {
             extensions: vec![],
             selection_criteria: "none".to_string(),
         };
-        let state = new(&cohort).unwrap();
+        let state = new(&cohort).expect("should succeed");
         assert_eq!(state.extensions.len(), 0);
     }
 
@@ -2781,7 +2781,7 @@ mod tests {
     #[test]
     fn test_btreemap_ordering() {
         let cohort = sample_cohort();
-        let state = new(&cohort).unwrap();
+        let state = new(&cohort).expect("should succeed");
         let keys: Vec<_> = state.extensions.keys().collect();
         // BTreeMap ensures sorted order
         assert_eq!(keys, vec!["ext_alpha", "ext_beta"]);

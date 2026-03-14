@@ -695,7 +695,7 @@ mod tests {
         let mgr = TransitionAbortManager::new();
         let known = participants_3();
         let policy = ForceTransitionPolicy::new(BTreeSet::new(), 0, "", "reason");
-        let err = mgr.validate_force_policy(&policy, &known).unwrap_err();
+        let err = mgr.validate_force_policy(&policy, &known).expect_err("should fail");
         assert_eq!(err.code(), error_codes::ERR_FORCE_NO_OPERATOR);
     }
 
@@ -704,7 +704,7 @@ mod tests {
         let mgr = TransitionAbortManager::new();
         let known = participants_3();
         let policy = ForceTransitionPolicy::new(BTreeSet::new(), 0, "admin", "");
-        let err = mgr.validate_force_policy(&policy, &known).unwrap_err();
+        let err = mgr.validate_force_policy(&policy, &known).expect_err("should fail");
         assert_eq!(err.code(), error_codes::ERR_FORCE_NO_REASON);
     }
 
@@ -716,7 +716,7 @@ mod tests {
         skip.insert("svc-a".to_string());
         skip.insert("svc-b".to_string());
         let policy = ForceTransitionPolicy::new(skip, 1, "admin", "reason");
-        let err = mgr.validate_force_policy(&policy, &known).unwrap_err();
+        let err = mgr.validate_force_policy(&policy, &known).expect_err("should fail");
         assert_eq!(err.code(), error_codes::ERR_FORCE_OVER_LIMIT);
     }
 
@@ -725,7 +725,7 @@ mod tests {
         let mgr = TransitionAbortManager::new();
         let known = participants_3();
         let policy = ForceTransitionPolicy::new(known.clone(), 3, "admin", "reason");
-        let err = mgr.validate_force_policy(&policy, &known).unwrap_err();
+        let err = mgr.validate_force_policy(&policy, &known).expect_err("should fail");
         assert_eq!(err.code(), error_codes::ERR_FORCE_ALL_SKIPPED);
     }
 
@@ -736,7 +736,7 @@ mod tests {
         let mut skip = BTreeSet::new();
         skip.insert("unknown-svc".to_string());
         let policy = ForceTransitionPolicy::new(skip, 1, "admin", "reason");
-        let err = mgr.validate_force_policy(&policy, &known).unwrap_err();
+        let err = mgr.validate_force_policy(&policy, &known).expect_err("should fail");
         assert_eq!(err.code(), error_codes::ERR_FORCE_UNKNOWN_PARTICIPANT);
     }
 
@@ -829,7 +829,7 @@ mod tests {
         let jsonl = mgr.export_audit_log_jsonl();
         assert!(!jsonl.is_empty());
         let parsed: serde_json::Value =
-            serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+            serde_json::from_str(jsonl.lines().next().expect("should have line")).expect("deserialize");
         assert_eq!(parsed["event_code"], event_codes::TRANSITION_ABORTED);
         assert_eq!(parsed["schema_version"], SCHEMA_VERSION);
     }
@@ -912,7 +912,7 @@ mod tests {
         assert_eq!(mgr.audit_log().len(), MAX_AUDIT_LOG_ENTRIES);
         assert_eq!(mgr.abort_events()[0].barrier_id, "abort-2");
         assert_eq!(
-            mgr.abort_events().last().unwrap().barrier_id,
+            mgr.abort_events().last().expect("should exist").barrier_id,
             format!("abort-{}", MAX_ABORT_EVENTS + 1)
         );
         assert_eq!(mgr.audit_log()[0].barrier_id, "abort-2");
@@ -939,7 +939,7 @@ mod tests {
         assert_eq!(mgr.audit_log().len(), MAX_AUDIT_LOG_ENTRIES);
         assert_eq!(mgr.force_events()[0].barrier_id, "force-2");
         assert_eq!(
-            mgr.force_events().last().unwrap().barrier_id,
+            mgr.force_events().last().expect("should exist").barrier_id,
             format!("force-{}", MAX_FORCE_EVENTS + 1)
         );
         assert_eq!(mgr.audit_log()[0].barrier_id, "force-2");

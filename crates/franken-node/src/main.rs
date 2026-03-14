@@ -1630,7 +1630,7 @@ mod init_tests {
             .expect("create file");
         assert_eq!(action.action, InitFileActionKind::Created);
         assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
+            std::fs::read_to_string(&path).expect("read should succeed"),
             "profile = \"balanced\"\n"
         );
     }
@@ -1656,7 +1656,7 @@ mod init_tests {
         let action = apply_init_write_policy(&path, "new", true, false, "t0").expect("overwrite");
         assert_eq!(action.action, InitFileActionKind::Overwritten);
         assert!(action.backup_path.is_none());
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+        assert_eq!(std::fs::read_to_string(&path).expect("read should succeed"), "new");
     }
 
     #[test]
@@ -1668,8 +1668,8 @@ mod init_tests {
             apply_init_write_policy(&path, "new", false, true, "t0").expect("backup overwrite");
         assert_eq!(action.action, InitFileActionKind::BackedUpAndOverwritten);
         let backup_path = action.backup_path.expect("backup path");
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
-        assert_eq!(std::fs::read_to_string(backup_path).unwrap(), "old");
+        assert_eq!(std::fs::read_to_string(&path).expect("read should succeed"), "new");
+        assert_eq!(std::fs::read_to_string(backup_path).expect("read should succeed"), "old");
     }
 }
 

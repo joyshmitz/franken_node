@@ -304,7 +304,7 @@ mod tests {
     #[test]
     fn fencing_requires_mtls() {
         let routes = route_metadata();
-        let fence = routes.iter().find(|r| r.path.contains("fence")).unwrap();
+        let fence = routes.iter().find(|r| r.path.contains("fence")).expect("should exist");
         assert_eq!(fence.auth_method, AuthMethod::MtlsClientCert);
     }
 
@@ -314,7 +314,7 @@ mod tests {
         let coord = routes
             .iter()
             .find(|r| r.path.contains("coordinate"))
-            .unwrap();
+            .expect("should exist");
         assert_eq!(coord.lifecycle, EndpointLifecycle::Experimental);
     }
 

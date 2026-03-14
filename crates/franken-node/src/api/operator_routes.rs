@@ -271,7 +271,7 @@ mod tests {
     #[test]
     fn health_endpoint_no_auth() {
         let routes = route_metadata();
-        let health = routes.iter().find(|r| r.path.contains("health")).unwrap();
+        let health = routes.iter().find(|r| r.path.contains("health")).expect("health route should exist");
         assert_eq!(health.auth_method, AuthMethod::None);
         assert!(health.policy_hook.required_roles.is_empty());
     }
