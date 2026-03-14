@@ -1,5 +1,5 @@
 {
-  "generated_on": "2026-03-12",
+  "generated_on": "2026-03-14",
   "findings": [
     {
       "module_path": "crates/franken-node/src/connector/durable_claim_gate.rs",
@@ -22,7 +22,7 @@
     {
       "module_path": "crates/franken-node/src/connector/policy_checkpoint.rs",
       "ambient_api": "std::time::SystemTime",
-      "line": 697,
+      "line": 698,
       "callsite": "SystemTime::now()",
       "status": "allowlisted",
       "allowlist_entry_id": "AAL-006",
@@ -85,7 +85,7 @@
     {
       "module_path": "crates/franken-node/src/connector/supervision.rs",
       "ambient_api": "std::time::Instant",
-      "line": 139,
+      "line": 141,
       "callsite": "started_at: Instant::now(),",
       "status": "allowlisted",
       "allowlist_entry_id": "AAL-008",
@@ -468,7 +468,7 @@
     {
       "module_path": "crates/franken-node/src/connector/policy_checkpoint.rs",
       "ambient_api": "std::time::SystemTime",
-      "line": 697,
+      "line": 698,
       "event_code": "AMB-003",
       "message": "allowlist exception AAL-006 applied"
     },
@@ -580,7 +580,7 @@
     {
       "module_path": "crates/franken-node/src/connector/supervision.rs",
       "ambient_api": "std::time::Instant",
-      "line": 139,
+      "line": 141,
       "event_code": "AMB-003",
       "message": "allowlist exception AAL-008 applied"
     },

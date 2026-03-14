@@ -1,7 +1,7 @@
 # bd-721z Verification Summary
 
 - Status: **PASS**
-- Generated on: `2026-03-12`
+- Generated on: `2026-03-14`
 - Modules scanned: `80`
 - Findings total: `10`
 - Violations (`AMB-002`, `AMB-004`): `0`

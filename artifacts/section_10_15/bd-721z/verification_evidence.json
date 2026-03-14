@@ -1,7 +1,7 @@
 {
   "bead_id": "bd-721z",
   "gate": "ambient_authority_gate",
-  "generated_on": "2026-03-12",
+  "generated_on": "2026-03-14",
   "status": "pass",
   "modules_scanned": 80,
   "findings_total": 10,
