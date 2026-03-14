@@ -471,17 +471,18 @@ impl VerifierSdk {
         // Replay through the canonical capsule path so SDK verification cannot
         // drift from the shared replay semantics.
         let replay_result = super::replay_capsule::replay(capsule);
-        let replay_match = match (&replay_result, capsule.expected_outputs.first()) {
-            (Ok(replay_hash), Some(first_output)) => {
-                crate::security::constant_time::ct_eq(&first_output.output_hash, replay_hash)
-            }
-            _ => false,
+        let replay_match = match &replay_result {
+            Ok(replay_hash) => super::replay_capsule::expected_outputs_match_hash(
+                &capsule.expected_outputs,
+                replay_hash,
+            ),
+            Err(_) => false,
         };
         evidence.push(EvidenceEntry {
             check_name: "replay_deterministic_match".to_string(),
             passed: replay_match,
             detail: match replay_result {
-                Ok(_) if replay_match => "replay hash matches expected output".to_string(),
+                Ok(_) if replay_match => "replay hash matches all expected outputs".to_string(),
                 Ok(replay_hash) => format!("replay_hash={replay_hash}"),
                 Err(err) => err.to_string(),
             },
@@ -950,7 +951,10 @@ mod tests {
             "replay evidence entry should be unique"
         );
         assert!(replay_entry.passed);
-        assert_eq!(replay_entry.detail, "replay hash matches expected output");
+        assert_eq!(
+            replay_entry.detail,
+            "replay hash matches all expected outputs"
+        );
     }
 
     // ── verify_capsule: error paths ─────────────────────────────────
@@ -1007,6 +1011,26 @@ mod tests {
         cap.expected_outputs[0].output_hash = "wrong_hash".to_string();
         let report = sdk.verify_capsule(&cap).unwrap();
         assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
+    }
+
+    #[test]
+    fn test_verify_capsule_extra_mismatched_expected_output_fails() {
+        let sdk = test_sdk();
+        let mut cap = valid_capsule();
+        cap.expected_outputs
+            .push(super::replay_capsule::CapsuleOutput {
+                seq: 1,
+                data: b"tampered".to_vec(),
+                output_hash: "wrong_hash".to_string(),
+            });
+        let report = sdk.verify_capsule(&cap).unwrap();
+        assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
+        assert!(
+            report
+                .evidence
+                .iter()
+                .any(|entry| { entry.check_name == "replay_deterministic_match" && !entry.passed })
+        );
     }
 
     #[test]

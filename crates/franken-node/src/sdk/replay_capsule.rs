@@ -215,6 +215,16 @@ fn validate_environment_snapshot(environment: &EnvironmentSnapshot) -> Result<()
     Ok(())
 }
 
+pub(crate) fn expected_outputs_match_hash(
+    expected_outputs: &[CapsuleOutput],
+    actual_hash: &str,
+) -> bool {
+    !expected_outputs.is_empty()
+        && expected_outputs
+            .iter()
+            .all(|output| crate::security::constant_time::ct_eq(&output.output_hash, actual_hash))
+}
+
 // ---------------------------------------------------------------------------
 // Capsule operations
 // ---------------------------------------------------------------------------
@@ -256,16 +266,16 @@ pub fn replay(capsule: &ReplayCapsule) -> Result<String, CapsuleError> {
     Ok(compute_inputs_hash(&capsule.inputs))
 }
 
-/// Replay a capsule and compare the result to the first expected output hash.
+/// Replay a capsule and compare the result to all declared expected output hashes.
 ///
 /// Returns `Ok(true)` if the replay hash matches, `Ok(false)` if it does not,
 /// or `Err` if the capsule is structurally invalid.
 pub fn replay_and_verify(capsule: &ReplayCapsule) -> Result<bool, CapsuleError> {
     let actual_hash = replay(capsule)?;
 
-    if let Some(first_output) = capsule.expected_outputs.first() {
-        Ok(crate::security::constant_time::ct_eq(
-            &first_output.output_hash,
+    if !capsule.expected_outputs.is_empty() {
+        Ok(expected_outputs_match_hash(
+            &capsule.expected_outputs,
             &actual_hash,
         ))
     } else {
@@ -573,6 +583,17 @@ mod tests {
     fn test_replay_and_verify_mismatch() {
         let mut cap = test_capsule();
         cap.expected_outputs[0].output_hash = "wrong_hash".to_string();
+        assert!(!replay_and_verify(&cap).unwrap());
+    }
+
+    #[test]
+    fn test_replay_and_verify_extra_mismatched_output_fails() {
+        let mut cap = test_capsule();
+        cap.expected_outputs.push(CapsuleOutput {
+            seq: 1,
+            data: b"tampered".to_vec(),
+            output_hash: "wrong_hash".to_string(),
+        });
         assert!(!replay_and_verify(&cap).unwrap());
     }
 
