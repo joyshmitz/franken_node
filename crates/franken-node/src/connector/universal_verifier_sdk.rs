@@ -408,6 +408,37 @@ fn validate_capsule_signer_public_key(public_key: &str) -> Result<(), VsdkError>
     Ok(())
 }
 
+fn validate_signature_metadata(manifest: &CapsuleManifest) -> Result<(), VsdkError> {
+    let signature_algorithm = manifest
+        .metadata
+        .get(CAPSULE_SIGNATURE_ALGORITHM_METADATA_KEY)
+        .ok_or_else(|| {
+            VsdkError::ManifestIncomplete(format!(
+                "metadata missing {CAPSULE_SIGNATURE_ALGORITHM_METADATA_KEY}"
+            ))
+        })?;
+    if signature_algorithm != CAPSULE_SIGNATURE_ALGORITHM {
+        return Err(VsdkError::ManifestIncomplete(format!(
+            "unsupported signature algorithm: {signature_algorithm}"
+        )));
+    }
+
+    let signer_public_key = manifest
+        .metadata
+        .get(CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY)
+        .ok_or_else(|| {
+            VsdkError::ManifestIncomplete(format!(
+                "metadata missing {CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY}"
+            ))
+        })?;
+    if signer_public_key.is_empty() {
+        return Err(VsdkError::ManifestIncomplete(format!(
+            "metadata {CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY} is empty"
+        )));
+    }
+    validate_capsule_signer_public_key(signer_public_key)
+}
+
 // ---------------------------------------------------------------------------
 // Core operations
 // ---------------------------------------------------------------------------
@@ -455,33 +486,7 @@ pub fn validate_manifest(manifest: &CapsuleManifest) -> Result<(), VsdkError> {
             "creator_identity is empty".to_string(),
         ));
     }
-    let signature_algorithm = manifest
-        .metadata
-        .get(CAPSULE_SIGNATURE_ALGORITHM_METADATA_KEY)
-        .ok_or_else(|| {
-            VsdkError::ManifestIncomplete(format!(
-                "metadata missing {CAPSULE_SIGNATURE_ALGORITHM_METADATA_KEY}"
-            ))
-        })?;
-    if signature_algorithm != CAPSULE_SIGNATURE_ALGORITHM {
-        return Err(VsdkError::ManifestIncomplete(format!(
-            "unsupported signature algorithm: {signature_algorithm}"
-        )));
-    }
-    let signer_public_key = manifest
-        .metadata
-        .get(CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY)
-        .ok_or_else(|| {
-            VsdkError::ManifestIncomplete(format!(
-                "metadata missing {CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY}"
-            ))
-        })?;
-    if signer_public_key.is_empty() {
-        return Err(VsdkError::ManifestIncomplete(format!(
-            "metadata {CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY} is empty"
-        )));
-    }
-    validate_capsule_signer_public_key(signer_public_key)?;
+    validate_signature_metadata(manifest)?;
     Ok(())
 }
 
@@ -521,8 +526,8 @@ fn validate_manifest_input_refs(
 ///
 /// INV-VSDK-SIGNATURE-BOUND: signature covers full capsule payload.
 pub fn verify_capsule_signature(capsule: &ReplayCapsule) -> Result<(), VsdkError> {
+    validate_signature_metadata(&capsule.manifest)?;
     let signer_public_key = capsule_signer_public_key(capsule)?;
-    validate_capsule_signer_public_key(signer_public_key)?;
     let payload = canonical_capsule_signature_payload(capsule);
     if crate::connector::verifier_sdk::verify_ed25519_signature_hex(
         signer_public_key,
@@ -1014,6 +1019,20 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_manifest_missing_signature_algorithm() {
+        let mut manifest = build_reference_manifest();
+        manifest
+            .metadata
+            .remove(CAPSULE_SIGNATURE_ALGORITHM_METADATA_KEY);
+        match validate_manifest(&manifest) {
+            Err(VsdkError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains(CAPSULE_SIGNATURE_ALGORITHM_METADATA_KEY));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_validate_manifest_input_refs_rejects_duplicates() {
         let manifest = build_reference_manifest();
         let inputs = BTreeMap::from([
@@ -1128,6 +1147,42 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_verify_capsule_signature_rejects_wrong_algorithm_even_with_valid_signature() {
+        let mut capsule = build_reference_capsule();
+        capsule.manifest.metadata.insert(
+            CAPSULE_SIGNATURE_ALGORITHM_METADATA_KEY.to_string(),
+            "rsa".to_string(),
+        );
+        let signature =
+            reference_signing_key().sign(&canonical_capsule_signature_payload(&capsule));
+        capsule.signature = hex::encode(signature.to_bytes());
+
+        match verify_capsule_signature(&capsule) {
+            Err(VsdkError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("unsupported signature algorithm"));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_verify_capsule_signature_rejects_missing_signature_algorithm_metadata() {
+        let mut capsule = build_reference_capsule();
+        capsule
+            .manifest
+            .metadata
+            .remove(CAPSULE_SIGNATURE_ALGORITHM_METADATA_KEY);
+        sign_capsule(&mut capsule, &reference_signing_key());
+
+        match verify_capsule_signature(&capsule) {
+            Err(VsdkError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains(CAPSULE_SIGNATURE_ALGORITHM_METADATA_KEY));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
     // ── replay_capsule ─────────────────────────────────────────────
 
     #[test]
@@ -1207,6 +1262,25 @@ mod tests {
         match replay_capsule(&capsule, "v1") {
             Err(VsdkError::SignatureMismatch { .. }) => {}
             other => panic!("expected SignatureMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_replay_capsule_rejects_wrong_algorithm_even_with_valid_signature() {
+        let mut capsule = build_reference_capsule();
+        capsule.manifest.metadata.insert(
+            CAPSULE_SIGNATURE_ALGORITHM_METADATA_KEY.to_string(),
+            "rsa".to_string(),
+        );
+        let signature =
+            reference_signing_key().sign(&canonical_capsule_signature_payload(&capsule));
+        capsule.signature = hex::encode(signature.to_bytes());
+
+        match replay_capsule(&capsule, "v1") {
+            Err(VsdkError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("unsupported signature algorithm"));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
         }
     }
 
