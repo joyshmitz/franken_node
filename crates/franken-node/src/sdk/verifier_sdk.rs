@@ -239,6 +239,14 @@ fn deterministic_hash_fields(fields: &[&str]) -> String {
     hex::encode(hasher.finalize())
 }
 
+fn artifact_binding_hash(request: &VerificationRequest) -> String {
+    let mut fields = Vec::with_capacity(2 + request.claims.len());
+    fields.push(request.artifact_id.as_str());
+    fields.push(request.artifact_hash.as_str());
+    fields.extend(request.claims.iter().map(String::as_str));
+    deterministic_hash_fields(&fields)
+}
+
 #[allow(dead_code)]
 fn now_timestamp() -> String {
     "2026-02-21T00:00:00Z".to_string()
@@ -371,12 +379,7 @@ impl VerifierSdk {
             VerifyVerdict::Fail(failures)
         };
 
-        let claims_joined = request.claims.join(",");
-        let binding_hash = deterministic_hash_fields(&[
-            &request.artifact_id,
-            &request.artifact_hash,
-            &claims_joined,
-        ]);
+        let binding_hash = artifact_binding_hash(request);
 
         Ok(VerificationReport {
             request_id: format!("vreq-{}", &deterministic_hash(&request.artifact_id)[..24]),
@@ -1374,6 +1377,33 @@ mod tests {
         assert_ne!(
             r1.binding_hash, r2.binding_hash,
             "binding hash must differ when fields contain delimiters"
+        );
+    }
+
+    #[test]
+    fn test_artifact_binding_hash_preserves_claim_vector_boundaries() {
+        let sdk = test_sdk();
+        let artifact_id = "artifact-claims".to_string();
+        let artifact_hash = deterministic_hash(&artifact_id);
+        let req1 = VerificationRequest {
+            artifact_id: artifact_id.clone(),
+            artifact_hash: artifact_hash.clone(),
+            claims: vec!["a,b".to_string(), "c".to_string()],
+        };
+        let req2 = VerificationRequest {
+            artifact_id,
+            artifact_hash,
+            claims: vec!["a".to_string(), "b,c".to_string()],
+        };
+        let r1 = sdk.verify_artifact(&req1).unwrap();
+        let r2 = sdk.verify_artifact(&req2).unwrap();
+        assert_ne!(
+            r1.binding_hash, r2.binding_hash,
+            "binding hash must preserve claim boundaries, not just joined contents"
+        );
+        assert_ne!(
+            r1.trace_id, r2.trace_id,
+            "trace ids derived from binding hash must also diverge"
         );
     }
 

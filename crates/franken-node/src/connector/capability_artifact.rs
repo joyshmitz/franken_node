@@ -37,7 +37,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
+use std::fmt::{self, Write as _};
 
 const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
 
@@ -173,10 +173,23 @@ impl ArtifactIdentity {
 
     /// Produce a deterministic canonical string for digest computation.
     pub fn canonical_repr(&self) -> String {
-        format!(
-            "artifact_id={};author={};created_at={}",
-            self.artifact_id, self.author, self.created_at,
-        )
+        fn append_field(repr: &mut String, field_name: &str, value: &str) {
+            if !repr.is_empty() {
+                repr.push(';');
+            }
+            let _ = write!(
+                repr,
+                "{field_name}_len={};{field_name}={value}",
+                value.len()
+            );
+        }
+
+        let mut repr = String::new();
+        // Preserve field boundaries even when values embed delimiter substrings.
+        append_field(&mut repr, "artifact_id", &self.artifact_id);
+        append_field(&mut repr, "author", &self.author);
+        append_field(&mut repr, "created_at", &self.created_at);
+        repr
     }
 }
 
@@ -269,7 +282,7 @@ impl CapabilityEnvelope {
 
         // Deterministic canonical representation for hashing.
         let mut hasher = Sha256::new();
-        hasher.update(b"capability_artifact_digest_v1:");
+        hasher.update(b"capability_artifact_digest_v2:");
         let repr = identity.canonical_repr();
         hasher.update((repr.len() as u64).to_le_bytes());
         hasher.update(repr.as_bytes());
@@ -977,9 +990,19 @@ mod tests {
     fn test_artifact_identity_canonical_repr() {
         let id = ArtifactIdentity::new("ext-1", "alice", "2026-01-01T00:00:00Z");
         let repr = id.canonical_repr();
-        assert!(repr.contains("ext-1"));
-        assert!(repr.contains("alice"));
-        assert!(repr.contains("2026-01-01T00:00:00Z"));
+        assert_eq!(
+            repr,
+            "artifact_id_len=5;artifact_id=ext-1;author_len=5;author=alice;created_at_len=20;created_at=2026-01-01T00:00:00Z"
+        );
+    }
+
+    #[test]
+    fn test_artifact_identity_canonical_repr_preserves_field_boundaries() {
+        let lhs = ArtifactIdentity::new("ext-1;author=alice", "bob", "2026-01-01T00:00:00Z");
+        let rhs = ArtifactIdentity::new("ext-1", "alice;author=bob", "2026-01-01T00:00:00Z");
+
+        assert_ne!(lhs, rhs);
+        assert_ne!(lhs.canonical_repr(), rhs.canonical_repr());
     }
 
     #[test]
@@ -1053,6 +1076,16 @@ mod tests {
         env.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
         env.bind_to(&id1);
         assert!(!env.verify_digest(&id2));
+    }
+
+    #[test]
+    fn test_envelope_digest_changes_when_identity_field_boundaries_change() {
+        let lhs = ArtifactIdentity::new("ext-1;author=alice", "bob", "2026-01-01T00:00:00Z");
+        let rhs = ArtifactIdentity::new("ext-1", "alice;author=bob", "2026-01-01T00:00:00Z");
+        let mut env = CapabilityEnvelope::new();
+        env.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+
+        assert_ne!(env.compute_digest(&lhs), env.compute_digest(&rhs));
     }
 
     #[test]

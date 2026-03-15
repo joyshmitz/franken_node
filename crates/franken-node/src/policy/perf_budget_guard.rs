@@ -248,6 +248,9 @@ impl fmt::Display for PerfBudgetError {
 /// Maximum events before oldest-first eviction.
 const MAX_EVENTS: usize = 4096;
 
+/// Maximum timing samples retained per hot path before oldest-first eviction.
+const MAX_TIMING_SAMPLES: usize = 8192;
+
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     items.push(item);
     if items.len() > cap {
@@ -563,10 +566,8 @@ impl TimingCollector {
         if !duration_us.is_finite() {
             return;
         }
-        self.baseline
-            .entry(hot_path.to_string())
-            .or_default()
-            .push(duration_us);
+        let samples = self.baseline.entry(hot_path.to_string()).or_default();
+        push_bounded(samples, duration_us, MAX_TIMING_SAMPLES);
         self.emit(
             PRF_006_TIMING_SAMPLE,
             hot_path,
@@ -579,10 +580,8 @@ impl TimingCollector {
         if !duration_us.is_finite() {
             return;
         }
-        self.integrated
-            .entry(hot_path.to_string())
-            .or_default()
-            .push(duration_us);
+        let samples = self.integrated.entry(hot_path.to_string()).or_default();
+        push_bounded(samples, duration_us, MAX_TIMING_SAMPLES);
         self.emit(
             PRF_006_TIMING_SAMPLE,
             hot_path,

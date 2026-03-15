@@ -801,6 +801,10 @@ fn stable_digest(prefix: &str, parts: &[String]) -> String {
     hex::encode(hasher.finalize())
 }
 
+fn stable_string_list(value: &[String]) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "[]".to_string())
+}
+
 fn unit_ratio(numerator: u32, denominator: u32) -> f64 {
     if denominator == 0 {
         0.0
@@ -1467,11 +1471,14 @@ fn generate_plan(state: &PipelineState, report: &CompatibilityReport) -> Migrati
 
     let mut evidence_artifacts = Vec::new();
     for phase in &phases {
-        let artifact_inputs = vec![
+        // Preserve extension vector boundaries instead of collapsing them back
+        // into a comma-delimited field before hashing or rendering.
+        let mut artifact_inputs = vec![
             phase.phase.as_str().to_string(),
             phase.rollback_certificate.certificate_id.clone(),
-            phase.extension_names.join(","),
         ];
+        artifact_inputs.extend(phase.extension_names.iter().cloned());
+        let extension_detail = stable_string_list(&phase.extension_names);
         evidence_artifacts.push(PipelineEvidenceArtifact {
             artifact_id: format!("plan-{}", phase.phase.as_str()),
             artifact_kind: "rollout_plan".to_string(),
@@ -1479,7 +1486,7 @@ fn generate_plan(state: &PipelineState, report: &CompatibilityReport) -> Migrati
             detail: format!(
                 "{} phase extensions={}",
                 phase.phase.as_str(),
-                phase.extension_names.join(",")
+                extension_detail
             ),
         });
     }
@@ -2159,7 +2166,10 @@ mod tests {
         let mut state = new(&sample_cohort()).expect("should succeed");
         state = advance(state).expect("should succeed"); // Intake -> Analysis
         state = advance(state).expect("should succeed"); // Analysis -> PlanGeneration (report generated)
-        let report = state.compatibility_report.as_ref().expect("should have report");
+        let report = state
+            .compatibility_report
+            .as_ref()
+            .expect("should have report");
         assert_eq!(report.per_extension_results.len(), 2);
         assert!(report.blockers.is_empty());
         assert!((report.overall_pass_rate - 1.0).abs() < f64::EPSILON);
@@ -2171,7 +2181,10 @@ mod tests {
         let mut state = new(&cohort).expect("should succeed");
         state = advance(state).expect("should succeed"); // -> Analysis
         state = advance(state).expect("should succeed"); // Analysis runs, produces report
-        let report = state.compatibility_report.as_ref().expect("should have report");
+        let report = state
+            .compatibility_report
+            .as_ref()
+            .expect("should have report");
         assert!(!report.blockers.is_empty());
         assert_eq!(report.overall_pass_rate, 0.0);
         assert_eq!(
@@ -2229,6 +2242,55 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_plan_phase_evidence_artifact_preserves_extension_boundaries() {
+        let cohort_a = CohortDefinition {
+            cohort_id: "cohort-comma-a".to_string(),
+            extensions: vec![
+                ext("alpha,beta", "1.0.0", "2.0.0", 1, 1, healthy_evidence()),
+                ext("gamma", "1.0.0", "2.0.0", 1, 1, healthy_evidence()),
+            ],
+            selection_criteria: "comma-a".to_string(),
+        };
+        let state_a = new(&cohort_a).expect("should succeed");
+        let report_a = run_analysis(&state_a);
+        let plan_a = generate_plan(&state_a, &report_a);
+
+        let cohort_b = CohortDefinition {
+            cohort_id: "cohort-comma-b".to_string(),
+            extensions: vec![
+                ext("alpha", "1.0.0", "2.0.0", 1, 1, healthy_evidence()),
+                ext("beta,gamma", "1.0.0", "2.0.0", 1, 1, healthy_evidence()),
+            ],
+            selection_criteria: "comma-b".to_string(),
+        };
+        let state_b = new(&cohort_b).expect("should succeed");
+        let report_b = run_analysis(&state_b);
+        let plan_b = generate_plan(&state_b, &report_b);
+
+        let shadow_a = plan_a
+            .evidence_artifacts
+            .iter()
+            .find(|artifact| artifact.artifact_id == "plan-shadow")
+            .expect("shadow artifact should exist");
+        let shadow_b = plan_b
+            .evidence_artifacts
+            .iter()
+            .find(|artifact| artifact.artifact_id == "plan-shadow")
+            .expect("shadow artifact should exist");
+
+        assert_ne!(shadow_a.digest, shadow_b.digest);
+        assert_ne!(shadow_a.detail, shadow_b.detail);
+        assert_eq!(
+            shadow_a.detail,
+            "shadow phase extensions=[\"alpha,beta\",\"gamma\"]"
+        );
+        assert_eq!(
+            shadow_b.detail,
+            "shadow phase extensions=[\"alpha\",\"beta,gamma\"]"
+        );
+    }
+
     // ── Execution ───────────────────────────────────────────────────────
 
     #[test]
@@ -2257,7 +2319,10 @@ mod tests {
     #[test]
     fn test_verification_passes_for_good_cohort() {
         let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
-        let report = state.verification_report.as_ref().expect("should have report");
+        let report = state
+            .verification_report
+            .as_ref()
+            .expect("should have report");
         assert!(report.meets_threshold);
         assert!((report.pass_rate - 1.0).abs() < f64::EPSILON);
     }
@@ -2303,7 +2368,10 @@ mod tests {
         let mut state = new(&cohort).expect("should succeed");
         state = advance(state).expect("should succeed");
         state = advance(state).expect("should succeed");
-        let report = state.compatibility_report.as_ref().expect("should have report");
+        let report = state
+            .compatibility_report
+            .as_ref()
+            .expect("should have report");
         assert!(report.degraded_mode.is_some());
         assert_eq!(
             report.findings["degraded_case"].compatibility_band,
@@ -2314,7 +2382,10 @@ mod tests {
     #[test]
     fn test_verification_report_has_per_extension() {
         let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
-        let report = state.verification_report.as_ref().expect("should have report");
+        let report = state
+            .verification_report
+            .as_ref()
+            .expect("should have report");
         assert_eq!(report.per_extension_results.len(), 2);
     }
 
@@ -2323,7 +2394,10 @@ mod tests {
     #[test]
     fn test_receipt_issued() {
         let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
-        let receipt = state.migration_receipt.as_ref().expect("should have receipt");
+        let receipt = state
+            .migration_receipt
+            .as_ref()
+            .expect("should have receipt");
         assert!(!receipt.pre_migration_hash.is_empty());
         assert!(!receipt.post_migration_hash.is_empty());
         assert!(!receipt.plan_fingerprint.is_empty());
@@ -2332,7 +2406,10 @@ mod tests {
     #[test]
     fn test_receipt_signed() {
         let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
-        let receipt = state.migration_receipt.as_ref().expect("should have receipt");
+        let receipt = state
+            .migration_receipt
+            .as_ref()
+            .expect("should have receipt");
         assert!(!receipt.signature.is_empty());
         assert_eq!(receipt.signature.len(), 64);
         assert!(verify_receipt_signature(receipt));
@@ -2341,14 +2418,21 @@ mod tests {
     #[test]
     fn test_receipt_has_verification_summary() {
         let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
-        let receipt = state.migration_receipt.as_ref().expect("should have receipt");
+        let receipt = state
+            .migration_receipt
+            .as_ref()
+            .expect("should have receipt");
         assert!(!receipt.verification_summary.is_empty());
     }
 
     #[test]
     fn test_receipt_signature_detects_tampering() {
         let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
-        let mut receipt = state.migration_receipt.as_ref().expect("should have receipt").clone();
+        let mut receipt = state
+            .migration_receipt
+            .as_ref()
+            .expect("should have receipt")
+            .clone();
         assert!(verify_receipt_signature(&receipt));
         receipt.verification_summary.push_str(" tampered");
         assert!(!verify_receipt_signature(&receipt));
@@ -2541,7 +2625,8 @@ mod tests {
     fn test_pipeline_state_serde_roundtrip() {
         let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
         let json = serde_json::to_string(&state).expect("serialize should succeed");
-        let parsed: PipelineState = serde_json::from_str(&json).expect("deserialize should succeed");
+        let parsed: PipelineState =
+            serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(state.current_stage, parsed.current_stage);
         assert_eq!(state.cohort_id, parsed.cohort_id);
         assert_eq!(state.idempotency_key, parsed.idempotency_key);
@@ -2551,25 +2636,34 @@ mod tests {
     fn test_cohort_definition_serde_roundtrip() {
         let cohort = sample_cohort();
         let json = serde_json::to_string(&cohort).expect("serialize should succeed");
-        let parsed: CohortDefinition = serde_json::from_str(&json).expect("deserialize should succeed");
+        let parsed: CohortDefinition =
+            serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(cohort, parsed);
     }
 
     #[test]
     fn test_migration_receipt_serde_roundtrip() {
         let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
-        let receipt = state.migration_receipt.as_ref().expect("should have receipt");
+        let receipt = state
+            .migration_receipt
+            .as_ref()
+            .expect("should have receipt");
         let json = serde_json::to_string(receipt).expect("serialize should succeed");
-        let parsed: MigrationReceipt = serde_json::from_str(&json).expect("deserialize should succeed");
+        let parsed: MigrationReceipt =
+            serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(receipt, &parsed);
     }
 
     #[test]
     fn test_verification_report_serde_roundtrip() {
         let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
-        let report = state.verification_report.as_ref().expect("should have report");
+        let report = state
+            .verification_report
+            .as_ref()
+            .expect("should have report");
         let json = serde_json::to_string(report).expect("serialize should succeed");
-        let parsed: VerificationReport = serde_json::from_str(&json).expect("deserialize should succeed");
+        let parsed: VerificationReport =
+            serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(report.pass_rate, parsed.pass_rate);
         assert_eq!(report.per_extension_results, parsed.per_extension_results);
         assert_eq!(report.meets_threshold, parsed.meets_threshold);

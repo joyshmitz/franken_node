@@ -271,6 +271,11 @@ pub fn validate_manifest(manifest: &CapsuleManifest) -> Result<(), CapsuleError>
             "expected_output_hash must be a 64-character hex sha256 digest".into(),
         ));
     }
+    if manifest.created_at.is_empty() {
+        return Err(CapsuleError::ManifestIncomplete(
+            "created_at is empty".into(),
+        ));
+    }
     if manifest.creator_identity.is_empty() {
         return Err(CapsuleError::ManifestIncomplete(
             "creator_identity is empty".into(),
@@ -486,6 +491,18 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_manifest_empty_created_at() {
+        let mut capsule = build_reference_capsule();
+        capsule.manifest.created_at = String::new();
+        match validate_manifest(&capsule.manifest) {
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("created_at"));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_verify_signature_pass() {
         let capsule = build_reference_capsule();
         assert!(verify_signature(&capsule).is_ok());
@@ -537,6 +554,19 @@ mod tests {
             Err(CapsuleError::ManifestIncomplete(msg)) => {
                 assert!(msg.contains("expected_output_hash"));
                 assert!(msg.contains("sha256"));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_replay_rejects_empty_created_at() {
+        let mut capsule = build_reference_capsule();
+        capsule.manifest.created_at = String::new();
+        sign_capsule(&mut capsule);
+        match replay(&capsule, "v1") {
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("created_at"));
             }
             other => panic!("expected ManifestIncomplete, got {other:?}"),
         }

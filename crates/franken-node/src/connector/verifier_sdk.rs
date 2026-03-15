@@ -754,25 +754,40 @@ pub fn verify_verification_result_signature(
 /// Compute the binding hash for a claim and its evidence items.
 /// INV-VER-EVIDENCE-BOUND: result is bound to evidence.
 fn compute_binding_hash(claim: &Claim, evidence: &[Evidence]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(b"connector_verifier_sdk_binding_v1:");
-    // Length-prefixed encoding prevents delimiter-collision ambiguity.
-    for field in [claim.claim_id.as_str(), claim.assertion.as_str()] {
-        hasher.update((field.len() as u64).to_le_bytes());
-        hasher.update(field.as_bytes());
+    let mut payload = Vec::new();
+    payload.extend_from_slice(b"connector_verifier_sdk_binding_v2:");
+    // Bind the full claim/evidence surface so a signed verification result
+    // cannot be replayed onto a materially different claim.
+    for field in [
+        claim.claim_id.as_str(),
+        claim.claim_type.as_str(),
+        claim.subject.as_str(),
+        claim.assertion.as_str(),
+        claim.timestamp.as_str(),
+    ] {
+        append_length_prefixed(&mut payload, field);
     }
-    hasher.update((evidence.len() as u64).to_le_bytes());
+    payload.extend_from_slice(&(claim.evidence_refs.len() as u64).to_le_bytes());
+    for evidence_ref in &claim.evidence_refs {
+        append_length_prefixed(&mut payload, evidence_ref);
+    }
+    payload.extend_from_slice(&(evidence.len() as u64).to_le_bytes());
     for ev in evidence {
-        hasher.update((ev.evidence_id.len() as u64).to_le_bytes());
-        hasher.update(ev.evidence_id.as_bytes());
-        hasher.update((ev.artifacts.len() as u64).to_le_bytes());
+        for field in [
+            ev.evidence_id.as_str(),
+            ev.claim_ref.as_str(),
+            ev.verification_procedure.as_str(),
+        ] {
+            append_length_prefixed(&mut payload, field);
+        }
+        payload.extend_from_slice(&(ev.artifacts.len() as u64).to_le_bytes());
         for (k, v) in &ev.artifacts {
-            hasher.update((k.len() as u64).to_le_bytes());
-            hasher.update(k.as_bytes());
-            hasher.update((v.len() as u64).to_le_bytes());
-            hasher.update(v.as_bytes());
+            append_length_prefixed(&mut payload, k);
+            append_length_prefixed(&mut payload, v);
         }
     }
+    let mut hasher = Sha256::new();
+    hasher.update(&payload);
     hex::encode(hasher.finalize())
 }
 
@@ -1523,6 +1538,37 @@ mod tests {
         assert_eq!(r1.artifact_binding_hash, r2.artifact_binding_hash);
         assert_eq!(r1.verifier_signature, r2.verifier_signature);
         assert_eq!(r1.checked_assertions.len(), r2.checked_assertions.len());
+    }
+
+    #[test]
+    fn test_verify_claim_binding_hash_changes_with_subject() {
+        let claim = generate_reference_claim();
+        let mut other_claim = claim.clone();
+        other_claim.subject = "plan-ref-002".to_string();
+        let evidence = generate_reference_evidence();
+        let signer = test_verifier_signer("v1", 1);
+
+        let r1 = verify_claim(&claim, &evidence, &signer).unwrap();
+        let r2 = verify_claim(&other_claim, &evidence, &signer).unwrap();
+
+        assert_ne!(r1.artifact_binding_hash, r2.artifact_binding_hash);
+        assert_ne!(r1.verifier_signature, r2.verifier_signature);
+    }
+
+    #[test]
+    fn test_verify_claim_binding_hash_changes_with_verification_procedure() {
+        let claim = generate_reference_claim();
+        let evidence = generate_reference_evidence();
+        let mut other_evidence = evidence.clone();
+        other_evidence[0].verification_procedure =
+            "Recompute hash against a different validation recipe".to_string();
+        let signer = test_verifier_signer("v1", 1);
+
+        let r1 = verify_claim(&claim, &evidence, &signer).unwrap();
+        let r2 = verify_claim(&claim, &other_evidence, &signer).unwrap();
+
+        assert_ne!(r1.artifact_binding_hash, r2.artifact_binding_hash);
+        assert_ne!(r1.verifier_signature, r2.verifier_signature);
     }
 
     // ── verify_migration_artifact ──────────────────────────────────
