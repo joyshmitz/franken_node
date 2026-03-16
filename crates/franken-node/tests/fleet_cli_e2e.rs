@@ -10,19 +10,17 @@ fn repo_root() -> PathBuf {
 }
 
 fn resolve_binary_path() -> PathBuf {
-    if let Some(exe) = std::env::var_os("CARGO_BIN_EXE_frankenengine-node")
-        .or_else(|| std::env::var_os("CARGO_BIN_EXE_franken-node"))
-    {
+    if let Some(exe) = std::env::var_os("CARGO_BIN_EXE_franken-node") {
         return PathBuf::from(exe);
     }
-    repo_root().join("target/debug/frankenengine-node")
+    repo_root().join("target/debug/franken-node")
 }
 
 fn run_cli(args: &[&str]) -> Output {
     let binary_path = resolve_binary_path();
     assert!(
         binary_path.is_file(),
-        "frankenengine-node binary not found at {}",
+        "franken-node binary not found at {}",
         binary_path.display()
     );
     Command::new(&binary_path)

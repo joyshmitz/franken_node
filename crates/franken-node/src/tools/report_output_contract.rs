@@ -253,10 +253,21 @@ impl ReportOutputContract {
             }
         }
 
-        let hash_input = serde_json::json!({"total": self.bundles.len(), "by_type": &by_type, "version": &self.contract_version}).to_string();
-        let content_hash = hex::encode(Sha256::digest(
-            [b"report_output_hash_v1:" as &[u8], hash_input.as_bytes()].concat(),
-        ));
+        let content_hash = {
+            let mut hasher = Sha256::new();
+            hasher.update(b"report_output_catalog_hash_v1:");
+            hasher.update((self.contract_version.len() as u64).to_le_bytes());
+            hasher.update(self.contract_version.as_bytes());
+            hasher.update((self.bundles.len() as u64).to_le_bytes());
+            hasher.update((complete as u64).to_le_bytes());
+            hasher.update((by_type.len() as u64).to_le_bytes());
+            for (type_name, count) in &by_type {
+                hasher.update((type_name.len() as u64).to_le_bytes());
+                hasher.update(type_name.as_bytes());
+                hasher.update((*count as u64).to_le_bytes());
+            }
+            hex::encode(hasher.finalize())
+        };
 
         self.log(
             event_codes::ROC_CATALOG_GENERATED,
@@ -464,5 +475,43 @@ mod tests {
         let mut e = ReportOutputContract::default();
         e.create_bundle(complete_bundle("b-1"), &trace()).unwrap();
         assert!(!e.bundles().get("b-1").unwrap().created_at.is_empty());
+    }
+
+    // === bd-3by7l: catalog hash coverage regressions ===
+
+    #[test]
+    fn catalog_hash_changes_with_complete_bundles() {
+        // Same total bundles and same type distribution but different
+        // completeness counts must produce different catalog hashes.
+        let mut e1 = ReportOutputContract::default();
+        let mut e2 = ReportOutputContract::default();
+        // e1: one complete bundle
+        e1.create_bundle(complete_bundle("b-1"), &trace()).unwrap();
+        // e2: one incomplete bundle (same type, same total count)
+        e2.create_bundle(partial_bundle("b-1"), &trace()).unwrap();
+        let c1 = e1.generate_catalog(&trace());
+        let c2 = e2.generate_catalog(&trace());
+        assert_ne!(
+            c1.content_hash, c2.content_hash,
+            "Different complete_bundles count must produce different catalog hash"
+        );
+    }
+
+    #[test]
+    fn catalog_hash_changes_with_type_distribution() {
+        // Same total count but different type distributions
+        // must produce different catalog hashes.
+        let mut e1 = ReportOutputContract::default();
+        let mut e2 = ReportOutputContract::default();
+        e1.create_bundle(complete_bundle("b-1"), &trace()).unwrap();
+        let mut sec_bundle = complete_bundle("b-1");
+        sec_bundle.report_type = ReportType::SecurityAssessment;
+        e2.create_bundle(sec_bundle, &trace()).unwrap();
+        let c1 = e1.generate_catalog(&trace());
+        let c2 = e2.generate_catalog(&trace());
+        assert_ne!(
+            c1.content_hash, c2.content_hash,
+            "Different type distribution must change catalog hash"
+        );
     }
 }

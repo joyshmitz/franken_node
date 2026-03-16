@@ -423,19 +423,13 @@ impl RedTeamEvaluations {
             }
         }
 
-        let hash_input = serde_json::json!({
-            "total_engagements": self.engagements.len(),
-            "total_findings": total_findings,
-            "schema_version": &self.schema_version,
-        })
-        .to_string();
-        let content_hash = hex::encode(Sha256::digest(
-            [
-                b"redteam_evaluations_hash_v1:" as &[u8],
-                hash_input.as_bytes(),
-            ]
-            .concat(),
-        ));
+        let content_hash = compute_catalog_content_hash(
+            self.engagements.len(),
+            total_findings,
+            &self.schema_version,
+            &by_type,
+            &by_severity,
+        );
 
         self.log(
             event_codes::RTE_CATALOG_GENERATED,
@@ -486,6 +480,30 @@ impl RedTeamEvaluations {
             MAX_AUDIT_LOG_ENTRIES,
         );
     }
+}
+
+fn compute_catalog_content_hash(
+    total_engagements: usize,
+    total_findings: usize,
+    schema_version: &str,
+    by_type: &BTreeMap<String, usize>,
+    by_severity: &BTreeMap<String, usize>,
+) -> String {
+    let hash_input = serde_json::json!({
+        "total_engagements": total_engagements,
+        "total_findings": total_findings,
+        "by_type": by_type,
+        "by_severity": by_severity,
+        "schema_version": schema_version,
+    })
+    .to_string();
+    hex::encode(Sha256::digest(
+        [
+            b"redteam_evaluations_hash_v1:" as &[u8],
+            hash_input.as_bytes(),
+        ]
+        .concat(),
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -733,6 +751,78 @@ mod tests {
     }
 
     #[test]
+    fn catalog_hash_changes_with_type_distribution() {
+        let mut red_team = RedTeamEvaluations::default();
+        let mut penetration = RedTeamEvaluations::default();
+
+        red_team
+            .create_engagement(sample_engagement("eng-1"), &trace())
+            .expect("should succeed");
+
+        let mut penetration_engagement = sample_engagement("eng-1");
+        penetration_engagement.eval_type = EvaluationType::PenetrationTest;
+        penetration
+            .create_engagement(penetration_engagement, &trace())
+            .expect("should succeed");
+
+        let red_team_catalog = red_team.generate_catalog("trace-type-red-team");
+        let penetration_catalog = penetration.generate_catalog("trace-type-pentest");
+
+        assert_ne!(red_team_catalog.by_type, penetration_catalog.by_type);
+        assert_eq!(
+            red_team_catalog.total_engagements,
+            penetration_catalog.total_engagements
+        );
+        assert_eq!(
+            red_team_catalog.total_findings,
+            penetration_catalog.total_findings
+        );
+        assert_ne!(
+            red_team_catalog.content_hash,
+            penetration_catalog.content_hash
+        );
+    }
+
+    #[test]
+    fn catalog_hash_changes_with_severity_distribution() {
+        let mut critical_engine = RedTeamEvaluations::default();
+        let mut low_engine = RedTeamEvaluations::default();
+
+        critical_engine
+            .create_engagement(sample_engagement("eng-1"), &trace())
+            .expect("should succeed");
+        critical_engine
+            .add_finding(
+                "eng-1",
+                sample_finding("f-1", FindingSeverity::Critical),
+                &trace(),
+            )
+            .expect("should succeed");
+
+        low_engine
+            .create_engagement(sample_engagement("eng-1"), &trace())
+            .expect("should succeed");
+        low_engine
+            .add_finding(
+                "eng-1",
+                sample_finding("f-1", FindingSeverity::Low),
+                &trace(),
+            )
+            .expect("should succeed");
+
+        let critical_catalog = critical_engine.generate_catalog("trace-severity-critical");
+        let low_catalog = low_engine.generate_catalog("trace-severity-low");
+
+        assert_ne!(critical_catalog.by_severity, low_catalog.by_severity);
+        assert_eq!(
+            critical_catalog.total_engagements,
+            low_catalog.total_engagements
+        );
+        assert_eq!(critical_catalog.total_findings, low_catalog.total_findings);
+        assert_ne!(critical_catalog.content_hash, low_catalog.content_hash);
+    }
+
+    #[test]
     fn create_sets_timestamp() {
         let mut engine = RedTeamEvaluations::default();
         engine
@@ -784,8 +874,12 @@ mod tests {
         engine
             .create_engagement(sample_engagement("eng-1"), &trace())
             .expect("should succeed");
-        let jsonl = engine.export_audit_log_jsonl().expect("jsonl export should succeed");
-        let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().expect("should have at least one line")).expect("json parse should succeed");
+        let jsonl = engine
+            .export_audit_log_jsonl()
+            .expect("jsonl export should succeed");
+        let first: serde_json::Value =
+            serde_json::from_str(jsonl.lines().next().expect("should have at least one line"))
+                .expect("json parse should succeed");
         assert!(first["event_code"].is_string());
     }
 }

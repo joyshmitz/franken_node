@@ -44,10 +44,10 @@ run_doctor_report() {
   local fixture_path="$2"
   local output_path="$3"
 
-  if [[ -x "${ROOT_DIR}/target/debug/frankenengine-node" ]]; then
+  if [[ -x "${ROOT_DIR}/target/debug/franken-node" ]]; then
     (
       cd "${ROOT_DIR}" && \
-      "${ROOT_DIR}/target/debug/frankenengine-node" doctor \
+      "${ROOT_DIR}/target/debug/franken-node" doctor \
         --json \
         --trace-id "${trace_id}" \
         --policy-activation-input "${fixture_path}"

@@ -88,32 +88,48 @@ def _checks():
        "generate_report" in src and "ContainmentReport" in src,
        "Aggregated report with flagged categories")
 
-    # 9. Metric versioning
+    # 9. Content-hash coverage
+    if "fn compute_report_content_hash" in src and "fn compute_percentiles" in src:
+        hash_region = src.split("fn compute_report_content_hash", 1)[1].split(
+            "fn compute_percentiles", 1
+        )[0]
+    else:
+        hash_region = ""
+    ok("content_hash_surface",
+       all(token in hash_region for token in [
+           "\"categories\": categories",
+           "\"overall_slo_breach_rate\": overall_slo_breach_rate",
+           "\"flagged_categories\": flagged_categories",
+           "\"metric_version\": metric_version",
+       ]),
+       "Report hash seals categories, breach rate, flagged categories, and metric version")
+
+    # 10. Metric versioning
     ok("metric_versioning",
        "METRIC_VERSION" in src and "crm-v1.0" in src,
        "crm-v1.0")
 
-    # 10. Event codes (12)
+    # 11. Event codes (12)
     found_codes = [c for c in REQUIRED_EVENT_CODES if c in src]
     ok("event_codes",
        len(found_codes) >= 12,
        f"{len(found_codes)}/12 codes")
 
-    # 11. Invariants (6)
+    # 12. Invariants (6)
     found_invs = [i for i in REQUIRED_INVARIANTS if i in src]
     ok("invariants",
        len(found_invs) >= 6,
        f"{len(found_invs)}/6 invariants")
 
-    # 12. Audit log
+    # 13. Audit log
     ok("audit_log",
        "CrmAuditRecord" in src and "export_audit_log_jsonl" in src,
        "JSONL audit export")
 
-    # 13. Spec alignment
+    # 14. Spec alignment
     ok("spec_alignment", os.path.isfile(SPEC), SPEC)
 
-    # 14. Test coverage
+    # 15. Test coverage
     test_count = len(re.findall(r"#\[test\]", src))
     ok("test_coverage",
        test_count >= 24,

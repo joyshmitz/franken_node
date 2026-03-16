@@ -350,16 +350,13 @@ impl VerifierBenchmarkReleases {
                 .or_default();
             *entry = entry.saturating_add(r.download_count);
         }
-        let content_hash = {
-            let mut h = Sha256::new();
-            h.update(b"verifier_benchmark_hash_v1:");
-            h.update((total as u64).to_le_bytes());
-            h.update((published as u64).to_le_bytes());
-            h.update(total_dl.to_le_bytes());
-            h.update((self.schema_version.len() as u64).to_le_bytes());
-            h.update(self.schema_version.as_bytes());
-            hex::encode(h.finalize())
-        };
+        let content_hash = compute_metrics_content_hash(
+            total,
+            published,
+            total_dl,
+            &by_type,
+            &self.schema_version,
+        );
 
         self.log(
             event_codes::VBR_METRICS_COMPUTED,
@@ -425,6 +422,28 @@ impl VerifierBenchmarkReleases {
             MAX_AUDIT_LOG_ENTRIES,
         );
     }
+}
+
+fn compute_metrics_content_hash(
+    total_releases: usize,
+    published_releases: usize,
+    total_downloads: u64,
+    downloads_by_type: &BTreeMap<String, u64>,
+    schema_version: &str,
+) -> String {
+    let mut h = Sha256::new();
+    h.update(b"verifier_benchmark_hash_v2:");
+    h.update((total_releases as u64).to_le_bytes());
+    h.update((published_releases as u64).to_le_bytes());
+    h.update(total_downloads.to_le_bytes());
+    for (release_type, downloads) in downloads_by_type {
+        h.update((release_type.len() as u64).to_le_bytes());
+        h.update(release_type.as_bytes());
+        h.update(downloads.to_le_bytes());
+    }
+    h.update((schema_version.len() as u64).to_le_bytes());
+    h.update(schema_version.as_bytes());
+    hex::encode(h.finalize())
 }
 
 #[cfg(test)]
@@ -580,6 +599,57 @@ mod tests {
         assert_eq!(
             e1.generate_metrics(&trace()).content_hash,
             e2.generate_metrics(&trace()).content_hash
+        );
+    }
+
+    #[test]
+    fn metrics_hash_changes_when_download_distribution_changes() {
+        let mut e1 = VerifierBenchmarkReleases::default();
+        let mut e2 = VerifierBenchmarkReleases::default();
+        e1.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace())
+            .unwrap();
+        e1.create_release(sample_release("r2", ReleaseType::BenchmarkSuite), &trace())
+            .unwrap();
+        e2.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace())
+            .unwrap();
+        e2.create_release(sample_release("r2", ReleaseType::BenchmarkSuite), &trace())
+            .unwrap();
+
+        e1.record_download("r1", "test", &trace()).unwrap();
+        e1.record_download("r2", "test", &trace()).unwrap();
+
+        e2.record_download("r1", "test", &trace()).unwrap();
+        e2.record_download("r1", "test", &trace()).unwrap();
+
+        let m1 = e1.generate_metrics(&trace());
+        let m2 = e2.generate_metrics(&trace());
+
+        assert_eq!(m1.total_downloads, m2.total_downloads);
+        assert_ne!(m1.downloads_by_type, m2.downloads_by_type);
+        assert_ne!(m1.content_hash, m2.content_hash);
+    }
+
+    #[test]
+    fn metrics_hash_matches_reported_surface() {
+        let mut e = VerifierBenchmarkReleases::default();
+        e.create_release(sample_release("r1", ReleaseType::VerifierTool), &trace())
+            .unwrap();
+        e.create_release(sample_release("r2", ReleaseType::BenchmarkSuite), &trace())
+            .unwrap();
+        e.record_download("r1", "test", &trace()).unwrap();
+        e.record_download("r2", "test", &trace()).unwrap();
+
+        let metrics = e.generate_metrics(&trace());
+
+        assert_eq!(
+            metrics.content_hash,
+            compute_metrics_content_hash(
+                metrics.total_releases,
+                metrics.published_releases,
+                metrics.total_downloads,
+                &metrics.downloads_by_type,
+                &metrics.schema_version,
+            )
         );
     }
 

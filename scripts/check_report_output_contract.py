@@ -37,12 +37,20 @@ def _checks():
     ok("audit_log", "RocAuditRecord" in src and "export_audit_log_jsonl" in src, "JSONL export")
     ok("contract_version", "roc-v1.0" in src, "roc-v1.0")
     ok("spec_alignment", os.path.isfile(SPEC), SPEC)
-    ok("test_coverage", len(re.findall(r"#\[test\]", src)) >= 18, f"{len(re.findall(r'#[test]', src))} tests")
+    ok("test_coverage", len(re.findall(r"#\[test\]", src)) >= 20, f"{len(re.findall(r'#[test]', src))} tests")
+    # 16. Catalog hash covers complete_bundles (bd-3by7l)
+    ok("catalog_hash_covers_complete_bundles",
+       "catalog_hash_changes_with_complete_bundles" in src,
+       "complete_bundles included in content_hash")
+    # 17. Length-prefixed catalog hash (bd-3by7l)
+    ok("catalog_hash_length_prefixed",
+       "to_le_bytes" in src and "report_output_catalog_hash_v1" in src,
+       "Length-prefixed hash inputs with domain separator")
     return r
 
 def self_test():
     r = _checks()
-    assert len(r) >= 14
+    assert len(r) >= 16
     for x in r:
         assert "check" in x and "passed" in x
     print(f"self_test: {len(r)} checks OK", file=sys.stderr)

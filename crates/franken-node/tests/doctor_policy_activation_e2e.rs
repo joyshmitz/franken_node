@@ -17,9 +17,7 @@ fn fixture_path(name: &str) -> PathBuf {
 fn run_doctor(policy_input_path: &Path, trace_id: &str) -> Value {
     let repo = repo_root();
 
-    let output = if let Some(exe) = std::env::var_os("CARGO_BIN_EXE_frankenengine-node")
-        .or_else(|| std::env::var_os("CARGO_BIN_EXE_franken-node"))
-    {
+    let output = if let Some(exe) = std::env::var_os("CARGO_BIN_EXE_franken-node") {
         Command::new(exe)
             .current_dir(&repo)
             .args([
@@ -34,8 +32,8 @@ fn run_doctor(policy_input_path: &Path, trace_id: &str) -> Value {
             ])
             .output()
             .expect("failed to run franken-node doctor")
-    } else if repo.join("target/debug/frankenengine-node").is_file() {
-        Command::new(repo.join("target/debug/frankenengine-node"))
+    } else if repo.join("target/debug/franken-node").is_file() {
+        Command::new(repo.join("target/debug/franken-node"))
             .current_dir(&repo)
             .args([
                 "doctor",

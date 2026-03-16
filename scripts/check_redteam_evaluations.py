@@ -37,6 +37,11 @@ def _checks():
         results.append({"check": name, "passed": passed, "detail": detail})
 
     src = _read(IMPL)
+    catalog_hash_region = src
+    if "fn compute_catalog_content_hash" in src and "#[cfg(test)]" in src:
+        catalog_hash_region = src.split("fn compute_catalog_content_hash", 1)[1].split(
+            "#[cfg(test)]", 1
+        )[0]
 
     ok("source_exists", os.path.isfile(IMPL), IMPL)
     ok("module_wiring", "pub mod redteam_evaluations;" in _read(MOD_RS), "tools/mod.rs")
@@ -59,6 +64,16 @@ def _checks():
     ok("confidence_scoring", "confidence_score" in src, "Confidence score 0.0-1.0")
     ok("remediation_tracking", "update_remediation" in src, "Status transitions for findings")
     ok("catalog_generation", "generate_catalog" in src and "EvaluationCatalog" in src, "Catalog with by_type/by_severity")
+    ok(
+        "catalog_hashing",
+        all(token in catalog_hash_region for token in [
+            '"by_type"',
+            '"by_severity"',
+            '"total_engagements"',
+            '"total_findings"',
+        ]),
+        "Catalog hash covers totals plus type/severity distributions",
+    )
 
     found_codes = [c for c in REQUIRED_CODES if c in src]
     ok("event_codes", len(found_codes) >= 12, f"{len(found_codes)}/12")

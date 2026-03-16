@@ -121,8 +121,23 @@ def _checks():
     # 15. Test coverage (count #[test])
     test_count = len(re.findall(r"#\[test\]", src))
     ok("test_coverage",
-       test_count >= 22,
-       f"{test_count} tests (>=22)")
+       test_count >= 25,
+       f"{test_count} tests (>=25)")
+
+    # 16. Catalog hash covers total_records (bd-2poym)
+    ok("catalog_hash_covers_total_records",
+       "total_records" in src and "catalog_hash_changes_with_total_records" in src,
+       "total_records included in content_hash")
+
+    # 17. Catalog hash covers bundles (bd-2poym)
+    ok("catalog_hash_covers_bundles",
+       "catalog_hash_changes_with_bundles" in src,
+       "bundles included in content_hash")
+
+    # 18. Length-prefixed catalog hash (bd-2poym)
+    ok("catalog_hash_length_prefixed",
+       "to_le_bytes" in src and "migration_incident_catalog_hash_v1" in src,
+       "Length-prefixed hash inputs with domain separator")
 
     return results
 
@@ -130,7 +145,7 @@ def _checks():
 def self_test():
     """Smoke-test that all checks produce output."""
     results = _checks()
-    assert len(results) >= 15, f"Expected >=15 checks, got {len(results)}"
+    assert len(results) >= 18, f"Expected >=18 checks, got {len(results)}"
     for r in results:
         assert "check" in r and "passed" in r
     print(f"self_test: {len(results)} checks OK", file=sys.stderr)

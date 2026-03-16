@@ -35,6 +35,7 @@ class TestIndividualChecks:
 
     def test_source_exists(self, results): assert results["source_exists"]["passed"]
     def test_module_wiring(self, results): assert results["module_wiring"]["passed"]
+    def test_content_hash_surface(self, results): assert results["content_hash_surface"]["passed"]
 
 
 class TestOverall:

@@ -344,19 +344,13 @@ impl ContainmentRevocationMetrics {
             0.0
         };
 
-        let hash_input = serde_json::json!({
-            "total_events": total,
-            "categories": categories.len(),
-            "metric_version": &self.metric_version,
-        })
-        .to_string();
-        let content_hash = hex::encode(Sha256::digest(
-            [
-                b"containment_revocation_hash_v1:" as &[u8],
-                hash_input.as_bytes(),
-            ]
-            .concat(),
-        ));
+        let content_hash = compute_report_content_hash(
+            total,
+            &categories,
+            breach_rate,
+            &flagged,
+            &self.metric_version,
+        );
 
         self.log(
             event_codes::CRM_REPORT_GENERATED,
@@ -414,6 +408,30 @@ impl ContainmentRevocationMetrics {
             MAX_AUDIT_LOG_ENTRIES,
         );
     }
+}
+
+fn compute_report_content_hash(
+    total_events: usize,
+    categories: &[CategoryMetrics],
+    overall_slo_breach_rate: f64,
+    flagged_categories: &[EventCategory],
+    metric_version: &str,
+) -> String {
+    let hash_input = serde_json::json!({
+        "total_events": total_events,
+        "categories": categories,
+        "overall_slo_breach_rate": overall_slo_breach_rate,
+        "flagged_categories": flagged_categories,
+        "metric_version": metric_version,
+    })
+    .to_string();
+    hex::encode(Sha256::digest(
+        [
+            b"containment_revocation_hash_v1:" as &[u8],
+            hash_input.as_bytes(),
+        ]
+        .concat(),
+    ))
 }
 
 fn compute_percentiles(sorted: &[f64]) -> Percentiles {
@@ -623,6 +641,124 @@ mod tests {
         let r1 = e1.generate_report("det");
         let r2 = e2.generate_report("det");
         assert_eq!(r1.content_hash, r2.content_hash);
+    }
+
+    #[test]
+    fn report_hash_changes_when_category_details_change_with_same_totals() {
+        let mut base = ContainmentRevocationMetrics::default();
+        let mut changed = ContainmentRevocationMetrics::default();
+
+        let base_a = sample_event("base-a", EventCategory::Revocation);
+        let base_b = sample_event("base-b", EventCategory::Revocation);
+        base.record_event(base_a, &trace()).unwrap();
+        base.record_event(base_b.clone(), &trace()).unwrap();
+
+        let mut changed_b = base_b;
+        changed_b.initiation_to_convergence_ms = 750.0;
+        changed
+            .record_event(
+                sample_event("changed-a", EventCategory::Revocation),
+                &trace(),
+            )
+            .unwrap();
+        changed.record_event(changed_b, &trace()).unwrap();
+
+        let base_report = base.generate_report("hash-category-base");
+        let changed_report = changed.generate_report("hash-category-changed");
+
+        assert_eq!(base_report.total_events, changed_report.total_events);
+        assert_eq!(
+            base_report.categories.len(),
+            changed_report.categories.len()
+        );
+        assert_eq!(
+            base_report.flagged_categories,
+            changed_report.flagged_categories
+        );
+        assert_eq!(
+            base_report.overall_slo_breach_rate,
+            changed_report.overall_slo_breach_rate
+        );
+        assert_ne!(base_report.categories, changed_report.categories);
+        assert_ne!(base_report.content_hash, changed_report.content_hash);
+    }
+
+    #[test]
+    fn report_hash_changes_when_flagged_categories_change_with_same_totals() {
+        let mut clean = ContainmentRevocationMetrics::default();
+        let mut flagged = ContainmentRevocationMetrics::default();
+
+        clean
+            .record_event(sample_event("clean-r", EventCategory::Revocation), &trace())
+            .unwrap();
+        clean
+            .record_event(sample_event("clean-q", EventCategory::Quarantine), &trace())
+            .unwrap();
+
+        flagged
+            .record_event(
+                sample_event("flagged-r", EventCategory::Revocation),
+                &trace(),
+            )
+            .unwrap();
+        let mut slo_breach = sample_event("flagged-q", EventCategory::Quarantine);
+        slo_breach.initiation_to_convergence_ms = 2500.0;
+        flagged.record_event(slo_breach, &trace()).unwrap();
+
+        let clean_report = clean.generate_report("hash-flagged-clean");
+        let flagged_report = flagged.generate_report("hash-flagged-flagged");
+
+        assert_eq!(clean_report.total_events, flagged_report.total_events);
+        assert_eq!(
+            clean_report.categories.len(),
+            flagged_report.categories.len()
+        );
+        assert_ne!(
+            clean_report.flagged_categories,
+            flagged_report.flagged_categories
+        );
+        assert_ne!(clean_report.content_hash, flagged_report.content_hash);
+    }
+
+    #[test]
+    fn report_hash_changes_when_breach_rate_changes_with_same_flagged_categories() {
+        let mut partial = ContainmentRevocationMetrics::default();
+        let mut full = ContainmentRevocationMetrics::default();
+
+        let mut partial_breach = sample_event("partial-breach", EventCategory::Revocation);
+        partial_breach.initiation_to_convergence_ms = 6000.0;
+        partial.record_event(partial_breach, &trace()).unwrap();
+        partial
+            .record_event(
+                sample_event("partial-ok", EventCategory::Revocation),
+                &trace(),
+            )
+            .unwrap();
+
+        let mut full_a = sample_event("full-a", EventCategory::Revocation);
+        full_a.initiation_to_convergence_ms = 6000.0;
+        let mut full_b = sample_event("full-b", EventCategory::Revocation);
+        full_b.initiation_to_convergence_ms = 7000.0;
+        full.record_event(full_a, &trace()).unwrap();
+        full.record_event(full_b, &trace()).unwrap();
+
+        let partial_report = partial.generate_report("hash-breach-partial");
+        let full_report = full.generate_report("hash-breach-full");
+
+        assert_eq!(partial_report.total_events, full_report.total_events);
+        assert_eq!(
+            partial_report.categories.len(),
+            full_report.categories.len()
+        );
+        assert_eq!(
+            partial_report.flagged_categories,
+            full_report.flagged_categories
+        );
+        assert_ne!(
+            partial_report.overall_slo_breach_rate,
+            full_report.overall_slo_breach_rate
+        );
+        assert_ne!(partial_report.content_hash, full_report.content_hash);
     }
 
     // === Audit log ===

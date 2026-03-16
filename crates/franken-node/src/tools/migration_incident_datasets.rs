@@ -389,19 +389,30 @@ impl ReproducibleDatasets {
             total_records = total_records.saturating_add(ds.record_count);
         }
 
-        let hash_input = serde_json::json!({
-            "datasets": self.datasets.len(),
-            "by_type": &by_type,
-            "schema_version": &self.config.schema_version,
-        })
-        .to_string();
-        let content_hash = hex::encode(Sha256::digest(
-            [
-                b"migration_incident_hash_v1:" as &[u8],
-                hash_input.as_bytes(),
-            ]
-            .concat(),
-        ));
+        let content_hash = {
+            let mut hasher = Sha256::new();
+            hasher.update(b"migration_incident_catalog_hash_v1:");
+            hasher.update((self.config.schema_version.len() as u64).to_le_bytes());
+            hasher.update(self.config.schema_version.as_bytes());
+            hasher.update((self.datasets.len() as u64).to_le_bytes());
+            hasher.update((total_records as u64).to_le_bytes());
+            hasher.update((by_type.len() as u64).to_le_bytes());
+            for (type_name, count) in &by_type {
+                hasher.update((type_name.len() as u64).to_le_bytes());
+                hasher.update(type_name.as_bytes());
+                hasher.update((*count as u64).to_le_bytes());
+            }
+            hasher.update((self.bundles.len() as u64).to_le_bytes());
+            for bundle in &self.bundles {
+                hasher.update((bundle.bundle_id.len() as u64).to_le_bytes());
+                hasher.update(bundle.bundle_id.as_bytes());
+                hasher.update((bundle.bundle_hash.len() as u64).to_le_bytes());
+                hasher.update(bundle.bundle_hash.as_bytes());
+                hasher.update((bundle.total_records as u64).to_le_bytes());
+                hasher.update((bundle.datasets.len() as u64).to_le_bytes());
+            }
+            hex::encode(hasher.finalize())
+        };
 
         let catalog = DatasetCatalog {
             catalog_id: Uuid::now_v7().to_string(),
@@ -768,5 +779,82 @@ mod tests {
             .publish_bundle(&["ds-1".to_string()], &make_trace())
             .unwrap();
         assert_eq!(engine.bundles().len(), 2);
+    }
+
+    // === bd-2poym: catalog hash coverage regressions ===
+
+    #[test]
+    fn catalog_hash_changes_with_total_records() {
+        // Same number of datasets and same type distribution, but different
+        // record counts must produce different catalog hashes.
+        let mut e1 = ReproducibleDatasets::default();
+        let mut e2 = ReproducibleDatasets::default();
+        e1.register_dataset(
+            sample_entry("ds-1", DatasetType::MigrationScenario, 500),
+            &make_trace(),
+        )
+        .unwrap();
+        e2.register_dataset(
+            sample_entry("ds-1", DatasetType::MigrationScenario, 999),
+            &make_trace(),
+        )
+        .unwrap();
+        let c1 = e1.generate_catalog("t");
+        let c2 = e2.generate_catalog("t");
+        assert_ne!(
+            c1.content_hash, c2.content_hash,
+            "Different total_records must produce different catalog hash"
+        );
+    }
+
+    #[test]
+    fn catalog_hash_changes_with_bundles() {
+        // Two engines with the same datasets but different bundle state
+        // must produce different catalog hashes.
+        let mut e1 = ReproducibleDatasets::default();
+        let mut e2 = ReproducibleDatasets::default();
+        e1.register_dataset(
+            sample_entry("ds-1", DatasetType::MigrationScenario, 500),
+            &make_trace(),
+        )
+        .unwrap();
+        e2.register_dataset(
+            sample_entry("ds-1", DatasetType::MigrationScenario, 500),
+            &make_trace(),
+        )
+        .unwrap();
+        // e2 has a published bundle; e1 does not
+        e2.publish_bundle(&["ds-1".to_string()], &make_trace())
+            .unwrap();
+        let c1 = e1.generate_catalog("t");
+        let c2 = e2.generate_catalog("t");
+        assert_ne!(
+            c1.content_hash, c2.content_hash,
+            "Publishing a bundle must change the catalog hash"
+        );
+    }
+
+    #[test]
+    fn catalog_hash_changes_with_type_distribution() {
+        // Same total dataset count but different type distributions
+        // must produce different catalog hashes.
+        let mut e1 = ReproducibleDatasets::default();
+        let mut e2 = ReproducibleDatasets::default();
+        e1.register_dataset(
+            sample_entry("ds-1", DatasetType::MigrationScenario, 500),
+            &make_trace(),
+        )
+        .unwrap();
+        e2.register_dataset(
+            sample_entry("ds-1", DatasetType::SecurityIncident, 500),
+            &make_trace(),
+        )
+        .unwrap();
+        let c1 = e1.generate_catalog("t");
+        let c2 = e2.generate_catalog("t");
+        assert_ne!(
+            c1.content_hash, c2.content_hash,
+            "Different type distribution must change catalog hash"
+        );
     }
 }

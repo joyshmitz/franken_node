@@ -32,6 +32,7 @@ def _checks():
     ok("quality_gating", "publish_release" in src and "MIN_QUALITY_SCORE" in src, "Quality threshold")
     ok("changelog_support", "update_changelog" in src and "changelog" in src, "Changelog management")
     ok("content_hash", "content_hash" in src and "Sha256" in src, "SHA-256 hashing")
+    ok("metrics_hashing", all(t in src for t in ["compute_metrics_content_hash", "downloads_by_type", "total_downloads"]), "Metrics hash seals downloads_by_type surface")
     ok("event_codes", sum(1 for c in CODES if c in src) >= 12, f"{sum(1 for c in CODES if c in src)}/12")
     ok("invariants", sum(1 for i in INVS if i in src) >= 6, f"{sum(1 for i in INVS if i in src)}/6")
     ok("audit_log", "VbrAuditRecord" in src and "export_audit_log_jsonl" in src, "JSONL export")

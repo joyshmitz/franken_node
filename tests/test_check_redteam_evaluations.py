@@ -48,6 +48,7 @@ class TestIndividualChecks:
     def test_confidence_scoring(self, results): assert results["confidence_scoring"]["passed"]
     def test_remediation_tracking(self, results): assert results["remediation_tracking"]["passed"]
     def test_catalog_generation(self, results): assert results["catalog_generation"]["passed"]
+    def test_catalog_hashing(self, results): assert results["catalog_hashing"]["passed"]
     def test_event_codes(self, results): assert results["event_codes"]["passed"]
     def test_invariants(self, results): assert results["invariants"]["passed"]
     def test_audit_log(self, results): assert results["audit_log"]["passed"]
