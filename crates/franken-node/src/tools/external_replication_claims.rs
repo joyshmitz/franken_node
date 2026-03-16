@@ -338,15 +338,8 @@ impl ExternalReplicationClaims {
             let count = by_cat.entry(c.category.label().to_string()).or_default();
             *count = count.saturating_add(1);
         }
-        let content_hash = {
-            let mut h = Sha256::new();
-            h.update(b"external_replication_hash_v1:");
-            h.update((total as u64).to_le_bytes());
-            h.update((published as u64).to_le_bytes());
-            h.update((self.schema_version.len() as u64).to_le_bytes());
-            h.update(self.schema_version.as_bytes());
-            hex::encode(h.finalize())
-        };
+        let content_hash =
+            compute_catalog_content_hash(total, published, pending, &by_cat, &self.schema_version);
         self.log(
             event_codes::ERC_CATALOG_GENERATED,
             trace_id,
@@ -401,6 +394,28 @@ impl ExternalReplicationClaims {
             MAX_AUDIT_LOG_ENTRIES,
         );
     }
+}
+
+fn compute_catalog_content_hash(
+    total_claims: usize,
+    published_claims: usize,
+    pending_claims: usize,
+    claims_by_category: &BTreeMap<String, usize>,
+    schema_version: &str,
+) -> String {
+    let mut h = Sha256::new();
+    h.update(b"external_replication_hash_v2:");
+    h.update((total_claims as u64).to_le_bytes());
+    h.update((published_claims as u64).to_le_bytes());
+    h.update((pending_claims as u64).to_le_bytes());
+    for (category, count) in claims_by_category {
+        h.update((category.len() as u64).to_le_bytes());
+        h.update(category.as_bytes());
+        h.update((*count as u64).to_le_bytes());
+    }
+    h.update((schema_version.len() as u64).to_le_bytes());
+    h.update(schema_version.as_bytes());
+    hex::encode(h.finalize())
 }
 
 #[cfg(test)]
@@ -590,6 +605,55 @@ mod tests {
         .unwrap();
         let cat = e.generate_catalog(&trace());
         assert_eq!(cat.claims_by_category.len(), 2);
+    }
+
+    #[test]
+    fn catalog_hash_changes_when_category_distribution_changes() {
+        let mut e1 = ExternalReplicationClaims::default();
+        let mut e2 = ExternalReplicationClaims::default();
+        e1.create_claim(
+            sample_claim("c1", ClaimCategory::SecurityGuarantee),
+            &trace(),
+        )
+        .unwrap();
+        e2.create_claim(
+            sample_claim("c1", ClaimCategory::PerformanceBenchmark),
+            &trace(),
+        )
+        .unwrap();
+
+        let c1 = e1.generate_catalog(&trace());
+        let c2 = e2.generate_catalog(&trace());
+
+        assert_ne!(c1.content_hash, c2.content_hash);
+    }
+
+    #[test]
+    fn catalog_hash_matches_reported_surface() {
+        let mut e = ExternalReplicationClaims::default();
+        e.create_claim(
+            sample_claim("c1", ClaimCategory::SecurityGuarantee),
+            &trace(),
+        )
+        .unwrap();
+        e.create_claim(
+            sample_claim("c2", ClaimCategory::PerformanceBenchmark),
+            &trace(),
+        )
+        .unwrap();
+
+        let cat = e.generate_catalog(&trace());
+
+        assert_eq!(
+            cat.content_hash,
+            compute_catalog_content_hash(
+                cat.total_claims,
+                cat.published_claims,
+                cat.pending_claims,
+                &cat.claims_by_category,
+                &cat.schema_version,
+            )
+        );
     }
 
     #[test]

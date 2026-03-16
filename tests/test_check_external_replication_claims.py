@@ -69,6 +69,7 @@ class TestIndividualChecks:
     def test_publication_gating(self, results): assert results["publication_gating"]["passed"]
     def test_evidence_linking(self, results): assert results["evidence_linking"]["passed"]
     def test_content_hash(self, results): assert results["content_hash"]["passed"]
+    def test_catalog_hashing(self, results): assert results["catalog_hashing"]["passed"]
     def test_event_codes(self, results): assert results["event_codes"]["passed"]
     def test_invariants(self, results): assert results["invariants"]["passed"]
     def test_audit_log(self, results): assert results["audit_log"]["passed"]

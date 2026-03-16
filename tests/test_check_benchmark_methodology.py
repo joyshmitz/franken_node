@@ -74,11 +74,20 @@ class TestIndividualChecks:
     def test_content_hashing(self, results):
         assert results["content_hashing"]["passed"]
 
+    def test_publication_hash_surface(self, results):
+        assert results["publication_hash_surface"]["passed"]
+
+    def test_publication_mutation_rehash(self, results):
+        assert results["publication_mutation_rehash"]["passed"]
+
     def test_reproducibility_checklist(self, results):
         assert results["reproducibility_checklist"]["passed"]
 
     def test_catalog_generation(self, results):
         assert results["catalog_generation"]["passed"]
+
+    def test_catalog_hash_surface(self, results):
+        assert results["catalog_hash_surface"]["passed"]
 
     def test_search_by_topic(self, results):
         assert results["search_by_topic"]["passed"]

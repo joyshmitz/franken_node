@@ -59,10 +59,32 @@ def _checks():
         ok(f"struct_{st}", f"struct {st}" in src, st)
 
     ok("content_hashing", "content_hash" in src and "Sha256" in src, "SHA-256 integrity")
+    ok(
+        "publication_hash_surface",
+        all(token in src for token in [
+            '"authors"',
+            '"citations"',
+            '"reproducibility_checklist"',
+            '"status"',
+            '"created_at"',
+            '"updated_at"',
+        ]),
+        "Publication hash covers mutable publication fields",
+    )
+    ok(
+        "publication_mutation_rehash",
+        len(re.findall(r"content_hash\s*=\s*compute_publication_hash\((?:&)?pub_entry\)", src)) >= 3,
+        "Create/status/citation paths reseal Publication.content_hash",
+    )
     ok("reproducibility_checklist", "ChecklistItem" in src and "reproducibility_checklist" in src,
        "Checklist with verified flag")
     ok("catalog_generation", "generate_catalog" in src and "PublicationCatalog" in src,
        "Catalog with by_topic/by_status")
+    ok(
+        "catalog_hash_surface",
+        all(token in src for token in ['"by_topic"', '"by_status"', "compute_catalog_hash"]),
+        "Catalog hash covers by_topic and by_status",
+    )
     ok("search_by_topic", "search_by_topic" in src, "Topic-based search")
 
     found_codes = [c for c in REQUIRED_CODES if c in src]

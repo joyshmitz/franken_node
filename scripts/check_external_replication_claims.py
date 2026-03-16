@@ -32,6 +32,7 @@ def _checks():
     ok("publication_gating", "can_publish" in src and "publish_claim" in src, "Threshold-gated publication")
     ok("evidence_linking", "link_evidence" in src and "evidence_refs" in src, "Evidence chain")
     ok("content_hash", "content_hash" in src and "Sha256" in src, "SHA-256 hashing")
+    ok("catalog_hashing", all(token in src for token in ["compute_catalog_content_hash", "pending_claims", "claims_by_category"]), "Catalog hash seals pending/category surface")
     ok("event_codes", sum(1 for c in CODES if c in src) >= 12, f"{sum(1 for c in CODES if c in src)}/12")
     ok("invariants", sum(1 for i in INVS if i in src) >= 6, f"{sum(1 for i in INVS if i in src)}/6")
     ok("audit_log", "ErcAuditRecord" in src and "export_audit_log_jsonl" in src, "JSONL export")

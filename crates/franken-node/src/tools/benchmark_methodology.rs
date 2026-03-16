@@ -70,6 +70,46 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     }
 }
 
+fn compute_publication_hash(pub_entry: &Publication) -> String {
+    let hash_input = serde_json::json!({
+        "pub_id": &pub_entry.pub_id,
+        "title": &pub_entry.title,
+        "topic": pub_entry.topic.label(),
+        "authors": &pub_entry.authors,
+        "status": pub_entry.status.label(),
+        "sections": &pub_entry.sections,
+        "citations": &pub_entry.citations,
+        "reproducibility_checklist": &pub_entry.reproducibility_checklist,
+        "pub_version": &pub_entry.pub_version,
+        "created_at": &pub_entry.created_at,
+        "updated_at": &pub_entry.updated_at,
+    })
+    .to_string();
+    let mut hasher = Sha256::new();
+    hasher.update(b"benchmark_methodology_hash_v1:");
+    hasher.update(hash_input.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+fn compute_catalog_hash(
+    total_publications: usize,
+    by_topic: &BTreeMap<String, usize>,
+    by_status: &BTreeMap<String, usize>,
+    pub_version: &str,
+) -> String {
+    let hash_input = serde_json::json!({
+        "total": total_publications,
+        "by_topic": by_topic,
+        "by_status": by_status,
+        "pub_version": pub_version,
+    })
+    .to_string();
+    let mut hasher = Sha256::new();
+    hasher.update(b"benchmark_methodology_hash_v1:");
+    hasher.update(hash_input.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
 // ---------------------------------------------------------------------------
 // Publication status
 // ---------------------------------------------------------------------------
@@ -284,24 +324,11 @@ impl BenchmarkMethodology {
             }),
         );
 
-        // Compute content hash
-        let hash_input = serde_json::json!({
-            "title": &pub_entry.title,
-            "topic": pub_entry.topic.label(),
-            "sections": &pub_entry.sections,
-        })
-        .to_string();
-        pub_entry.content_hash = hex::encode(Sha256::digest(
-            [
-                b"benchmark_methodology_hash_v1:" as &[u8],
-                hash_input.as_bytes(),
-            ]
-            .concat(),
-        ));
         pub_entry.pub_version = self.pub_version.clone();
         pub_entry.status = PubStatus::Draft;
         pub_entry.created_at = Utc::now().to_rfc3339();
         pub_entry.updated_at = pub_entry.created_at.clone();
+        pub_entry.content_hash = compute_publication_hash(&pub_entry);
 
         let pub_id = pub_entry.pub_id.clone();
 
@@ -377,6 +404,7 @@ impl BenchmarkMethodology {
             .ok_or_else(|| format!("Publication {pub_id} not found"))?;
         pub_entry.status = new_status;
         pub_entry.updated_at = Utc::now().to_rfc3339();
+        pub_entry.content_hash = compute_publication_hash(pub_entry);
 
         self.log(
             event_codes::BMP_STATUS_CHANGED,
@@ -416,6 +444,8 @@ impl BenchmarkMethodology {
             .get_mut(pub_id)
             .ok_or_else(|| format!("Publication {pub_id} not found"))?;
         push_bounded(&mut pub_entry.citations, citation, MAX_CITATIONS);
+        pub_entry.updated_at = Utc::now().to_rfc3339();
+        pub_entry.content_hash = compute_publication_hash(pub_entry);
         Ok(())
     }
 
@@ -436,19 +466,12 @@ impl BenchmarkMethodology {
             *status_count = status_count.saturating_add(1);
         }
 
-        let hash_input = serde_json::json!({
-            "total": self.publications.len(),
-            "by_topic": &by_topic,
-            "pub_version": &self.pub_version,
-        })
-        .to_string();
-        let content_hash = hex::encode(Sha256::digest(
-            [
-                b"benchmark_methodology_hash_v1:" as &[u8],
-                hash_input.as_bytes(),
-            ]
-            .concat(),
-        ));
+        let content_hash = compute_catalog_hash(
+            self.publications.len(),
+            &by_topic,
+            &by_status,
+            &self.pub_version,
+        );
 
         self.log(
             event_codes::BMP_CATALOG_GENERATED,
@@ -592,6 +615,51 @@ mod tests {
     }
 
     #[test]
+    fn publication_hash_covers_authors() {
+        let mut p1 = sample_pub("pub-1", MethodologyTopic::BenchmarkDesign);
+        p1.pub_version = PUB_VERSION.to_string();
+        p1.created_at = "2026-01-01T00:00:00Z".to_string();
+        p1.updated_at = p1.created_at.clone();
+
+        let mut p2 = p1.clone();
+        p2.authors.push("Author B".to_string());
+
+        assert_ne!(compute_publication_hash(&p1), compute_publication_hash(&p2));
+    }
+
+    #[test]
+    fn publication_hash_covers_citations() {
+        let mut p1 = sample_pub("pub-1", MethodologyTopic::BenchmarkDesign);
+        p1.pub_version = PUB_VERSION.to_string();
+        p1.created_at = "2026-01-01T00:00:00Z".to_string();
+        p1.updated_at = p1.created_at.clone();
+
+        let mut p2 = p1.clone();
+        p2.citations.push(Citation {
+            cite_id: "cite-1".to_string(),
+            title: "Test Paper".to_string(),
+            authors: vec!["Author B".to_string()],
+            year: 2025,
+            url: Some("https://example.com".to_string()),
+        });
+
+        assert_ne!(compute_publication_hash(&p1), compute_publication_hash(&p2));
+    }
+
+    #[test]
+    fn publication_hash_covers_reproducibility_checklist() {
+        let mut p1 = sample_pub("pub-1", MethodologyTopic::BenchmarkDesign);
+        p1.pub_version = PUB_VERSION.to_string();
+        p1.created_at = "2026-01-01T00:00:00Z".to_string();
+        p1.updated_at = p1.created_at.clone();
+
+        let mut p2 = p1.clone();
+        p2.reproducibility_checklist[0].verified = false;
+
+        assert_ne!(compute_publication_hash(&p1), compute_publication_hash(&p2));
+    }
+
+    #[test]
     fn create_sets_version() {
         let mut engine = BenchmarkMethodology::default();
         let p = sample_pub("pub-1", MethodologyTopic::BenchmarkDesign);
@@ -694,6 +762,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn transition_status_refreshes_content_hash() {
+        let mut engine = BenchmarkMethodology::default();
+        engine
+            .create_publication(
+                sample_pub("pub-1", MethodologyTopic::BenchmarkDesign),
+                &trace(),
+            )
+            .unwrap();
+        let before = engine
+            .publications()
+            .get("pub-1")
+            .unwrap()
+            .content_hash
+            .clone();
+
+        engine
+            .transition_status("pub-1", PubStatus::Review, &trace())
+            .unwrap();
+
+        let stored = engine.publications().get("pub-1").unwrap();
+        assert_eq!(stored.status, PubStatus::Review);
+        assert_ne!(before, stored.content_hash);
+    }
+
     // === Citations ===
 
     #[test]
@@ -717,6 +810,41 @@ mod tests {
             engine.publications().get("pub-1").unwrap().citations.len(),
             1
         );
+    }
+
+    #[test]
+    fn add_citation_refreshes_content_hash() {
+        let mut engine = BenchmarkMethodology::default();
+        engine
+            .create_publication(
+                sample_pub("pub-1", MethodologyTopic::BenchmarkDesign),
+                &trace(),
+            )
+            .unwrap();
+        let before = engine
+            .publications()
+            .get("pub-1")
+            .unwrap()
+            .content_hash
+            .clone();
+
+        engine
+            .add_citation(
+                "pub-1",
+                Citation {
+                    cite_id: "cite-1".to_string(),
+                    title: "Test Paper".to_string(),
+                    authors: vec!["Author B".to_string()],
+                    year: 2025,
+                    url: Some("https://example.com".to_string()),
+                },
+                &trace(),
+            )
+            .unwrap();
+
+        let stored = engine.publications().get("pub-1").unwrap();
+        assert_eq!(stored.citations.len(), 1);
+        assert_ne!(before, stored.content_hash);
     }
 
     // === Catalog ===
@@ -809,6 +937,23 @@ mod tests {
             .unwrap();
         let catalog = engine.generate_catalog(&trace());
         assert!(catalog.by_status.contains_key("draft"));
+    }
+
+    #[test]
+    fn catalog_hash_covers_by_status() {
+        let mut by_topic = BTreeMap::new();
+        by_topic.insert("benchmark_design".to_string(), 1usize);
+
+        let mut draft_status = BTreeMap::new();
+        draft_status.insert("draft".to_string(), 1usize);
+
+        let mut review_status = BTreeMap::new();
+        review_status.insert("review".to_string(), 1usize);
+
+        let draft_hash = compute_catalog_hash(1, &by_topic, &draft_status, PUB_VERSION);
+        let review_hash = compute_catalog_hash(1, &by_topic, &review_status, PUB_VERSION);
+
+        assert_ne!(draft_hash, review_hash);
     }
 
     // === Audit log ===
