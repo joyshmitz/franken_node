@@ -398,19 +398,26 @@ impl PerformanceHardeningMetrics {
             0.0
         };
 
-        let hash_input = serde_json::json!({
-            "total_metrics": self.metrics.len(),
-            "categories": categories.len(),
-            "metric_version": &self.metric_version,
-        })
-        .to_string();
-        let content_hash = hex::encode(Sha256::digest(
-            [
-                b"perf_hardening_metrics_hash_v1:" as &[u8],
-                hash_input.as_bytes(),
-            ]
-            .concat(),
-        ));
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"perf_hardening_metrics_hash_v1:");
+            h.update((self.metric_version.len() as u64).to_le_bytes());
+            h.update(self.metric_version.as_bytes());
+            h.update((self.metrics.len() as u64).to_le_bytes());
+            h.update((categories.len() as u64).to_le_bytes());
+            if overall.is_finite() {
+                h.update(overall.to_le_bytes());
+            } else {
+                h.update(f64::NAN.to_le_bytes());
+            }
+            h.update((flagged.len() as u64).to_le_bytes());
+            for cat in &flagged {
+                let label = cat.label();
+                h.update((label.len() as u64).to_le_bytes());
+                h.update(label.as_bytes());
+            }
+            hex::encode(h.finalize())
+        };
 
         self.log(
             event_codes::PHM_REPORT_GENERATED,
@@ -719,5 +726,29 @@ mod tests {
         let mut m = sample_metric("m1", OperationCategory::Startup);
         m.warm_start_ms = 0.0;
         assert!((m.cold_start_ratio() - 0.0).abs() < f64::EPSILON);
+    }
+
+    // === bd-3epue: report hash coverage regression ===
+
+    #[test]
+    fn report_hash_changes_with_different_overhead() {
+        // Same metric count/category count but different overhead ratio
+        // must produce different content hashes.
+        let mut e1 = PerformanceHardeningMetrics::default();
+        let mut e2 = PerformanceHardeningMetrics::default();
+        let m1 = sample_metric("m1", OperationCategory::Startup);
+        let mut m2 = sample_metric("m1", OperationCategory::Startup);
+        // Make hardened much worse to change overhead ratio
+        m2.hardened.p50_ms = 500.0;
+        m2.hardened.p95_ms = 1000.0;
+        m2.hardened.p99_ms = 2000.0;
+        e1.submit_metric(m1, &trace()).unwrap();
+        e2.submit_metric(m2, &trace()).unwrap();
+        let r1 = e1.generate_report(&trace());
+        let r2 = e2.generate_report(&trace());
+        assert_ne!(
+            r1.content_hash, r2.content_hash,
+            "Different overhead ratios must produce different report hash"
+        );
     }
 }

@@ -618,31 +618,52 @@ impl TransportFaultGate {
         let passed_tests = results.iter().filter(|r| r.outcome.is_acceptable()).count();
         let failed_tests = total_tests - passed_tests;
 
-        // Content hash of all results for reproducibility.
-        let results_json =
-            serde_json::to_string(&results).unwrap_or_else(|e| format!("__serde_err:{e}"));
-        let content_hash = format!(
-            "{:x}",
-            Sha256::digest(
-                [
-                    b"transport_fault_gate_hash_v1:" as &[u8],
-                    results_json.as_bytes()
-                ]
-                .concat()
-            )
-        );
+        // Content hash covering all verdict fields for reproducibility.
+        let protocols_tested: Vec<String> =
+            protocols.iter().map(|p| p.name().to_string()).collect();
+        let fault_modes_tested: Vec<String> = fault_modes.iter().map(|m| m.to_string()).collect();
+        let passed = failed_tests == 0;
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"transport_fault_gate_hash_v1:");
+            h.update((SCHEMA_VERSION.len() as u64).to_le_bytes());
+            h.update(SCHEMA_VERSION.as_bytes());
+            h.update(&[u8::from(passed)]);
+            h.update((total_tests as u64).to_le_bytes());
+            h.update((passed_tests as u64).to_le_bytes());
+            h.update((failed_tests as u64).to_le_bytes());
+            let results_json =
+                serde_json::to_string(&results).unwrap_or_else(|e| format!("__serde_err:{e}"));
+            h.update((results_json.len() as u64).to_le_bytes());
+            h.update(results_json.as_bytes());
+            h.update((protocols_tested.len() as u64).to_le_bytes());
+            for p in &protocols_tested {
+                h.update((p.len() as u64).to_le_bytes());
+                h.update(p.as_bytes());
+            }
+            h.update((fault_modes_tested.len() as u64).to_le_bytes());
+            for m in &fault_modes_tested {
+                h.update((m.len() as u64).to_le_bytes());
+                h.update(m.as_bytes());
+            }
+            h.update((seeds.len() as u64).to_le_bytes());
+            for &s in &seeds {
+                h.update(s.to_le_bytes());
+            }
+            format!("{:x}", h.finalize())
+        };
 
         let verdict = GateVerdict {
             schema_version: SCHEMA_VERSION.to_string(),
             bead_id: BEAD_ID.to_string(),
             section: SECTION.to_string(),
-            passed: failed_tests == 0,
+            passed,
             total_tests,
             passed_tests,
             failed_tests,
             results,
-            protocols_tested: protocols.iter().map(|p| p.name().to_string()).collect(),
-            fault_modes_tested: fault_modes.iter().map(|m| m.to_string()).collect(),
+            protocols_tested,
+            fault_modes_tested,
             seeds_used: seeds.clone(),
             content_hash,
         };
@@ -1124,7 +1145,8 @@ mod tests {
         let mut gate = TransportFaultGate::with_config(config).expect("should succeed");
         let verdict = gate.run_full_gate().expect("should succeed");
         let json = serde_json::to_string(&verdict).expect("serialize should succeed");
-        let parsed: serde_json::Value = serde_json::from_str(&json).expect("deserialize should succeed");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(parsed["schema_version"], "tfg-v1.0");
         assert_eq!(parsed["bead_id"], "bd-3u6o");
         assert_eq!(parsed["section"], "10.15");

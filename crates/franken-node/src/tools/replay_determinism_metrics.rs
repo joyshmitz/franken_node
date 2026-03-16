@@ -436,20 +436,29 @@ impl ReplayDeterminismMetrics {
             }),
         );
 
-        let hash_input = serde_json::json!({
-            "total_comparisons": total,
-            "matches": matches,
-            "completeness_pct": completeness_pct,
-            "metric_version": &self.config.metric_version,
-        })
-        .to_string();
-        let content_hash = hex::encode(Sha256::digest(
-            [
-                b"replay_determinism_hash_v1:" as &[u8],
-                hash_input.as_bytes(),
-            ]
-            .concat(),
-        ));
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"replay_determinism_hash_v1:");
+            h.update((self.config.metric_version.len() as u64).to_le_bytes());
+            h.update(self.config.metric_version.as_bytes());
+            h.update((total as u64).to_le_bytes());
+            h.update((matches as u64).to_le_bytes());
+            h.update((divergences as u64).to_le_bytes());
+            if determinism_rate.is_finite() {
+                h.update(determinism_rate.to_le_bytes());
+            } else {
+                h.update(f64::NAN.to_le_bytes());
+            }
+            if completeness_pct.is_finite() {
+                h.update(completeness_pct.to_le_bytes());
+            } else {
+                h.update(f64::NAN.to_le_bytes());
+            }
+            let verdict_label = format!("{gate_verdict:?}");
+            h.update((verdict_label.len() as u64).to_le_bytes());
+            h.update(verdict_label.as_bytes());
+            hex::encode(h.finalize())
+        };
 
         self.log(
             event_codes::RDM_REPORT_GENERATED,

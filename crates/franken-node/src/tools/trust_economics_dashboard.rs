@@ -451,15 +451,37 @@ impl TrustEconomicsDashboard {
             1.0
         };
 
-        let hash_input = serde_json::json!({
-            "amplification": amplification,
-            "pricing": pricing,
-            "loss": loss_summary,
-        })
-        .to_string();
-        let content_hash = hex::encode(Sha256::digest(
-            [b"trust_economics_hash_v1:" as &[u8], hash_input.as_bytes()].concat(),
-        ));
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"trust_economics_hash_v1:");
+            h.update((self.config.model_version.len() as u64).to_le_bytes());
+            h.update(self.config.model_version.as_bytes());
+            h.update((amplification.len() as u64).to_le_bytes());
+            for a in &amplification {
+                if a.franken_vs_node_factor.is_finite() {
+                    h.update(a.franken_vs_node_factor.to_le_bytes());
+                } else {
+                    h.update(f64::NAN.to_le_bytes());
+                }
+            }
+            if overall_amp.is_finite() {
+                h.update(overall_amp.to_le_bytes());
+            } else {
+                h.update(f64::NAN.to_le_bytes());
+            }
+            h.update((loss_summary.len() as u64).to_le_bytes());
+            for (category, loss) in &loss_summary {
+                h.update((category.len() as u64).to_le_bytes());
+                h.update(category.as_bytes());
+                if loss.is_finite() {
+                    h.update(loss.to_le_bytes());
+                } else {
+                    h.update(f64::NAN.to_le_bytes());
+                }
+            }
+            h.update((recommendations.len() as u64).to_le_bytes());
+            hex::encode(h.finalize())
+        };
 
         let report = TrustEconomicsReport {
             report_id: Uuid::now_v7().to_string(),

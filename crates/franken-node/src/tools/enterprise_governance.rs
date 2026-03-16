@@ -433,19 +433,24 @@ impl EnterpriseGovernance {
             }),
         );
 
-        let hash_input = serde_json::json!({
-            "total_rules": self.rules.len(),
-            "total_assessments": self.assessments.len(),
-            "schema_version": &self.schema_version,
-        })
-        .to_string();
-        let content_hash = hex::encode(Sha256::digest(
-            [
-                b"enterprise_governance_hash_v1:" as &[u8],
-                hash_input.as_bytes(),
-            ]
-            .concat(),
-        ));
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"enterprise_governance_hash_v1:");
+            h.update((self.schema_version.len() as u64).to_le_bytes());
+            h.update(self.schema_version.as_bytes());
+            h.update((self.rules.len() as u64).to_le_bytes());
+            h.update((self.assessments.len() as u64).to_le_bytes());
+            h.update((categories.len() as u64).to_le_bytes());
+            let gate_label = format!("{gate_action:?}");
+            h.update((gate_label.len() as u64).to_le_bytes());
+            h.update(gate_label.as_bytes());
+            h.update((blocked_rules.len() as u64).to_le_bytes());
+            for rule_id in &blocked_rules {
+                h.update((rule_id.len() as u64).to_le_bytes());
+                h.update(rule_id.as_bytes());
+            }
+            hex::encode(h.finalize())
+        };
 
         self.log(
             event_codes::EGI_REPORT_GENERATED,

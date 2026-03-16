@@ -252,7 +252,11 @@ impl ChallengeAuditEntry {
         hasher.update(self.to_state.label().as_bytes());
         hasher.update((self.event_code.len() as u64).to_le_bytes());
         hasher.update(self.event_code.as_bytes());
+        hasher.update((self.actor_id.len() as u64).to_le_bytes());
+        hasher.update(self.actor_id.as_bytes());
         hasher.update(self.timestamp_ms.to_le_bytes());
+        hasher.update((self.detail.len() as u64).to_le_bytes());
+        hasher.update(self.detail.as_bytes());
         hasher.update((self.prev_hash.len() as u64).to_le_bytes());
         hasher.update(self.prev_hash.as_bytes());
         format!("{:x}", hasher.finalize())

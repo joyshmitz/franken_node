@@ -381,17 +381,33 @@ impl MigrationSpeedFailureMetrics {
             serde_json::json!({"exceeds": exceeds}),
         );
 
-        let hash_input = serde_json::json!({
-            "total": total, "success": success, "failure": failure, "version": &self.metric_version,
-        })
-        .to_string();
-        let content_hash = hex::encode(Sha256::digest(
-            [
-                b"migration_speed_metrics_hash_v1:" as &[u8],
-                hash_input.as_bytes(),
-            ]
-            .concat(),
-        ));
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"migration_speed_metrics_hash_v1:");
+            h.update((self.metric_version.len() as u64).to_le_bytes());
+            h.update(self.metric_version.as_bytes());
+            h.update((total as u64).to_le_bytes());
+            h.update((success as u64).to_le_bytes());
+            h.update((failure as u64).to_le_bytes());
+            if failure_rate.is_finite() {
+                h.update(failure_rate.to_le_bytes());
+            } else {
+                h.update(f64::NAN.to_le_bytes());
+            }
+            if avg_total.is_finite() {
+                h.update(avg_total.to_le_bytes());
+            } else {
+                h.update(f64::NAN.to_le_bytes());
+            }
+            h.update(&[u8::from(exceeds)]);
+            h.update((flagged_phases.len() as u64).to_le_bytes());
+            for phase in &flagged_phases {
+                let label = phase.label();
+                h.update((label.len() as u64).to_le_bytes());
+                h.update(label.as_bytes());
+            }
+            hex::encode(h.finalize())
+        };
 
         self.log(
             event_codes::MSF_REPORT_GENERATED,

@@ -356,9 +356,49 @@ impl SafeExtensionOnboarding {
             h.update(SCHEMA_VERSION.as_bytes());
             h.update((total_sessions as u64).to_le_bytes());
             h.update((completed as u64).to_le_bytes());
-            h.update(mean_ttfe.to_le_bytes());
-            h.update(overall_friction.to_le_bytes());
+            if completion_rate.is_finite() {
+                h.update(completion_rate.to_le_bytes());
+            } else {
+                h.update(f64::NAN.to_le_bytes());
+            }
+            if mean_ttfe.is_finite() {
+                h.update(mean_ttfe.to_le_bytes());
+            } else {
+                h.update(f64::NAN.to_le_bytes());
+            }
+            h.update(&[u8::from(meets_ttfe)]);
+            if overall_auto.is_finite() {
+                h.update(overall_auto.to_le_bytes());
+            } else {
+                h.update(f64::NAN.to_le_bytes());
+            }
+            if overall_friction.is_finite() {
+                h.update(overall_friction.to_le_bytes());
+            } else {
+                h.update(f64::NAN.to_le_bytes());
+            }
+            h.update((phase_stats.len() as u64).to_le_bytes());
+            for ps in &phase_stats {
+                let label = ps.phase.label();
+                h.update((label.len() as u64).to_le_bytes());
+                h.update(label.as_bytes());
+                h.update((ps.total_sessions as u64).to_le_bytes());
+                if ps.automation_rate.is_finite() {
+                    h.update(ps.automation_rate.to_le_bytes());
+                } else {
+                    h.update(f64::NAN.to_le_bytes());
+                }
+                if ps.friction_score.is_finite() {
+                    h.update(ps.friction_score.to_le_bytes());
+                } else {
+                    h.update(f64::NAN.to_le_bytes());
+                }
+            }
             h.update((bottleneck_phases.len() as u64).to_le_bytes());
+            for bp in &bottleneck_phases {
+                h.update((bp.len() as u64).to_le_bytes());
+                h.update(bp.as_bytes());
+            }
             format!("{:x}", h.finalize())
         };
 
@@ -645,5 +685,28 @@ mod tests {
         let r = e.generate_report();
         assert!(!r.phase_stats.is_empty());
         assert_eq!(r.phase_stats[0].phase, OnboardingPhase::Install);
+    }
+
+    // === bd-12ej7: report hash coverage regression ===
+
+    #[test]
+    fn report_hash_changes_with_different_automation_rate() {
+        // Same session count and phases but different automation rates
+        // must produce different content hashes.
+        let mut e1 = SafeExtensionOnboarding::new();
+        let mut e2 = SafeExtensionOnboarding::new();
+        // e1: automated step
+        e1.record_step(sample_step("s1", "sess1", OnboardingPhase::Install));
+        // e2: manual step
+        let mut step = sample_step("s1", "sess1", OnboardingPhase::Install);
+        step.automated = false;
+        step.manual_interventions = 5;
+        e2.record_step(step);
+        let r1 = e1.generate_report();
+        let r2 = e2.generate_report();
+        assert_ne!(
+            r1.content_hash, r2.content_hash,
+            "Different automation rates must produce different report hash"
+        );
     }
 }

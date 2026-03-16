@@ -336,11 +336,27 @@ impl MigrationValidationCohorts {
         let content_hash = {
             let mut h = Sha256::new();
             h.update(b"migration_validation_hash_v1:");
-            h.update((total_cohorts as u64).to_le_bytes());
-            h.update((total_runs as u64).to_le_bytes());
-            h.update(determinism_rate.to_le_bytes());
             h.update((self.schema_version.len() as u64).to_le_bytes());
             h.update(self.schema_version.as_bytes());
+            h.update((total_cohorts as u64).to_le_bytes());
+            h.update((total_runs as u64).to_le_bytes());
+            if determinism_rate.is_finite() {
+                h.update(determinism_rate.to_le_bytes());
+            } else {
+                h.update(f64::NAN.to_le_bytes());
+            }
+            h.update(&[u8::from(meets)]);
+            h.update((flagged.len() as u64).to_le_bytes());
+            for cid in &flagged {
+                h.update((cid.len() as u64).to_le_bytes());
+                h.update(cid.as_bytes());
+            }
+            h.update((coverage.len() as u64).to_le_bytes());
+            for (cat, count) in &coverage {
+                h.update((cat.len() as u64).to_le_bytes());
+                h.update(cat.as_bytes());
+                h.update((*count as u64).to_le_bytes());
+            }
             hex::encode(h.finalize())
         };
 
@@ -624,5 +640,25 @@ mod tests {
     fn complete_run_missing_fails() {
         let mut e = MigrationValidationCohorts::default();
         assert!(e.complete_run("missing", "hash", &trace()).is_err());
+    }
+
+    // === bd-2ccjl: report hash coverage regression ===
+
+    #[test]
+    fn report_hash_changes_with_category_distribution() {
+        // Same cohort count but different category distributions
+        // must produce different content hashes.
+        let mut e1 = MigrationValidationCohorts::default();
+        let mut e2 = MigrationValidationCohorts::default();
+        e1.create_cohort(sample_cohort("c1", CohortCategory::NodeMinimal), &trace())
+            .unwrap();
+        e2.create_cohort(sample_cohort("c1", CohortCategory::BunComplex), &trace())
+            .unwrap();
+        let r1 = e1.generate_report(&trace());
+        let r2 = e2.generate_report(&trace());
+        assert_ne!(
+            r1.content_hash, r2.content_hash,
+            "Different category distribution must produce different report hash"
+        );
     }
 }

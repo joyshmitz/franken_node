@@ -292,14 +292,26 @@ impl AdversarialResilienceMetrics {
         } else {
             0.0
         };
-        let hash_input = serde_json::json!({"total": self.metrics.len(), "campaigns": campaigns.len(), "version": &self.metric_version}).to_string();
-        let content_hash = hex::encode(Sha256::digest(
-            [
-                b"adversarial_resilience_hash_v1:" as &[u8],
-                hash_input.as_bytes(),
-            ]
-            .concat(),
-        ));
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"adversarial_resilience_hash_v1:");
+            h.update((self.metric_version.len() as u64).to_le_bytes());
+            h.update(self.metric_version.as_bytes());
+            h.update((self.metrics.len() as u64).to_le_bytes());
+            h.update((campaigns.len() as u64).to_le_bytes());
+            if overall.is_finite() {
+                h.update(overall.to_le_bytes());
+            } else {
+                h.update(f64::NAN.to_le_bytes());
+            }
+            h.update((flagged.len() as u64).to_le_bytes());
+            for ct in &flagged {
+                let label = ct.label();
+                h.update((label.len() as u64).to_le_bytes());
+                h.update(label.as_bytes());
+            }
+            hex::encode(h.finalize())
+        };
 
         self.log(
             event_codes::ARM_REPORT_GENERATED,

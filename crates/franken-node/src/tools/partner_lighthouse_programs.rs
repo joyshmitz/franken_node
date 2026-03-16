@@ -356,11 +356,17 @@ impl PartnerLighthousePrograms {
         let content_hash = {
             let mut h = Sha256::new();
             h.update(b"partner_lighthouse_hash_v1:");
+            h.update((self.schema_version.len() as u64).to_le_bytes());
+            h.update(self.schema_version.as_bytes());
             h.update((total_p as u64).to_le_bytes());
             h.update((total_d as u64).to_le_bytes());
             h.update((total_o as u64).to_le_bytes());
-            h.update((self.schema_version.len() as u64).to_le_bytes());
-            h.update(self.schema_version.as_bytes());
+            h.update((by_tier.len() as u64).to_le_bytes());
+            for (tier_name, count) in &by_tier {
+                h.update((tier_name.len() as u64).to_le_bytes());
+                h.update(tier_name.as_bytes());
+                h.update((*count as u64).to_le_bytes());
+            }
             hex::encode(h.finalize())
         };
 
@@ -703,5 +709,26 @@ mod tests {
         let mut e = PartnerLighthousePrograms::default();
         e.enroll_partner(sample_partner("p1"), &trace()).unwrap();
         assert!(!e.partners()["p1"].enrolled_at.is_empty());
+    }
+
+    // === bd-3sfrf: funnel hash coverage regression ===
+
+    #[test]
+    fn funnel_hash_changes_with_tier_distribution() {
+        // Same total partners but different tier distributions
+        // must produce different content hashes.
+        let mut e1 = PartnerLighthousePrograms::default();
+        let mut e2 = PartnerLighthousePrograms::default();
+        e1.enroll_partner(sample_partner("p1"), &trace()).unwrap();
+        let mut p2 = sample_partner("p1");
+        p2.tier = PartnerTier::Strategic;
+        e2.enroll_partner(p2, &trace()).unwrap();
+        let f1 = e1.generate_funnel(&trace());
+        let f2 = e2.generate_funnel(&trace());
+        assert_eq!(f1.total_partners, f2.total_partners);
+        assert_ne!(
+            f1.content_hash, f2.content_hash,
+            "Different tier distributions must produce different funnel hash"
+        );
     }
 }

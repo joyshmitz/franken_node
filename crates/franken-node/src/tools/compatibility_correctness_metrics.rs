@@ -427,19 +427,29 @@ impl CompatibilityCorrectnessMetrics {
             0.0
         };
 
-        let hash_input = serde_json::json!({
-            "total_metrics": self.metrics.len(),
-            "segments": segments.len(),
-            "metric_version": &self.config.metric_version,
-        })
-        .to_string();
-        let content_hash = hex::encode(Sha256::digest(
-            [
-                b"compat_correctness_hash_v1:" as &[u8],
-                hash_input.as_bytes(),
-            ]
-            .concat(),
-        ));
+        let content_hash = {
+            let mut h = Sha256::new();
+            h.update(b"compat_correctness_hash_v1:");
+            h.update((self.config.metric_version.len() as u64).to_le_bytes());
+            h.update(self.config.metric_version.as_bytes());
+            h.update((self.metrics.len() as u64).to_le_bytes());
+            h.update((segments.len() as u64).to_le_bytes());
+            if overall.is_finite() {
+                h.update(overall.to_le_bytes());
+            } else {
+                h.update(f64::NAN.to_le_bytes());
+            }
+            h.update((flagged.len() as u64).to_le_bytes());
+            for seg in &flagged {
+                let af = seg.api_family.label();
+                let rb = seg.risk_band.label();
+                h.update((af.len() as u64).to_le_bytes());
+                h.update(af.as_bytes());
+                h.update((rb.len() as u64).to_le_bytes());
+                h.update(rb.as_bytes());
+            }
+            hex::encode(h.finalize())
+        };
 
         self.log(
             event_codes::CCM_REPORT_GENERATED,
@@ -770,5 +780,31 @@ mod tests {
     fn default_config_version() {
         let config = CcmConfig::default();
         assert_eq!(config.metric_version, METRIC_VERSION);
+    }
+
+    // === bd-2h7q2: report hash coverage regression ===
+
+    #[test]
+    fn report_hash_changes_with_different_correctness() {
+        // Same metric count/segment count but different correctness ratios
+        // must produce different content hashes.
+        let mut e1 = CompatibilityCorrectnessMetrics::default();
+        let mut e2 = CompatibilityCorrectnessMetrics::default();
+        e1.submit_metric(
+            sample_metric("m1", ApiFamily::Core, RiskBand::High, 1000, 999),
+            &trace(),
+        )
+        .unwrap();
+        e2.submit_metric(
+            sample_metric("m1", ApiFamily::Core, RiskBand::High, 1000, 100),
+            &trace(),
+        )
+        .unwrap();
+        let r1 = e1.generate_report(&trace());
+        let r2 = e2.generate_report(&trace());
+        assert_ne!(
+            r1.content_hash, r2.content_hash,
+            "Different overall_correctness must produce different report hash"
+        );
     }
 }
