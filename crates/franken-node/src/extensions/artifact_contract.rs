@@ -377,23 +377,22 @@ fn verify_contract_signature(contract: &CapabilityContract) -> bool {
 
 /// Compute the expected signature for a capability contract.
 pub fn compute_contract_signature(contract: &CapabilityContract) -> String {
-    let cap_ids: Vec<&str> = contract
-        .capabilities
-        .iter()
-        .map(|c| c.capability_id.as_str())
-        .collect();
-    let joined_caps = cap_ids.join(",");
     let signer = &contract.signer_id;
-    // Use length-prefixed encoding to prevent delimiter-collision ambiguity.
+    // Length-prefix each field individually to prevent delimiter collisions.
     let mut buf = Vec::new();
     for field in [
         contract.contract_id.as_str(),
         contract.extension_id.as_str(),
-        joined_caps.as_str(),
         signer.as_str(),
     ] {
         buf.extend_from_slice(&(field.len() as u64).to_le_bytes());
         buf.extend_from_slice(field.as_bytes());
+    }
+    // Length-prefix each capability individually (not comma-joined).
+    buf.extend_from_slice(&(contract.capabilities.len() as u64).to_le_bytes());
+    for cap in &contract.capabilities {
+        buf.extend_from_slice(&(cap.capability_id.len() as u64).to_le_bytes());
+        buf.extend_from_slice(cap.capability_id.as_bytes());
     }
     buf.extend_from_slice(&contract.issued_epoch_ms.to_le_bytes());
     digest_bytes(&buf)

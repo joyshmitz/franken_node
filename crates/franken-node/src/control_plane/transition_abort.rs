@@ -197,18 +197,16 @@ impl ForceTransitionPolicy {
         use sha2::Digest;
         let mut hasher = sha2::Sha256::new();
         sha2::Digest::update(&mut hasher, b"transition_abort_policy_v1:");
-        let joined = self
-            .skippable_participants
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(",");
-        // Length-prefixed encoding prevents delimiter-collision ambiguity.
-        for field in [
-            joined.as_str(),
-            self.operator_id.as_str(),
-            self.audit_reason.as_str(),
-        ] {
+        // Length-prefix each participant individually to prevent delimiter collisions.
+        sha2::Digest::update(
+            &mut hasher,
+            (self.skippable_participants.len() as u64).to_le_bytes(),
+        );
+        for participant in &self.skippable_participants {
+            sha2::Digest::update(&mut hasher, (participant.len() as u64).to_le_bytes());
+            sha2::Digest::update(&mut hasher, participant.as_bytes());
+        }
+        for field in [self.operator_id.as_str(), self.audit_reason.as_str()] {
             sha2::Digest::update(&mut hasher, (field.len() as u64).to_le_bytes());
             sha2::Digest::update(&mut hasher, field.as_bytes());
         }
@@ -695,7 +693,9 @@ mod tests {
         let mgr = TransitionAbortManager::new();
         let known = participants_3();
         let policy = ForceTransitionPolicy::new(BTreeSet::new(), 0, "", "reason");
-        let err = mgr.validate_force_policy(&policy, &known).expect_err("should fail");
+        let err = mgr
+            .validate_force_policy(&policy, &known)
+            .expect_err("should fail");
         assert_eq!(err.code(), error_codes::ERR_FORCE_NO_OPERATOR);
     }
 
@@ -704,7 +704,9 @@ mod tests {
         let mgr = TransitionAbortManager::new();
         let known = participants_3();
         let policy = ForceTransitionPolicy::new(BTreeSet::new(), 0, "admin", "");
-        let err = mgr.validate_force_policy(&policy, &known).expect_err("should fail");
+        let err = mgr
+            .validate_force_policy(&policy, &known)
+            .expect_err("should fail");
         assert_eq!(err.code(), error_codes::ERR_FORCE_NO_REASON);
     }
 
@@ -716,7 +718,9 @@ mod tests {
         skip.insert("svc-a".to_string());
         skip.insert("svc-b".to_string());
         let policy = ForceTransitionPolicy::new(skip, 1, "admin", "reason");
-        let err = mgr.validate_force_policy(&policy, &known).expect_err("should fail");
+        let err = mgr
+            .validate_force_policy(&policy, &known)
+            .expect_err("should fail");
         assert_eq!(err.code(), error_codes::ERR_FORCE_OVER_LIMIT);
     }
 
@@ -725,7 +729,9 @@ mod tests {
         let mgr = TransitionAbortManager::new();
         let known = participants_3();
         let policy = ForceTransitionPolicy::new(known.clone(), 3, "admin", "reason");
-        let err = mgr.validate_force_policy(&policy, &known).expect_err("should fail");
+        let err = mgr
+            .validate_force_policy(&policy, &known)
+            .expect_err("should fail");
         assert_eq!(err.code(), error_codes::ERR_FORCE_ALL_SKIPPED);
     }
 
@@ -736,7 +742,9 @@ mod tests {
         let mut skip = BTreeSet::new();
         skip.insert("unknown-svc".to_string());
         let policy = ForceTransitionPolicy::new(skip, 1, "admin", "reason");
-        let err = mgr.validate_force_policy(&policy, &known).expect_err("should fail");
+        let err = mgr
+            .validate_force_policy(&policy, &known)
+            .expect_err("should fail");
         assert_eq!(err.code(), error_codes::ERR_FORCE_UNKNOWN_PARTICIPANT);
     }
 
@@ -829,7 +837,8 @@ mod tests {
         let jsonl = mgr.export_audit_log_jsonl();
         assert!(!jsonl.is_empty());
         let parsed: serde_json::Value =
-            serde_json::from_str(jsonl.lines().next().expect("should have line")).expect("deserialize");
+            serde_json::from_str(jsonl.lines().next().expect("should have line"))
+                .expect("deserialize");
         assert_eq!(parsed["event_code"], event_codes::TRANSITION_ABORTED);
         assert_eq!(parsed["schema_version"], SCHEMA_VERSION);
     }

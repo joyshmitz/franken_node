@@ -19,6 +19,7 @@ pub mod device_profile;
 pub mod diagnostic_registry;
 pub mod dpor_schedule_gate;
 pub mod durability;
+pub mod durable_claim_gate;
 pub mod ecosystem_compliance;
 pub mod ecosystem_registry;
 pub mod ecosystem_reputation;

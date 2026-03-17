@@ -390,6 +390,37 @@ impl ScoreboardPipeline {
         Self { config }
     }
 
+    fn validate_contracts(
+        &self,
+        contracts: &[CompiledContract],
+    ) -> Result<(), ScoreboardRejectionReason> {
+        // INV-SCOREBOARD-FRESH-LINKS: reject stale evidence (fail-closed: >= rejects at boundary)
+        for contract in contracts {
+            if self
+                .config
+                .now_epoch_ms
+                .saturating_sub(contract.compiled_at_epoch_ms)
+                >= self.config.max_evidence_age_ms
+            {
+                return Err(ScoreboardRejectionReason::StaleEvidence);
+            }
+        }
+
+        // INV-SCOREBOARD-SIGNED-EVIDENCE: reject tampered signatures.
+        for contract in contracts {
+            let expected_sig = sign_contract(
+                &contract.contract_digest,
+                &contract.signer_id,
+                &self.config.signing_key,
+            );
+            if !crate::security::constant_time::ct_eq(&contract.signature, &expected_sig) {
+                return Err(ScoreboardRejectionReason::SignatureInvalid);
+            }
+        }
+
+        Ok(())
+    }
+
     /// Publish a scoreboard snapshot from a list of compiled contracts.
     ///
     /// Returns `ScoreboardUpdateResult::Published` if all entries pass
@@ -399,34 +430,11 @@ impl ScoreboardPipeline {
         snapshot_id: &str,
         contracts: &[CompiledContract],
     ) -> ScoreboardUpdateResult {
-        // INV-SCOREBOARD-FRESH-LINKS: reject stale evidence (fail-closed: >= rejects at boundary)
-        for contract in contracts {
-            if self
-                .config
-                .now_epoch_ms
-                .saturating_sub(contract.compiled_at_epoch_ms)
-                >= self.config.max_evidence_age_ms
-            {
-                return ScoreboardUpdateResult::Rejected {
-                    reason: ScoreboardRejectionReason::StaleEvidence,
-                    error_code: error_codes::ERR_SCOREBOARD_STALE_EVIDENCE.to_string(),
-                };
-            }
-        }
-
-        // Validate all contract signatures
-        for contract in contracts {
-            let expected_sig = sign_contract(
-                &contract.contract_digest,
-                &contract.signer_id,
-                &self.config.signing_key,
-            );
-            if !crate::security::constant_time::ct_eq(&contract.signature, &expected_sig) {
-                return ScoreboardUpdateResult::Rejected {
-                    reason: ScoreboardRejectionReason::SignatureInvalid,
-                    error_code: error_codes::ERR_SCOREBOARD_SIGNATURE_INVALID.to_string(),
-                };
-            }
+        if let Err(reason) = self.validate_contracts(contracts) {
+            return ScoreboardUpdateResult::Rejected {
+                error_code: reason.code().to_string(),
+                reason,
+            };
         }
 
         // Build entries atomically
@@ -466,16 +474,8 @@ impl ScoreboardPipeline {
         snapshot_id: &str,
         contracts: &[CompiledContract],
     ) -> Option<ScoreboardSnapshot> {
-        // Check freshness first (fail-closed: >= rejects at boundary)
-        for contract in contracts {
-            if self
-                .config
-                .now_epoch_ms
-                .saturating_sub(contract.compiled_at_epoch_ms)
-                >= self.config.max_evidence_age_ms
-            {
-                return None;
-            }
+        if self.validate_contracts(contracts).is_err() {
+            return None;
         }
 
         let mut entries = BTreeMap::new();
@@ -843,6 +843,24 @@ mod tests {
             _ => unreachable!("expected compiled"),
         };
         assert!(sb.build_snapshot("snap-stale", &[contract]).is_none());
+    }
+
+    #[test]
+    fn scoreboard_build_snapshot_returns_none_for_tampered_signature() {
+        let cc = compiler(10_000);
+        let sb = scoreboard(10_000);
+        let claim = make_test_claim("snap-tamper-1", "src-1");
+        let mut contract = match cc.compile(&claim) {
+            CompilationResult::Compiled { contract, .. } => contract,
+            _ => unreachable!("expected compiled"),
+        };
+        let replacement = if contract.signature.starts_with('a') {
+            "b"
+        } else {
+            "a"
+        };
+        contract.signature.replace_range(0..1, replacement);
+        assert!(sb.build_snapshot("snap-tampered", &[contract]).is_none());
     }
 
     #[test]

@@ -52,6 +52,7 @@ pub mod event_codes {
 
 pub mod error_codes {
     pub const ERR_CLMC_EMPTY_CLAIM_TEXT: &str = "ERR_CLMC_EMPTY_CLAIM_TEXT";
+    pub const ERR_CLMC_CLAIM_TEXT_TOO_LONG: &str = "ERR_CLMC_CLAIM_TEXT_TOO_LONG";
     pub const ERR_CLMC_MISSING_SOURCE: &str = "ERR_CLMC_MISSING_SOURCE";
     pub const ERR_CLMC_NO_EVIDENCE_LINKS: &str = "ERR_CLMC_NO_EVIDENCE_LINKS";
     pub const ERR_CLMC_INVALID_EVIDENCE_LINK: &str = "ERR_CLMC_INVALID_EVIDENCE_LINK";
@@ -187,6 +188,11 @@ pub enum ClaimCompilerError {
     EmptyClaimText {
         claim_id: String,
     },
+    ClaimTextTooLong {
+        claim_id: String,
+        max_bytes: usize,
+        actual_bytes: usize,
+    },
     MissingSource {
         claim_id: String,
     },
@@ -219,6 +225,7 @@ impl ClaimCompilerError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::EmptyClaimText { .. } => error_codes::ERR_CLMC_EMPTY_CLAIM_TEXT,
+            Self::ClaimTextTooLong { .. } => error_codes::ERR_CLMC_CLAIM_TEXT_TOO_LONG,
             Self::MissingSource { .. } => error_codes::ERR_CLMC_MISSING_SOURCE,
             Self::NoEvidenceLinks { .. } => error_codes::ERR_CLMC_NO_EVIDENCE_LINKS,
             Self::InvalidEvidenceLink { .. } => error_codes::ERR_CLMC_INVALID_EVIDENCE_LINK,
@@ -235,6 +242,17 @@ impl std::fmt::Display for ClaimCompilerError {
         match self {
             Self::EmptyClaimText { claim_id } => {
                 write!(f, "{}: claim_id={claim_id}", self.code())
+            }
+            Self::ClaimTextTooLong {
+                claim_id,
+                max_bytes,
+                actual_bytes,
+            } => {
+                write!(
+                    f,
+                    "{}: claim_id={claim_id} max_bytes={max_bytes} actual_bytes={actual_bytes}",
+                    self.code()
+                )
             }
             Self::MissingSource { claim_id } => {
                 write!(f, "{}: claim_id={claim_id}", self.code())
@@ -402,10 +420,29 @@ impl ClaimCompiler {
                 claim_id: raw.claim_id.clone(),
             });
         }
+        if normalised.len() > self.config.max_claim_text_bytes {
+            self.emit(
+                event_codes::CLMC_003,
+                &raw.claim_id,
+                &format!(
+                    "claim text too long: {} > {} bytes",
+                    normalised.len(),
+                    self.config.max_claim_text_bytes
+                ),
+                &raw.trace_id,
+            );
+            return Err(ClaimCompilerError::ClaimTextTooLong {
+                claim_id: raw.claim_id.clone(),
+                max_bytes: self.config.max_claim_text_bytes,
+                actual_bytes: normalised.len(),
+            });
+        }
 
         // Source validation (INV-CLMC-FAIL-CLOSED)
         let source = match &raw.source {
-            Some(s) if !s.submitter_id.is_empty() && !s.origin.is_empty() => s.clone(),
+            Some(s) if !s.submitter_id.trim().is_empty() && !s.origin.trim().is_empty() => {
+                s.clone()
+            }
             _ => {
                 self.emit(
                     event_codes::CLMC_003,
@@ -870,12 +907,51 @@ mod tests {
     }
 
     #[test]
+    fn reject_whitespace_only_submitter_id() {
+        let mut compiler = make_compiler();
+        let mut raw = valid_raw_claim("claim-whitespace-sub");
+        raw.source = Some(ClaimSource {
+            submitter_id: "   ".to_string(),
+            origin: "api".to_string(),
+            received_at_ms: 0,
+        });
+        let err = compiler.compile_claim(&raw).unwrap_err();
+        assert_eq!(err.code(), error_codes::ERR_CLMC_MISSING_SOURCE);
+    }
+
+    #[test]
+    fn reject_whitespace_only_origin() {
+        let mut compiler = make_compiler();
+        let mut raw = valid_raw_claim("claim-whitespace-origin");
+        raw.source = Some(ClaimSource {
+            submitter_id: "submitter".to_string(),
+            origin: "  \t".to_string(),
+            received_at_ms: 0,
+        });
+        let err = compiler.compile_claim(&raw).unwrap_err();
+        assert_eq!(err.code(), error_codes::ERR_CLMC_MISSING_SOURCE);
+    }
+
+    #[test]
     fn reject_no_evidence_links() {
         let mut compiler = make_compiler();
         let mut raw = valid_raw_claim("claim-no-ev");
         raw.evidence_links.clear();
         let err = compiler.compile_claim(&raw).unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_CLMC_NO_EVIDENCE_LINKS);
+    }
+
+    #[test]
+    fn reject_overlong_claim_text() {
+        let config = ClaimCompilerConfig {
+            max_claim_text_bytes: 8,
+            ..Default::default()
+        };
+        let mut compiler = ClaimCompiler::new(config);
+        let mut raw = valid_raw_claim("claim-too-long");
+        raw.claim_text = "123456789".to_string();
+        let err = compiler.compile_claim(&raw).unwrap_err();
+        assert_eq!(err.code(), error_codes::ERR_CLMC_CLAIM_TEXT_TOO_LONG);
     }
 
     #[test]
@@ -1202,7 +1278,9 @@ mod tests {
     #[test]
     fn publish_batch_rejects_tampered_claim_text() {
         let mut compiler = make_compiler();
-        let mut compiled = compiler.compile_claim(&valid_raw_claim("tamper-1")).unwrap();
+        let mut compiled = compiler
+            .compile_claim(&valid_raw_claim("tamper-1"))
+            .unwrap();
         // Tamper with the claim text after compilation
         compiled.normalised_text = "TAMPERED claim text".to_string();
         let err = compiler.publish_batch(&[compiled]).unwrap_err();
@@ -1215,7 +1293,9 @@ mod tests {
     #[test]
     fn publish_batch_rejects_tampered_evidence_links() {
         let mut compiler = make_compiler();
-        let mut compiled = compiler.compile_claim(&valid_raw_claim("tamper-2")).unwrap();
+        let mut compiled = compiler
+            .compile_claim(&valid_raw_claim("tamper-2"))
+            .unwrap();
         // Tamper with evidence after compilation
         if let Some(link) = compiled.evidence_links.first_mut() {
             link.uri = "https://evil.example.com/forged".to_string();

@@ -64,6 +64,7 @@ pub struct ReplayTarget {
     pub max_replay_bytes: u64,
     pub snapshot_version: u64,
     pub current_version: u64,
+    pub replay_bytes: u64,
 }
 
 impl ReplayTarget {
@@ -72,12 +73,14 @@ impl ReplayTarget {
         max_replay_bytes: u64,
         snapshot_version: u64,
         current_version: u64,
+        replay_bytes: u64,
     ) -> Self {
         Self {
             max_replay_ops,
             max_replay_bytes,
             snapshot_version,
             current_version,
+            replay_bytes,
         }
     }
 
@@ -86,9 +89,9 @@ impl ReplayTarget {
         self.current_version.saturating_sub(self.snapshot_version)
     }
 
-    /// Check if replay distance exceeds the configured max (fail-closed at boundary).
+    /// Check if replay cost exceeds the configured max (fail-closed at boundary).
     pub fn is_within_bounds(&self) -> bool {
-        self.replay_distance() < self.max_replay_ops
+        self.replay_distance() < self.max_replay_ops && self.replay_bytes < self.max_replay_bytes
     }
 }
 
@@ -127,8 +130,10 @@ pub struct SnapshotTracker {
 }
 
 impl SnapshotTracker {
-    pub fn new(connector_id: String, policy: SnapshotPolicy) -> Self {
-        Self {
+    pub fn new(connector_id: String, policy: SnapshotPolicy) -> Result<Self, SnapshotError> {
+        policy.validate()?;
+
+        Ok(Self {
             connector_id,
             policy,
             last_snapshot_version: 0,
@@ -136,7 +141,7 @@ impl SnapshotTracker {
             ops_since_snapshot: 0,
             bytes_since_snapshot: 0,
             audit_log: Vec::new(),
-        }
+        })
     }
 
     /// Record a state mutation of the given byte size.
@@ -210,6 +215,7 @@ impl SnapshotTracker {
             max_bytes,
             self.last_snapshot_version,
             current_version,
+            self.bytes_since_snapshot,
         )
     }
 
@@ -218,12 +224,15 @@ impl SnapshotTracker {
         &self,
         current_version: u64,
         max_replay_ops: u64,
+        max_replay_bytes: u64,
     ) -> Result<(), SnapshotError> {
-        let distance = current_version.saturating_sub(self.last_snapshot_version);
-        if distance >= max_replay_ops {
+        let replay_target = self.replay_target(current_version, max_replay_ops, max_replay_bytes);
+        if !replay_target.is_within_bounds() {
             return Err(SnapshotError::ReplayBoundExceeded {
-                replay_ops: distance,
+                replay_ops: replay_target.replay_distance(),
                 max_replay_ops,
+                replay_bytes: replay_target.replay_bytes,
+                max_replay_bytes,
             });
         }
         Ok(())
@@ -266,6 +275,8 @@ pub enum SnapshotError {
     ReplayBoundExceeded {
         replay_ops: u64,
         max_replay_ops: u64,
+        replay_bytes: u64,
+        max_replay_bytes: u64,
     },
     #[serde(rename = "POLICY_INVALID")]
     PolicyInvalid { reason: String },
@@ -292,10 +303,12 @@ impl fmt::Display for SnapshotError {
             Self::ReplayBoundExceeded {
                 replay_ops,
                 max_replay_ops,
+                replay_bytes,
+                max_replay_bytes,
             } => {
                 write!(
                     f,
-                    "REPLAY_BOUND_EXCEEDED: {replay_ops} ops exceeds max {max_replay_ops}"
+                    "REPLAY_BOUND_EXCEEDED: {replay_ops} ops/{replay_bytes} bytes exceeds max {max_replay_ops} ops/{max_replay_bytes} bytes"
                 )
             }
             Self::PolicyInvalid { reason } => {
@@ -312,7 +325,7 @@ mod tests {
     use super::*;
 
     fn default_tracker() -> SnapshotTracker {
-        SnapshotTracker::new("conn-1".into(), SnapshotPolicy::default_policy())
+        SnapshotTracker::new("conn-1".into(), SnapshotPolicy::default_policy()).unwrap()
     }
 
     // === Policy tests ===
@@ -446,14 +459,15 @@ mod tests {
 
     #[test]
     fn replay_target_distance() {
-        let rt = ReplayTarget::new(200, 100000, 5, 105);
+        let rt = ReplayTarget::new(200, 100000, 5, 105, 5000);
         assert_eq!(rt.replay_distance(), 100);
+        assert_eq!(rt.replay_bytes, 5000);
         assert!(rt.is_within_bounds());
     }
 
     #[test]
     fn replay_target_exceeded() {
-        let rt = ReplayTarget::new(50, 100000, 5, 105);
+        let rt = ReplayTarget::new(50, 100000, 5, 105, 5000);
         assert_eq!(rt.replay_distance(), 100);
         assert!(!rt.is_within_bounds());
     }
@@ -461,8 +475,20 @@ mod tests {
     #[test]
     fn replay_target_boundary_fail_closed() {
         // distance == max → fail-closed: NOT within bounds
-        let rt = ReplayTarget::new(100, 100000, 5, 105);
+        let rt = ReplayTarget::new(100, 100000, 5, 105, 5000);
         assert_eq!(rt.replay_distance(), 100);
+        assert!(!rt.is_within_bounds());
+    }
+
+    #[test]
+    fn replay_target_byte_bound_exceeded() {
+        let rt = ReplayTarget::new(200, 4096, 5, 105, 5000);
+        assert!(!rt.is_within_bounds());
+    }
+
+    #[test]
+    fn replay_target_byte_boundary_fail_closed() {
+        let rt = ReplayTarget::new(200, 5000, 5, 105, 5000);
         assert!(!rt.is_within_bounds());
     }
 
@@ -470,14 +496,16 @@ mod tests {
     fn check_replay_bound_ok() {
         let mut t = default_tracker();
         t.take_snapshot(10, "h".into(), "t".into()).unwrap();
-        assert!(t.check_replay_bound(60, 100).is_ok());
+        t.record_mutation(1024);
+        assert!(t.check_replay_bound(60, 100, 4096).is_ok());
     }
 
     #[test]
     fn check_replay_bound_exceeded() {
         let mut t = default_tracker();
         t.take_snapshot(10, "h".into(), "t".into()).unwrap();
-        let err = t.check_replay_bound(200, 100).unwrap_err();
+        t.record_mutation(1024);
+        let err = t.check_replay_bound(200, 100, 4096).unwrap_err();
         assert!(matches!(err, SnapshotError::ReplayBoundExceeded { .. }));
     }
 
@@ -486,7 +514,31 @@ mod tests {
         // distance == max → fail-closed: reject at boundary
         let mut t = default_tracker();
         t.take_snapshot(10, "h".into(), "t".into()).unwrap();
-        assert!(t.check_replay_bound(110, 100).is_err());
+        t.record_mutation(1024);
+        assert!(t.check_replay_bound(110, 100, 4096).is_err());
+    }
+
+    #[test]
+    fn check_replay_bound_exceeded_by_bytes() {
+        let mut t = default_tracker();
+        t.take_snapshot(10, "h".into(), "t".into()).unwrap();
+        t.record_mutation(4097);
+        let err = t.check_replay_bound(11, 100, 4096).unwrap_err();
+        assert!(matches!(err, SnapshotError::ReplayBoundExceeded { .. }));
+    }
+
+    #[test]
+    fn check_replay_bound_byte_boundary_fail_closed() {
+        let mut t = default_tracker();
+        t.take_snapshot(10, "h".into(), "t".into()).unwrap();
+        t.record_mutation(4096);
+        assert!(t.check_replay_bound(11, 100, 4096).is_err());
+    }
+
+    #[test]
+    fn tracker_new_rejects_invalid_policy() {
+        let err = SnapshotTracker::new("conn-1".into(), SnapshotPolicy::new(0, 1024)).unwrap_err();
+        assert!(matches!(err, SnapshotError::PolicyInvalid { .. }));
     }
 
     // === Policy update audit ===
@@ -535,6 +587,8 @@ mod tests {
         let err = SnapshotError::ReplayBoundExceeded {
             replay_ops: 150,
             max_replay_ops: 100,
+            replay_bytes: 2048,
+            max_replay_bytes: 1024,
         };
         let json = serde_json::to_string(&err).unwrap();
         let parsed: SnapshotError = serde_json::from_str(&json).unwrap();
@@ -552,6 +606,8 @@ mod tests {
         let e2 = SnapshotError::ReplayBoundExceeded {
             replay_ops: 150,
             max_replay_ops: 100,
+            replay_bytes: 2048,
+            max_replay_bytes: 1024,
         };
         assert!(e2.to_string().contains("REPLAY_BOUND_EXCEEDED"));
 
