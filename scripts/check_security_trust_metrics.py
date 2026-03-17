@@ -190,6 +190,23 @@ def check_content_hash() -> None:
            "content hash with compute_hash" if passed else "content hash missing")
 
 
+def check_content_hash_surface() -> None:
+    src = _read_text(ROOT / "crates" / "franken-node" / "src" / "tools" / "security_trust_metrics.rs")
+    signature = re.search(
+        r"pub fn compute_hash\(\s*formula_version:.*?gate_results:.*?overall_pass:.*?security_coverage:.*?trust_coverage:",
+        src,
+        flags=re.S,
+    )
+    passed = bool(signature)
+    _check(
+        "content_hash_surface",
+        passed,
+        "compute_hash covers formula_version + gate_results + overall_pass + coverage"
+        if passed
+        else "compute_hash surface incomplete",
+    )
+
+
 def check_inline_tests() -> None:
     src = _read_text(ROOT / "crates" / "franken-node" / "src" / "tools" / "security_trust_metrics.rs")
     test_count = len(re.findall(r"#\[test\]", src))
@@ -257,6 +274,7 @@ def run_all_checks() -> list[dict[str, Any]]:
     check_confidence_intervals()
     check_formula_versioning()
     check_content_hash()
+    check_content_hash_surface()
     check_inline_tests()
 
     check_spec_contract()

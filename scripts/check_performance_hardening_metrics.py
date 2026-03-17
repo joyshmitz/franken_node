@@ -53,6 +53,20 @@ def _checks():
     ok("cold_start_ratio", "cold_start_ratio" in src, "Cold-start vs warm-start")
     ok("budget_enforcement", "budget_ms" in src and "within_budget" in src, "Category budgets")
     ok("flagged_categories", "flagged_categories" in src, "Budget violation flagging")
+    ok(
+        "category_hash_surface",
+        all(snippet in src for snippet in [
+            "for category in &categories",
+            "category.category.label()",
+            "category.metric_count",
+            "category.avg_overhead_ratio",
+            "category.avg_cold_start_ratio",
+            "category.max_hardened_p99",
+            "category.budget_ms",
+            "u8::from(category.within_budget)",
+        ]),
+        "content_hash binds full category stats payload",
+    )
 
     found_codes = [c for c in REQUIRED_CODES if c in src]
     ok("event_codes", len(found_codes) >= 12, f"{len(found_codes)}/12")
@@ -65,7 +79,7 @@ def _checks():
     ok("spec_alignment", os.path.isfile(SPEC), SPEC)
 
     test_count = len(re.findall(r"#\[test\]", src))
-    ok("test_coverage", test_count >= 24, f"{test_count} tests (>=24)")
+    ok("test_coverage", test_count >= 25, f"{test_count} tests (>=25)")
 
     return results
 

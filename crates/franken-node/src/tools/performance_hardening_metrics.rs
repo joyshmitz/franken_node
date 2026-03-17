@@ -69,6 +69,14 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     }
 }
 
+fn hash_f64(hasher: &mut Sha256, value: f64) {
+    if value.is_finite() {
+        hasher.update(value.to_le_bytes());
+    } else {
+        hasher.update(f64::NAN.to_le_bytes());
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -405,10 +413,17 @@ impl PerformanceHardeningMetrics {
             h.update(self.metric_version.as_bytes());
             h.update((self.metrics.len() as u64).to_le_bytes());
             h.update((categories.len() as u64).to_le_bytes());
-            if overall.is_finite() {
-                h.update(overall.to_le_bytes());
-            } else {
-                h.update(f64::NAN.to_le_bytes());
+            hash_f64(&mut h, overall);
+            for category in &categories {
+                let label = category.category.label();
+                h.update((label.len() as u64).to_le_bytes());
+                h.update(label.as_bytes());
+                h.update((category.metric_count as u64).to_le_bytes());
+                hash_f64(&mut h, category.avg_overhead_ratio);
+                hash_f64(&mut h, category.avg_cold_start_ratio);
+                hash_f64(&mut h, category.max_hardened_p99);
+                hash_f64(&mut h, category.budget_ms);
+                h.update([u8::from(category.within_budget)]);
             }
             h.update((flagged.len() as u64).to_le_bytes());
             for cat in &flagged {
@@ -749,6 +764,29 @@ mod tests {
         assert_ne!(
             r1.content_hash, r2.content_hash,
             "Different overhead ratios must produce different report hash"
+        );
+    }
+
+    #[test]
+    fn report_hash_changes_with_different_category_cold_start_stats() {
+        let mut e1 = PerformanceHardeningMetrics::default();
+        let mut e2 = PerformanceHardeningMetrics::default();
+
+        let m1 = sample_metric("m1", OperationCategory::Request);
+        let mut m2 = sample_metric("m1", OperationCategory::Request);
+        m2.cold_start_ms = 400.0;
+
+        e1.submit_metric(m1, &trace()).unwrap();
+        e2.submit_metric(m2, &trace()).unwrap();
+
+        let r1 = e1.generate_report(&trace());
+        let r2 = e2.generate_report(&trace());
+
+        assert!((r1.overall_overhead_ratio - r2.overall_overhead_ratio).abs() < f64::EPSILON);
+        assert_eq!(r1.flagged_categories, r2.flagged_categories);
+        assert_ne!(
+            r1.content_hash, r2.content_hash,
+            "Different category cold-start stats must produce different report hash"
         );
     }
 }

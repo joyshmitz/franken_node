@@ -480,6 +480,13 @@ impl TrustEconomicsDashboard {
                 }
             }
             h.update((recommendations.len() as u64).to_le_bytes());
+            for rec in &recommendations {
+                let obj_label = format!("{:?}", rec.objective);
+                h.update((obj_label.len() as u64).to_le_bytes());
+                h.update(obj_label.as_bytes());
+                h.update((rec.rationale.len() as u64).to_le_bytes());
+                h.update(rec.rationale.as_bytes());
+            }
             hex::encode(h.finalize())
         };
 

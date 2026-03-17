@@ -399,7 +399,7 @@ impl MigrationSpeedFailureMetrics {
             h.update((failure as u64).to_le_bytes());
             hash_f64(&mut h, failure_rate);
             hash_f64(&mut h, avg_total);
-            h.update(&[u8::from(exceeds)]);
+            h.update([u8::from(exceeds)]);
             h.update((phase_stats.len() as u64).to_le_bytes());
             for phase_stat in &phase_stats {
                 let label = phase_stat.phase.label();

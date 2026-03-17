@@ -335,7 +335,13 @@ impl BenchmarkVersioning {
                 h.update(bc.as_bytes());
             }
             h.update((steps.len() as u64).to_le_bytes());
-            h.update(&[u8::from(rollback)]);
+            for step in &steps {
+                h.update((step.step_number as u64).to_le_bytes());
+                h.update((step.action.len() as u64).to_le_bytes());
+                h.update(step.action.as_bytes());
+                h.update([u8::from(step.automated)]);
+            }
+            h.update([u8::from(rollback)]);
             let effort_label = format!("{effort:?}");
             h.update((effort_label.len() as u64).to_le_bytes());
             h.update(effort_label.as_bytes());

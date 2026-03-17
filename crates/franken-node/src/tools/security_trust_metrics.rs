@@ -255,21 +255,73 @@ pub struct CoMetricReport {
     pub content_hash: String,
 }
 
+fn hash_bool(hasher: &mut Sha256, value: bool) {
+    hasher.update([u8::from(value)]);
+}
+
+fn hash_f64(hasher: &mut Sha256, value: f64) {
+    if value.is_finite() {
+        hasher.update(value.to_le_bytes());
+    } else {
+        hasher.update(f64::NAN.to_le_bytes());
+    }
+}
+
+fn hash_string(hasher: &mut Sha256, value: &str) {
+    hasher.update((value.len() as u64).to_le_bytes());
+    hasher.update(value.as_bytes());
+}
+
+fn hash_measurements(hasher: &mut Sha256, measurements: &[MetricMeasurement]) {
+    hasher.update((measurements.len() as u64).to_le_bytes());
+    for measurement in measurements {
+        hash_string(hasher, &measurement.metric_id);
+        hash_f64(hasher, measurement.score);
+        hash_f64(hasher, measurement.confidence_interval.lower);
+        hash_f64(hasher, measurement.confidence_interval.upper);
+        hash_f64(hasher, measurement.confidence_interval.confidence_level);
+        hasher.update(measurement.sample_count.to_le_bytes());
+        hash_string(hasher, &measurement.formula_version);
+        hasher.update((measurement.raw_data.len() as u64).to_le_bytes());
+        for (key, value) in &measurement.raw_data {
+            hash_string(hasher, key);
+            hash_f64(hasher, *value);
+        }
+    }
+}
+
+fn hash_gate_results(hasher: &mut Sha256, gate_results: &[MetricGateResult]) {
+    hasher.update((gate_results.len() as u64).to_le_bytes());
+    for gate in gate_results {
+        hash_string(hasher, &gate.metric_id);
+        hash_f64(hasher, gate.score);
+        hash_f64(hasher, gate.threshold);
+        hash_bool(hasher, gate.passed);
+        hash_bool(hasher, gate.warning);
+        hash_string(hasher, &gate.detail);
+    }
+}
+
 impl CoMetricReport {
-    pub fn compute_hash(security: &[MetricMeasurement], trust: &[MetricMeasurement]) -> String {
-        let canonical = serde_json::json!({
-            "security": security,
-            "trust": trust,
-        })
-        .to_string();
-        let digest = Sha256::digest(
-            [
-                b"security_trust_metrics_hash_v1:" as &[u8],
-                canonical.as_bytes(),
-            ]
-            .concat(),
-        );
-        hex::encode(digest)
+    pub fn compute_hash(
+        formula_version: &str,
+        security: &[MetricMeasurement],
+        trust: &[MetricMeasurement],
+        gate_results: &[MetricGateResult],
+        overall_pass: bool,
+        security_coverage: f64,
+        trust_coverage: f64,
+    ) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(b"security_trust_metrics_hash_v2:");
+        hash_string(&mut hasher, formula_version);
+        hash_measurements(&mut hasher, security);
+        hash_measurements(&mut hasher, trust);
+        hash_gate_results(&mut hasher, gate_results);
+        hash_bool(&mut hasher, overall_pass);
+        hash_f64(&mut hasher, security_coverage);
+        hash_f64(&mut hasher, trust_coverage);
+        hex::encode(hasher.finalize())
     }
 }
 
@@ -381,9 +433,19 @@ impl CoMetricEngine {
         let all_gates_pass = gate_results.iter().all(|g| g.passed);
         let coverage_ok =
             !self.config.require_all_categories || (sec_covered >= 1.0 && trust_covered >= 1.0);
+        let security_coverage = sec_covered.min(1.0);
+        let trust_coverage = trust_covered.min(1.0);
+        let overall_pass = all_gates_pass && coverage_ok;
 
-        let content_hash =
-            CoMetricReport::compute_hash(&security_measurements, &trust_measurements);
+        let content_hash = CoMetricReport::compute_hash(
+            &self.config.formula_version,
+            &security_measurements,
+            &trust_measurements,
+            &gate_results,
+            overall_pass,
+            security_coverage,
+            trust_coverage,
+        );
 
         let report = CoMetricReport {
             report_id: report_id.to_string(),
@@ -392,9 +454,9 @@ impl CoMetricEngine {
             security_metrics: security_measurements,
             trust_metrics: trust_measurements,
             gate_results,
-            overall_pass: all_gates_pass && coverage_ok,
-            security_coverage: sec_covered.min(1.0),
-            trust_coverage: trust_covered.min(1.0),
+            overall_pass,
+            security_coverage,
+            trust_coverage,
             content_hash,
         };
 
@@ -735,6 +797,80 @@ mod tests {
         );
 
         assert_eq!(report.content_hash.len(), 64);
+    }
+
+    #[test]
+    fn content_hash_changes_with_formula_version() {
+        let sec = make_passing_security_measurements();
+        let trust = make_passing_trust_measurements();
+
+        let mut config_a = CoMetricConfig::default();
+        config_a.formula_version = "secm-v1".to_string();
+        let mut config_b = CoMetricConfig::default();
+        config_b.formula_version = "secm-v2".to_string();
+
+        let mut engine_a = CoMetricEngine::new(config_a);
+        let mut engine_b = CoMetricEngine::new(config_b);
+
+        let report_a = engine_a.evaluate(
+            sec.clone(),
+            trust.clone(),
+            "hash-formula-a",
+            "2026-02-20T00:00:00Z",
+        );
+        let report_b = engine_b.evaluate(sec, trust, "hash-formula-b", "2026-02-20T00:00:00Z");
+
+        assert_ne!(report_a.formula_version, report_b.formula_version);
+        assert_ne!(
+            report_a.content_hash, report_b.content_hash,
+            "Different formula versions must produce different content hashes"
+        );
+    }
+
+    #[test]
+    fn content_hash_changes_with_gate_results() {
+        let mut sec = make_passing_security_measurements();
+        sec[0].score = 0.75;
+        let score = sec[0].score;
+        sec[0].raw_data.insert("mean".to_string(), score);
+        let trust = make_passing_trust_measurements();
+
+        let config_a = CoMetricConfig::default();
+        let mut config_b = CoMetricConfig::default();
+        config_b
+            .security_thresholds
+            .get_mut("SECM-SANDBOX")
+            .expect("default sandbox threshold")
+            .pass_threshold = 0.8;
+
+        let mut engine_a = CoMetricEngine::new(config_a);
+        let mut engine_b = CoMetricEngine::new(config_b);
+
+        let report_a = engine_a.evaluate(
+            sec.clone(),
+            trust.clone(),
+            "hash-gates-a",
+            "2026-02-20T00:00:00Z",
+        );
+        let report_b = engine_b.evaluate(sec, trust, "hash-gates-b", "2026-02-20T00:00:00Z");
+
+        let gate_a = report_a
+            .gate_results
+            .iter()
+            .find(|gate| gate.metric_id == "SECM-SANDBOX")
+            .expect("sandbox gate result");
+        let gate_b = report_b
+            .gate_results
+            .iter()
+            .find(|gate| gate.metric_id == "SECM-SANDBOX")
+            .expect("sandbox gate result");
+
+        assert_ne!(gate_a.passed, gate_b.passed);
+        assert_ne!(report_a.overall_pass, report_b.overall_pass);
+        assert_ne!(
+            report_a.content_hash, report_b.content_hash,
+            "Different gate results must produce different content hashes"
+        );
     }
 
     // === Threshold details ===

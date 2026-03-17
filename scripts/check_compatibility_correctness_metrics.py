@@ -65,6 +65,14 @@ def _checks():
 
     ok("flagged_segments", "flagged_segments" in src, "Below-threshold segment flagging")
 
+    ok(
+        "segment_hash_surface",
+        "h.update(segment.total_regressions.to_le_bytes())" in src
+        and "hash_f64(&mut h, segment.mean_detect_ms)" in src
+        and "report_hash_changes_with_different_segment_detect_latency" in src,
+        "content hash binds segment regressions + mean detect latency",
+    )
+
     found_codes = [c for c in REQUIRED_CODES if c in src]
     ok("event_codes", len(found_codes) >= 12, f"{len(found_codes)}/12")
 
@@ -76,7 +84,7 @@ def _checks():
     ok("spec_alignment", os.path.isfile(SPEC), SPEC)
 
     test_count = len(re.findall(r"#\[test\]", src))
-    ok("test_coverage", test_count >= 24, f"{test_count} tests (>=24)")
+    ok("test_coverage", test_count >= 25, f"{test_count} tests (>=25)")
 
     return results
 

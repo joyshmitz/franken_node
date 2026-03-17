@@ -69,6 +69,14 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     }
 }
 
+fn hash_f64(hasher: &mut Sha256, value: f64) {
+    if value.is_finite() {
+        hasher.update(value.to_le_bytes());
+    } else {
+        hasher.update(f64::NAN.to_le_bytes());
+    }
+}
+
 // ---------------------------------------------------------------------------
 // API families and risk bands
 // ---------------------------------------------------------------------------
@@ -434,11 +442,23 @@ impl CompatibilityCorrectnessMetrics {
             h.update(self.config.metric_version.as_bytes());
             h.update((self.metrics.len() as u64).to_le_bytes());
             h.update((segments.len() as u64).to_le_bytes());
-            if overall.is_finite() {
-                h.update(overall.to_le_bytes());
-            } else {
-                h.update(f64::NAN.to_le_bytes());
+            for segment in &segments {
+                let api_family = segment.segment.api_family.label();
+                let risk_band = segment.segment.risk_band.label();
+                h.update((api_family.len() as u64).to_le_bytes());
+                h.update(api_family.as_bytes());
+                h.update((risk_band.len() as u64).to_le_bytes());
+                h.update(risk_band.as_bytes());
+                h.update((segment.metric_count as u64).to_le_bytes());
+                h.update(segment.total_tests.to_le_bytes());
+                h.update(segment.total_passed.to_le_bytes());
+                h.update(segment.total_regressions.to_le_bytes());
+                hash_f64(&mut h, segment.correctness_rate);
+                hash_f64(&mut h, segment.threshold);
+                h.update([u8::from(segment.meets_threshold)]);
+                hash_f64(&mut h, segment.mean_detect_ms);
             }
+            hash_f64(&mut h, overall);
             h.update((flagged.len() as u64).to_le_bytes());
             for seg in &flagged {
                 let af = seg.api_family.label();
@@ -806,5 +826,36 @@ mod tests {
             r1.content_hash, r2.content_hash,
             "Different overall_correctness must produce different report hash"
         );
+    }
+
+    #[test]
+    fn report_hash_changes_with_different_segment_detect_latency() {
+        let mut e1 = CompatibilityCorrectnessMetrics::default();
+        let mut e2 = CompatibilityCorrectnessMetrics::default();
+
+        let mut faster_detection = sample_metric("m1", ApiFamily::Core, RiskBand::High, 1000, 998);
+        faster_detection.mean_detect_ms = 10.0;
+        let mut slower_detection = sample_metric("m1", ApiFamily::Core, RiskBand::High, 1000, 998);
+        slower_detection.mean_detect_ms = 250.0;
+
+        e1.submit_metric(faster_detection, &trace()).unwrap();
+        e2.submit_metric(slower_detection, &trace()).unwrap();
+
+        let first_report = e1.generate_report(&trace());
+        let second_report = e2.generate_report(&trace());
+
+        assert_eq!(
+            first_report.overall_correctness,
+            second_report.overall_correctness
+        );
+        assert_eq!(
+            first_report.flagged_segments,
+            second_report.flagged_segments
+        );
+        assert_ne!(
+            first_report.segments[0].mean_detect_ms,
+            second_report.segments[0].mean_detect_ms
+        );
+        assert_ne!(first_report.content_hash, second_report.content_hash);
     }
 }

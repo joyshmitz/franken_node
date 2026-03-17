@@ -366,7 +366,7 @@ impl SafeExtensionOnboarding {
             h.update((completed as u64).to_le_bytes());
             hash_f64(&mut h, completion_rate);
             hash_f64(&mut h, mean_ttfe);
-            h.update(&[u8::from(meets_ttfe)]);
+            h.update([u8::from(meets_ttfe)]);
             hash_f64(&mut h, overall_auto);
             hash_f64(&mut h, overall_friction);
             h.update((phase_stats.len() as u64).to_le_bytes());

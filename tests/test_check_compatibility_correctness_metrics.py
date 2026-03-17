@@ -80,6 +80,9 @@ class TestIndividualChecks:
     def test_flagged_segments(self, results):
         assert results["flagged_segments"]["passed"]
 
+    def test_segment_hash_surface(self, results):
+        assert results["segment_hash_surface"]["passed"]
+
     def test_event_codes(self, results):
         assert results["event_codes"]["passed"]
 

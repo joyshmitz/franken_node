@@ -345,7 +345,7 @@ impl MigrationValidationCohorts {
             } else {
                 h.update(f64::NAN.to_le_bytes());
             }
-            h.update(&[u8::from(meets)]);
+            h.update([u8::from(meets)]);
             h.update((flagged.len() as u64).to_le_bytes());
             for cid in &flagged {
                 h.update((cid.len() as u64).to_le_bytes());

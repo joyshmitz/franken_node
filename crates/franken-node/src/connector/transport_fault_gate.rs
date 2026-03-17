@@ -628,7 +628,7 @@ impl TransportFaultGate {
             h.update(b"transport_fault_gate_hash_v1:");
             h.update((SCHEMA_VERSION.len() as u64).to_le_bytes());
             h.update(SCHEMA_VERSION.as_bytes());
-            h.update(&[u8::from(passed)]);
+            h.update([u8::from(passed)]);
             h.update((total_tests as u64).to_le_bytes());
             h.update((passed_tests as u64).to_le_bytes());
             h.update((failed_tests as u64).to_le_bytes());

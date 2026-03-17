@@ -113,6 +113,10 @@ class TestKeyChecks(unittest.TestCase):
         checks = {c["check"]: c for c in mod.run_all_checks()}
         self.assertTrue(checks["content_hash"]["pass"])
 
+    def test_content_hash_surface(self):
+        checks = {c["check"]: c for c in mod.run_all_checks()}
+        self.assertTrue(checks["content_hash_surface"]["pass"])
+
     def test_inline_tests(self):
         checks = {c["check"]: c for c in mod.run_all_checks()}
         self.assertTrue(checks["inline_tests"]["pass"])

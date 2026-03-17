@@ -48,6 +48,7 @@ class TestIndividualChecks:
     def test_cold_start_ratio(self, results): assert results["cold_start_ratio"]["passed"]
     def test_budget_enforcement(self, results): assert results["budget_enforcement"]["passed"]
     def test_flagged_categories(self, results): assert results["flagged_categories"]["passed"]
+    def test_category_hash_surface(self, results): assert results["category_hash_surface"]["passed"]
     def test_event_codes(self, results): assert results["event_codes"]["passed"]
     def test_invariants(self, results): assert results["invariants"]["passed"]
     def test_audit_log(self, results): assert results["audit_log"]["passed"]
