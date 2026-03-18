@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn single_tenant_allocation() {
         let items = vec![item("r1", "t1", 5, 10)];
-        let (allocs, audit) = run_cycle(&items, &config(), "c1", "tr", "ts").unwrap();
+        let (allocs, audit) = run_cycle(&items, &config(), "c1", "tr", "ts").expect("should succeed");
         assert_eq!(allocs.len(), 1);
         assert_eq!(allocs[0].tenant_id, "t1");
         assert!(allocs[0].units_used > 0);
@@ -284,7 +284,7 @@ mod tests {
         let items: Vec<RepairItem> = (0..20)
             .map(|i| item(&format!("r{i}"), "t1", 5, 10))
             .collect();
-        let (_, audit) = run_cycle(&items, &config(), "c1", "tr", "ts").unwrap();
+        let (_, audit) = run_cycle(&items, &config(), "c1", "tr", "ts").expect("should succeed");
         assert!(audit.total_units_used <= config().max_units_per_cycle);
     }
 
@@ -295,7 +295,7 @@ mod tests {
             item("r2", "t1", 9, 3),
             item("r3", "t2", 1, 3),
         ];
-        let (allocs, _) = run_cycle(&items, &config(), "c1", "tr", "ts").unwrap();
+        let (allocs, _) = run_cycle(&items, &config(), "c1", "tr", "ts").expect("should succeed");
         for alloc in &allocs {
             assert!(
                 !alloc.items_allocated.is_empty(),
@@ -312,8 +312,8 @@ mod tests {
             item("r2", "t2", 3, 10),
             item("r3", "t1", 8, 10),
         ];
-        let (a1, _) = run_cycle(&items, &config(), "c1", "tr", "ts").unwrap();
-        let (a2, _) = run_cycle(&items, &config(), "c1", "tr", "ts").unwrap();
+        let (a1, _) = run_cycle(&items, &config(), "c1", "tr", "ts").expect("should succeed");
+        let (a2, _) = run_cycle(&items, &config(), "c1", "tr", "ts").expect("should succeed");
         for (x, y) in a1.iter().zip(a2.iter()) {
             assert_eq!(x.tenant_id, y.tenant_id);
             assert_eq!(x.items_allocated, y.items_allocated);
@@ -324,7 +324,7 @@ mod tests {
     #[test]
     fn audit_has_trace() {
         let items = vec![item("r1", "t1", 5, 10)];
-        let (_, audit) = run_cycle(&items, &config(), "c1", "trace-x", "ts").unwrap();
+        let (_, audit) = run_cycle(&items, &config(), "c1", "trace-x", "ts").expect("should succeed");
         assert_eq!(audit.trace_id, "trace-x");
         assert_eq!(audit.cycle_id, "c1");
     }
@@ -374,7 +374,7 @@ mod tests {
             item("r2", "t2", 5, 5),
             item("r3", "t3", 5, 5),
         ];
-        let (allocs, audit) = run_cycle(&items, &cfg, "c1", "tr", "ts").unwrap();
+        let (allocs, audit) = run_cycle(&items, &cfg, "c1", "tr", "ts").expect("should succeed");
         assert_eq!(allocs.len(), 2);
         assert_eq!(audit.tenants_skipped, 1);
     }
@@ -384,7 +384,7 @@ mod tests {
         let items = vec![item("low", "t1", 1, 5), item("high", "t1", 10, 5)];
         let mut cfg = config();
         cfg.max_units_per_cycle = 8; // only room for one + fairness
-        let (allocs, _) = run_cycle(&items, &cfg, "c1", "tr", "ts").unwrap();
+        let (allocs, _) = run_cycle(&items, &cfg, "c1", "tr", "ts").expect("should succeed");
         // High priority should be allocated first
         assert!(allocs[0].items_allocated.contains(&"high".to_string()));
     }
@@ -426,14 +426,14 @@ mod tests {
     #[test]
     fn audit_tenants_served_count() {
         let items = vec![item("r1", "t1", 5, 5), item("r2", "t2", 5, 5)];
-        let (_, audit) = run_cycle(&items, &config(), "c1", "tr", "ts").unwrap();
+        let (_, audit) = run_cycle(&items, &config(), "c1", "tr", "ts").expect("should succeed");
         assert_eq!(audit.tenants_served, 2);
     }
 
     #[test]
     fn allocation_sorted_by_tenant() {
         let items = vec![item("r1", "z-tenant", 5, 5), item("r2", "a-tenant", 5, 5)];
-        let (allocs, _) = run_cycle(&items, &config(), "c1", "tr", "ts").unwrap();
+        let (allocs, _) = run_cycle(&items, &config(), "c1", "tr", "ts").expect("should succeed");
         assert_eq!(allocs[0].tenant_id, "a-tenant");
         assert_eq!(allocs[1].tenant_id, "z-tenant");
     }

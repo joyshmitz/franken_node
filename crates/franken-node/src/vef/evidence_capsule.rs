@@ -328,8 +328,8 @@ mod tests {
 
     fn sealed_capsule() -> EvidenceCapsule {
         let mut c = EvidenceCapsule::new("cap-1".into(), 1000);
-        c.add_evidence(test_evidence()).unwrap();
-        c.seal().unwrap();
+        c.add_evidence(test_evidence()).expect("add should succeed");
+        c.seal().expect("seal should succeed");
         c
     }
 
@@ -355,7 +355,7 @@ mod tests {
     #[test]
     fn test_seal_ok() {
         let mut c = EvidenceCapsule::new("c1".into(), 1000);
-        c.add_evidence(test_evidence()).unwrap();
+        c.add_evidence(test_evidence()).expect("add should succeed");
         assert!(c.seal().is_ok());
         assert!(c.is_sealed());
     }
@@ -392,7 +392,7 @@ mod tests {
     #[test]
     fn test_verify_unsealed_fails() {
         let mut c = EvidenceCapsule::new("c1".into(), 1000);
-        c.add_evidence(test_evidence()).unwrap();
+        c.add_evidence(test_evidence()).expect("add should succeed");
         let result = c.verify_all();
         assert!(!result.valid);
     }
@@ -402,8 +402,8 @@ mod tests {
         let mut c = EvidenceCapsule::new("c1".into(), 1000);
         let mut ev = test_evidence();
         ev.verified = false;
-        c.add_evidence(ev).unwrap();
-        c.seal().unwrap();
+        c.add_evidence(ev).expect("add should succeed");
+        c.seal().expect("seal should succeed");
         let result = c.verify_all();
         assert!(!result.valid);
     }
@@ -411,8 +411,8 @@ mod tests {
     #[test]
     fn test_metadata() {
         let mut c = EvidenceCapsule::new("c1".into(), 1000);
-        c.set_metadata("key".into(), "val".into()).unwrap();
-        assert_eq!(c.metadata.get("key").unwrap(), "val");
+        c.set_metadata("key".into(), "val".into()).expect("set should succeed");
+        assert_eq!(c.metadata.get("key").expect("should exist"), "val");
     }
 
     #[test]
@@ -444,7 +444,7 @@ mod tests {
             supported_schemas: vec![SCHEMA_VERSION.into()],
         });
         let c = sealed_capsule();
-        let manifest = reg.export_capsule(&c, "ext-1").unwrap();
+        let manifest = reg.export_capsule(&c, "ext-1").expect("export should succeed");
         assert_eq!(manifest.evidence_count, 1);
     }
 
@@ -499,8 +499,8 @@ mod tests {
         let mut c = EvidenceCapsule::new("c1".into(), 1000);
         let mut ev = test_evidence();
         ev.receipt_chain_commitment = String::new();
-        c.add_evidence(ev).unwrap();
-        c.seal().unwrap();
+        c.add_evidence(ev).expect("add should succeed");
+        c.seal().expect("seal should succeed");
         let result = c.verify_all();
         assert!(!result.valid);
     }
@@ -508,11 +508,11 @@ mod tests {
     #[test]
     fn test_multiple_evidence() {
         let mut c = EvidenceCapsule::new("c1".into(), 1000);
-        c.add_evidence(test_evidence()).unwrap();
+        c.add_evidence(test_evidence()).expect("add should succeed");
         let mut ev2 = test_evidence();
         ev2.proof_id = "proof-2".into();
-        c.add_evidence(ev2).unwrap();
-        c.seal().unwrap();
+        c.add_evidence(ev2).expect("add should succeed");
+        c.seal().expect("seal should succeed");
         let result = c.verify_all();
         assert!(result.valid);
         assert_eq!(result.checked, 2);
@@ -534,7 +534,7 @@ mod tests {
             supported_schemas: vec![SCHEMA_VERSION.into()],
         });
         let c = sealed_capsule();
-        reg.export_capsule(&c, "ext-1").unwrap();
+        reg.export_capsule(&c, "ext-1").expect("export should succeed");
         assert_eq!(reg.audit_log().len(), 1);
         assert!(reg.audit_log()[0].contains(EVIDENCE_CAPSULE_EXPORTED));
     }

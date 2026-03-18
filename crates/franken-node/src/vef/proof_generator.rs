@@ -724,7 +724,7 @@ mod tests {
                     1_702_000_010_000 + n,
                     "trace-sample",
                 )
-                .unwrap();
+                .expect("should succeed");
         }
         chain.entries().to_vec()
     }
@@ -762,7 +762,7 @@ mod tests {
             trace_id: "trace-test".to_string(),
             created_at_millis: 1_702_000_030_000,
         };
-        let proof = backend.generate(&request).unwrap();
+        let proof = backend.generate(&request).expect("should generate");
         assert_eq!(proof.backend_name, "test-hash");
         assert!(!proof.proof_data.is_empty());
         assert!(proof.proof_data_hash.starts_with("sha256:"));
@@ -801,7 +801,7 @@ mod tests {
             trace_id: "trace-ver".to_string(),
             created_at_millis: 1_702_000_032_000,
         };
-        let proof = backend.generate(&request).unwrap();
+        let proof = backend.generate(&request).expect("should generate");
         assert_eq!(proof.format_version, PROOF_FORMAT_VERSION);
     }
 
@@ -820,7 +820,7 @@ mod tests {
             trace_id: "trace-name".to_string(),
             created_at_millis: 1_702_000_033_000,
         };
-        let proof = backend.generate(&request).unwrap();
+        let proof = backend.generate(&request).expect("should generate");
         assert_eq!(proof.backend_name, "custom-backend");
     }
 
@@ -847,8 +847,8 @@ mod tests {
             trace_id: "trace-b".to_string(),
             created_at_millis: 1_702_000_034_000,
         };
-        let proof1 = backend.generate(&req1).unwrap();
-        let proof2 = backend.generate(&req2).unwrap();
+        let proof1 = backend.generate(&req1).expect("should generate");
+        let proof2 = backend.generate(&req2).expect("should generate");
         assert_eq!(proof1.proof_data, proof2.proof_data);
         assert_eq!(proof1.proof_data_hash, proof2.proof_data_hash);
     }
@@ -868,8 +868,8 @@ mod tests {
             trace_id: "trace-verify".to_string(),
             created_at_millis: 1_702_000_035_000,
         };
-        let proof = backend.generate(&request).unwrap();
-        assert!(backend.verify(&proof, &entries).unwrap());
+        let proof = backend.generate(&request).expect("should generate");
+        assert!(backend.verify(&proof, &entries).expect("should verify"));
     }
 
     // ── 7. Proof verification fails for mismatched entries ──
@@ -887,8 +887,8 @@ mod tests {
             trace_id: "trace-mismatch".to_string(),
             created_at_millis: 1_702_000_036_000,
         };
-        let proof = backend.generate(&request).unwrap();
-        assert!(!backend.verify(&proof, &entries[..2]).unwrap());
+        let proof = backend.generate(&request).expect("should generate");
+        assert!(!backend.verify(&proof, &entries[..2]).expect("should verify"));
     }
 
     // ── 8. Proof verification with empty entries returns false ──
@@ -906,8 +906,8 @@ mod tests {
             trace_id: "trace-ev".to_string(),
             created_at_millis: 1_702_000_037_000,
         };
-        let proof = backend.generate(&request).unwrap();
-        assert!(!backend.verify(&proof, &[]).unwrap());
+        let proof = backend.generate(&request).expect("should generate");
+        assert!(!backend.verify(&proof, &[]).expect("should verify"));
     }
 
     // ── 9. ProofGenerator submit_request success ──
@@ -919,11 +919,11 @@ mod tests {
         let window = sample_window();
         let req_id = pg
             .submit_request(&window, &entries, 1_702_000_040_000, "trace-submit")
-            .unwrap();
+            .expect("should succeed");
         assert!(req_id.starts_with("req-"));
         assert_eq!(pg.requests().len(), 1);
         assert_eq!(
-            pg.requests().get(&req_id).unwrap().status,
+            pg.requests().get(&req_id).expect("should exist").status,
             ProofStatus::Pending
         );
     }
@@ -949,12 +949,12 @@ mod tests {
         let window = sample_window();
         let req_id = pg
             .submit_request(&window, &entries, 1_702_000_042_000, "trace-gen")
-            .unwrap();
+            .expect("should succeed");
         let proof = pg
             .generate_proof(&req_id, &window, &entries, 1_702_000_042_100)
-            .unwrap();
+            .expect("should succeed");
         assert_eq!(
-            pg.requests().get(&req_id).unwrap().status,
+            pg.requests().get(&req_id).expect("should exist").status,
             ProofStatus::Complete
         );
         assert!(proof.proof_id.contains(&req_id));
@@ -969,11 +969,11 @@ mod tests {
         let window = sample_window();
         let req_id = pg
             .submit_request(&window, &entries, 1_702_000_043_000, "trace-gv")
-            .unwrap();
+            .expect("should succeed");
         let proof = pg
             .generate_proof(&req_id, &window, &entries, 1_702_000_043_100)
-            .unwrap();
-        let valid = pg.verify_proof(&proof, &entries, "trace-gv").unwrap();
+            .expect("should succeed");
+        let valid = pg.verify_proof(&proof, &entries, "trace-gv").expect("should verify");
         assert!(valid);
     }
 
@@ -986,9 +986,9 @@ mod tests {
         let window = sample_window();
         let req_id = pg
             .submit_request(&window, &entries, 1_702_000_044_000, "trace-events")
-            .unwrap();
+            .expect("should succeed");
         pg.generate_proof(&req_id, &window, &entries, 1_702_000_044_100)
-            .unwrap();
+            .expect("should succeed");
         let events = pg.events();
         let codes: Vec<&str> = events.iter().map(|e| e.event_code.as_str()).collect();
         assert!(codes.contains(&event_codes::PGN_005_BACKEND_REGISTERED));
@@ -1010,13 +1010,13 @@ mod tests {
         let entries = sample_chain_entries();
         let window = sample_window();
         pgr.submit_request(&window, &entries, 1_702_000_050_000, "trace-timeout")
-            .unwrap();
+            .expect("should succeed");
         let timed_out = pgr.enforce_timeouts(1_702_000_052_000);
         assert_eq!(timed_out.len(), 1);
-        let status = pgr.requests().values().next().unwrap();
+        let status = pgr.requests().values().next().expect("should exist");
         assert_eq!(status.status, ProofStatus::Failed);
         assert_eq!(
-            status.error.as_ref().unwrap().code,
+            status.error.as_ref().expect("should have error").code,
             error_codes::ERR_PGN_TIMEOUT
         );
     }
@@ -1029,15 +1029,15 @@ mod tests {
         let entries = sample_chain_entries();
         let window = sample_window();
         pgr.submit_request(&window, &entries, 1_702_000_060_000, "trace-counts-1")
-            .unwrap();
+            .expect("should succeed");
         let req2 = pgr
             .submit_request(&window, &entries, 1_702_000_060_001, "trace-counts-2")
-            .unwrap();
+            .expect("should succeed");
         pgr.generate_proof(&req2, &window, &entries, 1_702_000_060_100)
-            .unwrap();
+            .expect("should succeed");
         let counts = pgr.status_counts();
-        assert_eq!(*counts.get("pending").unwrap(), 1);
-        assert_eq!(*counts.get("complete").unwrap(), 1);
+        assert_eq!(*counts.get("pending").expect("should exist"), 1);
+        assert_eq!(*counts.get("complete").expect("should exist"), 1);
     }
 
     // ── 16. Backend swap ──
@@ -1072,9 +1072,9 @@ mod tests {
             trace_id: "trace-meta".to_string(),
             created_at_millis: 1_702_000_070_000,
         };
-        let proof = backend.generate(&request).unwrap();
+        let proof = backend.generate(&request).expect("should generate");
         assert_eq!(
-            proof.metadata.get("entry_count").unwrap(),
+            proof.metadata.get("entry_count").expect("should exist"),
             &entries.len().to_string()
         );
     }
@@ -1094,7 +1094,7 @@ mod tests {
             trace_id: "trace-ref".to_string(),
             created_at_millis: 1_702_000_071_000,
         };
-        let proof = backend.generate(&request).unwrap();
+        let proof = backend.generate(&request).expect("should generate");
         assert_eq!(proof.receipt_window_ref, window.window_id);
     }
 
@@ -1111,9 +1111,9 @@ mod tests {
         let entries = sample_chain_entries();
         let window = sample_window();
         pgr.submit_request(&window, &entries, 1_702_000_080_000, "t1")
-            .unwrap();
+            .expect("should succeed");
         pgr.submit_request(&window, &entries, 1_702_000_080_001, "t2")
-            .unwrap();
+            .expect("should succeed");
         let err = pgr
             .submit_request(&window, &entries, 1_702_000_080_002, "t3")
             .unwrap_err();
@@ -1161,9 +1161,9 @@ mod tests {
             trace_id: "trace-serde".to_string(),
             created_at_millis: 1_702_000_090_000,
         };
-        let proof = backend.generate(&request).unwrap();
-        let json = serde_json::to_string(&proof).unwrap();
-        let deserialized: ComplianceProof = serde_json::from_str(&json).unwrap();
+        let proof = backend.generate(&request).expect("should generate");
+        let json = serde_json::to_string(&proof).expect("should serialize");
+        let deserialized: ComplianceProof = serde_json::from_str(&json).expect("should deserialize");
         assert_eq!(proof, deserialized);
     }
 
@@ -1181,8 +1181,8 @@ mod tests {
             trace_id: "trace-rt".to_string(),
             created_at_millis: 1_702_000_091_000,
         };
-        let json = serde_json::to_string(&request).unwrap();
-        let deserialized: ProofRequest = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&request).expect("should serialize");
+        let deserialized: ProofRequest = serde_json::from_str(&json).expect("should deserialize");
         assert_eq!(request, deserialized);
     }
 
@@ -1206,8 +1206,8 @@ mod tests {
             ProofStatus::Complete,
             ProofStatus::Failed,
         ] {
-            let json = serde_json::to_string(&status).unwrap();
-            let back: ProofStatus = serde_json::from_str(&json).unwrap();
+            let json = serde_json::to_string(&status).expect("should serialize");
+            let back: ProofStatus = serde_json::from_str(&json).expect("should deserialize");
             assert_eq!(status, back);
         }
     }
@@ -1222,10 +1222,10 @@ mod tests {
         let window = sample_window();
         let req_id = cpg
             .submit_request(&window, &entries, 1_702_000_100_000, "trace-conc")
-            .unwrap();
+            .expect("should succeed");
         let proof = cpg
             .generate_proof(&req_id, &window, &entries, 1_702_000_100_100)
-            .unwrap();
+            .expect("should succeed");
         assert!(!proof.proof_data.is_empty());
     }
 
@@ -1244,7 +1244,7 @@ mod tests {
             trace_id: "trace-hash".to_string(),
             created_at_millis: 1_702_000_110_000,
         };
-        let proof = backend.generate(&request).unwrap();
+        let proof = backend.generate(&request).expect("should generate");
         let recomputed = TestProofBackend::hash_bytes(&proof.proof_data);
         assert_eq!(proof.proof_data_hash, recomputed);
     }
@@ -1266,7 +1266,7 @@ mod tests {
                     1_702_000_120_000 + n,
                     "trace-diff",
                 )
-                .unwrap();
+                .expect("should succeed");
         }
         let entries2 = chain.entries().to_vec();
         let window = sample_window();
@@ -1287,8 +1287,8 @@ mod tests {
             trace_id: "trace-d2".to_string(),
             created_at_millis: 1_702_000_130_000,
         };
-        let proof1 = backend.generate(&req1).unwrap();
-        let proof2 = backend.generate(&req2).unwrap();
+        let proof1 = backend.generate(&req1).expect("should generate");
+        let proof2 = backend.generate(&req2).expect("should generate");
         assert_ne!(proof1.proof_data, proof2.proof_data);
     }
 
@@ -1308,7 +1308,7 @@ mod tests {
         let entries = sample_chain_entries();
         let window = sample_window();
         pgr.submit_request(&window, &entries, 1_702_000_140_000, "trace-fields")
-            .unwrap();
+            .expect("should succeed");
         for event in pgr.events() {
             assert!(!event.event_code.is_empty());
             assert!(!event.trace_id.is_empty());

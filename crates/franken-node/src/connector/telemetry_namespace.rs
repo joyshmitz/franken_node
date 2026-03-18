@@ -277,7 +277,7 @@ mod tests {
                 &["peer"],
                 1,
             ))
-            .unwrap();
+            .expect("should succeed");
         assert_eq!(s.plane, Plane::Protocol);
         assert_eq!(s.version, 1);
         assert!(!s.frozen);
@@ -310,8 +310,8 @@ mod tests {
             &["method"],
             1,
         ))
-        .unwrap();
-        r.freeze("franken.security.auth_total").unwrap();
+        .expect("should succeed");
+        r.freeze("franken.security.auth_total").expect("freeze should succeed");
 
         // Same shape — OK
         let s = r
@@ -321,7 +321,7 @@ mod tests {
                 &["method"],
                 2,
             ))
-            .unwrap();
+            .expect("should succeed");
         assert_eq!(s.version, 2);
 
         // Different type — rejected
@@ -356,10 +356,10 @@ mod tests {
             &[],
             1,
         ))
-        .unwrap();
+        .expect("should succeed");
         r.deprecate("franken.egress.bytes_total", "replaced by v2", 2)
-            .unwrap();
-        let s = r.get("franken.egress.bytes_total").unwrap();
+            .expect("should succeed");
+        let s = r.get("franken.egress.bytes_total").expect("should exist");
         assert!(s.deprecated);
         assert_eq!(s.deprecation_reason.as_deref(), Some("replaced by v2"));
         assert_eq!(s.deprecated_at_version, Some(2));
@@ -374,9 +374,9 @@ mod tests {
             &[],
             1,
         ))
-        .unwrap();
+        .expect("should succeed");
         r.deprecate("franken.capability.inv_total", "reason", 2)
-            .unwrap();
+            .expect("should succeed");
         let err = r
             .deprecate("franken.capability.inv_total", "again", 3)
             .unwrap_err();
@@ -402,19 +402,19 @@ mod tests {
     #[test]
     fn validate_name_good() {
         assert_eq!(
-            SchemaRegistry::validate_name("franken.protocol.x").unwrap(),
+            SchemaRegistry::validate_name("franken.protocol.x").expect("should pass"),
             Plane::Protocol
         );
         assert_eq!(
-            SchemaRegistry::validate_name("franken.capability.x").unwrap(),
+            SchemaRegistry::validate_name("franken.capability.x").expect("should pass"),
             Plane::Capability
         );
         assert_eq!(
-            SchemaRegistry::validate_name("franken.egress.x").unwrap(),
+            SchemaRegistry::validate_name("franken.egress.x").expect("should pass"),
             Plane::Egress
         );
         assert_eq!(
-            SchemaRegistry::validate_name("franken.security.x").unwrap(),
+            SchemaRegistry::validate_name("franken.security.x").expect("should pass"),
             Plane::Security
         );
     }
@@ -428,11 +428,11 @@ mod tests {
     fn list_by_plane() {
         let mut r = SchemaRegistry::new();
         r.register(&reg("franken.protocol.a", MetricType::Counter, &[], 1))
-            .unwrap();
+            .expect("should succeed");
         r.register(&reg("franken.protocol.b", MetricType::Gauge, &[], 1))
-            .unwrap();
+            .expect("should succeed");
         r.register(&reg("franken.security.c", MetricType::Counter, &[], 1))
-            .unwrap();
+            .expect("should succeed");
         let protos = r.list_by_plane(Plane::Protocol);
         assert_eq!(protos.len(), 2);
         assert_eq!(protos[0].name, "franken.protocol.a");
@@ -442,9 +442,9 @@ mod tests {
     fn catalog_returns_sorted() {
         let mut r = SchemaRegistry::new();
         r.register(&reg("franken.security.z", MetricType::Counter, &[], 1))
-            .unwrap();
+            .expect("should succeed");
         r.register(&reg("franken.protocol.a", MetricType::Counter, &[], 1))
-            .unwrap();
+            .expect("should succeed");
         let cat = r.catalog();
         assert_eq!(cat.len(), 2);
         assert_eq!(cat[0].name, "franken.protocol.a");
@@ -455,10 +455,10 @@ mod tests {
     fn re_register_unfrozen_overwrites() {
         let mut r = SchemaRegistry::new();
         r.register(&reg("franken.protocol.x", MetricType::Counter, &["a"], 1))
-            .unwrap();
+            .expect("should succeed");
         let s = r
             .register(&reg("franken.protocol.x", MetricType::Gauge, &["b"], 2))
-            .unwrap();
+            .expect("should succeed");
         assert_eq!(s.metric_type, MetricType::Gauge);
         assert_eq!(s.labels, vec!["b".to_string()]);
         assert_eq!(s.version, 2);

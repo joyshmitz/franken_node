@@ -355,7 +355,7 @@ mod tests {
     #[test]
     fn allow_within_bounds() {
         let r = req("r1", "p1", true, 100, 5000, 500, 10);
-        let (v, a) = check_response_bound(&r, &policy(), "tr", "ts").unwrap();
+        let (v, a) = check_response_bound(&r, &policy(), "tr", "ts").expect("should succeed");
         assert!(v.allowed);
         assert!(v.violations.is_empty());
         assert_eq!(a.verdict, "ALLOW");
@@ -364,7 +364,7 @@ mod tests {
     #[test]
     fn block_response_too_large() {
         let r = req("r1", "p1", true, 100, 5000, 6000, 10);
-        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").unwrap();
+        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").expect("should succeed");
         assert!(!v.allowed);
         assert!(
             v.violations
@@ -376,7 +376,7 @@ mod tests {
     #[test]
     fn block_ratio_exceeded() {
         let r = req("r1", "p1", true, 10, 10000, 200, 10);
-        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").unwrap();
+        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").expect("should succeed");
         assert!(!v.allowed);
         assert!(
             v.violations
@@ -388,7 +388,7 @@ mod tests {
     #[test]
     fn block_unauth_strict_limit() {
         let r = req("r1", "p1", false, 100, 5000, 1500, 10);
-        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").unwrap();
+        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").expect("should succeed");
         assert!(!v.allowed);
         assert!(
             v.violations
@@ -409,7 +409,7 @@ mod tests {
     fn block_items_exceeded() {
         let mut r = req("r1", "p1", true, 100, 5000, 500, 60);
         r.declared_bound.max_items = 50;
-        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").unwrap();
+        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").expect("should succeed");
         assert!(!v.allowed);
         assert!(
             v.violations
@@ -433,14 +433,14 @@ mod tests {
     fn zero_request_bytes_infinity_ratio() {
         // Zero request bytes with nonzero response → infinite ratio → blocked
         let r = req("r1", "p1", true, 0, 5000, 500, 10);
-        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").unwrap();
+        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").expect("should succeed");
         assert!(!v.allowed);
     }
 
     #[test]
     fn zero_request_zero_response_ok() {
         let r = req("r1", "p1", true, 0, 5000, 0, 0);
-        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").unwrap();
+        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").expect("should succeed");
         assert!(v.allowed);
     }
 
@@ -449,7 +449,7 @@ mod tests {
         // Unauth, oversized, high ratio, too many items
         let mut r = req("r1", "p1", false, 10, 50000, 5000, 100);
         r.declared_bound.max_items = 50;
-        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").unwrap();
+        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").expect("should succeed");
         assert!(!v.allowed);
         assert_eq!(v.violations.len(), 4); // response too large, ratio, unauth, items
     }
@@ -457,8 +457,8 @@ mod tests {
     #[test]
     fn deterministic_check() {
         let r = req("r1", "p1", true, 100, 5000, 500, 10);
-        let (v1, a1) = check_response_bound(&r, &policy(), "tr", "ts").unwrap();
-        let (v2, a2) = check_response_bound(&r, &policy(), "tr", "ts").unwrap();
+        let (v1, a1) = check_response_bound(&r, &policy(), "tr", "ts").expect("should succeed");
+        let (v2, a2) = check_response_bound(&r, &policy(), "tr", "ts").expect("should succeed");
         assert_eq!(v1.allowed, v2.allowed);
         assert_eq!(v1.violations.len(), v2.violations.len());
         assert_eq!(a1.verdict, a2.verdict);
@@ -468,7 +468,7 @@ mod tests {
     #[test]
     fn audit_entry_complete() {
         let r = req("r1", "p1", true, 100, 5000, 500, 10);
-        let (_, audit) = check_response_bound(&r, &policy(), "trace-123", "2026-01-01").unwrap();
+        let (_, audit) = check_response_bound(&r, &policy(), "trace-123", "2026-01-01").expect("should succeed");
         assert_eq!(audit.request_id, "r1");
         assert_eq!(audit.peer_id, "p1");
         assert_eq!(audit.timestamp, "2026-01-01");
@@ -483,7 +483,7 @@ mod tests {
             req("r2", "p2", false, 10, 5000, 1500, 10), // should fail
             req("r3", "p3", true, 100, 5000, 400, 10),
         ];
-        let results = run_adversarial_harness(&requests, &policy(), "tr", "ts").unwrap();
+        let results = run_adversarial_harness(&requests, &policy(), "tr", "ts").expect("should succeed");
         assert_eq!(results.len(), 3);
         assert!(results[0].0.allowed);
         assert!(!results[1].0.allowed);

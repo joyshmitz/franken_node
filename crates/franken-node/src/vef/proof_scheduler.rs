@@ -672,7 +672,7 @@ mod tests {
         scheduler
             .enqueue_windows(&windows, 1_701_100_002_010)
             .expect("should select windows");
-        let dispatched = scheduler.dispatch_jobs(1_701_100_002_020).unwrap();
+        let dispatched = scheduler.dispatch_jobs(1_701_100_002_020).expect("should dispatch");
         assert_eq!(dispatched.len(), 2);
         assert!(
             dispatched
@@ -696,7 +696,7 @@ mod tests {
         scheduler
             .enqueue_windows(&windows, 1_701_100_003_010)
             .expect("should select windows");
-        let dispatched = scheduler.dispatch_jobs(1_701_100_003_020).unwrap();
+        let dispatched = scheduler.dispatch_jobs(1_701_100_003_020).expect("should dispatch");
         assert_eq!(dispatched.len(), 1);
         assert_eq!(dispatched[0].tier, WorkloadTier::Critical);
     }
@@ -719,7 +719,7 @@ mod tests {
         scheduler
             .enqueue_windows(&windows, 1_701_100_004_000)
             .expect("should select windows");
-        scheduler.dispatch_jobs(1_701_100_004_000).unwrap();
+        scheduler.dispatch_jobs(1_701_100_004_000).expect("should dispatch");
         let exceeded = scheduler.enforce_deadlines(1_701_100_005_000);
         assert!(!exceeded.is_empty());
         assert!(
@@ -765,11 +765,11 @@ mod tests {
         scheduler
             .enqueue_windows(&windows, 1_701_100_008_010)
             .expect("should select windows");
-        let dispatched = scheduler.dispatch_jobs(1_701_100_008_020).unwrap();
+        let dispatched = scheduler.dispatch_jobs(1_701_100_008_020).expect("should dispatch");
         let job_id = &dispatched[0].job_id;
-        scheduler.mark_completed(job_id, 1_701_100_008_030).unwrap();
+        scheduler.mark_completed(job_id, 1_701_100_008_030).expect("should complete");
         assert_eq!(
-            scheduler.jobs().get(job_id).unwrap().status,
+            scheduler.jobs().get(job_id).expect("should exist").status,
             ProofJobStatus::Completed
         );
     }

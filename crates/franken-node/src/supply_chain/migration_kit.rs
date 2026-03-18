@@ -314,6 +314,12 @@ impl MigrationKitEcosystem {
             "archetype": archetype.label(),
             "steps": &steps,
             "kit_version": &self.config.kit_version,
+            "compatibility": {
+                "supported_versions": &compatibility.supported_versions,
+                "api_coverage_pct": compatibility.api_coverage_pct,
+                "known_incompatibilities": &compatibility.known_incompatibilities,
+                "migration_complexity": format!("{:?}", compatibility.migration_complexity),
+            },
         })
         .to_string();
         let content_hash = hex::encode(Sha256::digest(
@@ -545,9 +551,11 @@ impl MigrationKitEcosystem {
 
         let hash_input = serde_json::json!({
             "kit_id": kit_id,
+            "archetype": kit.archetype.label(),
             "total": total,
             "completed": completed,
             "failed": failed,
+            "overall_status": format!("{:?}", status),
         })
         .to_string();
         let content_hash = hex::encode(Sha256::digest(
@@ -1131,5 +1139,117 @@ mod tests {
         eco.generate_report(&kit_id, &make_trace()).unwrap();
         eco.generate_report(&kit_id, &make_trace()).unwrap();
         assert_eq!(eco.reports().len(), 2);
+    }
+
+    // === bd-fd5ox: content_hash covers compatibility mapping surface ===
+
+    #[test]
+    fn kit_hash_changes_with_different_compatibility_versions() {
+        let steps = sample_steps();
+        let mut compat_a = sample_compat(Archetype::Express);
+        compat_a.supported_versions = vec!["18.x".to_string()];
+        let mut compat_b = sample_compat(Archetype::Express);
+        compat_b.supported_versions = vec!["20.x".to_string()];
+
+        let mut e1 = MigrationKitEcosystem::default();
+        let mut e2 = MigrationKitEcosystem::default();
+
+        let k1 = e1
+            .load_kit(Archetype::Express, compat_a, steps.clone(), "trace")
+            .unwrap();
+        let k2 = e2
+            .load_kit(Archetype::Express, compat_b, steps, "trace")
+            .unwrap();
+
+        assert_ne!(
+            e1.kits().get(&k1).unwrap().content_hash,
+            e2.kits().get(&k2).unwrap().content_hash,
+            "different supported_versions must produce different kit content_hash"
+        );
+    }
+
+    #[test]
+    fn kit_hash_changes_with_different_complexity() {
+        let steps = sample_steps();
+        let mut compat_a = sample_compat(Archetype::Express);
+        compat_a.migration_complexity = MigrationComplexity::Low;
+        let mut compat_b = sample_compat(Archetype::Express);
+        compat_b.migration_complexity = MigrationComplexity::Critical;
+
+        let mut e1 = MigrationKitEcosystem::default();
+        let mut e2 = MigrationKitEcosystem::default();
+
+        let k1 = e1
+            .load_kit(Archetype::Express, compat_a, steps.clone(), "trace")
+            .unwrap();
+        let k2 = e2
+            .load_kit(Archetype::Express, compat_b, steps, "trace")
+            .unwrap();
+
+        assert_ne!(
+            e1.kits().get(&k1).unwrap().content_hash,
+            e2.kits().get(&k2).unwrap().content_hash,
+            "different migration_complexity must produce different kit content_hash"
+        );
+    }
+
+    #[test]
+    fn kit_hash_changes_with_different_incompatibilities() {
+        let steps = sample_steps();
+        let mut compat_a = sample_compat(Archetype::Express);
+        compat_a.known_incompatibilities = vec![];
+        let mut compat_b = sample_compat(Archetype::Express);
+        compat_b.known_incompatibilities = vec!["no-websockets".to_string()];
+
+        let mut e1 = MigrationKitEcosystem::default();
+        let mut e2 = MigrationKitEcosystem::default();
+
+        let k1 = e1
+            .load_kit(Archetype::Express, compat_a, steps.clone(), "trace")
+            .unwrap();
+        let k2 = e2
+            .load_kit(Archetype::Express, compat_b, steps, "trace")
+            .unwrap();
+
+        assert_ne!(
+            e1.kits().get(&k1).unwrap().content_hash,
+            e2.kits().get(&k2).unwrap().content_hash,
+            "different known_incompatibilities must produce different kit content_hash"
+        );
+    }
+
+    #[test]
+    fn report_hash_changes_with_different_archetype() {
+        let steps = sample_steps();
+
+        let mut e1 = MigrationKitEcosystem::default();
+        let mut e2 = MigrationKitEcosystem::default();
+
+        let k1 = e1
+            .load_kit(
+                Archetype::Express,
+                sample_compat(Archetype::Express),
+                steps.clone(),
+                "trace",
+            )
+            .unwrap();
+        let k2 = e2
+            .load_kit(
+                Archetype::Fastify,
+                sample_compat(Archetype::Fastify),
+                steps,
+                "trace",
+            )
+            .unwrap();
+
+        let r1 = e1.generate_report(&k1, "trace").unwrap();
+        let r2 = e2.generate_report(&k2, "trace").unwrap();
+
+        // Same step counts but different archetypes — hash must differ.
+        assert_eq!(r1.total_steps, r2.total_steps);
+        assert_ne!(
+            r1.content_hash, r2.content_hash,
+            "different archetypes must produce different report content_hash"
+        );
     }
 }

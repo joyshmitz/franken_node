@@ -773,7 +773,7 @@ mod tests {
     fn test_verify_artifact_pass() {
         let sdk = test_sdk();
         let req = valid_request();
-        let report = sdk.verify_artifact(&req).unwrap();
+        let report = sdk.verify_artifact(&req).expect("should verify");
         assert_eq!(report.verdict, VerifyVerdict::Pass);
         assert!(!report.binding_hash.is_empty());
     }
@@ -782,7 +782,7 @@ mod tests {
     fn test_verify_artifact_report_fields() {
         let sdk = test_sdk();
         let req = valid_request();
-        let report = sdk.verify_artifact(&req).unwrap();
+        let report = sdk.verify_artifact(&req).expect("should verify");
         assert_eq!(report.schema_tag, SCHEMA_TAG);
         assert_eq!(report.api_version, API_VERSION);
         assert_eq!(report.verifier_identity, "verifier://default");
@@ -794,7 +794,7 @@ mod tests {
     fn test_verify_artifact_evidence_entries() {
         let sdk = test_sdk();
         let req = valid_request();
-        let report = sdk.verify_artifact(&req).unwrap();
+        let report = sdk.verify_artifact(&req).expect("should verify");
         assert_eq!(report.evidence.len(), 6);
         let names: Vec<&str> = report
             .evidence
@@ -841,7 +841,7 @@ mod tests {
             artifact_hash: "short".to_string(),
             claims: vec!["c".to_string()],
         };
-        let report = sdk.verify_artifact(&req).unwrap();
+        let report = sdk.verify_artifact(&req).expect("should verify");
         assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
     }
 
@@ -853,7 +853,7 @@ mod tests {
             artifact_hash: "ff".repeat(32),
             claims: vec!["c".to_string()],
         };
-        let report = sdk.verify_artifact(&req).unwrap();
+        let report = sdk.verify_artifact(&req).expect("should verify");
         assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
     }
 
@@ -867,7 +867,7 @@ mod tests {
             artifact_hash,
             claims: vec![],
         };
-        let report = sdk.verify_artifact(&req).unwrap();
+        let report = sdk.verify_artifact(&req).expect("should verify");
         assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
     }
 
@@ -884,7 +884,7 @@ mod tests {
             artifact_hash: "a".repeat(64),
             claims: vec![],
         };
-        let report = sdk.verify_artifact(&req).unwrap();
+        let report = sdk.verify_artifact(&req).expect("should verify");
         assert_eq!(report.verdict, VerifyVerdict::Pass);
     }
 
@@ -895,8 +895,8 @@ mod tests {
         // INV-VSK-DETERMINISTIC-VERIFY
         let sdk = test_sdk();
         let req = valid_request();
-        let r1 = sdk.verify_artifact(&req).unwrap();
-        let r2 = sdk.verify_artifact(&req).unwrap();
+        let r1 = sdk.verify_artifact(&req).expect("should verify");
+        let r2 = sdk.verify_artifact(&req).expect("should verify");
         assert_eq!(r1.verdict, r2.verdict);
         assert_eq!(r1.binding_hash, r2.binding_hash);
         assert_eq!(r1.request_id, r2.request_id);
@@ -910,7 +910,7 @@ mod tests {
     fn test_verify_capsule_pass() {
         let sdk = test_sdk();
         let cap = valid_capsule();
-        let report = sdk.verify_capsule(&cap).unwrap();
+        let report = sdk.verify_capsule(&cap).expect("should verify");
         assert_eq!(report.verdict, VerifyVerdict::Pass);
     }
 
@@ -918,7 +918,7 @@ mod tests {
     fn test_verify_capsule_report_fields() {
         let sdk = test_sdk();
         let cap = valid_capsule();
-        let report = sdk.verify_capsule(&cap).unwrap();
+        let report = sdk.verify_capsule(&cap).expect("should verify");
         assert_eq!(report.schema_tag, SCHEMA_TAG);
         assert_eq!(report.api_version, API_VERSION);
         assert!(report.request_id.starts_with("vcap-"));
@@ -928,7 +928,7 @@ mod tests {
     fn test_verify_capsule_evidence_entries() {
         let sdk = test_sdk();
         let cap = valid_capsule();
-        let report = sdk.verify_capsule(&cap).unwrap();
+        let report = sdk.verify_capsule(&cap).expect("should verify");
         let names: Vec<&str> = report
             .evidence
             .iter()
@@ -976,7 +976,7 @@ mod tests {
         let sdk = test_sdk();
         let mut cap = valid_capsule();
         cap.inputs.clear();
-        let report = sdk.verify_capsule(&cap).unwrap();
+        let report = sdk.verify_capsule(&cap).expect("should verify");
         assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
     }
 
@@ -985,7 +985,7 @@ mod tests {
         let sdk = test_sdk();
         let mut cap = valid_capsule();
         cap.expected_outputs.clear();
-        let report = sdk.verify_capsule(&cap).unwrap();
+        let report = sdk.verify_capsule(&cap).expect("should verify");
         assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
     }
 
@@ -994,7 +994,7 @@ mod tests {
         let sdk = test_sdk();
         let mut cap = valid_capsule();
         cap.format_version = 0;
-        let report = sdk.verify_capsule(&cap).unwrap();
+        let report = sdk.verify_capsule(&cap).expect("should verify");
         assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
     }
 
@@ -1003,7 +1003,7 @@ mod tests {
         let sdk = test_sdk();
         let mut cap = valid_capsule();
         cap.inputs[1].seq = 0; // same as first = not strictly increasing
-        let report = sdk.verify_capsule(&cap).unwrap();
+        let report = sdk.verify_capsule(&cap).expect("should verify");
         assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
     }
 
@@ -1012,7 +1012,7 @@ mod tests {
         let sdk = test_sdk();
         let mut cap = valid_capsule();
         cap.expected_outputs[0].output_hash = "wrong_hash".to_string();
-        let report = sdk.verify_capsule(&cap).unwrap();
+        let report = sdk.verify_capsule(&cap).expect("should verify");
         assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
     }
 
@@ -1025,7 +1025,7 @@ mod tests {
             data: b"tampered".to_vec(),
             output_hash: "wrong_hash".to_string(),
         });
-        let report = sdk.verify_capsule(&cap).unwrap();
+        let report = sdk.verify_capsule(&cap).expect("should verify");
         assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
         assert!(
             report
@@ -1040,7 +1040,7 @@ mod tests {
         let sdk = test_sdk();
         let mut cap = valid_capsule();
         cap.environment.platform = String::new();
-        let report = sdk.verify_capsule(&cap).unwrap();
+        let report = sdk.verify_capsule(&cap).expect("should verify");
         assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
         assert!(
             report
@@ -1055,7 +1055,7 @@ mod tests {
         let sdk = test_sdk();
         let mut cap = valid_capsule();
         cap.environment.config_hash = String::new();
-        let report = sdk.verify_capsule(&cap).unwrap();
+        let report = sdk.verify_capsule(&cap).expect("should verify");
         assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
         assert!(
             report
@@ -1072,8 +1072,8 @@ mod tests {
         // INV-VSK-DETERMINISTIC-VERIFY
         let sdk = test_sdk();
         let cap = valid_capsule();
-        let r1 = sdk.verify_capsule(&cap).unwrap();
-        let r2 = sdk.verify_capsule(&cap).unwrap();
+        let r1 = sdk.verify_capsule(&cap).expect("should verify");
+        let r2 = sdk.verify_capsule(&cap).expect("should verify");
         assert_eq!(r1.verdict, r2.verdict);
         assert_eq!(r1.binding_hash, r2.binding_hash);
         assert_eq!(r1.evidence.len(), r2.evidence.len());
@@ -1086,8 +1086,8 @@ mod tests {
         let mut cap2 = valid_capsule();
         cap2.environment.platform = "darwin-aarch64".to_string();
 
-        let r1 = sdk.verify_capsule(&cap1).unwrap();
-        let r2 = sdk.verify_capsule(&cap2).unwrap();
+        let r1 = sdk.verify_capsule(&cap1).expect("should verify");
+        let r2 = sdk.verify_capsule(&cap2).expect("should verify");
 
         assert_eq!(r1.verdict, VerifyVerdict::Pass);
         assert_eq!(r2.verdict, VerifyVerdict::Pass);
@@ -1102,20 +1102,20 @@ mod tests {
     #[test]
     fn test_verify_chain_pass() {
         let sdk = test_sdk();
-        let r1 = sdk.verify_artifact(&valid_request()).unwrap();
+        let r1 = sdk.verify_artifact(&valid_request()).expect("should verify");
         let mut req2 = valid_request();
         req2.artifact_id = "artifact-002".to_string();
         req2.artifact_hash = deterministic_hash("artifact-002");
-        let r2 = sdk.verify_artifact(&req2).unwrap();
-        let chain_report = sdk.verify_chain(&[r1, r2]).unwrap();
+        let r2 = sdk.verify_artifact(&req2).expect("should verify");
+        let chain_report = sdk.verify_chain(&[r1, r2]).expect("should chain");
         assert_eq!(chain_report.verdict, VerifyVerdict::Pass);
     }
 
     #[test]
     fn test_verify_chain_report_fields() {
         let sdk = test_sdk();
-        let r1 = sdk.verify_artifact(&valid_request()).unwrap();
-        let chain_report = sdk.verify_chain(&[r1]).unwrap();
+        let r1 = sdk.verify_artifact(&valid_request()).expect("should verify");
+        let chain_report = sdk.verify_chain(&[r1]).expect("should chain");
         assert!(chain_report.request_id.starts_with("vchn-"));
         assert_eq!(chain_report.schema_tag, SCHEMA_TAG);
     }
@@ -1132,14 +1132,14 @@ mod tests {
     #[test]
     fn test_verify_chain_with_failing_report() {
         let sdk = test_sdk();
-        let passing = sdk.verify_artifact(&valid_request()).unwrap();
+        let passing = sdk.verify_artifact(&valid_request()).expect("should verify");
         let failing_req = VerificationRequest {
             artifact_id: "art-bad".to_string(),
             artifact_hash: "short".to_string(),
             claims: vec!["c".to_string()],
         };
-        let failing = sdk.verify_artifact(&failing_req).unwrap();
-        let chain_report = sdk.verify_chain(&[passing, failing]).unwrap();
+        let failing = sdk.verify_artifact(&failing_req).expect("should verify");
+        let chain_report = sdk.verify_chain(&[passing, failing]).expect("should chain");
         assert!(matches!(chain_report.verdict, VerifyVerdict::Fail(_)));
     }
 
@@ -1149,9 +1149,9 @@ mod tests {
     fn test_verify_chain_deterministic() {
         // INV-VSK-DETERMINISTIC-VERIFY
         let sdk = test_sdk();
-        let r1 = sdk.verify_artifact(&valid_request()).unwrap();
-        let chain1 = sdk.verify_chain(std::slice::from_ref(&r1)).unwrap();
-        let chain2 = sdk.verify_chain(&[r1]).unwrap();
+        let r1 = sdk.verify_artifact(&valid_request()).expect("should verify");
+        let chain1 = sdk.verify_chain(std::slice::from_ref(&r1)).expect("should chain");
+        let chain2 = sdk.verify_chain(&[r1]).expect("should chain");
         assert_eq!(chain1.binding_hash, chain2.binding_hash);
     }
 
@@ -1189,17 +1189,17 @@ mod tests {
     #[test]
     fn test_verification_request_serde_roundtrip() {
         let req = valid_request();
-        let json = serde_json::to_string(&req).unwrap();
-        let parsed: VerificationRequest = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&req).expect("serialize should succeed");
+        let parsed: VerificationRequest = serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(req, parsed);
     }
 
     #[test]
     fn test_verification_report_serde_roundtrip() {
         let sdk = test_sdk();
-        let report = sdk.verify_artifact(&valid_request()).unwrap();
-        let json = serde_json::to_string(&report).unwrap();
-        let parsed: VerificationReport = serde_json::from_str(&json).unwrap();
+        let report = sdk.verify_artifact(&valid_request()).expect("should verify");
+        let json = serde_json::to_string(&report).expect("serialize should succeed");
+        let parsed: VerificationReport = serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(report, parsed);
     }
 
@@ -1210,8 +1210,8 @@ mod tests {
             VerifyVerdict::Fail(vec!["reason".to_string()]),
             VerifyVerdict::Inconclusive("maybe".to_string()),
         ] {
-            let json = serde_json::to_string(&v).unwrap();
-            let parsed: VerifyVerdict = serde_json::from_str(&json).unwrap();
+            let json = serde_json::to_string(&v).expect("serialize should succeed");
+            let parsed: VerifyVerdict = serde_json::from_str(&json).expect("deserialize should succeed");
             assert_eq!(v, parsed);
         }
     }
@@ -1223,8 +1223,8 @@ mod tests {
             passed: true,
             detail: "ok".to_string(),
         };
-        let json = serde_json::to_string(&entry).unwrap();
-        let parsed: EvidenceEntry = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&entry).expect("serialize should succeed");
+        let parsed: EvidenceEntry = serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(entry, parsed);
     }
 
@@ -1235,16 +1235,16 @@ mod tests {
             detail: "started".to_string(),
             timestamp: now_timestamp(),
         };
-        let json = serde_json::to_string(&evt).unwrap();
-        let parsed: SdkEvent = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&evt).expect("serialize should succeed");
+        let parsed: SdkEvent = serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(parsed.event_code, "VSK-001");
     }
 
     #[test]
     fn test_verifier_config_serde_roundtrip() {
         let config = VerifierConfig::default();
-        let json = serde_json::to_string(&config).unwrap();
-        let parsed: VerifierConfig = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&config).expect("serialize should succeed");
+        let parsed: VerifierConfig = serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(config, parsed);
     }
 
@@ -1254,8 +1254,8 @@ mod tests {
             expected: "a".to_string(),
             actual: "b".to_string(),
         };
-        let json = serde_json::to_string(&err).unwrap();
-        let parsed: SdkError = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&err).expect("serialize should succeed");
+        let parsed: SdkError = serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(err, parsed);
     }
 
@@ -1372,8 +1372,8 @@ mod tests {
         let mut req2 = valid_request();
         req2.artifact_id = "art".to_string();
         req2.artifact_hash = "fake_hash|rest".to_string();
-        let r1 = sdk.verify_artifact(&req1).unwrap();
-        let r2 = sdk.verify_artifact(&req2).unwrap();
+        let r1 = sdk.verify_artifact(&req1).expect("should verify");
+        let r2 = sdk.verify_artifact(&req2).expect("should verify");
         assert_ne!(
             r1.binding_hash, r2.binding_hash,
             "binding hash must differ when fields contain delimiters"
@@ -1395,8 +1395,8 @@ mod tests {
             artifact_hash,
             claims: vec!["a".to_string(), "b,c".to_string()],
         };
-        let r1 = sdk.verify_artifact(&req1).unwrap();
-        let r2 = sdk.verify_artifact(&req2).unwrap();
+        let r1 = sdk.verify_artifact(&req1).expect("should verify");
+        let r2 = sdk.verify_artifact(&req2).expect("should verify");
         assert_ne!(
             r1.binding_hash, r2.binding_hash,
             "binding hash must preserve claim boundaries, not just joined contents"

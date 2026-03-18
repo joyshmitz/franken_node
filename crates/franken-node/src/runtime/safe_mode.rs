@@ -1204,31 +1204,31 @@ mod tests {
 
     #[test]
     fn test_flags_parse_empty() {
-        let flags = OperationFlags::parse_args(&[]).unwrap();
+        let flags = OperationFlags::parse_args(&[]).expect("should succeed");
         assert_eq!(flags, OperationFlags::none());
     }
 
     #[test]
     fn test_flags_parse_safe_mode() {
-        let flags = OperationFlags::parse_args(&["--safe-mode"]).unwrap();
+        let flags = OperationFlags::parse_args(&["--safe-mode"]).expect("should succeed");
         assert!(flags.safe_mode);
     }
 
     #[test]
     fn test_flags_parse_degraded() {
-        let flags = OperationFlags::parse_args(&["--degraded"]).unwrap();
+        let flags = OperationFlags::parse_args(&["--degraded"]).expect("should succeed");
         assert!(flags.degraded);
     }
 
     #[test]
     fn test_flags_parse_read_only() {
-        let flags = OperationFlags::parse_args(&["--read-only"]).unwrap();
+        let flags = OperationFlags::parse_args(&["--read-only"]).expect("should succeed");
         assert!(flags.read_only);
     }
 
     #[test]
     fn test_flags_parse_no_network() {
-        let flags = OperationFlags::parse_args(&["--no-network"]).unwrap();
+        let flags = OperationFlags::parse_args(&["--no-network"]).expect("should succeed");
         assert!(flags.no_network);
     }
 
@@ -1258,15 +1258,15 @@ mod tests {
                 assert_eq!(flag, "--unknown");
                 assert!(recovery_hint.contains("Valid flags"));
             }
-            _ => panic!("expected UnknownFlag error"),
+            _ => unreachable!("expected UnknownFlag error"),
         }
     }
 
     #[test]
     fn test_flags_deterministic_parsing() {
         // INV-SMO-FLAGPARSE: same input => same output.
-        let a = OperationFlags::parse_args(&["--safe-mode", "--read-only"]).unwrap();
-        let b = OperationFlags::parse_args(&["--safe-mode", "--read-only"]).unwrap();
+        let a = OperationFlags::parse_args(&["--safe-mode", "--read-only"]).expect("should succeed");
+        let b = OperationFlags::parse_args(&["--safe-mode", "--read-only"]).expect("should succeed");
         assert_eq!(a, b);
     }
 
@@ -1316,8 +1316,8 @@ mod tests {
             read_only: true,
             no_network: true,
         };
-        let json = serde_json::to_string(&flags).unwrap();
-        let parsed: OperationFlags = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&flags).expect("serialize");
+        let parsed: OperationFlags = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(flags, parsed);
     }
 
@@ -1359,8 +1359,8 @@ mod tests {
     #[test]
     fn test_capability_serde_roundtrip() {
         let cap = Capability::ExtensionLoading;
-        let json = serde_json::to_string(&cap).unwrap();
-        let parsed: Capability = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&cap).expect("serialize");
+        let parsed: Capability = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(cap, parsed);
     }
 
@@ -1410,8 +1410,8 @@ mod tests {
             crash_count: 3,
             window_secs: 60,
         };
-        let json = serde_json::to_string(&reason).unwrap();
-        let parsed: SafeModeEntryReason = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&reason).expect("serialize");
+        let parsed: SafeModeEntryReason = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(reason, parsed);
     }
 
@@ -1430,8 +1430,8 @@ mod tests {
     #[test]
     fn test_config_serde_roundtrip() {
         let config = SafeModeConfig::default();
-        let json = serde_json::to_string(&config).unwrap();
-        let parsed: SafeModeConfig = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&config).expect("serialize");
+        let parsed: SafeModeConfig = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(config, parsed);
     }
 
@@ -1475,7 +1475,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
         );
-        let json = receipt.to_json().unwrap();
+        let json = receipt.to_json().expect("to_json should succeed");
         assert!(json.contains("sha256:abc"));
         assert!(json.contains("trust_proof_digest"));
     }
@@ -1489,8 +1489,8 @@ mod tests {
             Vec::new(),
             Vec::new(),
         );
-        let json = serde_json::to_string(&receipt).unwrap();
-        let parsed: SafeModeEntryReceipt = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&receipt).expect("serialize");
+        let parsed: SafeModeEntryReceipt = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(receipt, parsed);
     }
 
@@ -1544,15 +1544,15 @@ mod tests {
     #[test]
     fn test_status_to_json() {
         let status = SafeModeStatus::inactive();
-        let json = status.to_json().unwrap();
+        let json = status.to_json().expect("to_json should succeed");
         assert!(json.contains("safe_mode_active"));
     }
 
     #[test]
     fn test_status_serde_roundtrip() {
         let status = SafeModeStatus::inactive();
-        let json = serde_json::to_string(&status).unwrap();
-        let parsed: SafeModeStatus = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&status).expect("serialize");
+        let parsed: SafeModeStatus = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(status, parsed);
     }
 
@@ -1617,8 +1617,8 @@ mod tests {
             flag: "--x".to_string(),
             recovery_hint: "fix".to_string(),
         };
-        let json = serde_json::to_string(&err).unwrap();
-        let parsed: SafeModeError = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&err).expect("serialize");
+        let parsed: SafeModeError = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(err, parsed);
     }
 
@@ -1698,7 +1698,7 @@ mod tests {
             "sha256:test",
             Vec::new(),
         );
-        let receipt = ctrl.entry_receipt().unwrap();
+        let receipt = ctrl.entry_receipt().expect("should have receipt");
         assert!(receipt.pass);
         assert_eq!(receipt.trust_state_hash, "sha256:test");
     }
@@ -1712,7 +1712,7 @@ mod tests {
             "sha256:test",
             vec!["hash mismatch".to_string()],
         );
-        let receipt = ctrl.entry_receipt().unwrap();
+        let receipt = ctrl.entry_receipt().expect("should have receipt");
         assert!(!receipt.pass);
         assert_eq!(receipt.inconsistencies.len(), 1);
     }
@@ -1752,7 +1752,7 @@ mod tests {
             operator_confirmed: true,
         };
         ctrl.exit_safe_mode(&verification, "operator-1", "2026-02-20T11:00:00Z")
-            .unwrap();
+            .expect("should succeed");
         assert!(!ctrl.is_active());
     }
 
@@ -1793,7 +1793,7 @@ mod tests {
         };
 
         ctrl.exit_safe_mode(&verification, "operator-1", "2026-02-20T11:00:00Z")
-            .unwrap();
+            .expect("should succeed");
 
         assert!(
             ctrl.events()
@@ -1910,7 +1910,7 @@ mod tests {
             evidence_ledger_intact: true,
             operator_confirmed: true,
         };
-        ctrl.exit_safe_mode(&verification, "op", "ts").unwrap();
+        ctrl.exit_safe_mode(&verification, "op", "ts").expect("exit should succeed");
         let exit_entries: Vec<_> = ctrl
             .audit_log()
             .iter()
@@ -2359,7 +2359,7 @@ mod tests {
             operator_confirmed: true,
         };
         ctrl.exit_safe_mode(&good_verification, "operator-1", "2026-02-20T11:00:00Z")
-            .unwrap();
+            .expect("should succeed");
         assert!(!ctrl.is_active());
 
         // Capabilities restored.
@@ -2379,7 +2379,7 @@ mod tests {
             ],
         );
         assert!(ctrl.is_active());
-        let receipt = ctrl.entry_receipt().unwrap();
+        let receipt = ctrl.entry_receipt().expect("should have receipt");
         assert!(!receipt.pass);
         assert_eq!(receipt.inconsistencies.len(), 2);
     }
@@ -2389,7 +2389,7 @@ mod tests {
         let mut ctrl = SafeModeController::with_default_config();
         let trigger = ctrl.check_crash_loop_trigger(5, 60);
         assert!(trigger.is_some());
-        ctrl.enter_degraded_state(trigger.unwrap(), "2026-02-20T10:00:00Z");
+        ctrl.enter_degraded_state(trigger.expect("trigger should exist"), "2026-02-20T10:00:00Z");
         assert!(ctrl.is_active());
         assert!(
             ctrl.events()
@@ -2418,7 +2418,7 @@ mod tests {
             assert_eq!(*local_epoch, 10);
             assert_eq!(*peer_epoch, 15);
         } else {
-            panic!("expected epoch mismatch reason");
+            unreachable!("expected epoch mismatch reason");
         }
     }
 
@@ -2448,21 +2448,21 @@ mod tests {
     #[test]
     fn test_parse_duration_between_valid() {
         let duration =
-            parse_duration_between("2026-02-20T10:00:00Z", "2026-02-20T11:00:00Z").unwrap();
+            parse_duration_between("2026-02-20T10:00:00Z", "2026-02-20T11:00:00Z").expect("parse");
         assert_eq!(duration, 3600);
     }
 
     #[test]
     fn test_parse_duration_between_same_timestamp() {
         let duration =
-            parse_duration_between("2026-02-20T10:00:00Z", "2026-02-20T10:00:00Z").unwrap();
+            parse_duration_between("2026-02-20T10:00:00Z", "2026-02-20T10:00:00Z").expect("parse");
         assert_eq!(duration, 0);
     }
 
     #[test]
     fn test_parse_duration_between_negative_clamps_to_zero() {
         let duration =
-            parse_duration_between("2026-02-20T11:00:00Z", "2026-02-20T10:00:00Z").unwrap();
+            parse_duration_between("2026-02-20T11:00:00Z", "2026-02-20T10:00:00Z").expect("parse");
         assert_eq!(duration, 0);
     }
 
@@ -2585,7 +2585,7 @@ mod tests {
             operator_confirmed: true,
         };
         ctrl.exit_safe_mode(&verification, "operator-1", "2026-02-20T11:00:00Z")
-            .unwrap();
+            .expect("should succeed");
         assert!(
             ctrl.events()
                 .iter()
@@ -2616,7 +2616,7 @@ mod tests {
         };
         let result = ctrl.exit_safe_mode(&verification, "op", "ts");
         assert!(result.is_err(), "exit_safe_mode should fail when not active");
-        let err = result.unwrap_err();
+        let err = result.expect_err("should fail");
         assert!(
             err.to_string().contains("not active"),
             "error should mention 'not active': {err}"

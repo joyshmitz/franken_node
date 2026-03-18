@@ -617,7 +617,7 @@ mod tests {
 
         store
             .complete(key, b"result-ok".to_vec(), 1001, "t2")
-            .unwrap();
+            .expect("should succeed");
 
         let r2 = store.check_or_insert(key, payload, 1002, "t2");
         match r2 {
@@ -625,7 +625,7 @@ mod tests {
                 assert_eq!(outcome.result_data, b"result-ok");
             }
             other => {
-                panic!("expected Duplicate, got {other:?}");
+                unreachable!("expected Duplicate, got {other:?}");
             }
         }
     }
@@ -638,7 +638,7 @@ mod tests {
         store.check_or_insert(key, b"payload-x", 1000, "t3");
         store
             .complete(key, b"result-x".to_vec(), 1001, "t3")
-            .unwrap();
+            .expect("should succeed");
 
         let r = store.check_or_insert(key, b"payload-y", 1002, "t3");
         match r {
@@ -650,7 +650,7 @@ mod tests {
                 assert_ne!(expected_hash, actual_hash);
             }
             other => {
-                panic!("expected Conflict, got {other:?}");
+                unreachable!("expected Conflict, got {other:?}");
             }
         }
     }
@@ -674,7 +674,7 @@ mod tests {
         store.check_or_insert(key, b"p5", 1000, "t5");
         store
             .complete(key, b"outcome-5".to_vec(), 1001, "t5")
-            .unwrap();
+            .expect("should succeed");
 
         // Re-check returns the cached outcome.
         let r = store.check_or_insert(key, b"p5", 1002, "t5");
@@ -685,7 +685,7 @@ mod tests {
                 assert!(!outcome.result_hash.is_empty());
             }
             other => {
-                panic!("expected Duplicate, got {other:?}");
+                unreachable!("expected Duplicate, got {other:?}");
             }
         }
     }
@@ -720,7 +720,7 @@ mod tests {
                 assert_eq!(actual_hash, payload_hash);
             }
             other => {
-                panic!(
+                unreachable!(
                     "expected Conflict for corrupted complete entry, got {:?}",
                     other
                 );
@@ -745,7 +745,7 @@ mod tests {
         let key = test_key(6);
 
         store.check_or_insert(key, b"ttl-payload", 1000, "t6");
-        store.complete(key, b"res".to_vec(), 1001, "t6").unwrap();
+        store.complete(key, b"res".to_vec(), 1001, "t6").expect("should succeed");
 
         // Within TTL -> Duplicate.
         let r1 = store.check_or_insert(key, b"ttl-payload", 1050, "t6");
@@ -766,7 +766,7 @@ mod tests {
             store.check_or_insert(test_key(seed), &[seed], 1000, "ts");
             store
                 .complete(test_key(seed), vec![seed], 1001, "ts")
-                .unwrap();
+                .expect("should succeed");
         }
         assert_eq!(store.entry_count(), 3);
 
@@ -787,7 +787,7 @@ mod tests {
         // Complete one.
         store
             .complete(test_key(20), b"done".to_vec(), 1001, "tr")
-            .unwrap();
+            .expect("should succeed");
 
         // Recover — only key 21 should transition to Abandoned.
         let recovered = store.recover_inflight("tr");
@@ -816,7 +816,7 @@ mod tests {
             let mut s = IdempotencyDedupeStore::new(3600);
             s.check_or_insert(test_key(40), b"det", 1000, "td");
             s.complete(test_key(40), b"res-det".to_vec(), 1001, "td")
-                .unwrap();
+                .expect("should succeed");
             s.content_hash()
         };
         assert_eq!(build(), build());
@@ -828,7 +828,7 @@ mod tests {
         store.check_or_insert(test_key(50), b"audit", 1000, "ta");
         store
             .complete(test_key(50), b"done".to_vec(), 1001, "ta")
-            .unwrap();
+            .expect("should succeed");
 
         // At least 3 events: recovery, new entry, inflight resolved.
         assert_eq!(store.audit_log_len(), 3);
@@ -853,7 +853,7 @@ mod tests {
         );
         store
             .complete(key, b"cap-result".to_vec(), 1001, "tcap")
-            .unwrap();
+            .expect("should succeed");
         let _ = store.check_or_insert(key, payload, 1002, "tcap");
 
         assert_eq!(store.audit_log_len(), 2);
@@ -881,7 +881,7 @@ mod tests {
         let _ = store.check_or_insert(key, payload, 1000, "tcap1");
         store
             .complete(key, b"cap-result-1".to_vec(), 1001, "tcap1")
-            .unwrap();
+            .expect("should succeed");
 
         assert_eq!(store.audit_log_len(), 1);
         assert_eq!(
@@ -980,13 +980,13 @@ mod tests {
         store.check_or_insert(test_key(90), b"keep", 1000, "tk");
         store
             .complete(test_key(90), b"kept".to_vec(), 1001, "tk")
-            .unwrap();
+            .expect("should succeed");
 
         // Entry at t=1050.
         store.check_or_insert(test_key(91), b"keep2", 1050, "tk");
         store
             .complete(test_key(91), b"kept2".to_vec(), 1051, "tk")
-            .unwrap();
+            .expect("should succeed");
 
         // Sweep at t=1101 — only first entry expired.
         let swept = store.sweep_expired(1101, "tk");
