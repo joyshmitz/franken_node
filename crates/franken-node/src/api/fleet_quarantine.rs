@@ -459,31 +459,113 @@ impl OperationSlot {
     }
 }
 
-static SHARED_FLEET_CONTROL_MANAGER: OnceLock<Mutex<FleetControlManager>> = OnceLock::new();
-
-fn shared_fleet_control_manager() -> &'static Mutex<FleetControlManager> {
-    SHARED_FLEET_CONTROL_MANAGER.get_or_init(|| Mutex::new(FleetControlManager::new()))
+/// Explicit owner for the fleet-control singleton state on the request path.
+struct SharedFleetControlOwner {
+    inner: Mutex<FleetControlManager>,
 }
 
-fn lock_shared_fleet_control_manager(
-    trace: &TraceContext,
-) -> Result<MutexGuard<'static, FleetControlManager>, ApiError> {
-    shared_fleet_control_manager()
-        .lock()
-        .map_err(|_| ApiError::Internal {
+impl SharedFleetControlOwner {
+    fn new() -> Self {
+        Self {
+            inner: Mutex::new(FleetControlManager::new()),
+        }
+    }
+
+    fn lock(&self, trace: &TraceContext) -> Result<MutexGuard<'_, FleetControlManager>, ApiError> {
+        self.inner.lock().map_err(|_| ApiError::Internal {
             detail: "fleet control manager lock poisoned".to_string(),
             trace_id: trace.trace_id.clone(),
         })
+    }
+
+    #[cfg(any(test, feature = "extended-surfaces"))]
+    fn quarantine(
+        &self,
+        identity: &AuthIdentity,
+        trace: &TraceContext,
+        request: &QuarantineRequest,
+    ) -> Result<FleetActionResult, ApiError> {
+        let mut mgr = self.lock(trace)?;
+        mgr.activate();
+        mgr.quarantine(&request.extension_id, &request.scope, identity, trace)
+            .map_err(|e| ApiError::BadRequest {
+                detail: format!("{}: {}", e.error_code(), "quarantine failed"),
+                trace_id: trace.trace_id.clone(),
+            })
+    }
+
+    #[cfg(any(test, feature = "extended-surfaces"))]
+    fn revoke(
+        &self,
+        identity: &AuthIdentity,
+        trace: &TraceContext,
+        request: &RevokeRequest,
+    ) -> Result<FleetActionResult, ApiError> {
+        let mut mgr = self.lock(trace)?;
+        mgr.activate();
+        mgr.revoke(&request.extension_id, &request.scope, identity, trace)
+            .map_err(|e| ApiError::BadRequest {
+                detail: format!("{}: {}", e.error_code(), "revocation failed"),
+                trace_id: trace.trace_id.clone(),
+            })
+    }
+
+    fn release(
+        &self,
+        identity: &AuthIdentity,
+        trace: &TraceContext,
+        incident_id: &str,
+    ) -> Result<FleetActionResult, ApiError> {
+        let mut mgr = self.lock(trace)?;
+        mgr.activate();
+        mgr.release(incident_id, identity, trace)
+            .map_err(|e| ApiError::BadRequest {
+                detail: format!("{}: {e:?}", e.error_code()),
+                trace_id: trace.trace_id.clone(),
+            })
+    }
+
+    fn status(&self, trace: &TraceContext, zone_id: &str) -> Result<FleetStatus, ApiError> {
+        let mgr = self.lock(trace)?;
+        mgr.status(zone_id).map_err(|e| ApiError::BadRequest {
+            detail: format!("{}: {}", e.error_code(), "status failed"),
+            trace_id: trace.trace_id.clone(),
+        })
+    }
+
+    fn reconcile(
+        &self,
+        identity: &AuthIdentity,
+        trace: &TraceContext,
+    ) -> Result<FleetActionResult, ApiError> {
+        let mut mgr = self.lock(trace)?;
+        mgr.activate();
+        mgr.reconcile(identity, trace)
+            .map_err(|e| ApiError::BadRequest {
+                detail: format!("{}: {}", e.error_code(), "reconcile failed"),
+                trace_id: trace.trace_id.clone(),
+            })
+    }
+
+    #[cfg(test)]
+    fn reset_for_tests(&self) {
+        let mut guard = match self.inner.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *guard = FleetControlManager::new();
+    }
+}
+
+static SHARED_FLEET_CONTROL_MANAGER: OnceLock<SharedFleetControlOwner> = OnceLock::new();
+
+fn shared_fleet_control_manager() -> &'static SharedFleetControlOwner {
+    SHARED_FLEET_CONTROL_MANAGER.get_or_init(SharedFleetControlOwner::new)
 }
 
 #[cfg(test)]
 fn reset_shared_fleet_control_manager_for_tests() {
-    let manager = shared_fleet_control_manager();
-    let mut guard = match manager.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    *guard = FleetControlManager::new();
+    shared_fleet_control_manager().reset_for_tests();
 }
 
 impl FleetControlManager {
@@ -997,14 +1079,7 @@ pub fn handle_quarantine(
     trace: &TraceContext,
     request: &QuarantineRequest,
 ) -> Result<ApiResponse<FleetActionResult>, ApiError> {
-    let mut mgr = lock_shared_fleet_control_manager(trace)?;
-    mgr.activate();
-    let result = mgr
-        .quarantine(&request.extension_id, &request.scope, identity, trace)
-        .map_err(|e| ApiError::BadRequest {
-            detail: format!("{}: {}", e.error_code(), "quarantine failed"),
-            trace_id: trace.trace_id.clone(),
-        })?;
+    let result = shared_fleet_control_manager().quarantine(identity, trace, request)?;
     Ok(ApiResponse {
         ok: true,
         data: result,
@@ -1018,14 +1093,7 @@ pub fn handle_revoke(
     trace: &TraceContext,
     request: &RevokeRequest,
 ) -> Result<ApiResponse<FleetActionResult>, ApiError> {
-    let mut mgr = lock_shared_fleet_control_manager(trace)?;
-    mgr.activate();
-    let result = mgr
-        .revoke(&request.extension_id, &request.scope, identity, trace)
-        .map_err(|e| ApiError::BadRequest {
-            detail: format!("{}: {}", e.error_code(), "revocation failed"),
-            trace_id: trace.trace_id.clone(),
-        })?;
+    let result = shared_fleet_control_manager().revoke(identity, trace, request)?;
     Ok(ApiResponse {
         ok: true,
         data: result,
@@ -1046,14 +1114,7 @@ pub fn handle_release(
         });
     }
 
-    let mut mgr = lock_shared_fleet_control_manager(trace)?;
-    mgr.activate();
-    let result = mgr
-        .release(incident_id, identity, trace)
-        .map_err(|e| ApiError::BadRequest {
-            detail: format!("{}: {e:?}", e.error_code()),
-            trace_id: trace.trace_id.clone(),
-        })?;
+    let result = shared_fleet_control_manager().release(identity, trace, incident_id)?;
     Ok(ApiResponse {
         ok: true,
         data: result,
@@ -1066,11 +1127,7 @@ pub fn handle_status(
     trace: &TraceContext,
     zone_id: &str,
 ) -> Result<ApiResponse<FleetStatus>, ApiError> {
-    let mgr = lock_shared_fleet_control_manager(trace)?;
-    let status = mgr.status(zone_id).map_err(|e| ApiError::BadRequest {
-        detail: format!("{}: {}", e.error_code(), "status failed"),
-        trace_id: trace.trace_id.clone(),
-    })?;
+    let status = shared_fleet_control_manager().status(trace, zone_id)?;
     Ok(ApiResponse {
         ok: true,
         data: status,
@@ -1082,14 +1139,7 @@ pub fn handle_reconcile(
     identity: &AuthIdentity,
     trace: &TraceContext,
 ) -> Result<ApiResponse<FleetActionResult>, ApiError> {
-    let mut mgr = lock_shared_fleet_control_manager(trace)?;
-    mgr.activate();
-    let result = mgr
-        .reconcile(identity, trace)
-        .map_err(|e| ApiError::BadRequest {
-            detail: format!("{}: {}", e.error_code(), "reconcile failed"),
-            trace_id: trace.trace_id.clone(),
-        })?;
+    let result = shared_fleet_control_manager().reconcile(identity, trace)?;
     Ok(ApiResponse {
         ok: true,
         data: result,
@@ -1200,7 +1250,9 @@ mod tests {
         let scope = test_revocation_scope();
         let identity = admin_identity();
         let trace = test_trace();
-        let err = mgr.revoke("ext-1", &scope, &identity, &trace).expect_err("should fail");
+        let err = mgr
+            .revoke("ext-1", &scope, &identity, &trace)
+            .expect_err("should fail");
         assert_eq!(err.error_code(), FLEET_NOT_ACTIVATED);
     }
 
@@ -1209,7 +1261,9 @@ mod tests {
         let mut mgr = FleetControlManager::new();
         let identity = admin_identity();
         let trace = test_trace();
-        let err = mgr.release("inc-1", &identity, &trace).expect_err("should fail");
+        let err = mgr
+            .release("inc-1", &identity, &trace)
+            .expect_err("should fail");
         assert_eq!(err.error_code(), FLEET_NOT_ACTIVATED);
     }
 
@@ -1793,25 +1847,22 @@ mod tests {
     #[test]
     fn handler_release_succeeds_for_prior_quarantine_incident() {
         let _guard = lock_handler_test_state();
+        let trace = test_trace();
         let request = QuarantineRequest {
             extension_id: "ext-1".to_string(),
             scope: test_quarantine_scope(),
         };
-        handle_quarantine(&admin_identity(), &test_trace(), &request).expect("handle quarantine");
+        handle_quarantine(&admin_identity(), &trace, &request).expect("handle quarantine");
 
         let incident_id = {
             let mgr = shared_fleet_control_manager()
-                .lock()
+                .lock(&trace)
                 .expect("shared fleet manager");
             mgr.active_incidents()[0].incident_id.clone()
         };
 
-        let release = handle_release(
-            &admin_identity(),
-            &test_trace(),
-            &ReleaseRequest { incident_id },
-        )
-        .expect("handle release");
+        let release = handle_release(&admin_identity(), &trace, &ReleaseRequest { incident_id })
+            .expect("handle release");
         assert_eq!(release.data.action_type, "release");
     }
 
