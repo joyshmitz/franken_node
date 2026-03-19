@@ -34,6 +34,15 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     }
 }
 
+fn hash_len_prefixed_bytes(hasher: &mut Sha256, bytes: &[u8]) {
+    hasher.update((bytes.len() as u64).to_le_bytes());
+    hasher.update(bytes);
+}
+
+fn hash_u64_field(hasher: &mut Sha256, value: u64) {
+    hasher.update(value.to_le_bytes());
+}
+
 /// Schema version tag for serialised store snapshots.
 pub const SCHEMA_VERSION: &str = "ids-v1.0";
 
@@ -524,20 +533,24 @@ impl IdempotencyDedupeStore {
     pub fn content_hash(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"idempotency_content_hash_v1:");
-        // Length-prefixed encoding prevents delimiter-collision ambiguity.
-        hasher.update((SCHEMA_VERSION.len() as u64).to_le_bytes());
-        hasher.update(SCHEMA_VERSION.as_bytes());
+        // Length-prefixed encoding prevents delimiter-collision ambiguity and
+        // the timestamp/TTL fields seal expiration-relevant state.
+        hash_len_prefixed_bytes(&mut hasher, SCHEMA_VERSION.as_bytes());
         for (k, entry) in &self.entries {
-            hasher.update((k.len() as u64).to_le_bytes());
-            hasher.update(k.as_bytes());
-            hasher.update((entry.payload_hash.len() as u64).to_le_bytes());
-            hasher.update(entry.payload_hash.as_bytes());
+            hash_len_prefixed_bytes(&mut hasher, k.as_bytes());
+            hash_len_prefixed_bytes(&mut hasher, entry.payload_hash.as_bytes());
             let status = format!("{}", entry.status);
-            hasher.update((status.len() as u64).to_le_bytes());
-            hasher.update(status.as_bytes());
-            if let Some(ref outcome) = entry.outcome {
-                hasher.update((outcome.result_hash.len() as u64).to_le_bytes());
-                hasher.update(outcome.result_hash.as_bytes());
+            hash_len_prefixed_bytes(&mut hasher, status.as_bytes());
+            hash_u64_field(&mut hasher, entry.created_at_secs);
+            hash_u64_field(&mut hasher, entry.ttl_secs);
+            match &entry.outcome {
+                Some(outcome) => {
+                    hasher.update([1]);
+                    hash_len_prefixed_bytes(&mut hasher, outcome.result_hash.as_bytes());
+                    hash_len_prefixed_bytes(&mut hasher, &outcome.result_data);
+                    hash_u64_field(&mut hasher, outcome.completed_at_secs);
+                }
+                None => hasher.update([0]),
             }
         }
         format!("{:x}", hasher.finalize())
@@ -820,6 +833,67 @@ mod tests {
             s.content_hash()
         };
         assert_eq!(build(), build());
+    }
+
+    #[test]
+    fn test_content_hash_changes_when_created_at_changes() {
+        let build = |created_at_secs| {
+            let mut store = IdempotencyDedupeStore::new(3600);
+            store.check_or_insert(test_key(41), b"det", created_at_secs, "t-created");
+            store
+                .complete(test_key(41), b"res-det".to_vec(), 1001, "t-created")
+                .expect("should succeed");
+            store.content_hash()
+        };
+
+        assert_ne!(build(1000), build(1002));
+    }
+
+    #[test]
+    fn test_content_hash_changes_when_ttl_changes() {
+        let build = |ttl_secs| {
+            let mut store = IdempotencyDedupeStore::new(ttl_secs);
+            store.check_or_insert(test_key(42), b"det", 1000, "t-ttl");
+            store
+                .complete(test_key(42), b"res-det".to_vec(), 1001, "t-ttl")
+                .expect("should succeed");
+            store.content_hash()
+        };
+
+        assert_ne!(build(3600), build(7200));
+    }
+
+    #[test]
+    fn test_content_hash_changes_when_completed_at_changes() {
+        let build = |completed_at_secs| {
+            let mut store = IdempotencyDedupeStore::new(3600);
+            store.check_or_insert(test_key(43), b"det", 1000, "t-complete");
+            store
+                .complete(
+                    test_key(43),
+                    b"res-det".to_vec(),
+                    completed_at_secs,
+                    "t-complete",
+                )
+                .expect("should succeed");
+            store.content_hash()
+        };
+
+        assert_ne!(build(1001), build(1003));
+    }
+
+    #[test]
+    fn test_content_hash_changes_when_result_data_changes() {
+        let build = |result_data: &[u8]| {
+            let mut store = IdempotencyDedupeStore::new(3600);
+            store.check_or_insert(test_key(44), b"det", 1000, "t-result");
+            store
+                .complete(test_key(44), result_data.to_vec(), 1001, "t-result")
+                .expect("should succeed");
+            store.content_hash()
+        };
+
+        assert_ne!(build(b"res-det-a"), build(b"res-det-b"));
     }
 
     #[test]

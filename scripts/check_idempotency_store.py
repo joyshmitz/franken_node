@@ -81,6 +81,16 @@ def _check(name: str, ok: bool, detail: str = "") -> dict:
     return {"check": name, "pass": ok, "detail": detail or ("ok" if ok else "FAIL")}
 
 
+def _content_hash_block() -> str:
+    src = _read(IMPL_FILE)
+    match = re.search(
+        r"pub fn content_hash\(&self\) -> String \{(?P<body>.*?)\n    \}\n\n    /// Return",
+        src,
+        re.S,
+    )
+    return match.group("body") if match else ""
+
+
 # ── Check groups ───────────────────────────────────────────────────────────
 
 def check_source_exists() -> list:
@@ -182,6 +192,23 @@ def check_operations() -> list:
     return checks
 
 
+def check_content_hash_surface() -> list:
+    block = _content_hash_block()
+    checks = []
+    checks.append(_check("CONTENT_HASH: function located", bool(block)))
+    checks.append(_check("CONTENT_HASH: created_at_secs participates",
+                         "entry.created_at_secs" in block))
+    checks.append(_check("CONTENT_HASH: ttl_secs participates",
+                         "entry.ttl_secs" in block))
+    checks.append(_check("CONTENT_HASH: completed_at_secs participates",
+                         "outcome.completed_at_secs" in block))
+    checks.append(_check("CONTENT_HASH: result_data participates",
+                         "outcome.result_data" in block))
+    checks.append(_check("CONTENT_HASH: outcome presence is encoded",
+                         "hasher.update([1])" in block and "hasher.update([0])" in block))
+    return checks
+
+
 def check_test_coverage() -> list:
     src = _read(IMPL_FILE)
     checks = []
@@ -279,6 +306,7 @@ def _checks() -> list:
     checks.extend(check_crash_recovery())
     checks.extend(check_audit_trail())
     checks.extend(check_operations())
+    checks.extend(check_content_hash_surface())
     checks.extend(check_test_coverage())
     checks.extend(check_serde())
     checks.extend(check_upstream())

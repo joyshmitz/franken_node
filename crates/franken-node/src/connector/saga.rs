@@ -20,6 +20,9 @@ const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
 /// Maximum concurrent sagas before oldest are evicted.
 const MAX_SAGAS: usize = 2048;
 
+/// Maximum step records per saga before oldest are evicted.
+const MAX_RECORDS_PER_SAGA: usize = 4096;
+
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     items.push(item);
     if items.len() > cap {
@@ -332,7 +335,7 @@ impl SagaExecutor {
             elapsed_ms,
         };
 
-        saga.records.push(record);
+        push_bounded(&mut saga.records, record, MAX_RECORDS_PER_SAGA);
         if matches!(outcome, StepOutcome::Failed { .. }) {
             saga.state = SagaState::Failed;
         } else {
@@ -465,7 +468,7 @@ impl SagaExecutor {
                 elapsed_ms: 0,
             };
             comp_records.push(record.clone());
-            saga.records.push(record);
+            push_bounded(&mut saga.records, record, MAX_RECORDS_PER_SAGA);
         }
 
         saga.state = SagaState::Compensated;

@@ -158,6 +158,21 @@ class TestIndividualCheckGroups(unittest.TestCase):
     def test_audit_trail(self):
         self._assert_pass("AUDIT_TRAIL: export_audit_log_jsonl")
 
+    def test_content_hash_covers_created_at(self):
+        self._assert_pass("CONTENT_HASH: created_at_secs participates")
+
+    def test_content_hash_covers_ttl(self):
+        self._assert_pass("CONTENT_HASH: ttl_secs participates")
+
+    def test_content_hash_covers_completed_at(self):
+        self._assert_pass("CONTENT_HASH: completed_at_secs participates")
+
+    def test_content_hash_covers_result_data(self):
+        self._assert_pass("CONTENT_HASH: result_data participates")
+
+    def test_content_hash_encodes_outcome_presence(self):
+        self._assert_pass("CONTENT_HASH: outcome presence is encoded")
+
     def test_schema_version(self):
         self._assert_pass("SCHEMA_VERSION ids-v1.0")
 

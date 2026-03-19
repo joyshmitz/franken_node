@@ -84,8 +84,19 @@ ERR_IDEMPOTENCY_CONFLICT
 | sweep_expired | Remove entries past TTL |
 | recover_inflight | Mark Processing entries as Abandoned |
 | export_audit_log_jsonl | Export audit log as JSONL |
-| content_hash | Deterministic content hash over store entries |
+| content_hash | Deterministic content hash over store entries, including TTL/timestamp fields and cached outcome bytes |
 | stats | Return (new, duplicate, conflict, expired) counters |
+
+## Content Hash Coverage
+
+`content_hash()` must seal the mutable entry state that affects replay and
+expiration behavior:
+
+- `DedupeEntry.created_at_secs`
+- `DedupeEntry.ttl_secs`
+- `CachedOutcome.result_hash`
+- `CachedOutcome.result_data`
+- `CachedOutcome.completed_at_secs`
 
 ## Key Types
 
@@ -117,10 +128,14 @@ ERR_IDEMPOTENCY_CONFLICT
 7. `recover_inflight` marks Processing entries as Abandoned
 8. Abandoned entries allow retry (return New)
 9. `content_hash` is deterministic across identical operations
-10. `export_audit_log_jsonl` produces valid JSONL
-11. `stats()` returns accurate counters
-12. Default TTL is 604800 seconds (7 days)
-13. At least 15 Rust unit tests covering all invariants
+10. Changing `created_at_secs` changes `content_hash`
+11. Changing `ttl_secs` changes `content_hash`
+12. Changing `completed_at_secs` changes `content_hash`
+13. Changing cached `result_data` changes `content_hash`
+14. `export_audit_log_jsonl` produces valid JSONL
+15. `stats()` returns accurate counters
+16. Default TTL is 604800 seconds (7 days)
+17. At least 15 Rust unit tests covering all invariants
 
 ## Evidence Artifacts
 

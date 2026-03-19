@@ -751,7 +751,7 @@ impl VerifierEconomyRegistry {
         let canonical_trace_hash = match canonicalize_sha256_prefixed_hex(
             &submission.evidence.execution_trace_hash,
         ) {
-            Some(hash) if hash == submission.evidence.execution_trace_hash => hash,
+            Some(hash) if ct_eq(&hash, &submission.evidence.execution_trace_hash) => hash,
             _ => {
                 self.emit(
                     VEP_008,

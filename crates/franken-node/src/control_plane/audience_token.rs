@@ -15,7 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 
 // ---------------------------------------------------------------------------
 // Event codes
@@ -499,16 +499,21 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     }
 }
 
-/// Insert a nonce into a bounded BTreeSet, evicting the lexicographically
-/// smallest entry when at capacity. This prevents unbounded memory growth
-/// from an adversary replaying many unique-nonce tokens.
-fn insert_nonce_bounded(set: &mut BTreeSet<String>, nonce: String, cap: usize) {
-    set.insert(nonce);
-    while set.len() > cap {
-        if let Some(oldest) = set.iter().next().cloned() {
-            set.remove(&oldest);
-        } else {
-            break;
+/// Insert a nonce into a bounded set, evicting the oldest entry when at capacity.
+/// This prevents unbounded memory growth from an adversary replaying many tokens
+/// and ensures that eviction is based on time, not lexicographical sorting.
+fn insert_nonce_bounded(
+    set: &mut BTreeSet<String>,
+    queue: &mut VecDeque<String>,
+    nonce: String,
+    cap: usize,
+) {
+    if set.insert(nonce.clone()) {
+        queue.push_back(nonce);
+        while queue.len() > cap {
+            if let Some(oldest) = queue.pop_front() {
+                set.remove(&oldest);
+            }
         }
     }
 }
@@ -518,6 +523,8 @@ fn insert_nonce_bounded(set: &mut BTreeSet<String>, nonce: String, cap: usize) {
 pub struct TokenValidator {
     /// Nonces seen in the current epoch.
     seen_nonces: BTreeSet<String>,
+    /// Insertion order of nonces for bounded eviction.
+    seen_nonces_queue: VecDeque<String>,
     /// Current epoch ID for replay scoping.
     epoch_id: u64,
     /// Emitted events.
@@ -533,6 +540,7 @@ impl TokenValidator {
     pub fn new(epoch_id: u64) -> Self {
         Self {
             seen_nonces: BTreeSet::new(),
+            seen_nonces_queue: VecDeque::new(),
             epoch_id,
             events: Vec::new(),
             tokens_issued: 0,
@@ -545,7 +553,7 @@ impl TokenValidator {
     /// Record a root token issuance.
     pub fn record_issuance(&mut self, token: &AudienceBoundToken, trace_id: &str, now_ms: u64) {
         self.tokens_issued = self.tokens_issued.saturating_add(1);
-        insert_nonce_bounded(&mut self.seen_nonces, token.nonce.clone(), MAX_NONCES);
+        insert_nonce_bounded(&mut self.seen_nonces, &mut self.seen_nonces_queue, token.nonce.clone(), MAX_NONCES);
         push_bounded(
             &mut self.events,
             TokenEvent {
@@ -574,7 +582,7 @@ impl TokenValidator {
         now_ms: u64,
     ) {
         self.tokens_delegated = self.tokens_delegated.saturating_add(1);
-        insert_nonce_bounded(&mut self.seen_nonces, token.nonce.clone(), MAX_NONCES);
+        insert_nonce_bounded(&mut self.seen_nonces, &mut self.seen_nonces_queue, token.nonce.clone(), MAX_NONCES);
         push_bounded(
             &mut self.events,
             TokenEvent {
@@ -737,7 +745,7 @@ impl TokenValidator {
 
         // All checks passed: record all token nonces and emit success event.
         for token in tokens.iter() {
-            insert_nonce_bounded(&mut self.seen_nonces, token.nonce.clone(), MAX_NONCES);
+            insert_nonce_bounded(&mut self.seen_nonces, &mut self.seen_nonces_queue, token.nonce.clone(), MAX_NONCES);
         }
         self.tokens_verified = self.tokens_verified.saturating_add(1);
         push_bounded(
@@ -776,6 +784,7 @@ impl TokenValidator {
     /// Reset nonces for a new epoch.
     pub fn advance_epoch(&mut self, new_epoch_id: u64) {
         self.seen_nonces.clear();
+        self.seen_nonces_queue.clear();
         self.epoch_id = new_epoch_id;
     }
 
