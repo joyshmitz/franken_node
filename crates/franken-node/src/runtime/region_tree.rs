@@ -341,6 +341,12 @@ impl RegionTree {
         id: &RegionId,
         timestamp_ms: u64,
     ) -> Result<RegionEvent, RegionTreeError> {
+        // Reject duplicate region IDs to prevent silent data loss.
+        if self.nodes.contains_key(id.as_str()) {
+            return Err(RegionTreeError::RegionAlreadyClosed {
+                region_id: id.as_str().to_string(),
+            });
+        }
         let node = RegionNode {
             id: id.clone(),
             parent: None,
@@ -371,14 +377,20 @@ impl RegionTree {
         parent_id: &RegionId,
         timestamp_ms: u64,
     ) -> Result<RegionEvent, RegionTreeError> {
-        // Validate parent exists and is active
+        // Reject duplicate region IDs to prevent silent data loss.
+        if self.nodes.contains_key(id.as_str()) {
+            return Err(RegionTreeError::RegionAlreadyClosed {
+                region_id: id.as_str().to_string(),
+            });
+        }
+        // Validate parent exists and is active (fail-closed: only Active parents accept children)
         {
             let parent = self.nodes.get(parent_id.as_str()).ok_or_else(|| {
                 RegionTreeError::ParentNotFound {
                     parent_id: parent_id.as_str().to_string(),
                 }
             })?;
-            if parent.state == RegionState::Closed {
+            if parent.state != RegionState::Active {
                 return Err(RegionTreeError::RegionAlreadyClosed {
                     region_id: parent_id.as_str().to_string(),
                 });

@@ -174,15 +174,29 @@ impl HighImpactActionRegistry {
 }
 
 /// Enforce that high-impact actions produce signed receipts.
+///
+/// Verifies both that a receipt is present AND that its action_name matches
+/// the action being enforced. Without the action_name check, a receipt for
+/// any low-impact action could satisfy the gate for a high-impact action.
 pub fn enforce_high_impact_receipt(
     action_name: &str,
     registry: &HighImpactActionRegistry,
     receipt: Option<&SignedReceipt>,
 ) -> Result<(), ReceiptError> {
-    if registry.is_high_impact(action_name) && receipt.is_none() {
-        return Err(ReceiptError::MissingHighImpactReceipt {
-            action_name: action_name.to_string(),
-        });
+    if registry.is_high_impact(action_name) {
+        match receipt {
+            None => {
+                return Err(ReceiptError::MissingHighImpactReceipt {
+                    action_name: action_name.to_string(),
+                });
+            }
+            Some(signed) if signed.receipt.action_name != action_name => {
+                return Err(ReceiptError::MissingHighImpactReceipt {
+                    action_name: action_name.to_string(),
+                });
+            }
+            _ => {}
+        }
     }
     Ok(())
 }
@@ -476,6 +490,7 @@ fn compute_chain_hash(previous_hash: Option<&str>, payload: &str) -> String {
     hasher.update(b"decision_receipt_chain_v1:");
     hasher.update((prev.len() as u64).to_le_bytes());
     hasher.update(prev.as_bytes());
+    hasher.update((payload.len() as u64).to_le_bytes());
     hasher.update(payload.as_bytes());
     hex::encode(hasher.finalize())
 }

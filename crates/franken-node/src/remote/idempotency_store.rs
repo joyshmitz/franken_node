@@ -896,7 +896,7 @@ mod tests {
         let key = test_key(60);
 
         store.check_or_insert(key, b"s1", 1000, "ts");
-        store.complete(key, b"sr".to_vec(), 1001, "ts").unwrap();
+        store.complete(key, b"sr".to_vec(), 1001, "ts").expect("should succeed");
 
         // Duplicate.
         store.check_or_insert(key, b"s1", 1002, "ts");
@@ -952,7 +952,7 @@ mod tests {
         let mut store = IdempotencyDedupeStore::new(3600);
         let key = test_key(80);
         store.check_or_insert(key, b"ac", 1000, "tac");
-        store.complete(key, b"r1".to_vec(), 1001, "tac").unwrap();
+        store.complete(key, b"r1".to_vec(), 1001, "tac").expect("should succeed");
         let err = store
             .complete(key, b"r2".to_vec(), 1002, "tac")
             .unwrap_err();

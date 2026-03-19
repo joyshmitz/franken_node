@@ -277,10 +277,10 @@ mod tests {
         let deriver = IdempotencyKeyDeriver::default();
         let a = deriver
             .derive_key("core.remote_compute.v1", 42, br#"{"x":1}"#)
-            .unwrap();
+            .expect("should succeed");
         let b = deriver
             .derive_key("core.remote_compute.v1", 42, br#"{"x":1}"#)
-            .unwrap();
+            .expect("should succeed");
         assert_eq!(a, b);
     }
 
@@ -289,8 +289,8 @@ mod tests {
         let deriver = IdempotencyKeyDeriver::default();
         let a = deriver
             .derive_key("core.remote_compute.v1", 7, b"payload")
-            .unwrap();
-        let b = deriver.derive_key("core.audit.v1", 7, b"payload").unwrap();
+            .expect("should succeed");
+        let b = deriver.derive_key("core.audit.v1", 7, b"payload").expect("should succeed");
         assert_ne!(a, b);
     }
 
@@ -299,10 +299,10 @@ mod tests {
         let deriver = IdempotencyKeyDeriver::default();
         let a = deriver
             .derive_key("core.remote_compute.v1", 100, b"payload")
-            .unwrap();
+            .expect("should succeed");
         let b = deriver
             .derive_key("core.remote_compute.v1", 101, b"payload")
-            .unwrap();
+            .expect("should succeed");
         assert_ne!(a, b);
     }
 
@@ -320,7 +320,7 @@ mod tests {
         let deriver = IdempotencyKeyDeriver::default();
         let key = deriver
             .derive_key("core.remote_compute.v1", u64::MAX, b"payload")
-            .unwrap();
+            .expect("should succeed");
         assert_eq!(key.to_hex().len(), 64);
     }
 
@@ -342,8 +342,8 @@ mod tests {
         let deriver = IdempotencyKeyDeriver::default();
         let key = deriver
             .derive_key("core.remote_compute.v1", 9, b"hex-roundtrip")
-            .unwrap();
-        let decoded = IdempotencyKey::from_hex(&key.to_hex()).unwrap();
+            .expect("should succeed");
+        let decoded = IdempotencyKey::from_hex(&key.to_hex()).expect("should succeed");
         assert_eq!(decoded, key);
     }
 
@@ -363,7 +363,7 @@ mod tests {
         let mut registry = demo_registry();
         let key = deriver
             .derive_registered_key(&mut registry, "core.remote_compute.v1", 1, b"x", "trace")
-            .unwrap();
+            .expect("should succeed");
         assert_eq!(key.to_hex().len(), 64);
     }
 
@@ -382,7 +382,7 @@ mod tests {
         let deriver = IdempotencyKeyDeriver::default();
         let key = deriver
             .derive_key("core.remote_compute.v1", 1, b"event")
-            .unwrap();
+            .expect("should succeed");
         let event = IdempotencyDerivationEvent::key_derived(
             "core.remote_compute.v1",
             1,

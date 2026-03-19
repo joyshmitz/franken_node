@@ -716,9 +716,9 @@ mod tests {
     #[test]
     fn test_audit_log_capacity_enforces_oldest_first_eviction() {
         let mut mgr = EvictionSagaManager::with_capacities(2, 8);
-        let id = mgr.start_saga("artifact-a", true, "ta1").unwrap();
-        mgr.begin_upload(&id, "ta2").unwrap();
-        mgr.complete_upload(&id, "ta3").unwrap();
+        let id = mgr.start_saga("artifact-a", true, "ta1").expect("should succeed");
+        mgr.begin_upload(&id, "ta2").expect("should succeed");
+        mgr.complete_upload(&id, "ta3").expect("should succeed");
 
         assert_eq!(mgr.audit_log.len(), 2);
         let codes: Vec<&str> = mgr
@@ -735,12 +735,12 @@ mod tests {
     #[test]
     fn test_transition_capacity_enforces_oldest_first_eviction() {
         let mut mgr = EvictionSagaManager::with_capacities(8, 2);
-        let id = mgr.start_saga("artifact-b", true, "tt1").unwrap();
-        mgr.begin_upload(&id, "tt2").unwrap();
-        mgr.complete_upload(&id, "tt3").unwrap();
-        mgr.complete_verify(&id, "tt4").unwrap();
+        let id = mgr.start_saga("artifact-b", true, "tt1").expect("should succeed");
+        mgr.begin_upload(&id, "tt2").expect("should succeed");
+        mgr.complete_upload(&id, "tt3").expect("should succeed");
+        mgr.complete_verify(&id, "tt4").expect("should succeed");
 
-        let saga = mgr.get_saga(&id).unwrap();
+        let saga = mgr.get_saga(&id).expect("should succeed");
         assert_eq!(saga.transitions.len(), 2);
         assert_eq!(saga.phase, SagaPhase::Retiring);
         assert_eq!(saga.transitions[0].to_phase, SagaPhase::Verifying);
@@ -750,13 +750,13 @@ mod tests {
     #[test]
     fn test_full_saga_success() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("artifact-1", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.complete_upload(&id, "t3").unwrap();
-        mgr.complete_verify(&id, "t4").unwrap();
-        mgr.complete_retire(&id, "t5").unwrap();
+        let id = mgr.start_saga("artifact-1", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.complete_upload(&id, "t3").expect("should succeed");
+        mgr.complete_verify(&id, "t4").expect("should succeed");
+        mgr.complete_retire(&id, "t5").expect("should succeed");
 
-        let saga = mgr.get_saga(&id).unwrap();
+        let saga = mgr.get_saga(&id).expect("should succeed");
         assert_eq!(saga.phase, SagaPhase::Complete);
         assert!(!saga.l2_present);
         assert!(saga.l3_present);
@@ -773,7 +773,7 @@ mod tests {
     #[test]
     fn test_remote_cap_recheck_blocks_begin_upload_until_restored() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
 
         let err = mgr.recheck_remote_cap(&id, false, "t2").unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
@@ -781,15 +781,15 @@ mod tests {
         let err = mgr.begin_upload(&id, "t3").unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
 
-        mgr.recheck_remote_cap(&id, true, "t4").unwrap();
-        mgr.begin_upload(&id, "t5").unwrap();
+        mgr.recheck_remote_cap(&id, true, "t4").expect("should succeed");
+        mgr.begin_upload(&id, "t5").expect("should succeed");
     }
 
     #[test]
     fn test_remote_cap_recheck_blocks_complete_upload_until_restored() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
 
         let err = mgr.recheck_remote_cap(&id, false, "t3").unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
@@ -797,16 +797,16 @@ mod tests {
         let err = mgr.complete_upload(&id, "t4").unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
 
-        mgr.recheck_remote_cap(&id, true, "t5").unwrap();
-        mgr.complete_upload(&id, "t6").unwrap();
+        mgr.recheck_remote_cap(&id, true, "t5").expect("should succeed");
+        mgr.complete_upload(&id, "t6").expect("should succeed");
     }
 
     #[test]
     fn test_remote_cap_recheck_blocks_complete_verify_until_restored() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.complete_upload(&id, "t3").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.complete_upload(&id, "t3").expect("should succeed");
 
         let err = mgr.recheck_remote_cap(&id, false, "t4").unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
@@ -814,17 +814,17 @@ mod tests {
         let err = mgr.complete_verify(&id, "t5").unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
 
-        mgr.recheck_remote_cap(&id, true, "t6").unwrap();
-        mgr.complete_verify(&id, "t7").unwrap();
+        mgr.recheck_remote_cap(&id, true, "t6").expect("should succeed");
+        mgr.complete_verify(&id, "t7").expect("should succeed");
     }
 
     #[test]
     fn test_remote_cap_recheck_blocks_complete_retire_until_restored() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.complete_upload(&id, "t3").unwrap();
-        mgr.complete_verify(&id, "t4").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.complete_upload(&id, "t3").expect("should succeed");
+        mgr.complete_verify(&id, "t4").expect("should succeed");
 
         let err = mgr.recheck_remote_cap(&id, false, "t5").unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
@@ -832,14 +832,14 @@ mod tests {
         let err = mgr.complete_retire(&id, "t6").unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
 
-        mgr.recheck_remote_cap(&id, true, "t7").unwrap();
-        mgr.complete_retire(&id, "t8").unwrap();
+        mgr.recheck_remote_cap(&id, true, "t7").expect("should succeed");
+        mgr.complete_retire(&id, "t8").expect("should succeed");
     }
 
     #[test]
     fn test_invalid_transition_rejected() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
         // Can't go directly to verify without upload
         let err = mgr.complete_upload(&id, "t2").unwrap_err();
         assert!(err.contains("invalid transition"));
@@ -848,12 +848,12 @@ mod tests {
     #[test]
     fn test_cancel_during_upload() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        let action = mgr.cancel_saga(&id, "t3").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        let action = mgr.cancel_saga(&id, "t3").expect("should succeed");
         assert!(matches!(action, CompensationAction::AbortUpload));
 
-        let saga = mgr.get_saga(&id).unwrap();
+        let saga = mgr.get_saga(&id).expect("should succeed");
         assert!(saga.l2_present);
         assert!(!saga.l3_present);
     }
@@ -861,13 +861,13 @@ mod tests {
     #[test]
     fn test_cancel_during_verify() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.complete_upload(&id, "t3").unwrap();
-        let action = mgr.cancel_saga(&id, "t4").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.complete_upload(&id, "t3").expect("should succeed");
+        let action = mgr.cancel_saga(&id, "t4").expect("should succeed");
         assert!(matches!(action, CompensationAction::CleanupL3));
 
-        let saga = mgr.get_saga(&id).unwrap();
+        let saga = mgr.get_saga(&id).expect("should succeed");
         assert!(saga.l2_present);
         assert!(!saga.l3_present);
     }
@@ -875,25 +875,25 @@ mod tests {
     #[test]
     fn test_cancel_during_retire() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.complete_upload(&id, "t3").unwrap();
-        mgr.complete_verify(&id, "t4").unwrap();
-        let action = mgr.cancel_saga(&id, "t5").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.complete_upload(&id, "t3").expect("should succeed");
+        mgr.complete_verify(&id, "t4").expect("should succeed");
+        let action = mgr.cancel_saga(&id, "t5").expect("should succeed");
         assert!(matches!(action, CompensationAction::CompleteRetirement));
 
-        let saga = mgr.get_saga(&id).unwrap();
+        let saga = mgr.get_saga(&id).expect("should succeed");
         assert!(!saga.l2_present); // Retirement completed
     }
 
     #[test]
     fn test_cancel_terminal_complete_rejected() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.complete_upload(&id, "t3").unwrap();
-        mgr.complete_verify(&id, "t4").unwrap();
-        mgr.complete_retire(&id, "t5").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.complete_upload(&id, "t3").expect("should succeed");
+        mgr.complete_verify(&id, "t4").expect("should succeed");
+        mgr.complete_retire(&id, "t5").expect("should succeed");
 
         let err = mgr.cancel_saga(&id, "t6").unwrap_err();
         assert!(err.contains("terminal phase Complete"));
@@ -902,9 +902,9 @@ mod tests {
     #[test]
     fn test_cancel_terminal_compensated_rejected() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.cancel_saga(&id, "t3").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.cancel_saga(&id, "t3").expect("should succeed");
 
         let err = mgr.cancel_saga(&id, "t4").unwrap_err();
         assert!(err.contains("terminal phase Compensated"));
@@ -913,11 +913,11 @@ mod tests {
     #[test]
     fn test_leak_check_passes_after_success() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.complete_upload(&id, "t3").unwrap();
-        mgr.complete_verify(&id, "t4").unwrap();
-        mgr.complete_retire(&id, "t5").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.complete_upload(&id, "t3").expect("should succeed");
+        mgr.complete_verify(&id, "t4").expect("should succeed");
+        mgr.complete_retire(&id, "t5").expect("should succeed");
 
         let result = mgr.leak_check("t6");
         assert!(result.passed);
@@ -927,9 +927,9 @@ mod tests {
     #[test]
     fn test_leak_check_passes_after_compensation() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.cancel_saga(&id, "t3").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.cancel_saga(&id, "t3").expect("should succeed");
 
         let result = mgr.leak_check("t4");
         assert!(result.passed);
@@ -938,27 +938,27 @@ mod tests {
     #[test]
     fn test_crash_recovery_identifies_action() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.complete_upload(&id, "t3").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.complete_upload(&id, "t3").expect("should succeed");
 
-        let action = mgr.recover_saga(&id, "t4").unwrap();
+        let action = mgr.recover_saga(&id, "t4").expect("should succeed");
         assert!(matches!(action, CompensationAction::CleanupL3));
     }
 
     #[test]
     fn test_content_hash_deterministic() {
         let mut m1 = EvictionSagaManager::new();
-        m1.start_saga("a", true, "t1").unwrap();
+        m1.start_saga("a", true, "t1").expect("should succeed");
         let mut m2 = EvictionSagaManager::new();
-        m2.start_saga("a", true, "t1").unwrap();
+        m2.start_saga("a", true, "t1").expect("should succeed");
         assert_eq!(m1.content_hash(), m2.content_hash());
     }
 
     #[test]
     fn test_audit_log_jsonl() {
         let mut mgr = EvictionSagaManager::init("t1");
-        mgr.start_saga("a", true, "t2").unwrap();
+        mgr.start_saga("a", true, "t2").expect("should succeed");
         let jsonl = mgr.export_audit_log_jsonl();
         assert_eq!(jsonl.lines().count(), 2);
     }
@@ -966,9 +966,9 @@ mod tests {
     #[test]
     fn test_saga_trace_jsonl() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.complete_upload(&id, "t3").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.complete_upload(&id, "t3").expect("should succeed");
         let jsonl = mgr.export_saga_trace_jsonl();
         assert_eq!(jsonl.lines().count(), 2);
     }
@@ -982,8 +982,8 @@ mod tests {
     #[test]
     fn test_multiple_sagas() {
         let mut mgr = EvictionSagaManager::new();
-        let id1 = mgr.start_saga("a", true, "t1").unwrap();
-        let id2 = mgr.start_saga("b", true, "t2").unwrap();
+        let id1 = mgr.start_saga("a", true, "t1").expect("should succeed");
+        let id2 = mgr.start_saga("b", true, "t2").expect("should succeed");
         assert_ne!(id1, id2);
         assert_eq!(mgr.saga_count(), 2);
     }
@@ -1006,23 +1006,23 @@ mod tests {
     #[test]
     fn test_crash_recovery_from_compensating_during_verify() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.complete_upload(&id, "t3").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.complete_upload(&id, "t3").expect("should succeed");
 
         // Simulate crash mid-compensation: manually transition to Compensating
         // (as if cancel_saga crashed after first record_transition but before completing)
         {
             let cap = mgr.transition_capacity();
-            let saga = mgr.sagas.get_mut(&id).unwrap();
+            let saga = mgr.sagas.get_mut(&id).expect("should succeed");
             saga.record_transition(SagaPhase::Compensating, "compensation: CleanupL3", cap);
         }
-        assert_eq!(mgr.get_saga(&id).unwrap().phase, SagaPhase::Compensating);
+        assert_eq!(mgr.get_saga(&id).expect("should succeed").phase, SagaPhase::Compensating);
 
-        let action = mgr.recover_saga(&id, "t4").unwrap();
+        let action = mgr.recover_saga(&id, "t4").expect("should succeed");
         assert!(matches!(action, CompensationAction::CleanupL3));
 
-        let saga = mgr.get_saga(&id).unwrap();
+        let saga = mgr.get_saga(&id).expect("should succeed");
         assert_eq!(saga.phase, SagaPhase::Compensated);
         assert!(!saga.l3_present);
         assert!(!saga.l3_verified);
@@ -1031,19 +1031,19 @@ mod tests {
     #[test]
     fn test_crash_recovery_from_compensating_during_upload() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
 
         {
             let cap = mgr.transition_capacity();
-            let saga = mgr.sagas.get_mut(&id).unwrap();
+            let saga = mgr.sagas.get_mut(&id).expect("should succeed");
             saga.record_transition(SagaPhase::Compensating, "compensation: AbortUpload", cap);
         }
 
-        let action = mgr.recover_saga(&id, "t3").unwrap();
+        let action = mgr.recover_saga(&id, "t3").expect("should succeed");
         assert!(matches!(action, CompensationAction::AbortUpload));
 
-        let saga = mgr.get_saga(&id).unwrap();
+        let saga = mgr.get_saga(&id).expect("should succeed");
         assert_eq!(saga.phase, SagaPhase::Compensated);
         assert!(saga.l2_present);
         assert!(!saga.l3_present);
@@ -1052,14 +1052,14 @@ mod tests {
     #[test]
     fn test_crash_recovery_from_compensating_during_retire() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.complete_upload(&id, "t3").unwrap();
-        mgr.complete_verify(&id, "t4").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.complete_upload(&id, "t3").expect("should succeed");
+        mgr.complete_verify(&id, "t4").expect("should succeed");
 
         {
             let cap = mgr.transition_capacity();
-            let saga = mgr.sagas.get_mut(&id).unwrap();
+            let saga = mgr.sagas.get_mut(&id).expect("should succeed");
             saga.record_transition(
                 SagaPhase::Compensating,
                 "compensation: CompleteRetirement",
@@ -1067,10 +1067,10 @@ mod tests {
             );
         }
 
-        let action = mgr.recover_saga(&id, "t5").unwrap();
+        let action = mgr.recover_saga(&id, "t5").expect("should succeed");
         assert!(matches!(action, CompensationAction::CompleteRetirement));
 
-        let saga = mgr.get_saga(&id).unwrap();
+        let saga = mgr.get_saga(&id).expect("should succeed");
         assert_eq!(saga.phase, SagaPhase::Complete);
         assert!(!saga.l2_present);
     }
@@ -1078,13 +1078,13 @@ mod tests {
     #[test]
     fn test_crash_recovery_from_uploading() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
 
-        let action = mgr.recover_saga(&id, "t3").unwrap();
+        let action = mgr.recover_saga(&id, "t3").expect("should succeed");
         assert!(matches!(action, CompensationAction::AbortUpload));
 
-        let saga = mgr.get_saga(&id).unwrap();
+        let saga = mgr.get_saga(&id).expect("should succeed");
         assert_eq!(saga.phase, SagaPhase::Compensated);
         assert!(!saga.l3_present);
     }
@@ -1092,15 +1092,15 @@ mod tests {
     #[test]
     fn test_crash_recovery_from_retiring() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.complete_upload(&id, "t3").unwrap();
-        mgr.complete_verify(&id, "t4").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.complete_upload(&id, "t3").expect("should succeed");
+        mgr.complete_verify(&id, "t4").expect("should succeed");
 
-        let action = mgr.recover_saga(&id, "t5").unwrap();
+        let action = mgr.recover_saga(&id, "t5").expect("should succeed");
         assert!(matches!(action, CompensationAction::CompleteRetirement));
 
-        let saga = mgr.get_saga(&id).unwrap();
+        let saga = mgr.get_saga(&id).expect("should succeed");
         assert_eq!(saga.phase, SagaPhase::Complete);
         assert!(!saga.l2_present);
     }
@@ -1108,29 +1108,29 @@ mod tests {
     #[test]
     fn test_crash_recovery_noop_for_terminal_states() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.complete_upload(&id, "t3").unwrap();
-        mgr.complete_verify(&id, "t4").unwrap();
-        mgr.complete_retire(&id, "t5").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.complete_upload(&id, "t3").expect("should succeed");
+        mgr.complete_verify(&id, "t4").expect("should succeed");
+        mgr.complete_retire(&id, "t5").expect("should succeed");
 
         // Recovery on Complete state should be a no-op
-        let action = mgr.recover_saga(&id, "t6").unwrap();
+        let action = mgr.recover_saga(&id, "t6").expect("should succeed");
         assert!(matches!(action, CompensationAction::None));
-        assert_eq!(mgr.get_saga(&id).unwrap().phase, SagaPhase::Complete);
+        assert_eq!(mgr.get_saga(&id).expect("should succeed").phase, SagaPhase::Complete);
     }
 
     #[test]
     fn test_leak_check_detects_stuck_compensating() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
-        mgr.complete_upload(&id, "t3").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
+        mgr.complete_upload(&id, "t3").expect("should succeed");
 
         // Simulate crash mid-compensation
         {
             let cap = mgr.transition_capacity();
-            let saga = mgr.sagas.get_mut(&id).unwrap();
+            let saga = mgr.sagas.get_mut(&id).expect("should succeed");
             saga.record_transition(SagaPhase::Compensating, "compensation: CleanupL3", cap);
         }
 
@@ -1143,11 +1143,11 @@ mod tests {
     #[test]
     fn test_crash_recovery_emits_compensation_complete_audit() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", true, "t1").unwrap();
-        mgr.begin_upload(&id, "t2").unwrap();
+        let id = mgr.start_saga("a", true, "t1").expect("should succeed");
+        mgr.begin_upload(&id, "t2").expect("should succeed");
 
         let audit_len_before = mgr.export_audit_log_jsonl().lines().count();
-        mgr.recover_saga(&id, "t3").unwrap();
+        mgr.recover_saga(&id, "t3").expect("should succeed");
         let audit = mgr.export_audit_log_jsonl();
         let audit_len_after = audit.lines().count();
 
