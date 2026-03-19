@@ -492,16 +492,6 @@ mod tests {
         Uuid::now_v7().to_string()
     }
 
-    fn sample_phases() -> Vec<PhaseDuration> {
-        MigrationPhase::all()
-            .iter()
-            .map(|p| PhaseDuration {
-                phase: *p,
-                duration_ms: 1000,
-            })
-            .collect()
-    }
-
     fn record_with_durations_and_failure(
         id: &str,
         durations: [u64; 5],
