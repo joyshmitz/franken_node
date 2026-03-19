@@ -603,7 +603,7 @@ impl AntiEntropyReconciler {
             delta_size,
             records_accepted: accepted.len(),
             records_rejected: rejected,
-            elapsed_ms: elapsed.as_millis() as u64,
+            elapsed_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
             fork_detected: false,
             cancelled: false,
             trace_id,

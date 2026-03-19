@@ -765,11 +765,11 @@ impl TransportFaultGate {
                     passed: 0,
                     failed: 0,
                 });
-            entry.total += 1;
+            entry.total = entry.total.saturating_add(1);
             if r.outcome.is_acceptable() {
-                entry.passed += 1;
+                entry.passed = entry.passed.saturating_add(1);
             } else {
-                entry.failed += 1;
+                entry.failed = entry.failed.saturating_add(1);
             }
         }
         map

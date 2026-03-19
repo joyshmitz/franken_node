@@ -1076,7 +1076,7 @@ fn evaluate_doctor_check(
         status,
         message,
         remediation,
-        duration_ms: start.elapsed().as_millis() as u64,
+        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
     }
 }
 

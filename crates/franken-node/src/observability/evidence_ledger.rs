@@ -182,6 +182,55 @@ pub struct EvidenceLedger {
 }
 
 impl EvidenceLedger {
+    fn validate_entry_size(&self, entry: &EvidenceEntry) -> Result<usize, LedgerError> {
+        let entry_size = entry.estimated_size();
+
+        if entry_size > self.capacity.max_bytes {
+            eprintln!(
+                "{}: entry size {} exceeds max_bytes {}, epoch={}",
+                event_codes::LEDGER_CAPACITY_WARN,
+                entry_size,
+                self.capacity.max_bytes,
+                entry.epoch_id,
+            );
+            return Err(LedgerError::EntryTooLarge {
+                entry_size,
+                max_bytes: self.capacity.max_bytes,
+            });
+        }
+
+        Ok(entry_size)
+    }
+
+    fn append_prevalidated(&mut self, entry: EvidenceEntry, entry_size: usize) -> EntryId {
+        // Evict oldest entries to make room
+        while self.entries.len() >= self.capacity.max_entries && !self.entries.is_empty() {
+            self.evict_oldest();
+        }
+        while self.current_bytes.saturating_add(entry_size) > self.capacity.max_bytes
+            && !self.entries.is_empty()
+        {
+            self.evict_oldest();
+        }
+
+        let id = EntryId(self.next_id);
+        self.next_id = self.next_id.saturating_add(1);
+        self.total_appended = self.total_appended.saturating_add(1);
+        self.current_bytes = self.current_bytes.saturating_add(entry_size);
+
+        eprintln!(
+            "{}: entry={}, decision={}, epoch={}, size={}",
+            event_codes::LEDGER_APPEND,
+            id,
+            entry.decision_id,
+            entry.epoch_id,
+            entry_size,
+        );
+
+        self.entries.push_back((id, entry, entry_size));
+        id
+    }
+
     /// Create a new evidence ledger with the given capacity.
     pub fn new(capacity: LedgerCapacity) -> Self {
         eprintln!(
@@ -235,49 +284,8 @@ impl EvidenceLedger {
     /// Evicts oldest entries as needed to stay within capacity bounds.
     /// Returns the assigned EntryId on success.
     pub fn append(&mut self, entry: EvidenceEntry) -> Result<EntryId, LedgerError> {
-        let entry_size = entry.estimated_size();
-
-        // Reject entries that individually exceed max_bytes
-        if entry_size > self.capacity.max_bytes {
-            eprintln!(
-                "{}: entry size {} exceeds max_bytes {}, epoch={}",
-                event_codes::LEDGER_CAPACITY_WARN,
-                entry_size,
-                self.capacity.max_bytes,
-                entry.epoch_id,
-            );
-            return Err(LedgerError::EntryTooLarge {
-                entry_size,
-                max_bytes: self.capacity.max_bytes,
-            });
-        }
-
-        // Evict oldest entries to make room
-        while self.entries.len() >= self.capacity.max_entries && !self.entries.is_empty() {
-            self.evict_oldest();
-        }
-        while self.current_bytes.saturating_add(entry_size) > self.capacity.max_bytes
-            && !self.entries.is_empty()
-        {
-            self.evict_oldest();
-        }
-
-        let id = EntryId(self.next_id);
-        self.next_id = self.next_id.saturating_add(1);
-        self.total_appended = self.total_appended.saturating_add(1);
-        self.current_bytes = self.current_bytes.saturating_add(entry_size);
-
-        eprintln!(
-            "{}: entry={}, decision={}, epoch={}, size={}",
-            event_codes::LEDGER_APPEND,
-            id,
-            entry.decision_id,
-            entry.epoch_id,
-            entry_size,
-        );
-
-        self.entries.push_back((id, entry, entry_size));
-        Ok(id)
+        let entry_size = self.validate_entry_size(&entry)?;
+        Ok(self.append_prevalidated(entry, entry_size))
     }
 
     /// Evict the oldest entry from the ring buffer.
@@ -416,8 +424,7 @@ impl LabSpillMode {
         let json_line = serde_json::to_string(&entry).map_err(|e| LedgerError::SpillError {
             reason: format!("JSON error: {e}"),
         })?;
-
-        let id = self.ledger.append(entry)?;
+        let entry_size = self.ledger.validate_entry_size(&entry)?;
 
         writeln!(self.spill_writer, "{json_line}").map_err(|e| LedgerError::SpillError {
             reason: format!("write: {e}"),
@@ -427,6 +434,7 @@ impl LabSpillMode {
             .map_err(|e| LedgerError::SpillError {
                 reason: format!("flush: {e}"),
             })?;
+        let id = self.ledger.append_prevalidated(entry, entry_size);
 
         eprintln!(
             "{}: spill wrote entry={}, bytes={}",
@@ -474,6 +482,43 @@ pub fn test_entry(decision_id: &str, epoch_id: u64) -> EvidenceEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io;
+
+    struct FailingWriteWriter;
+
+    impl Write for FailingWriteWriter {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            Err(io::Error::other("write failed"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct FailingFlushWriter;
+
+    impl Write for FailingFlushWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::other("flush failed"))
+        }
+    }
+
+    struct PanicOnWriteWriter;
+
+    impl Write for PanicOnWriteWriter {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            panic!("spill writer should not be called for oversized entry");
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
 
     fn make_entry(id: &str, epoch: u64) -> EvidenceEntry {
         test_entry(id, epoch)
@@ -510,7 +555,9 @@ mod tests {
     #[test]
     fn append_single_entry() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
-        let id = ledger.append(make_entry("DEC-001", 1)).expect("should succeed");
+        let id = ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
         assert_eq!(id, EntryId(1));
         assert_eq!(ledger.len(), 1);
         assert_eq!(ledger.total_appended(), 1);
@@ -533,9 +580,15 @@ mod tests {
     #[test]
     fn entry_ids_are_monotonic() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
-        let id1 = ledger.append(make_entry("DEC-001", 1)).expect("should succeed");
-        let id2 = ledger.append(make_entry("DEC-002", 2)).expect("should succeed");
-        let id3 = ledger.append(make_entry("DEC-003", 3)).expect("should succeed");
+        let id1 = ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
+        let id2 = ledger
+            .append(make_entry("DEC-002", 2))
+            .expect("should succeed");
+        let id3 = ledger
+            .append(make_entry("DEC-003", 3))
+            .expect("should succeed");
         assert!(id1 < id2);
         assert!(id2 < id3);
     }
@@ -545,11 +598,19 @@ mod tests {
     #[test]
     fn evicts_oldest_when_max_entries_exceeded() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(3, 100_000));
-        ledger.append(make_entry("DEC-001", 1)).expect("should succeed");
-        ledger.append(make_entry("DEC-002", 2)).expect("should succeed");
-        ledger.append(make_entry("DEC-003", 3)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
+        ledger
+            .append(make_entry("DEC-002", 2))
+            .expect("should succeed");
+        ledger
+            .append(make_entry("DEC-003", 3))
+            .expect("should succeed");
         assert_eq!(ledger.len(), 3);
-        ledger.append(make_entry("DEC-004", 4)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-004", 4))
+            .expect("should succeed");
         assert_eq!(ledger.len(), 3);
         assert_eq!(ledger.total_evicted(), 1);
         let entries: Vec<_> = ledger.iter_all().collect();
@@ -560,10 +621,18 @@ mod tests {
     #[test]
     fn eviction_is_fifo() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(2, 100_000));
-        ledger.append(make_entry("DEC-A", 1)).expect("should succeed");
-        ledger.append(make_entry("DEC-B", 2)).expect("should succeed");
-        ledger.append(make_entry("DEC-C", 3)).expect("should succeed");
-        ledger.append(make_entry("DEC-D", 4)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-A", 1))
+            .expect("should succeed");
+        ledger
+            .append(make_entry("DEC-B", 2))
+            .expect("should succeed");
+        ledger
+            .append(make_entry("DEC-C", 3))
+            .expect("should succeed");
+        ledger
+            .append(make_entry("DEC-D", 4))
+            .expect("should succeed");
         assert_eq!(ledger.len(), 2);
         assert_eq!(ledger.total_evicted(), 2);
         let entries: Vec<_> = ledger.iter_all().collect();
@@ -579,10 +648,16 @@ mod tests {
         let entry_size = small_entry.estimated_size();
         let max_bytes = entry_size * 2 + 10;
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, max_bytes));
-        ledger.append(make_entry("DEC-001", 1)).expect("should succeed");
-        ledger.append(make_entry("DEC-002", 2)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
+        ledger
+            .append(make_entry("DEC-002", 2))
+            .expect("should succeed");
         assert_eq!(ledger.len(), 2);
-        ledger.append(make_entry("DEC-003", 3)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-003", 3))
+            .expect("should succeed");
         assert_eq!(ledger.total_evicted(), 1);
         assert!(ledger.current_bytes() <= max_bytes);
     }
@@ -633,8 +708,12 @@ mod tests {
     #[test]
     fn iter_recent_with_n_larger_than_entries() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
-        ledger.append(make_entry("DEC-001", 1)).expect("should succeed");
-        ledger.append(make_entry("DEC-002", 2)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
+        ledger
+            .append(make_entry("DEC-002", 2))
+            .expect("should succeed");
         let recent: Vec<_> = ledger.iter_recent(100).collect();
         assert_eq!(recent.len(), 2);
     }
@@ -642,7 +721,9 @@ mod tests {
     #[test]
     fn iter_recent_zero_returns_empty() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
-        ledger.append(make_entry("DEC-001", 1)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
         let recent: Vec<_> = ledger.iter_recent(0).collect();
         assert_eq!(recent.len(), 0);
     }
@@ -688,7 +769,9 @@ mod tests {
     #[test]
     fn snapshot_is_cloneable() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
-        ledger.append(make_entry("DEC-001", 1)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
         let snap1 = ledger.snapshot();
         let snap2 = snap1.clone();
         assert_eq!(snap1.entries.len(), snap2.entries.len());
@@ -731,7 +814,9 @@ mod tests {
     #[test]
     fn snapshot_serialization_roundtrip() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
-        ledger.append(make_entry("DEC-001", 1)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
         let snap = ledger.snapshot();
         let json = serde_json::to_string(&snap).expect("should succeed");
         let parsed: LedgerSnapshot = serde_json::from_str(&json).expect("should succeed");
@@ -762,8 +847,12 @@ mod tests {
     fn lab_spill_writes_jsonl() {
         let buffer: Vec<u8> = Vec::new();
         let mut spill = LabSpillMode::new(LedgerCapacity::new(100, 100_000), Box::new(buffer));
-        spill.append(make_entry("DEC-001", 1)).expect("should succeed");
-        spill.append(make_entry("DEC-002", 2)).expect("should succeed");
+        spill
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
+        spill
+            .append(make_entry("DEC-002", 2))
+            .expect("should succeed");
         assert_eq!(spill.len(), 2);
     }
 
@@ -772,11 +861,17 @@ mod tests {
         let dir = tempfile::tempdir().expect("should succeed");
         let spill_path = dir.path().join("evidence_spill.jsonl");
         {
-            let mut spill =
-                LabSpillMode::with_file(LedgerCapacity::new(100, 100_000), &spill_path).expect("should succeed");
-            spill.append(make_entry("DEC-001", 1)).expect("should succeed");
-            spill.append(make_entry("DEC-002", 2)).expect("should succeed");
-            spill.append(make_entry("DEC-003", 3)).expect("should succeed");
+            let mut spill = LabSpillMode::with_file(LedgerCapacity::new(100, 100_000), &spill_path)
+                .expect("should succeed");
+            spill
+                .append(make_entry("DEC-001", 1))
+                .expect("should succeed");
+            spill
+                .append(make_entry("DEC-002", 2))
+                .expect("should succeed");
+            spill
+                .append(make_entry("DEC-003", 3))
+                .expect("should succeed");
         }
         let content = std::fs::read_to_string(&spill_path).expect("should succeed");
         let lines: Vec<&str> = content.lines().collect();
@@ -791,9 +886,15 @@ mod tests {
     fn lab_spill_eviction_still_works() {
         let buffer: Vec<u8> = Vec::new();
         let mut spill = LabSpillMode::new(LedgerCapacity::new(2, 100_000), Box::new(buffer));
-        spill.append(make_entry("DEC-001", 1)).expect("should succeed");
-        spill.append(make_entry("DEC-002", 2)).expect("should succeed");
-        spill.append(make_entry("DEC-003", 3)).expect("should succeed");
+        spill
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
+        spill
+            .append(make_entry("DEC-002", 2))
+            .expect("should succeed");
+        spill
+            .append(make_entry("DEC-003", 3))
+            .expect("should succeed");
         assert_eq!(spill.len(), 2);
         assert_eq!(spill.ledger().total_evicted(), 1);
     }
@@ -802,9 +903,53 @@ mod tests {
     fn lab_spill_snapshot() {
         let buffer: Vec<u8> = Vec::new();
         let mut spill = LabSpillMode::new(LedgerCapacity::new(100, 100_000), Box::new(buffer));
-        spill.append(make_entry("DEC-001", 1)).expect("should succeed");
+        spill
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
         let snap = spill.snapshot();
         assert_eq!(snap.entries.len(), 1);
+    }
+
+    #[test]
+    fn lab_spill_write_failure_does_not_mutate_ledger() {
+        let mut spill = LabSpillMode::new(
+            LedgerCapacity::new(100, 100_000),
+            Box::new(FailingWriteWriter),
+        );
+
+        let result = spill.append(make_entry("DEC-001", 1));
+
+        assert!(matches!(result, Err(LedgerError::SpillError { .. })));
+        assert_eq!(spill.len(), 0);
+        assert!(spill.is_empty());
+        assert_eq!(spill.snapshot().total_appended, 0);
+    }
+
+    #[test]
+    fn lab_spill_flush_failure_does_not_mutate_ledger() {
+        let mut spill = LabSpillMode::new(
+            LedgerCapacity::new(100, 100_000),
+            Box::new(FailingFlushWriter),
+        );
+
+        let result = spill.append(make_entry("DEC-001", 1));
+
+        assert!(matches!(result, Err(LedgerError::SpillError { .. })));
+        assert_eq!(spill.len(), 0);
+        assert!(spill.is_empty());
+        assert_eq!(spill.snapshot().total_appended, 0);
+    }
+
+    #[test]
+    fn lab_spill_oversized_entry_rejected_before_writer_use() {
+        let mut spill =
+            LabSpillMode::new(LedgerCapacity::new(100, 50), Box::new(PanicOnWriteWriter));
+
+        let result = spill.append(make_entry_with_payload("DEC-BIG", 1, 500));
+
+        assert!(matches!(result, Err(LedgerError::EntryTooLarge { .. })));
+        assert_eq!(spill.len(), 0);
+        assert_eq!(spill.snapshot().total_appended, 0);
     }
 
     // ── SharedEvidenceLedger ──
@@ -813,7 +958,9 @@ mod tests {
     fn shared_ledger_basic_operations() {
         let shared = SharedEvidenceLedger::new(LedgerCapacity::new(100, 100_000));
         assert!(shared.is_empty());
-        shared.append(make_entry("DEC-001", 1)).expect("should succeed");
+        shared
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
         assert_eq!(shared.len(), 1);
         assert!(!shared.is_empty());
     }
@@ -821,8 +968,12 @@ mod tests {
     #[test]
     fn shared_ledger_snapshot() {
         let shared = SharedEvidenceLedger::new(LedgerCapacity::new(100, 100_000));
-        shared.append(make_entry("DEC-001", 1)).expect("should succeed");
-        shared.append(make_entry("DEC-002", 2)).expect("should succeed");
+        shared
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
+        shared
+            .append(make_entry("DEC-002", 2))
+            .expect("should succeed");
         let snap = shared.snapshot();
         assert_eq!(snap.entries.len(), 2);
     }
@@ -841,7 +992,9 @@ mod tests {
         assert!(join.join().is_err(), "poisoning thread should panic");
 
         assert!(shared.is_empty());
-        shared.append(make_entry("DEC-001", 1)).expect("should succeed");
+        shared
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
         assert_eq!(shared.len(), 1);
         assert_eq!(shared.snapshot().entries.len(), 1);
     }
@@ -867,9 +1020,13 @@ mod tests {
     #[test]
     fn capacity_one() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(1, 100_000));
-        ledger.append(make_entry("DEC-001", 1)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
         assert_eq!(ledger.len(), 1);
-        ledger.append(make_entry("DEC-002", 2)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-002", 2))
+            .expect("should succeed");
         assert_eq!(ledger.len(), 1);
         assert_eq!(ledger.total_evicted(), 1);
         let entries: Vec<_> = ledger.iter_all().collect();
@@ -897,10 +1054,12 @@ mod tests {
             let dir = tempfile::tempdir().expect("should succeed");
             let path = dir.path().join("spill.jsonl");
             {
-                let mut spill =
-                    LabSpillMode::with_file(LedgerCapacity::new(100, 100_000), &path).expect("should succeed");
+                let mut spill = LabSpillMode::with_file(LedgerCapacity::new(100, 100_000), &path)
+                    .expect("should succeed");
                 for i in 1..=3 {
-                    spill.append(make_entry(&format!("DEC-{i:03}"), i)).expect("should succeed");
+                    spill
+                        .append(make_entry(&format!("DEC-{i:03}"), i))
+                        .expect("should succeed");
                 }
             }
             std::fs::read_to_string(&path).expect("should succeed")
@@ -916,17 +1075,27 @@ mod tests {
     fn append_assigns_monotonic_ids() {
         // Alias for entry_ids_are_monotonic (verification script checks this name)
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
-        let id1 = ledger.append(make_entry("DEC-001", 1)).expect("should succeed");
-        let id2 = ledger.append(make_entry("DEC-002", 2)).expect("should succeed");
+        let id1 = ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
+        let id2 = ledger
+            .append(make_entry("DEC-002", 2))
+            .expect("should succeed");
         assert!(id1 < id2);
     }
 
     #[test]
     fn eviction_at_max_entries() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(2, 100_000));
-        ledger.append(make_entry("DEC-001", 1)).expect("should succeed");
-        ledger.append(make_entry("DEC-002", 2)).expect("should succeed");
-        ledger.append(make_entry("DEC-003", 3)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
+        ledger
+            .append(make_entry("DEC-002", 2))
+            .expect("should succeed");
+        ledger
+            .append(make_entry("DEC-003", 3))
+            .expect("should succeed");
         assert_eq!(ledger.len(), 2);
         assert_eq!(ledger.total_evicted(), 1);
     }
@@ -952,9 +1121,15 @@ mod tests {
         let sz = entry.estimated_size();
         let max_bytes = sz * 2 + 5;
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, max_bytes));
-        ledger.append(make_entry("DEC-001", 1)).expect("should succeed");
-        ledger.append(make_entry("DEC-002", 2)).expect("should succeed");
-        ledger.append(make_entry("DEC-003", 3)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
+        ledger
+            .append(make_entry("DEC-002", 2))
+            .expect("should succeed");
+        ledger
+            .append(make_entry("DEC-003", 3))
+            .expect("should succeed");
         assert!(ledger.current_bytes() <= max_bytes);
         assert!(ledger.total_evicted() > 0);
     }
@@ -975,8 +1150,12 @@ mod tests {
     #[test]
     fn snapshot_reflects_current_state() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
-        ledger.append(make_entry("DEC-001", 1)).expect("should succeed");
-        ledger.append(make_entry("DEC-002", 2)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
+        ledger
+            .append(make_entry("DEC-002", 2))
+            .expect("should succeed");
         let snap = ledger.snapshot();
         assert_eq!(snap.entries.len(), 2);
         assert_eq!(snap.total_appended, 2);
@@ -985,9 +1164,13 @@ mod tests {
     #[test]
     fn snapshot_is_independent_of_ledger() {
         let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 100_000));
-        ledger.append(make_entry("DEC-001", 1)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
         let snap = ledger.snapshot();
-        ledger.append(make_entry("DEC-002", 2)).expect("should succeed");
+        ledger
+            .append(make_entry("DEC-002", 2))
+            .expect("should succeed");
         assert_eq!(snap.entries.len(), 1); // snap unchanged
         assert_eq!(ledger.len(), 2);
     }
@@ -997,7 +1180,8 @@ mod tests {
         fn run() -> LedgerSnapshot {
             let mut l = EvidenceLedger::new(LedgerCapacity::new(5, 100_000));
             for i in 1..=8 {
-                l.append(make_entry(&format!("DEC-{i:03}"), i)).expect("should succeed");
+                l.append(make_entry(&format!("DEC-{i:03}"), i))
+                    .expect("should succeed");
             }
             l.snapshot()
         }
@@ -1012,8 +1196,10 @@ mod tests {
         let mut l1 = EvidenceLedger::new(LedgerCapacity::new(3, 100_000));
         let mut l2 = EvidenceLedger::new(LedgerCapacity::new(3, 100_000));
         for i in 1..=5u64 {
-            l1.append(make_entry(&format!("DEC-{i:03}"), i)).expect("should succeed");
-            l2.append(make_entry(&format!("DEC-{i:03}"), i)).expect("should succeed");
+            l1.append(make_entry(&format!("DEC-{i:03}"), i))
+                .expect("should succeed");
+            l2.append(make_entry(&format!("DEC-{i:03}"), i))
+                .expect("should succeed");
         }
         let s1 = l1.snapshot();
         let s2 = l2.snapshot();

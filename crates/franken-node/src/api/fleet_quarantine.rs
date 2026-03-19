@@ -486,7 +486,6 @@ impl SharedFleetControlOwner {
         request: &QuarantineRequest,
     ) -> Result<FleetActionResult, ApiError> {
         let mut mgr = self.lock(trace)?;
-        mgr.activate();
         mgr.quarantine(&request.extension_id, &request.scope, identity, trace)
             .map_err(|e| ApiError::BadRequest {
                 detail: format!("{}: {}", e.error_code(), "quarantine failed"),
@@ -502,7 +501,6 @@ impl SharedFleetControlOwner {
         request: &RevokeRequest,
     ) -> Result<FleetActionResult, ApiError> {
         let mut mgr = self.lock(trace)?;
-        mgr.activate();
         mgr.revoke(&request.extension_id, &request.scope, identity, trace)
             .map_err(|e| ApiError::BadRequest {
                 detail: format!("{}: {}", e.error_code(), "revocation failed"),
@@ -517,7 +515,6 @@ impl SharedFleetControlOwner {
         incident_id: &str,
     ) -> Result<FleetActionResult, ApiError> {
         let mut mgr = self.lock(trace)?;
-        mgr.activate();
         mgr.release(incident_id, identity, trace)
             .map_err(|e| ApiError::BadRequest {
                 detail: format!("{}: {e:?}", e.error_code()),
@@ -539,7 +536,6 @@ impl SharedFleetControlOwner {
         trace: &TraceContext,
     ) -> Result<FleetActionResult, ApiError> {
         let mut mgr = self.lock(trace)?;
-        mgr.activate();
         mgr.reconcile(identity, trace)
             .map_err(|e| ApiError::BadRequest {
                 detail: format!("{}: {}", e.error_code(), "reconcile failed"),
@@ -566,6 +562,15 @@ fn shared_fleet_control_manager() -> &'static SharedFleetControlOwner {
 #[cfg(test)]
 fn reset_shared_fleet_control_manager_for_tests() {
     shared_fleet_control_manager().reset_for_tests();
+}
+
+#[cfg(test)]
+fn activate_shared_fleet_control_manager_for_tests() {
+    let mut guard = match shared_fleet_control_manager().inner.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    guard.activate();
 }
 
 impl FleetControlManager {
@@ -1740,6 +1745,7 @@ mod tests {
     #[test]
     fn handle_quarantine_succeeds() {
         let _guard = lock_handler_test_state();
+        activate_shared_fleet_control_manager_for_tests();
         let request = QuarantineRequest {
             extension_id: "ext-1".to_string(),
             scope: test_quarantine_scope(),
@@ -1753,6 +1759,7 @@ mod tests {
     #[test]
     fn handle_revoke_succeeds() {
         let _guard = lock_handler_test_state();
+        activate_shared_fleet_control_manager_for_tests();
         let request = RevokeRequest {
             extension_id: "ext-1".to_string(),
             scope: test_revocation_scope(),
@@ -1787,6 +1794,7 @@ mod tests {
     #[test]
     fn handle_reconcile_succeeds() {
         let _guard = lock_handler_test_state();
+        activate_shared_fleet_control_manager_for_tests();
         let result = handle_reconcile(&admin_identity(), &test_trace()).expect("handle reconcile");
         assert!(result.ok);
         assert_eq!(result.data.action_type, "reconcile");
@@ -1795,6 +1803,7 @@ mod tests {
     #[test]
     fn handle_release_nonexistent_incident_returns_error() {
         let _guard = lock_handler_test_state();
+        activate_shared_fleet_control_manager_for_tests();
         let identity = admin_identity();
         let trace = TraceContext {
             trace_id: "🙂🙂🙂🙂🙂🙂🙂🙂🙂".to_string(),
@@ -1832,6 +1841,7 @@ mod tests {
     #[test]
     fn handler_status_reflects_prior_quarantine() {
         let _guard = lock_handler_test_state();
+        activate_shared_fleet_control_manager_for_tests();
         let request = QuarantineRequest {
             extension_id: "ext-1".to_string(),
             scope: test_quarantine_scope(),
@@ -1847,6 +1857,7 @@ mod tests {
     #[test]
     fn handler_release_succeeds_for_prior_quarantine_incident() {
         let _guard = lock_handler_test_state();
+        activate_shared_fleet_control_manager_for_tests();
         let trace = test_trace();
         let request = QuarantineRequest {
             extension_id: "ext-1".to_string(),
@@ -1864,6 +1875,67 @@ mod tests {
         let release = handle_release(&admin_identity(), &trace, &ReleaseRequest { incident_id })
             .expect("handle release");
         assert_eq!(release.data.action_type, "release");
+    }
+
+    #[test]
+    fn handle_quarantine_rejects_before_activation() {
+        let _guard = lock_handler_test_state();
+        let request = QuarantineRequest {
+            extension_id: "ext-1".to_string(),
+            scope: test_quarantine_scope(),
+        };
+        let err = handle_quarantine(&admin_identity(), &test_trace(), &request)
+            .expect_err("unactivated quarantine should fail");
+        let detail = match err {
+            ApiError::BadRequest { detail, .. } => detail,
+            other => unreachable!("unexpected error: {other:?}"),
+        };
+        assert!(detail.contains(FLEET_NOT_ACTIVATED));
+    }
+
+    #[test]
+    fn handle_revoke_rejects_before_activation() {
+        let _guard = lock_handler_test_state();
+        let request = RevokeRequest {
+            extension_id: "ext-1".to_string(),
+            scope: test_revocation_scope(),
+        };
+        let err =
+            handle_revoke(&admin_identity(), &test_trace(), &request).expect_err("revoke fails");
+        let detail = match err {
+            ApiError::BadRequest { detail, .. } => detail,
+            other => unreachable!("unexpected error: {other:?}"),
+        };
+        assert!(detail.contains(FLEET_NOT_ACTIVATED));
+    }
+
+    #[test]
+    fn handle_release_rejects_before_activation() {
+        let _guard = lock_handler_test_state();
+        let err = handle_release(
+            &admin_identity(),
+            &test_trace(),
+            &ReleaseRequest {
+                incident_id: "inc-1".to_string(),
+            },
+        )
+        .expect_err("release fails");
+        let detail = match err {
+            ApiError::BadRequest { detail, .. } => detail,
+            other => unreachable!("unexpected error: {other:?}"),
+        };
+        assert!(detail.contains(FLEET_NOT_ACTIVATED));
+    }
+
+    #[test]
+    fn handle_reconcile_rejects_before_activation() {
+        let _guard = lock_handler_test_state();
+        let err = handle_reconcile(&admin_identity(), &test_trace()).expect_err("reconcile fails");
+        let detail = match err {
+            ApiError::BadRequest { detail, .. } => detail,
+            other => unreachable!("unexpected error: {other:?}"),
+        };
+        assert!(detail.contains(FLEET_NOT_ACTIVATED));
     }
 
     // ── Serde round-trip tests ────────────────────────────────────────────
