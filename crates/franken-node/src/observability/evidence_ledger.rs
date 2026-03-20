@@ -93,7 +93,8 @@ pub struct EvidenceEntry {
     pub epoch_id: u64,
     /// Serialized payload (opaque to the ledger).
     pub payload: serde_json::Value,
-    /// Estimated serialized size in bytes (set on append).
+    /// Optional serialized size hint.
+    /// The ledger derives its own budget accounting during append.
     #[serde(default)]
     pub size_bytes: usize,
 }
@@ -110,6 +111,8 @@ impl EvidenceEntry {
 /// Errors from ledger operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LedgerError {
+    /// The ledger is configured with zero entry capacity.
+    ZeroEntryCapacity,
     /// A single entry exceeds the max_bytes budget.
     EntryTooLarge { entry_size: usize, max_bytes: usize },
     /// Spill write failed.
@@ -119,6 +122,7 @@ pub enum LedgerError {
 impl fmt::Display for LedgerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ZeroEntryCapacity => write!(f, "ledger max_entries must be at least 1"),
             Self::EntryTooLarge {
                 entry_size,
                 max_bytes,
@@ -182,7 +186,16 @@ pub struct EvidenceLedger {
 }
 
 impl EvidenceLedger {
-    fn validate_entry_size(&self, entry: &EvidenceEntry) -> Result<usize, LedgerError> {
+    fn validate_append(&self, entry: &EvidenceEntry) -> Result<usize, LedgerError> {
+        if self.capacity.max_entries == 0 {
+            eprintln!(
+                "{}: append rejected because max_entries=0, epoch={}",
+                event_codes::LEDGER_CAPACITY_WARN,
+                entry.epoch_id,
+            );
+            return Err(LedgerError::ZeroEntryCapacity);
+        }
+
         let entry_size = entry.estimated_size();
 
         if entry_size > self.capacity.max_bytes {
@@ -284,7 +297,7 @@ impl EvidenceLedger {
     /// Evicts oldest entries as needed to stay within capacity bounds.
     /// Returns the assigned EntryId on success.
     pub fn append(&mut self, entry: EvidenceEntry) -> Result<EntryId, LedgerError> {
-        let entry_size = self.validate_entry_size(&entry)?;
+        let entry_size = self.validate_append(&entry)?;
         Ok(self.append_prevalidated(entry, entry_size))
     }
 
@@ -424,7 +437,7 @@ impl LabSpillMode {
         let json_line = serde_json::to_string(&entry).map_err(|e| LedgerError::SpillError {
             reason: format!("JSON error: {e}"),
         })?;
-        let entry_size = self.ledger.validate_entry_size(&entry)?;
+        let entry_size = self.ledger.validate_append(&entry)?;
 
         writeln!(self.spill_writer, "{json_line}").map_err(|e| LedgerError::SpillError {
             reason: format!("write: {e}"),
@@ -911,6 +924,17 @@ mod tests {
     }
 
     #[test]
+    fn zero_entry_capacity_rejects_append() {
+        let mut ledger = EvidenceLedger::new(LedgerCapacity::new(0, 100_000));
+
+        let result = ledger.append(make_entry("DEC-001", 1));
+
+        assert!(matches!(result, Err(LedgerError::ZeroEntryCapacity)));
+        assert!(ledger.is_empty());
+        assert_eq!(ledger.total_appended(), 0);
+    }
+
+    #[test]
     fn lab_spill_write_failure_does_not_mutate_ledger() {
         let mut spill = LabSpillMode::new(
             LedgerCapacity::new(100, 100_000),
@@ -949,6 +973,20 @@ mod tests {
 
         assert!(matches!(result, Err(LedgerError::EntryTooLarge { .. })));
         assert_eq!(spill.len(), 0);
+        assert_eq!(spill.snapshot().total_appended, 0);
+    }
+
+    #[test]
+    fn lab_spill_zero_entry_capacity_rejected_before_writer_use() {
+        let mut spill = LabSpillMode::new(
+            LedgerCapacity::new(0, 100_000),
+            Box::new(PanicOnWriteWriter),
+        );
+
+        let result = spill.append(make_entry("DEC-001", 1));
+
+        assert!(matches!(result, Err(LedgerError::ZeroEntryCapacity)));
+        assert!(spill.is_empty());
         assert_eq!(spill.snapshot().total_appended, 0);
     }
 
