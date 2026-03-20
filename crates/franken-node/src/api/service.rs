@@ -193,6 +193,8 @@ pub struct ControlPlaneService {
 impl ControlPlaneService {
     /// Create a new control-plane service with default or custom configuration.
     pub fn new(config: ServiceConfig) -> Self {
+        super::operator_routes::init_process_start();
+
         let operator_limit = config
             .rate_limits
             .get("operator")
@@ -270,6 +272,8 @@ mod tests {
 
     #[test]
     fn all_route_metadata_collects_all_groups() {
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
         let routes = all_route_metadata();
         let operator_count = routes
             .iter()
@@ -292,6 +296,8 @@ mod tests {
 
     #[test]
     fn endpoint_catalog_has_all_routes() {
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
         let catalog = build_endpoint_catalog();
         assert_eq!(catalog.len(), 12);
 
@@ -317,6 +323,8 @@ mod tests {
 
     #[test]
     fn endpoint_report_generation() {
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
         let report = generate_endpoint_report();
         assert_eq!(report.endpoints.len(), 12);
         assert!(report.middleware_coverage.auth_coverage);
@@ -326,6 +334,8 @@ mod tests {
 
     #[test]
     fn service_default_construction() {
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
         let service = ControlPlaneService::default();
         assert_eq!(service.config().listen_addr, "127.0.0.1:9090");
         assert_eq!(service.request_count(), 0);
@@ -333,6 +343,8 @@ mod tests {
 
     #[test]
     fn service_custom_config() {
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
         let config = ServiceConfig {
             listen_addr: "0.0.0.0:8080".to_string(),
             otel_enabled: true,
@@ -345,6 +357,8 @@ mod tests {
 
     #[test]
     fn service_catalog_matches_report() {
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
         let service = ControlPlaneService::default();
         let catalog = service.catalog();
         let report = service.report();
@@ -353,6 +367,8 @@ mod tests {
 
     #[test]
     fn service_record_increments_count() {
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
         let mut service = ControlPlaneService::default();
         let log = RequestLog {
             method: "GET".to_string(),
@@ -821,6 +837,8 @@ mod integration_tests {
 
     #[test]
     fn service_records_metrics_for_firewall_gated_requests() {
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
         let mut service = ControlPlaneService::default();
         let route = operator_status_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
@@ -846,6 +864,8 @@ mod integration_tests {
 
     #[test]
     fn service_metrics_error_count_on_auth_failure_before_firewall() {
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
         let mut service = ControlPlaneService::default();
         let route = fleet_admin_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
@@ -901,6 +921,8 @@ mod integration_tests {
 
     #[test]
     fn multiple_requests_through_pipeline_produce_consistent_metrics() {
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
         let mut service = ControlPlaneService::default();
         let route = operator_status_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));

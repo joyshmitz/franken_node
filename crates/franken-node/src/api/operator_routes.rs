@@ -7,6 +7,8 @@
 //! - `GET /v1/operator/rollout` — rollout state query
 
 use serde::{Deserialize, Serialize};
+#[cfg(test)]
+use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::time::Instant;
 
@@ -17,10 +19,94 @@ use super::middleware::{
 };
 use super::trust_card_routes::ApiResponse;
 
-static PROCESS_START: OnceLock<Instant> = OnceLock::new();
+#[derive(Debug, Clone)]
+struct ProcessStartState {
+    monotonic: Instant,
+    wall_clock_rfc3339: String,
+}
+
+impl ProcessStartState {
+    fn now() -> Self {
+        Self {
+            monotonic: Instant::now(),
+            wall_clock_rfc3339: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+}
+
+static PROCESS_START: OnceLock<ProcessStartState> = OnceLock::new();
+
+#[cfg(test)]
+static PROCESS_START_OVERRIDE: Mutex<Option<ProcessStartState>> = Mutex::new(None);
+
+#[cfg(test)]
+static PROCESS_START_INIT_CALLS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+fn process_start_state() -> ProcessStartState {
+    #[cfg(test)]
+    if let Some(override_state) = process_start_override_for_tests() {
+        return override_state;
+    }
+
+    PROCESS_START.get_or_init(ProcessStartState::now).clone()
+}
+
+pub(crate) fn init_process_start() {
+    #[cfg(test)]
+    PROCESS_START_INIT_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+    let _ = PROCESS_START.get_or_init(ProcessStartState::now);
+}
 
 fn process_uptime_seconds() -> u64 {
-    PROCESS_START.get_or_init(Instant::now).elapsed().as_secs()
+    process_start_state().monotonic.elapsed().as_secs()
+}
+
+fn process_started_at_rfc3339() -> String {
+    process_start_state().wall_clock_rfc3339
+}
+
+#[cfg(test)]
+pub(crate) fn process_start_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+}
+
+#[cfg(test)]
+fn process_start_override_for_tests() -> Option<ProcessStartState> {
+    PROCESS_START_OVERRIDE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .clone()
+}
+
+#[cfg(test)]
+pub(crate) fn clear_process_start_override_for_tests() {
+    let mut guard = PROCESS_START_OVERRIDE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    *guard = None;
+}
+
+#[cfg(test)]
+pub(crate) fn process_start_init_call_count_for_tests() -> usize {
+    PROCESS_START_INIT_CALLS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[cfg(test)]
+pub(crate) fn seed_process_start_for_tests(elapsed: std::time::Duration, wall_clock_rfc3339: &str) {
+    let mut guard = PROCESS_START_OVERRIDE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let now = Instant::now();
+    let monotonic = now.checked_sub(elapsed).unwrap_or(now);
+    *guard = Some(ProcessStartState {
+        monotonic,
+        wall_clock_rfc3339: wall_clock_rfc3339.to_string(),
+    });
 }
 
 // ── Response Types ─────────────────────────────────────────────────────────
@@ -230,7 +316,7 @@ pub fn get_rollout(
         canary_percentage: 0,
         healthy_nodes: 1,
         total_nodes: 1,
-        last_transition: chrono::Utc::now().to_rfc3339(),
+        last_transition: process_started_at_rfc3339(),
     };
 
     Ok(ApiResponse {
@@ -244,6 +330,7 @@ pub fn get_rollout(
 mod tests {
     use super::*;
     use crate::api::middleware::AuthMethod;
+    use crate::api::service::ControlPlaneService;
 
     fn test_identity() -> AuthIdentity {
         AuthIdentity {
@@ -271,13 +358,18 @@ mod tests {
     #[test]
     fn health_endpoint_no_auth() {
         let routes = route_metadata();
-        let health = routes.iter().find(|r| r.path.contains("health")).expect("health route should exist");
+        let health = routes
+            .iter()
+            .find(|r| r.path.contains("health"))
+            .expect("health route should exist");
         assert_eq!(health.auth_method, AuthMethod::None);
         assert!(health.policy_hook.required_roles.is_empty());
     }
 
     #[test]
     fn get_status_returns_ok() {
+        let _lock = process_start_test_lock();
+        clear_process_start_override_for_tests();
         let identity = test_identity();
         let trace = test_trace();
         let result = get_status(&identity, &trace).expect("status");
@@ -287,12 +379,41 @@ mod tests {
 
     #[test]
     fn status_uptime_is_monotonic() {
+        let _lock = process_start_test_lock();
+        clear_process_start_override_for_tests();
         let identity = test_identity();
         let trace = test_trace();
         let first = get_status(&identity, &trace).expect("first");
         std::thread::sleep(std::time::Duration::from_millis(5));
         let second = get_status(&identity, &trace).expect("second");
         assert!(second.data.uptime_seconds >= first.data.uptime_seconds);
+    }
+
+    #[test]
+    fn service_bootstrap_calls_process_start_init() {
+        let _lock = process_start_test_lock();
+        clear_process_start_override_for_tests();
+        let before = process_start_init_call_count_for_tests();
+
+        let _service = ControlPlaneService::default();
+
+        assert_eq!(process_start_init_call_count_for_tests(), before + 1);
+    }
+
+    #[test]
+    fn status_uptime_uses_seeded_process_start() {
+        let _lock = process_start_test_lock();
+        clear_process_start_override_for_tests();
+        seed_process_start_for_tests(std::time::Duration::from_secs(1), "2026-03-20T00:00:00Z");
+
+        let identity = test_identity();
+        let trace = test_trace();
+        let result = get_status(&identity, &trace).expect("status");
+
+        assert!(
+            result.data.uptime_seconds >= 1,
+            "uptime should include time since service bootstrap"
+        );
     }
 
     #[test]
@@ -317,11 +438,28 @@ mod tests {
 
     #[test]
     fn get_rollout_returns_stable_phase() {
+        let _lock = process_start_test_lock();
+        clear_process_start_override_for_tests();
         let identity = test_identity();
         let trace = test_trace();
         let result = get_rollout(&identity, &trace).expect("rollout");
         assert!(result.ok);
         assert_eq!(result.data.current_phase, "stable");
+    }
+
+    #[test]
+    fn rollout_last_transition_is_stable_across_reads() {
+        let _lock = process_start_test_lock();
+        clear_process_start_override_for_tests();
+        seed_process_start_for_tests(std::time::Duration::from_secs(2), "2026-03-20T12:34:56Z");
+        let identity = test_identity();
+        let trace = test_trace();
+
+        let first = get_rollout(&identity, &trace).expect("first rollout");
+        let second = get_rollout(&identity, &trace).expect("second rollout");
+
+        assert_eq!(first.data.last_transition, "2026-03-20T12:34:56Z");
+        assert_eq!(first.data.last_transition, second.data.last_transition);
     }
 
     #[test]
