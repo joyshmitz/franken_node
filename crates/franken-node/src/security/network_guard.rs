@@ -75,11 +75,11 @@ impl EgressRule {
 /// DNS hostnames are case-insensitive (RFC 4343); comparisons are normalized
 /// to prevent deny-rule bypass via casing tricks like "EVIL.COM" vs "evil.com".
 fn host_matches(pattern: &str, host: &str) -> bool {
-    if pattern == "*" {
+    let p = normalize_host_for_match(pattern);
+    if p == "*" {
         return true;
     }
-    let p = pattern.to_ascii_lowercase();
-    let h = host.to_ascii_lowercase();
+    let h = normalize_host_for_match(host);
     if let Some(suffix) = p.strip_prefix('*') {
         if suffix.starts_with('.') {
             h.ends_with(suffix) && h.len() > suffix.len()
@@ -89,6 +89,14 @@ fn host_matches(pattern: &str, host: &str) -> bool {
     } else {
         p == h
     }
+}
+
+fn normalize_host_for_match(host: &str) -> String {
+    let trimmed = host.trim();
+    if trimmed == "*" {
+        return "*".to_string();
+    }
+    trimmed.trim_end_matches('.').to_ascii_lowercase()
 }
 
 /// Egress policy for a connector.
@@ -358,10 +366,22 @@ mod tests {
     }
 
     #[test]
+    fn exact_host_match_normalizes_trailing_dot_and_whitespace() {
+        assert!(host_matches("api.example.com", " API.EXAMPLE.COM. "));
+        assert!(host_matches(" api.example.com. ", "api.example.com"));
+    }
+
+    #[test]
     fn wildcard_host_match() {
         assert!(host_matches("*.example.com", "api.example.com"));
         assert!(host_matches("*.example.com", "sub.api.example.com"));
         assert!(!host_matches("*.example.com", "example.com"));
+    }
+
+    #[test]
+    fn wildcard_host_match_normalizes_trailing_dot_and_whitespace() {
+        assert!(host_matches(" *.example.com. ", " sub.API.EXAMPLE.COM. "));
+        assert!(!host_matches("*.example.com", " example.com. "));
     }
 
     #[test]
@@ -402,6 +422,14 @@ mod tests {
     fn allowed_by_rule() {
         let policy = sample_policy();
         let (action, idx) = policy.evaluate("api.example.com", 443, Protocol::Http);
+        assert_eq!(action, Action::Allow);
+        assert_eq!(idx, Some(0));
+    }
+
+    #[test]
+    fn allowed_by_rule_with_trailing_dot_hostname() {
+        let policy = sample_policy();
+        let (action, idx) = policy.evaluate(" API.EXAMPLE.COM. ", 443, Protocol::Http);
         assert_eq!(action, Action::Allow);
         assert_eq!(idx, Some(0));
     }

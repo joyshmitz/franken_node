@@ -89,6 +89,12 @@ pub struct QuorumVerification {
     pub timestamp: String,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct SignerVerificationState {
+    has_valid_signature: bool,
+    has_invalid_signature: bool,
+}
+
 /// Error for coordinator operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoordinatorError {
@@ -171,7 +177,7 @@ pub fn verify_quorum(
     let threshold = config.threshold_for_tier(tier);
     let known_set: BTreeSet<&str> = known_signers.iter().map(|s| s.as_str()).collect();
     let mut failures = Vec::new();
-    let mut signer_validity: BTreeMap<String, bool> = BTreeMap::new();
+    let mut signer_states: BTreeMap<String, SignerVerificationState> = BTreeMap::new();
     let mut unknown_signers = BTreeSet::new();
 
     for sig in signatures {
@@ -191,14 +197,12 @@ pub fn verify_quorum(
         let digest = h.finalize();
         let expected_sig = hex::encode(digest);
 
+        let signer_state = signer_states.entry(sig.signer_id.clone()).or_default();
         if crate::security::constant_time::ct_eq(&sig.signature, &expected_sig) {
-            signer_validity.insert(sig.signer_id.clone(), true);
-            continue;
+            signer_state.has_valid_signature = true;
+        } else {
+            signer_state.has_invalid_signature = true;
         }
-
-        signer_validity
-            .entry(sig.signer_id.clone())
-            .or_insert(false);
     }
 
     failures.extend(
@@ -208,17 +212,19 @@ pub fn verify_quorum(
     );
 
     failures.extend(
-        signer_validity
+        signer_states
             .iter()
-            .filter(|(_, valid)| !**valid)
-            .map(|(signer_id, _)| VerificationFailure::InvalidSignature {
-                signer_id: signer_id.clone(),
-            }),
+            .filter(|(_, state)| state.has_invalid_signature)
+            .map(
+                |(signer_id, _state)| VerificationFailure::InvalidSignature {
+                    signer_id: signer_id.clone(),
+                },
+            ),
     );
 
-    let valid_count = signer_validity
+    let valid_count = signer_states
         .values()
-        .filter(|valid| **valid)
+        .filter(|state| state.has_valid_signature)
         .count()
         .try_into()
         .unwrap_or(u32::MAX);
@@ -230,10 +236,9 @@ pub fn verify_quorum(
         });
     }
 
-    let passed = valid_count >= threshold
-        && failures
-            .iter()
-            .all(|f| !matches!(f, VerificationFailure::BelowQuorum { .. }));
+    // Fail closed if any verification failure was classified, even when the
+    // batch also contains enough valid signatures to meet the quorum count.
+    let passed = valid_count >= threshold && failures.is_empty();
 
     QuorumVerification {
         lease_id: lease_id.to_string(),
@@ -387,6 +392,7 @@ mod tests {
         let known = vec!["s1".to_string()];
         let sigs = vec![valid_sig("s1", "h"), valid_sig("unknown", "h")];
         let v = verify_quorum(&qconfig(), "l1", "Standard", &sigs, &known, "h", "tr", "ts");
+        assert!(!v.passed, "unknown signers must fail quorum verification");
         let unknown = v
             .failures
             .iter()
@@ -402,6 +408,10 @@ mod tests {
             signature: "wrong".into(),
         }];
         let v = verify_quorum(&qconfig(), "l1", "Standard", &sigs, &known, "h", "tr", "ts");
+        assert!(
+            !v.passed,
+            "invalid signatures must fail quorum verification"
+        );
         let invalid = v
             .failures
             .iter()
@@ -458,7 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_signer_valid_later_still_counts() {
+    fn invalid_duplicate_before_valid_signature_fails_closed() {
         let known = vec!["s1".to_string()];
         let sigs = vec![
             QuorumSignature {
@@ -468,12 +478,109 @@ mod tests {
             valid_sig("s1", "h"),
         ];
         let v = verify_quorum(&qconfig(), "l1", "Standard", &sigs, &known, "h", "tr", "ts");
-        assert!(v.passed);
+        assert!(
+            !v.passed,
+            "a signer with any forged duplicate must fail quorum verification"
+        );
         assert_eq!(v.received, 1);
+        assert!(
+            v.failures
+                .iter()
+                .any(|f| matches!(f, VerificationFailure::InvalidSignature { .. }))
+        );
         assert!(
             !v.failures
                 .iter()
-                .any(|f| matches!(f, VerificationFailure::InvalidSignature { .. }))
+                .any(|f| matches!(f, VerificationFailure::BelowQuorum { .. })),
+            "meeting the threshold should not mask duplicate-signature tampering as below-quorum"
+        );
+    }
+
+    #[test]
+    fn invalid_duplicate_after_valid_signature_fails_closed() {
+        let known = vec!["s1".to_string()];
+        let sigs = vec![
+            valid_sig("s1", "h"),
+            QuorumSignature {
+                signer_id: "s1".into(),
+                signature: "wrong".into(),
+            },
+        ];
+        let v = verify_quorum(&qconfig(), "l1", "Standard", &sigs, &known, "h", "tr", "ts");
+        assert!(
+            !v.passed,
+            "a later forged duplicate must not be washed out by an earlier valid signature"
+        );
+        assert_eq!(v.received, 1);
+        assert!(
+            v.failures
+                .iter()
+                .any(|f| matches!(f, VerificationFailure::InvalidSignature { signer_id } if signer_id == "s1"))
+        );
+        assert!(
+            !v.failures
+                .iter()
+                .any(|f| matches!(f, VerificationFailure::BelowQuorum { .. })),
+            "meeting the threshold should not mask duplicate-signature tampering as below-quorum"
+        );
+    }
+
+    #[test]
+    fn mixed_valid_and_invalid_signatures_fail_closed() {
+        let known = vec!["s1".to_string(), "s2".to_string()];
+        let sigs = vec![
+            valid_sig("s1", "h"),
+            QuorumSignature {
+                signer_id: "s2".into(),
+                signature: "wrong".into(),
+            },
+        ];
+
+        let v = verify_quorum(&qconfig(), "l1", "Standard", &sigs, &known, "h", "tr", "ts");
+
+        assert!(
+            !v.passed,
+            "any invalid signature should fail quorum verification"
+        );
+        assert_eq!(
+            v.received, 1,
+            "valid quorum count should still be reported accurately"
+        );
+        assert!(
+            v.failures
+                .iter()
+                .any(|f| matches!(f, VerificationFailure::InvalidSignature { signer_id } if signer_id == "s2"))
+        );
+        assert!(
+            !v.failures
+                .iter()
+                .any(|f| matches!(f, VerificationFailure::BelowQuorum { .. })),
+            "meeting the threshold should not mask the invalid-signature failure as below-quorum"
+        );
+    }
+
+    #[test]
+    fn mixed_valid_and_unknown_signers_fail_closed() {
+        let known = vec!["s1".to_string()];
+        let sigs = vec![valid_sig("s1", "h"), valid_sig("stranger", "h")];
+
+        let v = verify_quorum(&qconfig(), "l1", "Standard", &sigs, &known, "h", "tr", "ts");
+
+        assert!(!v.passed, "unknown signers should fail quorum verification");
+        assert_eq!(
+            v.received, 1,
+            "only known valid signers should count toward quorum"
+        );
+        assert!(
+            v.failures
+                .iter()
+                .any(|f| matches!(f, VerificationFailure::UnknownSigner { signer_id } if signer_id == "stranger"))
+        );
+        assert!(
+            !v.failures
+                .iter()
+                .any(|f| matches!(f, VerificationFailure::BelowQuorum { .. })),
+            "threshold satisfaction should not override unknown-signer failure"
         );
     }
 
