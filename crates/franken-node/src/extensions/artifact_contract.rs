@@ -384,15 +384,19 @@ pub fn compute_contract_signature(contract: &CapabilityContract) -> String {
         contract.contract_id.as_str(),
         contract.extension_id.as_str(),
         signer.as_str(),
+        contract.schema_version.as_str(),
     ] {
         buf.extend_from_slice(&(field.len() as u64).to_le_bytes());
         buf.extend_from_slice(field.as_bytes());
     }
-    // Length-prefix each capability individually (not comma-joined).
+    // Bind the full capability envelope so post-sign tampering is rejected.
     buf.extend_from_slice(&(contract.capabilities.len() as u64).to_le_bytes());
     for cap in &contract.capabilities {
         buf.extend_from_slice(&(cap.capability_id.len() as u64).to_le_bytes());
         buf.extend_from_slice(cap.capability_id.as_bytes());
+        buf.extend_from_slice(&(cap.scope.len() as u64).to_le_bytes());
+        buf.extend_from_slice(cap.scope.as_bytes());
+        buf.extend_from_slice(&cap.max_calls_per_epoch.to_le_bytes());
     }
     buf.extend_from_slice(&contract.issued_epoch_ms.to_le_bytes());
     digest_bytes(&buf)
@@ -603,6 +607,38 @@ mod tests {
         let gate = test_gate();
         let mut contract = test_contract();
         contract.signature = "tampered-sig".to_string();
+        let artifact = make_artifact("a1", "ext-alpha", contract);
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn admission_rejects_scope_tampering_after_signing() {
+        let gate = test_gate();
+        let mut contract = test_contract();
+        contract.capabilities[0].scope = "filesystem:write".to_string();
+        let artifact = make_artifact("a1", "ext-alpha", contract);
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn admission_rejects_call_budget_tampering_after_signing() {
+        let gate = test_gate();
+        let mut contract = test_contract();
+        contract.capabilities[0].max_calls_per_epoch = 9_999;
         let artifact = make_artifact("a1", "ext-alpha", contract);
         let outcome = gate.evaluate(&artifact);
         assert!(matches!(
