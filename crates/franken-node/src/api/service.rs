@@ -11,8 +11,8 @@ use std::collections::BTreeMap;
 
 use super::fleet_control_routes;
 use super::middleware::{
-    EndpointGroup, RateLimitConfig, RateLimiter, RequestLog, RouteMetadata, ServiceMetrics,
-    default_rate_limit,
+    default_rate_limit, EndpointGroup, RateLimitConfig, RateLimiter, RequestLog, RouteMetadata,
+    ServiceMetrics,
 };
 use super::operator_routes;
 use super::verifier_routes;
@@ -433,9 +433,9 @@ mod tests {
 mod integration_tests {
     use super::*;
     use crate::api::middleware::{
-        AuthIdentity, AuthMethod, AuthzDecision, EndpointGroup, EndpointLifecycle, PolicyHook,
-        RateLimitConfig, RateLimiter, RouteMetadata, authorize, check_rate_limit,
-        default_rate_limit, execute_middleware_chain,
+        authorize, check_rate_limit, default_rate_limit, execute_middleware_chain, AuthIdentity,
+        AuthMethod, AuthzDecision, EndpointGroup, EndpointLifecycle, PolicyHook, RateLimitConfig,
+        RateLimiter, RouteMetadata,
     };
     use crate::security::intent_firewall::{
         EffectsFirewall, FirewallVerdict, IntentClassification, IntentClassifier, RemoteEffect,

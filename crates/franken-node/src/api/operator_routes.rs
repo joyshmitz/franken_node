@@ -7,9 +7,11 @@
 //! - `GET /v1/operator/rollout` — rollout state query
 
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 #[cfg(test)]
 use std::sync::Mutex;
 use std::sync::OnceLock;
+use std::sync::RwLock;
 use std::time::Instant;
 
 use super::error::ApiError;
@@ -25,50 +27,73 @@ struct ProcessStartState {
     wall_clock_rfc3339: String,
 }
 
-impl ProcessStartState {
-    fn now() -> Self {
-        Self {
-            monotonic: Instant::now(),
-            wall_clock_rfc3339: chrono::Utc::now().to_rfc3339(),
-        }
-    }
-}
-
-static PROCESS_START: OnceLock<ProcessStartState> = OnceLock::new();
+static MONOTONIC_EPOCH: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
+static PROCESS_START_INITIALIZED: AtomicBool = AtomicBool::new(false);
+static PROCESS_START_OFFSET_NANOS: AtomicU64 = AtomicU64::new(0);
+static PROCESS_START_WALL_CLOCK: std::sync::LazyLock<RwLock<String>> =
+    std::sync::LazyLock::new(|| RwLock::new(String::new()));
 
 #[cfg(test)]
 static PROCESS_START_OVERRIDE: Mutex<Option<ProcessStartState>> = Mutex::new(None);
 
 #[cfg(test)]
-static PROCESS_START_INIT_CALLS: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
+static PROCESS_START_INIT_CALLS: AtomicUsize = AtomicUsize::new(0);
 
-fn process_start_state() -> ProcessStartState {
-    #[cfg(test)]
-    if let Some(override_state) = process_start_override_for_tests() {
-        return override_state;
+fn now_epoch_nanos() -> u64 {
+    MONOTONIC_EPOCH.elapsed().as_nanos().min(u64::MAX as u128) as u64
+}
+
+fn duration_to_nanos(duration: std::time::Duration) -> u64 {
+    duration.as_nanos().min(u64::MAX as u128) as u64
+}
+
+fn install_process_start(offset_nanos: u64, wall_clock_rfc3339: String) {
+    {
+        let mut wall_clock = PROCESS_START_WALL_CLOCK
+            .write()
+            .unwrap_or_else(|poison| poison.into_inner());
+        *wall_clock = wall_clock_rfc3339;
     }
-
-    // Reads before service bootstrap must not pin the shared baseline.
-    PROCESS_START
-        .get()
-        .cloned()
-        .unwrap_or_else(ProcessStartState::now)
+    PROCESS_START_OFFSET_NANOS.store(offset_nanos, Ordering::Relaxed);
+    PROCESS_START_INITIALIZED.store(true, Ordering::Release);
 }
 
 pub(crate) fn init_process_start() {
     #[cfg(test)]
-    PROCESS_START_INIT_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    PROCESS_START_INIT_CALLS.fetch_add(1, Ordering::Relaxed);
 
-    let _ = PROCESS_START.get_or_init(ProcessStartState::now);
+    install_process_start(now_epoch_nanos(), chrono::Utc::now().to_rfc3339());
 }
 
 fn process_uptime_seconds() -> u64 {
-    process_start_state().monotonic.elapsed().as_secs()
+    #[cfg(test)]
+    if let Some(override_state) = process_start_override_for_tests() {
+        return override_state.monotonic.elapsed().as_secs();
+    }
+
+    let now_nanos = now_epoch_nanos();
+    let start_nanos = if PROCESS_START_INITIALIZED.load(Ordering::Acquire) {
+        PROCESS_START_OFFSET_NANOS.load(Ordering::Relaxed)
+    } else {
+        now_nanos
+    };
+    now_nanos.saturating_sub(start_nanos) / 1_000_000_000
 }
 
 fn process_started_at_rfc3339() -> String {
-    process_start_state().wall_clock_rfc3339
+    #[cfg(test)]
+    if let Some(override_state) = process_start_override_for_tests() {
+        return override_state.wall_clock_rfc3339;
+    }
+
+    if !PROCESS_START_INITIALIZED.load(Ordering::Acquire) {
+        return chrono::Utc::now().to_rfc3339();
+    }
+
+    PROCESS_START_WALL_CLOCK
+        .read()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .clone()
 }
 
 #[cfg(test)]
@@ -93,11 +118,20 @@ pub(crate) fn clear_process_start_override_for_tests() {
         .lock()
         .unwrap_or_else(|poison| poison.into_inner());
     *guard = None;
+    drop(guard);
+
+    PROCESS_START_OFFSET_NANOS.store(0, Ordering::Relaxed);
+    PROCESS_START_INITIALIZED.store(false, Ordering::Release);
+
+    let mut wall_clock = PROCESS_START_WALL_CLOCK
+        .write()
+        .unwrap_or_else(|poison| poison.into_inner());
+    wall_clock.clear();
 }
 
 #[cfg(test)]
 pub(crate) fn process_start_init_call_count_for_tests() -> usize {
-    PROCESS_START_INIT_CALLS.load(std::sync::atomic::Ordering::Relaxed)
+    PROCESS_START_INIT_CALLS.load(Ordering::Relaxed)
 }
 
 #[cfg(test)]
@@ -111,6 +145,15 @@ pub(crate) fn seed_process_start_for_tests(elapsed: std::time::Duration, wall_cl
         monotonic,
         wall_clock_rfc3339: wall_clock_rfc3339.to_string(),
     });
+}
+
+#[cfg(test)]
+pub(crate) fn seed_bootstrapped_process_start_for_tests(
+    elapsed: std::time::Duration,
+    wall_clock_rfc3339: &str,
+) {
+    let start_offset_nanos = now_epoch_nanos().saturating_sub(duration_to_nanos(elapsed));
+    install_process_start(start_offset_nanos, wall_clock_rfc3339.to_string());
 }
 
 // ── Response Types ─────────────────────────────────────────────────────────
@@ -464,6 +507,41 @@ mod tests {
 
         assert_eq!(first.data.last_transition, "2026-03-20T12:34:56Z");
         assert_eq!(first.data.last_transition, second.data.last_transition);
+    }
+
+    #[test]
+    fn service_bootstrap_reseeds_shared_process_start_state() {
+        let _lock = process_start_test_lock();
+        clear_process_start_override_for_tests();
+        seed_bootstrapped_process_start_for_tests(
+            std::time::Duration::from_secs(5),
+            "2026-03-20T12:34:56Z",
+        );
+
+        let identity = test_identity();
+        let trace = test_trace();
+
+        let before = get_rollout(&identity, &trace).expect("rollout before reseed");
+        assert_eq!(before.data.last_transition, "2026-03-20T12:34:56Z");
+        assert!(
+            get_status(&identity, &trace)
+                .expect("status before reseed")
+                .data
+                .uptime_seconds
+                >= 5
+        );
+
+        let _service = ControlPlaneService::default();
+
+        let after = get_rollout(&identity, &trace).expect("rollout after reseed");
+        assert_ne!(after.data.last_transition, "2026-03-20T12:34:56Z");
+        assert!(
+            get_status(&identity, &trace)
+                .expect("status after reseed")
+                .data
+                .uptime_seconds
+                < 5
+        );
     }
 
     #[test]
