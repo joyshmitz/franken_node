@@ -194,6 +194,23 @@ fn parse_ipv4_lax(ip: &str) -> Option<[u8; 4]> {
     }
 }
 
+fn parse_trailing_dot_numeric_ipv4_alias(ip: &str) -> Option<[u8; 4]> {
+    let trimmed = ip.trim();
+    if !trimmed.ends_with('.') {
+        return None;
+    }
+    let canonical = trimmed.trim_end_matches('.');
+    if canonical.is_empty() {
+        return None;
+    }
+    parse_ipv4(canonical).or_else(|| parse_ipv4_lax(canonical))
+}
+
+fn has_bracket_delimiters(host: &str) -> bool {
+    let trimmed = host.trim();
+    trimmed.starts_with('[') || trimmed.ends_with(']')
+}
+
 /// Reserved hostname aliases that resolve to loopback without touching the public DNS.
 fn blocked_hostname_label(host: &str) -> Option<&'static str> {
     let normalized = host.trim().trim_end_matches('.').to_ascii_lowercase();
@@ -232,12 +249,18 @@ impl SsrfPolicyTemplate {
         let octets = match parse_ipv4(ip) {
             Some(o) => o,
             None => {
+                if parse_trailing_dot_numeric_ipv4_alias(ip).is_some() {
+                    return true; // Treat malformed numeric IP aliases as private to deny fail-closed
+                }
                 if parse_ipv4_lax(ip).is_some() {
                     return true; // Treat as private to deny invalid IP formats
                 }
                 let clean_ip = ip.trim_start_matches('[').trim_end_matches(']');
                 if clean_ip.parse::<std::net::IpAddr>().is_ok() {
                     return true; // Deny unsupported IP literals (like IPv6) by treating them as private
+                }
+                if has_bracket_delimiters(ip) {
+                    return true; // Treat malformed bracketed host literals as private to deny fail-closed
                 }
                 return false;
             }
@@ -317,20 +340,80 @@ impl SsrfPolicyTemplate {
         let octets = match parse_ipv4(host) {
             Some(o) => o,
             None => {
-                let clean_host = host.trim_start_matches('[').trim_end_matches(']');
-                if clean_host.parse::<std::net::IpAddr>().is_ok() {
+                if parse_trailing_dot_numeric_ipv4_alias(host).is_some() {
                     self.emit_audit(
                         host,
                         port,
                         Action::Deny,
-                        Some("ipv6_unsupported"),
+                        Some("invalid_ip_format"),
                         false,
                         trace_id,
                         timestamp,
                     );
-                    return Err(SsrfError::SsrfDenied {
+                    return Err(SsrfError::SsrfInvalidIp {
                         host: host.to_string(),
-                        cidr: "ipv6_unsupported".to_string(),
+                    });
+                }
+                let clean_host = host.trim_start_matches('[').trim_end_matches(']');
+                if parse_trailing_dot_numeric_ipv4_alias(clean_host).is_some() {
+                    self.emit_audit(
+                        host,
+                        port,
+                        Action::Deny,
+                        Some("invalid_ip_format"),
+                        false,
+                        trace_id,
+                        timestamp,
+                    );
+                    return Err(SsrfError::SsrfInvalidIp {
+                        host: host.to_string(),
+                    });
+                }
+                if let Ok(parsed_ip) = clean_host.parse::<std::net::IpAddr>() {
+                    return match parsed_ip {
+                        std::net::IpAddr::V4(_) => {
+                            self.emit_audit(
+                                host,
+                                port,
+                                Action::Deny,
+                                Some("invalid_ip_format"),
+                                false,
+                                trace_id,
+                                timestamp,
+                            );
+                            Err(SsrfError::SsrfInvalidIp {
+                                host: host.to_string(),
+                            })
+                        }
+                        std::net::IpAddr::V6(_) => {
+                            self.emit_audit(
+                                host,
+                                port,
+                                Action::Deny,
+                                Some("ipv6_unsupported"),
+                                false,
+                                trace_id,
+                                timestamp,
+                            );
+                            Err(SsrfError::SsrfDenied {
+                                host: host.to_string(),
+                                cidr: "ipv6_unsupported".to_string(),
+                            })
+                        }
+                    };
+                }
+                if has_bracket_delimiters(host) {
+                    self.emit_audit(
+                        host,
+                        port,
+                        Action::Deny,
+                        Some("invalid_ip_format"),
+                        false,
+                        trace_id,
+                        timestamp,
+                    );
+                    return Err(SsrfError::SsrfInvalidIp {
+                        host: host.to_string(),
                     });
                 }
                 if parse_ipv4_lax(host).is_some() {
@@ -661,6 +744,19 @@ mod tests {
     }
 
     #[test]
+    fn private_ip_treats_trailing_dot_numeric_aliases_as_denied() {
+        assert!(SsrfPolicyTemplate::is_private_ip("127.0.0.1."));
+        assert!(SsrfPolicyTemplate::is_private_ip("8.8.8.8."));
+        assert!(SsrfPolicyTemplate::is_private_ip("127.1."));
+    }
+
+    #[test]
+    fn private_ip_treats_malformed_bracketed_hosts_as_denied() {
+        assert!(SsrfPolicyTemplate::is_private_ip("[127.0.0.1.]"));
+        assert!(SsrfPolicyTemplate::is_private_ip("[example.com]"));
+    }
+
+    #[test]
     fn public_ip_not_private() {
         assert!(!SsrfPolicyTemplate::is_private_ip("8.8.8.8"));
         assert!(!SsrfPolicyTemplate::is_private_ip("1.1.1.1"));
@@ -753,6 +849,41 @@ mod tests {
         assert!(result.is_err());
         assert!(SsrfPolicyTemplate::is_private_ip(" 127.0.0.1 "));
         assert!(SsrfPolicyTemplate::is_private_ip(" localhost \n"));
+    }
+
+    #[test]
+    fn check_ssrf_rejects_trailing_dot_private_numeric_alias() {
+        let mut t = SsrfPolicyTemplate::default_template("conn-1".into());
+        let result = t.check_ssrf("127.0.0.1.", 80, Protocol::Http, "td1", "ts");
+        assert!(matches!(result, Err(SsrfError::SsrfInvalidIp { .. })));
+    }
+
+    #[test]
+    fn check_ssrf_rejects_trailing_dot_public_numeric_alias() {
+        let mut t = SsrfPolicyTemplate::default_template("conn-1".into());
+        let result = t.check_ssrf("8.8.8.8.", 443, Protocol::Http, "td2", "ts");
+        assert!(matches!(result, Err(SsrfError::SsrfInvalidIp { .. })));
+    }
+
+    #[test]
+    fn check_ssrf_rejects_bracketed_ipv4_as_invalid_format() {
+        let mut t = SsrfPolicyTemplate::default_template("conn-1".into());
+        let result = t.check_ssrf("[127.0.0.1]", 80, Protocol::Http, "td3", "ts");
+        assert!(matches!(result, Err(SsrfError::SsrfInvalidIp { .. })));
+    }
+
+    #[test]
+    fn check_ssrf_rejects_bracketed_trailing_dot_ipv4_as_invalid_format() {
+        let mut t = SsrfPolicyTemplate::default_template("conn-1".into());
+        let result = t.check_ssrf("[127.0.0.1.]", 80, Protocol::Http, "td4", "ts");
+        assert!(matches!(result, Err(SsrfError::SsrfInvalidIp { .. })));
+    }
+
+    #[test]
+    fn check_ssrf_rejects_bracketed_hostname_as_invalid_format() {
+        let mut t = SsrfPolicyTemplate::default_template("conn-1".into());
+        let result = t.check_ssrf("[api.example.com]", 443, Protocol::Http, "td5", "ts");
+        assert!(matches!(result, Err(SsrfError::SsrfInvalidIp { .. })));
     }
 
     #[test]
