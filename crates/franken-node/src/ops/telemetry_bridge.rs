@@ -283,6 +283,8 @@ pub struct TelemetryRuntimeHandle {
     lifecycle: Arc<AtomicU8>,
     stop_flag: Arc<AtomicBool>,
     persistence_abort: Arc<AtomicBool>,
+    connection_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    connection_worker_panicked: Arc<AtomicBool>,
     listener_handle: Option<JoinHandle<()>>,
     persistence_handle: Option<JoinHandle<()>>,
 }
@@ -355,10 +357,29 @@ impl TelemetryRuntimeHandle {
         deadline: Duration,
     ) -> Result<TelemetryRuntimeReport, TelemetryJoinError> {
         let drain_start = Instant::now();
+        let mut join_error = None;
 
         // Join listener thread (should exit quickly after stop flag is set)
-        if let Some(handle) = self.listener_handle.take() {
-            let _ = handle.join();
+        if let Some(handle) = self.listener_handle.take()
+            && handle.join().is_err()
+        {
+            self.mark_join_failed(
+                &mut join_error,
+                "telemetry listener worker panicked while joining runtime",
+            );
+        }
+
+        if self.connection_worker_panicked.load(Ordering::SeqCst) {
+            self.mark_join_failed(
+                &mut join_error,
+                "telemetry connection worker panicked while joining runtime",
+            );
+        }
+
+        if let Err(err) = self.join_connection_workers() {
+            self.connection_worker_panicked
+                .store(true, Ordering::SeqCst);
+            self.mark_join_failed(&mut join_error, &err.0);
         }
 
         // Join persistence thread (drains remaining queue items)
@@ -419,6 +440,10 @@ impl TelemetryRuntimeHandle {
             });
         }
 
+        if let Some(err) = join_error {
+            return Err(err);
+        }
+
         let snapshot = self.snapshot();
         Ok(TelemetryRuntimeReport {
             final_state: self.lifecycle_state(),
@@ -432,6 +457,48 @@ impl TelemetryRuntimeHandle {
             drain_duration_ms: u64::try_from(drain_duration.as_millis()).unwrap_or(u64::MAX),
             recent_events: snapshot.recent_events,
         })
+    }
+
+    fn join_connection_workers(&self) -> Result<(), TelemetryJoinError> {
+        let mut registry_poisoned = false;
+        let handles = {
+            let mut guard = match self.connection_handles.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => {
+                    registry_poisoned = true;
+                    poisoned.into_inner()
+                }
+            };
+            std::mem::take(&mut *guard)
+        };
+
+        let mut worker_panicked = false;
+        for handle in handles {
+            if handle.join().is_err() {
+                worker_panicked = true;
+            }
+        }
+
+        if registry_poisoned {
+            Err(TelemetryJoinError(
+                "telemetry connection worker registry poisoned while joining runtime".to_string(),
+            ))
+        } else if worker_panicked {
+            Err(TelemetryJoinError(
+                "telemetry connection worker panicked while joining runtime".to_string(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn mark_join_failed(&self, slot: &mut Option<TelemetryJoinError>, message: &str) {
+        if !matches!(self.lifecycle_state(), BridgeLifecycleState::Failed) {
+            self.transition_state(BridgeLifecycleState::Failed);
+        }
+        if slot.is_none() {
+            *slot = Some(TelemetryJoinError(message.to_string()));
+        }
     }
 
     fn transition_state(&self, new_state: BridgeLifecycleState) {
@@ -524,6 +591,8 @@ impl TelemetryBridge {
             })?
         };
         let persistence_abort = Arc::new(AtomicBool::new(false));
+        let connection_handles = Arc::new(Mutex::new(Vec::new()));
+        let connection_worker_panicked = Arc::new(AtomicBool::new(false));
         let (sender, receiver) = mpsc::sync_channel(PERSIST_QUEUE_CAPACITY);
 
         // Clean up stale socket
@@ -578,6 +647,8 @@ impl TelemetryBridge {
         let listener_state = Arc::clone(&state);
         let listener_stop = Arc::clone(&stop_flag);
         let listener_lifecycle = Arc::clone(&lifecycle);
+        let listener_connection_handles = Arc::clone(&connection_handles);
+        let listener_connection_panicked = Arc::clone(&connection_worker_panicked);
         let listener_handle = thread::spawn(move || {
             Self::run_accept_loop(
                 listener,
@@ -585,6 +656,8 @@ impl TelemetryBridge {
                 listener_state,
                 listener_stop,
                 listener_lifecycle,
+                listener_connection_handles,
+                listener_connection_panicked,
             );
         });
 
@@ -594,6 +667,8 @@ impl TelemetryBridge {
             lifecycle,
             stop_flag,
             persistence_abort,
+            connection_handles,
+            connection_worker_panicked,
             listener_handle: Some(listener_handle),
             persistence_handle: Some(persistence_handle),
         })
@@ -607,12 +682,21 @@ impl TelemetryBridge {
         state: Arc<Mutex<TelemetryBridgeState>>,
         stop_flag: Arc<AtomicBool>,
         lifecycle: Arc<AtomicU8>,
+        connection_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+        connection_worker_panicked: Arc<AtomicBool>,
     ) {
-        let mut connection_handles: Vec<JoinHandle<()>> = Vec::new();
-
         loop {
             // Check stop flag
             if stop_flag.load(Ordering::SeqCst) {
+                break;
+            }
+
+            if !Self::reap_finished_connection_workers(
+                &connection_handles,
+                &connection_worker_panicked,
+            ) {
+                lifecycle.store(BridgeLifecycleState::Failed as u8, Ordering::SeqCst);
+                stop_flag.store(true, Ordering::SeqCst);
                 break;
             }
 
@@ -669,10 +753,24 @@ impl TelemetryBridge {
                             stop_inner,
                         );
                     });
-                    connection_handles.push(handle);
+                    if let Ok(mut handles) = connection_handles.lock() {
+                        handles.push(handle);
+                    } else {
+                        connection_worker_panicked.store(true, Ordering::SeqCst);
+                        lifecycle.store(BridgeLifecycleState::Failed as u8, Ordering::SeqCst);
+                        stop_flag.store(true, Ordering::SeqCst);
+                        let _ = handle.join();
+                        break;
+                    }
 
-                    // Reap finished connection threads
-                    connection_handles.retain(|h| !h.is_finished());
+                    if !Self::reap_finished_connection_workers(
+                        &connection_handles,
+                        &connection_worker_panicked,
+                    ) {
+                        lifecycle.store(BridgeLifecycleState::Failed as u8, Ordering::SeqCst);
+                        stop_flag.store(true, Ordering::SeqCst);
+                        break;
+                    }
                 }
                 Err(err) if err.kind() == ErrorKind::WouldBlock => {
                     // Non-blocking: no pending connection, sleep briefly
@@ -697,13 +795,45 @@ impl TelemetryBridge {
             }
         }
 
-        // Wait for all connection workers to finish (drain phase)
-        for handle in connection_handles {
-            let _ = handle.join();
+        if !Self::reap_finished_connection_workers(&connection_handles, &connection_worker_panicked)
+        {
+            lifecycle.store(BridgeLifecycleState::Failed as u8, Ordering::SeqCst);
+            stop_flag.store(true, Ordering::SeqCst);
         }
 
         // Drop sender to signal persistence thread to drain and exit
         drop(sender);
+    }
+
+    fn reap_finished_connection_workers(
+        connection_handles: &Arc<Mutex<Vec<JoinHandle<()>>>>,
+        connection_worker_panicked: &Arc<AtomicBool>,
+    ) -> bool {
+        let finished = {
+            let Ok(mut handles) = connection_handles.lock() else {
+                connection_worker_panicked.store(true, Ordering::SeqCst);
+                return false;
+            };
+            let mut finished = Vec::new();
+            let mut idx = 0usize;
+            while idx < handles.len() {
+                if handles[idx].is_finished() {
+                    finished.push(handles.swap_remove(idx));
+                } else {
+                    idx = idx.saturating_add(1);
+                }
+            }
+            finished
+        };
+
+        let mut worker_panicked = false;
+        for handle in finished {
+            if handle.join().is_err() {
+                connection_worker_panicked.store(true, Ordering::SeqCst);
+                worker_panicked = true;
+            }
+        }
+        !worker_panicked
     }
 
     fn handle_connection(
@@ -902,9 +1032,9 @@ impl TelemetryBridge {
                 break;
             }
 
-            // This can block without polling because join() waits for the
-            // listener owner first, and that owner joins all connection
-            // workers before dropping the last sender.
+            // This can block without polling because join() first stops and
+            // joins the listener owner, then drains all tracked connection
+            // workers before it waits on persistence.
             let envelope = match receiver.recv() {
                 Ok(envelope) => envelope,
                 Err(_) => break,
@@ -1323,6 +1453,8 @@ mod tests {
             lifecycle,
             stop_flag,
             persistence_abort,
+            connection_handles: Arc::new(Mutex::new(Vec::new())),
+            connection_worker_panicked: Arc::new(AtomicBool::new(false)),
             listener_handle: None,
             persistence_handle: Some(worker),
         };
@@ -1359,12 +1491,14 @@ mod tests {
             drop(state_for_worker);
         });
 
-        let mut handle = TelemetryRuntimeHandle {
+        let handle = TelemetryRuntimeHandle {
             socket_path: PathBuf::from("/tmp/telemetry-zero-deadline-finished.sock"),
             state: Arc::clone(&state),
             lifecycle,
             stop_flag,
             persistence_abort,
+            connection_handles: Arc::new(Mutex::new(Vec::new())),
+            connection_worker_panicked: Arc::new(AtomicBool::new(false)),
             listener_handle: None,
             persistence_handle: Some(worker),
         };
@@ -1394,6 +1528,157 @@ mod tests {
             Arc::strong_count(&state),
             1,
             "join() should still consume the finished worker handle"
+        );
+    }
+
+    #[test]
+    fn listener_join_panic_returns_error_after_joining_persistence_worker() {
+        let state = test_state(PERSIST_QUEUE_CAPACITY);
+        let lifecycle = Arc::new(AtomicU8::new(BridgeLifecycleState::Draining as u8));
+        let stop_flag = Arc::new(AtomicBool::new(true));
+        let persistence_abort = Arc::new(AtomicBool::new(false));
+
+        let listener = thread::spawn(|| {
+            panic!("listener panic during join test");
+        });
+
+        let state_for_connection = Arc::clone(&state);
+        let connection_worker = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            drop(state_for_connection);
+        });
+
+        let state_for_worker = Arc::clone(&state);
+        let worker = thread::spawn(move || {
+            drop(state_for_worker);
+        });
+
+        let connection_handles = Arc::new(Mutex::new(vec![connection_worker]));
+        let handle = TelemetryRuntimeHandle {
+            socket_path: PathBuf::from("/tmp/telemetry-listener-panic-test.sock"),
+            state: Arc::clone(&state),
+            lifecycle,
+            stop_flag,
+            persistence_abort,
+            connection_handles,
+            connection_worker_panicked: Arc::new(AtomicBool::new(false)),
+            listener_handle: Some(listener),
+            persistence_handle: Some(worker),
+        };
+
+        let err = handle
+            .join(Duration::from_secs(1))
+            .expect_err("listener panic should fail join");
+
+        assert!(
+            err.0.contains("listener worker panicked"),
+            "join error should report listener panic"
+        );
+        assert_eq!(
+            Arc::strong_count(&state),
+            1,
+            "connection and persistence workers should still be joined before returning the listener error"
+        );
+    }
+
+    #[test]
+    fn reaping_panicked_connection_workers_reports_failure_after_joining_all_finished_workers() {
+        let connection_worker_panicked = Arc::new(AtomicBool::new(false));
+        let joined_token = Arc::new(());
+        let joined_token_for_worker = Arc::clone(&joined_token);
+
+        let panicking_worker = thread::spawn(|| {
+            panic!("connection worker panic during reap test");
+        });
+        let finishing_worker = thread::spawn(move || {
+            drop(joined_token_for_worker);
+        });
+
+        let connection_handles = Arc::new(Mutex::new(vec![panicking_worker, finishing_worker]));
+
+        while !connection_handles
+            .lock()
+            .expect("connection handle registry lock")
+            .iter()
+            .all(JoinHandle::is_finished)
+        {
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        let healthy = TelemetryBridge::reap_finished_connection_workers(
+            &connection_handles,
+            &connection_worker_panicked,
+        );
+
+        assert!(
+            !healthy,
+            "panicked connection workers should fail the reap pass"
+        );
+        assert!(
+            connection_worker_panicked.load(Ordering::SeqCst),
+            "reap should surface the panic to the runtime"
+        );
+        assert_eq!(
+            Arc::strong_count(&joined_token),
+            1,
+            "reap should still join every finished worker before reporting failure"
+        );
+        assert!(
+            connection_handles
+                .lock()
+                .expect("connection handle registry lock")
+                .is_empty(),
+            "finished workers should be removed from the shared registry"
+        );
+    }
+
+    #[test]
+    fn poisoned_connection_registry_still_joins_workers_before_returning_error() {
+        let state = test_state(PERSIST_QUEUE_CAPACITY);
+        let lifecycle = Arc::new(AtomicU8::new(BridgeLifecycleState::Draining as u8));
+        let stop_flag = Arc::new(AtomicBool::new(true));
+        let persistence_abort = Arc::new(AtomicBool::new(false));
+
+        let state_for_connection = Arc::clone(&state);
+        let connection_worker = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            drop(state_for_connection);
+        });
+
+        let connection_handles = Arc::new(Mutex::new(vec![connection_worker]));
+        let handles_for_poison = Arc::clone(&connection_handles);
+        let _ = thread::spawn(move || {
+            let _guard = handles_for_poison
+                .lock()
+                .expect("connection handle registry lock");
+            panic!("poison connection handle registry");
+        })
+        .join();
+
+        let handle = TelemetryRuntimeHandle {
+            socket_path: PathBuf::from("/tmp/telemetry-poisoned-connection-registry.sock"),
+            state: Arc::clone(&state),
+            lifecycle,
+            stop_flag,
+            persistence_abort,
+            connection_handles,
+            connection_worker_panicked: Arc::new(AtomicBool::new(false)),
+            listener_handle: None,
+            persistence_handle: None,
+        };
+
+        let err = handle
+            .join(Duration::from_secs(1))
+            .expect_err("poisoned connection registry should fail join");
+
+        assert!(
+            err.0.contains("registry poisoned"),
+            "join error should report the poisoned registry"
+        );
+        assert_eq!(
+            Arc::strong_count(&state),
+            1,
+            "join() should still drain connection workers out of a poisoned registry before returning"
         );
     }
 
