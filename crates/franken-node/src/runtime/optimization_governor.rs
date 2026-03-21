@@ -413,6 +413,7 @@ pub struct OptimizationGovernor {
 /// Tracks an applied proposal so we can auto-revert it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct AppliedProposal {
+    pub seq: u64,
     pub proposal_id: String,
     pub knob: RuntimeKnob,
     pub old_value: u64,
@@ -642,6 +643,7 @@ impl OptimizationGovernor {
         self.applied.insert(
             proposal.proposal_id.clone(),
             AppliedProposal {
+                seq: self.next_seq,
                 proposal_id: proposal.proposal_id.clone(),
                 knob: proposal.knob,
                 old_value: proposal.old_value,
@@ -677,9 +679,9 @@ impl OptimizationGovernor {
         }
 
         // All currently applied proposals are suspect; revert them all.
-        // Reverse so last-applied proposals revert first and earliest old_value wins.
+        // Sort by sequence number descending so last-applied proposals revert first.
         let mut to_revert: Vec<AppliedProposal> = self.applied.values().cloned().collect();
-        to_revert.reverse();
+        to_revert.sort_by_key(|ap| std::cmp::Reverse(ap.seq));
         let mut reverted_ids = Vec::new();
 
         for ap in &to_revert {

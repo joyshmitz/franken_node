@@ -236,7 +236,11 @@ impl TrustState {
     pub fn insert(&mut self, record: TrustRecord) {
         if self.records.len() >= MAX_TRUST_RECORDS
             && !self.records.contains_key(&record.id)
-            && let Some(oldest_key) = self.records.keys().next().cloned()
+            && let Some(oldest_key) = self
+                .records
+                .values()
+                .min_by(|a, b| a.precedence_cmp(b))
+                .map(|r| r.id.clone())
         {
             self.records.remove(&oldest_key);
         }

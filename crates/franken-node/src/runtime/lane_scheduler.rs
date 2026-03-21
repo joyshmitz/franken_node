@@ -630,6 +630,29 @@ impl LaneScheduler {
         Ok(assignment.lane)
     }
 
+    /// Abort a queued task assignment, decrementing the queue depth.
+    pub fn abort_queued_task(&mut self, task_class: &TaskClass) -> Result<(), LaneSchedulerError> {
+        let lane = self.policy.resolve(task_class).ok_or_else(|| {
+            LaneSchedulerError::UnknownClass {
+                task_class: task_class.to_string(),
+            }
+        })?;
+
+        let counters = self.counters.get_mut(lane.as_str()).ok_or_else(|| {
+            LaneSchedulerError::UnknownLane {
+                lane: lane.to_string(),
+            }
+        })?;
+
+        if counters.queued_count > 0 {
+            counters.queued_count = counters.queued_count.saturating_sub(1);
+            if counters.queued_count == 0 {
+                counters.first_queued_at_ms = None;
+            }
+        }
+        Ok(())
+    }
+
     /// Check for lane starvation.
     /// INV-LANE-STARVATION-DETECT
     pub fn check_starvation(&mut self, current_ms: u64, trace_id: &str) -> Vec<LaneSchedulerError> {
@@ -1486,6 +1509,37 @@ mod tests {
                 .active_count,
             8
         );
+    }
+
+    #[test]
+    fn abort_queued_task_decrements_queue_depth() {
+        let mut p = LaneMappingPolicy::new();
+        p.add_lane(LaneConfig::new(SchedulerLane::Background, 10, 1));
+        p.add_rule(&task_classes::log_rotation(), SchedulerLane::Background);
+        let mut s = LaneScheduler::new(p).unwrap();
+
+        // Assign one active
+        s.assign_task(&task_classes::log_rotation(), 1000, "t1").unwrap();
+        
+        // Queue two more
+        let _ = s.assign_task(&task_classes::log_rotation(), 1001, "t2");
+        let _ = s.assign_task(&task_classes::log_rotation(), 1002, "t3");
+
+        let counters = s.lane_counter(SchedulerLane::Background).unwrap();
+        assert_eq!(counters.queued_count, 2);
+
+        // Abort one queued task
+        s.abort_queued_task(&task_classes::log_rotation()).unwrap();
+        
+        let counters = s.lane_counter(SchedulerLane::Background).unwrap();
+        assert_eq!(counters.queued_count, 1);
+        
+        // Abort the other queued task
+        s.abort_queued_task(&task_classes::log_rotation()).unwrap();
+        
+        let counters = s.lane_counter(SchedulerLane::Background).unwrap();
+        assert_eq!(counters.queued_count, 0);
+        assert_eq!(counters.first_queued_at_ms, None);
     }
 
     // ---- Default trait ----
