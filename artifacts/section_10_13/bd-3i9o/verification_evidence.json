@@ -2,7 +2,7 @@
   "gate": "provenance_gate_verification",
   "bead": "bd-3i9o",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "PG-IMPL",
@@ -39,8 +39,8 @@
     {
       "id": "PG-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "Tests verified via section gate (1978 connector tests pass)"
+      "status": "FAIL",
+      "details": "Command '['/home/ubuntu/.cargo/bin/cargo', 'test', '-p', 'frankenengine-node', '--', 'supply_chain::provenance_gate']' timed out after 120 seconds"
     },
     {
       "id": "PG-SPEC",

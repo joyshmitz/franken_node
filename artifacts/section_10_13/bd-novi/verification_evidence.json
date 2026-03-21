@@ -2,7 +2,7 @@
   "gate": "error_code_registry_verification",
   "bead": "bd-novi",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "ECR-IMPL",
@@ -28,8 +28,8 @@
     {
       "id": "ECR-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "Tests verified via section gate (1978 connector tests pass)"
+      "status": "FAIL",
+      "details": "Command '['/home/ubuntu/.cargo/bin/cargo', 'test', '--', 'connector::error_code_registry']' timed out after 120 seconds"
     },
     {
       "id": "ECR-SPEC",

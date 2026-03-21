@@ -2,7 +2,7 @@
   "gate": "repair_controller_verification",
   "bead": "bd-91gg",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "BRC-IMPL",
@@ -28,8 +28,8 @@
     {
       "id": "BRC-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "Tests verified via section gate (1978 connector tests pass)"
+      "status": "FAIL",
+      "details": "Command '['/home/ubuntu/.cargo/bin/cargo', 'test', '--', 'connector::repair_controller']' timed out after 120 seconds"
     },
     {
       "id": "BRC-SPEC",

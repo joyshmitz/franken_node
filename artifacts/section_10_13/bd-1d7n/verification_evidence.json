@@ -2,7 +2,7 @@
   "gate": "activation_pipeline_verification",
   "bead": "bd-1d7n",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "AP-IMPL",
@@ -39,8 +39,8 @@
     {
       "id": "AP-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "Tests verified via section gate (1978 connector tests pass)"
+      "status": "FAIL",
+      "details": "Command '['/home/ubuntu/.cargo/bin/cargo', 'test', '-p', 'frankenengine-node', '--', 'connector::activation_pipeline']' timed out after 120 seconds"
     },
     {
       "id": "AP-SPEC",

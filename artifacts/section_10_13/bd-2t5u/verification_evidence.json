@@ -2,7 +2,7 @@
   "gate": "prestage_engine_verification",
   "bead": "bd-2t5u",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "PSE-IMPL",
@@ -28,8 +28,8 @@
     {
       "id": "PSE-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "Tests verified via section gate (1978 connector tests pass)"
+      "status": "FAIL",
+      "details": "Command '['/home/ubuntu/.cargo/bin/cargo', 'test', '--', 'connector::prestage_engine']' timed out after 120 seconds"
     },
     {
       "id": "PSE-SPEC",

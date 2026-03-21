@@ -1,7 +1,7 @@
 # Verification Summary: Ecosystem Network-Effect APIs (Registry/Reputation/Compliance)
 
 **Bead:** bd-2aj | **Section:** 10.12
-**Timestamp:** 2026-02-26T22:15:17.401779+00:00
+**Timestamp:** 2026-03-21T01:46:16.340388+00:00
 **Overall:** PASS
 **Checks:** 12/12 passed
 
@@ -17,11 +17,11 @@
   - Coverage: 100.0% (required 95.0%)
 - **event_codes:** PASS
 - **File api_schema:** PASS (docs/specs/section_10_12/bd-2aj_api_schema.md, 4732 bytes)
-- **File compliance_module:** PASS (crates/franken-node/src/connector/ecosystem_compliance.rs, 24750 bytes)
-- **File connector_mod:** PASS (crates/franken-node/src/connector/mod.rs, 1924 bytes)
+- **File compliance_module:** PASS (crates/franken-node/src/connector/ecosystem_compliance.rs, 30184 bytes)
+- **File connector_mod:** PASS (crates/franken-node/src/connector/mod.rs, 2893 bytes)
 - **File contract:** PASS (docs/specs/section_10_12/bd-2aj_contract.md, 7890 bytes)
-- **File registry_module:** PASS (crates/franken-node/src/connector/ecosystem_registry.rs, 28230 bytes)
-- **File reputation_module:** PASS (crates/franken-node/src/connector/ecosystem_reputation.rs, 25400 bytes)
+- **File registry_module:** PASS (crates/franken-node/src/connector/ecosystem_registry.rs, 33714 bytes)
+- **File reputation_module:** PASS (crates/franken-node/src/connector/ecosystem_reputation.rs, 27110 bytes)
 - **mod_registration:** PASS
 - **registry_symbols:** PASS
 - **reputation_symbols:** PASS

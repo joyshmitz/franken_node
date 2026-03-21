@@ -29,7 +29,7 @@
       "id": "ACC-TESTS",
       "description": "Rust unit tests pass",
       "status": "FAIL",
-      "details": "0 tests passed"
+      "details": "Command '['/home/ubuntu/.cargo/bin/cargo', 'test', '--', 'connector::control_channel']' timed out after 120 seconds"
     },
     {
       "id": "ACC-SPEC",

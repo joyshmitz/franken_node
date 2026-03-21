@@ -2,7 +2,7 @@
   "gate": "device_profile_verification",
   "bead": "bd-8vby",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "DPR-IMPL",
@@ -28,8 +28,8 @@
     {
       "id": "DPR-TESTS",
       "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "Tests verified via section gate (1978 connector tests pass)"
+      "status": "FAIL",
+      "details": "Command '['/home/ubuntu/.cargo/bin/cargo', 'test', '--', 'connector::device_profile']' timed out after 120 seconds"
     },
     {
       "id": "DPR-SPEC",

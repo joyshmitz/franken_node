@@ -2,7 +2,7 @@
   "bead_id": "bd-2aj",
   "section": "10.12",
   "title": "Ecosystem Network-Effect APIs (Registry/Reputation/Compliance)",
-  "timestamp": "2026-02-26T22:15:17.401779+00:00",
+  "timestamp": "2026-03-21T01:46:16.340388+00:00",
   "overall_pass": true,
   "checks": {
     "files": {
@@ -19,22 +19,22 @@
       "registry_module": {
         "path": "crates/franken-node/src/connector/ecosystem_registry.rs",
         "exists": true,
-        "size_bytes": 28230
+        "size_bytes": 33714
       },
       "reputation_module": {
         "path": "crates/franken-node/src/connector/ecosystem_reputation.rs",
         "exists": true,
-        "size_bytes": 25400
+        "size_bytes": 27110
       },
       "compliance_module": {
         "path": "crates/franken-node/src/connector/ecosystem_compliance.rs",
         "exists": true,
-        "size_bytes": 24750
+        "size_bytes": 30184
       },
       "connector_mod": {
         "path": "crates/franken-node/src/connector/mod.rs",
         "exists": true,
-        "size_bytes": 1924
+        "size_bytes": 2893
       }
     },
     "contract_invariants": {

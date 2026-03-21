@@ -24,7 +24,7 @@
     }
   ],
   "failed_witnesses": 0,
-  "generated_at": "2026-03-12T18:03:32+00:00",
+  "generated_at": "2026-03-21T02:30:26+00:00",
   "notes": [
     "This support shard still excludes the replacement-critical verifier/capsule Rust files currently reserved under bd-1z5a.8: crates/franken-node/src/verifier_economy/mod.rs and crates/franken-node/src/connector/verifier_sdk.rs.",
     "bd-3tw7.2 extends the static seed to the standalone sdk/verifier workspace crate and its public verifier contract docs.",
