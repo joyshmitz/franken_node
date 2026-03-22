@@ -25,6 +25,35 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     }
 }
 
+fn ensure_evidence_refs_present(refs: &[VerifiedEvidenceRef]) -> Result<(), TrustCardError> {
+    if refs.is_empty() {
+        return Err(TrustCardError::EvidenceMissing);
+    }
+    Ok(())
+}
+
+fn card_matches_filter(card: &TrustCard, filter: &TrustCardListFilter) -> bool {
+    if let Some(level) = filter.certification_level
+        && card.certification_level != level
+    {
+        return false;
+    }
+    if let Some(publisher_id) = &filter.publisher_id
+        && &card.publisher.publisher_id != publisher_id
+    {
+        return false;
+    }
+    if let Some(capability) = &filter.capability
+        && !card
+            .capability_declarations
+            .iter()
+            .any(|cap| cap.name.contains(capability))
+    {
+        return false;
+    }
+    true
+}
+
 /// Compute a domain-separated hash for trust-card derivation evidence.
 fn compute_trust_card_derivation_hash(refs: &[VerifiedEvidenceRef], derived_at: u64) -> String {
     let mut hasher = Sha256::new();
@@ -76,7 +105,7 @@ pub enum TrustCardError {
     InvalidRegistryKey,
     #[error("invalid pagination: page={page}, per_page={per_page}")]
     InvalidPagination { page: usize, per_page: usize },
-    #[error("trust card creation requires at least one verified evidence reference")]
+    #[error("trust card derivation requires at least one verified evidence reference")]
     EvidenceMissing,
     #[error("upgrading certification level requires evidence references")]
     EvidenceRequiredForUpgrade,
@@ -333,12 +362,9 @@ impl TrustCardRegistry {
         trace_id: &str,
     ) -> Result<TrustCard, TrustCardError> {
         // Evidence binding gate: at least one evidence reference is required.
-        if input.evidence_refs.is_empty() {
-            return Err(TrustCardError::EvidenceMissing);
-        }
+        ensure_evidence_refs_present(&input.evidence_refs)?;
 
-        let derivation_hash =
-            compute_trust_card_derivation_hash(&input.evidence_refs, now_secs);
+        let derivation_hash = compute_trust_card_derivation_hash(&input.evidence_refs, now_secs);
         let derivation = DerivationMetadata {
             evidence_refs: input.evidence_refs.clone(),
             derived_at_epoch: now_secs,
@@ -346,12 +372,13 @@ impl TrustCardRegistry {
         };
 
         let extension_id = input.extension.extension_id.clone();
-        let previous = self
-            .cards_by_extension
-            .get(&extension_id)
-            .and_then(|history| history.last());
-        let previous_hash = previous.map(|card| card.card_hash.clone());
-        let next_version = previous.map_or(1, |card| card.trust_card_version.saturating_add(1));
+        let (previous_hash, next_version) = match self.latest_verified_card(&extension_id)? {
+            Some(previous) => (
+                Some(previous.card_hash.clone()),
+                previous.trust_card_version.saturating_add(1),
+            ),
+            None => (None, 1),
+        };
 
         let mut card = TrustCard {
             schema_version: "1.0.0".to_string(),
@@ -422,9 +449,13 @@ impl TrustCardRegistry {
         trace_id: &str,
     ) -> Result<TrustCard, TrustCardError> {
         let latest = self
-            .latest_card(extension_id)
-            .ok_or_else(|| TrustCardError::NotFound(extension_id.to_string()))?
-            .clone();
+            .latest_verified_card(extension_id)?
+            .cloned()
+            .ok_or_else(|| TrustCardError::NotFound(extension_id.to_string()))?;
+
+        if let Some(refs) = mutation.evidence_refs.as_ref() {
+            ensure_evidence_refs_present(refs)?;
+        }
 
         // Monotone upgrade enforcement: upgrading certification requires evidence.
         if let Some(level) = mutation.certification_level
@@ -443,8 +474,7 @@ impl TrustCardRegistry {
 
         // Update derivation evidence if new evidence refs are provided.
         if let Some(refs) = &mutation.evidence_refs {
-            let derivation_hash =
-                compute_trust_card_derivation_hash(refs, now_secs);
+            let derivation_hash = compute_trust_card_derivation_hash(refs, now_secs);
             next.derivation_evidence = Some(DerivationMetadata {
                 evidence_refs: refs.clone(),
                 derived_at_epoch: now_secs,
@@ -532,26 +562,28 @@ impl TrustCardRegistry {
             && now_secs.saturating_sub(cached.cached_at_secs) <= self.cache_ttl_secs
         {
             let card = cached.card.clone();
-            self.emit(
-                TRUST_CARD_CACHE_HIT,
-                Some(extension_id.to_string()),
-                trace_id,
-                now_secs,
-                "served from cache",
-            );
-            verify_card_signature(&card, &self.registry_key)?;
-            self.emit(
-                TRUST_CARD_SERVED,
-                Some(extension_id.to_string()),
-                trace_id,
-                now_secs,
-                "served verified trust card",
-            );
-            return Ok(Some(card));
+            if verify_card_signature(&card, &self.registry_key).is_ok() {
+                self.emit(
+                    TRUST_CARD_CACHE_HIT,
+                    Some(extension_id.to_string()),
+                    trace_id,
+                    now_secs,
+                    "served from cache",
+                );
+                self.emit(
+                    TRUST_CARD_SERVED,
+                    Some(extension_id.to_string()),
+                    trace_id,
+                    now_secs,
+                    "served verified trust card",
+                );
+                return Ok(Some(card));
+            }
+
+            self.cache_by_extension.remove(extension_id);
         }
 
-        let latest = self.latest_card(extension_id).cloned();
-        let Some(latest_card) = latest else {
+        let Some(latest_card) = self.latest_verified_card(extension_id)?.cloned() else {
             return Ok(None);
         };
 
@@ -580,8 +612,6 @@ impl TrustCardRegistry {
                 cached_at_secs: now_secs,
             },
         );
-
-        verify_card_signature(&latest_card, &self.registry_key)?;
         self.emit(
             TRUST_CARD_SERVED,
             Some(extension_id.to_string()),
@@ -597,7 +627,7 @@ impl TrustCardRegistry {
         filter: &TrustCardListFilter,
         trace_id: &str,
         now_secs: u64,
-    ) -> Vec<TrustCard> {
+    ) -> Result<Vec<TrustCard>, TrustCardError> {
         self.emit(
             TRUST_CARD_QUERIED,
             None,
@@ -610,24 +640,10 @@ impl TrustCardRegistry {
             let Some(card) = history.last() else {
                 continue;
             };
-            if let Some(level) = filter.certification_level
-                && card.certification_level != level
-            {
+            if !card_matches_filter(card, filter) {
                 continue;
             }
-            if let Some(publisher_id) = &filter.publisher_id
-                && &card.publisher.publisher_id != publisher_id
-            {
-                continue;
-            }
-            if let Some(capability) = &filter.capability
-                && !card
-                    .capability_declarations
-                    .iter()
-                    .any(|cap| cap.name.contains(capability))
-            {
-                continue;
-            }
+            verify_card_signature(card, &self.registry_key)?;
             out.push(card.clone());
         }
         out.sort_by(|left, right| {
@@ -635,7 +651,7 @@ impl TrustCardRegistry {
                 .extension_id
                 .cmp(&right.extension.extension_id)
         });
-        out
+        Ok(out)
     }
 
     pub fn list_by_publisher(
@@ -643,7 +659,7 @@ impl TrustCardRegistry {
         publisher_id: &str,
         now_secs: u64,
         trace_id: &str,
-    ) -> Vec<TrustCard> {
+    ) -> Result<Vec<TrustCard>, TrustCardError> {
         self.list(
             &TrustCardListFilter {
                 certification_level: None,
@@ -683,10 +699,6 @@ impl TrustCardRegistry {
         };
 
         for extension_id in extension_ids {
-            let latest = self
-                .latest_card(&extension_id)
-                .ok_or_else(|| TrustCardError::NotFound(extension_id.clone()))?
-                .clone();
             let cache_state = match self.cache_by_extension.get(&extension_id) {
                 Some(cached)
                     if now_secs.saturating_sub(cached.cached_at_secs) <= self.cache_ttl_secs =>
@@ -703,16 +715,27 @@ impl TrustCardRegistry {
                         .cache_by_extension
                         .get(&extension_id)
                         .ok_or_else(|| TrustCardError::NotFound(extension_id.clone()))?;
-                    verify_card_signature(&cached.card, &self.registry_key)?;
-                    report.cache_hits = report.cache_hits.saturating_add(1);
+                    if verify_card_signature(&cached.card, &self.registry_key).is_ok() {
+                        report.cache_hits = report.cache_hits.saturating_add(1);
+                        self.emit(
+                            TRUST_CARD_CACHE_HIT,
+                            Some(extension_id),
+                            trace_id,
+                            now_secs,
+                            "sync skipped fresh cache entry",
+                        );
+                        continue;
+                    }
+
+                    self.cache_by_extension.remove(&extension_id);
+                    report.cache_misses = report.cache_misses.saturating_add(1);
                     self.emit(
-                        TRUST_CARD_CACHE_HIT,
-                        Some(extension_id),
+                        TRUST_CARD_CACHE_MISS,
+                        Some(extension_id.clone()),
                         trace_id,
                         now_secs,
-                        "sync skipped fresh cache entry",
+                        "sync discarded invalid cache entry and repopulated from source",
                     );
-                    continue;
                 }
                 CacheSyncState::Missing => {
                     report.cache_misses = report.cache_misses.saturating_add(1);
@@ -746,7 +769,10 @@ impl TrustCardRegistry {
                 }
             }
 
-            verify_card_signature(&latest, &self.registry_key)?;
+            let latest = self
+                .latest_verified_card(&extension_id)?
+                .cloned()
+                .ok_or_else(|| TrustCardError::NotFound(extension_id.clone()))?;
             self.cache_by_extension.insert(
                 extension_id,
                 CachedCard {
@@ -759,7 +785,12 @@ impl TrustCardRegistry {
         Ok(report)
     }
 
-    pub fn search(&mut self, query: &str, now_secs: u64, trace_id: &str) -> Vec<TrustCard> {
+    pub fn search(
+        &mut self,
+        query: &str,
+        now_secs: u64,
+        trace_id: &str,
+    ) -> Result<Vec<TrustCard>, TrustCardError> {
         self.emit(
             TRUST_CARD_QUERIED,
             None,
@@ -784,16 +815,18 @@ impl TrustCardRegistry {
                 card.extension.extension_id, card.publisher.publisher_id, capability_text
             )
             .to_ascii_lowercase();
-            if haystack.contains(&query_lc) {
-                out.push(card.clone());
+            if !haystack.contains(&query_lc) {
+                continue;
             }
+            verify_card_signature(card, &self.registry_key)?;
+            out.push(card.clone());
         }
         out.sort_by(|left, right| {
             left.extension
                 .extension_id
                 .cmp(&right.extension.extension_id)
         });
-        out
+        Ok(out)
     }
 
     pub fn compare(
@@ -876,15 +909,25 @@ impl TrustCardRegistry {
         Ok(comparison)
     }
 
-    pub fn read_version(&self, extension_id: &str, trust_card_version: u64) -> Option<TrustCard> {
-        self.cards_by_extension
+    pub fn read_version(
+        &self,
+        extension_id: &str,
+        trust_card_version: u64,
+    ) -> Result<Option<TrustCard>, TrustCardError> {
+        let card = self
+            .cards_by_extension
             .get(extension_id)
             .and_then(|history| {
                 history
                     .iter()
                     .find(|card| card.trust_card_version == trust_card_version)
             })
-            .cloned()
+            .cloned();
+        if let Some(card) = card {
+            verify_card_signature(&card, &self.registry_key)?;
+            return Ok(Some(card));
+        }
+        Ok(None)
     }
 
     #[must_use]
@@ -896,6 +939,17 @@ impl TrustCardRegistry {
         self.cards_by_extension
             .get(extension_id)
             .and_then(|history| history.last())
+    }
+
+    fn latest_verified_card(
+        &self,
+        extension_id: &str,
+    ) -> Result<Option<&TrustCard>, TrustCardError> {
+        let latest = self.latest_card(extension_id);
+        if let Some(card) = latest {
+            verify_card_signature(card, &self.registry_key)?;
+        }
+        Ok(latest)
     }
 
     fn emit(
@@ -1431,10 +1485,50 @@ mod tests {
     #[test]
     fn list_filter_by_publisher_and_capability() {
         let mut registry = demo_registry(1_000).expect("demo");
-        let by_pub = registry.list_by_publisher("pub-acme", 1_010, "trace");
+        let by_pub = registry
+            .list_by_publisher("pub-acme", 1_010, "trace")
+            .expect("list by publisher");
         assert_eq!(by_pub.len(), 1);
-        let by_capability = registry.search("telemetry", 1_010, "trace");
+        let by_capability = registry
+            .search("telemetry", 1_010, "trace")
+            .expect("search");
         assert_eq!(by_capability.len(), 1);
+    }
+
+    #[test]
+    fn list_by_publisher_ignores_tampered_non_matching_card() {
+        let mut registry = demo_registry(1_000).expect("demo");
+        registry
+            .cards_by_extension
+            .get_mut("npm:@beta/telemetry-bridge")
+            .expect("history")
+            .last_mut()
+            .expect("latest")
+            .reputation_score_basis_points = 999;
+
+        let cards = registry
+            .list_by_publisher("pub-acme", 1_010, "trace")
+            .expect("unrelated tamper should not break filtered publisher list");
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].publisher.publisher_id, "pub-acme");
+    }
+
+    #[test]
+    fn search_ignores_tampered_non_matching_card() {
+        let mut registry = demo_registry(1_000).expect("demo");
+        registry
+            .cards_by_extension
+            .get_mut("npm:@beta/telemetry-bridge")
+            .expect("history")
+            .last_mut()
+            .expect("latest")
+            .reputation_score_basis_points = 999;
+
+        let cards = registry
+            .search("auth-guard", 1_010, "trace")
+            .expect("unrelated tamper should not break search");
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].extension.extension_id, "npm:@acme/auth-guard");
     }
 
     #[test]
@@ -1520,11 +1614,13 @@ mod tests {
         let registry = demo_registry(1_000).expect("demo");
         let version_1 = registry
             .read_version("npm:@beta/telemetry-bridge", 1)
+            .expect("read version")
             .expect("version 1");
         assert_eq!(version_1.trust_card_version, 1);
         assert!(
             registry
                 .read_version("npm:@beta/telemetry-bridge", 9)
+                .expect("read missing version")
                 .is_none()
         );
     }
@@ -1658,7 +1754,9 @@ mod tests {
         let mut registry = TrustCardRegistry::default();
         let mut input = sample_input();
         input.evidence_refs = vec![];
-        let err = registry.create(input, 1_000, "trace").expect_err("must fail");
+        let err = registry
+            .create(input, 1_000, "trace")
+            .expect_err("must fail");
         assert!(matches!(err, TrustCardError::EvidenceMissing));
     }
 
@@ -1683,7 +1781,7 @@ mod tests {
         registry
             .create(sample_input(), 1_000, "trace")
             .expect("create");
-        // Silver (from sample) → Platinum without evidence → error.
+        // Gold (from sample) → Platinum without evidence → error.
         let err = registry
             .update(
                 "npm:@acme/plugin",
@@ -1702,6 +1800,32 @@ mod tests {
             )
             .expect_err("upgrade without evidence must fail");
         assert!(matches!(err, TrustCardError::EvidenceRequiredForUpgrade));
+    }
+
+    #[test]
+    fn update_upgrade_with_empty_evidence_rejected() {
+        let mut registry = TrustCardRegistry::default();
+        registry
+            .create(sample_input(), 1_000, "trace")
+            .expect("create");
+        let err = registry
+            .update(
+                "npm:@acme/plugin",
+                TrustCardMutation {
+                    certification_level: Some(CertificationLevel::Platinum),
+                    revocation_status: None,
+                    active_quarantine: None,
+                    reputation_score_basis_points: None,
+                    reputation_trend: None,
+                    user_facing_risk_assessment: None,
+                    last_verified_timestamp: None,
+                    evidence_refs: Some(Vec::new()),
+                },
+                1_020,
+                "trace",
+            )
+            .expect_err("empty upgrade evidence must fail");
+        assert!(matches!(err, TrustCardError::EvidenceMissing));
     }
 
     #[test]
@@ -1733,6 +1857,32 @@ mod tests {
     }
 
     #[test]
+    fn update_with_empty_evidence_rejected_even_without_upgrade() {
+        let mut registry = TrustCardRegistry::default();
+        registry
+            .create(sample_input(), 1_000, "trace")
+            .expect("create");
+        let err = registry
+            .update(
+                "npm:@acme/plugin",
+                TrustCardMutation {
+                    certification_level: Some(CertificationLevel::Bronze),
+                    revocation_status: None,
+                    active_quarantine: None,
+                    reputation_score_basis_points: None,
+                    reputation_trend: None,
+                    user_facing_risk_assessment: None,
+                    last_verified_timestamp: None,
+                    evidence_refs: Some(Vec::new()),
+                },
+                1_020,
+                "trace",
+            )
+            .expect_err("empty evidence should not erase derivation metadata");
+        assert!(matches!(err, TrustCardError::EvidenceMissing));
+    }
+
+    #[test]
     fn update_with_evidence_replaces_derivation() {
         let mut registry = TrustCardRegistry::default();
         registry
@@ -1761,6 +1911,210 @@ mod tests {
             .as_ref()
             .expect("derivation updated");
         assert_eq!(derivation.derived_at_epoch, 2_000);
+    }
+
+    #[test]
+    fn list_rejects_tampered_latest_card() {
+        let mut registry = demo_registry(1_000).expect("demo");
+        registry
+            .cards_by_extension
+            .get_mut("npm:@beta/telemetry-bridge")
+            .expect("history")
+            .last_mut()
+            .expect("latest")
+            .reputation_score_basis_points = 999;
+
+        let err = registry
+            .list(&TrustCardListFilter::empty(), "trace", 1_100)
+            .expect_err("tampered latest card must fail list");
+        assert!(
+            matches!(err, TrustCardError::CardHashMismatch(extension) if extension == "npm:@beta/telemetry-bridge")
+        );
+    }
+
+    #[test]
+    fn create_rejects_append_after_tampered_latest_card() {
+        let mut registry = TrustCardRegistry::default();
+        registry
+            .create(sample_input(), 1_000, "trace-create-1")
+            .expect("create");
+        registry
+            .cards_by_extension
+            .get_mut("npm:@acme/plugin")
+            .expect("history")
+            .last_mut()
+            .expect("latest")
+            .reputation_score_basis_points = 1;
+
+        let mut second_input = sample_input();
+        second_input.extension.version = "2.0.0".to_string();
+
+        let err = registry
+            .create(second_input, 1_100, "trace-create-2")
+            .expect_err("tampered latest card must block append");
+        assert!(matches!(
+            err,
+            TrustCardError::CardHashMismatch(extension) if extension == "npm:@acme/plugin"
+        ));
+    }
+
+    #[test]
+    fn update_rejects_tampered_latest_card() {
+        let mut registry = TrustCardRegistry::default();
+        registry
+            .create(sample_input(), 1_000, "trace-create")
+            .expect("create");
+        registry
+            .cards_by_extension
+            .get_mut("npm:@acme/plugin")
+            .expect("history")
+            .last_mut()
+            .expect("latest")
+            .reputation_score_basis_points = 1;
+
+        let err = registry
+            .update(
+                "npm:@acme/plugin",
+                TrustCardMutation {
+                    certification_level: Some(CertificationLevel::Platinum),
+                    revocation_status: None,
+                    active_quarantine: None,
+                    reputation_score_basis_points: None,
+                    reputation_trend: None,
+                    user_facing_risk_assessment: None,
+                    last_verified_timestamp: None,
+                    evidence_refs: Some(test_evidence_refs()),
+                },
+                1_100,
+                "trace-update",
+            )
+            .expect_err("tampered latest card must block update");
+        assert!(matches!(
+            err,
+            TrustCardError::CardHashMismatch(extension) if extension == "npm:@acme/plugin"
+        ));
+    }
+
+    #[test]
+    fn search_rejects_tampered_matching_card() {
+        let mut registry = demo_registry(1_000).expect("demo");
+        registry
+            .cards_by_extension
+            .get_mut("npm:@beta/telemetry-bridge")
+            .expect("history")
+            .last_mut()
+            .expect("latest")
+            .publisher
+            .publisher_id = "pub-tampered".to_string();
+
+        let err = registry
+            .search("tampered", 1_100, "trace")
+            .expect_err("tampered card must fail search");
+        assert!(
+            matches!(err, TrustCardError::CardHashMismatch(extension) if extension == "npm:@beta/telemetry-bridge")
+        );
+    }
+
+    #[test]
+    fn read_recovers_from_invalid_fresh_cache_entry() {
+        let mut registry = TrustCardRegistry::default();
+        let created = registry
+            .create(sample_input(), 1_000, "trace-create")
+            .expect("create");
+        registry
+            .cache_by_extension
+            .get_mut("npm:@acme/plugin")
+            .expect("cached")
+            .card
+            .reputation_score_basis_points = 1;
+
+        let fetched = registry
+            .read("npm:@acme/plugin", 1_001, "trace-read")
+            .expect("read")
+            .expect("card exists");
+
+        assert_eq!(fetched.card_hash, created.card_hash);
+        assert_eq!(
+            registry
+                .cache_by_extension
+                .get("npm:@acme/plugin")
+                .expect("cache repaired")
+                .card
+                .card_hash,
+            created.card_hash
+        );
+    }
+
+    #[test]
+    fn read_version_rejects_tampered_history_card() {
+        let mut registry = demo_registry(1_000).expect("demo");
+        registry
+            .cards_by_extension
+            .get_mut("npm:@beta/telemetry-bridge")
+            .expect("history")[0]
+            .previous_version_hash = Some("tampered".to_string());
+
+        let err = registry
+            .read_version("npm:@beta/telemetry-bridge", 1)
+            .expect_err("tampered historical card must fail");
+        assert!(
+            matches!(err, TrustCardError::CardHashMismatch(extension) if extension == "npm:@beta/telemetry-bridge")
+        );
+    }
+
+    #[test]
+    fn read_rejects_tampered_source_without_caching_it() {
+        let mut registry = TrustCardRegistry::default();
+        registry
+            .create(sample_input(), 1_000, "trace-create")
+            .expect("create");
+        registry.cache_by_extension.remove("npm:@acme/plugin");
+        registry
+            .cards_by_extension
+            .get_mut("npm:@acme/plugin")
+            .expect("history")
+            .last_mut()
+            .expect("latest")
+            .reputation_score_basis_points = 1;
+
+        let err = registry
+            .read("npm:@acme/plugin", 1_100, "trace-read")
+            .expect_err("tampered source must be rejected");
+        assert!(matches!(
+            err,
+            TrustCardError::CardHashMismatch(extension) if extension == "npm:@acme/plugin"
+        ));
+        assert!(!registry.cache_by_extension.contains_key("npm:@acme/plugin"));
+    }
+
+    #[test]
+    fn sync_cache_rebuilds_invalid_fresh_cache_entry() {
+        let mut registry = TrustCardRegistry::default();
+        let created = registry
+            .create(sample_input(), 1_000, "trace-create")
+            .expect("create");
+        registry
+            .cache_by_extension
+            .get_mut("npm:@acme/plugin")
+            .expect("cached")
+            .card
+            .reputation_score_basis_points = 1;
+
+        let report = registry
+            .sync_cache(1_001, "trace-sync", false)
+            .expect("sync cache");
+
+        assert_eq!(report.cache_hits, 0);
+        assert_eq!(report.cache_misses, 1);
+        assert_eq!(
+            registry
+                .cache_by_extension
+                .get("npm:@acme/plugin")
+                .expect("cache rebuilt")
+                .card
+                .card_hash,
+            created.card_hash
+        );
     }
 
     #[test]

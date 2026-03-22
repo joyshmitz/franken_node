@@ -50,7 +50,13 @@ fn paged_response<T: Clone>(
     all: &[T],
     pagination: Pagination,
 ) -> Result<ApiResponse<Vec<T>>, TrustCardError> {
-    let per_page = pagination.per_page.max(1);
+    if pagination.page == 0 || pagination.per_page == 0 {
+        return Err(TrustCardError::InvalidPagination {
+            page: pagination.page,
+            per_page: pagination.per_page,
+        });
+    }
+    let per_page = pagination.per_page;
     let total_items = all.len();
     let data = paginate(all, pagination.page, per_page)?;
     let total_pages = if total_items == 0 {
@@ -122,7 +128,7 @@ pub fn list_trust_cards(
     trace_id: &str,
     pagination: Pagination,
 ) -> Result<ApiResponse<Vec<TrustCard>>, TrustCardError> {
-    let all = registry.list(filter, trace_id, now_secs);
+    let all = registry.list(filter, trace_id, now_secs)?;
     paged_response(&all, pagination)
 }
 
@@ -133,7 +139,7 @@ pub fn get_trust_cards_by_publisher(
     trace_id: &str,
     pagination: Pagination,
 ) -> Result<ApiResponse<Vec<TrustCard>>, TrustCardError> {
-    let all = registry.list_by_publisher(publisher_id, now_secs, trace_id);
+    let all = registry.list_by_publisher(publisher_id, now_secs, trace_id)?;
     paged_response(&all, pagination)
 }
 
@@ -144,7 +150,7 @@ pub fn search_trust_cards(
     trace_id: &str,
     pagination: Pagination,
 ) -> Result<ApiResponse<Vec<TrustCard>>, TrustCardError> {
-    let all = registry.search(query, now_secs, trace_id);
+    let all = registry.search(query, now_secs, trace_id)?;
     paged_response(&all, pagination)
 }
 
@@ -354,6 +360,29 @@ mod tests {
         .expect("response");
         assert!(response.ok);
         assert_eq!(response.data.len(), 1);
+    }
+
+    #[test]
+    fn list_route_rejects_invalid_zero_per_page() {
+        let mut registry = demo_registry(1_000).expect("demo");
+        let err = list_trust_cards(
+            &mut registry,
+            &TrustCardListFilter::empty(),
+            1_001,
+            "trace",
+            Pagination {
+                page: 1,
+                per_page: 0,
+            },
+        )
+        .expect_err("zero per_page must be rejected");
+        assert!(matches!(
+            err,
+            TrustCardError::InvalidPagination {
+                page: 1,
+                per_page: 0
+            }
+        ));
     }
 
     #[test]
