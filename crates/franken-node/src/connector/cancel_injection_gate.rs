@@ -416,17 +416,55 @@ impl CancelInjectionGate {
         let mut total_failed = 0usize;
         let mut total_points = 0usize;
 
-        let control_wf_keys: Vec<String> = self.control_workflows.keys().cloned().collect();
-
-        for wf_key in &control_wf_keys {
+        for workflow in ControlWorkflow::all() {
+            let wf_key = workflow.as_str().to_string();
             let canonical_key = format!("custom:{}", wf_key);
-            let point_count = self
+
+            if !self.control_workflows.contains_key(&wf_key) {
+                total_points += 1;
+                total_failed += 1;
+                workflow_results.push(WorkflowInjectionResult {
+                    workflow: wf_key,
+                    total_points: 1,
+                    points_passed: 0,
+                    points_failed: 1,
+                    failures: vec![PointFailure {
+                        await_point_index: 0,
+                        await_point_label: "workflow_registration".to_string(),
+                        failure_type: error_codes::ERR_CIG_MISSING_WORKFLOW.to_string(),
+                        detail: "required control workflow is not registered".to_string(),
+                    }],
+                });
+                continue;
+            }
+
+            let await_points = self
                 .framework
                 .registered_workflows()
-                .iter()
+                .into_iter()
                 .find(|w| w.id.to_string() == canonical_key)
-                .map(|w| w.await_points.len())
-                .unwrap_or(0);
+                .map(|w| w.await_points.clone())
+                .unwrap_or_default();
+            let point_count = await_points.len();
+
+            if point_count == 0 {
+                total_points += 1;
+                total_failed += 1;
+                workflow_results.push(WorkflowInjectionResult {
+                    workflow: wf_key,
+                    total_points: 1,
+                    points_passed: 0,
+                    points_failed: 1,
+                    failures: vec![PointFailure {
+                        await_point_index: 0,
+                        await_point_label: "workflow_registration".to_string(),
+                        failure_type: error_codes::ERR_CIG_MATRIX_INCOMPLETE.to_string(),
+                        detail: "required control workflow has no registered await points"
+                            .to_string(),
+                    }],
+                });
+                continue;
+            }
 
             let mut wf_result = WorkflowInjectionResult {
                 workflow: wf_key.clone(),
@@ -436,7 +474,7 @@ impl CancelInjectionGate {
                 failures: Vec::new(),
             };
 
-            for point in 0..point_count {
+            for (point, await_point) in await_points.iter().enumerate() {
                 total_points += 1;
                 let ts = 1000 + point as u64 * 100;
                 let rb = ResourceSnapshot::empty(ts);
@@ -463,7 +501,7 @@ impl CancelInjectionGate {
                             total_failed += 1;
                             wf_result.failures.push(PointFailure {
                                 await_point_index: point,
-                                await_point_label: format!("point-{}", point),
+                                await_point_label: await_point.label.clone(),
                                 failure_type: format!("{}", outcome),
                                 detail: format!("{}", outcome),
                             });
@@ -474,7 +512,7 @@ impl CancelInjectionGate {
                         total_failed += 1;
                         wf_result.failures.push(PointFailure {
                             await_point_index: point,
-                            await_point_label: format!("point-{}", point),
+                            await_point_label: await_point.label.clone(),
                             failure_type: "framework_error".to_string(),
                             detail: e.to_string(),
                         });
@@ -510,7 +548,7 @@ impl CancelInjectionGate {
         let report = CancelInjectionGateReport {
             gate_id: "bd-3tpg".to_string(),
             schema_version: SCHEMA_VERSION.to_string(),
-            total_workflows: control_wf_keys.len(),
+            total_workflows: ControlWorkflow::all().len(),
             total_injection_points: total_points,
             total_passed,
             total_failed,
@@ -691,6 +729,69 @@ mod tests {
         for wr in &report.workflow_results {
             assert_eq!(wr.points_failed, 0, "Failures in {}", wr.workflow);
         }
+    }
+
+    #[test]
+    fn partial_required_workflow_registration_fails_closed() {
+        let mut gate = CancelInjectionGate::new();
+        gate.register_control_workflow(
+            ControlWorkflow::ConnectorLifecycle,
+            vec![AwaitPoint::new(
+                WorkflowId::Custom("connector_lifecycle".into()),
+                0,
+                "init_start",
+                "Before connector initialization",
+            )],
+            "test",
+        );
+
+        let report = gate.run_full_gate("test");
+
+        assert_eq!(report.verdict, "FAIL");
+        assert_eq!(report.total_workflows, ControlWorkflow::all().len());
+        assert!(report.total_failed >= 1);
+        let missing = report
+            .workflow_results
+            .iter()
+            .find(|result| result.workflow == "rollout_transition")
+            .expect("missing workflow result");
+        assert_eq!(missing.total_points, 1);
+        assert_eq!(missing.points_failed, 1);
+        assert_eq!(
+            missing.points_passed + missing.points_failed,
+            missing.total_points
+        );
+        assert_eq!(missing.failures.len(), 1);
+        assert_eq!(
+            missing.failures[0].failure_type,
+            error_codes::ERR_CIG_MISSING_WORKFLOW
+        );
+    }
+
+    #[test]
+    fn zero_point_required_workflow_fails_closed() {
+        let mut gate = make_gate();
+        gate.register_control_workflow(ControlWorkflow::HealthGateEvaluation, Vec::new(), "test");
+
+        let report = gate.run_full_gate("test");
+
+        assert_eq!(report.verdict, "FAIL");
+        let zero_point = report
+            .workflow_results
+            .iter()
+            .find(|result| result.workflow == "health_gate_evaluation")
+            .expect("zero-point workflow result");
+        assert_eq!(zero_point.total_points, 1);
+        assert_eq!(zero_point.points_failed, 1);
+        assert_eq!(
+            zero_point.points_passed + zero_point.points_failed,
+            zero_point.total_points
+        );
+        assert_eq!(zero_point.failures.len(), 1);
+        assert_eq!(
+            zero_point.failures[0].failure_type,
+            error_codes::ERR_CIG_MATRIX_INCOMPLETE
+        );
     }
 
     // ---- Audit log ----
