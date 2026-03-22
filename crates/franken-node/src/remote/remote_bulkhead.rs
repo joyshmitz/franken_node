@@ -366,6 +366,22 @@ impl RemoteBulkhead {
         }
     }
 
+    fn reject_expired_queued_request(
+        &mut self,
+        position: usize,
+        now_ms: u64,
+    ) -> Option<BulkheadError> {
+        let expired = self.queue.remove(position)?;
+        self.log_event(
+            event_codes::RB_REQUEST_REJECTED,
+            now_ms,
+            format!("queue timeout request_id={}", expired.request_id),
+        );
+        Some(BulkheadError::QueueTimeout {
+            request_id: expired.request_id,
+        })
+    }
+
     /// Hot-reload max concurrency cap.
     ///
     /// If cap is reduced below current in-flight count, the bulkhead enters
@@ -505,6 +521,24 @@ impl RemoteBulkhead {
         request_id: &str,
         now_ms: u64,
     ) -> Result<BulkheadPermit, BulkheadError> {
+        let Some(position) = self.queue.iter().position(|q| q.request_id == request_id) else {
+            self.evict_expired_queue_entries(now_ms);
+            return Err(BulkheadError::UnknownRequest {
+                request_id: request_id.to_string(),
+            });
+        };
+
+        let expires_at_ms = self.queue[position].expires_at_ms;
+        if now_ms >= expires_at_ms {
+            let Some(timeout_error) = self.reject_expired_queued_request(position, now_ms) else {
+                return Err(BulkheadError::UnknownRequest {
+                    request_id: request_id.to_string(),
+                });
+            };
+            self.evict_expired_queue_entries(now_ms);
+            return Err(timeout_error);
+        }
+
         self.evict_expired_queue_entries(now_ms);
 
         let Some(position) = self.queue.iter().position(|q| q.request_id == request_id) else {
@@ -512,16 +546,7 @@ impl RemoteBulkhead {
                 request_id: request_id.to_string(),
             });
         };
-
-        let (expires_at_ms, timeout_ms) = {
-            let queued = &self.queue[position];
-            (queued.expires_at_ms, queued.timeout_ms)
-        };
-        if now_ms >= expires_at_ms {
-            return Err(BulkheadError::QueueTimeout {
-                request_id: request_id.to_string(),
-            });
-        }
+        let timeout_ms = self.queue[position].timeout_ms;
 
         if position != 0 || self.in_flight >= self.max_in_flight {
             return Err(BulkheadError::Queued {
@@ -690,7 +715,32 @@ mod tests {
         let _p = b.acquire(true, "r1", 10).expect("permit");
         let _queued = b.acquire(true, "r2", 11).expect_err("queued");
         let err = b.poll_queued("r2", 20).expect_err("should time out");
-        assert!(matches!(err, BulkheadError::UnknownRequest { .. }));
+        assert!(matches!(
+            err,
+            BulkheadError::QueueTimeout { ref request_id } if request_id == "r2"
+        ));
+        assert_eq!(b.queue_depth(), 0);
+        let rejection = b
+            .events()
+            .iter()
+            .rev()
+            .find(|event| event.event_code == event_codes::RB_REQUEST_REJECTED)
+            .expect("timeout rejection should be logged");
+        assert!(rejection.detail.contains("request_id=r2"));
+    }
+
+    #[test]
+    fn later_live_request_survives_front_timeout_eviction() {
+        let mut b = bulkhead_queue(1, 3, 10);
+        let p1 = b.acquire(true, "r1", 10).expect("permit");
+        let _queued = b.acquire(true, "r2", 11).expect_err("queue r2");
+        let _queued = b.acquire(true, "r3", 13).expect_err("queue r3");
+
+        b.release(p1, 22).expect("release");
+        let promoted = b.poll_queued("r3", 22).expect("r3 should promote");
+        assert_eq!(b.queue_depth(), 0);
+        assert_eq!(b.current_in_flight(), 1);
+        b.release(promoted, 23).expect("release promoted");
     }
 
     #[test]
