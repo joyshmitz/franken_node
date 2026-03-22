@@ -15,6 +15,9 @@ const MAX_AUDIT_LOG_ENTRIES: usize = 4096;
 const MAX_EVENTS: usize = 4096;
 const MAX_LINEAGE_ENTRIES: usize = 4096;
 const MAX_COMPATIBILITY_ENTRIES: usize = 4096;
+/// Maximum extensions retained in the registry before new registrations are
+/// rejected.  Prevents unbounded memory growth from mass registration attacks.
+const MAX_EXTENSIONS: usize = 8192;
 
 // -- Event codes ---------------------------------------------------------------
 
@@ -51,6 +54,8 @@ pub enum RegistryError {
     SybilDuplicate(String),
     #[error("authentication failure (code: {ERR_ENE_AUTH})")]
     AuthFailure(String),
+    #[error("registry at capacity ({0} extensions, max {MAX_EXTENSIONS})")]
+    RegistryFull(usize),
 }
 
 // -- Extension status ----------------------------------------------------------
@@ -207,6 +212,11 @@ impl EcosystemRegistry {
             return Err(RegistryError::DuplicateRegistration(
                 metadata.extension_id.clone(),
             ));
+        }
+
+        // Capacity check: prevent unbounded growth.
+        if self.extensions.len() >= MAX_EXTENSIONS {
+            return Err(RegistryError::RegistryFull(self.extensions.len()));
         }
 
         let ext_id = metadata.extension_id.clone();
@@ -633,6 +643,58 @@ mod tests {
         assert!(matches!(
             result,
             Err(RegistryError::DuplicateRegistration(_))
+        ));
+    }
+
+    #[test]
+    fn test_duplicate_registration_rejected_even_when_registry_is_full() {
+        let mut reg = EcosystemRegistry::new();
+        let existing = make_metadata("ext-existing", "pub-existing", "key-existing");
+        reg.publisher_keys.insert(
+            existing.publisher_key.clone(),
+            existing.publisher_id.clone(),
+        );
+        reg.extensions.insert(
+            existing.extension_id.clone(),
+            ExtensionRecord {
+                metadata: existing.clone(),
+                lineage: vec![VersionLineageEntry {
+                    version: existing.version.clone(),
+                    published_at: ts(1),
+                    changelog: "Initial registration".to_owned(),
+                    parent_version: None,
+                }],
+                compatibility: Vec::new(),
+            },
+        );
+
+        for idx in 0..(MAX_EXTENSIONS - 1) {
+            let extension_id = format!("ext-fill-{idx}");
+            let publisher_id = format!("pub-fill-{idx}");
+            let publisher_key = format!("key-fill-{idx}");
+            let metadata = make_metadata(&extension_id, &publisher_id, &publisher_key);
+            reg.publisher_keys.insert(publisher_key, publisher_id);
+            reg.extensions.insert(
+                extension_id,
+                ExtensionRecord {
+                    metadata,
+                    lineage: vec![VersionLineageEntry {
+                        version: "1.0.0".to_owned(),
+                        published_at: ts(1),
+                        changelog: "Initial registration".to_owned(),
+                        parent_version: None,
+                    }],
+                    compatibility: Vec::new(),
+                },
+            );
+        }
+
+        assert_eq!(reg.extension_count(), MAX_EXTENSIONS);
+        let result = reg.register_extension(existing, &ts(2), "t");
+        assert!(matches!(
+            result,
+            Err(RegistryError::DuplicateRegistration(ref extension_id))
+                if extension_id == "ext-existing"
         ));
     }
 

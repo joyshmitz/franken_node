@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::security::remote_cap::{CapabilityGate, RemoteCap, RemoteOperation};
 
+/// Maximum computation entries before new registrations are rejected.
+const MAX_COMPUTATION_ENTRIES: usize = 4096;
+
 // Event codes required by bead acceptance criteria.
 pub const CR_REGISTRY_LOADED: &str = "CR_REGISTRY_LOADED";
 pub const CR_LOOKUP_SUCCESS: &str = "CR_LOOKUP_SUCCESS";
@@ -257,6 +260,15 @@ impl ComputationRegistry {
         }
         if self.entries.contains_key(&entry.name) {
             return Err(ComputationRegistryError::DuplicateComputation { name: entry.name });
+        }
+        if self.entries.len() >= MAX_COMPUTATION_ENTRIES {
+            return Err(ComputationRegistryError::InvalidComputationEntry {
+                name: entry.name,
+                reason: format!(
+                    "registry at capacity ({} entries, max {MAX_COMPUTATION_ENTRIES})",
+                    self.entries.len()
+                ),
+            });
         }
 
         let name = entry.name.clone();
@@ -520,6 +532,26 @@ mod tests {
         let err = registry
             .register_computation(entry, "trace-register-b")
             .expect_err("duplicate must fail");
+        assert_eq!(err.code(), ERR_DUPLICATE_COMPUTATION);
+    }
+
+    #[test]
+    fn duplicate_registration_is_rejected_even_when_registry_is_full() {
+        let mut registry = ComputationRegistry::new(1, "trace-load");
+        let existing = sample_entry("trust.verify_manifest.v1");
+        registry
+            .entries
+            .insert(existing.name.clone(), existing.clone());
+
+        for idx in 0..(MAX_COMPUTATION_ENTRIES - 1) {
+            let entry = sample_entry(&format!("d{idx}.action.v1"));
+            registry.entries.insert(entry.name.clone(), entry);
+        }
+
+        assert_eq!(registry.entries.len(), MAX_COMPUTATION_ENTRIES);
+        let err = registry
+            .register_computation(existing, "trace-register-duplicate-full")
+            .expect_err("duplicate must beat capacity check");
         assert_eq!(err.code(), ERR_DUPLICATE_COMPUTATION);
     }
 

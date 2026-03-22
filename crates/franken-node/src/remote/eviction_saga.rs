@@ -22,6 +22,8 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
 pub const SCHEMA_VERSION: &str = "es-v1.0";
 pub const DEFAULT_MAX_AUDIT_RECORDS: usize = 4_096;
 pub const DEFAULT_MAX_TRANSITIONS_PER_SAGA: usize = 512;
+/// Maximum saga instances tracked before terminal-state entries are evicted.
+const MAX_SAGAS: usize = 4096;
 
 fn default_audit_log_capacity() -> usize {
     DEFAULT_MAX_AUDIT_RECORDS
@@ -274,6 +276,28 @@ impl EvictionSagaManager {
         }
     }
 
+    fn is_terminal_phase(phase: SagaPhase) -> bool {
+        matches!(
+            phase,
+            SagaPhase::Complete | SagaPhase::Compensated | SagaPhase::Failed
+        )
+    }
+
+    fn saga_sequence(saga_id: &str) -> u64 {
+        saga_id
+            .strip_prefix("saga-")
+            .and_then(|suffix| suffix.parse::<u64>().ok())
+            .unwrap_or(u64::MAX)
+    }
+
+    fn oldest_terminal_saga_id(&self) -> Option<String> {
+        self.sagas
+            .iter()
+            .filter(|(_, saga)| Self::is_terminal_phase(saga.phase))
+            .min_by_key(|(saga_id, _)| (Self::saga_sequence(saga_id), saga_id.as_str()))
+            .map(|(saga_id, _)| saga_id.clone())
+    }
+
     /// Start a new eviction saga.
     pub fn start_saga(
         &mut self,
@@ -283,6 +307,15 @@ impl EvictionSagaManager {
     ) -> Result<String, String> {
         if !has_remote_cap {
             return Err("RemoteCap required for upload phase".to_string());
+        }
+
+        if self.sagas.len() >= MAX_SAGAS {
+            self.evict_terminal_sagas();
+            if self.sagas.len() >= MAX_SAGAS {
+                return Err(format!(
+                    "saga registry full at capacity {MAX_SAGAS}; no terminal entries available for eviction"
+                ));
+            }
         }
 
         let saga_id = format!("saga-{}", self.next_saga_id);
@@ -299,6 +332,19 @@ impl EvictionSagaManager {
 
         self.sagas.insert(saga_id.clone(), saga);
         Ok(saga_id)
+    }
+
+    /// Evict oldest terminal-state sagas until the registry has room for one more entry.
+    fn evict_terminal_sagas(&mut self) {
+        while self.sagas.len() >= MAX_SAGAS {
+            let evict_key = self.oldest_terminal_saga_id();
+            match evict_key {
+                Some(key) => {
+                    self.sagas.remove(&key);
+                }
+                None => break,
+            }
+        }
     }
 
     /// Re-validate remote capability for an in-flight saga.
@@ -716,7 +762,9 @@ mod tests {
     #[test]
     fn test_audit_log_capacity_enforces_oldest_first_eviction() {
         let mut mgr = EvictionSagaManager::with_capacities(2, 8);
-        let id = mgr.start_saga("artifact-a", true, "ta1").expect("should succeed");
+        let id = mgr
+            .start_saga("artifact-a", true, "ta1")
+            .expect("should succeed");
         mgr.begin_upload(&id, "ta2").expect("should succeed");
         mgr.complete_upload(&id, "ta3").expect("should succeed");
 
@@ -735,7 +783,9 @@ mod tests {
     #[test]
     fn test_transition_capacity_enforces_oldest_first_eviction() {
         let mut mgr = EvictionSagaManager::with_capacities(8, 2);
-        let id = mgr.start_saga("artifact-b", true, "tt1").expect("should succeed");
+        let id = mgr
+            .start_saga("artifact-b", true, "tt1")
+            .expect("should succeed");
         mgr.begin_upload(&id, "tt2").expect("should succeed");
         mgr.complete_upload(&id, "tt3").expect("should succeed");
         mgr.complete_verify(&id, "tt4").expect("should succeed");
@@ -750,7 +800,9 @@ mod tests {
     #[test]
     fn test_full_saga_success() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("artifact-1", true, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("artifact-1", true, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, "t2").expect("should succeed");
         mgr.complete_upload(&id, "t3").expect("should succeed");
         mgr.complete_verify(&id, "t4").expect("should succeed");
@@ -781,7 +833,8 @@ mod tests {
         let err = mgr.begin_upload(&id, "t3").unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
 
-        mgr.recheck_remote_cap(&id, true, "t4").expect("should succeed");
+        mgr.recheck_remote_cap(&id, true, "t4")
+            .expect("should succeed");
         mgr.begin_upload(&id, "t5").expect("should succeed");
     }
 
@@ -797,7 +850,8 @@ mod tests {
         let err = mgr.complete_upload(&id, "t4").unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
 
-        mgr.recheck_remote_cap(&id, true, "t5").expect("should succeed");
+        mgr.recheck_remote_cap(&id, true, "t5")
+            .expect("should succeed");
         mgr.complete_upload(&id, "t6").expect("should succeed");
     }
 
@@ -814,7 +868,8 @@ mod tests {
         let err = mgr.complete_verify(&id, "t5").unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
 
-        mgr.recheck_remote_cap(&id, true, "t6").expect("should succeed");
+        mgr.recheck_remote_cap(&id, true, "t6")
+            .expect("should succeed");
         mgr.complete_verify(&id, "t7").expect("should succeed");
     }
 
@@ -832,7 +887,8 @@ mod tests {
         let err = mgr.complete_retire(&id, "t6").unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
 
-        mgr.recheck_remote_cap(&id, true, "t7").expect("should succeed");
+        mgr.recheck_remote_cap(&id, true, "t7")
+            .expect("should succeed");
         mgr.complete_retire(&id, "t8").expect("should succeed");
     }
 
@@ -989,6 +1045,54 @@ mod tests {
     }
 
     #[test]
+    fn test_start_saga_rejects_when_registry_full_without_terminal_entries() {
+        let mut mgr = EvictionSagaManager::new();
+        let max_sagas = u64::try_from(MAX_SAGAS).expect("MAX_SAGAS fits in u64");
+
+        for seq in 1..=max_sagas {
+            let saga_id = format!("saga-{seq}");
+            let mut saga = SagaInstance::new(&saga_id, "artifact");
+            saga.phase = SagaPhase::Uploading;
+            mgr.sagas.insert(saga_id, saga);
+        }
+        mgr.next_saga_id = max_sagas.saturating_add(1);
+
+        let err = mgr
+            .start_saga("overflow", true, "t-full")
+            .expect_err("full registry without terminal entries must fail");
+
+        assert!(err.contains("registry full"));
+        assert_eq!(mgr.saga_count(), MAX_SAGAS);
+    }
+
+    #[test]
+    fn test_start_saga_evicts_oldest_terminal_by_creation_order() {
+        let mut mgr = EvictionSagaManager::new();
+        let max_sagas = u64::try_from(MAX_SAGAS).expect("MAX_SAGAS fits in u64");
+
+        for seq in 2..=max_sagas.saturating_add(1) {
+            let saga_id = format!("saga-{seq}");
+            let mut saga = SagaInstance::new(&saga_id, "artifact");
+            saga.phase = if seq == 2 || seq == 10 {
+                SagaPhase::Complete
+            } else {
+                SagaPhase::Uploading
+            };
+            mgr.sagas.insert(saga_id, saga);
+        }
+        mgr.next_saga_id = max_sagas.saturating_add(2);
+
+        let new_id = mgr
+            .start_saga("new-artifact", true, "t-evict")
+            .expect("terminal eviction should free a slot");
+
+        assert_eq!(mgr.saga_count(), MAX_SAGAS);
+        assert!(!mgr.sagas.contains_key("saga-2"));
+        assert!(mgr.sagas.contains_key("saga-10"));
+        assert!(mgr.sagas.contains_key(&new_id));
+    }
+
+    #[test]
     fn test_compensation_action_created_phase() {
         let saga = SagaInstance::new("s1", "a1");
         assert!(matches!(
@@ -1017,7 +1121,10 @@ mod tests {
             let saga = mgr.sagas.get_mut(&id).expect("should succeed");
             saga.record_transition(SagaPhase::Compensating, "compensation: CleanupL3", cap);
         }
-        assert_eq!(mgr.get_saga(&id).expect("should succeed").phase, SagaPhase::Compensating);
+        assert_eq!(
+            mgr.get_saga(&id).expect("should succeed").phase,
+            SagaPhase::Compensating
+        );
 
         let action = mgr.recover_saga(&id, "t4").expect("should succeed");
         assert!(matches!(action, CompensationAction::CleanupL3));
@@ -1117,7 +1224,10 @@ mod tests {
         // Recovery on Complete state should be a no-op
         let action = mgr.recover_saga(&id, "t6").expect("should succeed");
         assert!(matches!(action, CompensationAction::None));
-        assert_eq!(mgr.get_saga(&id).expect("should succeed").phase, SagaPhase::Complete);
+        assert_eq!(
+            mgr.get_saga(&id).expect("should succeed").phase,
+            SagaPhase::Complete
+        );
     }
 
     #[test]
