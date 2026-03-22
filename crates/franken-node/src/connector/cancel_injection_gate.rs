@@ -466,6 +466,20 @@ impl CancelInjectionGate {
                 continue;
             }
 
+            let metadata_failures = malformed_await_point_failures(&wf_key, &await_points);
+            if !metadata_failures.is_empty() {
+                total_points += point_count;
+                total_failed += point_count;
+                workflow_results.push(WorkflowInjectionResult {
+                    workflow: wf_key,
+                    total_points: point_count,
+                    points_passed: 0,
+                    points_failed: point_count,
+                    failures: metadata_failures,
+                });
+                continue;
+            }
+
             let mut wf_result = WorkflowInjectionResult {
                 workflow: wf_key.clone(),
                 total_points: point_count,
@@ -597,6 +611,53 @@ impl Default for CancelInjectionGate {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn malformed_await_point_failures(
+    workflow_name: &str,
+    await_points: &[AwaitPoint],
+) -> Vec<PointFailure> {
+    let expected_workflow = WorkflowId::Custom(workflow_name.to_string());
+    let metadata_errors: Vec<Option<String>> = await_points
+        .iter()
+        .enumerate()
+        .map(|(expected_index, await_point)| {
+            if await_point.workflow != expected_workflow {
+                Some(format!(
+                    "await point {} is registered for {} instead of {}",
+                    await_point.label, await_point.workflow, expected_workflow
+                ))
+            } else if await_point.index != expected_index {
+                Some(format!(
+                    "await point {} has non-canonical index {} (expected {})",
+                    await_point.label, await_point.index, expected_index
+                ))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let first_error = match metadata_errors.iter().flatten().next() {
+        Some(detail) => detail.clone(),
+        None => return Vec::new(),
+    };
+
+    await_points
+        .iter()
+        .enumerate()
+        .map(|(expected_index, await_point)| PointFailure {
+            await_point_index: expected_index,
+            await_point_label: await_point.label.clone(),
+            failure_type: error_codes::ERR_CIG_MATRIX_INCOMPLETE.to_string(),
+            detail: metadata_errors[expected_index].clone().unwrap_or_else(|| {
+                format!(
+                    "workflow registration is malformed; execution skipped because {}",
+                    first_error
+                )
+            }),
+        })
+        .collect()
 }
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
@@ -791,6 +852,166 @@ mod tests {
         assert_eq!(
             zero_point.failures[0].failure_type,
             error_codes::ERR_CIG_MATRIX_INCOMPLETE
+        );
+    }
+
+    #[test]
+    fn duplicate_or_holey_await_point_indices_fail_closed() {
+        let mut gate = make_gate();
+        gate.register_control_workflow(
+            ControlWorkflow::FencingAcquire,
+            vec![
+                AwaitPoint::new(
+                    WorkflowId::Custom("fencing_acquire".into()),
+                    0,
+                    "token_request",
+                    "Requesting fencing token",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("fencing_acquire".into()),
+                    0,
+                    "epoch_validate",
+                    "Validating epoch binding",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("fencing_acquire".into()),
+                    5,
+                    "token_commit",
+                    "Committing token acquisition",
+                ),
+            ],
+            "test",
+        );
+
+        let report = gate.run_full_gate("test");
+
+        assert_eq!(report.verdict, "FAIL");
+        let malformed = report
+            .workflow_results
+            .iter()
+            .find(|result| result.workflow == "fencing_acquire")
+            .expect("malformed workflow result");
+        assert_eq!(malformed.total_points, 3);
+        assert_eq!(malformed.points_passed, 0);
+        assert_eq!(malformed.points_failed, 3);
+        assert_eq!(malformed.failures.len(), 3);
+        assert!(
+            malformed.failures[0]
+                .detail
+                .contains("workflow registration is malformed")
+        );
+        assert_eq!(
+            malformed.failures[1].failure_type,
+            error_codes::ERR_CIG_MATRIX_INCOMPLETE
+        );
+        assert!(malformed.failures[1].detail.contains("non-canonical index"));
+        assert_eq!(
+            malformed.points_passed + malformed.points_failed,
+            malformed.total_points
+        );
+    }
+
+    #[test]
+    fn single_malformed_await_point_aborts_entire_workflow_report() {
+        let mut gate = make_gate();
+        gate.register_control_workflow(
+            ControlWorkflow::MigrationOrchestration,
+            vec![
+                AwaitPoint::new(
+                    WorkflowId::Custom("migration_orchestration".into()),
+                    0,
+                    "schema_check",
+                    "Checking schema compatibility",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("migration_orchestration".into()),
+                    7,
+                    "data_migrate",
+                    "Migrating data",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("migration_orchestration".into()),
+                    2,
+                    "validate_result",
+                    "Validating migration",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("migration_orchestration".into()),
+                    3,
+                    "finalize",
+                    "Finalizing migration",
+                ),
+            ],
+            "test",
+        );
+
+        let report = gate.run_full_gate("test");
+
+        assert_eq!(report.verdict, "FAIL");
+        let malformed = report
+            .workflow_results
+            .iter()
+            .find(|result| result.workflow == "migration_orchestration")
+            .expect("malformed workflow result");
+        assert_eq!(malformed.total_points, 4);
+        assert_eq!(malformed.points_passed, 0);
+        assert_eq!(malformed.points_failed, 4);
+        assert_eq!(malformed.failures.len(), 4);
+        assert_eq!(
+            malformed.points_passed + malformed.points_failed,
+            malformed.total_points
+        );
+        assert!(
+            malformed.failures[0]
+                .detail
+                .contains("workflow registration is malformed")
+        );
+        assert!(
+            malformed.failures[1]
+                .detail
+                .contains("non-canonical index 7 (expected 1)")
+        );
+        assert!(
+            malformed.failures[3]
+                .detail
+                .contains("workflow registration is malformed")
+        );
+    }
+
+    #[test]
+    fn cross_wired_await_point_workflow_fails_closed() {
+        let mut gate = make_gate();
+        gate.register_control_workflow(
+            ControlWorkflow::ConnectorLifecycle,
+            vec![AwaitPoint::new(
+                WorkflowId::Custom("rollout_transition".into()),
+                0,
+                "init_start",
+                "Before connector initialization",
+            )],
+            "test",
+        );
+
+        let report = gate.run_full_gate("test");
+
+        assert_eq!(report.verdict, "FAIL");
+        let malformed = report
+            .workflow_results
+            .iter()
+            .find(|result| result.workflow == "connector_lifecycle")
+            .expect("cross-wired workflow result");
+        assert_eq!(malformed.total_points, 1);
+        assert_eq!(malformed.points_passed, 0);
+        assert_eq!(malformed.points_failed, 1);
+        assert_eq!(malformed.failures.len(), 1);
+        assert_eq!(
+            malformed.failures[0].failure_type,
+            error_codes::ERR_CIG_MATRIX_INCOMPLETE
+        );
+        assert!(
+            malformed.failures[0]
+                .detail
+                .contains("instead of custom:connector_lifecycle")
         );
     }
 
