@@ -267,7 +267,7 @@ impl AuthenticatedSession {
     }
 
     /// Transition to Terminated state.
-    /// Only valid from Active or Terminating state.
+    /// Only valid from Active, Terminating, or Expired state.
     pub fn terminate(&mut self) {
         if !matches!(
             self.state,

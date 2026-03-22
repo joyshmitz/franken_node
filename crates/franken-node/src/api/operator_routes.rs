@@ -7,10 +7,11 @@
 //! - `GET /v1/operator/rollout` — rollout state query
 
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 #[cfg(test)]
-use std::sync::Mutex;
-use std::sync::OnceLock;
+use std::sync::atomic::AtomicUsize;
+#[cfg(test)]
+use std::sync::{Mutex, OnceLock};
 use std::sync::RwLock;
 use std::time::Instant;
 

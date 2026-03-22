@@ -1033,6 +1033,59 @@ mod tests {
     // ── append_checkpoint with enforcement ──────────────────────────
 
     #[test]
+    fn test_append_accepts_valid_checkpoint_and_updates_chain_state() {
+        let mut chain = PolicyCheckpointChain::new();
+        let head = chain
+            .create_checkpoint(1, ReleaseChannel::Stable, "h0", "alice", "t")
+            .unwrap()
+            .checkpoint_hash
+            .clone();
+
+        let appended = PolicyCheckpoint {
+            sequence: chain.next_seq(),
+            epoch_id: 1,
+            channel: ReleaseChannel::Beta,
+            policy_hash: "h1".to_string(),
+            parent_hash: Some(head.clone()),
+            timestamp: 1000,
+            signer: "alice".to_string(),
+            checkpoint_hash: PolicyCheckpoint::compute_hash(
+                chain.next_seq(),
+                1,
+                &ReleaseChannel::Beta,
+                "h1",
+                Some(head.as_str()),
+                1000,
+                "alice",
+            ),
+        };
+        let expected_hash = appended.checkpoint_hash.clone();
+
+        let appended = chain.append_checkpoint(appended, "t").unwrap();
+        assert_eq!(appended.sequence, 1);
+        assert_eq!(appended.parent_hash.as_deref(), Some(head.as_str()));
+        assert_eq!(appended.checkpoint_hash, expected_hash);
+        assert_eq!(chain.len(), 2);
+        assert_eq!(chain.next_seq(), 2);
+        assert_eq!(chain.head_hash(), Some(expected_hash.as_str()));
+        assert_eq!(chain.verify_chain(), Ok(2));
+
+        let events = chain.events();
+        assert_eq!(events.len(), 2);
+        let last_event = events.last().unwrap();
+        assert_eq!(
+            last_event.event_code,
+            event_codes::PCK_001_CHECKPOINT_CREATED
+        );
+        assert_eq!(last_event.event_name, event_names::CHECKPOINT_CREATED);
+        assert_eq!(last_event.trace_id, "t");
+        assert_eq!(last_event.epoch_id, 1);
+        assert_eq!(last_event.sequence, 1);
+        assert_eq!(last_event.channel, "beta");
+        assert_eq!(last_event.detail, "checkpoint appended: seq=1 epoch=1");
+    }
+
+    #[test]
     fn test_append_rejects_wrong_sequence() {
         let mut chain = PolicyCheckpointChain::new();
         chain
@@ -1293,11 +1346,9 @@ mod tests {
         let latest_canary = chain.latest_for_channel(&ReleaseChannel::Canary).unwrap();
         assert_eq!(latest_canary.sequence, 3);
 
-        assert!(
-            chain
-                .latest_for_channel(&ReleaseChannel::Custom("nightly".into()))
-                .is_none()
-        );
+        assert!(chain
+            .latest_for_channel(&ReleaseChannel::Custom("nightly".into()))
+            .is_none());
     }
 
     // ── policy_frontier ──────────────────────────────────────────────
