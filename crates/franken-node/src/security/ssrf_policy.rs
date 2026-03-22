@@ -211,9 +211,17 @@ fn has_bracket_delimiters(host: &str) -> bool {
     trimmed.starts_with('[') || trimmed.ends_with(']')
 }
 
+fn has_multiple_trailing_dots(host: &str) -> bool {
+    host.trim().ends_with("..")
+}
+
 /// Reserved hostname aliases that resolve to loopback without touching the public DNS.
 fn blocked_hostname_label(host: &str) -> Option<&'static str> {
-    let normalized = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    let trimmed = host.trim();
+    let normalized = trimmed
+        .strip_suffix('.')
+        .unwrap_or(trimmed)
+        .to_ascii_lowercase();
     if normalized == "localhost" || normalized.ends_with(".localhost") {
         Some("localhost")
     } else {
@@ -222,7 +230,11 @@ fn blocked_hostname_label(host: &str) -> Option<&'static str> {
 }
 
 fn normalize_host_for_allowlist_match(host: &str) -> String {
-    host.trim().trim_end_matches('.').to_ascii_lowercase()
+    let trimmed = host.trim();
+    trimmed
+        .strip_suffix('.')
+        .unwrap_or(trimmed)
+        .to_ascii_lowercase()
 }
 
 impl SsrfPolicyTemplate {
@@ -239,6 +251,9 @@ impl SsrfPolicyTemplate {
     /// Check whether an endpoint string should be treated as internal/private.
     pub fn is_private_ip(ip: &str) -> bool {
         let ip = ip.trim();
+        if has_multiple_trailing_dots(ip) {
+            return true;
+        }
         // Handle IPv6 loopback
         if ip == "::1" || ip == "[::1]" {
             return true;
@@ -333,6 +348,20 @@ impl SsrfPolicyTemplate {
             return Err(SsrfError::SsrfDenied {
                 host: host.to_string(),
                 cidr: label.to_string(),
+            });
+        }
+        if has_multiple_trailing_dots(host) {
+            self.emit_audit(
+                host,
+                port,
+                Action::Deny,
+                Some("invalid_ip_format"),
+                false,
+                trace_id,
+                timestamp,
+            );
+            return Err(SsrfError::SsrfInvalidIp {
+                host: host.to_string(),
             });
         }
 
@@ -751,6 +780,13 @@ mod tests {
     }
 
     #[test]
+    fn private_ip_treats_repeated_trailing_dots_as_denied() {
+        assert!(SsrfPolicyTemplate::is_private_ip("localhost.."));
+        assert!(SsrfPolicyTemplate::is_private_ip("api.example.com.."));
+        assert!(SsrfPolicyTemplate::is_private_ip("127.0.0.1.."));
+    }
+
+    #[test]
     fn private_ip_treats_malformed_bracketed_hosts_as_denied() {
         assert!(SsrfPolicyTemplate::is_private_ip("[127.0.0.1.]"));
         assert!(SsrfPolicyTemplate::is_private_ip("[example.com]"));
@@ -911,6 +947,13 @@ mod tests {
     }
 
     #[test]
+    fn check_ssrf_rejects_repeated_trailing_dot_hostname_as_invalid_format() {
+        let mut t = SsrfPolicyTemplate::default_template("conn-1".into());
+        let result = t.check_ssrf("api.example.com..", 443, Protocol::Http, "td6", "ts");
+        assert!(matches!(result, Err(SsrfError::SsrfInvalidIp { .. })));
+    }
+
+    #[test]
     fn check_ssrf_emits_audit() {
         let mut t = SsrfPolicyTemplate::default_template("conn-1".into());
         let _ = t.check_ssrf("127.0.0.1", 80, Protocol::Http, "t6", "ts");
@@ -936,6 +979,15 @@ mod tests {
             .unwrap();
         let result = t.check_ssrf(" LOCALHOST. ", 8080, Protocol::Http, "t7d", "ts");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn allowlist_does_not_permit_repeated_trailing_dot_hostname_alias() {
+        let mut t = SsrfPolicyTemplate::default_template("conn-1".into());
+        t.add_allowlist("localhost", Some(8080), "local proxy", "t7e", "ts")
+            .unwrap();
+        let result = t.check_ssrf("LOCALHOST..", 8080, Protocol::Http, "t7f", "ts");
+        assert!(matches!(result, Err(SsrfError::SsrfInvalidIp { .. })));
     }
 
     // === Allowlist ===

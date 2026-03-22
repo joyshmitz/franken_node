@@ -96,7 +96,10 @@ fn normalize_host_for_match(host: &str) -> String {
     if trimmed == "*" {
         return "*".to_string();
     }
-    trimmed.trim_end_matches('.').to_ascii_lowercase()
+    trimmed
+        .strip_suffix('.')
+        .unwrap_or(trimmed)
+        .to_ascii_lowercase()
 }
 
 /// Egress policy for a connector.
@@ -435,11 +438,27 @@ mod tests {
     }
 
     #[test]
+    fn repeated_trailing_dot_hostname_does_not_match_exact_rule() {
+        let policy = sample_policy();
+        let (action, idx) = policy.evaluate("api.example.com..", 443, Protocol::Http);
+        assert_eq!(action, Action::Deny);
+        assert_eq!(idx, None);
+    }
+
+    #[test]
     fn allowed_by_wildcard() {
         let policy = sample_policy();
         let (action, idx) = policy.evaluate("sub.trusted.com", 443, Protocol::Http);
         assert_eq!(action, Action::Allow);
         assert_eq!(idx, Some(1));
+    }
+
+    #[test]
+    fn repeated_trailing_dot_hostname_does_not_match_wildcard_rule() {
+        let policy = sample_policy();
+        let (action, idx) = policy.evaluate("sub.trusted.com..", 443, Protocol::Http);
+        assert_eq!(action, Action::Deny);
+        assert_eq!(idx, None);
     }
 
     #[test]
