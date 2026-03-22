@@ -1656,7 +1656,10 @@ mod init_tests {
         let action = apply_init_write_policy(&path, "new", true, false, "t0").expect("overwrite");
         assert_eq!(action.action, InitFileActionKind::Overwritten);
         assert!(action.backup_path.is_none());
-        assert_eq!(std::fs::read_to_string(&path).expect("read should succeed"), "new");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read should succeed"),
+            "new"
+        );
     }
 
     #[test]
@@ -1668,8 +1671,14 @@ mod init_tests {
             apply_init_write_policy(&path, "new", false, true, "t0").expect("backup overwrite");
         assert_eq!(action.action, InitFileActionKind::BackedUpAndOverwritten);
         let backup_path = action.backup_path.expect("backup path");
-        assert_eq!(std::fs::read_to_string(&path).expect("read should succeed"), "new");
-        assert_eq!(std::fs::read_to_string(backup_path).expect("read should succeed"), "old");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read should succeed"),
+            "new"
+        );
+        assert_eq!(
+            std::fs::read_to_string(backup_path).expect("read should succeed"),
+            "old"
+        );
     }
 }
 
@@ -1947,7 +1956,9 @@ mod trust_command_tests {
     #[test]
     fn trust_list_filters_by_risk_and_revocation_status() {
         let mut registry = trust_card_cli_registry().expect("registry");
-        let cards = registry.list(&TrustCardListFilter::empty(), "trace-test", now_unix_secs());
+        let cards = registry
+            .list(&TrustCardListFilter::empty(), "trace-test", now_unix_secs())
+            .expect("list");
 
         let critical_revoked = filter_trust_cards_for_trust_command(
             cards.clone(),
@@ -2939,6 +2950,7 @@ fn quarantine_trust_cards(
                 "trace-cli-trust-quarantine-list",
                 now_secs,
             )
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?
             .into_iter()
             .map(|card| card.extension.extension_id)
             .collect();
@@ -4096,11 +4108,13 @@ fn main() -> Result<()> {
             TrustCommand::List(args) => {
                 let risk_filter = parse_risk_level_filter(args.risk.as_deref())?;
                 let mut registry = trust_card_cli_registry()?;
-                let cards = registry.list(
-                    &TrustCardListFilter::empty(),
-                    "trace-cli-trust-list",
-                    now_unix_secs(),
-                );
+                let cards = registry
+                    .list(
+                        &TrustCardListFilter::empty(),
+                        "trace-cli-trust-list",
+                        now_unix_secs(),
+                    )
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
                 let filtered =
                     filter_trust_cards_for_trust_command(cards, risk_filter, args.revoked);
                 println!("{}", render_trust_card_list(&filtered));
@@ -4142,11 +4156,13 @@ fn main() -> Result<()> {
                 let sync_report = registry
                     .sync_cache(now_secs, "trace-cli-trust-sync", args.force)
                     .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-                let cards = registry.list(
-                    &TrustCardListFilter::empty(),
-                    "trace-cli-trust-sync",
-                    now_secs,
-                );
+                let cards = registry
+                    .list(
+                        &TrustCardListFilter::empty(),
+                        "trace-cli-trust-sync",
+                        now_secs,
+                    )
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
                 println!(
                     "{}",
                     render_trust_sync_summary(&cards, &sync_report, args.force)
