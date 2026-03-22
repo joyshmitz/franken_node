@@ -804,10 +804,14 @@ mod tests {
         let sec = make_passing_security_measurements();
         let trust = make_passing_trust_measurements();
 
-        let mut config_a = CoMetricConfig::default();
-        config_a.formula_version = "secm-v1".to_string();
-        let mut config_b = CoMetricConfig::default();
-        config_b.formula_version = "secm-v2".to_string();
+        let config_a = CoMetricConfig {
+            formula_version: "secm-v1".to_string(),
+            ..CoMetricConfig::default()
+        };
+        let config_b = CoMetricConfig {
+            formula_version: "secm-v2".to_string(),
+            ..CoMetricConfig::default()
+        };
 
         let mut engine_a = CoMetricEngine::new(config_a);
         let mut engine_b = CoMetricEngine::new(config_b);

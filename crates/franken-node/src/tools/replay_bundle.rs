@@ -32,6 +32,14 @@ pub enum ReplayBundleError {
     },
     #[error("payload contains floating-point number at `{path}`")]
     NonDeterministicFloat { path: String },
+    #[error(
+        "timeline event {sequence_number} exceeds chunk budget: {size_bytes} > {max_bytes} bytes"
+    )]
+    OversizedEvent {
+        sequence_number: u64,
+        size_bytes: usize,
+        max_bytes: usize,
+    },
     #[error("json serialization error: {0}")]
     Json(#[from] serde_json::Error),
     #[error("io error: {0}")]
@@ -526,10 +534,18 @@ fn chunk_timeline(
     let mut buckets: Vec<Vec<TimelineEvent>> = Vec::new();
     let mut current_bucket: Vec<TimelineEvent> = Vec::new();
     let mut current_size = 2_usize;
+    let max_event_size = MAX_BUNDLE_BYTES.saturating_sub(2);
 
     for event in timeline {
         let event_json = canonicalize_value(&serde_json::to_value(event)?, "$.timeline_event")?;
         let event_size = canonical_json_bytes(&event_json)?.len();
+        if event_size > max_event_size {
+            return Err(ReplayBundleError::OversizedEvent {
+                sequence_number: event.sequence_number,
+                size_bytes: event_size,
+                max_bytes: max_event_size,
+            });
+        }
         let delimiter = usize::from(!current_bucket.is_empty());
 
         if !current_bucket.is_empty()
@@ -757,6 +773,25 @@ mod tests {
             assert_eq!(chunk.bundle_id, bundle.bundle_id);
             assert_eq!(chunk.total_chunks, bundle.manifest.chunk_count);
         }
+    }
+
+    #[test]
+    fn oversized_single_event_is_rejected() {
+        let oversized_blob = "x".repeat((10 * 1024 * 1024) + 1024);
+        let events = vec![RawEvent::new(
+            "2026-02-20T10:00:00.000001Z",
+            EventType::StateChange,
+            serde_json::json!({"blob": oversized_blob}),
+        )];
+
+        let err = generate_replay_bundle("INC-OVERSIZE-001", &events).expect_err("must fail");
+        assert!(matches!(
+            err,
+            ReplayBundleError::OversizedEvent {
+                sequence_number: 1,
+                ..
+            }
+        ));
     }
 
     #[test]
