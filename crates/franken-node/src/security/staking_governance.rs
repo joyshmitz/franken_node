@@ -826,6 +826,20 @@ impl TrustGovernanceState {
             .get_mut(&stake_id.0)
             .ok_or_else(|| StakingError::new(ERR_STAKE_NOT_FOUND, "stake not found"))?;
 
+        // Guard: only stakes in UnderAppeal state can be resolved.
+        // Without this check, resolving a stale appeal on a Withdrawn or
+        // Expired stake would revive it to Active, bypassing terminal-state
+        // guarantees.
+        if record.state != StakeState::UnderAppeal {
+            return Err(StakingError::new(
+                ERR_STAKE_INVALID_TRANSITION,
+                format!(
+                    "cannot resolve appeal: stake {} is in {} state, expected UnderAppeal",
+                    stake_id, record.state
+                ),
+            ));
+        }
+
         if upheld {
             // Appeal upheld: slash stands
             record.state = StakeState::Slashed;
