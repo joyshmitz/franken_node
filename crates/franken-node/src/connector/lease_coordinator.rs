@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone)]
 pub struct CoordinatorCandidate {
     pub node_id: String,
+    /// Zero weight means the candidate is ineligible for selection.
     pub weight: u64,
 }
 
@@ -127,7 +128,18 @@ pub fn select_coordinator(
     lease_id: &str,
     trace_id: &str,
 ) -> Result<CoordinatorSelection, CoordinatorError> {
-    if candidates.is_empty() {
+    let mut eligible_candidates: Vec<&CoordinatorCandidate> = candidates
+        .iter()
+        .filter(|candidate| candidate.weight > 0)
+        .collect();
+
+    eligible_candidates.sort_by(|left, right| {
+        left.node_id
+            .cmp(&right.node_id)
+            .then(left.weight.cmp(&right.weight))
+    });
+
+    if eligible_candidates.is_empty() {
         return Err(CoordinatorError::NoCandidates);
     }
 
@@ -135,7 +147,7 @@ pub fn select_coordinator(
     let mut best_node = String::new();
     let mut best_score: u128 = 0;
 
-    for candidate in candidates {
+    for candidate in &eligible_candidates {
         let mut h = Sha256::new();
         h.update(b"lease_coord_hash_v1:");
         h.update((lease_id.len() as u64).to_le_bytes());
@@ -145,15 +157,21 @@ pub fn select_coordinator(
         let digest = h.finalize();
         let hash = u64::from_le_bytes(digest[..8].try_into().unwrap_or([0u8; 8]));
         // Multiply by weight to favor higher-weighted candidates
-        let score = u128::from(hash) * u128::from(candidate.weight.max(1));
-        if best_node.is_empty() || score > best_score {
+        let score = u128::from(hash) * u128::from(candidate.weight);
+        if best_node.is_empty()
+            || score > best_score
+            || (score == best_score && candidate.node_id < best_node)
+        {
             best_score = score;
             best_node = candidate.node_id.clone();
         }
     }
 
     Ok(CoordinatorSelection {
-        candidates: candidates.iter().map(|c| c.node_id.clone()).collect(),
+        candidates: eligible_candidates
+            .iter()
+            .map(|candidate| candidate.node_id.clone())
+            .collect(),
         lease_id: lease_id.to_string(),
         selected: best_node,
         trace_id: trace_id.to_string(),
@@ -673,6 +691,52 @@ mod tests {
     }
 
     #[test]
+    fn selection_is_order_invariant_for_same_candidate_set() {
+        let forward = vec![
+            CoordinatorCandidate {
+                node_id: "node-a".into(),
+                weight: 10,
+            },
+            CoordinatorCandidate {
+                node_id: "node-c".into(),
+                weight: 8,
+            },
+            CoordinatorCandidate {
+                node_id: "node-b".into(),
+                weight: 5,
+            },
+        ];
+        let reversed = vec![
+            CoordinatorCandidate {
+                node_id: "node-b".into(),
+                weight: 5,
+            },
+            CoordinatorCandidate {
+                node_id: "node-c".into(),
+                weight: 8,
+            },
+            CoordinatorCandidate {
+                node_id: "node-a".into(),
+                weight: 10,
+            },
+        ];
+
+        let left = select_coordinator(&forward, "lease-order", "tr").unwrap();
+        let right = select_coordinator(&reversed, "lease-order", "tr").unwrap();
+
+        assert_eq!(left.selected, right.selected);
+        assert_eq!(left.candidates, right.candidates);
+        assert_eq!(
+            left.candidates,
+            vec![
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string()
+            ]
+        );
+    }
+
+    #[test]
     fn higher_weight_beats_wraparound_artifact() {
         let cands = vec![
             CoordinatorCandidate {
@@ -693,5 +757,43 @@ mod tests {
             selected, "node-a",
             "weighting must not be distorted by u64 wraparound"
         );
+    }
+
+    #[test]
+    fn zero_weight_candidate_is_ineligible_for_selection() {
+        let cands = vec![
+            CoordinatorCandidate {
+                node_id: "zero".into(),
+                weight: 0,
+            },
+            CoordinatorCandidate {
+                node_id: "one".into(),
+                weight: 1,
+            },
+        ];
+
+        let selection = select_coordinator(&cands, "lease-zero-3", "tr")
+            .expect("positive-weight candidate should still be selectable");
+
+        assert_eq!(selection.selected, "one");
+        assert_eq!(selection.candidates, vec!["one".to_string()]);
+    }
+
+    #[test]
+    fn all_zero_weight_candidates_error() {
+        let cands = vec![
+            CoordinatorCandidate {
+                node_id: "zero-a".into(),
+                weight: 0,
+            },
+            CoordinatorCandidate {
+                node_id: "zero-b".into(),
+                weight: 0,
+            },
+        ];
+
+        let err = select_coordinator(&cands, "lease-zero-only", "tr")
+            .expect_err("zero-weight candidates must not be silently promoted");
+        assert_eq!(err, CoordinatorError::NoCandidates);
     }
 }

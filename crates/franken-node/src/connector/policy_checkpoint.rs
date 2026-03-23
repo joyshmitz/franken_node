@@ -299,6 +299,116 @@ pub struct PolicyCheckpointChain {
 }
 
 impl PolicyCheckpointChain {
+    fn emit_rejection_event(
+        &mut self,
+        trace_id: &str,
+        epoch_id: u64,
+        sequence: u64,
+        channel: &ReleaseChannel,
+        detail: String,
+    ) {
+        push_bounded(
+            &mut self.events,
+            CheckpointChainEvent {
+                event_code: event_codes::PCK_003_CHECKPOINT_REJECTED.to_string(),
+                event_name: event_names::CHECKPOINT_REJECTED.to_string(),
+                trace_id: trace_id.to_string(),
+                epoch_id,
+                sequence,
+                channel: channel.label(),
+                detail,
+            },
+            MAX_EVENTS,
+        );
+    }
+
+    fn current_chain_violation(&self) -> Option<(usize, String)> {
+        if let Err((index, error)) = self.verify_chain() {
+            let reason = match error {
+                CheckpointChainError::HashChainBreak { reason, .. } => reason,
+                other => other.to_string(),
+            };
+            return Some((index, reason));
+        }
+
+        match self.checkpoints.last() {
+            Some(last) => {
+                let expected_head = Some(last.checkpoint_hash.as_str());
+                let actual_head = self.head_hash.as_deref();
+                let head_matches = match (expected_head, actual_head) {
+                    (Some(expected), Some(actual)) => {
+                        crate::security::constant_time::ct_eq(expected, actual)
+                    }
+                    (None, None) => true,
+                    _ => false,
+                };
+                if !head_matches {
+                    return Some((
+                        self.checkpoints.len().saturating_sub(1),
+                        format!(
+                            "head_hash mismatch: expected {:?}, got {:?}",
+                            expected_head, actual_head
+                        ),
+                    ));
+                }
+
+                let expected_next = self.checkpoints.len() as u64;
+                if self.next_seq != expected_next {
+                    return Some((
+                        self.checkpoints.len(),
+                        format!(
+                            "next_seq mismatch: expected {expected_next}, got {}",
+                            self.next_seq
+                        ),
+                    ));
+                }
+            }
+            None => {
+                if self.head_hash.is_some() {
+                    return Some((
+                        0,
+                        format!(
+                            "head_hash mismatch: expected {:?}, got {:?}",
+                            Option::<&str>::None,
+                            self.head_hash.as_deref()
+                        ),
+                    ));
+                }
+                if self.next_seq != 0 {
+                    return Some((
+                        0,
+                        format!("next_seq mismatch: expected 0, got {}", self.next_seq),
+                    ));
+                }
+            }
+        }
+
+        None
+    }
+
+    fn reject_if_chain_invalid(
+        &mut self,
+        trace_id: &str,
+        epoch_id: u64,
+        sequence: u64,
+        channel: &ReleaseChannel,
+    ) -> Result<(), CheckpointChainError> {
+        if let Some((index, reason)) = self.current_chain_violation() {
+            self.emit_rejection_event(
+                trace_id,
+                epoch_id,
+                sequence,
+                channel,
+                format!(
+                    "CHECKPOINT_HASH_CHAIN_BREAK: existing chain invalid at index {index}: {reason}"
+                ),
+            );
+            return Err(CheckpointChainError::HashChainBreak { index, reason });
+        }
+
+        Ok(())
+    }
+
     /// Create a new empty chain.
     #[must_use]
     pub fn new() -> Self {
@@ -331,6 +441,8 @@ impl PolicyCheckpointChain {
         signer: &str,
         trace_id: &str,
     ) -> Result<&PolicyCheckpoint, CheckpointChainError> {
+        self.reject_if_chain_invalid(trace_id, epoch_id, self.next_seq, &channel)?;
+
         let sequence = self.next_seq;
         let parent_hash = self.head_hash.clone();
         let timestamp = now_unix_secs();
@@ -360,6 +472,14 @@ impl PolicyCheckpointChain {
         // shift indices so that cp.sequence != enumerate-index, violating
         // INV-PCK-MONOTONIC and breaking verify_chain(). Reject at capacity.
         if self.checkpoints.len() >= MAX_CHECKPOINTS {
+            self.emit_rejection_event(
+                trace_id,
+                epoch_id,
+                sequence,
+                &channel,
+                "CHECKPOINT_HASH_CHAIN_BREAK: chain at capacity (MAX_CHECKPOINTS reached)"
+                    .to_string(),
+            );
             return Err(CheckpointChainError::HashChainBreak {
                 index: MAX_CHECKPOINTS,
                 reason: "chain at capacity (MAX_CHECKPOINTS reached)".to_string(),
@@ -412,23 +532,24 @@ impl PolicyCheckpointChain {
         checkpoint: PolicyCheckpoint,
         trace_id: &str,
     ) -> Result<&PolicyCheckpoint, CheckpointChainError> {
+        self.reject_if_chain_invalid(
+            trace_id,
+            checkpoint.epoch_id,
+            checkpoint.sequence,
+            &checkpoint.channel,
+        )?;
+
         // INV-PCK-MONOTONIC
         if checkpoint.sequence != self.next_seq {
-            push_bounded(
-                &mut self.events,
-                CheckpointChainEvent {
-                    event_code: event_codes::PCK_003_CHECKPOINT_REJECTED.to_string(),
-                    event_name: event_names::CHECKPOINT_REJECTED.to_string(),
-                    trace_id: trace_id.to_string(),
-                    epoch_id: checkpoint.epoch_id,
-                    sequence: checkpoint.sequence,
-                    channel: checkpoint.channel.label(),
-                    detail: format!(
-                        "CHECKPOINT_SEQ_VIOLATION: expected={}, actual={}",
-                        self.next_seq, checkpoint.sequence
-                    ),
-                },
-                MAX_EVENTS,
+            self.emit_rejection_event(
+                trace_id,
+                checkpoint.epoch_id,
+                checkpoint.sequence,
+                &checkpoint.channel,
+                format!(
+                    "CHECKPOINT_SEQ_VIOLATION: expected={}, actual={}",
+                    self.next_seq, checkpoint.sequence
+                ),
             );
             return Err(CheckpointChainError::SequenceViolation {
                 expected: self.next_seq,
@@ -443,21 +564,15 @@ impl PolicyCheckpointChain {
             _ => false,
         };
         if !parent_match {
-            push_bounded(
-                &mut self.events,
-                CheckpointChainEvent {
-                    event_code: event_codes::PCK_003_CHECKPOINT_REJECTED.to_string(),
-                    event_name: event_names::CHECKPOINT_REJECTED.to_string(),
-                    trace_id: trace_id.to_string(),
-                    epoch_id: checkpoint.epoch_id,
-                    sequence: checkpoint.sequence,
-                    channel: checkpoint.channel.label(),
-                    detail: format!(
-                        "CHECKPOINT_PARENT_MISMATCH: expected={:?}, actual={:?}",
-                        self.head_hash, checkpoint.parent_hash
-                    ),
-                },
-                MAX_EVENTS,
+            self.emit_rejection_event(
+                trace_id,
+                checkpoint.epoch_id,
+                checkpoint.sequence,
+                &checkpoint.channel,
+                format!(
+                    "CHECKPOINT_PARENT_MISMATCH: expected={:?}, actual={:?}",
+                    self.head_hash, checkpoint.parent_hash
+                ),
             );
             return Err(CheckpointChainError::ParentMismatch {
                 expected: self.head_hash.clone(),
@@ -466,18 +581,13 @@ impl PolicyCheckpointChain {
         }
 
         if !checkpoint.verify_hash() {
-            push_bounded(
-                &mut self.events,
-                CheckpointChainEvent {
-                    event_code: event_codes::PCK_003_CHECKPOINT_REJECTED.to_string(),
-                    event_name: event_names::CHECKPOINT_REJECTED.to_string(),
-                    trace_id: trace_id.to_string(),
-                    epoch_id: checkpoint.epoch_id,
-                    sequence: checkpoint.sequence,
-                    channel: checkpoint.channel.label(),
-                    detail: "CHECKPOINT_HASH_CHAIN_BREAK: checkpoint_hash does not match canonical serialization".to_string(),
-                },
-                MAX_EVENTS,
+            self.emit_rejection_event(
+                trace_id,
+                checkpoint.epoch_id,
+                checkpoint.sequence,
+                &checkpoint.channel,
+                "CHECKPOINT_HASH_CHAIN_BREAK: checkpoint_hash does not match canonical serialization"
+                    .to_string(),
             );
             return Err(CheckpointChainError::HashChainBreak {
                 index: checkpoint.sequence as usize,
@@ -493,6 +603,14 @@ impl PolicyCheckpointChain {
         // Cannot use push_bounded: same INV-PCK-MONOTONIC reasoning as
         // create_checkpoint — eviction breaks verify_chain().
         if self.checkpoints.len() >= MAX_CHECKPOINTS {
+            self.emit_rejection_event(
+                trace_id,
+                checkpoint.epoch_id,
+                checkpoint.sequence,
+                &checkpoint.channel,
+                "CHECKPOINT_HASH_CHAIN_BREAK: chain at capacity (MAX_CHECKPOINTS reached)"
+                    .to_string(),
+            );
             return Err(CheckpointChainError::HashChainBreak {
                 index: MAX_CHECKPOINTS,
                 reason: "chain at capacity (MAX_CHECKPOINTS reached)".to_string(),
@@ -702,6 +820,18 @@ impl PolicyCheckpointChain {
         if let Some(cp) = self.checkpoints.get_mut(index) {
             cp.sequence = new_seq;
         }
+    }
+
+    /// Tamper with the cached chain head hash for testing purposes.
+    #[cfg(test)]
+    pub fn tamper_head_hash(&mut self, new_head_hash: Option<String>) {
+        self.head_hash = new_head_hash;
+    }
+
+    /// Tamper with the cached next sequence number for testing purposes.
+    #[cfg(test)]
+    pub fn tamper_next_seq(&mut self, new_next_seq: u64) {
+        self.next_seq = new_next_seq;
     }
 }
 
@@ -1030,6 +1160,47 @@ mod tests {
         assert_eq!(chain.next_seq(), 2);
     }
 
+    #[test]
+    fn test_create_rejects_existing_invalid_chain_contents() {
+        let mut chain = PolicyCheckpointChain::new();
+        chain
+            .create_checkpoint(1, ReleaseChannel::Stable, "h0", "alice", "trace-create")
+            .expect("seed checkpoint");
+        chain.tamper_policy_hash(0, "TAMPERED");
+
+        let err = chain
+            .create_checkpoint(2, ReleaseChannel::Beta, "h1", "alice", "trace-reject")
+            .expect_err("invalid existing chain must reject new create");
+        match err {
+            CheckpointChainError::HashChainBreak { index, reason } => {
+                assert_eq!(index, 0);
+                assert_eq!(reason, "checkpoint_hash does not match recomputed hash");
+            }
+            _ => unreachable!("wrong error variant"),
+        }
+
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain.next_seq(), 1);
+
+        let rejection = chain
+            .events()
+            .last()
+            .expect("invalid create should emit a rejection event");
+        assert_eq!(
+            rejection.event_code,
+            event_codes::PCK_003_CHECKPOINT_REJECTED
+        );
+        assert_eq!(rejection.event_name, event_names::CHECKPOINT_REJECTED);
+        assert_eq!(rejection.trace_id, "trace-reject");
+        assert_eq!(rejection.epoch_id, 2);
+        assert_eq!(rejection.sequence, 1);
+        assert_eq!(rejection.channel, "beta");
+        assert_eq!(
+            rejection.detail,
+            "CHECKPOINT_HASH_CHAIN_BREAK: existing chain invalid at index 0: checkpoint_hash does not match recomputed hash"
+        );
+    }
+
     // ── append_checkpoint with enforcement ──────────────────────────
 
     #[test]
@@ -1209,6 +1380,69 @@ mod tests {
         assert_eq!(
             rejection.detail,
             "CHECKPOINT_HASH_CHAIN_BREAK: checkpoint_hash does not match canonical serialization"
+        );
+    }
+
+    #[test]
+    fn test_append_rejects_next_seq_mismatch_in_existing_chain_state() {
+        let mut chain = PolicyCheckpointChain::new();
+        let head = chain
+            .create_checkpoint(1, ReleaseChannel::Stable, "h0", "alice", "trace-create")
+            .expect("seed checkpoint")
+            .checkpoint_hash
+            .clone();
+        chain.tamper_next_seq(99);
+
+        let checkpoint = PolicyCheckpoint {
+            sequence: 99,
+            epoch_id: 2,
+            channel: ReleaseChannel::Beta,
+            policy_hash: "h1".to_string(),
+            parent_hash: Some(head.clone()),
+            timestamp: 1000,
+            signer: "alice".to_string(),
+            checkpoint_hash: PolicyCheckpoint::compute_hash(
+                99,
+                2,
+                &ReleaseChannel::Beta,
+                "h1",
+                Some(head.as_str()),
+                1000,
+                "alice",
+            ),
+        };
+
+        let err = chain
+            .append_checkpoint(checkpoint, "trace-append-reject")
+            .expect_err("invalid existing chain state must reject append");
+        match err {
+            CheckpointChainError::HashChainBreak { index, reason } => {
+                assert_eq!(index, 1);
+                assert_eq!(reason, "next_seq mismatch: expected 1, got 99");
+            }
+            _ => unreachable!("wrong error variant"),
+        }
+
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain.next_seq(), 99);
+        assert_eq!(chain.head_hash(), Some(head.as_str()));
+
+        let rejection = chain
+            .events()
+            .last()
+            .expect("invalid append should emit a rejection event");
+        assert_eq!(
+            rejection.event_code,
+            event_codes::PCK_003_CHECKPOINT_REJECTED
+        );
+        assert_eq!(rejection.event_name, event_names::CHECKPOINT_REJECTED);
+        assert_eq!(rejection.trace_id, "trace-append-reject");
+        assert_eq!(rejection.epoch_id, 2);
+        assert_eq!(rejection.sequence, 99);
+        assert_eq!(rejection.channel, "beta");
+        assert_eq!(
+            rejection.detail,
+            "CHECKPOINT_HASH_CHAIN_BREAK: existing chain invalid at index 1: next_seq mismatch: expected 1, got 99"
         );
     }
 
@@ -1501,6 +1735,125 @@ mod tests {
         assert!(events.iter().any(|e| e.event_code == "PCK-003"
             && e.event_name == "CHECKPOINT_REJECTED"
             && e.trace_id == "trace-reject"));
+    }
+
+    #[test]
+    fn test_create_checkpoint_capacity_rejection_emits_event() {
+        let mut chain = PolicyCheckpointChain::new();
+        for seq in 0..MAX_CHECKPOINTS {
+            chain
+                .create_checkpoint(
+                    1,
+                    ReleaseChannel::Stable,
+                    &format!("policy-{seq}"),
+                    "alice",
+                    "trace-fill",
+                )
+                .expect("fill chain");
+        }
+
+        let err = chain
+            .create_checkpoint(
+                2,
+                ReleaseChannel::Beta,
+                "overflow",
+                "alice",
+                "trace-cap-create",
+            )
+            .expect_err("full chain must reject create");
+        match err {
+            CheckpointChainError::HashChainBreak { index, reason } => {
+                assert_eq!(index, MAX_CHECKPOINTS);
+                assert_eq!(reason, "chain at capacity (MAX_CHECKPOINTS reached)");
+            }
+            _ => unreachable!("wrong error variant"),
+        }
+        assert_eq!(chain.len(), MAX_CHECKPOINTS);
+        assert_eq!(chain.next_seq(), MAX_CHECKPOINTS as u64);
+
+        let rejection = chain.events().last().expect("capacity rejection event");
+        assert_eq!(
+            rejection.event_code,
+            event_codes::PCK_003_CHECKPOINT_REJECTED
+        );
+        assert_eq!(rejection.event_name, event_names::CHECKPOINT_REJECTED);
+        assert_eq!(rejection.trace_id, "trace-cap-create");
+        assert_eq!(rejection.epoch_id, 2);
+        assert_eq!(rejection.sequence, MAX_CHECKPOINTS as u64);
+        assert_eq!(rejection.channel, "beta");
+        assert_eq!(
+            rejection.detail,
+            "CHECKPOINT_HASH_CHAIN_BREAK: chain at capacity (MAX_CHECKPOINTS reached)"
+        );
+    }
+
+    #[test]
+    fn test_append_checkpoint_capacity_rejection_emits_event() {
+        let mut chain = PolicyCheckpointChain::new();
+        for seq in 0..MAX_CHECKPOINTS {
+            chain
+                .create_checkpoint(
+                    1,
+                    ReleaseChannel::Stable,
+                    &format!("policy-{seq}"),
+                    "alice",
+                    "trace-fill",
+                )
+                .expect("fill chain");
+        }
+        let head = chain
+            .head_hash()
+            .expect("filled chain should have head")
+            .to_string();
+        let next_seq = chain.next_seq();
+
+        let checkpoint = PolicyCheckpoint {
+            sequence: next_seq,
+            epoch_id: 2,
+            channel: ReleaseChannel::Beta,
+            policy_hash: "overflow".to_string(),
+            parent_hash: Some(head.clone()),
+            timestamp: 1000,
+            signer: "alice".to_string(),
+            checkpoint_hash: PolicyCheckpoint::compute_hash(
+                next_seq,
+                2,
+                &ReleaseChannel::Beta,
+                "overflow",
+                Some(head.as_str()),
+                1000,
+                "alice",
+            ),
+        };
+
+        let err = chain
+            .append_checkpoint(checkpoint, "trace-cap-append")
+            .expect_err("full chain must reject append");
+        match err {
+            CheckpointChainError::HashChainBreak { index, reason } => {
+                assert_eq!(index, MAX_CHECKPOINTS);
+                assert_eq!(reason, "chain at capacity (MAX_CHECKPOINTS reached)");
+            }
+            _ => unreachable!("wrong error variant"),
+        }
+        assert_eq!(chain.len(), MAX_CHECKPOINTS);
+        assert_eq!(chain.next_seq(), next_seq);
+        assert_eq!(chain.head_hash(), Some(head.as_str()));
+
+        let rejection = chain.events().last().expect("capacity rejection event");
+        assert_eq!(
+            rejection.event_code,
+            event_codes::PCK_003_CHECKPOINT_REJECTED
+        );
+        assert_eq!(rejection.event_name, event_names::CHECKPOINT_REJECTED);
+        assert_eq!(rejection.trace_id, "trace-cap-append");
+        assert_eq!(rejection.epoch_id, 2);
+        assert_eq!(rejection.sequence, next_seq);
+        assert_eq!(rejection.channel, "beta");
+        assert_eq!(
+            rejection.detail,
+            "CHECKPOINT_HASH_CHAIN_BREAK: chain at capacity (MAX_CHECKPOINTS reached)"
+        );
     }
 
     // ── Large chain test (100+ checkpoints) ──────────────────────────

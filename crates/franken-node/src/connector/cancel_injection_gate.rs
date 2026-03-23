@@ -95,6 +95,33 @@ impl ControlWorkflow {
             Self::HealthGateEvaluation => "health_gate_evaluation",
         }
     }
+
+    pub fn canonical_await_point_labels(&self) -> &'static [&'static str] {
+        match self {
+            Self::ConnectorLifecycle => {
+                &["init_start", "health_probe", "state_load", "ready_signal"]
+            }
+            Self::RolloutTransition => &[
+                "canary_check",
+                "promote_prepare",
+                "state_commit",
+                "notify_peers",
+            ],
+            Self::QuarantinePromotion => &["quarantine_check", "trust_verify", "promotion_commit"],
+            Self::MigrationOrchestration => &[
+                "schema_check",
+                "data_migrate",
+                "validate_result",
+                "finalize",
+            ],
+            Self::FencingAcquire => &["token_request", "epoch_validate", "token_commit"],
+            Self::HealthGateEvaluation => &["probe_collect", "score_compute", "verdict_emit"],
+        }
+    }
+
+    pub fn expected_point_count(&self) -> usize {
+        self.canonical_await_point_labels().len()
+    }
 }
 
 impl fmt::Display for ControlWorkflow {
@@ -466,7 +493,22 @@ impl CancelInjectionGate {
                 continue;
             }
 
-            let metadata_failures = malformed_await_point_failures(&wf_key, &await_points);
+            let count_failures = point_count_mismatch_failures(workflow, &await_points);
+            if !count_failures.is_empty() {
+                let failure_count = count_failures.len();
+                total_points += failure_count;
+                total_failed += failure_count;
+                workflow_results.push(WorkflowInjectionResult {
+                    workflow: wf_key,
+                    total_points: failure_count,
+                    points_passed: 0,
+                    points_failed: failure_count,
+                    failures: count_failures,
+                });
+                continue;
+            }
+
+            let metadata_failures = malformed_await_point_failures(workflow, &await_points);
             if !metadata_failures.is_empty() {
                 total_points += point_count;
                 total_failed += point_count;
@@ -614,10 +656,11 @@ impl Default for CancelInjectionGate {
 }
 
 fn malformed_await_point_failures(
-    workflow_name: &str,
+    workflow: &ControlWorkflow,
     await_points: &[AwaitPoint],
 ) -> Vec<PointFailure> {
-    let expected_workflow = WorkflowId::Custom(workflow_name.to_string());
+    let expected_workflow = WorkflowId::Custom(workflow.as_str().to_string());
+    let expected_labels = workflow.canonical_await_point_labels();
     let metadata_errors: Vec<Option<String>> = await_points
         .iter()
         .enumerate()
@@ -631,6 +674,11 @@ fn malformed_await_point_failures(
                 Some(format!(
                     "await point {} has non-canonical index {} (expected {})",
                     await_point.label, await_point.index, expected_index
+                ))
+            } else if await_point.label != expected_labels[expected_index] {
+                Some(format!(
+                    "await point {} has non-canonical label {} (expected {})",
+                    expected_index, await_point.label, expected_labels[expected_index]
                 ))
             } else {
                 None
@@ -656,6 +704,41 @@ fn malformed_await_point_failures(
                     first_error
                 )
             }),
+        })
+        .collect()
+}
+
+fn point_count_mismatch_failures(
+    workflow: &ControlWorkflow,
+    await_points: &[AwaitPoint],
+) -> Vec<PointFailure> {
+    let expected_labels = workflow.canonical_await_point_labels();
+    let expected_count = workflow.expected_point_count();
+    let actual_count = await_points.len();
+
+    if actual_count == expected_count {
+        return Vec::new();
+    }
+
+    let detail = format!(
+        "workflow registers {actual_count} await points but canonical matrix requires {expected_count}"
+    );
+    let report_width = actual_count.max(expected_count);
+
+    (0..report_width)
+        .map(|expected_index| PointFailure {
+            await_point_index: expected_index,
+            await_point_label: await_points
+                .get(expected_index)
+                .map(|await_point| await_point.label.clone())
+                .or_else(|| {
+                    expected_labels
+                        .get(expected_index)
+                        .map(|label| (*label).to_string())
+                })
+                .unwrap_or_else(|| "workflow_registration".to_string()),
+            failure_type: error_codes::ERR_CIG_MATRIX_INCOMPLETE.to_string(),
+            detail: detail.clone(),
         })
         .collect()
 }
@@ -856,6 +939,52 @@ mod tests {
     }
 
     #[test]
+    fn non_canonical_await_point_count_fails_closed() {
+        let mut gate = make_gate();
+        gate.register_control_workflow(
+            ControlWorkflow::FencingAcquire,
+            vec![
+                AwaitPoint::new(
+                    WorkflowId::Custom("fencing_acquire".into()),
+                    0,
+                    "token_request",
+                    "Requesting fencing token",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("fencing_acquire".into()),
+                    1,
+                    "epoch_validate",
+                    "Validating epoch binding",
+                ),
+            ],
+            "test",
+        );
+
+        let report = gate.run_full_gate("test");
+
+        assert_eq!(report.verdict, "FAIL");
+        let malformed = report
+            .workflow_results
+            .iter()
+            .find(|result| result.workflow == "fencing_acquire")
+            .expect("count-mismatch workflow result");
+        assert_eq!(malformed.total_points, 3);
+        assert_eq!(malformed.points_passed, 0);
+        assert_eq!(malformed.points_failed, 3);
+        assert_eq!(malformed.failures.len(), 3);
+        assert_eq!(
+            malformed.points_passed + malformed.points_failed,
+            malformed.total_points
+        );
+        assert!(
+            malformed.failures[0]
+                .detail
+                .contains("registers 2 await points but canonical matrix requires 3")
+        );
+        assert_eq!(malformed.failures[2].await_point_label, "token_commit");
+    }
+
+    #[test]
     fn duplicate_or_holey_await_point_indices_fail_closed() {
         let mut gate = make_gate();
         gate.register_control_workflow(
@@ -975,6 +1104,62 @@ mod tests {
             malformed.failures[3]
                 .detail
                 .contains("workflow registration is malformed")
+        );
+    }
+
+    #[test]
+    fn renamed_await_point_label_fails_closed() {
+        let mut gate = make_gate();
+        gate.register_control_workflow(
+            ControlWorkflow::FencingAcquire,
+            vec![
+                AwaitPoint::new(
+                    WorkflowId::Custom("fencing_acquire".into()),
+                    0,
+                    "token_request",
+                    "Requesting fencing token",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("fencing_acquire".into()),
+                    1,
+                    "epoch_validate",
+                    "Validating epoch binding",
+                ),
+                AwaitPoint::new(
+                    WorkflowId::Custom("fencing_acquire".into()),
+                    2,
+                    "commit_token",
+                    "Committing token acquisition",
+                ),
+            ],
+            "test",
+        );
+
+        let report = gate.run_full_gate("test");
+
+        assert_eq!(report.verdict, "FAIL");
+        let malformed = report
+            .workflow_results
+            .iter()
+            .find(|result| result.workflow == "fencing_acquire")
+            .expect("renamed-label workflow result");
+        assert_eq!(malformed.total_points, 3);
+        assert_eq!(malformed.points_passed, 0);
+        assert_eq!(malformed.points_failed, 3);
+        assert_eq!(malformed.failures.len(), 3);
+        assert_eq!(
+            malformed.points_passed + malformed.points_failed,
+            malformed.total_points
+        );
+        assert!(
+            malformed.failures[0]
+                .detail
+                .contains("workflow registration is malformed")
+        );
+        assert!(
+            malformed.failures[2]
+                .detail
+                .contains("has non-canonical label commit_token (expected token_commit)")
         );
     }
 

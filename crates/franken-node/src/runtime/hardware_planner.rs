@@ -127,6 +127,8 @@ pub mod error_codes {
     pub const ERR_HWP_EMPTY_CAPABILITIES: &str = "ERR_HWP_EMPTY_CAPABILITIES";
     pub const ERR_HWP_DISPATCH_UNGATED: &str = "ERR_HWP_DISPATCH_UNGATED";
     pub const ERR_HWP_DISPATCH_NOT_PLACED: &str = "ERR_HWP_DISPATCH_NOT_PLACED";
+    pub const ERR_HWP_ALREADY_PLACED: &str = "ERR_HWP_ALREADY_PLACED";
+    pub const ERR_HWP_RELEASE_NOT_PLACED: &str = "ERR_HWP_RELEASE_NOT_PLACED";
     pub const ERR_HWP_INVALID_RISK_LEVEL: &str = "ERR_HWP_INVALID_RISK_LEVEL";
     pub const ERR_HWP_FALLBACK_EXHAUSTED: &str = "ERR_HWP_FALLBACK_EXHAUSTED";
     pub const ERR_HWP_UNKNOWN_POLICY: &str = "ERR_HWP_UNKNOWN_POLICY";
@@ -406,6 +408,16 @@ pub enum HardwarePlannerError {
         workload_id: String,
         target_profile_id: String,
     },
+    /// Placement requested for a workload that is already active on a target.
+    AlreadyPlaced {
+        workload_id: String,
+        target_profile_id: String,
+    },
+    /// Release requested for a workload/target pair without an active placement.
+    ReleaseNotPlaced {
+        workload_id: String,
+        target_profile_id: String,
+    },
     /// Risk level outside valid range.
     InvalidRiskLevel { profile_id: String, risk_level: u32 },
     /// All fallback paths exhausted.
@@ -426,6 +438,8 @@ impl HardwarePlannerError {
             Self::EmptyCapabilities { .. } => error_codes::ERR_HWP_EMPTY_CAPABILITIES,
             Self::DispatchUngated { .. } => error_codes::ERR_HWP_DISPATCH_UNGATED,
             Self::DispatchNotPlaced { .. } => error_codes::ERR_HWP_DISPATCH_NOT_PLACED,
+            Self::AlreadyPlaced { .. } => error_codes::ERR_HWP_ALREADY_PLACED,
+            Self::ReleaseNotPlaced { .. } => error_codes::ERR_HWP_RELEASE_NOT_PLACED,
             Self::InvalidRiskLevel { .. } => error_codes::ERR_HWP_INVALID_RISK_LEVEL,
             Self::FallbackExhausted { .. } => error_codes::ERR_HWP_FALLBACK_EXHAUSTED,
             Self::UnknownPolicy { .. } => error_codes::ERR_HWP_UNKNOWN_POLICY,
@@ -507,6 +521,30 @@ impl fmt::Display for HardwarePlannerError {
                     target_profile_id
                 )
             }
+            Self::AlreadyPlaced {
+                workload_id,
+                target_profile_id,
+            } => {
+                write!(
+                    f,
+                    "{}: workload {} is already active on target {}",
+                    self.code(),
+                    workload_id,
+                    target_profile_id
+                )
+            }
+            Self::ReleaseNotPlaced {
+                workload_id,
+                target_profile_id,
+            } => {
+                write!(
+                    f,
+                    "{}: workload {} is not actively placed on target {}",
+                    self.code(),
+                    workload_id,
+                    target_profile_id
+                )
+            }
             Self::InvalidRiskLevel {
                 profile_id,
                 risk_level,
@@ -578,6 +616,8 @@ pub struct HardwarePlanner {
     decisions: Vec<PlacementDecision>,
     /// Completed dispatch tokens.
     dispatches: Vec<DispatchToken>,
+    /// Active workload -> target placement map used to prevent stale dispatch.
+    active_placements: BTreeMap<String, String>,
 }
 
 impl HardwarePlanner {
@@ -590,6 +630,7 @@ impl HardwarePlanner {
             approved_interfaces,
             decisions: Vec::new(),
             dispatches: Vec::new(),
+            active_placements: BTreeMap::new(),
         }
     }
 
@@ -677,6 +718,13 @@ impl HardwarePlanner {
             detail: format!("placement requested for workload {}", request.workload_id),
             schema_version: SCHEMA_VERSION.to_string(),
         });
+
+        if let Some(target_profile_id) = self.active_placements.get(&request.workload_id) {
+            return Err(HardwarePlannerError::AlreadyPlaced {
+                workload_id: request.workload_id.clone(),
+                target_profile_id: target_profile_id.clone(),
+            });
+        }
 
         let policy = self
             .policies
@@ -864,6 +912,8 @@ impl HardwarePlanner {
         if let Some(prof) = self.profiles.get_mut(&selected) {
             prof.used_slots = prof.used_slots.saturating_add(1);
         }
+        self.active_placements
+            .insert(request.workload_id.clone(), selected.clone());
 
         // HWP-004
         self.emit_audit(PlannerAuditEvent {
@@ -1006,15 +1056,11 @@ impl HardwarePlanner {
             });
         }
 
-        let has_successful_placement = self.decisions.iter().rev().any(|decision| {
-            decision.workload_id == workload_id
-                && decision.target_profile_id.as_deref() == Some(target_profile_id)
-                && matches!(
-                    decision.outcome,
-                    PlacementOutcome::Placed | PlacementOutcome::PlacedViaFallback
-                )
-        });
-        if !has_successful_placement {
+        if self
+            .active_placements
+            .get(workload_id)
+            .is_none_or(|active_target| active_target != target_profile_id)
+        {
             return Err(HardwarePlannerError::DispatchNotPlaced {
                 workload_id: workload_id.to_string(),
                 target_profile_id: target_profile_id.to_string(),
@@ -1043,13 +1089,34 @@ impl HardwarePlanner {
         Ok(token)
     }
 
-    /// Release a slot on a hardware profile (e.g. workload completed).
-    pub fn release_slot(&mut self, profile_id: &str) -> Result<(), HardwarePlannerError> {
-        let prof = self.profiles.get_mut(profile_id).ok_or_else(|| {
-            HardwarePlannerError::UnknownProfile {
-                profile_id: profile_id.to_string(),
-            }
-        })?;
+    /// Release an active placement after a workload completes.
+    pub fn release_placement(
+        &mut self,
+        workload_id: &str,
+        target_profile_id: &str,
+    ) -> Result<(), HardwarePlannerError> {
+        if !self.profiles.contains_key(target_profile_id) {
+            return Err(HardwarePlannerError::UnknownProfile {
+                profile_id: target_profile_id.to_string(),
+            });
+        }
+
+        if self
+            .active_placements
+            .get(workload_id)
+            .is_none_or(|active_target| active_target != target_profile_id)
+        {
+            return Err(HardwarePlannerError::ReleaseNotPlaced {
+                workload_id: workload_id.to_string(),
+                target_profile_id: target_profile_id.to_string(),
+            });
+        }
+
+        self.active_placements.remove(workload_id);
+        let prof = self
+            .profiles
+            .get_mut(target_profile_id)
+            .expect("profile existence checked above");
         prof.used_slots = prof.used_slots.saturating_sub(1);
         Ok(())
     }
@@ -1602,10 +1669,10 @@ mod tests {
         assert_eq!(err.code(), error_codes::ERR_HWP_UNKNOWN_PROFILE);
     }
 
-    // ---- Slot release ----
+    // ---- Placement release ----
 
     #[test]
-    fn release_slot_success() {
+    fn release_placement_success() {
         let mut planner = make_planner();
         planner
             .register_profile(gpu_profile("hw-1", 10, 4), 1000, "t1")
@@ -1618,15 +1685,48 @@ mod tests {
         planner.request_placement(&req, 2000).unwrap();
         assert_eq!(planner.get_profile("hw-1").unwrap().used_slots, 1);
 
-        planner.release_slot("hw-1").unwrap();
+        planner.release_placement("wl-1", "hw-1").unwrap();
         assert_eq!(planner.get_profile("hw-1").unwrap().used_slots, 0);
     }
 
     #[test]
-    fn release_slot_unknown_profile() {
+    fn release_placement_unknown_profile() {
         let mut planner = make_planner();
-        let err = planner.release_slot("nonexistent").unwrap_err();
+        let err = planner
+            .release_placement("wl-1", "nonexistent")
+            .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_HWP_UNKNOWN_PROFILE);
+    }
+
+    #[test]
+    fn release_placement_requires_active_workload_target_pair() {
+        let mut planner = make_planner();
+        planner
+            .register_profile(gpu_profile("hw-1", 10, 4), 1000, "t1")
+            .unwrap();
+
+        let err = planner.release_placement("wl-1", "hw-1").unwrap_err();
+        assert_eq!(err.code(), error_codes::ERR_HWP_RELEASE_NOT_PLACED);
+    }
+
+    #[test]
+    fn dispatch_after_release_is_rejected() {
+        let mut planner = make_planner();
+        planner
+            .register_profile(gpu_profile("hw-1", 10, 4), 1000, "t1")
+            .unwrap();
+        planner
+            .register_policy(default_policy(), 1001, "t1")
+            .unwrap();
+
+        let req = workload("wl-1", &["gpu", "compute"], 50, "default");
+        planner.request_placement(&req, 1500).unwrap();
+        planner.release_placement("wl-1", "hw-1").unwrap();
+
+        let err = planner
+            .dispatch("wl-1", "hw-1", "franken_engine", 2000, "t1")
+            .unwrap_err();
+        assert_eq!(err.code(), error_codes::ERR_HWP_DISPATCH_NOT_PLACED);
     }
 
     // ---- Audit log ----
@@ -1791,6 +1891,14 @@ mod tests {
                 workload_id: "wl-1".into(),
                 target_profile_id: "hw-1".into(),
             },
+            HardwarePlannerError::AlreadyPlaced {
+                workload_id: "wl-1".into(),
+                target_profile_id: "hw-1".into(),
+            },
+            HardwarePlannerError::ReleaseNotPlaced {
+                workload_id: "wl-1".into(),
+                target_profile_id: "hw-1".into(),
+            },
             HardwarePlannerError::InvalidRiskLevel {
                 profile_id: "hw-1".into(),
                 risk_level: 999,
@@ -1853,6 +1961,24 @@ mod tests {
         let req3 = workload("wl-3", &["gpu", "compute"], 50, "default");
         let err = planner.request_placement(&req3, 2002).unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_HWP_CAPACITY_EXHAUSTED);
+    }
+
+    #[test]
+    fn duplicate_active_workload_placement_is_rejected() {
+        let mut planner = make_planner();
+        planner
+            .register_profile(gpu_profile("hw-1", 10, 2), 1000, "t1")
+            .unwrap();
+        planner
+            .register_policy(default_policy(), 1001, "t1")
+            .unwrap();
+
+        let req = workload("wl-1", &["gpu", "compute"], 50, "default");
+        planner.request_placement(&req, 2000).unwrap();
+
+        let err = planner.request_placement(&req, 2001).unwrap_err();
+        assert_eq!(err.code(), error_codes::ERR_HWP_ALREADY_PLACED);
+        assert_eq!(planner.get_profile("hw-1").unwrap().used_slots, 1);
     }
 
     // ---- Invariant constants ----
