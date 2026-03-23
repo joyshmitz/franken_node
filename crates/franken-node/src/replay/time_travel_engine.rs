@@ -30,7 +30,7 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
 use crate::security::constant_time::ct_eq;
@@ -767,6 +767,7 @@ pub fn identity_replay(step: &TraceStep, _env: &EnvironmentSnapshot) -> (Vec<u8>
 #[derive(Debug)]
 pub struct ReplayEngine {
     traces: BTreeMap<String, WorkflowTrace>,
+    trace_registration_order: VecDeque<String>,
     audit_log: Vec<AuditEntry>,
 }
 
@@ -775,6 +776,7 @@ impl ReplayEngine {
     pub fn new() -> Self {
         Self {
             traces: BTreeMap::new(),
+            trace_registration_order: VecDeque::new(),
             audit_log: Vec::new(),
         }
     }
@@ -789,10 +791,11 @@ impl ReplayEngine {
             });
         }
         if self.traces.len() >= MAX_REGISTERED_TRACES
-            && let Some(oldest_key) = self.traces.keys().next().cloned()
+            && let Some(oldest_trace_id) = self.trace_registration_order.pop_front()
         {
-            self.traces.remove(&oldest_key);
+            self.traces.remove(&oldest_trace_id);
         }
+        self.trace_registration_order.push_back(trace.trace_id.clone());
         self.traces.insert(trace.trace_id.clone(), trace);
         Ok(())
     }
@@ -965,7 +968,12 @@ impl ReplayEngine {
 
     /// Remove a trace by ID.
     pub fn remove_trace(&mut self, trace_id: &str) -> Option<WorkflowTrace> {
-        self.traces.remove(trace_id)
+        let removed = self.traces.remove(trace_id);
+        if removed.is_some() {
+            self.trace_registration_order
+                .retain(|registered_trace_id| registered_trace_id != trace_id);
+        }
+        removed
     }
 }
 
@@ -1287,6 +1295,51 @@ mod tests {
         let removed = engine.remove_trace("rm");
         assert!(removed.is_some());
         assert_eq!(engine.trace_count(), 0);
+    }
+
+    #[test]
+    fn engine_capacity_evicts_oldest_registered_trace() {
+        let mut engine = ReplayEngine::new();
+        engine
+            .register_trace(one_step_trace("zzz-oldest"))
+            .expect("register should succeed");
+        for idx in 0..(MAX_REGISTERED_TRACES - 1) {
+            engine
+                .register_trace(one_step_trace(&format!("aaa-{idx:04}")))
+                .expect("register should succeed");
+        }
+
+        engine
+            .register_trace(one_step_trace("mmm-newest"))
+            .expect("overflow register should succeed");
+
+        assert_eq!(engine.trace_count(), MAX_REGISTERED_TRACES);
+        assert!(engine.get_trace("zzz-oldest").is_none());
+        assert!(engine.get_trace("aaa-0000").is_some());
+        assert!(engine.get_trace("mmm-newest").is_some());
+    }
+
+    #[test]
+    fn engine_remove_trace_clears_registration_order() {
+        let mut engine = ReplayEngine::new();
+        engine
+            .register_trace(one_step_trace("stale-order"))
+            .expect("register should succeed");
+        let removed = engine.remove_trace("stale-order");
+        assert!(removed.is_some());
+
+        for idx in 0..MAX_REGISTERED_TRACES {
+            engine
+                .register_trace(one_step_trace(&format!("fill-{idx:04}")))
+                .expect("register should succeed");
+        }
+        engine
+            .register_trace(one_step_trace("fill-overflow"))
+            .expect("overflow register should succeed");
+
+        assert_eq!(engine.trace_count(), MAX_REGISTERED_TRACES);
+        assert!(engine.get_trace("stale-order").is_none());
+        assert!(engine.get_trace("fill-overflow").is_some());
     }
 
     // --- Identity replay (INV-TTR-DETERMINISM) ---
