@@ -430,6 +430,23 @@ impl<B: CheckpointBackend> CheckpointContract for CheckpointWriter<B> {
     ) -> Result<CheckpointId, CheckpointError> {
         let existing = self.read_latest_valid(trace_id, orchestration_id)?;
         if let Some(violation) = first_hash_chain_failure(&existing.events) {
+            push_bounded(
+                &mut self.decision_stream,
+                CheckpointEvent {
+                    event_code: FN_CK_007_CONTRACT_VIOLATION.to_string(),
+                    event_name: CHECKPOINT_CONTRACT_VIOLATION.to_string(),
+                    orchestration_id: orchestration_id.to_string(),
+                    iteration_count,
+                    checkpoint_hash: violation.checkpoint_hash.clone(),
+                    previous_checkpoint_hash: violation.previous_checkpoint_hash.clone(),
+                    progress_state_hash: None,
+                    epoch,
+                    trace_id: trace_id.to_string(),
+                    contract_status: "violation:cannot_append_after_hash_chain_failure".to_string(),
+                    wall_clock_time: now_unix_ms(),
+                },
+                MAX_EVENTS,
+            );
             return Err(CheckpointError::HashChainViolation {
                 orchestration_id: orchestration_id.to_string(),
                 checkpoint_id: violation
@@ -507,6 +524,23 @@ impl<B: CheckpointBackend> CheckpointContract for CheckpointWriter<B> {
                 epoch,
                 &progress_state_hash,
                 previous_checkpoint_hash.as_deref(),
+            );
+            push_bounded(
+                &mut self.decision_stream,
+                CheckpointEvent {
+                    event_code: FN_CK_007_CONTRACT_VIOLATION.to_string(),
+                    event_name: CHECKPOINT_CONTRACT_VIOLATION.to_string(),
+                    orchestration_id: orchestration_id.to_string(),
+                    iteration_count,
+                    checkpoint_hash: Some(attempted_checkpoint_id.clone()),
+                    previous_checkpoint_hash: previous_checkpoint_hash.clone(),
+                    progress_state_hash: Some(progress_state_hash.clone()),
+                    epoch,
+                    trace_id: trace_id.to_string(),
+                    contract_status: format!("violation:{progress_violation}"),
+                    wall_clock_time: now_unix_ms(),
+                },
+                MAX_EVENTS,
             );
             return Err(CheckpointError::HashChainViolation {
                 orchestration_id: orchestration_id.to_string(),
@@ -984,6 +1018,16 @@ mod tests {
             .tamper_progress_state("orch-3c", 1, "{\"cursor\":\"999\"}");
 
         let decision_stream_len = writer.decision_stream().len();
+        let append_event_count = writer
+            .decision_stream()
+            .iter()
+            .filter(|event| event.event_code == FN_CK_008_DECISION_STREAM_APPEND)
+            .count();
+        let violation_event_count = writer
+            .decision_stream()
+            .iter()
+            .filter(|event| event.event_code == FN_CK_007_CONTRACT_VIOLATION)
+            .count();
         let checkpoint_count = writer
             .list_checkpoints("orch-3c")
             .expect("list checkpoints before rejection")
@@ -1011,7 +1055,36 @@ mod tests {
                 && checkpoint_id == &second
                 && reason == "cannot_append_after_hash_chain_failure"
         ));
-        assert_eq!(writer.decision_stream().len(), decision_stream_len);
+        assert_eq!(writer.decision_stream().len(), decision_stream_len + 1);
+        assert_eq!(
+            writer
+                .decision_stream()
+                .iter()
+                .filter(|event| event.event_code == FN_CK_008_DECISION_STREAM_APPEND)
+                .count(),
+            append_event_count
+        );
+        assert_eq!(
+            writer
+                .decision_stream()
+                .iter()
+                .filter(|event| event.event_code == FN_CK_007_CONTRACT_VIOLATION)
+                .count(),
+            violation_event_count + 1
+        );
+        let rejection = writer
+            .decision_stream()
+            .last()
+            .expect("rejection event appended to decision stream");
+        assert_eq!(rejection.event_code, FN_CK_007_CONTRACT_VIOLATION);
+        assert_eq!(rejection.event_name, CHECKPOINT_CONTRACT_VIOLATION);
+        assert_eq!(rejection.orchestration_id, "orch-3c");
+        assert_eq!(rejection.iteration_count, 30);
+        assert_eq!(rejection.epoch, 1);
+        assert_eq!(
+            rejection.contract_status,
+            "violation:cannot_append_after_hash_chain_failure"
+        );
         assert_eq!(
             writer
                 .list_checkpoints("orch-3c")
