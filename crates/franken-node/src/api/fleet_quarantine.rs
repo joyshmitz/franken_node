@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 /// Maximum fleet control events before oldest are evicted.
 const MAX_FLEET_EVENTS: usize = 4096;
 
-/// Maximum incident handles before oldest are evicted.
+/// Maximum incident handles retained before released entries are reclaimed.
 #[cfg(any(test, feature = "extended-surfaces"))]
 const MAX_INCIDENTS: usize = 2048;
 
@@ -69,6 +69,10 @@ pub const FLEET_ZONE_UNREACHABLE: &str = "FLEET_ZONE_UNREACHABLE";
 pub const FLEET_CONVERGENCE_TIMEOUT: &str = "FLEET_CONVERGENCE_TIMEOUT";
 pub const FLEET_ROLLBACK_FAILED: &str = "FLEET_ROLLBACK_FAILED";
 pub const FLEET_NOT_ACTIVATED: &str = "FLEET_NOT_ACTIVATED";
+#[cfg(any(test, feature = "extended-surfaces"))]
+pub const FLEET_INCIDENT_CAPACITY_EXCEEDED: &str = "FLEET_INCIDENT_CAPACITY_EXCEEDED";
+#[cfg(any(test, feature = "extended-surfaces"))]
+pub const FLEET_ZONE_STATUS_CAPACITY_EXCEEDED: &str = "FLEET_ZONE_STATUS_CAPACITY_EXCEEDED";
 
 // ── Invariant Tags ────────────────────────────────────────────────────────
 
@@ -278,6 +282,12 @@ pub enum FleetControlError {
     },
     /// API not activated (safe-start mode).
     NotActivated { code: String },
+    /// Incident registry is full of unreleased entries.
+    #[cfg(any(test, feature = "extended-surfaces"))]
+    IncidentCapacityExceeded { code: String },
+    /// Zone-status registry is full of live entries.
+    #[cfg(any(test, feature = "extended-surfaces"))]
+    ZoneStatusCapacityExceeded { code: String },
 }
 
 impl FleetControlError {
@@ -318,6 +328,20 @@ impl FleetControlError {
         }
     }
 
+    #[cfg(any(test, feature = "extended-surfaces"))]
+    pub fn incident_capacity_exceeded() -> Self {
+        Self::IncidentCapacityExceeded {
+            code: FLEET_INCIDENT_CAPACITY_EXCEEDED.to_string(),
+        }
+    }
+
+    #[cfg(any(test, feature = "extended-surfaces"))]
+    pub fn zone_status_capacity_exceeded() -> Self {
+        Self::ZoneStatusCapacityExceeded {
+            code: FLEET_ZONE_STATUS_CAPACITY_EXCEEDED.to_string(),
+        }
+    }
+
     /// Return the stable error code for this error.
     pub fn error_code(&self) -> &str {
         match self {
@@ -328,6 +352,10 @@ impl FleetControlError {
             Self::ConvergenceTimeout { code, .. } => code,
             Self::RollbackFailed { code, .. } => code,
             Self::NotActivated { code } => code,
+            #[cfg(any(test, feature = "extended-surfaces"))]
+            Self::IncidentCapacityExceeded { code } => code,
+            #[cfg(any(test, feature = "extended-surfaces"))]
+            Self::ZoneStatusCapacityExceeded { code } => code,
         }
     }
 }
@@ -431,8 +459,10 @@ impl FleetControlEvent {
 pub struct FleetControlManager {
     /// Whether the API is activated (false = safe-start read-only mode).
     activated: bool,
-    /// Active quarantine incidents keyed by incident_id.
+    /// Incident handles keyed by incident_id; released entries persist until reconcile.
     incidents: BTreeMap<String, IncidentHandle>,
+    /// Convergence state keyed by quarantine incident_id for precise lifecycle cleanup.
+    incident_convergences: BTreeMap<String, ConvergenceState>,
     /// Per-zone fleet status.
     zone_status: BTreeMap<String, FleetStatus>,
     /// Event log for audit trail.
@@ -443,7 +473,7 @@ pub struct FleetControlManager {
     op_epoch: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct OperationSlot {
     epoch: u64,
     sequence: u64,
@@ -457,6 +487,24 @@ impl OperationSlot {
             format!("fleet-op-{:016x}-{:016x}", self.epoch, self.sequence)
         }
     }
+}
+
+fn parse_operation_slot(operation_id: &str) -> Option<OperationSlot> {
+    let raw = operation_id.strip_prefix("fleet-op-")?;
+    match raw.split_once('-') {
+        Some((epoch, sequence)) => Some(OperationSlot {
+            epoch: u64::from_str_radix(epoch, 16).ok()?,
+            sequence: u64::from_str_radix(sequence, 16).ok()?,
+        }),
+        None => Some(OperationSlot {
+            epoch: 0,
+            sequence: raw.parse().ok()?,
+        }),
+    }
+}
+
+fn incident_operation_slot(incident_id: &str) -> Option<OperationSlot> {
+    parse_operation_slot(incident_id.strip_prefix("inc-")?)
 }
 
 /// Explicit owner for the fleet-control singleton state on the request path.
@@ -580,6 +628,7 @@ impl FleetControlManager {
         Self {
             activated: false,
             incidents: BTreeMap::new(),
+            incident_convergences: BTreeMap::new(),
             zone_status: BTreeMap::new(),
             events: Vec::new(),
             next_op_id: 1,
@@ -618,6 +667,8 @@ impl FleetControlManager {
         let op_id = self.next_operation_id();
         let now = chrono::Utc::now().to_rfc3339();
         let incident_id = format!("inc-{op_id}");
+        let reclaimed_zone_key = self.prepare_zone_status_slot(zone_id)?;
+        let reclaimed_incident_key = self.prepare_incident_slot(&incident_id)?;
 
         // Create incident handle
         let incident = IncidentHandle {
@@ -628,21 +679,16 @@ impl FleetControlManager {
             status: IncidentStatus::Active,
             action_type: "quarantine".to_string(),
         };
-        if self.incidents.len() >= MAX_INCIDENTS
-            && !self.incidents.contains_key(&incident_id)
-            && let Some(oldest_key) = self.incidents.keys().next().cloned()
-        {
-            self.incidents.remove(&oldest_key);
+        if let Some(reclaimed_zone_key) = reclaimed_zone_key {
+            self.zone_status.remove(&reclaimed_zone_key);
+        }
+        if let Some(reclaimed_incident_key) = reclaimed_incident_key {
+            self.incidents.remove(&reclaimed_incident_key);
+            self.incident_convergences.remove(&reclaimed_incident_key);
         }
         self.incidents.insert(incident_id.clone(), incident);
 
         // Update zone status (bounded by MAX_ZONE_STATUS)
-        if self.zone_status.len() >= MAX_ZONE_STATUS
-            && !self.zone_status.contains_key(zone_id)
-            && let Some(oldest_key) = self.zone_status.keys().next().cloned()
-        {
-            self.zone_status.remove(&oldest_key);
-        }
         let zone = self
             .zone_status
             .entry(zone_id.to_string())
@@ -668,6 +714,9 @@ impl FleetControlManager {
             eta_seconds: Some(scope.affected_nodes.saturating_mul(2)),
             phase: ConvergencePhase::Propagating,
         };
+        self.incident_convergences
+            .insert(incident_id.clone(), convergence.clone());
+        self.sync_zone_pending_convergences(zone_id);
 
         // Emit event
         let event = FleetControlEvent::quarantine_initiated(&trace.trace_id, zone_id, extension_id);
@@ -701,13 +750,17 @@ impl FleetControlManager {
 
         let op_id = self.next_operation_id();
         let now = chrono::Utc::now().to_rfc3339();
+        let reclaimed_zone_key = self.prepare_zone_status_slot(zone_id)?;
+        let incident_id = format!("inc-{op_id}");
+        let reclaimed_incident_key = if scope.severity == RevocationSeverity::Emergency {
+            self.prepare_incident_slot(&incident_id)?
+        } else {
+            None
+        };
 
         // Update zone status (bounded by MAX_ZONE_STATUS)
-        if self.zone_status.len() >= MAX_ZONE_STATUS
-            && !self.zone_status.contains_key(zone_id)
-            && let Some(oldest_key) = self.zone_status.keys().next().cloned()
-        {
-            self.zone_status.remove(&oldest_key);
+        if let Some(reclaimed_zone_key) = reclaimed_zone_key {
+            self.zone_status.remove(&reclaimed_zone_key);
         }
         let zone = self
             .zone_status
@@ -727,7 +780,6 @@ impl FleetControlManager {
 
         // Emergency revocations create incidents
         if scope.severity == RevocationSeverity::Emergency {
-            let incident_id = format!("inc-{op_id}");
             let incident = IncidentHandle {
                 incident_id: incident_id.clone(),
                 extension_id: extension_id.to_string(),
@@ -736,11 +788,9 @@ impl FleetControlManager {
                 status: IncidentStatus::Active,
                 action_type: "revoke".to_string(),
             };
-            if self.incidents.len() >= MAX_INCIDENTS
-                && !self.incidents.contains_key(&incident_id)
-                && let Some(oldest_key) = self.incidents.keys().next().cloned()
-            {
-                self.incidents.remove(&oldest_key);
+            if let Some(reclaimed_incident_key) = reclaimed_incident_key {
+                self.incidents.remove(&reclaimed_incident_key);
+                self.incident_convergences.remove(&reclaimed_incident_key);
             }
             self.incidents.insert(incident_id, incident);
         }
@@ -796,6 +846,8 @@ impl FleetControlManager {
                 zone.active_revocations = zone.active_revocations.saturating_sub(1);
             }
         }
+        self.incident_convergences.remove(incident_id);
+        self.sync_zone_pending_convergences(&zone_id);
 
         let op_id = self.next_operation_id();
         let now = chrono::Utc::now().to_rfc3339();
@@ -824,6 +876,10 @@ impl FleetControlManager {
             .zone_status
             .get(zone_id)
             .cloned()
+            .map(|mut status| {
+                status.pending_convergences = self.pending_convergences_for_zone(zone_id);
+                status
+            })
             .unwrap_or_else(|| FleetStatus {
                 zone_id: zone_id.to_string(),
                 active_quarantines: 0,
@@ -852,6 +908,12 @@ impl FleetControlManager {
         // Clean up released incidents
         self.incidents
             .retain(|_, inc| inc.status != IncidentStatus::Released);
+        self.incident_convergences
+            .retain(|incident_id, _| self.incidents.contains_key(incident_id));
+        let zone_ids: Vec<String> = self.zone_status.keys().cloned().collect();
+        for zone_id in zone_ids {
+            self.sync_zone_pending_convergences(&zone_id);
+        }
 
         let receipt = self.build_receipt(&op_id, &identity.principal, "all", &now);
 
@@ -927,7 +989,101 @@ impl FleetControlManager {
         self.allocate_operation_slot().operation_id()
     }
 
-    fn validated_zone_id<'a>(zone_id: &'a str) -> Result<&'a str, FleetControlError> {
+    #[cfg(any(test, feature = "extended-surfaces"))]
+    fn reclaimable_incident_key(&self) -> Option<String> {
+        self.incidents
+            .iter()
+            .filter(|(_, incident)| incident.status == IncidentStatus::Released)
+            .min_by_key(|(incident_id, _)| {
+                incident_operation_slot(incident_id).unwrap_or(OperationSlot {
+                    epoch: u64::MAX,
+                    sequence: u64::MAX,
+                })
+            })
+            .map(|(incident_id, _)| incident_id.clone())
+    }
+
+    #[cfg(any(test, feature = "extended-surfaces"))]
+    fn reclaimable_zone_status_key(&self) -> Option<String> {
+        self.zone_status
+            .iter()
+            .find(|(zone_id, status)| {
+                status.active_quarantines == 0
+                    && status.active_revocations == 0
+                    && self.pending_convergences_for_zone(zone_id).is_empty()
+                    && !self.zone_has_live_incident(zone_id)
+            })
+            .map(|(zone_id, _)| zone_id.clone())
+    }
+
+    #[cfg(any(test, feature = "extended-surfaces"))]
+    fn zone_has_live_incident(&self, zone_id: &str) -> bool {
+        self.incidents.values().any(|incident| {
+            incident.zone_id == zone_id && incident.status != IncidentStatus::Released
+        })
+    }
+
+    #[cfg(any(test, feature = "extended-surfaces"))]
+    fn prepare_incident_slot(
+        &self,
+        incident_id: &str,
+    ) -> Result<Option<String>, FleetControlError> {
+        if self.incidents.len() < MAX_INCIDENTS || self.incidents.contains_key(incident_id) {
+            return Ok(None);
+        }
+
+        self.reclaimable_incident_key()
+            .map(Some)
+            .ok_or_else(FleetControlError::incident_capacity_exceeded)
+    }
+
+    #[cfg(any(test, feature = "extended-surfaces"))]
+    fn prepare_zone_status_slot(&self, zone_id: &str) -> Result<Option<String>, FleetControlError> {
+        if self.zone_status.len() < MAX_ZONE_STATUS || self.zone_status.contains_key(zone_id) {
+            return Ok(None);
+        }
+
+        self.reclaimable_zone_status_key()
+            .map(Some)
+            .ok_or_else(FleetControlError::zone_status_capacity_exceeded)
+    }
+
+    fn pending_convergences_for_zone(&self, zone_id: &str) -> Vec<ConvergenceState> {
+        let mut pending: Vec<(OperationSlot, ConvergenceState)> = self
+            .incident_convergences
+            .iter()
+            .filter_map(|(incident_id, convergence)| {
+                let incident = self.incidents.get(incident_id)?;
+                if incident.zone_id != zone_id
+                    || incident.status == IncidentStatus::Released
+                    || incident.action_type != "quarantine"
+                {
+                    return None;
+                }
+                Some((
+                    incident_operation_slot(incident_id).unwrap_or(OperationSlot {
+                        epoch: u64::MAX,
+                        sequence: u64::MAX,
+                    }),
+                    convergence.clone(),
+                ))
+            })
+            .collect();
+        pending.sort_by_key(|(slot, _)| *slot);
+        pending
+            .into_iter()
+            .map(|(_, convergence)| convergence)
+            .collect()
+    }
+
+    fn sync_zone_pending_convergences(&mut self, zone_id: &str) {
+        let pending = self.pending_convergences_for_zone(zone_id);
+        if let Some(zone) = self.zone_status.get_mut(zone_id) {
+            zone.pending_convergences = pending;
+        }
+    }
+
+    fn validated_zone_id(zone_id: &str) -> Result<&str, FleetControlError> {
         let zone_id = zone_id.trim();
         if zone_id.is_empty() {
             return Err(FleetControlError::scope_invalid(
@@ -1418,6 +1574,11 @@ mod tests {
             .expect("quarantine");
         let status = mgr.status("zone-us-east-1").expect("status");
         assert_eq!(status.active_quarantines, 1);
+        assert_eq!(status.pending_convergences.len(), 1);
+        assert_eq!(
+            status.pending_convergences[0].phase,
+            ConvergencePhase::Propagating
+        );
     }
 
     #[test]
@@ -1538,6 +1699,363 @@ mod tests {
     }
 
     #[test]
+    fn reclaimable_incident_key_uses_operation_order_not_lexicographic_key_order() {
+        let mut mgr = FleetControlManager::new();
+        mgr.incidents.insert(
+            "inc-fleet-op-10".to_string(),
+            IncidentHandle {
+                incident_id: "inc-fleet-op-10".to_string(),
+                extension_id: "ext-10".to_string(),
+                zone_id: "zone-1".to_string(),
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+                status: IncidentStatus::Released,
+                action_type: "quarantine".to_string(),
+            },
+        );
+        mgr.incidents.insert(
+            "inc-fleet-op-2".to_string(),
+            IncidentHandle {
+                incident_id: "inc-fleet-op-2".to_string(),
+                extension_id: "ext-2".to_string(),
+                zone_id: "zone-1".to_string(),
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+                status: IncidentStatus::Released,
+                action_type: "quarantine".to_string(),
+            },
+        );
+
+        assert_eq!(
+            mgr.reclaimable_incident_key().as_deref(),
+            Some("inc-fleet-op-2")
+        );
+    }
+
+    #[test]
+    fn quarantine_capacity_reclaims_oldest_released_incident_by_operation_order() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+        for seq in 2..=(MAX_INCIDENTS as u64 + 1) {
+            let incident_id = format!("inc-fleet-op-{seq}");
+            mgr.incidents.insert(
+                incident_id.clone(),
+                IncidentHandle {
+                    incident_id,
+                    extension_id: format!("ext-{seq}"),
+                    zone_id: "zone-us-east-1".to_string(),
+                    created_at: "2026-01-01T00:00:00Z".to_string(),
+                    status: IncidentStatus::Released,
+                    action_type: "quarantine".to_string(),
+                },
+            );
+        }
+        mgr.next_op_id = MAX_INCIDENTS as u64 + 2;
+
+        let scope = test_quarantine_scope();
+        mgr.quarantine("ext-new", &scope, &admin_identity(), &test_trace())
+            .expect("quarantine");
+
+        assert_eq!(mgr.incident_count(), MAX_INCIDENTS);
+        assert!(!mgr.incidents.contains_key("inc-fleet-op-2"));
+        assert!(mgr.incidents.contains_key("inc-fleet-op-10"));
+    }
+
+    #[test]
+    fn incident_capacity_prefers_released_entries_over_live_ones() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+        for seq in 2..=(MAX_INCIDENTS as u64) {
+            let incident_id = format!("inc-fleet-op-{seq}");
+            mgr.incidents.insert(
+                incident_id.clone(),
+                IncidentHandle {
+                    incident_id,
+                    extension_id: format!("ext-{seq}"),
+                    zone_id: "zone-us-east-1".to_string(),
+                    created_at: "2026-01-01T00:00:00Z".to_string(),
+                    status: IncidentStatus::Active,
+                    action_type: "quarantine".to_string(),
+                },
+            );
+        }
+        let released_id = format!("inc-fleet-op-{}", MAX_INCIDENTS as u64 + 1);
+        mgr.incidents.insert(
+            released_id.clone(),
+            IncidentHandle {
+                incident_id: released_id.clone(),
+                extension_id: "ext-released".to_string(),
+                zone_id: "zone-us-east-1".to_string(),
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+                status: IncidentStatus::Released,
+                action_type: "quarantine".to_string(),
+            },
+        );
+        mgr.next_op_id = MAX_INCIDENTS as u64 + 2;
+
+        let scope = test_quarantine_scope();
+        mgr.quarantine("ext-new", &scope, &admin_identity(), &test_trace())
+            .expect("quarantine");
+
+        assert_eq!(mgr.incident_count(), MAX_INCIDENTS);
+        assert!(!mgr.incidents.contains_key(&released_id));
+        assert!(mgr.incidents.contains_key("inc-fleet-op-2"));
+    }
+
+    #[test]
+    fn quarantine_full_of_live_incidents_fails_closed() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+        for seq in 2..=(MAX_INCIDENTS as u64 + 1) {
+            let incident_id = format!("inc-fleet-op-{seq}");
+            mgr.incidents.insert(
+                incident_id.clone(),
+                IncidentHandle {
+                    incident_id,
+                    extension_id: format!("ext-{seq}"),
+                    zone_id: "zone-us-east-1".to_string(),
+                    created_at: "2026-01-01T00:00:00Z".to_string(),
+                    status: IncidentStatus::Active,
+                    action_type: "quarantine".to_string(),
+                },
+            );
+        }
+        mgr.next_op_id = MAX_INCIDENTS as u64 + 2;
+        let rejected_id = format!("inc-fleet-op-{}", MAX_INCIDENTS as u64 + 2);
+
+        let scope = test_quarantine_scope();
+        let err = mgr
+            .quarantine("ext-new", &scope, &admin_identity(), &test_trace())
+            .expect_err("full live registry must reject");
+
+        assert_eq!(err.error_code(), FLEET_INCIDENT_CAPACITY_EXCEEDED);
+        assert_eq!(mgr.incident_count(), MAX_INCIDENTS);
+        assert!(mgr.incidents.contains_key("inc-fleet-op-2"));
+        assert!(!mgr.incidents.contains_key(&rejected_id));
+    }
+
+    #[test]
+    fn emergency_revoke_full_of_live_incidents_fails_closed() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+        for seq in 2..=(MAX_INCIDENTS as u64 + 1) {
+            let incident_id = format!("inc-fleet-op-{seq}");
+            mgr.incidents.insert(
+                incident_id.clone(),
+                IncidentHandle {
+                    incident_id,
+                    extension_id: format!("ext-{seq}"),
+                    zone_id: "zone-us-east-1".to_string(),
+                    created_at: "2026-01-01T00:00:00Z".to_string(),
+                    status: IncidentStatus::Active,
+                    action_type: "quarantine".to_string(),
+                },
+            );
+        }
+        mgr.next_op_id = MAX_INCIDENTS as u64 + 2;
+        let rejected_id = format!("inc-fleet-op-{}", MAX_INCIDENTS as u64 + 2);
+
+        let scope = RevocationScope {
+            zone_id: "zone-us-east-1".to_string(),
+            tenant_id: None,
+            severity: RevocationSeverity::Emergency,
+            reason: "critical".to_string(),
+        };
+        let err = mgr
+            .revoke("ext-new", &scope, &admin_identity(), &test_trace())
+            .expect_err("full live registry must reject");
+
+        assert_eq!(err.error_code(), FLEET_INCIDENT_CAPACITY_EXCEEDED);
+        assert_eq!(mgr.incident_count(), MAX_INCIDENTS);
+        assert!(mgr.incidents.contains_key("inc-fleet-op-2"));
+        assert!(!mgr.incidents.contains_key(&rejected_id));
+    }
+
+    #[test]
+    fn emergency_revoke_incident_capacity_failure_does_not_leak_zone_status() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+        for seq in 2..=(MAX_INCIDENTS as u64 + 1) {
+            let incident_id = format!("inc-fleet-op-{seq}");
+            mgr.incidents.insert(
+                incident_id.clone(),
+                IncidentHandle {
+                    incident_id,
+                    extension_id: format!("ext-{seq}"),
+                    zone_id: "zone-us-east-1".to_string(),
+                    created_at: "2026-01-01T00:00:00Z".to_string(),
+                    status: IncidentStatus::Active,
+                    action_type: "quarantine".to_string(),
+                },
+            );
+        }
+        mgr.next_op_id = MAX_INCIDENTS as u64 + 2;
+
+        let scope = RevocationScope {
+            zone_id: "zone-us-east-1".to_string(),
+            tenant_id: None,
+            severity: RevocationSeverity::Emergency,
+            reason: "critical".to_string(),
+        };
+        let err = mgr
+            .revoke("ext-new", &scope, &admin_identity(), &test_trace())
+            .expect_err("full live registry must reject");
+
+        assert_eq!(err.error_code(), FLEET_INCIDENT_CAPACITY_EXCEEDED);
+        let status = mgr.status("zone-us-east-1").expect("status");
+        assert_eq!(status.active_revocations, 0);
+    }
+
+    #[test]
+    fn zone_status_capacity_prefers_empty_zones_over_live_ones() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+        mgr.zone_status.insert(
+            "zone-empty".to_string(),
+            FleetStatus {
+                zone_id: "zone-empty".to_string(),
+                active_quarantines: 0,
+                active_revocations: 0,
+                healthy_nodes: 0,
+                total_nodes: 0,
+                activated: true,
+                pending_convergences: Vec::new(),
+            },
+        );
+        for seq in 2..=MAX_ZONE_STATUS as u32 {
+            let zone_id = format!("zone-live-{seq:04}");
+            mgr.zone_status.insert(
+                zone_id.clone(),
+                FleetStatus {
+                    zone_id,
+                    active_quarantines: 1,
+                    active_revocations: 0,
+                    healthy_nodes: 5,
+                    total_nodes: 5,
+                    activated: true,
+                    pending_convergences: Vec::new(),
+                },
+            );
+        }
+
+        let scope = QuarantineScope {
+            zone_id: "zone-new".to_string(),
+            tenant_id: None,
+            affected_nodes: 5,
+            reason: "test".to_string(),
+        };
+        mgr.quarantine("ext-new", &scope, &admin_identity(), &test_trace())
+            .expect("quarantine");
+
+        assert!(!mgr.zone_status.contains_key("zone-empty"));
+        assert!(mgr.zone_status.contains_key("zone-live-0002"));
+        assert!(mgr.zone_status.contains_key("zone-new"));
+    }
+
+    #[test]
+    fn zone_status_reclaim_ignores_zero_count_zone_with_live_incident_reference() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+        mgr.zone_status.insert(
+            "zone-empty".to_string(),
+            FleetStatus {
+                zone_id: "zone-empty".to_string(),
+                active_quarantines: 0,
+                active_revocations: 0,
+                healthy_nodes: 0,
+                total_nodes: 0,
+                activated: true,
+                pending_convergences: Vec::new(),
+            },
+        );
+        mgr.zone_status.insert(
+            "zone-drifted".to_string(),
+            FleetStatus {
+                zone_id: "zone-drifted".to_string(),
+                active_quarantines: 0,
+                active_revocations: 0,
+                healthy_nodes: 0,
+                total_nodes: 0,
+                activated: true,
+                pending_convergences: Vec::new(),
+            },
+        );
+        mgr.incidents.insert(
+            "inc-fleet-op-2".to_string(),
+            IncidentHandle {
+                incident_id: "inc-fleet-op-2".to_string(),
+                extension_id: "ext-drifted".to_string(),
+                zone_id: "zone-drifted".to_string(),
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+                status: IncidentStatus::Active,
+                action_type: "quarantine".to_string(),
+            },
+        );
+        for seq in 3..=MAX_ZONE_STATUS as u32 {
+            let zone_id = format!("zone-live-{seq:04}");
+            mgr.zone_status.insert(
+                zone_id.clone(),
+                FleetStatus {
+                    zone_id,
+                    active_quarantines: 1,
+                    active_revocations: 0,
+                    healthy_nodes: 5,
+                    total_nodes: 5,
+                    activated: true,
+                    pending_convergences: Vec::new(),
+                },
+            );
+        }
+
+        let scope = QuarantineScope {
+            zone_id: "zone-new".to_string(),
+            tenant_id: None,
+            affected_nodes: 5,
+            reason: "test".to_string(),
+        };
+        mgr.quarantine("ext-new", &scope, &admin_identity(), &test_trace())
+            .expect("quarantine");
+
+        assert!(!mgr.zone_status.contains_key("zone-empty"));
+        assert!(mgr.zone_status.contains_key("zone-drifted"));
+        assert!(mgr.zone_status.contains_key("zone-new"));
+    }
+
+    #[test]
+    fn quarantine_full_of_live_zone_status_entries_fails_closed_without_inserting_incident() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+        for seq in 1..=MAX_ZONE_STATUS as u32 {
+            let zone_id = format!("zone-live-{seq:04}");
+            mgr.zone_status.insert(
+                zone_id.clone(),
+                FleetStatus {
+                    zone_id,
+                    active_quarantines: 1,
+                    active_revocations: 0,
+                    healthy_nodes: 5,
+                    total_nodes: 5,
+                    activated: true,
+                    pending_convergences: Vec::new(),
+                },
+            );
+        }
+
+        let scope = QuarantineScope {
+            zone_id: "zone-new".to_string(),
+            tenant_id: None,
+            affected_nodes: 5,
+            reason: "test".to_string(),
+        };
+        let err = mgr
+            .quarantine("ext-new", &scope, &admin_identity(), &test_trace())
+            .expect_err("full live zone registry must reject");
+
+        assert_eq!(err.error_code(), FLEET_ZONE_STATUS_CAPACITY_EXCEEDED);
+        assert_eq!(mgr.incident_count(), 0);
+        assert!(!mgr.zone_status.contains_key("zone-new"));
+        assert!(mgr.zone_status.contains_key("zone-live-0001"));
+    }
+
+    #[test]
     fn revocation_severities() {
         let advisory = RevocationSeverity::Advisory;
         let mandatory = RevocationSeverity::Mandatory;
@@ -1590,6 +2108,46 @@ mod tests {
             .expect("release");
         let status = mgr.status("zone-us-east-1").expect("status");
         assert_eq!(status.active_quarantines, 0);
+        assert!(status.pending_convergences.is_empty());
+    }
+
+    #[test]
+    fn release_removes_matching_convergence_when_zone_has_multiple_quarantines() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+        let first_scope = QuarantineScope {
+            zone_id: "zone-us-east-1".to_string(),
+            tenant_id: None,
+            affected_nodes: 3,
+            reason: "first".to_string(),
+        };
+        let second_scope = QuarantineScope {
+            zone_id: "zone-us-east-1".to_string(),
+            tenant_id: None,
+            affected_nodes: 7,
+            reason: "second".to_string(),
+        };
+        mgr.quarantine("ext-1", &first_scope, &admin_identity(), &test_trace())
+            .expect("first quarantine");
+        mgr.quarantine("ext-2", &second_scope, &admin_identity(), &test_trace())
+            .expect("second quarantine");
+
+        let second_incident_id = mgr
+            .active_incidents()
+            .iter()
+            .find(|incident| incident.extension_id == "ext-2")
+            .expect("second incident present")
+            .incident_id
+            .clone();
+
+        mgr.release(&second_incident_id, &admin_identity(), &test_trace())
+            .expect("release second quarantine");
+
+        let status = mgr.status("zone-us-east-1").expect("status");
+        assert_eq!(status.active_quarantines, 1);
+        assert_eq!(status.pending_convergences.len(), 1);
+        assert_eq!(status.pending_convergences[0].total_nodes, 3);
+        assert_eq!(status.pending_convergences[0].eta_seconds, Some(6));
     }
 
     #[test]
@@ -1650,6 +2208,29 @@ mod tests {
         assert_eq!(result.event_code, FLEET_RECONCILE_COMPLETED);
         // Released incident should be cleaned up
         assert_eq!(mgr.incident_count(), 0);
+    }
+
+    #[test]
+    fn reconcile_clears_pending_convergences_from_status() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+        let scope = test_quarantine_scope();
+        mgr.quarantine("ext-1", &scope, &admin_identity(), &test_trace())
+            .expect("quarantine");
+
+        let before = mgr
+            .status("zone-us-east-1")
+            .expect("status before reconcile");
+        assert_eq!(before.pending_convergences.len(), 1);
+
+        mgr.reconcile(&admin_identity(), &test_trace())
+            .expect("reconcile");
+
+        let after = mgr
+            .status("zone-us-east-1")
+            .expect("status after reconcile");
+        assert_eq!(after.active_quarantines, 1);
+        assert!(after.pending_convergences.is_empty());
     }
 
     #[test]
@@ -1744,6 +2325,18 @@ mod tests {
     fn error_not_activated() {
         let err = FleetControlError::not_activated();
         assert_eq!(err.error_code(), FLEET_NOT_ACTIVATED);
+    }
+
+    #[test]
+    fn error_incident_capacity_exceeded() {
+        let err = FleetControlError::incident_capacity_exceeded();
+        assert_eq!(err.error_code(), FLEET_INCIDENT_CAPACITY_EXCEEDED);
+    }
+
+    #[test]
+    fn error_zone_status_capacity_exceeded() {
+        let err = FleetControlError::zone_status_capacity_exceeded();
+        assert_eq!(err.error_code(), FLEET_ZONE_STATUS_CAPACITY_EXCEEDED);
     }
 
     // ── ConvergencePhase tests ────────────────────────────────────────────
@@ -1931,6 +2524,11 @@ mod tests {
             .expect("handle status");
         assert_eq!(status.data.active_quarantines, 1);
         assert!(status.data.activated);
+        assert_eq!(status.data.pending_convergences.len(), 1);
+        assert_eq!(
+            status.data.pending_convergences[0].phase,
+            ConvergencePhase::Propagating
+        );
     }
 
     #[test]

@@ -109,6 +109,8 @@ pub enum TrustCardError {
     EvidenceMissing,
     #[error("upgrading certification level requires evidence references")]
     EvidenceRequiredForUpgrade,
+    #[error("revocation is irreversible: cannot transition from Revoked to Active")]
+    RevocationIrreversible,
 }
 
 impl From<serde_json::Error> for TrustCardError {
@@ -482,6 +484,15 @@ impl TrustCardRegistry {
             });
         }
         if let Some(status) = mutation.revocation_status {
+            // INV-TC-MONOTONIC-REVOCATION: once revoked, a trust card can
+            // NEVER transition back to Active.  Revocation is permanent and
+            // irreversible — accepting Active on a Revoked card would let a
+            // revoked extension re-enter the trusted set.
+            if matches!(latest.revocation_status, RevocationStatus::Revoked { .. })
+                && matches!(status, RevocationStatus::Active)
+            {
+                return Err(TrustCardError::RevocationIrreversible);
+            }
             if matches!(status, RevocationStatus::Revoked { .. }) {
                 self.emit(
                     TRUST_CARD_REVOKED,

@@ -23,6 +23,9 @@ const MAX_SAGAS: usize = 2048;
 /// Maximum step records per saga before oldest are evicted.
 const MAX_RECORDS_PER_SAGA: usize = 4096;
 
+/// Stable error when the saga registry is full of non-reclaimable live instances.
+const ERR_SAGA_CAPACITY_EXCEEDED: &str = "ERR_SAGA_CAPACITY_EXCEEDED";
+
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     items.push(item);
     if items.len() > cap {
@@ -153,6 +156,15 @@ impl fmt::Display for SagaState {
     }
 }
 
+impl SagaState {
+    fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            SagaState::Committed | SagaState::Compensated | SagaState::Failed
+        )
+    }
+}
+
 /// A saga instance tracking step definitions, execution state, and records.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SagaInstance {
@@ -225,11 +237,36 @@ impl SagaExecutor {
         );
     }
 
+    fn oldest_reclaimable_saga_id(&self) -> Option<String> {
+        self.sagas
+            .iter()
+            .filter(|(_, saga)| saga.state.is_terminal())
+            .min_by_key(|(saga_id, _)| saga_id_sequence(saga_id))
+            .map(|(saga_id, _)| saga_id.clone())
+    }
+
     /// Create a new saga with a list of step definitions.
     ///
     /// Returns the saga ID. The saga starts in `Pending` state.
-    pub fn create_saga(&mut self, steps: Vec<SagaStepDef>, trace_id: &str) -> String {
+    ///
+    /// # Errors
+    /// - The saga registry is at capacity and contains no terminal saga that can be reclaimed
+    pub fn create_saga(
+        &mut self,
+        steps: Vec<SagaStepDef>,
+        trace_id: &str,
+    ) -> Result<String, String> {
         let saga_id = format!("saga-{}", self.next_saga_id);
+
+        if self.sagas.len() >= MAX_SAGAS && !self.sagas.contains_key(&saga_id) {
+            let Some(oldest_key) = self.oldest_reclaimable_saga_id() else {
+                return Err(format!(
+                    "{ERR_SAGA_CAPACITY_EXCEEDED}: saga registry full of live instances"
+                ));
+            };
+            self.sagas.remove(&oldest_key);
+        }
+
         self.next_saga_id = self.next_saga_id.saturating_add(1);
 
         let step_names: Vec<_> = steps.iter().map(|s| s.name.clone()).collect();
@@ -241,13 +278,6 @@ impl SagaExecutor {
             completed_steps: 0,
             records: Vec::new(),
         };
-
-        if self.sagas.len() >= MAX_SAGAS
-            && !self.sagas.contains_key(&saga_id)
-            && let Some(oldest_key) = self.sagas.keys().next().cloned()
-        {
-            self.sagas.remove(&oldest_key);
-        }
         self.sagas.insert(saga_id.clone(), saga);
 
         self.log(
@@ -260,7 +290,7 @@ impl SagaExecutor {
             }),
         );
 
-        saga_id
+        Ok(saga_id)
     }
 
     /// Execute the next forward step of a saga.
@@ -563,11 +593,31 @@ impl Default for SagaExecutor {
     }
 }
 
+fn saga_id_sequence(saga_id: &str) -> u64 {
+    saga_id
+        .strip_prefix("saga-")
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .unwrap_or(u64::MAX)
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_saga_instance(saga_id: &str, state: SagaState) -> SagaInstance {
+        SagaInstance {
+            saga_id: saga_id.to_string(),
+            state,
+            steps: make_steps(&["step"]),
+            completed_steps: usize::from(matches!(
+                state,
+                SagaState::Running | SagaState::Committed
+            )),
+            records: Vec::new(),
+        }
+    }
 
     fn make_steps(names: &[&str]) -> Vec<SagaStepDef> {
         names
@@ -592,7 +642,7 @@ mod tests {
     fn test_create_saga() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["step_a", "step_b", "step_c"]);
-        let id = exec.create_saga(steps, "trace-1");
+        let id = exec.create_saga(steps, "trace-1").unwrap();
         assert_eq!(id, "saga-1");
         let saga = exec.get_saga(&id).unwrap();
         assert_eq!(saga.state, SagaState::Pending);
@@ -605,7 +655,7 @@ mod tests {
     fn test_execute_steps_in_order() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["s1", "s2", "s3"]);
-        let id = exec.create_saga(steps, "t");
+        let id = exec.create_saga(steps, "t").unwrap();
 
         let idx0 = exec.execute_step(&id, success_outcome(), 10, "t").unwrap();
         assert_eq!(idx0, 0);
@@ -624,7 +674,7 @@ mod tests {
     fn test_commit_all_steps() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["a", "b"]);
-        let id = exec.create_saga(steps, "t");
+        let id = exec.create_saga(steps, "t").unwrap();
         exec.execute_step(&id, success_outcome(), 5, "t").unwrap();
         exec.execute_step(&id, success_outcome(), 5, "t").unwrap();
         exec.commit(&id, "t").unwrap();
@@ -638,7 +688,7 @@ mod tests {
     fn test_compensate_reverses() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["s0", "s1", "s2"]);
-        let id = exec.create_saga(steps, "t");
+        let id = exec.create_saga(steps, "t").unwrap();
 
         exec.execute_step(&id, success_outcome(), 5, "t").unwrap();
         exec.execute_step(&id, success_outcome(), 5, "t").unwrap();
@@ -666,7 +716,7 @@ mod tests {
     fn test_compensate_partial() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["a", "b", "c", "d"]);
-        let id = exec.create_saga(steps, "t");
+        let id = exec.create_saga(steps, "t").unwrap();
 
         // Execute a, b successfully, then c fails
         exec.execute_step(&id, success_outcome(), 1, "t").unwrap();
@@ -693,7 +743,7 @@ mod tests {
     fn test_failed_step_sets_failed_state_and_does_not_increment_completed_steps() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["a", "b", "c"]);
-        let id = exec.create_saga(steps, "t");
+        let id = exec.create_saga(steps, "t").unwrap();
 
         exec.execute_step(&id, success_outcome(), 1, "t").unwrap();
         exec.execute_step(
@@ -718,7 +768,7 @@ mod tests {
     fn test_cannot_execute_additional_forward_steps_after_failure() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["a", "b", "c"]);
-        let id = exec.create_saga(steps, "t");
+        let id = exec.create_saga(steps, "t").unwrap();
 
         exec.execute_step(&id, success_outcome(), 1, "t").unwrap();
         exec.execute_step(
@@ -750,7 +800,7 @@ mod tests {
     fn test_no_intermediate_state() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["x"]);
-        let id = exec.create_saga(steps, "t");
+        let id = exec.create_saga(steps, "t").unwrap();
         exec.execute_step(&id, success_outcome(), 1, "t").unwrap();
         exec.commit(&id, "t").unwrap();
 
@@ -768,7 +818,7 @@ mod tests {
     fn test_idempotent_compensation() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["a", "b"]);
-        let id = exec.create_saga(steps, "t");
+        let id = exec.create_saga(steps, "t").unwrap();
         exec.execute_step(&id, success_outcome(), 1, "t").unwrap();
         exec.execute_step(
             &id,
@@ -796,7 +846,7 @@ mod tests {
         let run = || {
             let mut exec = SagaExecutor::new();
             let steps = make_steps(&["s1", "s2", "s3"]);
-            let id = exec.create_saga(steps, "t");
+            let id = exec.create_saga(steps, "t").unwrap();
             exec.execute_step(&id, success_outcome(), 5, "t").unwrap();
             exec.execute_step(&id, success_outcome(), 10, "t").unwrap();
             exec.execute_step(
@@ -828,7 +878,7 @@ mod tests {
     fn test_compensation_trace_records_all() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["a", "b", "c"]);
-        let id = exec.create_saga(steps, "t");
+        let id = exec.create_saga(steps, "t").unwrap();
         exec.execute_step(&id, success_outcome(), 1, "t").unwrap();
         exec.execute_step(&id, success_outcome(), 1, "t").unwrap();
         exec.execute_step(&id, success_outcome(), 1, "t").unwrap();
@@ -871,8 +921,8 @@ mod tests {
         let steps1 = make_steps(&["a", "b"]);
         let steps2 = make_steps(&["a", "b"]);
 
-        e1.create_saga(steps1, "t");
-        e2.create_saga(steps2, "t");
+        e1.create_saga(steps1, "t").unwrap();
+        e2.create_saga(steps2, "t").unwrap();
 
         assert_eq!(e1.content_hash(), e2.content_hash());
     }
@@ -882,7 +932,7 @@ mod tests {
     fn test_audit_log() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["a"]);
-        let id = exec.create_saga(steps, "t1");
+        let id = exec.create_saga(steps, "t1").unwrap();
         exec.execute_step(&id, success_outcome(), 1, "t2").unwrap();
         exec.commit(&id, "t3").unwrap();
 
@@ -909,7 +959,7 @@ mod tests {
     fn test_audit_event_codes_for_failed_step() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["a", "b"]);
-        let id = exec.create_saga(steps, "t1");
+        let id = exec.create_saga(steps, "t1").unwrap();
         exec.execute_step(&id, success_outcome(), 1, "t2").unwrap();
         exec.execute_step(
             &id,
@@ -947,7 +997,7 @@ mod tests {
     fn test_audit_event_codes_for_compensated_step() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["a"]);
-        let id = exec.create_saga(steps, "t1");
+        let id = exec.create_saga(steps, "t1").unwrap();
 
         // Compensation requires a previously-succeeded forward step.
         exec.execute_step(
@@ -981,7 +1031,7 @@ mod tests {
     fn test_saga_state_transitions() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["a", "b"]);
-        let id = exec.create_saga(steps, "t");
+        let id = exec.create_saga(steps, "t").unwrap();
 
         // Pending -> Running (first step)
         assert_eq!(exec.get_saga(&id).unwrap().state, SagaState::Pending);
@@ -1027,7 +1077,7 @@ mod tests {
                 idempotency_key: None,
             },
         ];
-        let id = exec.create_saga(steps, "t");
+        let id = exec.create_saga(steps, "t").unwrap();
 
         let saga = exec.get_saga(&id).unwrap();
         assert!(saga.steps[1].is_remote);
@@ -1058,9 +1108,9 @@ mod tests {
     #[test]
     fn test_multiple_sagas() {
         let mut exec = SagaExecutor::new();
-        let id1 = exec.create_saga(make_steps(&["a"]), "t");
-        let id2 = exec.create_saga(make_steps(&["b"]), "t");
-        let id3 = exec.create_saga(make_steps(&["c"]), "t");
+        let id1 = exec.create_saga(make_steps(&["a"]), "t").unwrap();
+        let id2 = exec.create_saga(make_steps(&["b"]), "t").unwrap();
+        let id3 = exec.create_saga(make_steps(&["c"]), "t").unwrap();
 
         assert_ne!(id1, id2);
         assert_ne!(id2, id3);
@@ -1093,7 +1143,7 @@ mod tests {
     fn test_export_trace() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["a", "b"]);
-        let id = exec.create_saga(steps, "t");
+        let id = exec.create_saga(steps, "t").unwrap();
         exec.execute_step(&id, success_outcome(), 1, "t").unwrap();
         exec.execute_step(
             &id,
@@ -1117,7 +1167,7 @@ mod tests {
     fn test_export_trace_not_compensated() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["a"]);
-        let id = exec.create_saga(steps, "t");
+        let id = exec.create_saga(steps, "t").unwrap();
         exec.execute_step(&id, success_outcome(), 1, "t").unwrap();
         exec.commit(&id, "t").unwrap();
 
@@ -1130,7 +1180,7 @@ mod tests {
     fn test_skipped_step_not_compensated() {
         let mut exec = SagaExecutor::new();
         let steps = make_steps(&["a", "b", "c"]);
-        let id = exec.create_saga(steps, "t");
+        let id = exec.create_saga(steps, "t").unwrap();
 
         exec.execute_step(&id, success_outcome(), 1, "t").unwrap();
         exec.execute_step(
@@ -1161,6 +1211,60 @@ mod tests {
             !trace.compensated_steps.iter().any(|s| s.step_index == 1),
             "skipped step must not appear in compensation trace"
         );
+    }
+
+    #[test]
+    fn test_create_saga_rejects_when_registry_full_of_live_sagas() {
+        let mut exec = SagaExecutor::new();
+        for seq in 1..=MAX_SAGAS {
+            let saga_id = format!("saga-{seq}");
+            exec.sagas.insert(
+                saga_id.clone(),
+                make_saga_instance(&saga_id, SagaState::Running),
+            );
+        }
+        exec.next_saga_id = MAX_SAGAS as u64 + 1;
+
+        let err = exec
+            .create_saga(make_steps(&["new"]), "t")
+            .expect_err("full live registry must fail closed");
+        assert!(err.contains(ERR_SAGA_CAPACITY_EXCEEDED));
+        assert_eq!(exec.saga_count(), MAX_SAGAS);
+        assert!(exec.get_saga("saga-1").is_some());
+        assert!(exec.get_saga("saga-2048").is_some());
+        assert!(exec.get_saga("saga-2049").is_none());
+    }
+
+    #[test]
+    fn test_create_saga_reclaims_oldest_terminal_saga_by_issuance_order() {
+        let mut exec = SagaExecutor::new();
+        for seq in 1..=MAX_SAGAS {
+            let saga_id = format!("saga-{seq}");
+            let state = match seq {
+                2 | 10 => SagaState::Committed,
+                _ => SagaState::Running,
+            };
+            exec.sagas
+                .insert(saga_id.clone(), make_saga_instance(&saga_id, state));
+        }
+        exec.next_saga_id = MAX_SAGAS as u64 + 1;
+
+        let new_id = exec.create_saga(make_steps(&["new"]), "t").unwrap();
+        assert_eq!(new_id, "saga-2049");
+        assert_eq!(exec.saga_count(), MAX_SAGAS);
+        assert!(
+            exec.get_saga("saga-1").is_some(),
+            "live saga must be preserved"
+        );
+        assert!(
+            exec.get_saga("saga-2").is_none(),
+            "oldest terminal saga should be reclaimed first"
+        );
+        assert!(
+            exec.get_saga("saga-10").is_some(),
+            "issuance order must beat lexicographic ordering among terminals"
+        );
+        assert!(exec.get_saga(&new_id).is_some());
     }
 
     // 19. test_default_executor

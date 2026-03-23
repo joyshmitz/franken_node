@@ -39,6 +39,8 @@ const MAX_SLASH_EVENTS: usize = 4096;
 const MAX_APPEAL_RECORDS: usize = 4096;
 /// Maximum slash history entries per account.
 const MAX_SLASH_HISTORY_PER_ACCOUNT: usize = 1024;
+/// Maximum stake records before terminal-state (Withdrawn/Expired) entries are evicted.
+const MAX_STAKE_RECORDS: usize = 8192;
 
 // ---------------------------------------------------------------------------
 // Schema version
@@ -780,6 +782,22 @@ impl StakingLedger {
             withdrawn_at: None,
             slashed_at: None,
         };
+        // Capacity guard: evict terminal-state stakes (Withdrawn/Expired)
+        // to prevent unbounded growth. Active/Slashed/UnderAppeal stakes are
+        // never evicted — they represent live financial state.
+        if self.state.stakes.len() >= MAX_STAKE_RECORDS {
+            let terminal_key = self
+                .state
+                .stakes
+                .iter()
+                .find(|(_, s)| {
+                    matches!(s.state, StakeState::Withdrawn | StakeState::Expired)
+                })
+                .map(|(k, _)| *k);
+            if let Some(key) = terminal_key {
+                self.state.stakes.remove(&key);
+            }
+        }
         self.state.stakes.insert(stake_id.0, record);
 
         // Update account

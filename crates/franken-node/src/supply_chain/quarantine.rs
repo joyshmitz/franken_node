@@ -55,6 +55,8 @@ pub const ERR_QUARANTINE_ALREADY_ACTIVE: &str = "ERR_QUARANTINE_ALREADY_ACTIVE";
 pub const ERR_RECALL_WITHOUT_QUARANTINE: &str = "ERR_RECALL_WITHOUT_QUARANTINE";
 pub const ERR_LIFT_REQUIRES_CLEARANCE: &str = "ERR_LIFT_REQUIRES_CLEARANCE";
 pub const ERR_QUARANTINE_INVALID_TRANSITION: &str = "ERR_QUARANTINE_INVALID_TRANSITION";
+pub const ERR_QUARANTINE_CAPACITY_EXCEEDED: &str = "ERR_QUARANTINE_CAPACITY_EXCEEDED";
+pub const ERR_QUARANTINE_DUPLICATE_ORDER_ID: &str = "ERR_QUARANTINE_DUPLICATE_ORDER_ID";
 pub const ERR_AUDIT_CHAIN_BROKEN: &str = "ERR_AUDIT_CHAIN_BROKEN";
 
 // ── Quarantine mode ─────────────────────────────────────────────────────────
@@ -382,15 +384,31 @@ impl QuarantineRegistry {
         &mut self,
         order: QuarantineOrder,
     ) -> Result<QuarantineRecord, QuarantineError> {
+        if self.order_id_seen(&order.order_id) {
+            return Err(QuarantineError {
+                code: ERR_QUARANTINE_DUPLICATE_ORDER_ID.to_owned(),
+                message: format!("Quarantine order id already exists: {}", order.order_id),
+            });
+        }
+
         let ext_id = self.extension_id_from_scope(&order.scope);
 
         // Check for existing active quarantine.
-        if let Some(existing_id) = self.active_quarantines.get(&ext_id) {
-            return Err(QuarantineError {
-                code: ERR_QUARANTINE_ALREADY_ACTIVE.to_owned(),
-                message: format!("Extension {ext_id} already under quarantine: {existing_id}"),
-            });
+        if let Some(existing_id) = self.active_quarantines.get(&ext_id).cloned() {
+            if self
+                .records
+                .get(&existing_id)
+                .is_some_and(|record| !Self::record_is_terminal(record))
+            {
+                return Err(QuarantineError {
+                    code: ERR_QUARANTINE_ALREADY_ACTIVE.to_owned(),
+                    message: format!("Extension {ext_id} already under quarantine: {existing_id}"),
+                });
+            }
+            self.active_quarantines.remove(&ext_id);
         }
+
+        let reclaimed_order_id = self.prepare_record_slot(&order.order_id)?;
 
         let order_id = order.order_id.clone();
         let severity = order.severity;
@@ -419,11 +437,8 @@ impl QuarantineRegistry {
             state_history,
         };
 
-        if self.records.len() >= MAX_RECORDS
-            && !self.records.contains_key(&order_id)
-            && let Some(oldest_key) = self.records.keys().next().cloned()
-        {
-            self.records.remove(&oldest_key);
+        if let Some(reclaimed_order_id) = reclaimed_order_id {
+            self.remove_record(&reclaimed_order_id);
         }
         self.records.insert(order_id.clone(), record.clone());
         self.active_quarantines
@@ -856,7 +871,7 @@ impl QuarantineRegistry {
         self.total_recalls = self.total_recalls.saturating_add(1);
 
         // Remove from active quarantines.
-        self.active_quarantines.retain(|_, v| v != order_id);
+        self.remove_active_quarantine(order_id);
 
         self.append_audit(
             RECALL_COMPLETED,
@@ -924,7 +939,7 @@ impl QuarantineRegistry {
         record.clearance = Some(clearance);
 
         // Remove from active quarantines.
-        self.active_quarantines.retain(|_, v| v != &order_id);
+        self.remove_active_quarantine(&order_id);
 
         self.append_audit(
             QUARANTINE_LIFTED,
@@ -942,7 +957,7 @@ impl QuarantineRegistry {
     /// Check if an extension is currently quarantined (fail-closed).
     #[must_use]
     pub fn is_quarantined(&self, extension_id: &str) -> bool {
-        self.active_quarantines.contains_key(extension_id)
+        self.get_active_quarantine(extension_id).is_some()
     }
 
     /// Get the active quarantine record for an extension.
@@ -951,6 +966,7 @@ impl QuarantineRegistry {
         self.active_quarantines
             .get(extension_id)
             .and_then(|order_id| self.records.get(order_id))
+            .filter(|record| !Self::record_is_terminal(record))
     }
 
     /// Get a quarantine record by order ID.
@@ -1036,7 +1052,14 @@ impl QuarantineRegistry {
     /// Number of currently active quarantines.
     #[must_use]
     pub fn active_count(&self) -> usize {
-        self.active_quarantines.len()
+        self.active_quarantines
+            .values()
+            .filter(|order_id| {
+                self.records
+                    .get(*order_id)
+                    .is_some_and(|record| !Self::record_is_terminal(record))
+            })
+            .count()
     }
 
     // ── Internal ─────────────────────────────────────────────────────────
@@ -1049,6 +1072,60 @@ impl QuarantineRegistry {
                 format!("publisher:{publisher_id}")
             }
         }
+    }
+
+    fn record_is_terminal(record: &QuarantineRecord) -> bool {
+        matches!(
+            record.state,
+            QuarantineState::Lifted | QuarantineState::RecallCompleted
+        )
+    }
+
+    fn reclaimable_record_id(&self) -> Option<String> {
+        self.records
+            .iter()
+            .filter(|(_, record)| Self::record_is_terminal(record))
+            .min_by_key(|(_, record)| {
+                record
+                    .state_history
+                    .last()
+                    .map(|(_, timestamp)| timestamp.as_str())
+                    .unwrap_or(record.order.issued_at.as_str())
+            })
+            .map(|(order_id, _)| order_id.clone())
+    }
+
+    fn prepare_record_slot(&self, order_id: &str) -> Result<Option<String>, QuarantineError> {
+        if self.records.len() < MAX_RECORDS || self.records.contains_key(order_id) {
+            return Ok(None);
+        }
+
+        self.reclaimable_record_id()
+            .map(Some)
+            .ok_or_else(|| QuarantineError {
+                code: ERR_QUARANTINE_CAPACITY_EXCEEDED.to_owned(),
+                message: format!(
+                    "Quarantine registry is full of live orders (capacity {MAX_RECORDS})"
+                ),
+            })
+    }
+
+    fn order_id_seen(&self, order_id: &str) -> bool {
+        self.records.contains_key(order_id)
+            || self
+                .audit_trail
+                .iter()
+                .any(|entry| entry.order_id == order_id)
+    }
+
+    fn remove_active_quarantine(&mut self, order_id: &str) {
+        self.active_quarantines
+            .retain(|_, active| active != order_id);
+    }
+
+    fn remove_record(&mut self, order_id: &str) {
+        self.records.remove(order_id);
+        self.remove_active_quarantine(order_id);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1150,6 +1227,20 @@ mod tests {
         }
     }
 
+    fn make_order_for_extension(
+        id: &str,
+        extension_id: &str,
+        severity: QuarantineSeverity,
+        mode: QuarantineMode,
+    ) -> QuarantineOrder {
+        let mut order = make_order(id, severity, mode);
+        order.scope = QuarantineScope::AllVersions {
+            extension_id: extension_id.to_owned(),
+        };
+        order.trace_id = format!("trace-{id}");
+        order
+    }
+
     fn make_recall(order_id: &str) -> RecallOrder {
         RecallOrder {
             recall_id: "recall-001".to_owned(),
@@ -1181,6 +1272,39 @@ mod tests {
         let mut reg = QuarantineRegistry::new();
         let order = make_order("q-001", QuarantineSeverity::Medium, QuarantineMode::Hard);
         let record = reg.initiate_quarantine(order).expect("should succeed");
+        assert_eq!(record.state, QuarantineState::Initiated);
+    }
+
+    #[test]
+    fn test_duplicate_order_id_is_rejected_without_overwriting_existing_record() {
+        let mut reg = QuarantineRegistry::new();
+        reg.initiate_quarantine(make_order_for_extension(
+            "q-dup",
+            "ext-original",
+            QuarantineSeverity::High,
+            QuarantineMode::Soft,
+        ))
+        .expect("should succeed");
+
+        let err = reg
+            .initiate_quarantine(make_order_for_extension(
+                "q-dup",
+                "ext-replacement",
+                QuarantineSeverity::Critical,
+                QuarantineMode::Hard,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_QUARANTINE_DUPLICATE_ORDER_ID);
+        assert!(reg.get_active_quarantine("ext-original").is_some());
+        assert!(reg.get_active_quarantine("ext-replacement").is_none());
+        let record = reg.get_record("q-dup").expect("original record retained");
+        assert_eq!(
+            record.order.scope,
+            QuarantineScope::AllVersions {
+                extension_id: "ext-original".to_owned()
+            }
+        );
         assert_eq!(record.state, QuarantineState::Initiated);
     }
 
@@ -1229,13 +1353,15 @@ mod tests {
             QuarantineState::Enforced
         );
 
-        reg.start_drain("q-001", "2026-01-15T00:03:00Z").expect("should succeed");
+        reg.start_drain("q-001", "2026-01-15T00:03:00Z")
+            .expect("should succeed");
         assert_eq!(
             reg.get_record("q-001").expect("should succeed").state,
             QuarantineState::Draining
         );
 
-        reg.complete_drain("q-001", "2026-01-15T00:04:00Z").expect("should succeed");
+        reg.complete_drain("q-001", "2026-01-15T00:04:00Z")
+            .expect("should succeed");
         assert_eq!(
             reg.get_record("q-001").expect("should succeed").state,
             QuarantineState::Isolated
@@ -1252,10 +1378,13 @@ mod tests {
         // Advance through the required state machine: Enforced → Draining → Isolated
         reg.enforce_quarantine("q-001", "2026-01-15T00:02:00Z")
             .expect("should succeed");
-        reg.start_drain("q-001", "2026-01-15T00:03:00Z").expect("should succeed");
-        reg.complete_drain("q-001", "2026-01-15T00:04:00Z").expect("should succeed");
+        reg.start_drain("q-001", "2026-01-15T00:03:00Z")
+            .expect("should succeed");
+        reg.complete_drain("q-001", "2026-01-15T00:04:00Z")
+            .expect("should succeed");
 
-        reg.lift_quarantine(make_clearance("q-001")).expect("should succeed");
+        reg.lift_quarantine(make_clearance("q-001"))
+            .expect("should succeed");
         assert!(!reg.is_quarantined("ext-test"));
 
         let record = reg.get_record("q-001").expect("should succeed");
@@ -1282,11 +1411,14 @@ mod tests {
         reg.initiate_quarantine(order).expect("should succeed");
         reg.enforce_quarantine("q-001", "2026-01-15T00:02:00Z")
             .expect("should succeed");
-        reg.start_drain("q-001", "2026-01-15T00:03:00Z").expect("should succeed");
-        reg.complete_drain("q-001", "2026-01-15T00:04:00Z").expect("should succeed");
+        reg.start_drain("q-001", "2026-01-15T00:03:00Z")
+            .expect("should succeed");
+        reg.complete_drain("q-001", "2026-01-15T00:04:00Z")
+            .expect("should succeed");
 
         // Trigger recall (requires Isolated state).
-        reg.trigger_recall(make_recall("q-001")).expect("should succeed");
+        reg.trigger_recall(make_recall("q-001"))
+            .expect("should succeed");
         assert_eq!(
             reg.get_record("q-001").expect("should succeed").state,
             QuarantineState::RecallTriggered
@@ -1301,7 +1433,8 @@ mod tests {
             removed_at: "2026-01-16T13:00:00Z".to_owned(),
             artifact_hash: "abc123".to_owned(),
         };
-        reg.record_recall_receipt("q-001", receipt).expect("should succeed");
+        reg.record_recall_receipt("q-001", receipt)
+            .expect("should succeed");
 
         // Complete recall.
         reg.complete_recall("q-001", "2026-01-16T14:00:00Z")
@@ -1351,9 +1484,12 @@ mod tests {
         reg.initiate_quarantine(order).expect("should succeed");
         reg.enforce_quarantine("q-001", "2026-01-15T00:02:00Z")
             .expect("should succeed");
-        reg.start_drain("q-001", "2026-01-15T00:03:00Z").expect("should succeed");
-        reg.complete_drain("q-001", "2026-01-15T00:04:00Z").expect("should succeed");
-        reg.trigger_recall(make_recall("q-001")).expect("should succeed");
+        reg.start_drain("q-001", "2026-01-15T00:03:00Z")
+            .expect("should succeed");
+        reg.complete_drain("q-001", "2026-01-15T00:04:00Z")
+            .expect("should succeed");
+        reg.trigger_recall(make_recall("q-001"))
+            .expect("should succeed");
 
         // 1 of 3 nodes confirmed.
         let receipt = RecallReceipt {
@@ -1364,7 +1500,8 @@ mod tests {
             removed_at: "2026-01-16T13:00:00Z".to_owned(),
             artifact_hash: "abc".to_owned(),
         };
-        reg.record_recall_receipt("q-001", receipt).expect("should succeed");
+        reg.record_recall_receipt("q-001", receipt)
+            .expect("should succeed");
 
         let pct = reg.recall_completion_pct("q-001", 3);
         assert!((pct - 33.333).abs() < 1.0);
@@ -1377,7 +1514,8 @@ mod tests {
         reg.initiate_quarantine(order).expect("should succeed");
         reg.enforce_quarantine("q-001", "2026-01-15T00:02:00Z")
             .expect("should succeed");
-        reg.start_drain("q-001", "2026-01-15T00:03:00Z").expect("should succeed");
+        reg.start_drain("q-001", "2026-01-15T00:03:00Z")
+            .expect("should succeed");
 
         assert!(reg.verify_audit_integrity().expect("should succeed"));
         assert_eq!(reg.audit_trail().len(), 3);
@@ -1438,8 +1576,10 @@ mod tests {
         reg.initiate_quarantine(order).expect("should succeed");
         reg.enforce_quarantine("q-001", "2026-01-15T00:02:00Z")
             .expect("should succeed");
-        reg.start_drain("q-001", "2026-01-15T00:03:00Z").expect("should succeed");
-        reg.complete_drain("q-001", "2026-01-15T00:04:00Z").expect("should succeed");
+        reg.start_drain("q-001", "2026-01-15T00:03:00Z")
+            .expect("should succeed");
+        reg.complete_drain("q-001", "2026-01-15T00:04:00Z")
+            .expect("should succeed");
 
         let record = reg.get_record("q-001").expect("should succeed");
         assert_eq!(record.state_history.len(), 4);
@@ -1508,9 +1648,12 @@ mod tests {
         reg.initiate_quarantine(order).expect("should succeed");
         reg.enforce_quarantine("q-001", "2026-01-15T00:02:00Z")
             .expect("should succeed");
-        reg.start_drain("q-001", "2026-01-15T00:03:00Z").expect("should succeed");
-        reg.complete_drain("q-001", "2026-01-15T00:04:00Z").expect("should succeed");
-        reg.trigger_recall(make_recall("q-001")).expect("should succeed");
+        reg.start_drain("q-001", "2026-01-15T00:03:00Z")
+            .expect("should succeed");
+        reg.complete_drain("q-001", "2026-01-15T00:04:00Z")
+            .expect("should succeed");
+        reg.trigger_recall(make_recall("q-001"))
+            .expect("should succeed");
 
         // Push more receipts than the cap.
         for i in 0..(MAX_RECALL_RECEIPTS + 10) {
@@ -1522,11 +1665,115 @@ mod tests {
                 removed_at: "2026-01-16T13:00:00Z".to_owned(),
                 artifact_hash: format!("hash-{i}"),
             };
-            reg.record_recall_receipt("q-001", receipt).expect("should succeed");
+            reg.record_recall_receipt("q-001", receipt)
+                .expect("should succeed");
         }
 
         let record = reg.get_record("q-001").expect("should succeed");
         assert!(record.recall_receipts.len() <= MAX_RECALL_RECEIPTS);
+    }
+
+    #[test]
+    fn test_initiate_quarantine_rejects_when_registry_full_of_live_orders() {
+        let mut reg = QuarantineRegistry::new();
+        for i in 0..MAX_RECORDS {
+            reg.initiate_quarantine(make_order_for_extension(
+                &format!("q-{i:05}"),
+                &format!("ext-{i:05}"),
+                QuarantineSeverity::Low,
+                QuarantineMode::Soft,
+            ))
+            .expect("should succeed");
+        }
+
+        let err = reg
+            .initiate_quarantine(make_order_for_extension(
+                "q-overflow",
+                "ext-overflow",
+                QuarantineSeverity::High,
+                QuarantineMode::Soft,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_QUARANTINE_CAPACITY_EXCEEDED);
+        assert_eq!(reg.records.len(), MAX_RECORDS);
+        assert_eq!(reg.active_quarantines.len(), MAX_RECORDS);
+        assert_eq!(reg.active_count(), MAX_RECORDS);
+        assert!(reg.get_record("q-00000").is_some());
+        assert!(reg.get_active_quarantine("ext-00000").is_some());
+        assert!(reg.get_record("q-overflow").is_none());
+    }
+
+    #[test]
+    fn test_initiate_quarantine_reclaims_terminal_record_instead_of_live_one() {
+        let mut reg = QuarantineRegistry::new();
+
+        reg.initiate_quarantine(make_order_for_extension(
+            "q-terminal",
+            "ext-terminal",
+            QuarantineSeverity::High,
+            QuarantineMode::Hard,
+        ))
+        .expect("should succeed");
+        reg.enforce_quarantine("q-terminal", "2026-01-15T00:02:00Z")
+            .expect("should succeed");
+        reg.start_drain("q-terminal", "2026-01-15T00:03:00Z")
+            .expect("should succeed");
+        reg.complete_drain("q-terminal", "2026-01-15T00:04:00Z")
+            .expect("should succeed");
+        reg.lift_quarantine(make_clearance("q-terminal"))
+            .expect("should succeed");
+
+        for i in 1..MAX_RECORDS {
+            reg.initiate_quarantine(make_order_for_extension(
+                &format!("q-live-{i:05}"),
+                &format!("ext-live-{i:05}"),
+                QuarantineSeverity::Low,
+                QuarantineMode::Soft,
+            ))
+            .expect("should succeed");
+        }
+
+        reg.initiate_quarantine(make_order_for_extension(
+            "q-new",
+            "ext-new",
+            QuarantineSeverity::Low,
+            QuarantineMode::Soft,
+        ))
+        .expect("should succeed");
+
+        assert_eq!(reg.records.len(), MAX_RECORDS);
+        assert_eq!(reg.active_count(), MAX_RECORDS);
+        assert!(reg.get_record("q-terminal").is_none());
+        assert!(!reg.is_quarantined("ext-terminal"));
+        assert!(reg.get_record("q-new").is_some());
+        assert!(reg.get_active_quarantine("ext-new").is_some());
+    }
+
+    #[test]
+    fn test_stale_active_quarantine_pointer_does_not_block_new_order() {
+        let mut reg = QuarantineRegistry::new();
+        reg.active_quarantines
+            .insert("ext-stale".to_owned(), "q-stale".to_owned());
+
+        assert!(!reg.is_quarantined("ext-stale"));
+        assert_eq!(reg.active_count(), 0);
+        assert!(reg.get_active_quarantine("ext-stale").is_none());
+
+        reg.initiate_quarantine(make_order_for_extension(
+            "q-recovered",
+            "ext-stale",
+            QuarantineSeverity::Low,
+            QuarantineMode::Soft,
+        ))
+        .expect("should succeed");
+
+        assert_eq!(
+            reg.active_quarantines.get("ext-stale"),
+            Some(&"q-recovered".to_owned())
+        );
+        assert!(reg.get_active_quarantine("ext-stale").is_some());
+        assert_eq!(reg.active_count(), 1);
     }
 
     #[test]
@@ -1536,8 +1783,10 @@ mod tests {
         reg.initiate_quarantine(order).expect("should succeed");
         reg.enforce_quarantine("q-001", "2026-01-15T00:02:00Z")
             .expect("should succeed");
-        reg.start_drain("q-001", "2026-01-15T00:03:00Z").expect("should succeed");
-        reg.complete_drain("q-001", "2026-01-15T00:04:00Z").expect("should succeed");
+        reg.start_drain("q-001", "2026-01-15T00:03:00Z")
+            .expect("should succeed");
+        reg.complete_drain("q-001", "2026-01-15T00:04:00Z")
+            .expect("should succeed");
 
         // Attempt to complete recall without triggering it first (state = Isolated).
         let err = reg

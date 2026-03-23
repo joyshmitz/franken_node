@@ -16,7 +16,7 @@
 //! - `RB_LATENCY_REPORT`
 
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 
 const MAX_BULKHEAD_EVENTS: usize = 1024;
@@ -140,8 +140,14 @@ pub enum BulkheadError {
     UnknownRequest {
         request_id: String,
     },
+    DuplicateRequest {
+        request_id: String,
+    },
     UnknownPermit {
         permit_id: u64,
+    },
+    InvalidRequestId {
+        detail: String,
     },
     Draining {
         in_flight: usize,
@@ -162,7 +168,9 @@ impl BulkheadError {
             Self::Queued { .. } => "RB_ERR_QUEUED",
             Self::QueueTimeout { .. } => "RB_ERR_QUEUE_TIMEOUT",
             Self::UnknownRequest { .. } => "RB_ERR_UNKNOWN_REQUEST",
+            Self::DuplicateRequest { .. } => "RB_ERR_DUPLICATE_REQUEST",
             Self::UnknownPermit { .. } => "RB_ERR_UNKNOWN_PERMIT",
+            Self::InvalidRequestId { .. } => "RB_ERR_INVALID_REQUEST_ID",
             Self::Draining { .. } => "RB_ERR_DRAINING",
             Self::InvalidConfig { .. } => "RB_ERR_INVALID_CONFIG",
         }
@@ -194,8 +202,14 @@ impl fmt::Display for BulkheadError {
             Self::UnknownRequest { request_id } => {
                 write!(f, "{}: unknown request_id={request_id}", self.code())
             }
+            Self::DuplicateRequest { request_id } => {
+                write!(f, "{}: duplicate request_id={request_id}", self.code())
+            }
             Self::UnknownPermit { permit_id } => {
                 write!(f, "{}: unknown permit_id={permit_id}", self.code())
+            }
+            Self::InvalidRequestId { detail } => {
+                write!(f, "{}: {detail}", self.code())
             }
             Self::Draining {
                 in_flight,
@@ -221,7 +235,8 @@ pub struct RemoteBulkhead {
     in_flight: usize,
     policy: BackpressurePolicy,
     queue: VecDeque<QueuedRequest>,
-    outstanding_permits: BTreeSet<u64>,
+    outstanding_permits: BTreeMap<u64, String>,
+    active_request_ids: BTreeSet<String>,
     next_permit_id: u64,
     draining_target: Option<usize>,
     p99_target_ms: u64,
@@ -253,7 +268,8 @@ impl RemoteBulkhead {
             in_flight: 0,
             policy,
             queue: VecDeque::new(),
-            outstanding_permits: BTreeSet::new(),
+            outstanding_permits: BTreeMap::new(),
+            active_request_ids: BTreeSet::new(),
             next_permit_id: 1,
             draining_target: None,
             p99_target_ms,
@@ -338,14 +354,37 @@ impl RemoteBulkhead {
         );
     }
 
-    fn issue_permit(&mut self, now_ms: u64) -> BulkheadPermit {
+    fn validate_request_id(request_id: &str) -> Result<(), BulkheadError> {
+        if request_id.trim().is_empty() {
+            return Err(BulkheadError::InvalidRequestId {
+                detail: "request_id must not be empty".to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    fn request_id_in_use(&self, request_id: &str) -> bool {
+        self.active_request_ids.contains(request_id)
+            || self
+                .queue
+                .iter()
+                .any(|queued| queued.request_id == request_id)
+    }
+
+    fn queue_has_waiters(&self) -> bool {
+        matches!(self.policy, BackpressurePolicy::Queue { .. }) && !self.queue.is_empty()
+    }
+
+    fn issue_permit(&mut self, now_ms: u64, request_id: &str) -> BulkheadPermit {
         let permit = BulkheadPermit {
             permit_id: self.next_permit_id,
             issued_at_ms: now_ms,
             cap_snapshot: self.max_in_flight,
         };
         self.next_permit_id = self.next_permit_id.saturating_add(1);
-        self.outstanding_permits.insert(permit.permit_id);
+        self.outstanding_permits
+            .insert(permit.permit_id, request_id.to_string());
+        self.active_request_ids.insert(request_id.to_string());
         self.in_flight = self.in_flight.saturating_add(1);
         permit
     }
@@ -426,6 +465,7 @@ impl RemoteBulkhead {
         request_id: &str,
         now_ms: u64,
     ) -> Result<BulkheadPermit, BulkheadError> {
+        Self::validate_request_id(request_id)?;
         if !has_remote_cap {
             self.log_event(
                 event_codes::RB_REQUEST_REJECTED,
@@ -436,6 +476,17 @@ impl RemoteBulkhead {
         }
 
         self.evict_expired_queue_entries(now_ms);
+
+        if self.request_id_in_use(request_id) {
+            self.log_event(
+                event_codes::RB_REQUEST_REJECTED,
+                now_ms,
+                format!("duplicate request_id={request_id}"),
+            );
+            return Err(BulkheadError::DuplicateRequest {
+                request_id: request_id.to_string(),
+            });
+        }
 
         if let Some(target_cap) = self.draining_target {
             if self.in_flight >= target_cap {
@@ -452,8 +503,8 @@ impl RemoteBulkhead {
             self.draining_target = None;
         }
 
-        if self.in_flight < self.max_in_flight {
-            let permit = self.issue_permit(now_ms);
+        if self.in_flight < self.max_in_flight && !self.queue_has_waiters() {
+            let permit = self.issue_permit(now_ms, request_id);
             self.log_event(
                 event_codes::RB_PERMIT_ACQUIRED,
                 now_ms,
@@ -462,14 +513,13 @@ impl RemoteBulkhead {
             return Ok(permit);
         }
 
-        self.log_event(
-            event_codes::RB_AT_CAPACITY,
-            now_ms,
-            format!("request_id={request_id} in_flight={}", self.in_flight),
-        );
-
         match self.policy {
             BackpressurePolicy::Reject => {
+                self.log_event(
+                    event_codes::RB_AT_CAPACITY,
+                    now_ms,
+                    format!("request_id={request_id} in_flight={}", self.in_flight),
+                );
                 self.log_event(
                     event_codes::RB_REQUEST_REJECTED,
                     now_ms,
@@ -484,6 +534,14 @@ impl RemoteBulkhead {
                 max_depth,
                 timeout_ms,
             } => {
+                let waiters_ahead = self.queue_has_waiters();
+                if !waiters_ahead {
+                    self.log_event(
+                        event_codes::RB_AT_CAPACITY,
+                        now_ms,
+                        format!("request_id={request_id} in_flight={}", self.in_flight),
+                    );
+                }
                 if self.queue.len() >= max_depth {
                     self.log_event(
                         event_codes::RB_REQUEST_REJECTED,
@@ -504,7 +562,9 @@ impl RemoteBulkhead {
                 self.log_event(
                     event_codes::RB_REQUEST_QUEUED,
                     now_ms,
-                    format!("request_id={request_id} position={position}"),
+                    format!(
+                        "request_id={request_id} position={position} waiters_ahead={waiters_ahead}"
+                    ),
                 );
                 Err(BulkheadError::Queued {
                     request_id: request_id.to_string(),
@@ -521,6 +581,7 @@ impl RemoteBulkhead {
         request_id: &str,
         now_ms: u64,
     ) -> Result<BulkheadPermit, BulkheadError> {
+        Self::validate_request_id(request_id)?;
         let Some(position) = self.queue.iter().position(|q| q.request_id == request_id) else {
             self.evict_expired_queue_entries(now_ms);
             return Err(BulkheadError::UnknownRequest {
@@ -548,6 +609,17 @@ impl RemoteBulkhead {
         };
         let timeout_ms = self.queue[position].timeout_ms;
 
+        if self.active_request_ids.contains(request_id) {
+            self.log_event(
+                event_codes::RB_REQUEST_REJECTED,
+                now_ms,
+                format!("queued request_id already active request_id={request_id}"),
+            );
+            return Err(BulkheadError::DuplicateRequest {
+                request_id: request_id.to_string(),
+            });
+        }
+
         if position != 0 || self.in_flight >= self.max_in_flight {
             return Err(BulkheadError::Queued {
                 request_id: request_id.to_string(),
@@ -563,7 +635,7 @@ impl RemoteBulkhead {
                 timeout_ms,
             });
         };
-        let permit = self.issue_permit(now_ms);
+        let permit = self.issue_permit(now_ms, request_id);
         self.log_event(
             event_codes::RB_PERMIT_ACQUIRED,
             now_ms,
@@ -577,17 +649,18 @@ impl RemoteBulkhead {
 
     /// Release a previously issued permit.
     pub fn release(&mut self, permit: BulkheadPermit, now_ms: u64) -> Result<(), BulkheadError> {
-        if !self.outstanding_permits.remove(&permit.permit_id) {
+        let Some(request_id) = self.outstanding_permits.remove(&permit.permit_id) else {
             return Err(BulkheadError::UnknownPermit {
                 permit_id: permit.permit_id,
             });
-        }
+        };
+        self.active_request_ids.remove(&request_id);
 
         self.in_flight = self.in_flight.saturating_sub(1);
         self.log_event(
             event_codes::RB_PERMIT_RELEASED,
             now_ms,
-            format!("permit_id={}", permit.permit_id()),
+            format!("request_id={request_id} permit_id={}", permit.permit_id()),
         );
 
         if let Some(target_cap) = self.draining_target {
@@ -777,6 +850,107 @@ mod tests {
             .acquire(false, "no-cap", 1)
             .expect_err("must require capability");
         assert!(matches!(err, BulkheadError::RemoteCapRequired));
+    }
+
+    #[test]
+    fn empty_request_id_is_rejected_fail_closed() {
+        let mut b = bulkhead_reject(2);
+        let err = b
+            .acquire(true, "   ", 1)
+            .expect_err("empty request id must fail closed");
+        assert!(matches!(err, BulkheadError::InvalidRequestId { .. }));
+        assert_eq!(b.current_in_flight(), 0);
+    }
+
+    #[test]
+    fn duplicate_active_request_id_is_rejected_without_second_permit() {
+        let mut b = bulkhead_reject(2);
+        let permit = b.acquire(true, "dup", 1).expect("first permit");
+        let err = b
+            .acquire(true, "dup", 2)
+            .expect_err("duplicate active request id must fail closed");
+        assert!(matches!(
+            err,
+            BulkheadError::DuplicateRequest { ref request_id } if request_id == "dup"
+        ));
+        assert_eq!(b.current_in_flight(), 1);
+        b.release(permit, 3).expect("release original permit");
+        assert_eq!(b.current_in_flight(), 0);
+    }
+
+    #[test]
+    fn duplicate_queued_request_id_is_rejected_without_adding_second_queue_entry() {
+        let mut b = bulkhead_queue(1, 4, 100);
+        let permit = b.acquire(true, "active", 1).expect("active permit");
+        let queued = b
+            .acquire(true, "queued", 2)
+            .expect_err("first queued request");
+        assert!(matches!(queued, BulkheadError::Queued { .. }));
+        let duplicate = b
+            .acquire(true, "queued", 3)
+            .expect_err("duplicate queued request must fail closed");
+        assert!(matches!(
+            duplicate,
+            BulkheadError::DuplicateRequest { ref request_id } if request_id == "queued"
+        ));
+        assert_eq!(b.queue_depth(), 1);
+
+        b.release(permit, 4).expect("release active permit");
+        let promoted = b.poll_queued("queued", 5).expect("promote queued");
+        b.release(promoted, 6).expect("release promoted");
+        assert_eq!(b.current_in_flight(), 0);
+        assert_eq!(b.queue_depth(), 0);
+    }
+
+    #[test]
+    fn fresh_acquire_cannot_leapfrog_existing_queue_waiter() {
+        let mut b = bulkhead_queue(1, 4, 100);
+        let active = b.acquire(true, "active", 1).expect("active permit");
+        let queued = b
+            .acquire(true, "queued-1", 2)
+            .expect_err("first queued request");
+        assert!(matches!(queued, BulkheadError::Queued { position: 1, .. }));
+
+        b.release(active, 3).expect("release active permit");
+
+        let newer = b
+            .acquire(true, "queued-2", 4)
+            .expect_err("new request must queue behind existing waiter");
+        assert!(matches!(
+            newer,
+            BulkheadError::Queued {
+                ref request_id,
+                position: 2,
+                ..
+            } if request_id == "queued-2"
+        ));
+
+        let promoted_first = b
+            .poll_queued("queued-1", 5)
+            .expect("front queued request should promote first");
+        assert_eq!(b.current_in_flight(), 1);
+
+        let still_waiting = b
+            .poll_queued("queued-2", 6)
+            .expect_err("second queued request should still wait");
+        assert!(matches!(
+            still_waiting,
+            BulkheadError::Queued {
+                ref request_id,
+                position: 1,
+                ..
+            } if request_id == "queued-2"
+        ));
+
+        b.release(promoted_first, 7)
+            .expect("release first promoted permit");
+        let promoted_second = b
+            .poll_queued("queued-2", 8)
+            .expect("second queued request should promote after first releases");
+        b.release(promoted_second, 9)
+            .expect("release second promoted permit");
+        assert_eq!(b.current_in_flight(), 0);
+        assert_eq!(b.queue_depth(), 0);
     }
 
     #[test]

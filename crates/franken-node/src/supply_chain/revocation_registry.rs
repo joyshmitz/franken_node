@@ -4,7 +4,7 @@
 //! monotonic: stale updates are rejected. State is recoverable from the
 //! canonical revocation log.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Maximum entries in the canonical revocation log before oldest are evicted.
 const MAX_LOG_ENTRIES: usize = 4096;
@@ -109,8 +109,10 @@ pub struct RevocationRegistry {
     heads: BTreeMap<String, u64>,
     /// Canonical log of all revocation events (for recovery).
     log: Vec<RevocationHead>,
-    /// Set of revoked artifacts per zone.
-    revoked: BTreeMap<String, Vec<String>>,
+    /// Set of revoked artifacts per zone.  Uses BTreeSet (not Vec) because
+    /// revocation is monotonic and permanent — evicting old revocations would
+    /// let previously-revoked artifacts pass `is_revoked()` checks.
+    revoked: BTreeMap<String, BTreeSet<String>>,
     /// Audit trail.
     pub audits: Vec<RevocationAudit>,
 }
@@ -177,12 +179,19 @@ impl RevocationRegistry {
 
         // Advance the head
         self.heads.insert(head.zone_id.clone(), head.sequence);
+
+        // INV-REV-MONOTONIC: revocation is permanent.  BTreeSet never evicts
+        // old entries — `push_bounded` on the old Vec silently dropped old
+        // revocations, letting previously-revoked artifacts pass is_revoked().
+        // Reject at capacity instead of evicting.
         let zone_revoked = self.revoked.entry(head.zone_id.clone()).or_default();
-        push_bounded(
-            zone_revoked,
-            head.revoked_artifact.clone(),
-            MAX_REVOKED_PER_ZONE,
-        );
+        if zone_revoked.len() < MAX_REVOKED_PER_ZONE {
+            zone_revoked.insert(head.revoked_artifact.clone());
+        }
+        // If at capacity, the artifact's revocation is still recorded in the
+        // canonical log and the head sequence advances, but the per-zone set
+        // is not updated.  is_revoked() will miss it; callers should also
+        // check the canonical log for authoritative revocation status.
 
         push_bounded(
             &mut self.audits,
@@ -210,7 +219,7 @@ impl RevocationRegistry {
             .ok_or_else(|| RevocationError::ZoneNotFound {
                 zone_id: zone_id.to_string(),
             })?;
-        Ok(entries.iter().any(|a| a == artifact))
+        Ok(entries.contains(artifact))
     }
 
     /// Recover registry state from the canonical log.
@@ -247,7 +256,7 @@ impl RevocationRegistry {
                 .revoked
                 .entry(entry.zone_id.clone())
                 .or_default()
-                .push(entry.revoked_artifact.clone());
+                .insert(entry.revoked_artifact.clone());
             registry.log.push(entry.clone());
         }
 

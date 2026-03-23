@@ -8,6 +8,9 @@ use std::collections::BTreeMap;
 /// Maximum number of lease decisions before oldest-first eviction.
 const MAX_DECISIONS: usize = 4096;
 
+/// Maximum lease records before expired/revoked leases are swept.
+const MAX_LEASES: usize = 8192;
+
 /// Purpose for which a lease is held.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LeasePurpose {
@@ -78,7 +81,8 @@ pub struct LeaseDecision {
 
 /// Errors from lease operations.
 ///
-/// Error codes: `LS_EXPIRED`, `LS_STALE_USE`, `LS_ALREADY_REVOKED`, `LS_PURPOSE_MISMATCH`.
+/// Error codes: `LS_EXPIRED`, `LS_STALE_USE`, `LS_ALREADY_REVOKED`,
+/// `LS_PURPOSE_MISMATCH`, `LS_NOT_FOUND`, `LS_CAPACITY_EXCEEDED`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LeaseError {
     Expired {
@@ -98,6 +102,9 @@ pub enum LeaseError {
     NotFound {
         lease_id: String,
     },
+    CapacityExceeded {
+        capacity: usize,
+    },
 }
 
 impl LeaseError {
@@ -108,6 +115,7 @@ impl LeaseError {
             Self::AlreadyRevoked { .. } => "LS_ALREADY_REVOKED",
             Self::PurposeMismatch { .. } => "LS_PURPOSE_MISMATCH",
             Self::NotFound { .. } => "LS_NOT_FOUND",
+            Self::CapacityExceeded { .. } => "LS_CAPACITY_EXCEEDED",
         }
     }
 }
@@ -129,6 +137,9 @@ impl std::fmt::Display for LeaseError {
                 )
             }
             Self::NotFound { lease_id } => write!(f, "LS_NOT_FOUND: {lease_id}"),
+            Self::CapacityExceeded { capacity } => {
+                write!(f, "LS_CAPACITY_EXCEEDED: registry at capacity {capacity}")
+            }
         }
     }
 }
@@ -164,7 +175,27 @@ impl LeaseService {
         now: u64,
         trace_id: &str,
         timestamp: &str,
-    ) -> Lease {
+    ) -> Result<Lease, LeaseError> {
+        self.sweep_inactive(now);
+        if self.leases.len() >= MAX_LEASES {
+            let denied_lease_id = format!("lease-{}", self.next_id);
+            push_bounded(
+                &mut self.decisions,
+                LeaseDecision {
+                    lease_id: denied_lease_id,
+                    action: "grant".into(),
+                    allowed: false,
+                    reason: format!("lease capacity exceeded ({MAX_LEASES})"),
+                    trace_id: trace_id.to_string(),
+                    timestamp: timestamp.to_string(),
+                },
+                MAX_DECISIONS,
+            );
+            return Err(LeaseError::CapacityExceeded {
+                capacity: MAX_LEASES,
+            });
+        }
+
         let lease_id = format!("lease-{}", self.next_id);
         self.next_id = self.next_id.saturating_add(1);
 
@@ -192,7 +223,7 @@ impl LeaseService {
             MAX_DECISIONS,
         );
 
-        lease
+        Ok(lease)
     }
 
     /// Renew a lease, extending its TTL from `now`.
@@ -208,7 +239,7 @@ impl LeaseService {
         let lease = self
             .leases
             .get(lease_id)
-            .ok_or_else(|| LeaseError::Expired {
+            .ok_or_else(|| LeaseError::NotFound {
                 lease_id: lease_id.to_string(),
             })?;
 
@@ -364,7 +395,7 @@ impl LeaseService {
         let lease = self
             .leases
             .get_mut(lease_id)
-            .ok_or_else(|| LeaseError::Expired {
+            .ok_or_else(|| LeaseError::NotFound {
                 lease_id: lease_id.to_string(),
             })?;
 
@@ -400,6 +431,18 @@ impl LeaseService {
     pub fn active_count(&self, now: u64) -> usize {
         self.leases.values().filter(|l| l.is_active(now)).count()
     }
+
+    fn sweep_inactive(&mut self, now: u64) {
+        let inactive_keys: Vec<String> = self
+            .leases
+            .iter()
+            .filter(|(_, lease)| lease.is_expired(now) || lease.revoked)
+            .map(|(lease_id, _)| lease_id.clone())
+            .collect();
+        for lease_id in inactive_keys {
+            self.leases.remove(&lease_id);
+        }
+    }
 }
 
 /// Push an item to a bounded Vec, evicting oldest entries if at capacity.
@@ -415,10 +458,24 @@ fn push_bounded<T>(vec: &mut Vec<T>, item: T, max: usize) {
 mod tests {
     use super::*;
 
+    fn live_lease(id: usize, purpose: LeasePurpose, now: u64) -> Lease {
+        Lease {
+            lease_id: format!("lease-{id}"),
+            holder: format!("holder-{id}"),
+            purpose,
+            ttl_secs: 60,
+            granted_at: now,
+            renewed_at: now,
+            revoked: false,
+        }
+    }
+
     #[test]
     fn grant_creates_lease() {
         let mut svc = LeaseService::new();
-        let l = svc.grant("holder-1", LeasePurpose::Operation, 60, 100, "tr", "ts");
+        let l = svc
+            .grant("holder-1", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
         assert_eq!(l.holder, "holder-1");
         assert_eq!(l.purpose, LeasePurpose::Operation);
         assert!(l.is_active(100));
@@ -427,7 +484,9 @@ mod tests {
     #[test]
     fn lease_expires_after_ttl() {
         let mut svc = LeaseService::new();
-        let l = svc.grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts");
+        let l = svc
+            .grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
         assert!(!l.is_expired(159)); // just before TTL boundary
         assert!(l.is_expired(160)); // at TTL boundary (fail-closed: 0 remaining = expired)
     }
@@ -451,7 +510,9 @@ mod tests {
     #[test]
     fn renew_extends_ttl() {
         let mut svc = LeaseService::new();
-        let l = svc.grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts");
+        let l = svc
+            .grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
         let renewed = svc.renew(&l.lease_id, 150, "tr2", "ts2").unwrap();
         assert!(!renewed.is_expired(209)); // 150 + 60 = 210, one before boundary
         assert!(renewed.is_expired(210)); // at boundary (fail-closed)
@@ -460,7 +521,9 @@ mod tests {
     #[test]
     fn renew_expired_fails() {
         let mut svc = LeaseService::new();
-        let l = svc.grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts");
+        let l = svc
+            .grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
         let err = svc.renew(&l.lease_id, 200, "tr2", "ts2").unwrap_err();
         assert_eq!(err.code(), "LS_EXPIRED");
     }
@@ -468,7 +531,9 @@ mod tests {
     #[test]
     fn renew_revoked_fails() {
         let mut svc = LeaseService::new();
-        let l = svc.grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts");
+        let l = svc
+            .grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
         svc.revoke(&l.lease_id, "tr", "ts").unwrap();
         let err = svc.renew(&l.lease_id, 110, "tr2", "ts2").unwrap_err();
         assert_eq!(err.code(), "LS_ALREADY_REVOKED");
@@ -477,7 +542,9 @@ mod tests {
     #[test]
     fn use_active_lease_ok() {
         let mut svc = LeaseService::new();
-        let l = svc.grant("h", LeasePurpose::StateWrite, 60, 100, "tr", "ts");
+        let l = svc
+            .grant("h", LeasePurpose::StateWrite, 60, 100, "tr", "ts")
+            .unwrap();
         let d = svc
             .use_lease(&l.lease_id, LeasePurpose::StateWrite, 110, "tr2", "ts2")
             .unwrap();
@@ -487,7 +554,9 @@ mod tests {
     #[test]
     fn use_expired_lease_rejected() {
         let mut svc = LeaseService::new();
-        let l = svc.grant("h", LeasePurpose::StateWrite, 60, 100, "tr", "ts");
+        let l = svc
+            .grant("h", LeasePurpose::StateWrite, 60, 100, "tr", "ts")
+            .unwrap();
         let err = svc
             .use_lease(&l.lease_id, LeasePurpose::StateWrite, 200, "tr2", "ts2")
             .unwrap_err();
@@ -520,7 +589,9 @@ mod tests {
     #[test]
     fn use_revoked_lease_rejected() {
         let mut svc = LeaseService::new();
-        let l = svc.grant("h", LeasePurpose::StateWrite, 60, 100, "tr", "ts");
+        let l = svc
+            .grant("h", LeasePurpose::StateWrite, 60, 100, "tr", "ts")
+            .unwrap();
         svc.revoke(&l.lease_id, "tr", "ts").unwrap();
         let err = svc
             .use_lease(&l.lease_id, LeasePurpose::StateWrite, 110, "tr2", "ts2")
@@ -531,7 +602,9 @@ mod tests {
     #[test]
     fn use_wrong_purpose_rejected() {
         let mut svc = LeaseService::new();
-        let l = svc.grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts");
+        let l = svc
+            .grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
         let err = svc
             .use_lease(
                 &l.lease_id,
@@ -547,7 +620,9 @@ mod tests {
     #[test]
     fn revoke_works() {
         let mut svc = LeaseService::new();
-        let l = svc.grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts");
+        let l = svc
+            .grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
         svc.revoke(&l.lease_id, "tr", "ts").unwrap();
         assert!(svc.get(&l.lease_id).unwrap().revoked);
     }
@@ -555,7 +630,9 @@ mod tests {
     #[test]
     fn double_revoke_fails() {
         let mut svc = LeaseService::new();
-        let l = svc.grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts");
+        let l = svc
+            .grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
         svc.revoke(&l.lease_id, "tr", "ts").unwrap();
         let err = svc.revoke(&l.lease_id, "tr", "ts").unwrap_err();
         assert_eq!(err.code(), "LS_ALREADY_REVOKED");
@@ -564,8 +641,10 @@ mod tests {
     #[test]
     fn active_count() {
         let mut svc = LeaseService::new();
-        svc.grant("h1", LeasePurpose::Operation, 60, 100, "tr", "ts");
-        svc.grant("h2", LeasePurpose::StateWrite, 60, 100, "tr", "ts");
+        svc.grant("h1", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
+        svc.grant("h2", LeasePurpose::StateWrite, 60, 100, "tr", "ts")
+            .unwrap();
         assert_eq!(svc.active_count(110), 2);
         assert_eq!(svc.active_count(200), 0); // both expired
     }
@@ -573,7 +652,9 @@ mod tests {
     #[test]
     fn remaining_time() {
         let mut svc = LeaseService::new();
-        let l = svc.grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts");
+        let l = svc
+            .grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
         assert_eq!(l.remaining(130), 30);
         assert_eq!(l.remaining(160), 0);
         assert_eq!(l.remaining(200), 0);
@@ -629,12 +710,25 @@ mod tests {
             .code(),
             "LS_PURPOSE_MISMATCH"
         );
+        assert_eq!(
+            LeaseError::NotFound {
+                lease_id: "x".into()
+            }
+            .code(),
+            "LS_NOT_FOUND"
+        );
+        assert_eq!(
+            LeaseError::CapacityExceeded { capacity: 1 }.code(),
+            "LS_CAPACITY_EXCEEDED"
+        );
     }
 
     #[test]
     fn decisions_recorded() {
         let mut svc = LeaseService::new();
-        let l = svc.grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts");
+        let l = svc
+            .grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
         svc.use_lease(&l.lease_id, LeasePurpose::Operation, 110, "tr2", "ts2")
             .unwrap();
         assert_eq!(svc.decisions.len(), 2);
@@ -645,14 +739,16 @@ mod tests {
     #[test]
     fn migration_handoff_purpose() {
         let mut svc = LeaseService::new();
-        let l = svc.grant(
-            "migrator",
-            LeasePurpose::MigrationHandoff,
-            120,
-            100,
-            "tr",
-            "ts",
-        );
+        let l = svc
+            .grant(
+                "migrator",
+                LeasePurpose::MigrationHandoff,
+                120,
+                100,
+                "tr",
+                "ts",
+            )
+            .unwrap();
         let d = svc
             .use_lease(
                 &l.lease_id,
@@ -663,5 +759,64 @@ mod tests {
             )
             .unwrap();
         assert!(d.allowed);
+    }
+
+    #[test]
+    fn renew_missing_lease_returns_not_found() {
+        let mut svc = LeaseService::new();
+        let err = svc.renew("missing", 100, "tr", "ts").unwrap_err();
+        assert_eq!(err.code(), "LS_NOT_FOUND");
+    }
+
+    #[test]
+    fn revoke_missing_lease_returns_not_found() {
+        let mut svc = LeaseService::new();
+        let err = svc.revoke("missing", "tr", "ts").unwrap_err();
+        assert_eq!(err.code(), "LS_NOT_FOUND");
+    }
+
+    #[test]
+    fn grant_rejects_when_registry_full_of_live_leases() {
+        let mut svc = LeaseService::new();
+        for id in 0..MAX_LEASES {
+            svc.leases.insert(
+                format!("lease-{id}"),
+                live_lease(id, LeasePurpose::Operation, 100),
+            );
+        }
+        svc.next_id = MAX_LEASES as u64 + 1;
+
+        let err = svc
+            .grant("extra", LeasePurpose::StateWrite, 60, 100, "tr", "ts")
+            .unwrap_err();
+
+        assert_eq!(err.code(), "LS_CAPACITY_EXCEEDED");
+        assert_eq!(svc.leases.len(), MAX_LEASES);
+        assert!(
+            svc.decisions
+                .last()
+                .is_some_and(|decision| !decision.allowed && decision.reason.contains("capacity"))
+        );
+    }
+
+    #[test]
+    fn grant_reclaims_inactive_leases_before_enforcing_capacity() {
+        let mut svc = LeaseService::new();
+        for id in 0..MAX_LEASES {
+            svc.leases.insert(
+                format!("lease-{id}"),
+                live_lease(id, LeasePurpose::Operation, 100),
+            );
+        }
+        svc.next_id = MAX_LEASES as u64 + 1;
+        svc.leases.get_mut("lease-0").expect("seeded lease").revoked = true;
+
+        let lease = svc
+            .grant("extra", LeasePurpose::StateWrite, 60, 100, "tr", "ts")
+            .expect("revoked lease should be reclaimed");
+
+        assert_eq!(svc.leases.len(), MAX_LEASES);
+        assert_eq!(lease.holder, "extra");
+        assert!(!svc.leases.contains_key("lease-0"));
     }
 }
