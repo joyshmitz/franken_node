@@ -2,7 +2,7 @@
   "bead_id": "bd-2pw",
   "section": "10.6",
   "title": "Artifact Signing and Checksum Verification for Releases",
-  "timestamp": "2026-03-21T01:30:10.050076+00:00",
+  "timestamp": "2026-03-24T23:34:19.289827+00:00",
   "overall_pass": true,
   "checks": {
     "files": {
@@ -34,7 +34,7 @@
       "main": {
         "path": "crates/franken-node/src/main.rs",
         "exists": true,
-        "size_bytes": 151414
+        "size_bytes": 151833
       }
     },
     "spec_invariants": {

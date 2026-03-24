@@ -1,7 +1,7 @@
 # Verification Summary: Artifact Signing and Checksum Verification for Releases
 
 **Bead:** bd-2pw | **Section:** 10.6
-**Timestamp:** 2026-03-21T01:30:10.050076+00:00
+**Timestamp:** 2026-03-24T23:34:19.289827+00:00
 **Overall:** PASS
 **Checks:** 15/15 passed
 
@@ -14,7 +14,7 @@
 - **File rust_impl:** PASS (crates/franken-node/src/supply_chain/artifact_signing.rs, 36453 bytes)
 - **File mod_rs:** PASS (crates/franken-node/src/supply_chain/mod.rs, 368 bytes)
 - **File cli:** PASS (crates/franken-node/src/cli.rs, 16053 bytes)
-- **File main:** PASS (crates/franken-node/src/main.rs, 151414 bytes)
+- **File main:** PASS (crates/franken-node/src/main.rs, 151833 bytes)
 - **key_rotation_logic:** PASS
 - **main_patterns:** PASS
 - **manifest_format:** PASS
