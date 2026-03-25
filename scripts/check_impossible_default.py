@@ -207,7 +207,7 @@ def check_sha256() -> None:
 def check_signature_verifier() -> None:
     """Check SignatureVerifier trait."""
     _file_contains(IMPL, "pub trait SignatureVerifier", "trait: SignatureVerifier")
-    _file_contains(IMPL, "pub struct HashSignatureVerifier", "struct: HashSignatureVerifier")
+    _file_contains(IMPL, "pub struct Ed25519SignatureVerifier", "struct: Ed25519SignatureVerifier")
 
 
 def check_tests() -> None:

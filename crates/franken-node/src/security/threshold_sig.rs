@@ -4,8 +4,8 @@
 //! below threshold are rejected. Verification failures produce stable,
 //! machine-readable failure reasons.
 
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fmt;
 
@@ -145,33 +145,57 @@ fn digest_prefix_u64(digest: &[u8]) -> u64 {
     u64::from_le_bytes(prefix)
 }
 
-/// Simulate signature verification. In production this would use Ed25519
-/// or similar. Here we verify: H(key || content_hash) == signature.
-fn verify_signature(key: &SignerKey, content_hash: &str, sig: &PartialSignature) -> bool {
-    let mut h = Sha256::new();
-    h.update(b"threshold_sig_verify_v1:");
-    h.update((key.public_key_hex.len() as u64).to_le_bytes());
-    h.update(key.public_key_hex.as_bytes());
-    h.update((content_hash.len() as u64).to_le_bytes());
-    h.update(content_hash.as_bytes());
-    let digest = h.finalize();
-    let expected = hex::encode(digest);
-    crate::security::constant_time::ct_eq(&sig.signature_hex, &expected)
+/// Build the domain-separated message for signing/verification.
+fn build_signing_message(content_hash: &str) -> Vec<u8> {
+    let mut msg = Vec::new();
+    msg.extend_from_slice(b"threshold_sig_verify_v1:");
+    msg.extend_from_slice(&(content_hash.len() as u64).to_le_bytes());
+    msg.extend_from_slice(content_hash.as_bytes());
+    msg
 }
 
-/// Create a valid signature for testing.
-pub fn sign(key: &SignerKey, content_hash: &str) -> PartialSignature {
-    let mut h = Sha256::new();
-    h.update(b"threshold_sig_verify_v1:");
-    h.update((key.public_key_hex.len() as u64).to_le_bytes());
-    h.update(key.public_key_hex.as_bytes());
-    h.update((content_hash.len() as u64).to_le_bytes());
-    h.update(content_hash.as_bytes());
-    let digest = h.finalize();
+/// Verify a partial signature using Ed25519.
+fn verify_signature(key: &SignerKey, content_hash: &str, sig: &PartialSignature) -> bool {
+    // Decode the public key from hex (32 bytes for Ed25519)
+    let pk_bytes = match hex::decode(&key.public_key_hex) {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    let pk_array: [u8; 32] = match pk_bytes.try_into() {
+        Ok(a) => a,
+        Err(_) => return false,
+    };
+    let verifying_key = match VerifyingKey::from_bytes(&pk_array) {
+        Ok(vk) => vk,
+        Err(_) => return false,
+    };
+
+    // Decode the signature from hex (64 bytes for Ed25519)
+    let sig_bytes = match hex::decode(&sig.signature_hex) {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    let sig_array: [u8; 64] = match sig_bytes.try_into() {
+        Ok(a) => a,
+        Err(_) => return false,
+    };
+    let signature = Signature::from_bytes(&sig_array);
+
+    let message = build_signing_message(content_hash);
+    verifying_key.verify_strict(&message, &signature).is_ok()
+}
+
+/// Create an Ed25519 signature for a content hash.
+///
+/// Requires the private signing key. The corresponding public key must be
+/// registered in the threshold config for the signature to verify.
+pub fn sign(signing_key: &SigningKey, key_id: &str, content_hash: &str) -> PartialSignature {
+    let message = build_signing_message(content_hash);
+    let signature = signing_key.sign(&message);
     PartialSignature {
-        signer_id: key.key_id.clone(),
-        key_id: key.key_id.clone(),
-        signature_hex: hex::encode(digest),
+        signer_id: key_id.to_string(),
+        key_id: key_id.to_string(),
+        signature_hex: hex::encode(signature.to_bytes()),
     }
 }
 
@@ -331,30 +355,54 @@ impl std::error::Error for ThresholdError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest, Sha256};
 
-    fn test_keys(n: u32) -> Vec<SignerKey> {
-        (0..n)
-            .map(|i| SignerKey {
-                key_id: format!("signer-{i}"),
-                public_key_hex: format!("pubkey_{i:04x}"),
-            })
-            .collect()
+    /// Deterministically generate an Ed25519 signing key from an index.
+    fn test_signing_key(i: u32) -> SigningKey {
+        let mut h = Sha256::new();
+        h.update(b"test_signing_key_seed_v1:");
+        h.update(i.to_le_bytes());
+        let seed: [u8; 32] = h.finalize().into();
+        SigningKey::from_bytes(&seed)
     }
 
-    fn test_config(k: u32, n: u32) -> ThresholdConfig {
-        ThresholdConfig {
+    /// Generate n signing keys and the corresponding SignerKey structs.
+    fn test_keys(n: u32) -> (Vec<SigningKey>, Vec<SignerKey>) {
+        let mut signing_keys = Vec::new();
+        let mut signer_keys = Vec::new();
+        for i in 0..n {
+            let sk = test_signing_key(i);
+            let pk_hex = hex::encode(sk.verifying_key().to_bytes());
+            signer_keys.push(SignerKey {
+                key_id: format!("signer-{i}"),
+                public_key_hex: pk_hex,
+            });
+            signing_keys.push(sk);
+        }
+        (signing_keys, signer_keys)
+    }
+
+    fn test_config(k: u32, n: u32) -> (Vec<SigningKey>, ThresholdConfig) {
+        let (signing_keys, signer_keys) = test_keys(n);
+        let config = ThresholdConfig {
             threshold: k,
             total_signers: n,
-            signer_keys: test_keys(n),
-        }
+            signer_keys,
+        };
+        (signing_keys, config)
     }
 
-    fn signed_artifact(config: &ThresholdConfig, hash: &str, count: usize) -> PublicationArtifact {
-        let sigs: Vec<PartialSignature> = config
-            .signer_keys
+    fn signed_artifact(
+        signing_keys: &[SigningKey],
+        config: &ThresholdConfig,
+        hash: &str,
+        count: usize,
+    ) -> PublicationArtifact {
+        let sigs: Vec<PartialSignature> = signing_keys
             .iter()
+            .zip(config.signer_keys.iter())
             .take(count)
-            .map(|key| sign(key, hash))
+            .map(|(sk, key)| sign(sk, &key.key_id, hash))
             .collect();
         PublicationArtifact {
             artifact_id: "art-1".into(),
@@ -368,35 +416,36 @@ mod tests {
 
     #[test]
     fn config_valid() {
-        assert!(test_config(2, 3).validate().is_ok());
+        let (_sks, config) = test_config(2, 3);
+        assert!(config.validate().is_ok());
     }
 
     #[test]
     fn config_threshold_zero_invalid() {
-        let c = test_config(0, 3);
-        assert!(c.validate().is_err());
+        let (_sks, config) = test_config(0, 3);
+        assert!(config.validate().is_err());
     }
 
     #[test]
     fn config_threshold_exceeds_total() {
-        let mut c = test_config(5, 3);
-        c.threshold = 5;
-        assert!(c.validate().is_err());
+        let (_sks, mut config) = test_config(5, 3);
+        config.threshold = 5;
+        assert!(config.validate().is_err());
     }
 
     #[test]
     fn config_key_count_mismatch() {
-        let mut c = test_config(2, 3);
-        c.signer_keys.pop();
-        assert!(c.validate().is_err());
+        let (_sks, mut config) = test_config(2, 3);
+        config.signer_keys.pop();
+        assert!(config.validate().is_err());
     }
 
     #[test]
     fn config_duplicate_key_ids_invalid() {
-        let mut c = test_config(2, 3);
-        c.signer_keys[1].key_id = c.signer_keys[0].key_id.clone();
+        let (_sks, mut config) = test_config(2, 3);
+        config.signer_keys[1].key_id = config.signer_keys[0].key_id.clone();
         assert_eq!(
-            c.validate(),
+            config.validate(),
             Err(ThresholdError::ConfigInvalid {
                 reason: "duplicate signer key_id signer-0".to_string(),
             })
@@ -405,12 +454,13 @@ mod tests {
 
     #[test]
     fn config_duplicate_public_keys_invalid() {
-        let mut c = test_config(2, 3);
-        c.signer_keys[1].public_key_hex = c.signer_keys[0].public_key_hex.clone();
+        let (_sks, mut config) = test_config(2, 3);
+        let pk0 = config.signer_keys[0].public_key_hex.clone();
+        config.signer_keys[1].public_key_hex = pk0.clone();
         assert_eq!(
-            c.validate(),
+            config.validate(),
             Err(ThresholdError::ConfigInvalid {
-                reason: "duplicate signer public_key_hex pubkey_0000".to_string(),
+                reason: format!("duplicate signer public_key_hex {pk0}"),
             })
         );
     }
@@ -419,8 +469,8 @@ mod tests {
 
     #[test]
     fn full_quorum_passes() {
-        let config = test_config(2, 3);
-        let artifact = signed_artifact(&config, "hash-abc", 3);
+        let (sks, config) = test_config(2, 3);
+        let artifact = signed_artifact(&sks, &config, "hash-abc", 3);
         let result = verify_threshold(&config, &artifact, "t1", "ts");
         assert!(result.verified);
         assert_eq!(result.valid_signatures, 3);
@@ -428,8 +478,8 @@ mod tests {
 
     #[test]
     fn exact_threshold_passes() {
-        let config = test_config(2, 3);
-        let artifact = signed_artifact(&config, "hash-abc", 2);
+        let (sks, config) = test_config(2, 3);
+        let artifact = signed_artifact(&sks, &config, "hash-abc", 2);
         let result = verify_threshold(&config, &artifact, "t2", "ts");
         assert!(result.verified);
         assert_eq!(result.valid_signatures, 2);
@@ -437,8 +487,8 @@ mod tests {
 
     #[test]
     fn below_threshold_rejected() {
-        let config = test_config(2, 3);
-        let artifact = signed_artifact(&config, "hash-abc", 1);
+        let (sks, config) = test_config(2, 3);
+        let artifact = signed_artifact(&sks, &config, "hash-abc", 1);
         let result = verify_threshold(&config, &artifact, "t3", "ts");
         assert!(!result.verified);
         assert!(matches!(
@@ -449,16 +499,16 @@ mod tests {
 
     #[test]
     fn zero_signatures_rejected() {
-        let config = test_config(2, 3);
-        let artifact = signed_artifact(&config, "hash-abc", 0);
+        let (sks, config) = test_config(2, 3);
+        let artifact = signed_artifact(&sks, &config, "hash-abc", 0);
         let result = verify_threshold(&config, &artifact, "t4", "ts");
         assert!(!result.verified);
     }
 
     #[test]
     fn invalid_config_reason_is_not_double_prefixed() {
-        let config = test_config(0, 3);
-        let artifact = signed_artifact(&config, "hash-abc", 0);
+        let (sks, config) = test_config(0, 3);
+        let artifact = signed_artifact(&sks, &config, "hash-abc", 0);
         let result = verify_threshold(&config, &artifact, "t4-invalid", "ts");
         assert_eq!(
             result.failure_reason,
@@ -470,16 +520,17 @@ mod tests {
 
     #[test]
     fn duplicate_public_key_config_fails_closed_before_quorum_count() {
-        let mut config = test_config(2, 2);
-        config.signer_keys[1].public_key_hex = config.signer_keys[0].public_key_hex.clone();
+        let (sks, mut config) = test_config(2, 2);
+        let pk0 = config.signer_keys[0].public_key_hex.clone();
+        config.signer_keys[1].public_key_hex = pk0.clone();
 
         let artifact = PublicationArtifact {
             artifact_id: "art-dup-pubkey".into(),
             connector_id: "conn-1".into(),
             content_hash: "hash-abc".into(),
             signatures: vec![
-                sign(&config.signer_keys[0], "hash-abc"),
-                sign(&config.signer_keys[1], "hash-abc"),
+                sign(&sks[0], &config.signer_keys[0].key_id, "hash-abc"),
+                sign(&sks[1], &config.signer_keys[1].key_id, "hash-abc"),
             ],
         };
 
@@ -489,7 +540,7 @@ mod tests {
         assert_eq!(
             result.failure_reason,
             Some(FailureReason::ConfigInvalid {
-                reason: "duplicate signer public_key_hex pubkey_0000".to_string(),
+                reason: format!("duplicate signer public_key_hex {pk0}"),
             })
         );
     }
@@ -498,8 +549,8 @@ mod tests {
 
     #[test]
     fn unknown_signer_not_counted() {
-        let config = test_config(2, 3);
-        let mut artifact = signed_artifact(&config, "hash-abc", 1);
+        let (sks, config) = test_config(2, 3);
+        let mut artifact = signed_artifact(&sks, &config, "hash-abc", 1);
         artifact.signatures.push(PartialSignature {
             signer_id: "unknown-signer".into(),
             key_id: "unknown-key".into(),
@@ -514,8 +565,8 @@ mod tests {
 
     #[test]
     fn invalid_signature_not_counted() {
-        let config = test_config(2, 3);
-        let mut artifact = signed_artifact(&config, "hash-abc", 1);
+        let (sks, config) = test_config(2, 3);
+        let mut artifact = signed_artifact(&sks, &config, "hash-abc", 1);
         artifact.signatures.push(PartialSignature {
             signer_id: "signer-1".into(),
             key_id: "signer-1".into(),
@@ -530,12 +581,12 @@ mod tests {
 
     #[test]
     fn duplicate_signer_counted_once() {
-        let config = test_config(2, 3);
-        let mut artifact = signed_artifact(&config, "hash-abc", 1);
+        let (sks, config) = test_config(2, 3);
+        let mut artifact = signed_artifact(&sks, &config, "hash-abc", 1);
         // Add same signer again
         artifact
             .signatures
-            .push(sign(&config.signer_keys[0], "hash-abc"));
+            .push(sign(&sks[0], &config.signer_keys[0].key_id, "hash-abc"));
         let result = verify_threshold(&config, &artifact, "t7", "ts");
         assert!(!result.verified);
         assert_eq!(result.valid_signatures, 1);
@@ -543,10 +594,10 @@ mod tests {
 
     #[test]
     fn duplicate_key_with_different_signer_id_rejected_as_invalid() {
-        let config = test_config(2, 3);
-        let mut artifact = signed_artifact(&config, "hash-abc", 1);
+        let (sks, config) = test_config(2, 3);
+        let mut artifact = signed_artifact(&sks, &config, "hash-abc", 1);
 
-        let mut replay = sign(&config.signer_keys[0], "hash-abc");
+        let mut replay = sign(&sks[0], &config.signer_keys[0].key_id, "hash-abc");
         replay.signer_id = "signer-0-alias".to_string();
         artifact.signatures.push(replay);
 
@@ -561,10 +612,10 @@ mod tests {
 
     #[test]
     fn mismatched_signer_id_does_not_count_toward_quorum() {
-        let config = test_config(2, 3);
-        let mut artifact = signed_artifact(&config, "hash-abc", 1);
+        let (sks, config) = test_config(2, 3);
+        let mut artifact = signed_artifact(&sks, &config, "hash-abc", 1);
 
-        let mut replay = sign(&config.signer_keys[1], "hash-abc");
+        let mut replay = sign(&sks[1], &config.signer_keys[1].key_id, "hash-abc");
         replay.signer_id = "signer-0".to_string();
         artifact.signatures.push(replay);
 
@@ -583,8 +634,8 @@ mod tests {
 
     #[test]
     fn result_has_trace_id() {
-        let config = test_config(2, 3);
-        let artifact = signed_artifact(&config, "hash-abc", 2);
+        let (sks, config) = test_config(2, 3);
+        let artifact = signed_artifact(&sks, &config, "hash-abc", 2);
         let result = verify_threshold(&config, &artifact, "trace-xyz", "ts");
         assert_eq!(result.trace_id, "trace-xyz");
     }
@@ -593,17 +644,17 @@ mod tests {
 
     #[test]
     fn sign_deterministic() {
-        let key = &test_keys(1)[0];
-        let s1 = sign(key, "hash");
-        let s2 = sign(key, "hash");
+        let sk = test_signing_key(0);
+        let s1 = sign(&sk, "signer-0", "hash");
+        let s2 = sign(&sk, "signer-0", "hash");
         assert_eq!(s1.signature_hex, s2.signature_hex);
     }
 
     #[test]
     fn sign_different_for_different_hashes() {
-        let key = &test_keys(1)[0];
-        let s1 = sign(key, "hash-a");
-        let s2 = sign(key, "hash-b");
+        let sk = test_signing_key(0);
+        let s1 = sign(&sk, "signer-0", "hash-a");
+        let s2 = sign(&sk, "signer-0", "hash-b");
         assert_ne!(s1.signature_hex, s2.signature_hex);
     }
 
@@ -611,8 +662,8 @@ mod tests {
 
     #[test]
     fn serde_roundtrip_result() {
-        let config = test_config(2, 3);
-        let artifact = signed_artifact(&config, "hash-abc", 2);
+        let (sks, config) = test_config(2, 3);
+        let artifact = signed_artifact(&sks, &config, "hash-abc", 2);
         let result = verify_threshold(&config, &artifact, "t8", "ts");
         let json = serde_json::to_string(&result).unwrap();
         let parsed: VerificationResult = serde_json::from_str(&json).unwrap();
@@ -621,7 +672,7 @@ mod tests {
 
     #[test]
     fn serde_roundtrip_config() {
-        let config = test_config(2, 3);
+        let (_sks, config) = test_config(2, 3);
         let json = serde_json::to_string(&config).unwrap();
         let parsed: ThresholdConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(config, parsed);

@@ -407,14 +407,40 @@ pub trait SignatureVerifier: Send + Sync {
     fn verify(&self, token: &CapabilityToken) -> bool;
 }
 
-/// Default verifier that checks the signature matches the SHA-256 content hash.
-/// In production, this would use ed25519 or similar.
+/// Ed25519 signature verifier for capability tokens.
+///
+/// Verifies that `token.signature` (hex-encoded, 64 bytes) is a valid Ed25519
+/// signature over the token's `content_hash()` bytes, checked against the
+/// stored `VerifyingKey`.
 #[derive(Debug, Clone)]
-pub struct HashSignatureVerifier;
+pub struct Ed25519SignatureVerifier {
+    /// The Ed25519 public key used to verify token signatures.
+    pub verifying_key: ed25519_dalek::VerifyingKey,
+}
 
-impl SignatureVerifier for HashSignatureVerifier {
+impl Ed25519SignatureVerifier {
+    /// Create a new verifier from an Ed25519 verifying (public) key.
+    pub fn new(verifying_key: ed25519_dalek::VerifyingKey) -> Self {
+        Self { verifying_key }
+    }
+}
+
+impl SignatureVerifier for Ed25519SignatureVerifier {
     fn verify(&self, token: &CapabilityToken) -> bool {
-        crate::security::constant_time::ct_eq(&token.signature, &token.content_hash())
+        use ed25519_dalek::Verifier;
+
+        let Ok(sig_bytes) = hex::decode(&token.signature) else {
+            return false;
+        };
+        let Ok(sig_array) = <[u8; 64]>::try_from(sig_bytes.as_slice()) else {
+            return false;
+        };
+        let signature = ed25519_dalek::Signature::from_bytes(&sig_array);
+
+        let hash = token.content_hash();
+        self.verifying_key
+            .verify(hash.as_bytes(), &signature)
+            .is_ok()
     }
 }
 
@@ -468,9 +494,9 @@ impl CapabilityEnforcer {
         }
     }
 
-    /// Create a new enforcer using the default hash-based signature verifier.
-    pub fn with_default_verifier() -> Self {
-        Self::new(Box::new(HashSignatureVerifier))
+    /// Create a new enforcer with an Ed25519 verifying key.
+    pub fn with_ed25519_verifier(verifying_key: ed25519_dalek::VerifyingKey) -> Self {
+        Self::new(Box::new(Ed25519SignatureVerifier::new(verifying_key)))
     }
 
     /// Enforce: check whether a capability is allowed at the given time.
@@ -813,11 +839,36 @@ mod tests {
 
     // -- Helpers --
 
-    fn make_enforcer() -> CapabilityEnforcer {
-        CapabilityEnforcer::with_default_verifier()
+    use ed25519_dalek::{Signer, SigningKey};
+
+    /// Sign a capability token with the given Ed25519 signing key.
+    /// Sets `token.signature` to the hex-encoded Ed25519 signature over
+    /// the token's `content_hash()`.
+    fn sign_token(token: &mut CapabilityToken, signing_key: &SigningKey) {
+        let hash = token.content_hash();
+        let sig = signing_key.sign(hash.as_bytes());
+        token.signature = hex::encode(sig.to_bytes());
     }
 
-    fn make_token(cap: ImpossibleCapability, expires_at_ms: u64) -> CapabilityToken {
+    /// Deterministic test keypair (fixed seed for reproducibility).
+    fn test_signing_key() -> SigningKey {
+        let seed: [u8; 32] = [
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+            0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+            0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+        ];
+        SigningKey::from_bytes(&seed)
+    }
+
+    fn make_enforcer() -> (CapabilityEnforcer, SigningKey) {
+        let sk = test_signing_key();
+        let vk = sk.verifying_key();
+        let enforcer = CapabilityEnforcer::with_ed25519_verifier(vk);
+        (enforcer, sk)
+    }
+
+    fn make_token(cap: ImpossibleCapability, expires_at_ms: u64, sk: &SigningKey) -> CapabilityToken {
         let mut token = CapabilityToken {
             token_id: format!("tok-{}", cap.label()),
             capability: cap,
@@ -828,8 +879,7 @@ mod tests {
             signature: String::new(),
             justification: "test justification".to_string(),
         };
-        // Sign with the content hash (matches HashSignatureVerifier).
-        token.signature = token.content_hash();
+        sign_token(&mut token, sk);
         token
     }
 
@@ -910,7 +960,7 @@ mod tests {
 
     #[test]
     fn test_all_blocked_by_default() {
-        let enforcer = make_enforcer();
+        let (enforcer, _sk) = make_enforcer();
         for &cap in ImpossibleCapability::ALL {
             assert!(
                 enforcer.status(cap).is_blocked(),
@@ -922,7 +972,7 @@ mod tests {
 
     #[test]
     fn test_enforce_blocked_returns_error() {
-        let mut enforcer = make_enforcer();
+        let (mut enforcer, _sk) = make_enforcer();
         for &cap in ImpossibleCapability::ALL {
             let err = enforcer.enforce(cap, "user", 1000).unwrap_err();
             assert_eq!(err.code, ERR_IBD_BLOCKED);
@@ -932,7 +982,7 @@ mod tests {
 
     #[test]
     fn test_blocked_error_is_actionable() {
-        let mut enforcer = make_enforcer();
+        let (mut enforcer, _sk) = make_enforcer();
         let err = enforcer
             .enforce(ImpossibleCapability::FsAccess, "user", 1000)
             .unwrap_err();
@@ -945,16 +995,16 @@ mod tests {
 
     #[test]
     fn test_opt_in_with_valid_token() {
-        let mut enforcer = make_enforcer();
-        let token = make_token(ImpossibleCapability::FsAccess, 10_000);
+        let (mut enforcer, sk) = make_enforcer();
+        let token = make_token(ImpossibleCapability::FsAccess, 10_000, &sk);
         enforcer.opt_in(token, "admin", 2000).unwrap();
         assert!(enforcer.is_enabled(ImpossibleCapability::FsAccess));
     }
 
     #[test]
     fn test_enforce_after_opt_in_succeeds() {
-        let mut enforcer = make_enforcer();
-        let token = make_token(ImpossibleCapability::OutboundNetwork, 10_000);
+        let (mut enforcer, sk) = make_enforcer();
+        let token = make_token(ImpossibleCapability::OutboundNetwork, 10_000, &sk);
         enforcer.opt_in(token, "admin", 2000).unwrap();
         assert!(
             enforcer
@@ -965,7 +1015,7 @@ mod tests {
 
     #[test]
     fn test_opt_in_with_invalid_signature_rejected() {
-        let mut enforcer = make_enforcer();
+        let (mut enforcer, _sk) = make_enforcer();
         let token = make_bad_sig_token(ImpossibleCapability::FsAccess);
         let err = enforcer.opt_in(token, "admin", 2000).unwrap_err();
         assert_eq!(err.code, ERR_IBD_INVALID_SIGNATURE);
@@ -973,16 +1023,16 @@ mod tests {
 
     #[test]
     fn test_opt_in_with_expired_token_rejected() {
-        let mut enforcer = make_enforcer();
-        let token = make_token(ImpossibleCapability::FsAccess, 1500);
+        let (mut enforcer, sk) = make_enforcer();
+        let token = make_token(ImpossibleCapability::FsAccess, 1500, &sk);
         let err = enforcer.opt_in(token, "admin", 2000).unwrap_err();
         assert_eq!(err.code, ERR_IBD_TOKEN_EXPIRED);
     }
 
     #[test]
     fn test_token_expiry_blocks_enforce() {
-        let mut enforcer = make_enforcer();
-        let token = make_token(ImpossibleCapability::ChildProcessSpawn, 5000);
+        let (mut enforcer, sk) = make_enforcer();
+        let token = make_token(ImpossibleCapability::ChildProcessSpawn, 5000, &sk);
         enforcer.opt_in(token, "admin", 2000).unwrap();
         // Before expiry: ok.
         assert!(
@@ -1065,7 +1115,7 @@ mod tests {
 
     #[test]
     fn test_record_deployment_enforced() {
-        let mut enforcer = make_enforcer();
+        let (mut enforcer, _sk) = make_enforcer();
         enforcer.record_deployment(true);
         enforcer.record_deployment(true);
         enforcer.record_deployment(false);
@@ -1077,7 +1127,7 @@ mod tests {
 
     #[test]
     fn test_silent_disable_blocked() {
-        let mut enforcer = make_enforcer();
+        let (mut enforcer, _sk) = make_enforcer();
         let err = enforcer
             .attempt_silent_disable(ImpossibleCapability::DisableHardening, "rogue", 5000)
             .unwrap_err();
@@ -1086,7 +1136,7 @@ mod tests {
 
     #[test]
     fn test_silent_disable_logged() {
-        let mut enforcer = make_enforcer();
+        let (mut enforcer, _sk) = make_enforcer();
         let _ = enforcer.attempt_silent_disable(ImpossibleCapability::FsAccess, "rogue", 5000);
         let log = enforcer.audit_log();
         assert!(!log.is_empty());
@@ -1096,7 +1146,7 @@ mod tests {
 
     #[test]
     fn test_silent_disable_increments_metric() {
-        let mut enforcer = make_enforcer();
+        let (mut enforcer, _sk) = make_enforcer();
         let _ = enforcer.attempt_silent_disable(ImpossibleCapability::FsAccess, "rogue", 5000);
         assert_eq!(enforcer.metrics().silent_disable_detected_total, 1);
     }
@@ -1105,7 +1155,7 @@ mod tests {
 
     #[test]
     fn test_generate_report_structure() {
-        let enforcer = make_enforcer();
+        let (enforcer, _sk) = make_enforcer();
         let report = enforcer.generate_report("2026-02-20T00:00:00Z");
         assert_eq!(report.bead_id, "bd-1xao");
         assert_eq!(report.section, "13");
@@ -1115,7 +1165,7 @@ mod tests {
 
     #[test]
     fn test_report_all_blocked_by_default() {
-        let enforcer = make_enforcer();
+        let (enforcer, _sk) = make_enforcer();
         let report = enforcer.generate_report("2026-02-20T00:00:00Z");
         for entry in &report.capabilities {
             assert_eq!(entry.enforcement_status, "blocked");
@@ -1124,8 +1174,8 @@ mod tests {
 
     #[test]
     fn test_report_after_opt_in() {
-        let mut enforcer = make_enforcer();
-        let token = make_token(ImpossibleCapability::FsAccess, 99_999);
+        let (mut enforcer, sk) = make_enforcer();
+        let token = make_token(ImpossibleCapability::FsAccess, 99_999, &sk);
         enforcer.opt_in(token, "admin", 1000).unwrap();
         let report = enforcer.generate_report("2026-02-20T00:00:00Z");
         let fs_entry = report
@@ -1140,7 +1190,7 @@ mod tests {
 
     #[test]
     fn test_enforce_blocked_creates_audit_entry() {
-        let mut enforcer = make_enforcer();
+        let (mut enforcer, _sk) = make_enforcer();
         let _ = enforcer.enforce(ImpossibleCapability::FsAccess, "user", 1000);
         assert_eq!(enforcer.audit_log().len(), 1);
         assert_eq!(
@@ -1151,8 +1201,8 @@ mod tests {
 
     #[test]
     fn test_opt_in_creates_audit_entry() {
-        let mut enforcer = make_enforcer();
-        let token = make_token(ImpossibleCapability::FsAccess, 99_999);
+        let (mut enforcer, sk) = make_enforcer();
+        let token = make_token(ImpossibleCapability::FsAccess, 99_999, &sk);
         enforcer.opt_in(token, "admin", 1000).unwrap();
         let entry = enforcer.audit_log().last().unwrap();
         assert_eq!(entry.event_code, IBD_002_OPT_IN_GRANTED);
@@ -1160,7 +1210,7 @@ mod tests {
 
     #[test]
     fn test_audit_hash_chain() {
-        let mut enforcer = make_enforcer();
+        let (mut enforcer, _sk) = make_enforcer();
         let _ = enforcer.enforce(ImpossibleCapability::FsAccess, "u", 1000);
         let _ = enforcer.enforce(ImpossibleCapability::OutboundNetwork, "u", 2000);
         let log = enforcer.audit_log();
@@ -1169,7 +1219,7 @@ mod tests {
 
     #[test]
     fn test_audit_first_entry_has_zero_prev_hash() {
-        let mut enforcer = make_enforcer();
+        let (mut enforcer, _sk) = make_enforcer();
         let _ = enforcer.enforce(ImpossibleCapability::FsAccess, "u", 1000);
         assert_eq!(enforcer.audit_log()[0].prev_hash, "0".repeat(64));
     }
@@ -1178,7 +1228,8 @@ mod tests {
 
     #[test]
     fn test_token_is_expired() {
-        let token = make_token(ImpossibleCapability::FsAccess, 5000);
+        let sk = test_signing_key();
+        let token = make_token(ImpossibleCapability::FsAccess, 5000, &sk);
         assert!(!token.is_expired(4000));
         assert!(token.is_expired(5000));
         assert!(token.is_expired(6000));
@@ -1186,15 +1237,17 @@ mod tests {
 
     #[test]
     fn test_token_content_hash_deterministic() {
-        let t1 = make_token(ImpossibleCapability::FsAccess, 5000);
-        let t2 = make_token(ImpossibleCapability::FsAccess, 5000);
+        let sk = test_signing_key();
+        let t1 = make_token(ImpossibleCapability::FsAccess, 5000, &sk);
+        let t2 = make_token(ImpossibleCapability::FsAccess, 5000, &sk);
         assert_eq!(t1.content_hash(), t2.content_hash());
     }
 
     #[test]
     fn test_token_content_hash_differs_for_different_caps() {
-        let t1 = make_token(ImpossibleCapability::FsAccess, 5000);
-        let t2 = make_token(ImpossibleCapability::OutboundNetwork, 5000);
+        let sk = test_signing_key();
+        let t1 = make_token(ImpossibleCapability::FsAccess, 5000, &sk);
+        let t2 = make_token(ImpossibleCapability::OutboundNetwork, 5000, &sk);
         assert_ne!(t1.content_hash(), t2.content_hash());
     }
 
@@ -1202,9 +1255,9 @@ mod tests {
 
     #[test]
     fn test_expire_tokens_batch() {
-        let mut enforcer = make_enforcer();
-        let t1 = make_token(ImpossibleCapability::FsAccess, 5000);
-        let t2 = make_token(ImpossibleCapability::OutboundNetwork, 5000);
+        let (mut enforcer, sk) = make_enforcer();
+        let t1 = make_token(ImpossibleCapability::FsAccess, 5000, &sk);
+        let t2 = make_token(ImpossibleCapability::OutboundNetwork, 5000, &sk);
         enforcer.opt_in(t1, "admin", 1000).unwrap();
         enforcer.opt_in(t2, "admin", 1000).unwrap();
         let expired = enforcer.expire_tokens(6000);
@@ -1215,9 +1268,9 @@ mod tests {
 
     #[test]
     fn test_expire_tokens_partial() {
-        let mut enforcer = make_enforcer();
-        let t1 = make_token(ImpossibleCapability::FsAccess, 5000);
-        let t2 = make_token(ImpossibleCapability::OutboundNetwork, 10_000);
+        let (mut enforcer, sk) = make_enforcer();
+        let t1 = make_token(ImpossibleCapability::FsAccess, 5000, &sk);
+        let t2 = make_token(ImpossibleCapability::OutboundNetwork, 10_000, &sk);
         enforcer.opt_in(t1, "admin", 1000).unwrap();
         enforcer.opt_in(t2, "admin", 1000).unwrap();
         let expired = enforcer.expire_tokens(6000);
@@ -1230,7 +1283,7 @@ mod tests {
 
     #[test]
     fn test_metrics_blocked_total() {
-        let mut enforcer = make_enforcer();
+        let (mut enforcer, _sk) = make_enforcer();
         let _ = enforcer.enforce(ImpossibleCapability::FsAccess, "u", 1000);
         let _ = enforcer.enforce(ImpossibleCapability::FsAccess, "u", 2000);
         assert_eq!(enforcer.metrics().blocked_total, 2);
@@ -1238,8 +1291,8 @@ mod tests {
 
     #[test]
     fn test_metrics_opt_in_total() {
-        let mut enforcer = make_enforcer();
-        let t = make_token(ImpossibleCapability::FsAccess, 99_999);
+        let (mut enforcer, sk) = make_enforcer();
+        let t = make_token(ImpossibleCapability::FsAccess, 99_999, &sk);
         enforcer.opt_in(t, "admin", 1000).unwrap();
         assert_eq!(enforcer.metrics().opt_in_granted_total, 1);
     }
@@ -1305,7 +1358,8 @@ mod tests {
 
     #[test]
     fn test_token_serde_roundtrip() {
-        let token = make_token(ImpossibleCapability::FsAccess, 5000);
+        let sk = test_signing_key();
+        let token = make_token(ImpossibleCapability::FsAccess, 5000, &sk);
         let json = serde_json::to_string(&token).unwrap();
         let parsed: CapabilityToken = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, token);
@@ -1321,7 +1375,7 @@ mod tests {
 
     #[test]
     fn test_enforcement_report_serde() {
-        let enforcer = make_enforcer();
+        let (enforcer, _sk) = make_enforcer();
         let report = enforcer.generate_report("2026-02-20T00:00:00Z");
         let json = serde_json::to_string(&report).unwrap();
         let parsed: EnforcementReport = serde_json::from_str(&json).unwrap();
@@ -1347,7 +1401,7 @@ mod tests {
 
     #[test]
     fn test_full_lifecycle() {
-        let mut enforcer = make_enforcer();
+        let (mut enforcer, sk) = make_enforcer();
 
         // 1. All blocked by default.
         for &cap in ImpossibleCapability::ALL {
@@ -1355,7 +1409,7 @@ mod tests {
         }
 
         // 2. Opt-in for FsAccess.
-        let token = make_token(ImpossibleCapability::FsAccess, 10_000);
+        let token = make_token(ImpossibleCapability::FsAccess, 10_000, &sk);
         enforcer.opt_in(token, "admin", 2000).unwrap();
         assert!(
             enforcer
