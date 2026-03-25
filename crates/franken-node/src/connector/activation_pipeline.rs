@@ -148,20 +148,48 @@ pub trait StageExecutor {
     fn health_check(&self) -> Result<(), String>;
 }
 
-/// Default executor that simulates successful stages.
+/// Default executor with input validation but no actual sandbox creation.
+/// Suitable for development and testing. For production, implement a custom
+/// StageExecutor with real sandbox, secret, and capability management.
 pub struct DefaultExecutor;
 
 impl StageExecutor for DefaultExecutor {
-    fn create_sandbox(&self, _config: &str) -> Result<(), String> {
+    fn create_sandbox(&self, config: &str) -> Result<(), String> {
+        // Validate that config is non-empty and valid JSON.
+        if config.is_empty() {
+            return Err("sandbox config must not be empty".to_string());
+        }
+        if serde_json::from_str::<serde_json::Value>(config).is_err() {
+            return Err("sandbox config must be valid JSON".to_string());
+        }
         Ok(())
     }
     fn mount_secrets(&self, refs: &[String]) -> Result<Vec<String>, String> {
+        // Validate secret references are non-empty and well-formed.
+        for r in refs {
+            if r.is_empty() {
+                return Err("secret reference must not be empty".to_string());
+            }
+            if r.contains('\0') {
+                return Err(format!("secret reference contains null byte: {r}"));
+            }
+            if r.contains("..") || r.starts_with('/') || r.contains('\\') {
+                return Err(format!("secret reference contains unsafe path: {r}"));
+            }
+        }
         Ok(refs.to_vec())
     }
-    fn issue_capabilities(&self, _caps: &[String]) -> Result<(), String> {
+    fn issue_capabilities(&self, caps: &[String]) -> Result<(), String> {
+        // Validate capability names are non-empty.
+        for cap in caps {
+            if cap.is_empty() {
+                return Err("capability name must not be empty".to_string());
+            }
+        }
         Ok(())
     }
     fn health_check(&self) -> Result<(), String> {
+        // Default executor always passes health check.
         Ok(())
     }
 }
@@ -341,7 +369,7 @@ mod tests {
     fn test_input() -> ActivationInput {
         ActivationInput {
             connector_id: "conn-1".into(),
-            sandbox_config: "default".into(),
+            sandbox_config: r#"{"mode":"default"}"#.into(),
             secret_refs: vec!["secret-a".into(), "secret-b".into()],
             capabilities: vec!["cap-read".into(), "cap-write".into()],
             trace_id: "trace-1".into(),
@@ -621,5 +649,120 @@ mod tests {
         let mut t2 = activate(&input, &DefaultExecutor);
         t2.connector_id = "other".into();
         assert!(!transcripts_match(&t1, &t2));
+    }
+
+    // --- DefaultExecutor validation tests (bd-1phd2) ---
+
+    #[test]
+    fn default_executor_rejects_empty_config() {
+        let mut input = test_input();
+        input.sandbox_config = String::new();
+        let t = activate(&input, &DefaultExecutor);
+        assert!(!t.completed);
+        assert_eq!(t.stages.len(), 1);
+        assert_eq!(
+            t.stages[0].error.as_ref().unwrap().code(),
+            "ACT_SANDBOX_FAILED"
+        );
+    }
+
+    #[test]
+    fn default_executor_rejects_invalid_json_config() {
+        let mut input = test_input();
+        input.sandbox_config = "not json".into();
+        let t = activate(&input, &DefaultExecutor);
+        assert!(!t.completed);
+        assert_eq!(t.stages.len(), 1);
+        assert_eq!(
+            t.stages[0].error.as_ref().unwrap().code(),
+            "ACT_SANDBOX_FAILED"
+        );
+    }
+
+    #[test]
+    fn default_executor_rejects_empty_secret_ref() {
+        let mut input = test_input();
+        input.secret_refs = vec!["valid".into(), String::new()];
+        let t = activate(&input, &DefaultExecutor);
+        assert!(!t.completed);
+        assert_eq!(t.stages.len(), 2);
+        assert_eq!(
+            t.stages[1].error.as_ref().unwrap().code(),
+            "ACT_SECRET_MOUNT_FAILED"
+        );
+    }
+
+    #[test]
+    fn default_executor_rejects_path_traversal_secret() {
+        let mut input = test_input();
+        input.secret_refs = vec!["../etc/passwd".into()];
+        let t = activate(&input, &DefaultExecutor);
+        assert!(!t.completed);
+        assert_eq!(t.stages.len(), 2);
+        assert_eq!(
+            t.stages[1].error.as_ref().unwrap().code(),
+            "ACT_SECRET_MOUNT_FAILED"
+        );
+    }
+
+    #[test]
+    fn default_executor_rejects_absolute_path_secret() {
+        let mut input = test_input();
+        input.secret_refs = vec!["/etc/shadow".into()];
+        let t = activate(&input, &DefaultExecutor);
+        assert!(!t.completed);
+        assert_eq!(t.stages.len(), 2);
+        assert_eq!(
+            t.stages[1].error.as_ref().unwrap().code(),
+            "ACT_SECRET_MOUNT_FAILED"
+        );
+    }
+
+    #[test]
+    fn default_executor_rejects_backslash_secret() {
+        let mut input = test_input();
+        input.secret_refs = vec!["foo\\bar".into()];
+        let t = activate(&input, &DefaultExecutor);
+        assert!(!t.completed);
+        assert_eq!(t.stages.len(), 2);
+        assert_eq!(
+            t.stages[1].error.as_ref().unwrap().code(),
+            "ACT_SECRET_MOUNT_FAILED"
+        );
+    }
+
+    #[test]
+    fn default_executor_rejects_null_byte_secret() {
+        let mut input = test_input();
+        input.secret_refs = vec!["foo\0bar".into()];
+        let t = activate(&input, &DefaultExecutor);
+        assert!(!t.completed);
+        assert_eq!(t.stages.len(), 2);
+        assert_eq!(
+            t.stages[1].error.as_ref().unwrap().code(),
+            "ACT_SECRET_MOUNT_FAILED"
+        );
+    }
+
+    #[test]
+    fn default_executor_rejects_empty_capability() {
+        let mut input = test_input();
+        input.capabilities = vec!["valid".into(), String::new()];
+        let t = activate(&input, &DefaultExecutor);
+        assert!(!t.completed);
+        assert_eq!(t.stages.len(), 3);
+        assert_eq!(
+            t.stages[2].error.as_ref().unwrap().code(),
+            "ACT_CAPABILITY_FAILED"
+        );
+    }
+
+    #[test]
+    fn default_executor_accepts_valid_inputs() {
+        let input = test_input();
+        let t = activate(&input, &DefaultExecutor);
+        assert!(t.completed);
+        assert_eq!(t.stages.len(), 4);
+        assert!(t.stages.iter().all(|s| s.success));
     }
 }

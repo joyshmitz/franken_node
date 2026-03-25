@@ -56,7 +56,7 @@ pub mod n_version_oracle;
 pub mod obligation_tracker;
 #[cfg(any(test, feature = "extended-surfaces"))]
 pub mod offline_coverage;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod operator_intelligence;
 pub mod perf_budget_guard;
 pub mod policy_checkpoint;

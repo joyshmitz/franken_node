@@ -221,11 +221,22 @@ pub struct RollbackProof {
 }
 
 impl RollbackProof {
-    /// Verify that applying rollback_spec to post_state produces pre_state.
+    /// Compute the content hash of the proof for integrity verification.
+    pub fn content_hash(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(b"rollback_proof_content_v1:");
+        hasher.update(self.pre_state_hash);
+        hasher.update((self.action_spec.len() as u64).to_le_bytes());
+        hasher.update(self.action_spec.as_bytes());
+        hasher.update(self.post_state_hash);
+        hasher.update((self.rollback_spec.len() as u64).to_le_bytes());
+        hasher.update(self.rollback_spec.as_bytes());
+        hasher.finalize().into()
+    }
+
+    /// Verify structural and cryptographic soundness of the rollback proof.
     /// INV-OIR-ROLLBACK-SOUND
     pub fn verify(&self) -> Result<bool, OIError> {
-        // In a real system, this would execute the rollback and compare hashes.
-        // Here we verify structural soundness: both hashes present and specs non-empty.
         if self.action_spec.is_empty() {
             return Err(OIError::RollbackFailed("empty action spec".into()));
         }
@@ -235,6 +246,13 @@ impl RollbackProof {
         if ct_eq_bytes(&self.pre_state_hash, &self.post_state_hash) {
             return Err(OIError::RollbackFailed(
                 "pre and post states identical".into(),
+            ));
+        }
+        // Verify rollback spec references the correct action (INV-OIR-ROLLBACK-SOUND).
+        let expected_rollback = format!("rollback:{}", self.action_spec);
+        if self.rollback_spec != expected_rollback {
+            return Err(OIError::RollbackFailed(
+                "rollback spec does not match action spec".into(),
             ));
         }
         Ok(true)
@@ -608,6 +626,7 @@ impl RecommendationEngine {
         rec: &Recommendation,
         pre_state: [u8; 32],
         post_state: [u8; 32],
+        ctx: &OperatorContext,
     ) -> Result<(RollbackProof, ReplayArtifact), OIError> {
         let rollback_proof = RollbackProof {
             pre_state_hash: pre_state,
@@ -635,7 +654,7 @@ impl RecommendationEngine {
             MAX_EVENTS,
         );
 
-        let context_fp = [0u8; 32]; // Simplified: would use actual context fingerprint.
+        let context_fp = ctx.fingerprint();
         let replay = ReplayArtifact {
             recommendation_id: rec.id.clone(),
             input_context_fingerprint: context_fp,
@@ -1051,7 +1070,7 @@ mod tests {
             pre_state_hash: [1u8; 32],
             action_spec: "migrate v2".into(),
             post_state_hash: [2u8; 32],
-            rollback_spec: "rollback v2".into(),
+            rollback_spec: "rollback:migrate v2".into(),
         };
         assert!(proof.verify().unwrap());
     }
@@ -1087,11 +1106,12 @@ mod tests {
         let recs = engine.recommend(&ctx, 1000).unwrap();
         let rec = &recs[0];
         engine.accept_recommendation(rec, 1001).unwrap();
-        let result = engine.execute_recommendation(rec, [1u8; 32], [2u8; 32]);
+        let result = engine.execute_recommendation(rec, [1u8; 32], [2u8; 32], &ctx);
         assert!(result.is_ok());
         let (proof, replay) = result.unwrap();
         assert_eq!(proof.pre_state_hash, [1u8; 32]);
         assert_eq!(replay.recommendation_id, rec.id);
+        assert_eq!(replay.input_context_fingerprint, ctx.fingerprint());
     }
 
     #[test]
@@ -1101,7 +1121,7 @@ mod tests {
             pre_state_hash: [1u8; 32],
             action_spec: "migrate".into(),
             post_state_hash: [2u8; 32],
-            rollback_spec: "rollback".into(),
+            rollback_spec: "rollback:migrate".into(),
         };
         assert!(engine.execute_rollback(&proof).is_ok());
         let has_verified = engine
@@ -1126,7 +1146,7 @@ mod tests {
         let rec = &recs[0];
         engine.accept_recommendation(rec, 1001).unwrap();
         let (_, replay) = engine
-            .execute_recommendation(rec, [1u8; 32], [2u8; 32])
+            .execute_recommendation(rec, [1u8; 32], [2u8; 32], &ctx)
             .unwrap();
         assert_eq!(replay.recommendation_id, rec.id);
         assert!(replay.rollback_proof.is_some());

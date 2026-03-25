@@ -272,16 +272,21 @@ impl ResourceTracker {
 
     /// Release a resource.
     pub fn release(&mut self, name: &str) -> bool {
-        if let Some(count) = self.held.get_mut(name)
-            && *count > 0
-        {
-            *count = count.saturating_sub(1);
-            if *count == 0 {
-                self.held.remove(name);
+        let should_remove = if let Some(count) = self.held.get_mut(name) {
+            if *count > 0 {
+                *count = count.saturating_sub(1);
+                *count == 0
+            } else {
+                return false;
             }
-            return true;
+        } else {
+            return false;
+        };
+
+        if should_remove {
+            self.held.remove(name);
         }
-        false
+        true
     }
 
     /// Check if any resources are still held (potential leak).
@@ -367,9 +372,16 @@ impl Drop for ResourceGuard {
     fn drop(&mut self) {
         if !self.released && self.resources.has_leaks() {
             // INV-CAN-NO-LEAK: force-release on drop with warning.
-            // In production this would emit CAN-006 via the audit channel.
-            let _leaked = self.resources.release_all();
-            // Leak detected during drop -- CAN-006 would be emitted here.
+            let leaked_count = self.resources.release_all();
+            // CAN-006: emit structured warning for leak detection audit trail.
+            tracing::warn!(
+                event_code = event_codes::CAN_006,
+                workflow = %self.workflow,
+                leaked_resources = leaked_count,
+                "Resource leak detected during drop: force-released {} resource(s) for workflow '{}'",
+                leaked_count,
+                self.workflow,
+            );
         }
     }
 }

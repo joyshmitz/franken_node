@@ -775,6 +775,7 @@ impl Supervisor {
     ///
     /// Enforces `INV-SUP-SHUTDOWN-ORDER` and `INV-SUP-TIMEOUT-ENFORCED`.
     pub fn shutdown(&mut self) -> ShutdownReport {
+        let shutdown_start = std::time::Instant::now();
         let child_count = u32::try_from(self.children.len()).unwrap_or(u32::MAX);
         push_bounded(
             &mut self.events,
@@ -817,7 +818,7 @@ impl Supervisor {
         let report = ShutdownReport {
             children_stopped,
             force_terminated,
-            duration_ms: 0, // synchronous model; real impl would measure
+            duration_ms: u64::try_from(shutdown_start.elapsed().as_millis()).unwrap_or(u64::MAX),
         };
 
         push_bounded(
