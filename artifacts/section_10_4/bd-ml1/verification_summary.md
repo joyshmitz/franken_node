@@ -1,7 +1,7 @@
 # Verification Summary: Publisher Reputation Model with Explainable Transitions
 
 **Bead:** bd-ml1 | **Section:** 10.4
-**Timestamp:** 2026-03-25T00:27:31.735653+00:00
+**Timestamp:** 2026-03-25T01:36:58.507214+00:00
 **Overall:** PASS
 **Checks:** 12/12 passed
 
@@ -10,7 +10,7 @@
 - **determinism:** PASS
 - **event_codes:** PASS
 - **File spec:** PASS (docs/specs/section_10_4/bd-ml1_contract.md, 5350 bytes)
-- **File rust_impl:** PASS (crates/franken-node/src/supply_chain/reputation.rs, 47482 bytes)
+- **File rust_impl:** PASS (crates/franken-node/src/supply_chain/reputation.rs, 47416 bytes)
 - **File mod_rs:** PASS (crates/franken-node/src/supply_chain/mod.rs, 368 bytes)
 - **freeze_semantics:** PASS
 - **hash_chain:** PASS

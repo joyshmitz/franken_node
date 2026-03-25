@@ -1,7 +1,7 @@
 # Verification Summary: Verifier economy portal and external attestation publishing flow
 
 **Bead:** bd-m8p | **Section:** 10.9
-**Timestamp:** 2026-03-12T18:18:43.156903+00:00
+**Timestamp:** 2026-03-25T01:42:28.981864+00:00
 **Overall:** PASS
 **Checks:** 171/171 passed
 
@@ -177,7 +177,7 @@
 - [PASS] replacement_critical:capsule_integrity_path: no_shortcuts: no shortcut markers found
 - [PASS] replacement_critical:capsule_rejection_error_surface: required_markers: all required markers present
 - [PASS] replacement_critical:capsule_rejection_error_surface: no_shortcuts: no shortcut markers found
-- [PASS] rust_test_count: 92 tests (minimum 50)
+- [PASS] rust_test_count: 107 tests (minimum 50)
 
 ## Artifacts
 
