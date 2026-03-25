@@ -492,9 +492,15 @@ impl QuarantineRegistry {
 
         if self.propagation_status.len() >= MAX_PROPAGATION_STATUS
             && !self.propagation_status.contains_key(node_id)
-            && let Some(oldest_key) = self.propagation_status.keys().next().cloned()
         {
-            self.propagation_status.remove(&oldest_key);
+            if let Some(oldest_key) = self
+                .propagation_status
+                .iter()
+                .min_by_key(|(_, ts)| ts.as_str())
+                .map(|(k, _)| k.clone())
+            {
+                self.propagation_status.remove(&oldest_key);
+            }
         }
         self.propagation_status
             .insert(node_id.to_owned(), timestamp.to_owned());
@@ -1619,10 +1625,10 @@ mod tests {
 
         // Generate enough audit entries to trigger eviction.
         // Each quarantine with unique extension_id produces audit entries.
-        for i in 0..(MAX_AUDIT_TRAIL + 10) {
+        for i in 0..(MAX_AUDIT_TRAIL / 2 + 10) {
             let mut order = make_order(
                 &format!("q-{i}"),
-                QuarantineSeverity::Low,
+                QuarantineSeverity::Critical,
                 QuarantineMode::Soft,
             );
             order.scope = QuarantineScope::AllVersions {

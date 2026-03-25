@@ -135,6 +135,12 @@ fn replay_capsule_freshness_window_valid(issued_at: &str, expires_at: &str) -> b
     issued_at <= now && now < expires_at
 }
 
+fn replay_capsule_issued_at_sort_key(issued_at: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::parse_from_rfc3339(issued_at)
+        .ok()
+        .map(|timestamp| timestamp.with_timezone(&chrono::Utc))
+}
+
 pub(crate) fn attestation_signature_payload(submission: &AttestationSubmission) -> Vec<u8> {
     let mut payload = Vec::new();
     payload.extend_from_slice(b"verifier_economy_attestation_v1:");
@@ -1210,6 +1216,17 @@ impl VerifierEconomyRegistry {
         }
     }
 
+    fn oldest_replay_capsule_key(&self) -> Option<String> {
+        self.replay_capsules
+            .iter()
+            .min_by(|(left_id, left_capsule), (right_id, right_capsule)| {
+                replay_capsule_issued_at_sort_key(&left_capsule.issued_at)
+                    .cmp(&replay_capsule_issued_at_sort_key(&right_capsule.issued_at))
+                    .then_with(|| left_id.cmp(right_id))
+            })
+            .map(|(capsule_id, _)| capsule_id.clone())
+    }
+
     pub fn register_replay_capsule(&mut self, capsule: ReplayCapsule) -> VepResult<()> {
         if let Err(failure) = self.verify_replay_capsule(&capsule) {
             return Err(Self::replay_capsule_rejection_error(
@@ -1220,7 +1237,7 @@ impl VerifierEconomyRegistry {
         let capsule_id = capsule.capsule_id.clone();
         if self.replay_capsules.len() >= MAX_REPLAY_CAPSULES
             && !self.replay_capsules.contains_key(&capsule_id)
-            && let Some(oldest_key) = self.replay_capsules.keys().next().cloned()
+            && let Some(oldest_key) = self.oldest_replay_capsule_key()
         {
             self.replay_capsules.remove(&oldest_key);
         }
@@ -1665,6 +1682,37 @@ mod tests {
         };
         sign_capsule(&mut capsule, signing_key);
         capsule
+    }
+
+    fn register_capsule_with_times(
+        reg: &mut VerifierEconomyRegistry,
+        verifier_id: &str,
+        attestation: &Attestation,
+        signing_key: &SigningKey,
+        capsule_id: &str,
+        label: &str,
+        issued_at: chrono::DateTime<chrono::Utc>,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) {
+        let mut capsule = make_capsule(capsule_id, verifier_id, attestation, signing_key, label);
+        capsule.issued_at = issued_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        capsule.expires_at = expires_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        capsule.integrity_hash = compute_capsule_integrity_hash(
+            &capsule.capsule_id,
+            &capsule.schema_version,
+            &capsule.attestation_id,
+            &capsule.verifier_id,
+            &capsule.claim_metadata_hash,
+            &capsule.issued_at,
+            &capsule.expires_at,
+            &capsule.input_state_hash,
+            &capsule.trace_commitment_root,
+            &capsule.output_state_hash,
+            &capsule.expected_result_hash,
+        );
+        sign_capsule(&mut capsule, signing_key);
+        reg.register_replay_capsule(capsule)
+            .expect("capsule should register");
     }
 
     fn register_and_submit(reg: &mut VerifierEconomyRegistry) -> (Verifier, Attestation) {
@@ -2352,6 +2400,59 @@ mod tests {
         reg.register_replay_capsule(capsule).unwrap();
         reg.access_replay_capsule("cap-002").unwrap();
         assert!(reg.events().iter().any(|e| e.code == VEP_007));
+    }
+
+    #[test]
+    fn test_register_replay_capsule_evicts_oldest_issued_at_with_capsule_id_tiebreak() {
+        let mut reg = make_registry();
+        let (verifier, attestation) = register_and_submit(&mut reg);
+        let signing_key = registration_signing_key();
+        let base = chrono::Utc::now() - chrono::Duration::minutes(50);
+
+        let register_at =
+            |reg: &mut VerifierEconomyRegistry, capsule_id: &str, label: &str, offset_secs: i64| {
+                let issued_at = base + chrono::Duration::seconds(offset_secs);
+                let expires_at =
+                    issued_at + chrono::Duration::seconds(MAX_REPLAY_CAPSULE_FRESHNESS_SECS);
+                register_capsule_with_times(
+                    reg,
+                    &verifier.verifier_id,
+                    &attestation,
+                    &signing_key,
+                    capsule_id,
+                    label,
+                    issued_at,
+                    expires_at,
+                );
+            };
+
+        register_at(&mut reg, "yyy-oldest", "capsule-oldest-y", 0);
+        register_at(&mut reg, "zzz-oldest", "capsule-oldest-z", 0);
+
+        for idx in 0..(MAX_REPLAY_CAPSULES - 3) {
+            let offset_secs = i64::try_from(idx + 1).expect("capsule offset should fit within i64");
+            let capsule_id = format!("mid-{idx:04}");
+            let label = format!("capsule-mid-{idx:04}");
+            register_at(&mut reg, &capsule_id, &label, offset_secs);
+        }
+
+        let newest_offset =
+            i64::try_from(MAX_REPLAY_CAPSULES).expect("capsule offset should fit within i64");
+        register_at(&mut reg, "aaa-newest", "capsule-newest-a", newest_offset);
+        assert_eq!(reg.replay_capsules.len(), MAX_REPLAY_CAPSULES);
+
+        register_at(
+            &mut reg,
+            "inserted-after-capacity",
+            "capsule-inserted-after-capacity",
+            newest_offset + 1,
+        );
+
+        assert_eq!(reg.replay_capsules.len(), MAX_REPLAY_CAPSULES);
+        assert!(!reg.replay_capsules.contains_key("yyy-oldest"));
+        assert!(reg.replay_capsules.contains_key("zzz-oldest"));
+        assert!(reg.replay_capsules.contains_key("aaa-newest"));
+        assert!(reg.replay_capsules.contains_key("inserted-after-capacity"));
     }
 
     #[test]

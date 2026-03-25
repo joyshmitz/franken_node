@@ -41,10 +41,14 @@ def run_checks() -> list[dict]:
         mod_src = f.read()
     checks.append(_check("module registered in storage/mod.rs", "pub mod retrievability_gate;" in mod_src))
 
-    # Storage module registered in main.rs
-    with open(MAIN_RS) as f:
-        main_src = f.read()
-    checks.append(_check("storage module in main.rs", "pub mod storage;" in main_src))
+    # Storage module registered in lib.rs
+    LIB_RS = os.path.join(ROOT, "crates/franken-node/src/lib.rs")
+    if os.path.exists(LIB_RS):
+        with open(LIB_RS) as f:
+            lib_src = f.read()
+        checks.append(_check("storage module in lib.rs", "pub mod storage;" in lib_src))
+    else:
+        checks.append(_check("storage module in lib.rs", False, "lib.rs missing"))
 
     with open(IMPL) as f:
         src = f.read()
@@ -112,7 +116,8 @@ def run_checks() -> list[dict]:
         "test_hash_mismatch_emits_failure_event",
         "test_hash_mismatch_records_receipt",
         "test_latency_exceeded_blocks",
-        "test_latency_at_limit_passes",
+        "test_latency_at_limit_is_rejected",
+        "test_latency_below_limit_passes",
         "test_unreachable_target_blocks",
         "test_unregistered_target_blocks",
         "test_eviction_succeeds_with_proof",

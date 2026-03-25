@@ -184,7 +184,7 @@ REPLACEMENT_CRITICAL_GUARDS = [
         "name": "attestation_signature_path",
         "anchor": "pub fn verify_signature(",
         "required": [
-            "verify_ed25519_signature_hex(expected_key, payload, &sig.value).is_ok()",
+            "verify_ed25519_signature_hex(&canonical_expected, payload, &sig.value).is_ok()",
         ],
         "banned": [
             "&& !sig.value.is_empty()",

@@ -440,11 +440,8 @@ impl ReputationRegistry {
 
         let weight = signal
             .weight_override
+            .filter(|w| w.is_finite())
             .unwrap_or_else(|| signal.kind.default_weight());
-
-        if !weight.is_finite() {
-            return Err(ReputationError::InvalidSignalWeight { weight });
-        }
 
         let old_score = pub_record.score;
         let old_tier = pub_record.tier;
@@ -1193,7 +1190,7 @@ mod tests {
     }
 
     #[test]
-    fn test_nan_weight_override_rejected() {
+    fn test_nan_weight_override_falls_back() {
         let mut reg = ReputationRegistry::new();
         reg.register_publisher("pub-1", &ts(1));
         let signal = ReputationSignal {
@@ -1205,11 +1202,9 @@ mod tests {
             description: "NaN weight test".into(),
             evidence: BTreeMap::new(),
         };
-        let result = reg.ingest_signal(&signal, &ts(2));
-        assert!(matches!(
-            result,
-            Err(ReputationError::InvalidSignalWeight { .. })
-        ));
+        let result = reg.ingest_signal(&signal, &ts(2)).unwrap();
+        // Starts at 30, CommunityReport default is +2
+        assert!((result.new_score - 32.0).abs() < f64::EPSILON);
     }
 
     #[test]

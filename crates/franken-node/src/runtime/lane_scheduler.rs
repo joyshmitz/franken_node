@@ -223,7 +223,8 @@ impl LaneMappingPolicy {
         self.mapping_rules.get(task_class.as_str()).copied()
     }
 
-    /// Validate policy: all lanes configured, all rules map to configured lanes.
+    /// Validate policy: configured lanes are well-formed and every rule maps to
+    /// a configured lane.
     pub fn validate(&self) -> Result<(), String> {
         if self.lane_configs.is_empty() {
             return Err("no lanes configured".into());
@@ -940,6 +941,16 @@ mod tests {
     }
 
     // ---- Policy validation ----
+
+    #[test]
+    fn partial_policy_with_configured_mapping_is_valid() {
+        let mut p = LaneMappingPolicy::new();
+        add_lane_ok(&mut p, LaneConfig::new(SchedulerLane::Maintenance, 20, 2));
+        p.add_rule(&task_classes::compaction(), SchedulerLane::Maintenance);
+
+        assert!(p.validate().is_ok());
+        assert!(LaneScheduler::new(p).is_ok());
+    }
 
     #[test]
     fn empty_policy_invalid() {

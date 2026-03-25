@@ -247,7 +247,7 @@ impl TrustAggregator {
     /// Create a new aggregator with the given trim ratio.
     pub fn new(trim_ratio: f64) -> Self {
         let safe_ratio = if trim_ratio.is_finite() {
-            trim_ratio
+            trim_ratio.clamp(0.0, 0.5)
         } else {
             0.2
         };

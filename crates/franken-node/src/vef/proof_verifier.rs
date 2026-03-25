@@ -349,14 +349,25 @@ impl ProofVerifier {
         let age_limit = predicate
             .max_proof_age_millis
             .min(self.config.max_proof_age_millis);
-        let freshness_satisfied = age_millis < age_limit;
+        let is_from_future = proof.generated_at_millis > now_millis;
+        let freshness_satisfied = !is_from_future && age_millis < age_limit;
+        
         if !freshness_satisfied {
-            deny_reasons.push(format!(
-                "{}: proof age {}ms exceeds limit {}ms",
-                error_codes::ERR_PVF_PROOF_EXPIRED,
-                age_millis,
-                age_limit
-            ));
+            if is_from_future {
+                deny_reasons.push(format!(
+                    "{}: proof generated in the future ({} > {})",
+                    error_codes::ERR_PVF_PROOF_EXPIRED,
+                    proof.generated_at_millis,
+                    now_millis
+                ));
+            } else {
+                deny_reasons.push(format!(
+                    "{}: proof age {}ms exceeds limit {}ms",
+                    error_codes::ERR_PVF_PROOF_EXPIRED,
+                    age_millis,
+                    age_limit
+                ));
+            }
             all_satisfied = false;
         }
         evidence.push(PredicateEvidence {
@@ -365,6 +376,8 @@ impl ProofVerifier {
             satisfied: freshness_satisfied,
             reason: if freshness_satisfied {
                 format!("proof age {}ms within limit {}ms", age_millis, age_limit)
+            } else if is_from_future {
+                format!("proof generated in the future ({} > {})", proof.generated_at_millis, now_millis)
             } else {
                 format!("proof age {}ms exceeds limit {}ms", age_millis, age_limit)
             },
@@ -889,6 +902,23 @@ mod tests {
             _ => String::new(),
         };
         assert!(deny_text.contains("ERR-PVF-PROOF-EXPIRED"));
+    }
+
+    // ── 3b. Proof from the future produces Deny ────────────────────────────
+
+    #[test]
+    fn future_proof_produces_deny_decision() {
+        let mut gate = gate_with_predicate();
+        let mut proof = valid_proof();
+        proof.generated_at_millis = NOW + 60_000; // 60 seconds in the future
+        let req = make_request(proof);
+        let report = gate.verify(&req).unwrap();
+        assert!(matches!(report.decision, TrustDecision::Deny(_)));
+        let deny_text = match &report.decision {
+            TrustDecision::Deny(r) => r.clone(),
+            _ => String::new(),
+        };
+        assert!(deny_text.contains("proof generated in the future"));
     }
 
     // ── 4. Missing policy produces error ───────────────────────────────────

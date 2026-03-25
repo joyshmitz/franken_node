@@ -482,6 +482,19 @@ impl CompatGateService {
         let receipt_id = self.next_receipt_id();
 
         let current_mode = self.scopes.get(&request.scope_id).copied().unwrap_or(CompatMode::Strict);
+        
+        if current_mode != request.from_mode {
+            return ModeTransitionResponse {
+                transition_id: trace_id,
+                approved: false,
+                receipt_id,
+                rationale: format!(
+                    "transition denied: requested from_mode {} does not match actual current mode {}",
+                    request.from_mode, current_mode
+                ),
+            };
+        }
+
         let is_escalation = current_mode.is_escalation(request.to_mode);
         let approved = if is_escalation {
             !request.justification.is_empty()

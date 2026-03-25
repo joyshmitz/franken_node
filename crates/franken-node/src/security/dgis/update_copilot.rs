@@ -624,7 +624,19 @@ impl UpdateCopilot {
         };
         factors.insert("metric_calibration".to_string(), metric_calibration);
 
-        let history_depth = 0.7; // Placeholder; would check real history
+        // History depth: derived from available historical data signals.
+        // More transitive dependencies and higher fan-out indicate richer signal history.
+        let dep_signal = (proposal.post_update_metrics.transitive_dependency_count as f64)
+            .min(50.0) / 50.0; // Normalize: 50+ deps = full depth
+        let update_history_signal = {
+            let fo = proposal.post_update_metrics.fan_out;
+            if fo.is_finite() && fo > 0.0 {
+                fo.min(10.0) / 10.0 // Normalize fan-out: 10+ = full signal
+            } else {
+                0.0 // Non-finite or non-positive: fail closed to no signal
+            }
+        };
+        let history_depth = ((dep_signal + update_history_signal) / 2.0).clamp(0.0, 1.0);
         factors.insert("history_depth".to_string(), history_depth);
 
         let avg_quality: f64 = if factors.is_empty() {

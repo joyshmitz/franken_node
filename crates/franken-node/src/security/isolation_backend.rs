@@ -66,8 +66,27 @@ pub struct PlatformCapabilities {
     pub has_oci_runtime: bool,
 }
 
+/// Probe for OCI-compliant container runtimes (docker, podman, or nerdctl).
+///
+/// Checks common OCI runtime executables via PATH lookup. Returns `false`
+/// (fail-closed) if no runtime is found or if all probes fail.
+fn probe_oci_runtime() -> bool {
+    for runtime in &["docker", "podman", "nerdctl"] {
+        if std::process::Command::new(runtime)
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+        {
+            return true;
+        }
+    }
+    false
+}
+
 impl PlatformCapabilities {
-    /// Probe the current platform (simulated for scaffolding).
+    /// Probe the current platform for isolation capabilities.
     pub fn probe() -> Self {
         Self {
             os: std::env::consts::OS.to_string(),
@@ -77,7 +96,7 @@ impl PlatformCapabilities {
             has_namespaces: cfg!(target_os = "linux"),
             has_cgroups: cfg!(target_os = "linux"),
             has_macos_sandbox: cfg!(target_os = "macos"),
-            has_oci_runtime: false, // would probe for docker/podman
+            has_oci_runtime: probe_oci_runtime(),
         }
     }
 
