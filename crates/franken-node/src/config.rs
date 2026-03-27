@@ -533,6 +533,22 @@ impl Config {
                     value,
                 ));
             }
+            if let Some(value) = section.min_trust_score {
+                self.trust.min_trust_score = Some(value);
+                decisions.push(MergeDecision::new(
+                    stage.clone(),
+                    "trust.min_trust_score",
+                    value,
+                ));
+            }
+            if let Some(value) = section.decay_factor {
+                self.trust.decay_factor = Some(value);
+                decisions.push(MergeDecision::new(
+                    stage.clone(),
+                    "trust.decay_factor",
+                    value,
+                ));
+            }
         }
 
         if let Some(section) = &overrides.replay {
@@ -740,6 +756,49 @@ impl Config {
                 ));
             }
         }
+
+        if let Some(section) = &overrides.thresholds {
+            if let Some(value) = section.max_failure_rate {
+                self.thresholds.max_failure_rate = Some(value);
+                decisions.push(MergeDecision::new(
+                    stage.clone(),
+                    "thresholds.max_failure_rate",
+                    value,
+                ));
+            }
+            if let Some(value) = section.min_quality_score {
+                self.thresholds.min_quality_score = Some(value);
+                decisions.push(MergeDecision::new(
+                    stage.clone(),
+                    "thresholds.min_quality_score",
+                    value,
+                ));
+            }
+            if let Some(value) = section.max_variance_pct {
+                self.thresholds.max_variance_pct = Some(value);
+                decisions.push(MergeDecision::new(
+                    stage.clone(),
+                    "thresholds.max_variance_pct",
+                    value,
+                ));
+            }
+            if let Some(value) = section.regression_threshold_pct {
+                self.thresholds.regression_threshold_pct = Some(value);
+                decisions.push(MergeDecision::new(
+                    stage.clone(),
+                    "thresholds.regression_threshold_pct",
+                    value,
+                ));
+            }
+            if let Some(value) = section.min_resilience_score {
+                self.thresholds.min_resilience_score = Some(value);
+                decisions.push(MergeDecision::new(
+                    stage.clone(),
+                    "thresholds.min_resilience_score",
+                    value,
+                ));
+            }
+        }
     }
 
     fn apply_env_overrides(
@@ -865,6 +924,20 @@ impl Config {
                 parsed,
             ));
         }
+        apply_env_field_opt_f64(
+            "FRANKEN_NODE_TRUST_MIN_TRUST_SCORE",
+            env_lookup,
+            &mut self.trust.min_trust_score,
+            "trust.min_trust_score",
+            decisions,
+        )?;
+        apply_env_field_opt_f64(
+            "FRANKEN_NODE_TRUST_DECAY_FACTOR",
+            env_lookup,
+            &mut self.trust.decay_factor,
+            "trust.decay_factor",
+            decisions,
+        )?;
 
         apply_env_field_bool(
             "FRANKEN_NODE_REPLAY_PERSIST_HIGH_SEVERITY",
@@ -2072,6 +2145,54 @@ require_lockstep_validation = true
     }
 
     #[test]
+    fn resolve_applies_trust_score_and_threshold_file_profile_overrides() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("franken_node.toml");
+        std::fs::write(
+            &path,
+            r#"
+profile = "balanced"
+
+[trust]
+min_trust_score = 0.61
+decay_factor = 0.91
+
+[thresholds]
+max_failure_rate = 0.04
+min_quality_score = 0.82
+
+[profiles.strict.trust]
+min_trust_score = 0.72
+decay_factor = 0.88
+
+[profiles.strict.thresholds]
+max_failure_rate = 0.02
+min_resilience_score = 0.77
+"#,
+        )
+        .unwrap();
+
+        let env = BTreeMap::from([("FRANKEN_NODE_PROFILE".to_string(), "strict".to_string())]);
+
+        let resolved =
+            Config::resolve_with_env(Some(&path), CliOverrides::default(), &map_lookup(env))
+                .unwrap();
+
+        assert_eq!(resolved.config.profile, Profile::Strict);
+        assert_eq!(resolved.config.trust.min_trust_score, Some(0.72));
+        assert_eq!(resolved.config.trust.decay_factor, Some(0.88));
+        assert_eq!(resolved.config.thresholds.max_failure_rate, Some(0.02));
+        assert_eq!(resolved.config.thresholds.min_quality_score, Some(0.82));
+        assert_eq!(resolved.config.thresholds.min_resilience_score, Some(0.77));
+        assert!(resolved.decisions.iter().any(|decision| {
+            decision.field == "trust.min_trust_score" && decision.stage == MergeStage::Profile
+        }));
+        assert!(resolved.decisions.iter().any(|decision| {
+            decision.field == "thresholds.max_failure_rate" && decision.stage == MergeStage::Profile
+        }));
+    }
+
+    #[test]
     fn resolve_rejects_invalid_env_bool() {
         let env = BTreeMap::from([(
             "FRANKEN_NODE_MIGRATION_AUTOFIX".to_string(),
@@ -2172,6 +2293,32 @@ overflow_policy = "reject"
 
         assert_eq!(resolved.config.runtime.remote_max_in_flight, 66);
         assert_eq!(resolved.config.runtime.bulkhead_retry_after_ms, 17);
+    }
+
+    #[test]
+    fn resolve_applies_trust_score_env_overrides() {
+        let env = BTreeMap::from([
+            (
+                "FRANKEN_NODE_TRUST_MIN_TRUST_SCORE".to_string(),
+                "0.66".to_string(),
+            ),
+            (
+                "FRANKEN_NODE_TRUST_DECAY_FACTOR".to_string(),
+                "0.93".to_string(),
+            ),
+        ]);
+
+        let resolved =
+            Config::resolve_with_env(None, CliOverrides::default(), &map_lookup(env)).unwrap();
+
+        assert_eq!(resolved.config.trust.min_trust_score, Some(0.66));
+        assert_eq!(resolved.config.trust.decay_factor, Some(0.93));
+        assert!(resolved.decisions.iter().any(|decision| {
+            decision.field == "trust.min_trust_score" && decision.stage == MergeStage::Env
+        }));
+        assert!(resolved.decisions.iter().any(|decision| {
+            decision.field == "trust.decay_factor" && decision.stage == MergeStage::Env
+        }));
     }
 
     #[test]
