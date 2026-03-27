@@ -40,6 +40,8 @@ pub enum ReputationApiError {
     RateLimitExceeded(String),
     #[error("duplicate publisher identity `{0}` (Sybil rejection)")]
     SybilDuplicate(String),
+    #[error("publisher `{0}` is frozen — score updates are blocked")]
+    PublisherFrozen(String),
 }
 
 // -- Input dimensions ----------------------------------------------------------
@@ -257,6 +259,10 @@ pub fn is_anomalous_delta(delta: f64, history: &[f64], config: &AnomalyConfig) -
         return delta.abs() > 1e-9;
     }
 
+    if !config.std_dev_multiplier.is_finite() || config.std_dev_multiplier < 0.0 {
+        // Non-finite or negative multiplier — fail closed (treat as anomalous).
+        return true;
+    }
     delta.abs() > config.std_dev_multiplier * std_dev
 }
 
@@ -362,6 +368,12 @@ impl EcosystemReputationApi {
             .publishers
             .get_mut(publisher_id)
             .ok_or_else(|| ReputationApiError::PublisherNotFound(publisher_id.to_owned()))?;
+
+        if pub_record.frozen {
+            return Err(ReputationApiError::PublisherFrozen(
+                publisher_id.to_owned(),
+            ));
+        }
 
         let old_score = pub_record.score;
         let new_score = deterministic_reputation_score(&inputs, &self.weights);

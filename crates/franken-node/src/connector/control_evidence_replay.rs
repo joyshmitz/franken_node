@@ -18,6 +18,7 @@ use std::fmt;
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
 const MAX_VERDICTS: usize = 4096;
+const MAX_CANDIDATES: usize = 4096;
 
 use crate::connector::control_evidence::{ControlEvidenceEntry, DecisionKind, DecisionType};
 use crate::observability::evidence_ledger::{DecisionKind as LedgerDecisionKind, EvidenceEntry};
@@ -111,24 +112,34 @@ pub fn build_replay_context(
     let mut candidates = Vec::new();
 
     // Primary candidate (the chosen action)
-    candidates.push(Candidate {
-        id: entry.decision_id.clone(),
-        decision_kind: ledger_kind,
-        score: 1.0,
-        metadata: serde_json::json!({
-            "chosen_action": entry.chosen_action,
-        }),
-    });
+    push_bounded(
+        &mut candidates,
+        Candidate {
+            id: entry.decision_id.clone(),
+            decision_kind: ledger_kind,
+            score: 1.0,
+            metadata: serde_json::json!({
+                "chosen_action": entry.chosen_action,
+            }),
+        },
+        MAX_CANDIDATES,
+    );
 
     // Other candidates (lower score, same kind for simplicity)
     for (i, candidate_name) in entry.candidates_considered.iter().enumerate() {
         if *candidate_name != entry.decision_id {
-            candidates.push(Candidate {
-                id: candidate_name.clone(),
-                decision_kind: ledger_kind,
-                score: (0.5 - (i as f64 * 0.01)).max(0.0),
-                metadata: serde_json::json!({}),
-            });
+            let raw_score = (0.5 - (i as f64 * 0.01)).max(0.0);
+            let score = if raw_score.is_finite() { raw_score } else { 0.0 };
+            push_bounded(
+                &mut candidates,
+                Candidate {
+                    id: candidate_name.clone(),
+                    decision_kind: ledger_kind,
+                    score,
+                    metadata: serde_json::json!({}),
+                },
+                MAX_CANDIDATES,
+            );
         }
     }
 
