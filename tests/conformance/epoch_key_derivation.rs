@@ -1,17 +1,7 @@
 //! Conformance tests for bd-3cs3 epoch-scoped key derivation vectors.
 
-#[path = "../../crates/franken-node/src/control_plane/control_epoch.rs"]
-pub mod control_epoch;
-
-pub mod control_plane {
-    pub use super::control_epoch;
-}
-
-#[path = "../../crates/franken-node/src/security/epoch_scoped_keys.rs"]
-mod epoch_scoped_keys;
-
-use control_plane::control_epoch::ControlEpoch;
-use epoch_scoped_keys::{
+use frankenengine_node::control_plane::control_epoch::ControlEpoch;
+use frankenengine_node::security::epoch_scoped_keys::{
     RootSecret, derive_epoch_key, sign_epoch_artifact, verify_epoch_signature,
 };
 use serde::Deserialize;
