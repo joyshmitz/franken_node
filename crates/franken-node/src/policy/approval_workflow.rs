@@ -153,6 +153,7 @@ fn compute_entry_hash(entry: &PolicyChangeAuditEntry) -> String {
         &entry.timestamp,
         &entry.details,
         &entry.prev_hash,
+        &entry.signature,
     ] {
         hasher.update((field.len() as u64).to_le_bytes());
         hasher.update(field.as_bytes());

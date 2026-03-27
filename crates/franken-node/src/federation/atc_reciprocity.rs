@@ -160,7 +160,12 @@ impl ContributionMetrics {
 
     /// Compute quality-adjusted contribution ratio.
     pub fn quality_adjusted_ratio(&self) -> f64 {
-        self.contribution_ratio() * self.contribution_quality
+        let quality = if self.contribution_quality.is_finite() {
+            self.contribution_quality.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        self.contribution_ratio() * quality
     }
 }
 
@@ -304,9 +309,9 @@ impl ReciprocityEngine {
 
         if self.next_audit_sequence == u64::MAX {
             self.next_audit_sequence = 1;
-            self.audit_epoch = self.audit_epoch.wrapping_add(1);
+            self.audit_epoch = self.audit_epoch.saturating_add(1);
         } else {
-            self.next_audit_sequence += 1;
+            self.next_audit_sequence = self.next_audit_sequence.saturating_add(1);
         }
 
         entry_id
