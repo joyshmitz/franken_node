@@ -45,7 +45,7 @@ class TestConstants(unittest.TestCase):
         self.assertEqual(mod.SIZE_BUDGETS["enterprise"], 80)
 
     def test_all_checks_count(self):
-        self.assertEqual(len(mod.ALL_CHECKS), 18)
+        self.assertEqual(len(mod.ALL_CHECKS), 19)
 
 
 class TestSelfTest(unittest.TestCase):
@@ -137,11 +137,14 @@ class TestIndividualChecks(unittest.TestCase):
     def test_spec_size_constraint(self):
         self.assertTrue(self._run(mod.check_spec_size_constraint)["pass"])
 
-    def test_spec_cli_flag(self):
-        self.assertTrue(self._run(mod.check_spec_cli_flag)["pass"])
+    def test_spec_runtime_boundary(self):
+        self.assertTrue(self._run(mod.check_spec_runtime_boundary)["pass"])
 
-    def test_spec_env_var(self):
-        self.assertTrue(self._run(mod.check_spec_env_var)["pass"])
+    def test_policy_runtime_boundary(self):
+        self.assertTrue(self._run(mod.check_policy_runtime_boundary)["pass"])
+
+    def test_profiles_toml_runtime_boundary(self):
+        self.assertTrue(self._run(mod.check_profiles_toml_runtime_boundary)["pass"])
 
 
 class TestValidateProfile(unittest.TestCase):

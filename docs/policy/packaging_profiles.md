@@ -89,17 +89,22 @@ verification script and CI gate.
 
 ## 6. Profile Selection Precedence
 
-1. **CLI flag** `--profile <name>` (highest priority).
-2. **Environment variable** `FRANKEN_NODE_PROFILE`.
-3. **Default**: `local` if neither is set.
+These profiles are selected by packaging/release tooling, not by the current
+runtime CLI/config selector path.
 
-The CLI flag always overrides the environment variable. This ensures
-predictable behavior in automation scripts and CI pipelines.
+1. **Packaging/release tooling** selects `local`, `dev`, or `enterprise`.
+2. **Default**: `local` if tooling does not override the selection.
+
+Runtime `franken-node` configuration continues to use runtime policy profiles
+(`strict`, `balanced`, `legacy-risky`) via `config.rs`, `cli.rs`, and README
+examples. Packaging profiles must not be documented as runtime `--profile` or
+`FRANKEN_NODE_PROFILE` values until the binary actually implements that path.
 
 ## 7. Error Handling
 
-- Unknown profile names produce event **PKG-004**, emit a clear error
-  listing valid options (`local`, `dev`, `enterprise`), and exit non-zero.
+- Unknown packaging profile names produce event **PKG-004**, emit a clear error
+  listing valid options (`local`, `dev`, `enterprise`), and exit non-zero in
+  the packaging/release selection path.
 - Profile configuration file (`packaging/profiles.toml`) must be present
   and parseable at build time; missing or malformed files abort the build.
 
@@ -160,10 +165,10 @@ Changes to component inclusion, default policies, or size budgets require:
 | ID | Rule |
 |----|------|
 | INV-PKG-PROFILES | Exactly three profiles exist: `local`, `dev`, `enterprise` |
-| INV-PKG-SELECTION | CLI flag overrides env var; default is `local` |
+| INV-PKG-SELECTION | Packaging selection is owned by packaging/release tooling; current runtime `--profile` / `FRANKEN_NODE_PROFILE` remain runtime policy selectors (`strict`, `balanced`, `legacy-risky`) |
 | INV-PKG-SIZE | `local` binary at least 30% smaller than `enterprise` |
 | INV-PKG-INTEGRITY | `enterprise` performs full startup integrity self-check |
 | INV-PKG-COMPONENTS | Each profile includes exactly its defined components |
 | INV-PKG-TELEMETRY | Telemetry levels enforced per profile |
 | INV-PKG-AUDIT | `enterprise` mandates audit logging; others disable by default |
-| INV-PKG-ERROR | Unknown profiles produce PKG-004 and exit non-zero |
+| INV-PKG-ERROR | Unknown packaging profiles produce PKG-004 and exit non-zero in the packaging/release selection path |

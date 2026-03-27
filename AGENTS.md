@@ -252,7 +252,7 @@ CLI / config / profiles
 | `main.rs` | Top-level command execution for `init`, `run`, `migrate`, `verify`, `trust`, `remotecap`, `trust-card`, `fleet`, `incident`, `registry`, `bench`, and `doctor` |
 | `lib.rs` | Domain exports such as `connector`, `control_plane`, `remote`, `runtime`, `security`, `supply_chain`, `storage`, `tools`, `replay`, and feature-gated API/policy/conformance surfaces |
 | `cli.rs` | Stable CLI argument shapes and JSON/human output contracts that downstream tests assert |
-| `config.rs` | Runtime profile and config loading, including local/dev/enterprise profile behavior |
+| `config.rs` | Runtime profile and config loading for `strict`, `balanced`, and `legacy-risky` behavior |
 | `sdk/verifier/src/lib.rs` | Public verifier-facing API kept smaller and more stable than the main product crate |
 
 ### Main Product Domains
@@ -272,7 +272,7 @@ CLI / config / profiles
 
 - `extended-surfaces` enables heavier product surfaces such as `api`, `claims`, `conformance`, `extensions`, `federation`, `policy`, `registry`, `sdk`, and `verifier_economy`.
 - `test-support` enables shared testing helpers and harness-facing modules.
-- Deployment/profile defaults live in `packaging/profiles.toml`, which currently defines `local`, `dev`, and `enterprise` profiles selected by `--profile <name>` or `FRANKEN_NODE_PROFILE`.
+- Deployment/profile defaults live in `packaging/profiles.toml`, which currently defines `local`, `dev`, and `enterprise` packaging metadata for packaging/release flows. The live runtime `--profile <name>` / `FRANKEN_NODE_PROFILE` path still selects `strict`, `balanced`, or `legacy-risky`.
 
 ### Working Assumptions for Agents
 
@@ -334,7 +334,7 @@ python3 scripts/<relevant-gate>.py --json
 Do **not** assume historical release automation details still apply here. This checkout currently exposes product packaging and release-adjacent surfaces through:
 
 - `Cargo.toml` versioning for the Rust workspace
-- `packaging/profiles.toml` for `local`, `dev`, and `enterprise` packaging defaults
+- `packaging/profiles.toml` for `local`, `dev`, and `enterprise` packaging defaults used by packaging/release tooling, not the current runtime config selector
 - README install channels such as the one-line installer URL and Homebrew tap
 - `franken-node verify release` for release-directory checksum/signature verification
 

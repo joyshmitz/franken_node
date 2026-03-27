@@ -272,14 +272,55 @@ def check_spec_size_constraint() -> dict[str, Any]:
     return _file_contains(SPEC, "30%", "spec_size_constraint")
 
 
-def check_spec_cli_flag() -> dict[str, Any]:
-    """C17: Spec documents --profile CLI flag."""
-    return _file_contains(SPEC, "--profile", "spec_cli_flag")
+def check_spec_runtime_boundary() -> dict[str, Any]:
+    """C17: Spec distinguishes packaging profiles from runtime policy profiles."""
+    if not SPEC.is_file():
+        return _check("spec_runtime_boundary", False, "spec file missing")
+    content = SPEC.read_text(encoding="utf-8")
+    passed = (
+        "packaging/release tooling" in content
+        and "strict`, `balanced`, and `legacy-risky`" in content
+    )
+    detail = (
+        "spec distinguishes packaging selection from runtime policy selection"
+        if passed
+        else "missing packaging/runtime selector boundary"
+    )
+    return _check("spec_runtime_boundary", passed, detail)
 
 
-def check_spec_env_var() -> dict[str, Any]:
-    """C18: Spec documents FRANKEN_NODE_PROFILE env var."""
-    return _file_contains(SPEC, "FRANKEN_NODE_PROFILE", "spec_env_var")
+def check_policy_runtime_boundary() -> dict[str, Any]:
+    """C18: Policy distinguishes packaging profiles from runtime policy profiles."""
+    if not POLICY.is_file():
+        return _check("policy_runtime_boundary", False, "policy file missing")
+    content = POLICY.read_text(encoding="utf-8")
+    passed = (
+        "packaging/release tooling" in content
+        and "`strict`, `balanced`, `legacy-risky`" in content
+    )
+    detail = (
+        "policy distinguishes packaging selection from runtime policy selection"
+        if passed
+        else "missing packaging/runtime selector boundary"
+    )
+    return _check("policy_runtime_boundary", passed, detail)
+
+
+def check_profiles_toml_runtime_boundary() -> dict[str, Any]:
+    """C19: profiles.toml comments declare packaging-only selection semantics."""
+    if not PROFILES_TOML.is_file():
+        return _check("profiles_toml_runtime_boundary", False, "profiles.toml missing")
+    content = PROFILES_TOML.read_text(encoding="utf-8")
+    passed = (
+        "packaging/build metadata" in content
+        and "strict, balanced, legacy-risky" in content
+    )
+    detail = (
+        "profiles.toml comments declare packaging-only selection semantics"
+        if passed
+        else "missing packaging/runtime selector boundary in profiles.toml"
+    )
+    return _check("profiles_toml_runtime_boundary", passed, detail)
 
 
 # ---------------------------------------------------------------------------
@@ -355,8 +396,9 @@ ALL_CHECKS = [
     check_enterprise_audit_mandatory,
     check_enterprise_integrity_self_check,
     check_spec_size_constraint,
-    check_spec_cli_flag,
-    check_spec_env_var,
+    check_spec_runtime_boundary,
+    check_policy_runtime_boundary,
+    check_profiles_toml_runtime_boundary,
 ]
 
 

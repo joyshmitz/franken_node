@@ -56,14 +56,21 @@ ensure the right trade-offs are applied automatically.
 
 ## Profile Selection
 
-Profiles are selected via:
+Packaging profiles are selected by packaging/release tooling that reads
+`packaging/profiles.toml`. The current runtime binary does **not** consume
+`local`, `dev`, or `enterprise` through its `--profile` / `FRANKEN_NODE_PROFILE`
+path; that runtime selector continues to mean runtime policy profiles
+`strict`, `balanced`, and `legacy-risky`.
 
-1. `--profile <name>` CLI flag (highest priority).
-2. `FRANKEN_NODE_PROFILE` environment variable.
-3. Default: `local` if neither is set.
+Packaging/release selection rules are:
 
-Unknown profile names produce a clear error listing valid options and exit
-non-zero with event code PKG-004.
+1. Packaging/release tooling selects one of `local`, `dev`, or `enterprise`.
+2. If tooling does not override the selection, `local` is the default
+   packaging profile.
+
+Unknown packaging profile names produce a clear error listing valid options
+and exit non-zero with event code PKG-004 in the packaging/release selection
+path.
 
 ## Configuration File
 
@@ -76,13 +83,13 @@ determine what to include in the output artifact.
 | ID | Statement |
 |----|-----------|
 | INV-PKG-PROFILES | Exactly three profiles are defined: `local`, `dev`, `enterprise`. No additional profiles are accepted without governance review. |
-| INV-PKG-SELECTION | CLI flag `--profile` takes strict precedence over `FRANKEN_NODE_PROFILE` env var. If neither is set, `local` is used. |
+| INV-PKG-SELECTION | Packaging profile selection is a packaging/release concern. The current runtime `--profile` / `FRANKEN_NODE_PROFILE` path continues to select runtime policy profiles `strict`, `balanced`, `legacy-risky`, while packaging defaults to `local` when tooling does not override it. |
 | INV-PKG-SIZE | The `local` profile binary is at least 30% smaller than the `enterprise` profile binary, measured after stripping debug symbols and excluding compliance bundles. |
 | INV-PKG-INTEGRITY | The `enterprise` profile performs a full startup integrity self-check: binary signature verification, configuration checksum, and policy schema validation. |
 | INV-PKG-COMPONENTS | Each profile includes exactly the components listed in its definition; no extra components leak across profiles. |
 | INV-PKG-TELEMETRY | Telemetry levels are enforced per profile: `local` = off, `dev` = debug-local, `enterprise` = structured-export. |
 | INV-PKG-AUDIT | The `enterprise` profile mandates audit logging; `local` and `dev` disable it by default. |
-| INV-PKG-ERROR | Unknown profile names produce event PKG-004, list valid options, and exit non-zero. |
+| INV-PKG-ERROR | Unknown packaging profile names produce event PKG-004, list valid options, and exit non-zero in the packaging/release selection path. |
 
 ## Event Codes
 
@@ -121,6 +128,10 @@ determine what to include in the output artifact.
 4. Eager-load all modules.
 5. Enable audit logging and structured telemetry export.
 6. Emit PKG-002 with component list.
+
+These startup sequences describe behavior for a package assembled under the
+corresponding packaging profile. They do not redefine the current runtime
+`--profile` / `FRANKEN_NODE_PROFILE` selector used by `config.rs`.
 
 ## Telemetry Levels
 

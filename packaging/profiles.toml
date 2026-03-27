@@ -1,8 +1,9 @@
 # Packaging Profiles for franken-node
 #
 # Defines three deployment profiles: local, dev, enterprise.
-# Selected via `--profile <name>` CLI flag or FRANKEN_NODE_PROFILE env var.
-# CLI flag takes precedence over env var.
+# These are packaging/build metadata for release tooling and artifact assembly.
+# They are not consumed by the current runtime CLI/env selector path, which
+# still uses runtime policy profiles: strict, balanced, legacy-risky.
 #
 # Bead: bd-3kn | Section: 10.6 Performance + Packaging
 
@@ -105,11 +106,12 @@ exclude_compliance_bundles = false
 
 # ---------------------------------------------------------------
 # Profile selection rules:
-#   1. --profile <name> CLI flag (highest priority)
-#   2. FRANKEN_NODE_PROFILE env var
-#   3. Default: "local" if neither set
+#   1. Packaging/release tooling selects one of these profiles when building or
+#      assembling artifacts.
+#   2. If tooling does not override the selection, "local" is the default
+#      packaging profile.
 #
-# Unknown profile names MUST produce a clear error listing valid options
-# and exit non-zero.
+# Unknown packaging profile names MUST produce a clear error listing valid
+# options and exit non-zero in the packaging/release selection path.
 #
 # Valid profiles: local, dev, enterprise
