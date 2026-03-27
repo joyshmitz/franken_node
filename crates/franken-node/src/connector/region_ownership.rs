@@ -50,7 +50,7 @@ pub mod event_codes {
 static REGION_SEQ: AtomicU64 = AtomicU64::new(1);
 
 fn next_region_id() -> RegionId {
-    RegionId(REGION_SEQ.fetch_add(1, Ordering::Relaxed))
+    RegionId(atomic_next(&REGION_SEQ))
 }
 
 // ---------------------------------------------------------------------------
@@ -58,6 +58,19 @@ fn next_region_id() -> RegionId {
 // ---------------------------------------------------------------------------
 
 static CX_SEQ: AtomicU64 = AtomicU64::new(1);
+
+fn atomic_next(counter: &AtomicU64) -> u64 {
+    loop {
+        let current = counter.load(Ordering::Relaxed);
+        let next = current.saturating_add(1);
+        if counter
+            .compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            return current;
+        }
+    }
+}
 
 /// asupersync execution context for control-plane operations.
 ///
@@ -85,7 +98,7 @@ pub struct ControlPlaneCx {
 impl ControlPlaneCx {
     /// Create a new root Cx for a control-plane lifecycle.
     pub fn new_root(connector_id: &str, trace_id: &str, epoch: u64) -> Self {
-        let seq = CX_SEQ.fetch_add(1, Ordering::Relaxed);
+        let seq = atomic_next(&CX_SEQ);
         let cx_id = compute_cx_id(epoch, seq);
         Self {
             epoch,
@@ -99,7 +112,7 @@ impl ControlPlaneCx {
 
     /// Derive a child Cx inheriting the epoch and parent linkage.
     pub fn child(&self) -> Self {
-        let seq = CX_SEQ.fetch_add(1, Ordering::Relaxed);
+        let seq = atomic_next(&CX_SEQ);
         let cx_id = compute_cx_id(self.epoch, seq);
         Self {
             epoch: self.epoch,

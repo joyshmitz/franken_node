@@ -443,7 +443,11 @@ impl ReputationRegistry {
             .filter(|w| w.is_finite())
             .unwrap_or_else(|| signal.kind.default_weight());
 
-        let old_score = pub_record.score;
+        let old_score = if pub_record.score.is_finite() {
+            pub_record.score
+        } else {
+            0.0
+        };
         let old_tier = pub_record.tier;
 
         // Compute new score, clamped to [0, 100].
@@ -544,7 +548,11 @@ impl ReputationRegistry {
             });
         }
 
-        let old_score = pub_record.score;
+        let old_score = if pub_record.score.is_finite() {
+            pub_record.score
+        } else {
+            0.0
+        };
         let old_tier = pub_record.tier;
         let baseline = config.baseline;
         let rate = config.daily_rate;

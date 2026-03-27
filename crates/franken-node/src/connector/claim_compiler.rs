@@ -539,7 +539,7 @@ impl ClaimCompiler {
         );
 
         // Pre-validate the entire batch before mutating (INV-CLMC-SCOREBOARD-ATOMIC)
-        if self.entries.len() + claims.len() > self.config.scoreboard_capacity {
+        if self.entries.len().saturating_add(claims.len()) > self.config.scoreboard_capacity {
             self.emit(
                 event_codes::CLMC_006,
                 "*",
@@ -779,8 +779,18 @@ fn compute_scoreboard_digest(entries: &BTreeMap<String, ScoreEntry>) -> String {
     for (claim_id, entry) in entries {
         hasher.update((claim_id.len() as u64).to_le_bytes());
         hasher.update(claim_id.as_bytes());
+        hasher.update((entry.submitter_id.len() as u64).to_le_bytes());
+        hasher.update(entry.submitter_id.as_bytes());
+        hasher.update((entry.claim_summary.len() as u64).to_le_bytes());
+        hasher.update(entry.claim_summary.as_bytes());
+        hasher.update((entry.evidence_count as u64).to_le_bytes());
         hasher.update((entry.compilation_digest.len() as u64).to_le_bytes());
         hasher.update(entry.compilation_digest.as_bytes());
+        hasher.update((entry.evidence_uris.len() as u64).to_le_bytes());
+        for uri in &entry.evidence_uris {
+            hasher.update((uri.len() as u64).to_le_bytes());
+            hasher.update(uri.as_bytes());
+        }
     }
     hex::encode(hasher.finalize())
 }

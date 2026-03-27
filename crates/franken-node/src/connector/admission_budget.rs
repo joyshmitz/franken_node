@@ -328,7 +328,7 @@ impl AdmissionBudgetTracker {
         }
 
         // Dimension 3: failed_auth (current count, no increment from request)
-        let auth_ok = usage.failed_auth_count <= self.budget.max_failed_auth;
+        let auth_ok = usage.failed_auth_count < self.budget.max_failed_auth;
         records.push(BudgetCheckRecord {
             peer_id: request.peer_id.clone(),
             timestamp: timestamp.to_string(),

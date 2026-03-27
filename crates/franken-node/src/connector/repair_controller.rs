@@ -211,7 +211,7 @@ pub fn run_cycle(
             if total_used >= config.max_units_per_cycle {
                 break;
             }
-            let can_use = item.size_units.min(config.max_units_per_cycle - total_used);
+            let can_use = item.size_units.min(config.max_units_per_cycle.saturating_sub(total_used));
             if can_use > 0 {
                 let alloc =
                     allocations

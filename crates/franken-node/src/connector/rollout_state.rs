@@ -329,11 +329,16 @@ pub fn persist(state: &RolloutState, path: &Path) -> Result<(), PersistError> {
     })?;
 
     // Write to temp file then rename for atomicity (UUID suffix avoids collisions).
+    // TempFileGuard ensures cleanup on rename failure.
     let tmp_path = path.with_extension(format!("tmp.{}", uuid::Uuid::now_v7()));
     std::fs::write(&tmp_path, &json).map_err(|e| PersistError::IoError {
         message: e.to_string(),
     })?;
-    std::fs::rename(&tmp_path, path).map_err(|e| PersistError::IoError {
+    let rename_result = std::fs::rename(&tmp_path, path);
+    if rename_result.is_err() {
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+    rename_result.map_err(|e| PersistError::IoError {
         message: e.to_string(),
     })?;
 

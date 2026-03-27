@@ -86,7 +86,7 @@ impl RecommendationConfig {
                 "confidence_threshold must be in [0.0, 1.0]".into(),
             ));
         }
-        if self.risk_budget <= 0.0 {
+        if !self.risk_budget.is_finite() || self.risk_budget <= 0.0 {
             return Err(OIError::InvalidConfig("risk_budget must be > 0".into()));
         }
         if !(0.0..=1.0).contains(&self.degraded_confidence_penalty) {
@@ -582,8 +582,14 @@ impl RecommendationEngine {
             )));
         }
 
+        if !rec.expected_loss.is_finite() {
+            return Err(OIError::ScoreOverflow {
+                cumulative: self.cumulative_loss,
+                budget: self.config.risk_budget,
+            });
+        }
         let new_cumulative = self.cumulative_loss + rec.expected_loss;
-        if new_cumulative > self.config.risk_budget {
+        if !new_cumulative.is_finite() || new_cumulative > self.config.risk_budget {
             return Err(OIError::ScoreOverflow {
                 cumulative: new_cumulative,
                 budget: self.config.risk_budget,

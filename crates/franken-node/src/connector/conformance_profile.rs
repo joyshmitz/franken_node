@@ -7,6 +7,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+const MAX_CAPABILITY_RESULTS: usize = 4096;
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    items.push(item);
+    if items.len() > cap {
+        let overflow = items.len() - cap;
+        items.drain(0..overflow);
+    }
+}
+
 // ── Profile ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -183,15 +193,19 @@ pub fn evaluate_claim(
     for cap in required {
         match result_map.get(cap.as_str()) {
             None => {
-                per_cap.push(CapabilityResult {
-                    capability: cap.clone(),
-                    passed: false,
-                    details: "no test result".into(),
-                });
+                push_bounded(
+                    &mut per_cap,
+                    CapabilityResult {
+                        capability: cap.clone(),
+                        passed: false,
+                        details: "no test result".into(),
+                    },
+                    MAX_CAPABILITY_RESULTS,
+                );
                 all_pass = false;
             }
             Some(r) => {
-                per_cap.push((*r).clone());
+                push_bounded(&mut per_cap, (*r).clone(), MAX_CAPABILITY_RESULTS);
                 if !r.passed {
                     all_pass = false;
                 }
