@@ -6,13 +6,14 @@
 //! route groups through the middleware chain and provides a unified
 //! `ControlPlaneService` with dispatch, metrics, and endpoint catalog.
 
+use crate::config::Config as RuntimeConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use super::fleet_control_routes;
 use super::middleware::{
-    default_rate_limit, EndpointGroup, RateLimitConfig, RateLimiter, RequestLog, RouteMetadata,
-    ServiceMetrics,
+    EndpointGroup, RateLimitConfig, RateLimiter, RequestLog, RouteMetadata, ServiceMetrics,
+    default_rate_limit,
 };
 use super::operator_routes;
 use super::verifier_routes;
@@ -30,6 +31,9 @@ pub struct ServiceConfig {
     pub otel_enabled: bool,
     /// Service name for tracing.
     pub service_name: String,
+    /// Runtime config snapshot exposed through operator/config surfaces.
+    #[serde(default)]
+    pub runtime_config: RuntimeConfig,
 }
 
 impl Default for ServiceConfig {
@@ -39,6 +43,7 @@ impl Default for ServiceConfig {
             rate_limits: BTreeMap::new(),
             otel_enabled: false,
             service_name: "franken-node-control-plane".to_string(),
+            runtime_config: RuntimeConfig::default(),
         }
     }
 }
@@ -194,6 +199,7 @@ impl ControlPlaneService {
     /// Create a new control-plane service with default or custom configuration.
     pub fn new(config: ServiceConfig) -> Self {
         super::operator_routes::init_process_start();
+        super::operator_routes::init_operator_config(&config.runtime_config);
 
         let operator_limit = config
             .rate_limits
@@ -433,9 +439,9 @@ mod tests {
 mod integration_tests {
     use super::*;
     use crate::api::middleware::{
-        authorize, check_rate_limit, default_rate_limit, execute_middleware_chain, AuthIdentity,
-        AuthMethod, AuthzDecision, EndpointGroup, EndpointLifecycle, PolicyHook, RateLimitConfig,
-        RateLimiter, RouteMetadata,
+        AuthIdentity, AuthMethod, AuthzDecision, EndpointGroup, EndpointLifecycle, PolicyHook,
+        RateLimitConfig, RateLimiter, RouteMetadata, authorize, check_rate_limit,
+        default_rate_limit, execute_middleware_chain,
     };
     use crate::security::intent_firewall::{
         EffectsFirewall, FirewallVerdict, IntentClassification, IntentClassifier, RemoteEffect,

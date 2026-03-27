@@ -193,6 +193,7 @@ pub struct BehavioralProfile {
 pub struct ProvenanceSummary {
     pub attestation_level: String,
     pub source_uri: String,
+    pub artifact_hashes: Vec<String>,
     pub verified_at: String,
 }
 
@@ -1213,6 +1214,7 @@ pub fn demo_registry(now_secs: u64) -> Result<TrustCardRegistry, TrustCardError>
             provenance_summary: ProvenanceSummary {
                 attestation_level: "slsa-l3".to_string(),
                 source_uri: "https://registry.example/acme/auth-guard".to_string(),
+                artifact_hashes: vec!["sha256:".to_string() + &"a".repeat(64)],
                 verified_at: "2026-02-20T12:00:00Z".to_string(),
             },
             reputation_score_basis_points: 920,
@@ -1262,6 +1264,7 @@ pub fn demo_registry(now_secs: u64) -> Result<TrustCardRegistry, TrustCardError>
             provenance_summary: ProvenanceSummary {
                 attestation_level: "slsa-l2".to_string(),
                 source_uri: "https://registry.example/beta/telemetry-bridge".to_string(),
+                artifact_hashes: vec!["sha256:".to_string() + &"b".repeat(64)],
                 verified_at: "2026-02-20T12:00:01Z".to_string(),
             },
             reputation_score_basis_points: 680,
@@ -1420,6 +1423,7 @@ mod tests {
             provenance_summary: ProvenanceSummary {
                 attestation_level: "slsa-l3".to_string(),
                 source_uri: "registry://acme/plugin".to_string(),
+                artifact_hashes: vec!["sha256:".to_string() + &"e".repeat(64)],
                 verified_at: "2026-01-01T00:00:00Z".to_string(),
             },
             reputation_score_basis_points: 900,

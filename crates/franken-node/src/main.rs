@@ -2950,6 +2950,12 @@ fn quarantine_trust_cards(
             )
             .map_err(|err| anyhow::anyhow!(err.to_string()))?
             .into_iter()
+            .filter(|card| {
+                card.provenance_summary
+                    .artifact_hashes
+                    .iter()
+                    .any(|h| h == artifact)
+            })
             .map(|card| card.extension.extension_id)
             .collect();
     } else {

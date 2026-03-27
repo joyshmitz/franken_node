@@ -6,6 +6,7 @@
 //! - `GET /v1/operator/config` — current configuration view
 //! - `GET /v1/operator/rollout` — rollout state query
 
+use crate::config::Config as RuntimeConfig;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 #[cfg(test)]
@@ -37,6 +38,13 @@ static PROCESS_START_WALL_CLOCK: std::sync::LazyLock<RwLock<String>> =
     std::sync::LazyLock::new(|| RwLock::new(String::new()));
 static PROCESS_START_INIT_LOCK: std::sync::LazyLock<Mutex<()>> =
     std::sync::LazyLock::new(|| Mutex::new(()));
+static OPERATOR_CONFIG_INITIALIZED: AtomicBool = AtomicBool::new(false);
+static OPERATOR_CONFIG_VIEW: std::sync::LazyLock<RwLock<ConfigView>> =
+    std::sync::LazyLock::new(|| {
+        RwLock::new(ConfigView::from_runtime_config(&RuntimeConfig::default()))
+    });
+static OPERATOR_CONFIG_INIT_LOCK: std::sync::LazyLock<Mutex<()>> =
+    std::sync::LazyLock::new(|| Mutex::new(()));
 
 #[cfg(test)]
 static PROCESS_START_OVERRIDE: Mutex<Option<ProcessStartState>> = Mutex::new(None);
@@ -64,6 +72,14 @@ fn install_process_start(offset_nanos: u64, wall_clock_rfc3339: String) {
     PROCESS_START_INITIALIZED.store(true, Ordering::Release);
 }
 
+fn install_operator_config(config: &RuntimeConfig) {
+    let mut view = OPERATOR_CONFIG_VIEW
+        .write()
+        .unwrap_or_else(|poison| poison.into_inner());
+    *view = ConfigView::from_runtime_config(config);
+    OPERATOR_CONFIG_INITIALIZED.store(true, Ordering::Release);
+}
+
 pub(crate) fn init_process_start() {
     #[cfg(test)]
     PROCESS_START_INIT_CALLS.fetch_add(1, Ordering::Relaxed);
@@ -80,6 +96,13 @@ pub(crate) fn init_process_start() {
     }
 
     install_process_start(now_epoch_nanos(), chrono::Utc::now().to_rfc3339());
+}
+
+pub(crate) fn init_operator_config(config: &RuntimeConfig) {
+    let _guard = OPERATOR_CONFIG_INIT_LOCK
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    install_operator_config(config);
 }
 
 fn process_uptime_seconds() -> u64 {
@@ -108,6 +131,17 @@ fn process_started_at_rfc3339() -> String {
     }
 
     PROCESS_START_WALL_CLOCK
+        .read()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .clone()
+}
+
+fn operator_config_view() -> ConfigView {
+    if !OPERATOR_CONFIG_INITIALIZED.load(Ordering::Acquire) {
+        init_operator_config(&RuntimeConfig::default());
+    }
+
+    OPERATOR_CONFIG_VIEW
         .read()
         .unwrap_or_else(|poison| poison.into_inner())
         .clone()
@@ -144,6 +178,12 @@ pub(crate) fn clear_process_start_override_for_tests() {
         .write()
         .unwrap_or_else(|poison| poison.into_inner());
     wall_clock.clear();
+
+    OPERATOR_CONFIG_INITIALIZED.store(false, Ordering::Release);
+    let mut config_view = OPERATOR_CONFIG_VIEW
+        .write()
+        .unwrap_or_else(|poison| poison.into_inner());
+    *config_view = ConfigView::from_runtime_config(&RuntimeConfig::default());
 }
 
 #[cfg(test)]
@@ -233,6 +273,23 @@ pub struct ConfigView {
     pub replay_persist_high_severity: bool,
     pub fleet_convergence_timeout_seconds: u32,
     pub observability_namespace: String,
+}
+
+impl ConfigView {
+    fn from_runtime_config(config: &RuntimeConfig) -> Self {
+        Self {
+            profile: config.profile.to_string(),
+            compatibility_mode: config.compatibility.mode.to_string(),
+            trust_revocation_fresh: config.trust.risky_requires_fresh_revocation,
+            quarantine_on_high_risk: config.trust.quarantine_on_high_risk,
+            replay_persist_high_severity: config.replay.persist_high_severity,
+            fleet_convergence_timeout_seconds: config
+                .fleet
+                .convergence_timeout_seconds
+                .min(u32::MAX as u64) as u32,
+            observability_namespace: config.observability.namespace.clone(),
+        }
+    }
 }
 
 /// Rollout state returned by `GET /v1/operator/rollout`.
@@ -365,15 +422,7 @@ pub fn get_config(
     _identity: &AuthIdentity,
     _trace: &TraceContext,
 ) -> Result<ApiResponse<ConfigView>, ApiError> {
-    let config = ConfigView {
-        profile: "balanced".to_string(),
-        compatibility_mode: "balanced".to_string(),
-        trust_revocation_fresh: true,
-        quarantine_on_high_risk: true,
-        replay_persist_high_severity: true,
-        fleet_convergence_timeout_seconds: 120,
-        observability_namespace: "franken_node".to_string(),
-    };
+    let config = operator_config_view();
 
     Ok(ApiResponse {
         ok: true,
@@ -522,12 +571,53 @@ mod tests {
     }
 
     #[test]
-    fn get_config_returns_balanced_profile() {
+    fn get_config_returns_default_snapshot_without_service_bootstrap() {
+        let _lock = process_start_test_lock();
+        clear_process_start_override_for_tests();
         let identity = test_identity();
         let trace = test_trace();
         let result = get_config(&identity, &trace).expect("config");
         assert!(result.ok);
         assert_eq!(result.data.profile, "balanced");
+        assert_eq!(result.data.compatibility_mode, "balanced");
+        assert!(result.data.trust_revocation_fresh);
+        assert!(result.data.quarantine_on_high_risk);
+        assert!(result.data.replay_persist_high_severity);
+        assert_eq!(result.data.fleet_convergence_timeout_seconds, 120);
+        assert_eq!(result.data.observability_namespace, "franken_node");
+
+        let repeat = get_config(&identity, &trace).expect("repeat config");
+        assert_eq!(result.data, repeat.data);
+    }
+
+    #[test]
+    fn service_bootstrap_updates_operator_config_snapshot() {
+        let _lock = process_start_test_lock();
+        clear_process_start_override_for_tests();
+        let identity = test_identity();
+        let trace = test_trace();
+
+        let before = get_config(&identity, &trace).expect("config before bootstrap");
+        assert_eq!(before.data.profile, "balanced");
+
+        let custom_runtime_config =
+            crate::config::Config::for_profile(crate::config::Profile::LegacyRisky);
+        let _service = ControlPlaneService::new(crate::api::service::ServiceConfig {
+            runtime_config: custom_runtime_config,
+            ..Default::default()
+        });
+
+        let after = get_config(&identity, &trace).expect("config after bootstrap");
+        assert_eq!(after.data.profile, "legacy-risky");
+        assert_eq!(after.data.compatibility_mode, "legacy-risky");
+        assert!(!after.data.trust_revocation_fresh);
+        assert!(!after.data.quarantine_on_high_risk);
+        assert!(after.data.replay_persist_high_severity);
+        assert_eq!(after.data.fleet_convergence_timeout_seconds, 300);
+        assert_eq!(after.data.observability_namespace, "franken_node");
+
+        let repeat = get_config(&identity, &trace).expect("repeat config");
+        assert_eq!(after.data, repeat.data);
     }
 
     #[test]
