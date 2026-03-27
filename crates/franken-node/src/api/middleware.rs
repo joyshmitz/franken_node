@@ -139,6 +139,7 @@ pub fn authenticate(
     auth_header: Option<&str>,
     required_method: &AuthMethod,
     trace_id: &str,
+    authorized_keys: &std::collections::BTreeSet<String>,
 ) -> AuthResult {
     match required_method {
         AuthMethod::None => Ok(AuthIdentity {
@@ -160,6 +161,12 @@ pub fn authenticate(
             if key.is_empty() {
                 return Err(ApiError::AuthFailed {
                     detail: "empty API key".to_string(),
+                    trace_id: trace_id.to_string(),
+                });
+            }
+            if !authorized_keys.contains(key) {
+                return Err(ApiError::AuthFailed {
+                    detail: "invalid API key".to_string(),
                     trace_id: trace_id.to_string(),
                 });
             }
@@ -186,6 +193,12 @@ pub fn authenticate(
                     trace_id: trace_id.to_string(),
                 });
             }
+            if !authorized_keys.contains(token) {
+                return Err(ApiError::AuthFailed {
+                    detail: "invalid bearer token".to_string(),
+                    trace_id: trace_id.to_string(),
+                });
+            }
             Ok(AuthIdentity {
                 principal: format!("token:{}", utf8_prefix(token, 8)),
                 method: AuthMethod::BearerToken,
@@ -200,7 +213,7 @@ pub fn authenticate(
                 trace_id: trace_id.to_string(),
             })?;
             Ok(AuthIdentity {
-                principal: format!("mtls:{header}"),
+                principal: format!("mtls:{}", utf8_prefix(header, 16)),
                 method: AuthMethod::MtlsClientCert,
                 roles: vec![
                     "operator".to_string(),
@@ -478,6 +491,7 @@ pub fn execute_middleware_chain<F, T>(
     auth_header: Option<&str>,
     traceparent: Option<&str>,
     rate_limiter: &mut RateLimiter,
+    authorized_keys: &std::collections::BTreeSet<String>,
     handler: F,
 ) -> (MiddlewareResult<T>, RequestLog)
 where
@@ -493,7 +507,7 @@ where
     let trace_id = trace_ctx.trace_id.clone();
 
     // Step 2: Authentication
-    let identity = match authenticate(auth_header, &route.auth_method, &trace_id) {
+    let identity = match authenticate(auth_header, &route.auth_method, &trace_id, authorized_keys) {
         Ok(id) => id,
         Err(err) => {
             let log = build_request_log(route, 401, start, &trace_id, "anonymous");
@@ -673,30 +687,45 @@ mod tests {
         assert_eq!(tc.trace_id, parsed.trace_id);
     }
 
+    fn get_test_keys() -> std::collections::BTreeSet<String> {
+        let mut keys = std::collections::BTreeSet::new();
+        keys.insert("test-key-123".to_string());
+        keys.insert("mytoken-abc".to_string());
+        keys.insert("🔐鍵🙂abc123".to_string());
+        keys.insert("令牌🙂abcXYZ".to_string());
+        keys.insert("valid-token-abc".to_string());
+        keys.insert("fleet-service-cert".to_string());
+        keys
+    }
+
     #[test]
     fn authenticate_none_method() {
-        let result = authenticate(None, &AuthMethod::None, "t-1");
+        let keys = get_test_keys();
+        let result = authenticate(None, &AuthMethod::None, "t-1", &keys);
         let identity = result.expect("auth none");
         assert_eq!(identity.principal, "anonymous");
     }
 
     #[test]
     fn authenticate_api_key() {
-        let result = authenticate(Some("ApiKey test-key-123"), &AuthMethod::ApiKey, "t-2");
+        let keys = get_test_keys();
+        let result = authenticate(Some("ApiKey test-key-123"), &AuthMethod::ApiKey, "t-2", &keys);
         let identity = result.expect("auth api key");
         assert!(identity.principal.starts_with("apikey:"));
     }
 
     #[test]
     fn authenticate_bearer_token() {
-        let result = authenticate(Some("Bearer mytoken-abc"), &AuthMethod::BearerToken, "t-3");
+        let keys = get_test_keys();
+        let result = authenticate(Some("Bearer mytoken-abc"), &AuthMethod::BearerToken, "t-3", &keys);
         let identity = result.expect("auth bearer");
         assert!(identity.principal.starts_with("token:"));
     }
 
     #[test]
     fn authenticate_api_key_handles_unicode_without_panicking() {
-        let result = authenticate(Some("ApiKey 🔐鍵🙂abc123"), &AuthMethod::ApiKey, "t-2u");
+        let keys = get_test_keys();
+        let result = authenticate(Some("ApiKey 🔐鍵🙂abc123"), &AuthMethod::ApiKey, "t-2u", &keys);
         let identity = result.expect("auth api key");
         let expected: String = "🔐鍵🙂abc123".chars().take(8).collect();
         assert_eq!(identity.principal, format!("apikey:{expected}"));
@@ -704,10 +733,12 @@ mod tests {
 
     #[test]
     fn authenticate_bearer_handles_unicode_without_panicking() {
+        let keys = get_test_keys();
         let result = authenticate(
             Some("Bearer 令牌🙂abcXYZ"),
             &AuthMethod::BearerToken,
             "t-3u",
+            &keys,
         );
         let identity = result.expect("auth bearer");
         let expected: String = "令牌🙂abcXYZ".chars().take(8).collect();
@@ -716,13 +747,15 @@ mod tests {
 
     #[test]
     fn authenticate_missing_header() {
-        let result = authenticate(None, &AuthMethod::ApiKey, "t-4");
+        let keys = get_test_keys();
+        let result = authenticate(None, &AuthMethod::ApiKey, "t-4", &keys);
         assert!(result.is_err());
     }
 
     #[test]
     fn authenticate_wrong_prefix() {
-        let result = authenticate(Some("Basic abc"), &AuthMethod::BearerToken, "t-5");
+        let keys = get_test_keys();
+        let result = authenticate(Some("Basic abc"), &AuthMethod::BearerToken, "t-5", &keys);
         assert!(result.is_err());
     }
 
@@ -883,12 +916,14 @@ mod tests {
             trace_propagation: true,
         };
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
+        let keys = get_test_keys();
 
         let (result, log) = execute_middleware_chain(
             &route,
             None,
             Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"),
             &mut limiter,
+            &keys,
             |_identity, _ctx| Ok("ok".to_string()),
         );
 
@@ -912,12 +947,14 @@ mod tests {
             trace_propagation: true,
         };
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
+        let keys = get_test_keys();
 
         let (result, log) = execute_middleware_chain(
             &route,
             None, // no auth header
             None,
             &mut limiter,
+            &keys,
             |_identity, _ctx| Ok("should not reach"),
         );
 

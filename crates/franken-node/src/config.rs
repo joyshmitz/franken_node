@@ -112,6 +112,7 @@ impl Config {
                 },
                 security: SecurityConfig {
                     max_degraded_duration_secs: 3_600,
+                    authorized_api_keys: std::collections::BTreeSet::new(),
                 },
                 engine: EngineConfig::default(),
                 runtime: RuntimeConfig::strict_defaults(),
@@ -165,6 +166,7 @@ impl Config {
                 },
                 security: SecurityConfig {
                     max_degraded_duration_secs: 3_600,
+                    authorized_api_keys: std::collections::BTreeSet::new(),
                 },
                 engine: EngineConfig::default(),
                 runtime: RuntimeConfig::balanced_defaults(),
@@ -218,6 +220,7 @@ impl Config {
                 },
                 security: SecurityConfig {
                     max_degraded_duration_secs: 3_600,
+                    authorized_api_keys: std::collections::BTreeSet::new(),
                 },
                 engine: EngineConfig::default(),
                 runtime: RuntimeConfig::legacy_defaults(),
@@ -1783,6 +1786,10 @@ pub struct RemoteConfig {
 pub struct SecurityConfig {
     /// Maximum time the system may remain in degraded mode before suspension.
     pub max_degraded_duration_secs: u64,
+
+    /// List of authorized API keys for control-plane access.
+    #[serde(default)]
+    pub authorized_api_keys: std::collections::BTreeSet<String>,
 }
 
 // -- Engine --

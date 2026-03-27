@@ -447,9 +447,20 @@ mod integration_tests {
         EffectsFirewall, FirewallVerdict, IntentClassification, IntentClassifier, RemoteEffect,
         TrafficOrigin,
     };
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     // ── Helpers ────────────────────────────────────────────────────────
+
+    fn get_test_keys() -> BTreeSet<String> {
+        let mut keys = BTreeSet::new();
+        keys.insert("test-key-123".to_string());
+        keys.insert("mytoken-abc".to_string());
+        keys.insert("🔐鍵🙂abc123".to_string());
+        keys.insert("令牌🙂abcXYZ".to_string());
+        keys.insert("valid-token-abc".to_string());
+        keys.insert("fleet-service-cert".to_string());
+        keys
+    }
 
     fn make_effect(effect_id: &str, ext_id: &str) -> RemoteEffect {
         RemoteEffect {
@@ -510,12 +521,14 @@ mod integration_tests {
         let route = operator_status_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let mut fw = make_firewall();
+        let keys = get_test_keys();
 
         let (result, log) = execute_middleware_chain(
             &route,
             None, // no auth needed
             None,
             &mut limiter,
+            &keys,
             |_identity, _ctx| {
                 let effect = make_effect("e-safe", "ext-001");
                 let decision = fw
@@ -536,12 +549,14 @@ mod integration_tests {
         let route = fleet_admin_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
         let mut firewall_called = false;
+        let keys = get_test_keys();
 
         let (result, log) = execute_middleware_chain(
             &route,
             None, // missing required auth
             None,
             &mut limiter,
+            &keys,
             |_identity, _ctx| {
                 firewall_called = true;
                 Ok("should not reach")
@@ -560,12 +575,14 @@ mod integration_tests {
     fn wrong_auth_prefix_rejected_before_firewall() {
         let route = fleet_admin_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
+        let keys = get_test_keys();
 
         let (result, log) = execute_middleware_chain(
             &route,
             Some("ApiKey my-key"), // route requires BearerToken
             None,
             &mut limiter,
+            &keys,
             |_identity, _ctx| Ok("should not reach"),
         );
 
@@ -589,12 +606,14 @@ mod integration_tests {
         };
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
         let mut fw = make_firewall();
+        let keys = get_test_keys();
 
         let (result, log) = execute_middleware_chain(
             &route,
             Some("fleet-service-cert"),
             None,
             &mut limiter,
+            &keys,
             |identity, _ctx| {
                 assert!(identity.roles.contains(&"fleet-admin".to_string()));
                 let effect = make_effect("e-fleet", "ext-001");
@@ -618,12 +637,14 @@ mod integration_tests {
         let route = fleet_admin_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
         let mut firewall_called = false;
+        let keys = get_test_keys();
 
         let (result, log) = execute_middleware_chain(
             &route,
             Some("Bearer valid-token-abc"),
             None,
             &mut limiter,
+            &keys,
             |_identity, _ctx| {
                 firewall_called = true;
                 Ok("should not reach")
@@ -675,16 +696,19 @@ mod integration_tests {
             fail_closed: false,
         };
         let mut limiter = RateLimiter::new(config);
+        let keys = get_test_keys();
 
         // Exhaust the burst
         let (first, _) =
-            execute_middleware_chain(&route, None, None, &mut limiter, |_id, _ctx| Ok("first"));
+            execute_middleware_chain(&route, None, None, &mut limiter, &keys, |_id, _ctx| {
+                Ok("first")
+            });
         assert!(first.is_ok());
 
         // Second request hits rate limit
         let mut firewall_called = false;
         let (second, log) =
-            execute_middleware_chain(&route, None, None, &mut limiter, |_id, _ctx| {
+            execute_middleware_chain(&route, None, None, &mut limiter, &keys, |_id, _ctx| {
                 firewall_called = true;
                 Ok("should not reach")
             });
@@ -729,12 +753,14 @@ mod integration_tests {
         let route = operator_status_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let traceparent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+        let keys = get_test_keys();
 
         let (result, log) = execute_middleware_chain(
             &route,
             None,
             Some(traceparent),
             &mut limiter,
+            &keys,
             |_identity, ctx| {
                 assert_eq!(ctx.trace_id, "0af7651916cd43dd8448eb211c80319c");
                 assert_eq!(ctx.span_id, "b7ad6b7169203331");
@@ -750,12 +776,14 @@ mod integration_tests {
     fn generated_trace_context_when_no_traceparent() {
         let route = operator_status_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
+        let keys = get_test_keys();
 
         let (result, log) = execute_middleware_chain(
             &route,
             None,
             None, // no traceparent
             &mut limiter,
+            &keys,
             |_identity, ctx| {
                 assert!(!ctx.trace_id.is_empty());
                 assert!(!ctx.span_id.is_empty());
@@ -774,9 +802,15 @@ mod integration_tests {
         let route = operator_status_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let mut fw = make_firewall();
+        let keys = get_test_keys();
 
-        let (result, log) =
-            execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
+        let (result, log) = execute_middleware_chain(
+            &route,
+            None,
+            None,
+            &mut limiter,
+            &keys,
+            |_identity, _ctx| {
                 let mut effect = make_effect("e-exfil", "ext-001");
                 effect.has_sensitive_payload = true;
                 let decision = fw
@@ -786,7 +820,8 @@ mod integration_tests {
                 assert_eq!(decision.intent, Some(IntentClassification::Exfiltration));
                 assert!(!decision.receipt_id.is_empty());
                 Ok(decision)
-            });
+            },
+        );
 
         assert!(result.is_ok());
         assert_eq!(log.status, 200); // handler returned Ok
@@ -797,9 +832,15 @@ mod integration_tests {
         let route = operator_status_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let mut fw = make_firewall();
+        let keys = get_test_keys();
 
-        let (result, _log) =
-            execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
+        let (result, _log) = execute_middleware_chain(
+            &route,
+            None,
+            None,
+            &mut limiter,
+            &keys,
+            |_identity, _ctx| {
                 let mut effect = make_effect("e-cred-fwd", "ext-001");
                 effect.carries_credentials = true;
                 let decision = fw
@@ -811,7 +852,8 @@ mod integration_tests {
                     Some(IntentClassification::CredentialForward)
                 );
                 Ok(decision.verdict)
-            });
+            },
+        );
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), FirewallVerdict::Deny);
@@ -822,9 +864,15 @@ mod integration_tests {
         let route = operator_status_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let mut fw = make_firewall();
+        let keys = get_test_keys();
 
-        let (result, _log) =
-            execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
+        let (result, _log) = execute_middleware_chain(
+            &route,
+            None,
+            None,
+            &mut limiter,
+            &keys,
+            |_identity, _ctx| {
                 let mut effect = make_effect("e-health", "ext-001");
                 effect.path = "/health/live".into();
                 let decision = fw
@@ -833,7 +881,8 @@ mod integration_tests {
                 assert_eq!(decision.verdict, FirewallVerdict::Allow);
                 assert_eq!(decision.intent, Some(IntentClassification::HealthCheck));
                 Ok(decision.verdict)
-            });
+            },
+        );
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), FirewallVerdict::Allow);
@@ -849,15 +898,22 @@ mod integration_tests {
         let route = operator_status_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let mut fw = make_firewall();
+        let keys = get_test_keys();
 
-        let (_result, log) =
-            execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
+        let (_result, log) = execute_middleware_chain(
+            &route,
+            None,
+            None,
+            &mut limiter,
+            &keys,
+            |_identity, _ctx| {
                 let effect = make_effect("e-metric", "ext-001");
                 let _decision = fw
                     .evaluate(&effect, "trace-metric", "2026-01-01T00:00:00Z")
                     .expect("firewall");
                 Ok("processed")
-            });
+            },
+        );
 
         service.record(&log);
         assert_eq!(service.request_count(), 1);
@@ -875,12 +931,14 @@ mod integration_tests {
         let mut service = ControlPlaneService::default();
         let route = fleet_admin_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
+        let keys = get_test_keys();
 
         let (_result, log) = execute_middleware_chain(
             &route,
             None, // missing auth
             None,
             &mut limiter,
+            &keys,
             |_identity, _ctx| Ok("unreachable"),
         );
 
@@ -904,10 +962,16 @@ mod integration_tests {
         let route = operator_status_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let mut fw = EffectsFirewall::with_default_policy();
+        let keys = get_test_keys();
         // Do NOT register the extension
 
-        let (result, log) =
-            execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
+        let (result, log) = execute_middleware_chain(
+            &route,
+            None,
+            None,
+            &mut limiter,
+            &keys,
+            |_identity, _ctx| {
                 let effect = make_effect("e-unreg", "ext-unknown");
                 let fw_result = fw.evaluate(&effect, "trace-unreg", "2026-01-01T00:00:00Z");
                 assert!(fw_result.is_err());
@@ -917,7 +981,8 @@ mod integration_tests {
                         trace_id: "trace-unreg".to_string(),
                     },
                 )
-            });
+            },
+        );
 
         assert!(result.is_err());
         assert_eq!(log.status, 500);
@@ -933,17 +998,24 @@ mod integration_tests {
         let route = operator_status_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let mut fw = make_firewall();
+        let keys = get_test_keys();
 
         for i in 0..5 {
             let effect_id = format!("e-multi-{}", i);
-            let (_result, log) =
-                execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
+            let (_result, log) = execute_middleware_chain(
+                &route,
+                None,
+                None,
+                &mut limiter,
+                &keys,
+                |_identity, _ctx| {
                     let effect = make_effect(&effect_id, "ext-001");
                     let decision = fw
                         .evaluate(&effect, "trace-m", "2026-01-01T00:00:00Z")
                         .expect("firewall");
                     Ok(decision.verdict)
-                });
+                },
+            );
             service.record(&log);
         }
 
@@ -962,9 +1034,15 @@ mod integration_tests {
         let route = operator_status_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let mut fw = make_firewall();
+        let keys = get_test_keys();
 
-        let (result, _log) =
-            execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
+        let (result, _log) = execute_middleware_chain(
+            &route,
+            None,
+            None,
+            &mut limiter,
+            &keys,
+            |_identity, _ctx| {
                 let effect = make_effect("e-classify", "ext-001");
                 let classifier_result = IntentClassifier::classify(&effect);
                 let decision = fw
@@ -972,7 +1050,8 @@ mod integration_tests {
                     .expect("firewall");
                 assert_eq!(decision.intent, classifier_result);
                 Ok(decision.intent)
-            });
+            },
+        );
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Some(IntentClassification::DataFetch));
@@ -985,9 +1064,15 @@ mod integration_tests {
         let route = operator_status_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
         let mut fw = make_firewall();
+        let keys = get_test_keys();
 
-        let (result, _log) =
-            execute_middleware_chain(&route, None, None, &mut limiter, |_identity, _ctx| {
+        let (result, _log) = execute_middleware_chain(
+            &route,
+            None,
+            None,
+            &mut limiter,
+            &keys,
+            |_identity, _ctx| {
                 let effect = RemoteEffect {
                     effect_id: "e-internal".into(),
                     origin: TrafficOrigin::NodeInternal {
@@ -1007,7 +1092,8 @@ mod integration_tests {
                 assert_eq!(decision.verdict, FirewallVerdict::Allow);
                 assert!(decision.rationale.contains("node-internal"));
                 Ok(decision.verdict)
-            });
+            },
+        );
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), FirewallVerdict::Allow);

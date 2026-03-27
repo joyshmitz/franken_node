@@ -696,6 +696,7 @@ mod tests {
     fn policy_uses_security_config_defaults() {
         let config = SecurityConfig {
             max_degraded_duration_secs: 42,
+            authorized_api_keys: std::collections::BTreeSet::new(),
         };
         let policy = DegradedModePolicy::with_security_defaults("trust-input-stale", &config);
         assert_eq!(policy.max_degraded_duration_secs, 42);
