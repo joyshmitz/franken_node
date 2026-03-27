@@ -35,22 +35,17 @@ impl std::error::Error for EngineProcessError {}
 
 /// Returns the list of candidate paths to search for the franken-engine binary.
 fn default_engine_binary_candidates() -> Vec<PathBuf> {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = manifest_dir
-        .parent()
-        .and_then(Path::parent)
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| manifest_dir.clone());
-
     let mut candidates = Vec::new();
-    if let Some(parent_dir) = workspace_root.parent() {
-        let sibling_engine_root = parent_dir.join("franken_engine");
-        candidates.push(sibling_engine_root.join("target/release/franken-engine"));
-        candidates.push(sibling_engine_root.join("target/debug/franken-engine"));
+    
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            candidates.push(exe_dir.join("franken-engine"));
+            candidates.push(exe_dir.join("franken-engine.exe"));
+        }
     }
-
-    candidates.push(workspace_root.join("target/release/franken-engine"));
-    candidates.push(workspace_root.join("target/debug/franken-engine"));
+    
+    candidates.push(PathBuf::from("franken-engine"));
+    candidates.push(PathBuf::from("franken-engine.exe"));
     candidates
 }
 
