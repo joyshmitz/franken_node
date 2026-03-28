@@ -219,6 +219,7 @@ pub fn classify_divergence(
     franken_digest: &str,
     reference_digest: &str,
     reference_count: usize,
+    references_agree: bool,
 ) -> RiskTier {
     // If all references agree and disagree with franken_engine → high risk.
     // If references themselves disagree → medium risk.
@@ -226,7 +227,7 @@ pub fn classify_divergence(
     if ct_eq(franken_digest, reference_digest) {
         return RiskTier::Low;
     }
-    if reference_count <= 1 {
+    if !references_agree || reference_count <= 1 {
         RiskTier::Medium
     } else {
         RiskTier::High
@@ -274,13 +275,21 @@ pub fn run_harness(
     for sample in samples {
         let fe_digest = digest_bytes(&sample.franken_engine_output);
 
+        let mut available_refs = Vec::new();
         for rt in &config.reference_runtimes {
-            let ref_output = match sample.reference_outputs.get(&rt.runtime_id) {
-                Some(o) => o,
-                None => continue,
-            };
-            let ref_digest = digest_bytes(ref_output);
+            if let Some(o) = sample.reference_outputs.get(&rt.runtime_id) {
+                available_refs.push((rt.clone(), digest_bytes(o)));
+            }
+        }
 
+        let references_agree = if available_refs.is_empty() {
+            true
+        } else {
+            let first_ref_digest = &available_refs[0].1;
+            available_refs.iter().all(|(_, d)| ct_eq(first_ref_digest, d))
+        };
+
+        for (rt, ref_digest) in available_refs {
             if !ct_eq(&fe_digest, &ref_digest) {
                 div_counter = div_counter.saturating_add(1);
                 let risk_tier = classify_divergence(
@@ -288,6 +297,7 @@ pub fn run_harness(
                     &fe_digest,
                     &ref_digest,
                     config.reference_runtimes.len(),
+                    references_agree,
                 );
 
                 // ORACLE_DIVERGENCE_CLASSIFIED + ORACLE_RISK_TIER_ASSIGNED
@@ -609,8 +619,8 @@ mod tests {
     #[test]
     fn classification_is_deterministic() {
         // INV-ORACLE-DETERMINISTIC-CLASSIFICATION
-        let tier1 = classify_divergence("b1", "aaa", "bbb", 2);
-        let tier2 = classify_divergence("b1", "aaa", "bbb", 2);
+        let tier1 = classify_divergence("b1", "aaa", "bbb", 2, true);
+        let tier2 = classify_divergence("b1", "aaa", "bbb", 2, true);
         assert_eq!(tier1, tier2);
     }
 

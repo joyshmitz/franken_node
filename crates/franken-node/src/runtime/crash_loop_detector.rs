@@ -230,9 +230,11 @@ impl CrashLoopDetector {
         u32::try_from(count).unwrap_or(u32::MAX)
     }
 
-    /// Check if the crash-loop threshold is exceeded across all connectors at time `now`.
+    /// Check if the crash-loop threshold is exceeded for any connector at time `now`.
     pub fn is_looping(&self, now: u64) -> bool {
-        self.crashes_in_window(now) >= self.config.max_crashes
+        self.crash_times_by_connector
+            .keys()
+            .any(|id| self.is_looping_for(id, now))
     }
 
     /// Check if the crash-loop threshold is exceeded for a connector at time `now`.

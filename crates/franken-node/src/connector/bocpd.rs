@@ -249,7 +249,7 @@ fn student_t_pdf(x: f64, mu: f64, sigma_sq: f64, nu: f64) -> f64 {
         - 0.5 * (nu * PI).ln()
         - 0.5 * sigma_sq.ln();
     let log_body = -((nu + 1.0) / 2.0) * (1.0 + z * z / nu).ln();
-    let result = (log_coeff + log_body).exp();
+    let result = (log_coeff + log_body).exp().max(1e-300);
     if result.is_finite() { result } else { 1e-300 }
 }
 

@@ -195,7 +195,8 @@ pub fn authenticate(
                     trace_id: trace_id.to_string(),
                 });
             }
-            if !authorized_keys.iter().any(|k| ct_eq(k, token)) {
+            let is_valid = authorized_keys.iter().fold(false, |acc, k| acc | ct_eq(k, token));
+            if !is_valid {
                 return Err(ApiError::AuthFailed {
                     detail: "invalid bearer token".to_string(),
                     trace_id: trace_id.to_string(),

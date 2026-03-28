@@ -64,9 +64,11 @@ pub struct TransparencyPolicy {
 impl TransparencyPolicy {
     /// Check if a `(tree_size, root_hash)` checkpoint is in the pinned set.
     pub fn is_checkpoint_pinned(&self, tree_size: u64, root_hash: &str) -> bool {
-        self.pinned_roots
-            .iter()
-            .any(|r| r.tree_size == tree_size && ct_eq(&r.root_hash, root_hash))
+        self.pinned_roots.iter().fold(false, |acc, r| {
+            let size_match = r.tree_size == tree_size;
+            let hash_match = ct_eq(&r.root_hash, root_hash);
+            acc | (size_match & hash_match)
+        })
     }
 }
 

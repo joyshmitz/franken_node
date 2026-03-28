@@ -213,7 +213,7 @@ impl AudienceBoundToken {
     pub fn audience_contains(&self, service_id: &str) -> bool {
         self.audience
             .iter()
-            .any(|a| crate::security::constant_time::ct_eq(a, service_id))
+            .fold(false, |acc, a| acc | crate::security::constant_time::ct_eq(a, service_id))
     }
 }
 
