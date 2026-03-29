@@ -347,6 +347,11 @@ impl EvidenceLedger {
 // ── SharedEvidenceLedger ────────────────────────────────────────────
 
 /// Thread-safe wrapper for EvidenceLedger. `Send + Sync` for async tasks.
+///
+/// This stays a thin lock wrapper while the shared surface is limited to
+/// synchronous append/snapshot access. Promote it only if callers start
+/// building reply protocols, restart semantics, or other actor-style lifecycle
+/// concerns around the ledger instead of simple bounded state access.
 #[derive(Clone)]
 pub struct SharedEvidenceLedger {
     inner: Arc<Mutex<EvidenceLedger>>,

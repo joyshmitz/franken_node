@@ -508,6 +508,12 @@ fn incident_operation_slot(incident_id: &str) -> Option<OperationSlot> {
 }
 
 /// Explicit owner for the fleet-control singleton state on the request path.
+///
+/// This remains a lock-wrapped owner while the request path is still simple:
+/// direct method dispatch, bounded in-memory state, and no actor-style mailbox,
+/// restart domain, or ad hoc request/reply protocol. Promote this surface only
+/// if coordination topology, lifecycle semantics, or contention pressure become
+/// the actual problem.
 struct SharedFleetControlOwner {
     inner: Mutex<FleetControlManager>,
 }

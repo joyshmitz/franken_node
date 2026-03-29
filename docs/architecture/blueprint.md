@@ -184,13 +184,14 @@ The conclusion is intentionally selective:
 - focus substantive runtime-ownership work on the telemetry ingestion seam,
 - defer broader adoption until this crate owns a real async service boundary or an actor-style ownership topology that justifies it.
 
-### Direct Tokio Footprint At Audit Time
+### Tokio Footprint After Bootstrap Cleanup
 
 | Surface | Evidence | Decision Impact |
 |---------|----------|-----------------|
-| `crates/franken-node/Cargo.toml` | Declares `tokio.workspace = true` | Tokio is still a direct dependency and must be justified by real runtime work, not inertia. |
-| `crates/franken-node/src/main.rs` | `#[tokio::main] async fn main()` | The CLI bootstrap currently requires Tokio only at the entry point. |
-| `crates/franken-node/src/**/*.rs` | Audit found no real `.await` sites in this crate; the only direct async function is `main()` | The executor shell is functionally dead scaffolding today, not a meaningful runtime substrate. |
+| `Cargo.toml` | Workspace manifest still carries a shared `tokio` version slot. | Guardrail and fixture surfaces can still refer to Tokio patterns without implying that the primary crate uses Tokio at runtime. |
+| `crates/franken-node/Cargo.toml` | No `tokio.workspace = true` entry remains. | `frankenengine-node` is no longer a direct Tokio consumer. |
+| `crates/franken-node/src/main.rs` | Plain `fn main() -> Result<()>` entrypoint. | The dead executor shell cleanup has already landed; the CLI no longer bootstraps Tokio. |
+| `crates/franken-node/src/ops/tokio_drift_checker.rs` | Guardrail logic and fixtures still scan for Tokio bootstrap/runtime patterns. | The remaining Tokio-facing work is preventative: block ambient executor reintroduction unless the documented exception path is activated. |
 
 ### Indirect Canonical Asupersync Leverage Already Present
 
@@ -216,14 +217,14 @@ Asupersync concept."
 | Live runtime seam | `crates/franken-node/src/ops/telemetry_bridge.rs`, `crates/franken-node/src/ops/engine_dispatcher.rs` | This is the one place the crate owns long-lived background work: `thread::spawn`, nested per-connection threads, Unix socket ingestion, and `Arc<Mutex<FrankensqliteAdapter>>` with no explicit stop/join contract. | Primary immediate refactor candidate for selective Asupersync leverage. |
 | Local semantic/model layer | `crates/franken-node/src/connector/region_ownership.rs`, `crates/franken-node/src/connector/supervision.rs`, `crates/franken-node/src/runtime/region_tree.rs` | These files model region ownership, supervision, quiescence, and deterministic lifecycle semantics, but they are mostly invariant/spec/data-structure surfaces rather than live async runtime boundaries. | Keep local unless semantic drift from canonical upstream adapters becomes costly or a real runtime topology appears underneath them. |
 | Skeleton/future service boundary | `crates/franken-node/src/api/service.rs` | The file assembles route metadata, middleware, metrics, and endpoint catalogs, but it is still a service skeleton rather than a live async HTTP or gRPC boundary. | Defer native Asupersync request-region/service-boundary migration until the service becomes real. |
-| Dead executor shell | `crates/franken-node/src/main.rs` | `#[tokio::main]` exists, but the crate does not currently exercise async work that justifies an executor. | Safe high-confidence cleanup candidate. |
+| Bootstrap guardrail | `crates/franken-node/src/main.rs`, `crates/franken-node/src/ops/tokio_drift_checker.rs` | The ambient Tokio bootstrap has already been removed from the CLI, but the crate still carries an explicit guardrail against reintroducing it without a documented exception path. | Keep the guardrail in place; only reintroduce Tokio through the runtime guardrail exception path below. |
 
-### Immediate Implementation Graph
+### Implementation Graph And Current Status
 
 | Bead | Purpose | Why Now |
 |------|---------|---------|
-| `bd-1now.2` | Remove dead Tokio bootstrap from `frankenengine-node` CLI | Low-risk cleanup that matches the measured direct Tokio footprint. |
-| `bd-1now.3` | Add guardrail against ambient Tokio/runtime reintroduction | Prevents silent executor creep after the bootstrap cleanup lands. |
+| `bd-1now.2` | Remove dead Tokio bootstrap from `frankenengine-node` CLI | Completed: `main.rs` is synchronous and the product crate no longer declares a direct Tokio dependency. |
+| `bd-1now.3` | Add guardrail against ambient Tokio/runtime reintroduction | Completed: guardrail code and verification now keep Tokio/bootstrap as an explicit future exception path. |
 | `bd-1now.4` | TelemetryBridge selective Asupersync adoption cluster | Highest-leverage seam for ownership, backpressure, shutdown, and supervision improvements. |
 | `bd-1now.5` | Decide local semantic twin policy versus canonical upstream adapters | Prevents semantic drift between local model layers and the upstream canonical control-plane substrate. |
 

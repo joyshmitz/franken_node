@@ -85,7 +85,7 @@ We only use **Cargo** in this project, NEVER any other package manager.
 | `ed25519-dalek` + `zeroize` + `serde_cbor` | Key material handling and signed/canonical payload support |
 | `base64` + `hex` | Binary/text encoding for signatures, digests, and artifacts |
 | `flate2` | Gzip compression for replay bundle chunking/export |
-| `tokio` | Async runtime for MCP server mode |
+| `tokio` | Shared workspace dependency slot retained for Tokio guardrail/test surfaces; the primary `frankenengine-node` crate is not currently a direct Tokio consumer |
 | `tracing` + `tracing-subscriber` | Structured logging and diagnostics |
 | `subtle` | Constant-time comparisons in security-sensitive paths |
 | `tempfile` | Temp artifact handling in tests and validation paths |

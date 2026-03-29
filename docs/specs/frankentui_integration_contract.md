@@ -21,6 +21,7 @@ This contract defines how `franken_node` presentation surfaces integrate with `f
 | `crates/franken-node/src/policy/evidence_emission.rs` | `StatusBar`, `Table` | `diagnostic_renderer` | Evidence emission progress and anomaly notifications. |
 | `crates/franken-node/src/observability/evidence_ledger.rs` | `LogStreamPanel` | `diagnostic_renderer` | Audit/evidence stream visualization hooks. |
 | `crates/franken-node/src/tools/evidence_replay_validator.rs` | `DiffPanel`, `AlertBanner` | `diagnostic_renderer` | Replay mismatch/match visibility with deterministic ordering. |
+| `crates/franken-node/src/ops/tokio_drift_checker.rs` | `GuardReportPanel`, `AlertBanner` | `diagnostic_renderer` | Tokio/bootstrap guardrail findings and remediation report rendering. |
 
 ## Styling and Token Strategy
 
@@ -31,7 +32,7 @@ This contract defines how `franken_node` presentation surfaces integrate with `f
 
 ## Rendering + Event Loop Contract
 
-- **Loop ownership**: `franken_node` owns the root async runtime (`tokio`), while `frankentui` owns frame rendering once a TUI surface is activated.
+- **Loop ownership**: `franken_node` owns synchronous command/output orchestration, view-model publication, render invalidation policy, and any explicitly approved runtime boundary, while `frankentui` owns frame rendering once a TUI surface is activated.
 - **Tick target**: 16 ms default render cadence for interactive surfaces (60 FPS nominal); 100 ms fallback for high-load/degraded mode.
 - **State propagation**: domain modules publish immutable view-model deltas -> presentation adapter merges deltas -> render invalidation queue schedules frame updates.
 - **Backpressure**: rendering is best-effort and must never block policy/control critical-path operations.

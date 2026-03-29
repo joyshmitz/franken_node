@@ -1,7 +1,7 @@
 {
   "contract_id": "bd-34ll",
   "version": "1.0.0",
-  "generated_at": "2026-02-20T20:05:00Z",
+  "generated_at": "2026-03-29T01:12:00Z",
   "components": [
     {
       "franken_node_module": "crates/franken-node/src/cli.rs",
@@ -79,10 +79,17 @@
       "boundary_type": "diagnostic_renderer",
       "styling_strategy": "token_only",
       "snapshot_hook": "tests/conformance/frankentui/lockstep_harness.snap"
+    },
+    {
+      "franken_node_module": "crates/franken-node/src/ops/tokio_drift_checker.rs",
+      "frankentui_component": "GuardReportPanel",
+      "boundary_type": "diagnostic_renderer",
+      "styling_strategy": "token_only",
+      "snapshot_hook": "tests/conformance/frankentui/tokio_drift_guard_report.snap"
     }
   ],
   "event_loop_contract": {
-    "owner": "franken_node_tokio_runtime_with_frankentui_render_adapter",
+    "owner": "franken_node_sync_orchestration_with_frankentui_render_adapter",
     "tick_rate_ms": 16,
     "state_propagation_pattern": "view_model_delta_bus_then_render_invalidations",
     "input_dispatch": "frankentui_input_router_to_command_handlers"
@@ -126,7 +133,7 @@
     {
       "requirement": "event_loop_ownership_defined",
       "status": "defined",
-      "detail": "Runtime/render ownership and tick strategy explicitly assigned."
+      "detail": "Synchronous franken_node orchestration versus frankentui rendering ownership and tick strategy explicitly assigned without assuming a root Tokio runtime."
     },
     {
       "requirement": "input_routing_defined",

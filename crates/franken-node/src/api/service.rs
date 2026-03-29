@@ -5,6 +5,12 @@
 //! defined in bd-2f5l. It wires operator, verifier, and fleet-control
 //! route groups through the middleware chain and provides a unified
 //! `ControlPlaneService` with dispatch, metrics, and endpoint catalog.
+//!
+//! This module is intentionally still an in-process assembly/catalog layer.
+//! It does not yet own a live async socket boundary, request task lifecycle,
+//! or transport-bound cancellation semantics. Revisit native Asupersync
+//! request-region work only if this file grows a real server boundary instead
+//! of remaining metadata and dispatch assembly.
 
 use crate::config::Config as RuntimeConfig;
 use serde::{Deserialize, Serialize};
