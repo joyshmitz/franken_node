@@ -1279,6 +1279,10 @@ impl VerifierEconomyRegistry {
 
     /// Verify replay capsule integrity by checking hash consistency.
     ///
+    /// This public helper enforces the default replay-capsule freshness
+    /// window. Registry methods that support a configured freshness limit
+    /// call the internal helper with the registry-local value instead.
+    ///
     /// Returns `Ok(())` if the capsule passes all structural and
     /// cryptographic integrity checks, or a specific
     /// [`CapsuleVerificationFailure`] identifying the first failing check.
@@ -3193,6 +3197,49 @@ mod tests {
         sign_capsule(&mut capsule, &signing_key);
         let err = reg.register_replay_capsule(capsule).unwrap_err();
         assert_eq!(err.code, ERR_VEP_CAPSULE_FRESHNESS);
+    }
+
+    #[test]
+    fn test_registry_honors_looser_configured_replay_capsule_freshness() {
+        let configured_freshness_secs = u64::try_from(DEFAULT_REPLAY_CAPSULE_FRESHNESS_SECS + 120)
+            .expect("configured freshness should fit within u64");
+        let mut reg =
+            VerifierEconomyRegistry::with_replay_capsule_freshness_secs(configured_freshness_secs);
+        let (verifier, attestation) = register_and_submit(&mut reg);
+        let signing_key = registration_signing_key();
+        let issued_at = chrono::Utc::now() - chrono::Duration::seconds(20);
+        let expires_at =
+            issued_at + chrono::Duration::seconds(DEFAULT_REPLAY_CAPSULE_FRESHNESS_SECS + 60);
+        let mut capsule = make_capsule(
+            "capsule-over-default-window",
+            &verifier.verifier_id,
+            &attestation,
+            &signing_key,
+            "capsule-over-default-window",
+        );
+        capsule.issued_at = issued_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        capsule.expires_at = expires_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        capsule.integrity_hash = compute_capsule_integrity_hash(
+            &capsule.capsule_id,
+            &capsule.schema_version,
+            &capsule.attestation_id,
+            &capsule.verifier_id,
+            &capsule.claim_metadata_hash,
+            &capsule.issued_at,
+            &capsule.expires_at,
+            &capsule.input_state_hash,
+            &capsule.trace_commitment_root,
+            &capsule.output_state_hash,
+            &capsule.expected_result_hash,
+        );
+        sign_capsule(&mut capsule, &signing_key);
+
+        assert_eq!(
+            VerifierEconomyRegistry::verify_capsule_integrity(&capsule),
+            Err(CapsuleVerificationFailure::FreshnessWindowInvalid)
+        );
+        reg.register_replay_capsule(capsule)
+            .expect("registry should honor configured freshness window");
     }
 
     // -- Published attestations filter ----------------------------------------

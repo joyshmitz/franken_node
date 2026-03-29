@@ -252,7 +252,11 @@ pub struct DenialReason {
 
 impl fmt::Display for DenialReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}] {}: {}", self.error_code, self.transition_type, self.message)
+        write!(
+            f,
+            "[{}] {}: {}",
+            self.error_code, self.transition_type, self.message
+        )
     }
 }
 
@@ -484,10 +488,14 @@ impl ControlTransitionGate {
         let max_age = self.policy.effective_max_age(tt);
         let mut valid_evidence_ids: Vec<String> = Vec::new();
         let mut pending_evidence_ids: Vec<String> = Vec::new();
+        let mut saw_scope_mismatch = false;
+        let mut saw_expired = false;
+        let mut saw_invalid = false;
 
         for ev in &request.evidence_refs {
             // Check scope coverage.
             if !ev.covers_transition(tt) {
+                saw_scope_mismatch = true;
                 self.emit_event(
                     event_codes::CTL_005_DENIED_SCOPE_MISMATCH,
                     &request.request_id,
@@ -503,6 +511,7 @@ impl ControlTransitionGate {
 
             // Check expiration.
             if ev.is_expired_at(self.now_millis) {
+                saw_expired = true;
                 self.emit_event(
                     event_codes::CTL_004_DENIED_EXPIRED_EVIDENCE,
                     &request.request_id,
@@ -519,6 +528,7 @@ impl ControlTransitionGate {
             // Check evidence age against policy.
             let age = self.now_millis.saturating_sub(ev.created_at_millis);
             if age >= max_age {
+                saw_expired = true;
                 self.emit_event(
                     event_codes::CTL_004_DENIED_EXPIRED_EVIDENCE,
                     &request.request_id,
@@ -534,6 +544,7 @@ impl ControlTransitionGate {
 
             // Check hash is non-empty as basic integrity regardless of state.
             if ev.evidence_hash.is_empty() {
+                saw_invalid = true;
                 self.emit_event(
                     event_codes::CTL_007_DENIED_INVALID_HASH,
                     &request.request_id,
@@ -553,27 +564,23 @@ impl ControlTransitionGate {
                     pending_evidence_ids.push(ev.evidence_id.clone());
                 }
                 VerificationState::Expired => {
+                    saw_expired = true;
                     self.emit_event(
                         event_codes::CTL_004_DENIED_EXPIRED_EVIDENCE,
                         &request.request_id,
                         tt,
                         &request.trace_id,
-                        format!(
-                            "Evidence {} has expired verification state",
-                            ev.evidence_id
-                        ),
+                        format!("Evidence {} has expired verification state", ev.evidence_id),
                     );
                 }
                 VerificationState::Invalid => {
+                    saw_invalid = true;
                     self.emit_event(
                         event_codes::CTL_007_DENIED_INVALID_HASH,
                         &request.request_id,
                         tt,
                         &request.trace_id,
-                        format!(
-                            "Evidence {} has invalid verification state",
-                            ev.evidence_id
-                        ),
+                        format!("Evidence {} has invalid verification state", ev.evidence_id),
                     );
                 }
             }
@@ -587,7 +594,9 @@ impl ControlTransitionGate {
                 &request.trace_id,
                 valid_evidence_ids,
             )
-        } else if !pending_evidence_ids.is_empty() {
+        } else if valid_evidence_ids.len() + pending_evidence_ids.len() >= min_evidence
+            && !pending_evidence_ids.is_empty()
+        {
             self.pend(
                 &request.request_id,
                 tt,
@@ -596,20 +605,7 @@ impl ControlTransitionGate {
             )
         } else {
             // INV-CTL-EVIDENCE-REQUIRED: no valid evidence found.
-            let has_scope_mismatch = request
-                .evidence_refs
-                .iter()
-                .any(|e| !e.covers_transition(tt));
-            let has_expired = request
-                .evidence_refs
-                .iter()
-                .any(|e| e.is_expired_at(self.now_millis));
-            let has_invalid = request
-                .evidence_refs
-                .iter()
-                .any(|e| e.state == VerificationState::Invalid);
-
-            if has_invalid {
+            if saw_invalid {
                 self.deny(
                     &request.request_id,
                     tt,
@@ -621,7 +617,7 @@ impl ControlTransitionGate {
                         tt
                     ),
                 )
-            } else if has_expired {
+            } else if saw_expired {
                 self.deny(
                     &request.request_id,
                     tt,
@@ -630,17 +626,14 @@ impl ControlTransitionGate {
                     event_codes::CTL_004_DENIED_EXPIRED_EVIDENCE,
                     format!("All evidence for {} has expired", tt),
                 )
-            } else if has_scope_mismatch {
+            } else if saw_scope_mismatch {
                 self.deny(
                     &request.request_id,
                     tt,
                     &request.trace_id,
                     error_codes::ERR_CTL_SCOPE_MISMATCH,
                     event_codes::CTL_005_DENIED_SCOPE_MISMATCH,
-                    format!(
-                        "No evidence covers transition type {}",
-                        tt
-                    ),
+                    format!("No evidence covers transition type {}", tt),
                 )
             } else {
                 self.deny(
@@ -701,14 +694,18 @@ impl ControlTransitionGate {
         trace_id: &str,
         detail: String,
     ) {
-        push_bounded(&mut self.events, GateEvent {
-            event_code: event_code.to_string(),
-            request_id: request_id.to_string(),
-            transition_type,
-            trace_id: trace_id.to_string(),
-            detail,
-            timestamp_millis: self.now_millis,
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            GateEvent {
+                event_code: event_code.to_string(),
+                request_id: request_id.to_string(),
+                transition_type,
+                trace_id: trace_id.to_string(),
+                detail,
+                timestamp_millis: self.now_millis,
+            },
+            MAX_EVENTS,
+        );
     }
 
     fn deny(
@@ -726,19 +723,24 @@ impl ControlTransitionGate {
         self.metrics.denied_count = self.metrics.denied_count.saturating_add(1);
         match error_code {
             error_codes::ERR_CTL_MISSING_EVIDENCE => {
-                self.metrics.denied_missing_evidence = self.metrics.denied_missing_evidence.saturating_add(1);
+                self.metrics.denied_missing_evidence =
+                    self.metrics.denied_missing_evidence.saturating_add(1);
             }
             error_codes::ERR_CTL_EXPIRED_EVIDENCE => {
-                self.metrics.denied_expired_evidence = self.metrics.denied_expired_evidence.saturating_add(1);
+                self.metrics.denied_expired_evidence =
+                    self.metrics.denied_expired_evidence.saturating_add(1);
             }
             error_codes::ERR_CTL_SCOPE_MISMATCH => {
-                self.metrics.denied_scope_mismatch = self.metrics.denied_scope_mismatch.saturating_add(1);
+                self.metrics.denied_scope_mismatch =
+                    self.metrics.denied_scope_mismatch.saturating_add(1);
             }
             error_codes::ERR_CTL_INVALID_HASH => {
-                self.metrics.denied_invalid_hash = self.metrics.denied_invalid_hash.saturating_add(1);
+                self.metrics.denied_invalid_hash =
+                    self.metrics.denied_invalid_hash.saturating_add(1);
             }
             error_codes::ERR_CTL_INSUFFICIENT_TRUST => {
-                self.metrics.denied_insufficient_trust = self.metrics.denied_insufficient_trust.saturating_add(1);
+                self.metrics.denied_insufficient_trust =
+                    self.metrics.denied_insufficient_trust.saturating_add(1);
             }
             _ => {}
         }
@@ -813,10 +815,7 @@ impl ControlTransitionGate {
 
         AuthorizationDecision::PendingVerification {
             pending_evidence_ids,
-            detail: format!(
-                "Pending: evidence not yet verified for {}",
-                tt
-            ),
+            detail: format!("Pending: evidence not yet verified for {}", tt),
         }
     }
 }
@@ -841,10 +840,7 @@ mod tests {
         ControlTransitionGate::new(GatePolicy::default(), NOW)
     }
 
-    fn valid_evidence(
-        id: &str,
-        scope: Vec<TransitionType>,
-    ) -> VefEvidenceRef {
+    fn valid_evidence(id: &str, scope: Vec<TransitionType>) -> VefEvidenceRef {
         VefEvidenceRef {
             evidence_id: id.to_string(),
             evidence_hash: "sha256:abcdef0123456789".to_string(),
@@ -890,7 +886,11 @@ mod tests {
         let ctx = default_trust_ctx();
 
         let decision = gate.evaluate(&req, &ctx);
-        assert!(decision.is_authorized(), "Expected Authorized, got {:?}", decision);
+        assert!(
+            decision.is_authorized(),
+            "Expected Authorized, got {:?}",
+            decision
+        );
         assert_eq!(gate.metrics().authorized_count, 1);
     }
 
@@ -905,7 +905,10 @@ mod tests {
         assert!(decision.is_denied(), "Expected Denied, got {:?}", decision);
         if let AuthorizationDecision::Denied { reason, .. } = &decision {
             assert_eq!(reason.error_code, error_codes::ERR_CTL_MISSING_EVIDENCE);
-            assert_eq!(reason.event_code, event_codes::CTL_003_DENIED_MISSING_EVIDENCE);
+            assert_eq!(
+                reason.event_code,
+                event_codes::CTL_003_DENIED_MISSING_EVIDENCE
+            );
         }
         assert_eq!(gate.metrics().denied_missing_evidence, 1);
     }
@@ -992,8 +995,59 @@ mod tests {
         let ctx = default_trust_ctx();
 
         let decision = gate.evaluate(&req, &ctx);
-        assert!(decision.is_pending(), "Expected PendingVerification, got {:?}", decision);
+        assert!(
+            decision.is_pending(),
+            "Expected PendingVerification, got {:?}",
+            decision
+        );
         assert_eq!(gate.metrics().pending_count, 1);
+    }
+
+    // Test 6b: Pending verification only applies when the request could still
+    // satisfy min_evidence_count after pending evidence verifies.
+    #[test]
+    fn test_pending_verification_requires_feasible_min_evidence() {
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            TransitionType::CapabilityGrant,
+            TransitionOverride {
+                min_evidence_count: Some(2),
+                max_evidence_age_millis: None,
+                min_trust_level: None,
+            },
+        );
+        let policy = GatePolicy {
+            transition_overrides: overrides,
+            ..GatePolicy::default()
+        };
+        let mut gate = ControlTransitionGate::new(policy, NOW);
+        let ev = VefEvidenceRef {
+            evidence_id: "ev-unverified-insufficient".to_string(),
+            evidence_hash: "sha256:pending".to_string(),
+            scope: vec![TransitionType::CapabilityGrant],
+            state: VerificationState::Unverified,
+            created_at_millis: NOW - 500,
+            expires_at_millis: NOW + 3_600_000,
+            trace_id: "trace-test".to_string(),
+        };
+        let req = make_request("req-6b", TransitionType::CapabilityGrant, vec![ev]);
+        let ctx = default_trust_ctx();
+
+        let decision = gate.evaluate(&req, &ctx);
+        assert!(
+            decision.is_denied(),
+            "Expected Denied when pending evidence cannot satisfy min_evidence_count, got {:?}",
+            decision
+        );
+        if let AuthorizationDecision::Denied { reason, .. } = &decision {
+            assert_eq!(reason.error_code, error_codes::ERR_CTL_MISSING_EVIDENCE);
+            assert_eq!(
+                reason.event_code,
+                event_codes::CTL_003_DENIED_MISSING_EVIDENCE
+            );
+        }
+        assert_eq!(gate.metrics().denied_missing_evidence, 1);
+        assert_eq!(gate.metrics().pending_count, 0);
     }
 
     // Test 7: All transition types require evidence (INV-CTL-NO-BYPASS).
@@ -1026,7 +1080,10 @@ mod tests {
             !deny_events.is_empty(),
             "INV-CTL-DENY-LOGGED: denial must emit event"
         );
-        assert_eq!(deny_events[0].transition_type, TransitionType::PolicyOverride);
+        assert_eq!(
+            deny_events[0].transition_type,
+            TransitionType::PolicyOverride
+        );
     }
 
     // Test 9: Multiple evidence entries — one valid is sufficient.
@@ -1051,7 +1108,10 @@ mod tests {
         let ctx = default_trust_ctx();
 
         let decision = gate.evaluate(&req, &ctx);
-        assert!(decision.is_authorized(), "Expected Authorized with one valid evidence");
+        assert!(
+            decision.is_authorized(),
+            "Expected Authorized with one valid evidence"
+        );
     }
 
     // Test 10: Evidence with empty hash is rejected.
@@ -1072,7 +1132,15 @@ mod tests {
 
         let decision = gate.evaluate(&req, &ctx);
         // Should be denied because the only evidence has an empty hash
-        assert!(decision.is_denied(), "Expected Denied for empty hash evidence");
+        assert!(
+            decision.is_denied(),
+            "Expected Denied for empty hash evidence"
+        );
+        if let AuthorizationDecision::Denied { reason, .. } = &decision {
+            assert_eq!(reason.error_code, error_codes::ERR_CTL_INVALID_HASH);
+            assert_eq!(reason.event_code, event_codes::CTL_007_DENIED_INVALID_HASH);
+        }
+        assert_eq!(gate.metrics().denied_invalid_hash, 1);
     }
 
     // Test 11: Policy override with higher min_evidence_count.
@@ -1125,11 +1193,7 @@ mod tests {
 
         let ev1 = valid_evidence("ev-12a", vec![TransitionType::PolicyOverride]);
         let ev2 = valid_evidence("ev-12b", vec![TransitionType::PolicyOverride]);
-        let req = make_request(
-            "req-12",
-            TransitionType::PolicyOverride,
-            vec![ev1, ev2],
-        );
+        let req = make_request("req-12", TransitionType::PolicyOverride, vec![ev1, ev2]);
         let ctx = default_trust_ctx();
 
         let decision = gate.evaluate(&req, &ctx);
@@ -1194,6 +1258,14 @@ mod tests {
 
         let decision = gate.evaluate(&req, &ctx);
         assert!(decision.is_denied());
+        if let AuthorizationDecision::Denied { reason, .. } = &decision {
+            assert_eq!(reason.error_code, error_codes::ERR_CTL_EXPIRED_EVIDENCE);
+            assert_eq!(
+                reason.event_code,
+                event_codes::CTL_004_DENIED_EXPIRED_EVIDENCE
+            );
+        }
+        assert_eq!(gate.metrics().denied_expired_evidence, 1);
     }
 
     // Test 15: Metrics are tracked per transition type.
@@ -1247,7 +1319,10 @@ mod tests {
     // Test 18: Schema version constant is defined.
     #[test]
     fn test_schema_version_defined() {
-        assert_eq!(CONTROL_INTEGRATION_SCHEMA_VERSION, "vef-control-integration-v1");
+        assert_eq!(
+            CONTROL_INTEGRATION_SCHEMA_VERSION,
+            "vef-control-integration-v1"
+        );
     }
 
     // Test 19: Invariant constants are defined.
@@ -1261,10 +1336,22 @@ mod tests {
     // Test 20: TransitionType Display works.
     #[test]
     fn test_transition_type_display() {
-        assert_eq!(TransitionType::CapabilityGrant.to_string(), "capability_grant");
-        assert_eq!(TransitionType::TrustLevelChange.to_string(), "trust_level_change");
-        assert_eq!(TransitionType::ArtifactPromotion.to_string(), "artifact_promotion");
-        assert_eq!(TransitionType::PolicyOverride.to_string(), "policy_override");
+        assert_eq!(
+            TransitionType::CapabilityGrant.to_string(),
+            "capability_grant"
+        );
+        assert_eq!(
+            TransitionType::TrustLevelChange.to_string(),
+            "trust_level_change"
+        );
+        assert_eq!(
+            TransitionType::ArtifactPromotion.to_string(),
+            "artifact_promotion"
+        );
+        assert_eq!(
+            TransitionType::PolicyOverride.to_string(),
+            "policy_override"
+        );
     }
 
     // Test 21: VerificationState validity checks.
@@ -1289,7 +1376,10 @@ mod tests {
     fn test_evidence_ref_scope_coverage() {
         let ev = valid_evidence(
             "ev-23",
-            vec![TransitionType::CapabilityGrant, TransitionType::TrustLevelChange],
+            vec![
+                TransitionType::CapabilityGrant,
+                TransitionType::TrustLevelChange,
+            ],
         );
         assert!(ev.covers_transition(TransitionType::CapabilityGrant));
         assert!(ev.covers_transition(TransitionType::TrustLevelChange));
@@ -1384,6 +1474,14 @@ mod tests {
 
         let decision = gate.evaluate(&req, &ctx);
         assert!(decision.is_denied());
+        if let AuthorizationDecision::Denied { reason, .. } = &decision {
+            assert_eq!(reason.error_code, error_codes::ERR_CTL_EXPIRED_EVIDENCE);
+            assert_eq!(
+                reason.event_code,
+                event_codes::CTL_004_DENIED_EXPIRED_EVIDENCE
+            );
+        }
+        assert_eq!(gate.metrics().denied_expired_evidence, 1);
     }
 
     // Test 28: DenialReason Display trait.

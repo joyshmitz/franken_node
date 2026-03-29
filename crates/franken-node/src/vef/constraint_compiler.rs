@@ -475,7 +475,7 @@ impl ConstraintCompiler {
 
         // Validate coverage: every action class must have at least one predicate.
         // INV-VEF-COVERAGE
-        let mut warning_count = 0;
+        let mut warning_count: usize = 0;
         let covered_classes: std::collections::BTreeSet<&str> =
             coverage.keys().map(|k| k.as_str()).collect();
         for ac in ActionClass::ALL {
@@ -577,8 +577,8 @@ impl ConstraintCompiler {
     /// Compute SHA-256 hash of the canonical policy serialization.
     /// Uses BTreeMap-based serde_json for deterministic output. INV-VEF-DETERMINISTIC
     fn compute_policy_hash(&self, policy: &PolicyDefinition) -> String {
-        let canonical = serde_json::to_string(policy)
-            .unwrap_or_else(|e| format!("__serde_err:{e}"));
+        let canonical =
+            serde_json::to_string(policy).unwrap_or_else(|e| format!("__serde_err:{e}"));
         self.sha256_hex(&canonical)
     }
 
@@ -667,11 +667,15 @@ impl PolicyRule {
 
     /// Add a condition to this rule.
     pub fn with_condition(mut self, field: &str, op: ComparisonOp, value: &str) -> Self {
-        push_bounded(&mut self.conditions, Condition {
-            field: field.to_string(),
-            op,
-            value: value.to_string(),
-        }, MAX_CONDITIONS);
+        push_bounded(
+            &mut self.conditions,
+            Condition {
+                field: field.to_string(),
+                op,
+                value: value.to_string(),
+            },
+            MAX_CONDITIONS,
+        );
         self
     }
 

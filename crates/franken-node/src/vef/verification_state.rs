@@ -4,7 +4,6 @@
 
 use std::collections::BTreeMap;
 
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
@@ -33,8 +32,7 @@ pub const ERR_VEF_STATE_POLICY_MISSING: &str = "ERR_VEF_STATE_POLICY_MISSING";
 // INV-VEF-STATE-NO-ESCALATION: cannot move to higher risk without proof
 
 /// Risk level for actions and transitions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum RiskLevel {
     Low,
     Medium,
@@ -43,8 +41,7 @@ pub enum RiskLevel {
 }
 
 /// Verification proof status.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProofStatus {
     pub proof_id: String,
     pub verified: bool,
@@ -60,8 +57,7 @@ impl ProofStatus {
 }
 
 /// Control state for an entity.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ControlState {
     pub entity_id: String,
     pub current_risk_level: RiskLevel,
@@ -70,8 +66,7 @@ pub struct ControlState {
 }
 
 /// Transition request.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransitionRequest {
     pub entity_id: String,
     pub target_risk_level: RiskLevel,
@@ -80,16 +75,14 @@ pub struct TransitionRequest {
 }
 
 /// Transition result.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransitionResult {
     Approved,
     Blocked { reason: String },
 }
 
 /// Action authorization request.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionRequest {
     pub entity_id: String,
     pub action: String,
@@ -98,22 +91,33 @@ pub struct ActionRequest {
 }
 
 /// Action authorization result.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionResult {
     Authorized,
     Denied { reason: String },
 }
 
 /// Errors from verification state.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VefStateError {
-    NoProof { entity_id: String },
-    StaleProof { entity_id: String, age: u64 },
-    InvalidTransition { from: RiskLevel, to: RiskLevel },
-    RiskExceeded { required: RiskLevel, current: RiskLevel },
-    PolicyMissing { entity_id: String },
+    NoProof {
+        entity_id: String,
+    },
+    StaleProof {
+        entity_id: String,
+        age: u64,
+    },
+    InvalidTransition {
+        from: RiskLevel,
+        to: RiskLevel,
+    },
+    RiskExceeded {
+        required: RiskLevel,
+        current: RiskLevel,
+    },
+    PolicyMissing {
+        entity_id: String,
+    },
 }
 
 impl std::fmt::Display for VefStateError {
@@ -140,8 +144,7 @@ impl std::fmt::Display for VefStateError {
 }
 
 /// Audit entry.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateAuditEntry {
     pub event_code: String,
     pub entity_id: String,
@@ -181,7 +184,11 @@ impl VerificationStateManager {
         );
     }
 
-    pub fn attach_proof(&mut self, entity_id: &str, proof: ProofStatus) -> Result<(), VefStateError> {
+    pub fn attach_proof(
+        &mut self,
+        entity_id: &str,
+        proof: ProofStatus,
+    ) -> Result<(), VefStateError> {
         let state = self
             .states
             .get_mut(entity_id)
@@ -206,16 +213,23 @@ impl VerificationStateManager {
             detail: format!("target={:?}", req.target_risk_level),
         });
 
-        let state = self
-            .states
-            .get(&req.entity_id)
-            .ok_or(VefStateError::PolicyMissing {
-                entity_id: req.entity_id.clone(),
-            })?;
+        let (current_risk_level, proof) = match self.states.get(&req.entity_id) {
+            Some(state) => (state.current_risk_level, state.proof.clone()),
+            None => {
+                self.emit_audit(StateAuditEntry {
+                    event_code: VEF_STATE_TRANSITION_BLOCKED.into(),
+                    entity_id: req.entity_id.clone(),
+                    detail: ERR_VEF_STATE_POLICY_MISSING.into(),
+                });
+                return Err(VefStateError::PolicyMissing {
+                    entity_id: req.entity_id.clone(),
+                });
+            }
+        };
 
         // Escalation check — INV-VEF-STATE-NO-ESCALATION
-        if req.target_risk_level > state.current_risk_level {
-            match &state.proof {
+        if req.target_risk_level > current_risk_level {
+            match proof.as_ref() {
                 None => {
                     self.emit_audit(StateAuditEntry {
                         event_code: VEF_STATE_TRANSITION_BLOCKED.into(),
@@ -227,7 +241,9 @@ impl VerificationStateManager {
                     });
                 }
                 Some(proof) if !proof.is_fresh(req.requested_at_epoch) => {
-                    let age = req.requested_at_epoch.saturating_sub(proof.verified_at_epoch);
+                    let age = req
+                        .requested_at_epoch
+                        .saturating_sub(proof.verified_at_epoch);
                     self.emit_audit(StateAuditEntry {
                         event_code: VEF_STATE_TRANSITION_BLOCKED.into(),
                         entity_id: req.entity_id.clone(),
@@ -243,12 +259,19 @@ impl VerificationStateManager {
         }
 
         // Apply transition
-        let state = self
-            .states
-            .get_mut(&req.entity_id)
-            .ok_or(VefStateError::PolicyMissing {
-                entity_id: req.entity_id.clone(),
-            })?;
+        let state = match self.states.get_mut(&req.entity_id) {
+            Some(state) => state,
+            None => {
+                self.emit_audit(StateAuditEntry {
+                    event_code: VEF_STATE_TRANSITION_BLOCKED.into(),
+                    entity_id: req.entity_id.clone(),
+                    detail: ERR_VEF_STATE_POLICY_MISSING.into(),
+                });
+                return Err(VefStateError::PolicyMissing {
+                    entity_id: req.entity_id.clone(),
+                });
+            }
+        };
         state.current_risk_level = req.target_risk_level;
         state.transition_count = state.transition_count.saturating_add(1);
 
@@ -265,34 +288,41 @@ impl VerificationStateManager {
     ///
     /// INV-VEF-STATE-RISK-BOUND: high-risk actions need fresh proof
     pub fn authorize_action(&mut self, req: &ActionRequest) -> Result<ActionResult, VefStateError> {
-        let state = self
-            .states
-            .get(&req.entity_id)
-            .ok_or(VefStateError::PolicyMissing {
-                entity_id: req.entity_id.clone(),
-            })?;
+        let (current_risk_level, proof) = match self.states.get(&req.entity_id) {
+            Some(state) => (state.current_risk_level, state.proof.clone()),
+            None => {
+                self.emit_audit(StateAuditEntry {
+                    event_code: VEF_STATE_ACTION_DENIED.into(),
+                    entity_id: req.entity_id.clone(),
+                    detail: ERR_VEF_STATE_POLICY_MISSING.into(),
+                });
+                return Err(VefStateError::PolicyMissing {
+                    entity_id: req.entity_id.clone(),
+                });
+            }
+        };
 
         // Risk level check
-        if req.required_risk_level > state.current_risk_level {
+        if req.required_risk_level > current_risk_level {
             self.emit_audit(StateAuditEntry {
                 event_code: VEF_STATE_ACTION_DENIED.into(),
                 entity_id: req.entity_id.clone(),
                 detail: format!(
                     "need={:?} have={:?}",
-                    req.required_risk_level, state.current_risk_level
+                    req.required_risk_level, current_risk_level
                 ),
             });
             return Ok(ActionResult::Denied {
                 reason: format!(
                     "current risk {:?} < required {:?}",
-                    state.current_risk_level, req.required_risk_level
+                    current_risk_level, req.required_risk_level
                 ),
             });
         }
 
         // For High/Critical, require fresh proof — INV-VEF-STATE-RISK-BOUND
         if req.required_risk_level >= RiskLevel::High {
-            match &state.proof {
+            match proof.as_ref() {
                 None => {
                     self.emit_audit(StateAuditEntry {
                         event_code: VEF_STATE_ACTION_DENIED.into(),
@@ -304,7 +334,14 @@ impl VerificationStateManager {
                     });
                 }
                 Some(proof) if !proof.is_fresh(req.requested_at_epoch) => {
-                    let age = req.requested_at_epoch.saturating_sub(proof.verified_at_epoch);
+                    let age = req
+                        .requested_at_epoch
+                        .saturating_sub(proof.verified_at_epoch);
+                    self.emit_audit(StateAuditEntry {
+                        event_code: VEF_STATE_ACTION_DENIED.into(),
+                        entity_id: req.entity_id.clone(),
+                        detail: format!("{ERR_VEF_STATE_STALE_PROOF}: age={age}s"),
+                    });
                     return Err(VefStateError::StaleProof {
                         entity_id: req.entity_id.clone(),
                         age,
@@ -482,7 +519,7 @@ mod tests {
     }
 
     #[test]
-    fn test_authorize_high_risk_denied_no_proof() {
+    fn test_authorize_high_risk_denied_stale_proof_emits_audit() {
         let mut mgr = setup_manager();
         mgr.attach_proof("ext-1", fresh_proof()).unwrap();
         let up = TransitionRequest {
@@ -503,6 +540,13 @@ mod tests {
             mgr.authorize_action(&req),
             Err(VefStateError::StaleProof { .. })
         ));
+        let last = mgr
+            .audit_log()
+            .last()
+            .expect("stale-proof denial should be audited");
+        assert_eq!(last.event_code, VEF_STATE_ACTION_DENIED);
+        assert_eq!(last.entity_id, "ext-1");
+        assert!(last.detail.contains(ERR_VEF_STATE_STALE_PROOF));
     }
 
     #[test]
@@ -600,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn test_unknown_entity_transition() {
+    fn test_unknown_entity_transition_emits_blocked_audit() {
         let mut mgr = setup_manager();
         let req = TransitionRequest {
             entity_id: "nope".into(),
@@ -612,5 +656,30 @@ mod tests {
             mgr.request_transition(&req),
             Err(VefStateError::PolicyMissing { .. })
         ));
+        assert_eq!(mgr.audit_log().len(), 2);
+        let last = mgr.audit_log().last().expect("audit entry should exist");
+        assert_eq!(last.event_code, VEF_STATE_TRANSITION_BLOCKED);
+        assert_eq!(last.entity_id, "nope");
+        assert_eq!(last.detail, ERR_VEF_STATE_POLICY_MISSING);
+    }
+
+    #[test]
+    fn test_unknown_entity_action_emits_audit() {
+        let mut mgr = setup_manager();
+        let req = ActionRequest {
+            entity_id: "nope".into(),
+            action: "deploy".into(),
+            required_risk_level: RiskLevel::High,
+            requested_at_epoch: 1000,
+        };
+        assert!(matches!(
+            mgr.authorize_action(&req),
+            Err(VefStateError::PolicyMissing { .. })
+        ));
+        assert_eq!(mgr.audit_log().len(), 1);
+        let last = mgr.audit_log().last().expect("audit entry should exist");
+        assert_eq!(last.event_code, VEF_STATE_ACTION_DENIED);
+        assert_eq!(last.entity_id, "nope");
+        assert_eq!(last.detail, ERR_VEF_STATE_POLICY_MISSING);
     }
 }

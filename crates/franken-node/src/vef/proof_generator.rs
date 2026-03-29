@@ -309,8 +309,10 @@ impl ProofBackend for TestProofBackend {
         }
         let expected_data = self.compute_proof_bytes(entries);
         let expected_hash = Self::hash_bytes(&expected_data);
-        Ok(crate::security::constant_time::ct_eq_bytes(&proof.proof_data, &expected_data)
-            && crate::security::constant_time::ct_eq(&proof.proof_data_hash, &expected_hash))
+        Ok(
+            crate::security::constant_time::ct_eq_bytes(&proof.proof_data, &expected_data)
+                && crate::security::constant_time::ct_eq(&proof.proof_data_hash, &expected_hash),
+        )
     }
 }
 
@@ -569,6 +571,7 @@ impl ProofGenerator {
     /// Enforce timeouts on pending/generating requests.
     pub fn enforce_timeouts(&mut self, now_millis: u64) -> Vec<String> {
         let mut timed_out = Vec::new();
+        let mut timeout_events = Vec::new();
         for status in self.requests.values_mut() {
             if matches!(
                 status.status,
@@ -583,13 +586,16 @@ impl ProofGenerator {
                     )));
                     status.completed_at_millis = Some(now_millis);
                     timed_out.push(status.request_id.clone());
-                    self.emit_event(ProofGeneratorEvent {
+                    timeout_events.push(ProofGeneratorEvent {
                         event_code: event_codes::PGN_004_GENERATION_FAILED.to_string(),
                         trace_id: status.trace_id.clone(),
                         detail: format!("request={} timed out", status.request_id),
                     });
                 }
             }
+        }
+        for event in timeout_events {
+            self.emit_event(event);
         }
         timed_out
     }
@@ -888,7 +894,11 @@ mod tests {
             created_at_millis: 1_702_000_036_000,
         };
         let proof = backend.generate(&request).expect("should generate");
-        assert!(!backend.verify(&proof, &entries[..2]).expect("should verify"));
+        assert!(
+            !backend
+                .verify(&proof, &entries[..2])
+                .expect("should verify")
+        );
     }
 
     // ── 8. Proof verification with empty entries returns false ──
@@ -973,7 +983,9 @@ mod tests {
         let proof = pg
             .generate_proof(&req_id, &window, &entries, 1_702_000_043_100)
             .expect("should succeed");
-        let valid = pg.verify_proof(&proof, &entries, "trace-gv").expect("should verify");
+        let valid = pg
+            .verify_proof(&proof, &entries, "trace-gv")
+            .expect("should verify");
         assert!(valid);
     }
 
@@ -1019,6 +1031,16 @@ mod tests {
             status.error.as_ref().expect("should have error").code,
             error_codes::ERR_PGN_TIMEOUT
         );
+        let timeout_event = pgr
+            .events()
+            .iter()
+            .find(|event| {
+                event.event_code == event_codes::PGN_004_GENERATION_FAILED
+                    && event.detail.contains("timed out")
+            })
+            .expect("timeout event should be emitted");
+        assert_eq!(timeout_event.trace_id, "trace-timeout");
+        assert!(timeout_event.detail.contains(&timed_out[0]));
     }
 
     // ── 15. Status counts ──
@@ -1163,7 +1185,8 @@ mod tests {
         };
         let proof = backend.generate(&request).expect("should generate");
         let json = serde_json::to_string(&proof).expect("should serialize");
-        let deserialized: ComplianceProof = serde_json::from_str(&json).expect("should deserialize");
+        let deserialized: ComplianceProof =
+            serde_json::from_str(&json).expect("should deserialize");
         assert_eq!(proof, deserialized);
     }
 

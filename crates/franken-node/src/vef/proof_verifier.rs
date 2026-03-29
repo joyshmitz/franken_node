@@ -206,6 +206,7 @@ pub struct VerifierError {
 }
 
 impl VerifierError {
+    #[cfg(test)]
     fn proof_expired(message: impl Into<String>) -> Self {
         Self {
             code: error_codes::ERR_PVF_PROOF_EXPIRED.to_string(),
@@ -351,7 +352,7 @@ impl ProofVerifier {
             .min(self.config.max_proof_age_millis);
         let is_from_future = proof.generated_at_millis > now_millis;
         let freshness_satisfied = !is_from_future && age_millis < age_limit;
-        
+
         if !freshness_satisfied {
             if is_from_future {
                 deny_reasons.push(format!(
@@ -377,7 +378,10 @@ impl ProofVerifier {
             reason: if freshness_satisfied {
                 format!("proof age {}ms within limit {}ms", age_millis, age_limit)
             } else if is_from_future {
-                format!("proof generated in the future ({} > {})", proof.generated_at_millis, now_millis)
+                format!(
+                    "proof generated in the future ({} > {})",
+                    proof.generated_at_millis, now_millis
+                )
             } else {
                 format!("proof age {}ms exceeds limit {}ms", age_millis, age_limit)
             },
@@ -599,16 +603,19 @@ impl VerificationGate {
         request: &VerificationRequest,
     ) -> Result<VerificationReport, VerifierError> {
         let trace_id = &request.trace_id;
+        let mut report_events = Vec::new();
 
         // Emit request-received event
-        self.emit_event(VerifierEvent {
+        let request_received_event = VerifierEvent {
             event_code: event_codes::PVF_001_REQUEST_RECEIVED.to_string(),
             trace_id: trace_id.clone(),
             detail: format!(
                 "request={} proof={} action_class={}",
                 request.request_id, request.proof.proof_id, request.proof.action_class
             ),
-        });
+        };
+        self.emit_event(request_received_event.clone());
+        report_events.push(request_received_event);
 
         // Format validation
         if request.proof.proof_id.is_empty() {
@@ -622,6 +629,15 @@ impl VerificationGate {
         }
         if request.proof.proof_hash.is_empty() {
             let err = VerifierError::invalid_format("proof_hash is empty");
+            self.emit_event(VerifierEvent {
+                event_code: event_codes::PVF_004_DENY_LOGGED.to_string(),
+                trace_id: trace_id.clone(),
+                detail: format!("request={} DENY: {}", request.request_id, err.message),
+            });
+            return Err(err);
+        }
+        if request.proof.action_class.is_empty() {
+            let err = VerifierError::invalid_format("action_class is empty");
             self.emit_event(VerifierEvent {
                 event_code: event_codes::PVF_004_DENY_LOGGED.to_string(),
                 trace_id: trace_id.clone(),
@@ -652,22 +668,23 @@ impl VerificationGate {
         let (decision, evidence) =
             verifier.validate_proof(&request.proof, &predicate, request.now_millis, trace_id)?;
 
-        // Emit decision event
-        self.emit_event(VerifierEvent {
+        // Propagate verifier events (via emit_event to respect push_bounded)
+        for event in verifier.events().iter().cloned() {
+            self.emit_event(event.clone());
+            report_events.push(event);
+        }
+
+        let decision_event = VerifierEvent {
             event_code: event_codes::PVF_003_DECISION_EMITTED.to_string(),
             trace_id: trace_id.clone(),
             detail: format!(
                 "request={} proof={} decision={}",
                 request.request_id, request.proof.proof_id, decision
             ),
-        });
+        };
+        self.emit_event(decision_event.clone());
+        report_events.push(decision_event);
 
-        // Propagate verifier events (via emit_event to respect push_bounded)
-        for event in verifier.events().iter().cloned() {
-            self.emit_event(event);
-        }
-
-        // Build report
         let report_digest = compute_report_digest(
             &request.request_id,
             &request.proof.proof_id,
@@ -676,6 +693,17 @@ impl VerificationGate {
             &evidence,
         )?;
 
+        let report_finalized_event = VerifierEvent {
+            event_code: event_codes::PVF_006_REPORT_FINALIZED.to_string(),
+            trace_id: trace_id.clone(),
+            detail: format!(
+                "request={} report_digest={} decision={}",
+                request.request_id, report_digest, decision
+            ),
+        };
+        self.emit_event(report_finalized_event.clone());
+        report_events.push(report_finalized_event);
+
         let report = VerificationReport {
             schema_version: PROOF_VERIFIER_SCHEMA_VERSION.to_string(),
             request_id: request.request_id.clone(),
@@ -683,21 +711,11 @@ impl VerificationGate {
             action_class: request.proof.action_class.clone(),
             decision: decision.clone(),
             evidence,
-            events: verifier.events().to_vec(),
+            events: report_events,
             report_digest,
             trace_id: trace_id.clone(),
             created_at_millis: request.now_millis,
         };
-
-        // Emit report-finalized event
-        self.emit_event(VerifierEvent {
-            event_code: event_codes::PVF_006_REPORT_FINALIZED.to_string(),
-            trace_id: trace_id.clone(),
-            detail: format!(
-                "request={} report_digest={} decision={}",
-                request.request_id, report.report_digest, decision
-            ),
-        });
 
         push_bounded(&mut self.reports, report.clone(), MAX_REPORTS);
         self.next_report_seq = self
@@ -772,8 +790,7 @@ fn compute_report_digest(
         proof_id: &'a str,
         action_class: &'a str,
         decision: &'a TrustDecision,
-        evidence_count: usize,
-        evidence_satisfied: Vec<bool>,
+        evidence: &'a [PredicateEvidence],
     }
 
     let material = DigestMaterial {
@@ -782,8 +799,7 @@ fn compute_report_digest(
         proof_id,
         action_class,
         decision,
-        evidence_count: evidence.len(),
-        evidence_satisfied: evidence.iter().map(|e| e.satisfied).collect(),
+        evidence,
     };
 
     let bytes = serde_json::to_vec(&material).map_err(|err| {
@@ -1033,6 +1049,26 @@ mod tests {
         assert_eq!(report.report_digest, digest);
     }
 
+    #[test]
+    fn report_digest_changes_when_evidence_details_change() {
+        let mut gate = gate_with_predicate();
+        let req = make_request(valid_proof());
+        let report = gate.verify(&req).unwrap();
+        let mut altered_evidence = report.evidence.clone();
+        altered_evidence[0].reason = "tampered reason".to_string();
+
+        let altered_digest = compute_report_digest(
+            &report.request_id,
+            &report.proof_id,
+            &report.action_class,
+            &report.decision,
+            &altered_evidence,
+        )
+        .unwrap();
+
+        assert_ne!(report.report_digest, altered_digest);
+    }
+
     // ── 11. Low confidence produces Deny (below degrade threshold) ─────────
 
     #[test]
@@ -1203,6 +1239,52 @@ mod tests {
         assert_eq!(last.event_code, event_codes::PVF_006_REPORT_FINALIZED);
     }
 
+    #[test]
+    fn allow_report_includes_full_gate_event_trail() {
+        let mut gate = gate_with_predicate();
+        let req = make_request(valid_proof());
+        let report = gate.verify(&req).unwrap();
+        let codes: Vec<&str> = report
+            .events
+            .iter()
+            .map(|event| event.event_code.as_str())
+            .collect();
+
+        assert_eq!(
+            codes,
+            vec![
+                event_codes::PVF_001_REQUEST_RECEIVED,
+                event_codes::PVF_002_PROOF_VALIDATED,
+                event_codes::PVF_003_DECISION_EMITTED,
+                event_codes::PVF_006_REPORT_FINALIZED,
+            ]
+        );
+    }
+
+    #[test]
+    fn deny_gate_events_preserve_causal_order() {
+        let mut gate = gate_with_predicate();
+        let mut proof = valid_proof();
+        proof.expires_at_millis = NOW - 1;
+        let report = gate.verify(&make_request(proof)).unwrap();
+        let codes: Vec<&str> = gate
+            .events()
+            .iter()
+            .map(|event| event.event_code.as_str())
+            .collect();
+
+        assert_eq!(
+            codes,
+            vec![
+                event_codes::PVF_001_REQUEST_RECEIVED,
+                event_codes::PVF_004_DENY_LOGGED,
+                event_codes::PVF_003_DECISION_EMITTED,
+                event_codes::PVF_006_REPORT_FINALIZED,
+            ]
+        );
+        assert_eq!(report.events, gate.events());
+    }
+
     // ── 23. Policy version enforcement can be disabled ─────────────────────
 
     #[test]
@@ -1310,6 +1392,15 @@ mod tests {
         let err = verifier
             .validate_proof(&proof, &pred, NOW, "trace-empty-class")
             .unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_PVF_INVALID_FORMAT);
+    }
+
+    #[test]
+    fn empty_action_class_produces_invalid_format_error_from_gate() {
+        let mut gate = gate_with_predicate();
+        let mut proof = valid_proof();
+        proof.action_class = String::new();
+        let err = gate.verify(&make_request(proof)).unwrap_err();
         assert_eq!(err.code, error_codes::ERR_PVF_INVALID_FORMAT);
     }
 

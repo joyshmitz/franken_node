@@ -4,7 +4,6 @@
 
 use std::collections::BTreeMap;
 
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 // ── Capacity limits ─────────────────────────────────────────────────
@@ -44,8 +43,7 @@ pub const ERR_CAPSULE_EXPORT_FAILED: &str = "ERR_CAPSULE_EXPORT_FAILED";
 // INV-EVIDENCE-CAPSULE-SCHEMA-STABLE: schema version must match expected format
 
 /// VEF evidence record to embed in capsule.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VefEvidence {
     pub receipt_chain_commitment: String,
     pub proof_id: String,
@@ -57,8 +55,7 @@ pub struct VefEvidence {
 }
 
 /// Replay capsule with VEF evidence integration.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EvidenceCapsule {
     pub capsule_id: String,
     pub schema_version: String,
@@ -138,7 +135,7 @@ impl EvidenceCapsule {
             };
         }
 
-        let mut passed = 0;
+        let mut passed: usize = 0;
         let mut failures = Vec::new();
 
         for ev in &self.evidence {
@@ -173,8 +170,7 @@ impl EvidenceCapsule {
 }
 
 /// Result of capsule verification.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapsuleVerificationResult {
     pub valid: bool,
     pub checked: usize,
@@ -183,8 +179,7 @@ pub struct CapsuleVerificationResult {
 }
 
 /// Capsule errors.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CapsuleError {
     EmptyEvidence,
     AlreadySealed,
@@ -200,7 +195,10 @@ impl std::fmt::Display for CapsuleError {
             Self::EmptyEvidence => write!(f, "{ERR_CAPSULE_EMPTY_EVIDENCE}"),
             Self::AlreadySealed => write!(f, "{ERR_CAPSULE_SEAL_FAILED}: already sealed"),
             Self::SchemaMismatch { expected, got } => {
-                write!(f, "{ERR_CAPSULE_SCHEMA_MISMATCH}: expected={expected}, got={got}")
+                write!(
+                    f,
+                    "{ERR_CAPSULE_SCHEMA_MISMATCH}: expected={expected}, got={got}"
+                )
             }
             Self::ProofMissing { detail } => {
                 write!(f, "{ERR_CAPSULE_PROOF_MISSING}: {detail}")
@@ -216,8 +214,7 @@ impl std::fmt::Display for CapsuleError {
 }
 
 /// External verification API endpoint descriptor.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalVerifierEndpoint {
     pub name: String,
     pub url: String,
@@ -225,8 +222,7 @@ pub struct ExternalVerifierEndpoint {
 }
 
 /// Export manifest for external verification.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportManifest {
     pub capsule_id: String,
     pub evidence_count: usize,
@@ -281,10 +277,14 @@ impl VerifierRegistry {
             });
         }
 
-        push_bounded(&mut self.audit_log, format!(
-            "{}: capsule={} target={}",
-            EVIDENCE_CAPSULE_EXPORTED, capsule.capsule_id, target
-        ), MAX_AUDIT_LOG_ENTRIES);
+        push_bounded(
+            &mut self.audit_log,
+            format!(
+                "{}: capsule={} target={}",
+                EVIDENCE_CAPSULE_EXPORTED, capsule.capsule_id, target
+            ),
+            MAX_AUDIT_LOG_ENTRIES,
+        );
 
         Ok(ExportManifest {
             capsule_id: capsule.capsule_id.clone(),
@@ -411,7 +411,8 @@ mod tests {
     #[test]
     fn test_metadata() {
         let mut c = EvidenceCapsule::new("c1".into(), 1000);
-        c.set_metadata("key".into(), "val".into()).expect("set should succeed");
+        c.set_metadata("key".into(), "val".into())
+            .expect("set should succeed");
         assert_eq!(c.metadata.get("key").expect("should exist"), "val");
     }
 
@@ -444,7 +445,9 @@ mod tests {
             supported_schemas: vec![SCHEMA_VERSION.into()],
         });
         let c = sealed_capsule();
-        let manifest = reg.export_capsule(&c, "ext-1").expect("export should succeed");
+        let manifest = reg
+            .export_capsule(&c, "ext-1")
+            .expect("export should succeed");
         assert_eq!(manifest.evidence_count, 1);
     }
 
@@ -534,7 +537,8 @@ mod tests {
             supported_schemas: vec![SCHEMA_VERSION.into()],
         });
         let c = sealed_capsule();
-        reg.export_capsule(&c, "ext-1").expect("export should succeed");
+        reg.export_capsule(&c, "ext-1")
+            .expect("export should succeed");
         assert_eq!(reg.audit_log().len(), 1);
         assert!(reg.audit_log()[0].contains(EVIDENCE_CAPSULE_EXPORTED));
     }
