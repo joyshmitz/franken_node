@@ -58,17 +58,23 @@ impl TraceContext {
         if parts.len() != 4 {
             return None;
         }
-        let trace_id = parts[1].to_string();
-        let span_id = parts[2].to_string();
-        let trace_flags = u8::from_str_radix(parts[3], 16).ok()?;
-
-        if trace_id.len() != 32 || span_id.len() != 16 {
+        let version = parts[0];
+        let trace_id = parts[1];
+        let span_id = parts[2];
+        if version.len() != 2
+            || !is_lower_hex(version)
+            || version == "ff"
+            || !is_valid_trace_id(trace_id)
+            || !is_valid_span_id(span_id)
+            || !is_valid_trace_flags(parts[3])
+        {
             return None;
         }
+        let trace_flags = u8::from_str_radix(parts[3], 16).ok()?;
 
         Some(Self {
-            trace_id,
-            span_id,
+            trace_id: trace_id.to_string(),
+            span_id: span_id.to_string(),
             trace_flags,
         })
     }
@@ -103,6 +109,33 @@ fn rand_span_id() -> u64 {
         .unwrap_or_default();
     // Mix nanoseconds with a constant for uniqueness
     now.as_nanos() as u64 ^ 0x517c_c1b7_2722_0a95
+}
+
+#[cfg(any(test, feature = "extended-surfaces"))]
+fn is_lower_hex(value: &str) -> bool {
+    value
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+}
+
+#[cfg(any(test, feature = "extended-surfaces"))]
+fn has_nonzero_hex_digit(value: &str) -> bool {
+    value.bytes().any(|byte| byte != b'0')
+}
+
+#[cfg(any(test, feature = "extended-surfaces"))]
+fn is_valid_trace_id(value: &str) -> bool {
+    value.len() == 32 && is_lower_hex(value) && has_nonzero_hex_digit(value)
+}
+
+#[cfg(any(test, feature = "extended-surfaces"))]
+fn is_valid_span_id(value: &str) -> bool {
+    value.len() == 16 && is_lower_hex(value) && has_nonzero_hex_digit(value)
+}
+
+#[cfg(any(test, feature = "extended-surfaces"))]
+fn is_valid_trace_flags(value: &str) -> bool {
+    value.len() == 2 && is_lower_hex(value)
 }
 
 // ── Authentication ─────────────────────────────────────────────────────────
@@ -195,7 +228,9 @@ pub fn authenticate(
                     trace_id: trace_id.to_string(),
                 });
             }
-            let is_valid = authorized_keys.iter().fold(false, |acc, k| acc | ct_eq(k, token));
+            let is_valid = authorized_keys
+                .iter()
+                .fold(false, |acc, k| acc | ct_eq(k, token));
             if !is_valid {
                 return Err(ApiError::AuthFailed {
                     detail: "invalid bearer token".to_string(),
@@ -210,13 +245,30 @@ pub fn authenticate(
         }
         AuthMethod::MtlsClientCert => {
             // mTLS verification happens at the transport layer; here we just
-            // check that the identity was propagated via a header.
+            // check that the propagated identity is non-empty and matches the
+            // set of transport-validated client identities.
             let header = auth_header.ok_or_else(|| ApiError::AuthFailed {
                 detail: "mTLS client identity not propagated".to_string(),
                 trace_id: trace_id.to_string(),
             })?;
+            let propagated_identity = header.trim();
+            if propagated_identity.is_empty() {
+                return Err(ApiError::AuthFailed {
+                    detail: "empty mTLS client identity".to_string(),
+                    trace_id: trace_id.to_string(),
+                });
+            }
+            let is_valid = authorized_keys
+                .iter()
+                .fold(false, |acc, k| acc | ct_eq(k, propagated_identity));
+            if !is_valid {
+                return Err(ApiError::AuthFailed {
+                    detail: "invalid mTLS client identity".to_string(),
+                    trace_id: trace_id.to_string(),
+                });
+            }
             Ok(AuthIdentity {
-                principal: format!("mtls:{}", utf8_prefix(header, 16)),
+                principal: format!("mtls:{}", utf8_prefix(propagated_identity, 16)),
                 method: AuthMethod::MtlsClientCert,
                 roles: vec![
                     "operator".to_string(),
@@ -683,6 +735,42 @@ mod tests {
     fn trace_context_parse_invalid() {
         assert!(TraceContext::from_traceparent("bad-header").is_none());
         assert!(TraceContext::from_traceparent("00-short-id-01").is_none());
+        assert!(
+            TraceContext::from_traceparent(
+                "00-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-b7ad6b7169203331-01"
+            )
+            .is_none()
+        );
+        assert!(
+            TraceContext::from_traceparent(
+                "00-00000000000000000000000000000000-b7ad6b7169203331-01"
+            )
+            .is_none()
+        );
+        assert!(
+            TraceContext::from_traceparent(
+                "00-0af7651916cd43dd8448eb211c80319c-0000000000000000-01"
+            )
+            .is_none()
+        );
+        assert!(
+            TraceContext::from_traceparent(
+                "00-0AF7651916CD43DD8448EB211C80319C-b7ad6b7169203331-01"
+            )
+            .is_none()
+        );
+        assert!(
+            TraceContext::from_traceparent(
+                "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-1"
+            )
+            .is_none()
+        );
+        assert!(
+            TraceContext::from_traceparent(
+                "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-0A"
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -767,6 +855,19 @@ mod tests {
     }
 
     #[test]
+    fn authenticate_mtls_identity() {
+        let keys = get_test_keys();
+        let result = authenticate(
+            Some("fleet-service-cert"),
+            &AuthMethod::MtlsClientCert,
+            "t-3m",
+            &keys,
+        );
+        let identity = result.expect("auth mtls");
+        assert_eq!(identity.principal, "mtls:fleet-service-ce");
+    }
+
+    #[test]
     fn authenticate_missing_header() {
         let keys = get_test_keys();
         let result = authenticate(None, &AuthMethod::ApiKey, "t-4", &keys);
@@ -777,6 +878,45 @@ mod tests {
     fn authenticate_wrong_prefix() {
         let keys = get_test_keys();
         let result = authenticate(Some("Basic abc"), &AuthMethod::BearerToken, "t-5", &keys);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn authenticate_mtls_rejects_empty_identity() {
+        let keys = get_test_keys();
+        let result = authenticate(Some(""), &AuthMethod::MtlsClientCert, "t-5m", &keys);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn authenticate_mtls_rejects_whitespace_only_identity() {
+        let keys = get_test_keys();
+        let result = authenticate(Some("   "), &AuthMethod::MtlsClientCert, "t-5mw", &keys);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn authenticate_mtls_trims_propagated_identity() {
+        let keys = get_test_keys();
+        let result = authenticate(
+            Some("  fleet-service-cert  "),
+            &AuthMethod::MtlsClientCert,
+            "t-5mt",
+            &keys,
+        );
+        let identity = result.expect("auth mtls");
+        assert_eq!(identity.principal, "mtls:fleet-service-ce");
+    }
+
+    #[test]
+    fn authenticate_mtls_rejects_unknown_identity() {
+        let keys = get_test_keys();
+        let result = authenticate(
+            Some("rogue-service-cert"),
+            &AuthMethod::MtlsClientCert,
+            "t-5mu",
+            &keys,
+        );
         assert!(result.is_err());
     }
 
@@ -954,6 +1094,38 @@ mod tests {
     }
 
     #[test]
+    fn execute_middleware_chain_generates_trace_context_for_invalid_traceparent() {
+        let route = RouteMetadata {
+            method: "GET".to_string(),
+            path: "/v1/operator/status".to_string(),
+            group: EndpointGroup::Operator,
+            lifecycle: EndpointLifecycle::Stable,
+            auth_method: AuthMethod::None,
+            policy_hook: PolicyHook {
+                hook_id: "operator.status.read".to_string(),
+                required_roles: vec![],
+            },
+            trace_propagation: true,
+        };
+        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
+        let keys = get_test_keys();
+        let invalid_traceparent = "00-00000000000000000000000000000000-b7ad6b7169203331-01";
+
+        let (result, log) = execute_middleware_chain(
+            &route,
+            None,
+            Some(invalid_traceparent),
+            &mut limiter,
+            &keys,
+            |_identity, ctx| Ok(ctx.clone()),
+        );
+
+        let trace_ctx = result.expect("generated trace context");
+        assert_ne!(trace_ctx.trace_id, "00000000000000000000000000000000");
+        assert_eq!(trace_ctx.trace_id, log.trace_id);
+    }
+
+    #[test]
     fn execute_middleware_chain_auth_failure() {
         let route = RouteMetadata {
             method: "POST".to_string(),
@@ -973,6 +1145,37 @@ mod tests {
         let (result, log) = execute_middleware_chain(
             &route,
             None, // no auth header
+            None,
+            &mut limiter,
+            &keys,
+            |_identity, _ctx| Ok("should not reach"),
+        );
+
+        assert!(result.is_err());
+        assert_eq!(log.status, 401);
+        assert_eq!(log.event_code, "FASTAPI_AUTH_FAIL");
+    }
+
+    #[test]
+    fn execute_middleware_chain_rejects_blank_mtls_identity() {
+        let route = RouteMetadata {
+            method: "POST".to_string(),
+            path: "/v1/fleet/quarantine".to_string(),
+            group: EndpointGroup::FleetControl,
+            lifecycle: EndpointLifecycle::Stable,
+            auth_method: AuthMethod::MtlsClientCert,
+            policy_hook: PolicyHook {
+                hook_id: "fleet.quarantine.execute".to_string(),
+                required_roles: vec!["fleet-admin".to_string()],
+            },
+            trace_propagation: true,
+        };
+        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
+        let keys = get_test_keys();
+
+        let (result, log) = execute_middleware_chain(
+            &route,
+            Some("   "),
             None,
             &mut limiter,
             &keys,

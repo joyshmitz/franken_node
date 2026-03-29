@@ -44,5 +44,6 @@ pub mod supply_chain;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
 pub mod tools;
+pub mod vef;
 #[cfg(feature = "extended-surfaces")]
 pub mod verifier_economy;

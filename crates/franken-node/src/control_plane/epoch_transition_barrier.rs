@@ -188,6 +188,18 @@ pub enum BarrierError {
     EpochMismatch { expected: u64, provided: u64 },
 }
 
+/// Result of attempting to commit a barrier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BarrierCommitOutcome {
+    /// All participants ACKed and the barrier committed successfully.
+    Committed { target_epoch: u64 },
+    /// The commit attempt auto-aborted the barrier instead of advancing.
+    Aborted {
+        current_epoch: u64,
+        reason: AbortReason,
+    },
+}
+
 impl BarrierError {
     pub fn code(&self) -> &'static str {
         match self {
@@ -660,7 +672,11 @@ impl EpochTransitionBarrier {
     ///
     /// INV-BARRIER-ALL-ACK: requires N ACKs for N participants.
     /// INV-BARRIER-NO-PARTIAL: on commit, epoch is advanced atomically.
-    pub fn try_commit(&mut self, timestamp_ms: u64, trace_id: &str) -> Result<u64, BarrierError> {
+    pub fn try_commit(
+        &mut self,
+        timestamp_ms: u64,
+        trace_id: &str,
+    ) -> Result<BarrierCommitOutcome, BarrierError> {
         let barrier = self
             .active_barrier
             .as_mut()
@@ -678,13 +694,15 @@ impl EpochTransitionBarrier {
 
             // Check if we've exceeded the global timeout
             if elapsed >= self.config.global_timeout_ms {
-                return self.abort(
-                    AbortReason::Timeout {
-                        missing_participants: missing,
-                    },
-                    timestamp_ms,
-                    trace_id,
-                );
+                let reason = AbortReason::Timeout {
+                    missing_participants: missing,
+                };
+                return self
+                    .abort(reason.clone(), timestamp_ms, trace_id)
+                    .map(|current_epoch| BarrierCommitOutcome::Aborted {
+                        current_epoch,
+                        reason,
+                    });
             }
 
             return Err(BarrierError::Timeout {
@@ -731,7 +749,7 @@ impl EpochTransitionBarrier {
             self.history.drain(0..overflow);
         }
 
-        Ok(target_epoch)
+        Ok(BarrierCommitOutcome::Committed { target_epoch })
     }
 
     /// Abort the current barrier.
@@ -1013,8 +1031,8 @@ mod tests {
                 .unwrap();
         }
 
-        let new_epoch = b.try_commit(1200, "t1").unwrap();
-        assert_eq!(new_epoch, 6);
+        let outcome = b.try_commit(1200, "t1").unwrap();
+        assert_eq!(outcome, BarrierCommitOutcome::Committed { target_epoch: 6 });
         assert!(!b.is_barrier_active());
         assert_eq!(b.active_barrier().unwrap().phase, BarrierPhase::Committed);
     }
@@ -1068,14 +1086,18 @@ mod tests {
         // svc-1 and svc-2 missing
 
         // Exceed global timeout
-        let epoch = b
+        let outcome = b
             .try_commit(1000 + DEFAULT_BARRIER_TIMEOUT_MS, "t1")
             .unwrap();
-        // try_commit triggers abort when timed out and returns current epoch
-        // Actually, let me re-read the logic...
-        // When not all acked and elapsed >= global_timeout, it calls self.abort()
-        // which returns Ok(current_epoch)
-        assert_eq!(epoch, 5);
+        assert_eq!(
+            outcome,
+            BarrierCommitOutcome::Aborted {
+                current_epoch: 5,
+                reason: AbortReason::Timeout {
+                    missing_participants: vec!["svc-1".into(), "svc-2".into()],
+                },
+            }
+        );
     }
 
     // ---- Drain failure ----
@@ -1136,7 +1158,10 @@ mod tests {
         b.propose(5, 6, 1000, "t1").unwrap();
         b.record_drain_ack(make_ack("svc-0", "barrier-000001", 50))
             .unwrap();
-        b.try_commit(1100, "t1").unwrap();
+        assert_eq!(
+            b.try_commit(1100, "t1").unwrap(),
+            BarrierCommitOutcome::Committed { target_epoch: 6 }
+        );
 
         let err = b
             .record_drain_ack(make_ack("svc-0", "barrier-000001", 100))
@@ -1150,7 +1175,10 @@ mod tests {
         b.propose(5, 6, 1000, "t1").unwrap();
         b.record_drain_ack(make_ack("svc-0", "barrier-000001", 50))
             .unwrap();
-        b.try_commit(1100, "t1").unwrap();
+        assert_eq!(
+            b.try_commit(1100, "t1").unwrap(),
+            BarrierCommitOutcome::Committed { target_epoch: 6 }
+        );
 
         let err = b
             .abort(
@@ -1185,7 +1213,10 @@ mod tests {
             .unwrap();
         b.record_drain_ack(make_ack("svc-1", "barrier-000001", 60))
             .unwrap();
-        b.try_commit(1200, "t1").unwrap();
+        assert_eq!(
+            b.try_commit(1200, "t1").unwrap(),
+            BarrierCommitOutcome::Committed { target_epoch: 6 }
+        );
 
         let t = b.transcript().unwrap();
         let codes: Vec<&str> = t.entries.iter().map(|e| e.event_code.as_str()).collect();
@@ -1223,7 +1254,10 @@ mod tests {
         b.propose(0, 1, 1000, "t1").unwrap();
         b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20))
             .unwrap();
-        b.try_commit(1100, "t1").unwrap();
+        assert_eq!(
+            b.try_commit(1100, "t1").unwrap(),
+            BarrierCommitOutcome::Committed { target_epoch: 1 }
+        );
 
         let jsonl = b.transcript().unwrap().export_jsonl();
         assert!(!jsonl.is_empty());
@@ -1308,7 +1342,10 @@ mod tests {
         b.propose(0, 1, 1000, "t1").unwrap();
         b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20))
             .unwrap();
-        b.try_commit(1100, "t1").unwrap();
+        assert_eq!(
+            b.try_commit(1100, "t1").unwrap(),
+            BarrierCommitOutcome::Committed { target_epoch: 1 }
+        );
 
         // Second barrier: abort
         b.propose(1, 2, 2000, "t2").unwrap();
@@ -1332,7 +1369,10 @@ mod tests {
         b.propose(0, 1, 1000, "t1").unwrap();
         b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20))
             .unwrap();
-        b.try_commit(1100, "t1").unwrap();
+        assert_eq!(
+            b.try_commit(1100, "t1").unwrap(),
+            BarrierCommitOutcome::Committed { target_epoch: 1 }
+        );
 
         let jsonl = b.export_audit_log_jsonl();
         assert!(!jsonl.is_empty());
@@ -1373,7 +1413,10 @@ mod tests {
         assert_eq!(b.active_barrier().unwrap().barrier_id, "barrier-000001");
         b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20))
             .unwrap();
-        b.try_commit(1100, "t1").unwrap();
+        assert_eq!(
+            b.try_commit(1100, "t1").unwrap(),
+            BarrierCommitOutcome::Committed { target_epoch: 1 }
+        );
 
         b.propose(1, 2, 2000, "t2").unwrap();
         assert_eq!(b.active_barrier().unwrap().barrier_id, "barrier-000002");
@@ -1473,7 +1516,10 @@ mod tests {
         b.propose(5, 6, 1000, "t1").unwrap();
         b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20))
             .unwrap();
-        b.try_commit(1100, "t1").unwrap();
+        assert_eq!(
+            b.try_commit(1100, "t1").unwrap(),
+            BarrierCommitOutcome::Committed { target_epoch: 6 }
+        );
 
         assert!(b.active_barrier().unwrap().is_terminal());
         assert!(!b.is_barrier_active());
@@ -1504,7 +1550,10 @@ mod tests {
         b.propose(5, 6, 1000, "t1").unwrap();
         b.record_drain_ack(make_ack("svc-0", "barrier-000001", 20))
             .unwrap();
-        b.try_commit(1100, "t1").unwrap();
+        assert_eq!(
+            b.try_commit(1100, "t1").unwrap(),
+            BarrierCommitOutcome::Committed { target_epoch: 6 }
+        );
 
         // Should be able to propose new barrier
         b.propose(6, 7, 2000, "t2").unwrap();

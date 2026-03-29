@@ -99,6 +99,8 @@ pub fn all_route_metadata() -> Vec<RouteMetadata> {
     routes.extend(operator_routes::route_metadata());
     routes.extend(verifier_routes::route_metadata());
     routes.extend(fleet_control_routes::route_metadata());
+    #[cfg(any(test, feature = "extended-surfaces"))]
+    routes.extend(super::fleet_quarantine::quarantine_route_metadata());
     routes
 }
 
@@ -157,7 +159,10 @@ pub struct PerformanceBaseline {
 
 // ── Endpoint Report ────────────────────────────────────────────────────────
 
-/// Full endpoint report matching `artifacts/10.16/fastapi_endpoint_report.json`.
+/// Full endpoint report for the live service catalog surface.
+///
+/// This report is distinct from the older FastAPI skeleton artifact in
+/// `artifacts/10.16/fastapi_endpoint_report.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EndpointReport {
     pub endpoints: Vec<EndpointCatalogEntry>,
@@ -302,8 +307,8 @@ mod tests {
 
         assert_eq!(operator_count, 4);
         assert_eq!(verifier_count, 3);
-        assert_eq!(fleet_count, 5);
-        assert_eq!(routes.len(), 12);
+        assert_eq!(fleet_count, 10);
+        assert_eq!(routes.len(), 17);
     }
 
     #[test]
@@ -311,7 +316,7 @@ mod tests {
         let _lock = super::operator_routes::process_start_test_lock();
         super::operator_routes::clear_process_start_override_for_tests();
         let catalog = build_endpoint_catalog();
-        assert_eq!(catalog.len(), 12);
+        assert_eq!(catalog.len(), 17);
 
         // All entries have non-empty fields
         for entry in &catalog {
@@ -338,9 +343,9 @@ mod tests {
         let _lock = super::operator_routes::process_start_test_lock();
         super::operator_routes::clear_process_start_override_for_tests();
         let report = generate_endpoint_report();
-        assert_eq!(report.endpoints.len(), 12);
+        assert_eq!(report.endpoints.len(), 17);
         assert!(report.middleware_coverage.auth_coverage);
-        assert_eq!(report.performance_baselines.len(), 12);
+        assert_eq!(report.performance_baselines.len(), 17);
         assert!(!report.generated_at.is_empty());
     }
 
@@ -402,6 +407,24 @@ mod tests {
         for entry in &catalog {
             assert_eq!(entry.conformance_status, "pass");
         }
+    }
+
+    #[test]
+    fn endpoint_catalog_includes_fleet_quarantine_surface() {
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
+        let catalog = build_endpoint_catalog();
+
+        assert!(catalog.iter().any(|entry| {
+            entry.method == "POST"
+                && entry.path == "/v1/fleet/quarantine"
+                && entry.policy_hook == "fleet.quarantine.execute"
+        }));
+        assert!(catalog.iter().any(|entry| {
+            entry.method == "POST"
+                && entry.path == "/v1/fleet/reconcile"
+                && entry.policy_hook == "fleet.reconcile.execute"
+        }));
     }
 
     #[test]
@@ -496,9 +519,24 @@ mod integration_tests {
             path: "/v1/fleet/quarantine".to_string(),
             group: EndpointGroup::FleetControl,
             lifecycle: EndpointLifecycle::Stable,
+            auth_method: AuthMethod::MtlsClientCert,
+            policy_hook: PolicyHook {
+                hook_id: "fleet.quarantine.execute".to_string(),
+                required_roles: vec!["fleet-admin".to_string()],
+            },
+            trace_propagation: true,
+        }
+    }
+
+    fn synthetic_bearer_admin_route() -> RouteMetadata {
+        RouteMetadata {
+            method: "POST".to_string(),
+            path: "/v1/test/fleet/admin".to_string(),
+            group: EndpointGroup::FleetControl,
+            lifecycle: EndpointLifecycle::Stable,
             auth_method: AuthMethod::BearerToken,
             policy_hook: PolicyHook {
-                hook_id: "fleet.quarantine.write".to_string(),
+                hook_id: "test.fleet.admin.execute".to_string(),
                 required_roles: vec!["fleet-admin".to_string()],
             },
             trace_propagation: true,
@@ -585,7 +623,7 @@ mod integration_tests {
 
         let (result, log) = execute_middleware_chain(
             &route,
-            Some("ApiKey my-key"), // route requires BearerToken
+            Some("ApiKey my-key"), // route requires propagated mTLS identity
             None,
             &mut limiter,
             &keys,
@@ -597,19 +635,8 @@ mod integration_tests {
     }
 
     #[test]
-    fn authorized_bearer_can_reach_firewall() {
-        let route = RouteMetadata {
-            method: "POST".to_string(),
-            path: "/v1/fleet/quarantine".to_string(),
-            group: EndpointGroup::FleetControl,
-            lifecycle: EndpointLifecycle::Stable,
-            auth_method: AuthMethod::MtlsClientCert,
-            policy_hook: PolicyHook {
-                hook_id: "fleet.quarantine.write".to_string(),
-                required_roles: vec!["fleet-admin".to_string()],
-            },
-            trace_propagation: true,
-        };
+    fn authorized_mtls_identity_can_reach_firewall() {
+        let route = fleet_admin_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
         let mut fw = make_firewall();
         let keys = get_test_keys();
@@ -638,9 +665,10 @@ mod integration_tests {
     // ── Authorization → Firewall pipeline ─────────────────────────────
 
     #[test]
-    fn insufficient_role_denied_before_firewall() {
-        // BearerToken gives ["operator", "verifier"] but fleet route requires "fleet-admin"
-        let route = fleet_admin_route();
+    fn synthetic_bearer_admin_route_denied_before_firewall() {
+        // Real quarantine/reconcile routes are mTLS-only. This synthetic route
+        // isolates the authorization-deny branch for bearer identities.
+        let route = synthetic_bearer_admin_route();
         let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
         let mut firewall_called = false;
         let keys = get_test_keys();
@@ -673,7 +701,7 @@ mod integration_tests {
             roles: vec!["fleet-admin".to_string()],
         };
         let hook = PolicyHook {
-            hook_id: "fleet.quarantine.write".to_string(),
+            hook_id: "fleet.quarantine.execute".to_string(),
             required_roles: vec!["fleet-admin".to_string()],
         };
 
@@ -689,6 +717,25 @@ mod integration_tests {
             .expect("firewall");
         assert_eq!(fw_decision.verdict, FirewallVerdict::Deny);
         assert_eq!(fw_decision.intent, Some(IntentClassification::Exfiltration));
+    }
+
+    #[test]
+    fn fleet_admin_fixture_matches_authoritative_quarantine_metadata() {
+        let fixture = fleet_admin_route();
+        let authoritative = crate::api::fleet_quarantine::quarantine_route_metadata()
+            .into_iter()
+            .find(|route| route.method == "POST" && route.path == "/v1/fleet/quarantine")
+            .expect("authoritative quarantine route");
+
+        assert_eq!(fixture.auth_method, authoritative.auth_method);
+        assert_eq!(
+            fixture.policy_hook.hook_id,
+            authoritative.policy_hook.hook_id
+        );
+        assert_eq!(
+            fixture.policy_hook.required_roles,
+            authoritative.policy_hook.required_roles
+        );
     }
 
     // ── Rate limiting → Firewall pipeline ─────────────────────────────

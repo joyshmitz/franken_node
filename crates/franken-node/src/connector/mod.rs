@@ -30,16 +30,16 @@ pub mod eviction_saga;
 pub mod execution_scorer;
 pub mod fencing;
 pub mod frame_parser;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod fuzz_corpus;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod golden_vectors;
 pub mod health_gate;
 #[cfg(any(test, feature = "extended-surfaces"))]
 pub mod high_assurance_promotion;
 #[cfg(any(test, feature = "extended-surfaces"))]
 pub mod incident_bundle_retention;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod interop_suite;
 pub mod lease_conflict;
 #[cfg(any(test, feature = "extended-surfaces"))]
@@ -51,7 +51,7 @@ pub mod lifecycle;
 pub mod manifest_negotiation;
 pub mod migration_artifact;
 pub mod migration_pipeline;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod n_version_oracle;
 pub mod obligation_tracker;
 #[cfg(any(test, feature = "extended-surfaces"))]
@@ -85,12 +85,12 @@ pub mod transport_fault_gate;
 pub mod trust_fabric;
 pub mod trust_object_id;
 pub mod trust_zone;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod universal_verifier_sdk;
 pub mod vef_claim_integration;
 pub mod vef_execution_receipt;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod vef_perf_budget;
 pub mod vef_policy_constraints;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod verifier_sdk;

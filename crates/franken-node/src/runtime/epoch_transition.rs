@@ -12,7 +12,8 @@ use sha2::{Digest, Sha256};
 
 use crate::control_plane::control_epoch::{EpochError, EpochStore};
 use crate::control_plane::epoch_transition_barrier::{
-    AbortReason, BarrierConfig, BarrierError, BarrierInstance, DrainAck, EpochTransitionBarrier,
+    AbortReason, BarrierCommitOutcome, BarrierConfig, BarrierError, BarrierInstance, DrainAck,
+    EpochTransitionBarrier,
 };
 use crate::control_plane::transition_abort::{
     ParticipantAbortState, TransitionAbortManager, TransitionAbortReason,
@@ -28,6 +29,7 @@ pub const EPOCH_ADVANCED: &str = "EPOCH_ADVANCED";
 pub const STALE_EPOCH_REJECTED: &str = "STALE_EPOCH_REJECTED";
 pub const FUTURE_EPOCH_REJECTED: &str = "FUTURE_EPOCH_REJECTED";
 pub const EPOCH_TRANSITION_ABORTED: &str = "EPOCH_TRANSITION_ABORTED";
+pub const EPOCH_TRANSITION_COMMIT_ABORTED: &str = "EPOCH_TRANSITION_COMMIT_ABORTED";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EpochTransitionLogEvent {
@@ -78,6 +80,10 @@ pub enum EpochTransitionError {
         presented_epoch: u64,
         current_epoch: u64,
     },
+    CommitAborted {
+        barrier_id: String,
+        reason: String,
+    },
 }
 
 impl EpochTransitionError {
@@ -90,6 +96,7 @@ impl EpochTransitionError {
             Self::EpochAdvanceMismatch { .. } => "EPOCH_TRANSITION_ADVANCE_MISMATCH",
             Self::StaleEpochRejected { .. } => STALE_EPOCH_REJECTED,
             Self::FutureEpochRejected { .. } => FUTURE_EPOCH_REJECTED,
+            Self::CommitAborted { .. } => EPOCH_TRANSITION_COMMIT_ABORTED,
         }
     }
 }
@@ -126,6 +133,13 @@ impl fmt::Display for EpochTransitionError {
                 self.code(),
                 presented_epoch,
                 current_epoch
+            ),
+            Self::CommitAborted { barrier_id, reason } => write!(
+                f,
+                "{}: barrier {} auto-aborted during commit attempt: {}",
+                self.code(),
+                barrier_id,
+                reason
             ),
         }
     }
@@ -375,7 +389,28 @@ impl ProductEpochCoordinator {
             .pending
             .clone()
             .ok_or(EpochTransitionError::NoActiveTransition)?;
-        let target_epoch = self.barrier.try_commit(timestamp_ms, trace_id)?;
+        let target_epoch = match self.barrier.try_commit(timestamp_ms, trace_id)? {
+            BarrierCommitOutcome::Committed { target_epoch } => target_epoch,
+            BarrierCommitOutcome::Aborted { reason, .. } => {
+                let snapshot = self
+                    .barrier
+                    .active_barrier()
+                    .cloned()
+                    .ok_or(EpochTransitionError::NoActiveTransition)?;
+                let elapsed_ms = timestamp_ms.saturating_sub(snapshot.propose_timestamp_ms);
+                self.record_abort_outcome(
+                    snapshot.clone(),
+                    pending,
+                    transition_abort_reason_from_barrier_reason(&reason, elapsed_ms),
+                    timestamp_ms,
+                    trace_id,
+                );
+                return Err(EpochTransitionError::CommitAborted {
+                    barrier_id: snapshot.barrier_id,
+                    reason: reason.to_string(),
+                });
+            }
+        };
         let manifest_hash = manifest_hash_for_transition(
             &pending.transition_id,
             &pending.initiator,
@@ -565,6 +600,25 @@ fn participant_states_from_snapshot(
             },
         })
         .collect::<Vec<_>>()
+}
+
+fn transition_abort_reason_from_barrier_reason(
+    reason: &AbortReason,
+    elapsed_ms: u64,
+) -> TransitionAbortReason {
+    match reason {
+        AbortReason::Timeout { .. } => TransitionAbortReason::Timeout { elapsed_ms },
+        AbortReason::DrainFailed {
+            participant_id,
+            detail,
+        } => TransitionAbortReason::ParticipantFailure {
+            participant_id: participant_id.clone(),
+            detail: detail.clone(),
+        },
+        AbortReason::Cancelled { detail } => TransitionAbortReason::Cancellation {
+            source: detail.clone(),
+        },
+    }
 }
 
 fn manifest_hash_for_transition(
@@ -794,5 +848,36 @@ mod tests {
         assert_eq!(coordinator.history()[1].pre_epoch, 10);
         assert_eq!(coordinator.history()[1].target_epoch, 11);
         assert!(coordinator.history()[1].abort_reason.is_some());
+    }
+
+    #[test]
+    fn timed_out_commit_attempt_fails_closed_without_advancing_epoch() {
+        let mut coordinator = ProductEpochCoordinator::new(7, 1, BarrierConfig::default());
+        coordinator.register_service("svc-a");
+        coordinator.register_service("svc-b");
+
+        coordinator
+            .propose_transition("operator-1", "rotation", 1_000, "trace-propose")
+            .expect("proposal succeeds");
+        coordinator
+            .ack_drain("svc-a", 1, 5, "trace-ack-a")
+            .expect("svc-a drained");
+
+        let err = coordinator
+            .commit_transition(40_000, "trace-timeout-commit")
+            .expect_err("timed out commit must fail closed");
+        assert_eq!(err.code(), EPOCH_TRANSITION_COMMIT_ABORTED);
+        assert_eq!(coordinator.current_epoch(), 7);
+        assert_eq!(coordinator.abort_manager().abort_count(), 1);
+        assert_eq!(coordinator.history().len(), 1);
+        assert_eq!(coordinator.history()[0].outcome, "ABORTED");
+        assert_eq!(coordinator.history()[0].pre_epoch, 7);
+        assert_eq!(coordinator.history()[0].target_epoch, 8);
+
+        let reproposal = coordinator
+            .propose_transition("operator-2", "retry", 41_000, "trace-repropose")
+            .expect("pending transition should be cleared after abort");
+        assert_eq!(reproposal.pre_epoch, 7);
+        assert_eq!(reproposal.target_epoch, 8);
     }
 }
