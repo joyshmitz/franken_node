@@ -12,7 +12,7 @@ use crate::security::constant_time::ct_eq_bytes;
 use crate::security::epoch_scoped_keys::{RootSecret, SIGNATURE_LEN, derive_epoch_key};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -337,8 +337,10 @@ pub struct ControlChannel {
     last_recv_seq: Option<u64>,
     send_window: BTreeSet<u64>,
     recv_window: BTreeSet<u64>,
-    /// Nonces seen in the current epoch for cross-message replay detection.
+    /// Nonces seen in the highest accepted epoch for cross-message replay detection.
+    nonce_epoch: Option<ControlEpoch>,
     seen_nonces: BTreeSet<[u8; 16]>,
+    seen_nonce_order: VecDeque<[u8; 16]>,
     open: bool,
     audit_log: Vec<ChannelAuditEntry>,
 }
@@ -355,18 +357,20 @@ impl ControlChannel {
             last_recv_seq: None,
             send_window: BTreeSet::new(),
             recv_window: BTreeSet::new(),
+            nonce_epoch: None,
             seen_nonces: BTreeSet::new(),
+            seen_nonce_order: VecDeque::new(),
             open: true,
             audit_log: Vec::new(),
         })
     }
 
-    /// Verify a transcript-bound credential.
+    /// Verify a transcript-bound credential MAC.
     ///
     /// Recomputes the HMAC from the message fields and the channel's root
     /// secret, then compares in constant time.  Returns an error string on
     /// failure for structured logging.
-    fn verify_credential(&self, msg: &ChannelMessage) -> Result<(), String> {
+    fn verify_transcript_mac(&self, msg: &ChannelMessage) -> Result<(), String> {
         if !self.config.require_auth {
             return Ok(());
         }
@@ -391,12 +395,6 @@ impl ControlChannel {
         if !ct_eq_bytes(&msg.credential.mac, &expected) {
             return Err("transcript_mac_mismatch".into());
         }
-
-        // Nonce reuse check (cross-message replay within the same epoch).
-        if self.seen_nonces.contains(&msg.credential.nonce) {
-            return Err("nonce_reuse_detected".into());
-        }
-
         Ok(())
     }
 
@@ -435,16 +433,34 @@ impl ControlChannel {
         push_bounded(&mut self.audit_log, entry, MAX_AUDIT_LOG_ENTRIES);
     }
 
-    /// Record nonce with bounded eviction.
-    fn record_nonce(&mut self, nonce: [u8; 16]) {
-        self.seen_nonces.insert(nonce);
-        // Evict oldest nonces when capacity is exceeded.
-        while self.seen_nonces.len() > MAX_SEEN_NONCES {
-            // BTreeSet iteration is sorted; remove the smallest.
-            if let Some(&oldest) = self.seen_nonces.iter().next() {
+    /// Rotate nonce tracking when the accepted epoch changes.
+    fn rotate_nonce_epoch(&mut self, epoch: ControlEpoch) {
+        if self.nonce_epoch == Some(epoch) {
+            return;
+        }
+
+        self.nonce_epoch = Some(epoch);
+        self.seen_nonces.clear();
+        self.seen_nonce_order.clear();
+    }
+
+    /// Record nonce with bounded oldest-first eviction.
+    fn record_nonce(&mut self, epoch: ControlEpoch, nonce: [u8; 16]) {
+        self.rotate_nonce_epoch(epoch);
+        if !self.seen_nonces.insert(nonce) {
+            return;
+        }
+
+        self.seen_nonce_order.push_back(nonce);
+        while self.seen_nonce_order.len() > MAX_SEEN_NONCES {
+            if let Some(oldest) = self.seen_nonce_order.pop_front() {
                 self.seen_nonces.remove(&oldest);
             }
         }
+    }
+
+    fn epoch_regressed(&self, epoch: ControlEpoch) -> bool {
+        self.nonce_epoch.is_some_and(|current| epoch < current)
     }
 
     /// Build an audit entry with common fields filled from the message.
@@ -489,7 +505,7 @@ impl ControlChannel {
         }
 
         // Step 1: Transcript-bound authentication (INV-ACC-AUTHENTICATED)
-        if let Err(reason) = self.verify_credential(msg) {
+        if let Err(reason) = self.verify_transcript_mac(msg) {
             let audit = Self::make_audit(
                 msg,
                 timestamp,
@@ -504,6 +520,45 @@ impl ControlChannel {
                 message_id: msg.message_id.clone(),
                 reason,
             });
+        }
+
+        if self.config.require_auth {
+            if self.epoch_regressed(msg.credential.epoch) {
+                let audit = Self::make_audit(
+                    msg,
+                    timestamp,
+                    true,
+                    false,
+                    false,
+                    "REJECT_AUTH",
+                    Some("epoch_regression_detected"),
+                );
+                self.push_audit_entry(audit.clone());
+                return Err(ChannelError::AuthFailed {
+                    message_id: msg.message_id.clone(),
+                    reason: "epoch_regression_detected".into(),
+                });
+            }
+
+            // Nonce replay protection is scoped to the currently accepted epoch.
+            if self.nonce_epoch == Some(msg.credential.epoch)
+                && self.seen_nonces.contains(&msg.credential.nonce)
+            {
+                let audit = Self::make_audit(
+                    msg,
+                    timestamp,
+                    true,
+                    false,
+                    false,
+                    "REJECT_AUTH",
+                    Some("nonce_reuse_detected"),
+                );
+                self.push_audit_entry(audit.clone());
+                return Err(ChannelError::AuthFailed {
+                    message_id: msg.message_id.clone(),
+                    reason: "nonce_reuse_detected".into(),
+                });
+            }
         }
 
         // Step 2: Replay window check (INV-ACC-REPLAY-WINDOW)
@@ -538,7 +593,9 @@ impl ControlChannel {
 
         // All checks passed — update state.
         self.set_last_seq(msg.direction, msg.sequence_number);
-        self.record_nonce(msg.credential.nonce);
+        if self.config.require_auth {
+            self.record_nonce(msg.credential.epoch, msg.credential.nonce);
+        }
 
         let window_size = self.config.replay_window_size;
         let min_retained_seq = msg
@@ -776,6 +833,51 @@ mod tests {
         let m = forged_msg("m1", Direction::Send, 1);
         let (result, _) = ch.process_message(&m, "ts").unwrap();
         assert!(result.authenticated);
+    }
+
+    #[test]
+    fn no_auth_mode_skips_epoch_and_nonce_freshness_enforcement() {
+        let cfg = ChannelConfig {
+            replay_window_size: 10,
+            require_auth: false,
+            channel_id: "noauth-ch".into(),
+            audience: "noauth-aud".into(),
+        };
+        let mut ch = ControlChannel::new(cfg, test_secret()).unwrap();
+        let nonce = [0x42; 16];
+
+        let first = ChannelMessage {
+            message_id: "noauth-epoch-2".into(),
+            direction: Direction::Send,
+            sequence_number: 1,
+            credential: ChannelCredential {
+                subject_id: "test-subject".into(),
+                epoch: ControlEpoch::new(2),
+                nonce,
+                mac: [0xAA; SIGNATURE_LEN],
+            },
+            payload_hash: "hash-1".into(),
+        };
+        ch.process_message(&first, "ts").unwrap();
+
+        let second = ChannelMessage {
+            message_id: "noauth-stale-reuse".into(),
+            direction: Direction::Send,
+            sequence_number: 2,
+            credential: ChannelCredential {
+                subject_id: "test-subject".into(),
+                epoch: ControlEpoch::new(1),
+                nonce,
+                mac: [0xBB; SIGNATURE_LEN],
+            },
+            payload_hash: "hash-2".into(),
+        };
+        let (result, audit) = ch.process_message(&second, "ts").unwrap();
+        assert!(result.authenticated);
+        assert_eq!(audit.verdict, "ACCEPT");
+        assert_eq!(ch.nonce_epoch, None);
+        assert!(ch.seen_nonces.is_empty());
+        assert!(ch.seen_nonce_order.is_empty());
     }
 
     #[test]
@@ -1215,6 +1317,367 @@ mod tests {
         };
         let err = ch.process_message(&m2, "ts").unwrap_err();
         assert_eq!(err.code(), "ACC_AUTH_FAILED");
+        let audit = ch.audit_log().last().expect("nonce reuse audit must exist");
+        assert!(
+            audit.authenticated,
+            "MAC already verified before nonce reuse rejection"
+        );
+        assert_eq!(audit.reason_code.as_deref(), Some("nonce_reuse_detected"));
+    }
+
+    #[test]
+    fn nonce_reuse_is_allowed_after_authenticated_epoch_rotation() {
+        let cfg = config();
+        let mut ch = ControlChannel::new(cfg.clone(), test_secret()).unwrap();
+        let nonce = [0x08; 16];
+
+        let first = ChannelMessage {
+            message_id: "epoch-1".into(),
+            direction: Direction::Send,
+            sequence_number: 1,
+            credential: sign_channel_message(
+                &cfg,
+                "test-subject",
+                Direction::Send,
+                1,
+                "hash-1",
+                ControlEpoch::new(1),
+                nonce,
+                &test_secret(),
+            ),
+            payload_hash: "hash-1".into(),
+        };
+        ch.process_message(&first, "ts").unwrap();
+
+        let second = ChannelMessage {
+            message_id: "epoch-2".into(),
+            direction: Direction::Send,
+            sequence_number: 2,
+            credential: sign_channel_message(
+                &cfg,
+                "test-subject",
+                Direction::Send,
+                2,
+                "hash-2",
+                ControlEpoch::new(2),
+                nonce,
+                &test_secret(),
+            ),
+            payload_hash: "hash-2".into(),
+        };
+        let (result, audit) = ch.process_message(&second, "ts").unwrap();
+        assert!(result.authenticated);
+        assert_eq!(audit.epoch, 2);
+    }
+
+    #[test]
+    fn forged_epoch_change_does_not_clear_nonce_replay_state() {
+        let cfg = config();
+        let mut ch = ControlChannel::new(cfg.clone(), test_secret()).unwrap();
+        let nonce = [0x09; 16];
+
+        let first = ChannelMessage {
+            message_id: "epoch-1".into(),
+            direction: Direction::Send,
+            sequence_number: 1,
+            credential: sign_channel_message(
+                &cfg,
+                "test-subject",
+                Direction::Send,
+                1,
+                "hash-1",
+                ControlEpoch::new(1),
+                nonce,
+                &test_secret(),
+            ),
+            payload_hash: "hash-1".into(),
+        };
+        ch.process_message(&first, "ts").unwrap();
+
+        let forged = ChannelMessage {
+            message_id: "forged-epoch-2".into(),
+            direction: Direction::Send,
+            sequence_number: 2,
+            credential: ChannelCredential {
+                subject_id: "test-subject".into(),
+                epoch: ControlEpoch::new(2),
+                nonce,
+                mac: [0xAA; SIGNATURE_LEN],
+            },
+            payload_hash: "hash-2".into(),
+        };
+        let err = ch.process_message(&forged, "ts").unwrap_err();
+        assert_eq!(err.code(), "ACC_AUTH_FAILED");
+
+        let second = ChannelMessage {
+            message_id: "epoch-1-reuse".into(),
+            direction: Direction::Send,
+            sequence_number: 2,
+            credential: sign_channel_message(
+                &cfg,
+                "test-subject",
+                Direction::Send,
+                2,
+                "hash-2",
+                ControlEpoch::new(1),
+                nonce,
+                &test_secret(),
+            ),
+            payload_hash: "hash-2".into(),
+        };
+        let err = ch.process_message(&second, "ts").unwrap_err();
+        assert_eq!(err.code(), "ACC_AUTH_FAILED");
+        assert_eq!(
+            ch.audit_log()
+                .last()
+                .and_then(|entry| entry.reason_code.as_deref()),
+            Some("nonce_reuse_detected")
+        );
+    }
+
+    #[test]
+    fn rejected_epoch_change_does_not_clear_nonce_replay_state() {
+        let cfg = config();
+        let mut ch = ControlChannel::new(cfg.clone(), test_secret()).unwrap();
+        let nonce = [0x0A; 16];
+
+        let first = ChannelMessage {
+            message_id: "epoch-1".into(),
+            direction: Direction::Send,
+            sequence_number: 1,
+            credential: sign_channel_message(
+                &cfg,
+                "test-subject",
+                Direction::Send,
+                1,
+                "hash-1",
+                ControlEpoch::new(1),
+                nonce,
+                &test_secret(),
+            ),
+            payload_hash: "hash-1".into(),
+        };
+        ch.process_message(&first, "ts").unwrap();
+
+        let rejected_epoch_change = ChannelMessage {
+            message_id: "epoch-2-seq-regress".into(),
+            direction: Direction::Send,
+            sequence_number: 1,
+            credential: sign_channel_message(
+                &cfg,
+                "test-subject",
+                Direction::Send,
+                1,
+                "hash-regress",
+                ControlEpoch::new(2),
+                [0x55; 16],
+                &test_secret(),
+            ),
+            payload_hash: "hash-regress".into(),
+        };
+        let err = ch
+            .process_message(&rejected_epoch_change, "ts")
+            .unwrap_err();
+        assert_eq!(err.code(), "ACC_REPLAY_DETECTED");
+
+        let second = ChannelMessage {
+            message_id: "epoch-1-reuse-after-regress".into(),
+            direction: Direction::Send,
+            sequence_number: 2,
+            credential: sign_channel_message(
+                &cfg,
+                "test-subject",
+                Direction::Send,
+                2,
+                "hash-2",
+                ControlEpoch::new(1),
+                nonce,
+                &test_secret(),
+            ),
+            payload_hash: "hash-2".into(),
+        };
+        let err = ch.process_message(&second, "ts").unwrap_err();
+        assert_eq!(err.code(), "ACC_AUTH_FAILED");
+        assert_eq!(
+            ch.audit_log()
+                .last()
+                .and_then(|entry| entry.reason_code.as_deref()),
+            Some("nonce_reuse_detected")
+        );
+    }
+
+    #[test]
+    fn stale_authenticated_epoch_is_rejected_after_epoch_advances() {
+        let cfg = config();
+        let mut ch = ControlChannel::new(cfg.clone(), test_secret()).unwrap();
+
+        let first = ChannelMessage {
+            message_id: "epoch-1".into(),
+            direction: Direction::Send,
+            sequence_number: 1,
+            credential: sign_channel_message(
+                &cfg,
+                "test-subject",
+                Direction::Send,
+                1,
+                "hash-1",
+                ControlEpoch::new(1),
+                [0x0B; 16],
+                &test_secret(),
+            ),
+            payload_hash: "hash-1".into(),
+        };
+        ch.process_message(&first, "ts").unwrap();
+
+        let second = ChannelMessage {
+            message_id: "epoch-2".into(),
+            direction: Direction::Send,
+            sequence_number: 2,
+            credential: sign_channel_message(
+                &cfg,
+                "test-subject",
+                Direction::Send,
+                2,
+                "hash-2",
+                ControlEpoch::new(2),
+                [0x0C; 16],
+                &test_secret(),
+            ),
+            payload_hash: "hash-2".into(),
+        };
+        ch.process_message(&second, "ts").unwrap();
+
+        let stale = ChannelMessage {
+            message_id: "stale-epoch-1".into(),
+            direction: Direction::Send,
+            sequence_number: 3,
+            credential: sign_channel_message(
+                &cfg,
+                "test-subject",
+                Direction::Send,
+                3,
+                "hash-3",
+                ControlEpoch::new(1),
+                [0x0D; 16],
+                &test_secret(),
+            ),
+            payload_hash: "hash-3".into(),
+        };
+        let err = ch.process_message(&stale, "ts").unwrap_err();
+        assert_eq!(err.code(), "ACC_AUTH_FAILED");
+        let audit = ch
+            .audit_log()
+            .last()
+            .expect("epoch regression audit must exist");
+        assert!(
+            audit.authenticated,
+            "stale epoch is rejected after MAC verification"
+        );
+        assert_eq!(
+            audit.reason_code.as_deref(),
+            Some("epoch_regression_detected")
+        );
+    }
+
+    #[test]
+    fn nonce_eviction_is_oldest_first_not_lexicographic() {
+        let cfg = config();
+        let mut ch = ControlChannel::new(cfg.clone(), test_secret()).unwrap();
+        let epoch = ControlEpoch::new(1);
+
+        for seq in 0..MAX_SEEN_NONCES {
+            let mut nonce = [0u8; 16];
+            if seq == 0 {
+                nonce = [0xFF; 16];
+            } else if seq == MAX_SEEN_NONCES - 1 {
+                nonce = [0x00; 16];
+            } else {
+                nonce[..8].copy_from_slice(&(seq as u64).to_le_bytes());
+            }
+
+            let sequence_number = seq as u64 + 1;
+            let payload_hash = format!("hash-{sequence_number}");
+            let msg = ChannelMessage {
+                message_id: format!("m-{sequence_number}"),
+                direction: Direction::Send,
+                sequence_number,
+                credential: sign_channel_message(
+                    &cfg,
+                    "test-subject",
+                    Direction::Send,
+                    sequence_number,
+                    &payload_hash,
+                    epoch,
+                    nonce,
+                    &test_secret(),
+                ),
+                payload_hash,
+            };
+            ch.process_message(&msg, "ts").unwrap();
+        }
+
+        let overflow_seq = MAX_SEEN_NONCES as u64 + 1;
+        let overflow_hash = format!("hash-{overflow_seq}");
+        let overflow = ChannelMessage {
+            message_id: "overflow".into(),
+            direction: Direction::Send,
+            sequence_number: overflow_seq,
+            credential: sign_channel_message(
+                &cfg,
+                "test-subject",
+                Direction::Send,
+                overflow_seq,
+                &overflow_hash,
+                epoch,
+                [0x11; 16],
+                &test_secret(),
+            ),
+            payload_hash: overflow_hash,
+        };
+        ch.process_message(&overflow, "ts").unwrap();
+
+        let replay_oldest = ChannelMessage {
+            message_id: "replay-oldest".into(),
+            direction: Direction::Send,
+            sequence_number: overflow_seq + 1,
+            credential: sign_channel_message(
+                &cfg,
+                "test-subject",
+                Direction::Send,
+                overflow_seq + 1,
+                "replay-oldest",
+                epoch,
+                [0xFF; 16],
+                &test_secret(),
+            ),
+            payload_hash: "replay-oldest".into(),
+        };
+        ch.process_message(&replay_oldest, "ts").unwrap();
+
+        let replay_recent_low = ChannelMessage {
+            message_id: "replay-recent-low".into(),
+            direction: Direction::Send,
+            sequence_number: overflow_seq + 2,
+            credential: sign_channel_message(
+                &cfg,
+                "test-subject",
+                Direction::Send,
+                overflow_seq + 2,
+                "replay-recent-low",
+                epoch,
+                [0x00; 16],
+                &test_secret(),
+            ),
+            payload_hash: "replay-recent-low".into(),
+        };
+        let err = ch.process_message(&replay_recent_low, "ts").unwrap_err();
+        assert_eq!(err.code(), "ACC_AUTH_FAILED");
+        assert_eq!(
+            ch.audit_log()
+                .last()
+                .and_then(|entry| entry.reason_code.as_deref()),
+            Some("nonce_reuse_detected")
+        );
     }
 
     #[test]

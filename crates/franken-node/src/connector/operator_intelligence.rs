@@ -7,6 +7,7 @@
 
 use hex::encode as hex_encode;
 use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, VecDeque};
 
 use crate::security::constant_time::ct_eq_bytes;
 
@@ -409,6 +410,8 @@ pub struct RecommendationEngine {
     degraded: bool,
     missing_sources: Vec<String>,
     audit_trail: Vec<AuditEntry>,
+    closed_audit_entries: BTreeMap<String, AuditEntry>,
+    closed_audit_order: VecDeque<String>,
     events: Vec<OIEvent>,
     cumulative_loss: f64,
 }
@@ -421,6 +424,8 @@ impl RecommendationEngine {
             degraded: false,
             missing_sources: Vec::new(),
             audit_trail: Vec::new(),
+            closed_audit_entries: BTreeMap::new(),
+            closed_audit_order: VecDeque::new(),
             events: Vec::new(),
             cumulative_loss: 0.0,
         })
@@ -483,6 +488,47 @@ impl RecommendationEngine {
             })
     }
 
+    fn recommendation_id(action_key: &str, timestamp: u64, context_fp: [u8; 32]) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(b"operator_intelligence_recommendation_id_v1:");
+        hasher.update((action_key.len() as u64).to_le_bytes());
+        hasher.update(action_key.as_bytes());
+        hasher.update(timestamp.to_le_bytes());
+        hasher.update(context_fp);
+        format!("{action_key}@{}", hex_encode(hasher.finalize()))
+    }
+
+    fn closed_entry(&self, recommendation_id: &str) -> Option<&AuditEntry> {
+        self.closed_audit_entries.get(recommendation_id)
+    }
+
+    fn closed_decision(&self, recommendation_id: &str) -> Option<RecommendationDecision> {
+        self.closed_entry(recommendation_id)
+            .map(|entry| entry.decision)
+    }
+
+    fn remember_closed_entry(&mut self, entry: AuditEntry) {
+        if entry.decision == RecommendationDecision::Pending {
+            return;
+        }
+
+        if let Some(existing) = self.closed_audit_entries.get_mut(&entry.recommendation_id) {
+            *existing = entry;
+            return;
+        }
+
+        let recommendation_id = entry.recommendation_id.clone();
+        self.closed_audit_entries
+            .insert(recommendation_id.clone(), entry);
+        self.closed_audit_order.push_back(recommendation_id);
+
+        while self.closed_audit_order.len() > MAX_AUDIT_TRAIL_ENTRIES {
+            if let Some(oldest) = self.closed_audit_order.pop_front() {
+                self.closed_audit_entries.remove(&oldest);
+            }
+        }
+    }
+
     /// Generate recommendations for the given context.
     /// INV-OIR-DETERMINISTIC: same inputs produce identical outputs.
     pub fn recommend(
@@ -498,8 +544,8 @@ impl RecommendationEngine {
         let actions = generate_actions(ctx);
         let context_fp = ctx.fingerprint();
 
-        let mut recommendations = Vec::new();
-        for (i, (id, action, prereqs, time_ms)) in actions.iter().enumerate() {
+        let mut candidates = Vec::new();
+        for (i, (action_key, action, prereqs, time_ms)) in actions.iter().enumerate() {
             // Scale expected loss per action: base loss * action-specific weight.
             let action_loss = base_loss * (1.0 / (i as f64 + 1.0));
 
@@ -528,14 +574,45 @@ impl RecommendationEngine {
                 continue;
             }
 
+            candidates.push((
+                action_key.clone(),
+                action.clone(),
+                prereqs.clone(),
+                *time_ms,
+                action_loss,
+                confidence,
+                degraded_warning,
+            ));
+        }
+
+        // Sort by expected loss (highest first) for ranking.
+        candidates.sort_by(|a, b| b.4.partial_cmp(&a.4).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Only surfaced recommendations get authoritative IDs and audit entries.
+        candidates.truncate(self.config.max_recommendations);
+
+        let mut recommendations = Vec::with_capacity(candidates.len());
+        for (
+            i,
+            (
+                action_key,
+                action,
+                prerequisites,
+                estimated_time_ms,
+                expected_loss,
+                confidence,
+                degraded_warning,
+            ),
+        ) in candidates.into_iter().enumerate()
+        {
             let rec = Recommendation {
-                id: id.clone(),
-                action: action.clone(),
-                expected_loss: action_loss,
+                id: Self::recommendation_id(&action_key, timestamp, context_fp),
+                action,
+                expected_loss,
                 confidence,
                 priority: u32::try_from(i + 1).unwrap_or(u32::MAX),
-                prerequisites: prereqs.clone(),
-                estimated_time_ms: *time_ms,
+                prerequisites,
+                estimated_time_ms,
                 degraded_warning,
             };
 
@@ -551,37 +628,28 @@ impl RecommendationEngine {
                 MAX_EVENTS,
             );
 
-            // INV-OIR-AUDIT: record in audit trail.
-            push_bounded(
-                &mut self.audit_trail,
-                AuditEntry {
-                    timestamp,
-                    recommendation_id: rec.id.clone(),
-                    action: rec.action.clone(),
-                    decision: RecommendationDecision::Pending,
-                    expected_loss: rec.expected_loss,
-                    context_fingerprint: context_fp,
-                },
-                MAX_AUDIT_TRAIL_ENTRIES,
-            );
+            if self.closed_decision(&rec.id).is_none()
+                && self
+                    .audit_trail
+                    .iter()
+                    .all(|entry| entry.recommendation_id != rec.id)
+            {
+                push_bounded(
+                    &mut self.audit_trail,
+                    AuditEntry {
+                        timestamp,
+                        recommendation_id: rec.id.clone(),
+                        action: rec.action.clone(),
+                        decision: RecommendationDecision::Pending,
+                        expected_loss: rec.expected_loss,
+                        context_fingerprint: context_fp,
+                    },
+                    MAX_AUDIT_TRAIL_ENTRIES,
+                );
+            }
 
             recommendations.push(rec);
         }
-
-        // Sort by expected loss (highest first) for ranking.
-        recommendations.sort_by(|a, b| {
-            b.expected_loss
-                .partial_cmp(&a.expected_loss)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        // Re-assign priority after sort.
-        for (i, rec) in recommendations.iter_mut().enumerate() {
-            rec.priority = u32::try_from(i + 1).unwrap_or(u32::MAX);
-        }
-
-        // Truncate to max.
-        recommendations.truncate(self.config.max_recommendations);
 
         Ok(recommendations)
     }
@@ -596,6 +664,20 @@ impl RecommendationEngine {
         rec: &Recommendation,
         timestamp: u64,
     ) -> Result<(), OIError> {
+        if let Some(decision) = self.closed_decision(&rec.id) {
+            return match decision {
+                RecommendationDecision::Accepted => Err(OIError::NoContext(format!(
+                    "recommendation {} already accepted",
+                    rec.id
+                ))),
+                RecommendationDecision::Rejected => Err(OIError::NoContext(format!(
+                    "recommendation {} already rejected",
+                    rec.id
+                ))),
+                RecommendationDecision::Pending => unreachable!("pending decisions are not cached"),
+            };
+        }
+
         let expected_loss = {
             let entry = self.audit_entry(&rec.id)?;
             match entry.decision {
@@ -630,10 +712,14 @@ impl RecommendationEngine {
             });
         }
 
-        let entry = self.audit_entry_mut(&rec.id)?;
-        entry.decision = RecommendationDecision::Accepted;
-        entry.timestamp = timestamp;
+        let accepted_entry = {
+            let entry = self.audit_entry_mut(&rec.id)?;
+            entry.decision = RecommendationDecision::Accepted;
+            entry.timestamp = timestamp;
+            entry.clone()
+        };
         self.cumulative_loss = new_cumulative;
+        self.remember_closed_entry(accepted_entry);
 
         push_bounded(
             &mut self.events,
@@ -653,25 +739,43 @@ impl RecommendationEngine {
         rec: &Recommendation,
         timestamp: u64,
     ) -> Result<(), OIError> {
-        let entry = self.audit_entry_mut(&rec.id)?;
-        match entry.decision {
-            RecommendationDecision::Pending => {
-                entry.decision = RecommendationDecision::Rejected;
-                entry.timestamp = timestamp;
-            }
-            RecommendationDecision::Accepted => {
-                return Err(OIError::NoContext(format!(
+        if let Some(decision) = self.closed_decision(&rec.id) {
+            return match decision {
+                RecommendationDecision::Accepted => Err(OIError::NoContext(format!(
                     "recommendation {} already accepted",
                     rec.id
-                )));
-            }
-            RecommendationDecision::Rejected => {
-                return Err(OIError::NoContext(format!(
+                ))),
+                RecommendationDecision::Rejected => Err(OIError::NoContext(format!(
                     "recommendation {} already rejected",
                     rec.id
-                )));
-            }
+                ))),
+                RecommendationDecision::Pending => unreachable!("pending decisions are not cached"),
+            };
         }
+
+        let rejected_entry = {
+            let entry = self.audit_entry_mut(&rec.id)?;
+            match entry.decision {
+                RecommendationDecision::Pending => {
+                    entry.decision = RecommendationDecision::Rejected;
+                    entry.timestamp = timestamp;
+                    entry.clone()
+                }
+                RecommendationDecision::Accepted => {
+                    return Err(OIError::NoContext(format!(
+                        "recommendation {} already accepted",
+                        rec.id
+                    )));
+                }
+                RecommendationDecision::Rejected => {
+                    return Err(OIError::NoContext(format!(
+                        "recommendation {} already rejected",
+                        rec.id
+                    )));
+                }
+            }
+        };
+        self.remember_closed_entry(rejected_entry);
 
         push_bounded(
             &mut self.events,
@@ -685,6 +789,18 @@ impl RecommendationEngine {
         Ok(())
     }
 
+    fn authoritative_audit_entry(&self, recommendation_id: &str) -> Result<&AuditEntry, OIError> {
+        if let Ok(entry) = self.audit_entry(recommendation_id) {
+            return Ok(entry);
+        }
+        if let Some(entry) = self.closed_entry(recommendation_id) {
+            return Ok(entry);
+        }
+        Err(OIError::NoContext(format!(
+            "recommendation {recommendation_id} not present in audit trail"
+        )))
+    }
+
     /// Execute an accepted recommendation and produce rollback proof.
     pub fn execute_recommendation(
         &mut self,
@@ -695,7 +811,7 @@ impl RecommendationEngine {
     ) -> Result<(RollbackProof, ReplayArtifact), OIError> {
         let context_fp = ctx.fingerprint();
         let (recommendation_id, action, expected_context_fp) = {
-            let entry = self.audit_entry(&rec.id)?;
+            let entry = self.authoritative_audit_entry(&rec.id)?;
             match entry.decision {
                 RecommendationDecision::Accepted => {}
                 RecommendationDecision::Pending => {
@@ -983,6 +1099,29 @@ mod tests {
     }
 
     #[test]
+    fn test_recommend_repeated_same_inputs_remains_deterministic() {
+        let mut engine = make_engine();
+        let ctx = test_context();
+
+        let first = engine.recommend(&ctx, 1000).unwrap();
+        let second = engine.recommend(&ctx, 1000).unwrap();
+
+        assert_eq!(first.len(), second.len());
+        for (left, right) in first.iter().zip(second.iter()) {
+            assert_eq!(left.id, right.id);
+            assert_eq!(left.action, right.action);
+            assert_eq!(left.priority, right.priority);
+            assert!((left.expected_loss - right.expected_loss).abs() < f64::EPSILON);
+            assert!((left.confidence - right.confidence).abs() < f64::EPSILON);
+        }
+        assert_eq!(
+            engine.audit_trail().len(),
+            first.len(),
+            "repeated deterministic recommendation runs must reuse audit entries"
+        );
+    }
+
+    #[test]
     fn test_recommend_sorted_by_loss() {
         let mut engine = make_engine();
         let ctx = test_context();
@@ -1000,6 +1139,19 @@ mod tests {
         let ctx = test_context();
         let recs = engine.recommend(&ctx, 1000).unwrap();
         assert!(recs.len() <= 2);
+    }
+
+    #[test]
+    fn test_audit_trail_only_records_emitted_recommendations() {
+        let mut cfg = default_config();
+        cfg.max_recommendations = 1;
+        let mut engine = RecommendationEngine::new(cfg).unwrap();
+        let ctx = test_context();
+        let recs = engine.recommend(&ctx, 1000).unwrap();
+
+        assert_eq!(recs.len(), 1);
+        assert_eq!(engine.audit_trail().len(), 1);
+        assert_eq!(engine.audit_trail()[0].recommendation_id, recs[0].id);
     }
 
     #[test]
@@ -1144,6 +1296,132 @@ mod tests {
             (engine.cumulative_loss() - expected_loss).abs() < f64::EPSILON,
             "acceptance must use the audit-trail expected loss"
         );
+    }
+
+    #[test]
+    fn test_recommendation_ids_do_not_alias_across_generations() {
+        let mut engine = make_engine();
+        let first_ctx = test_context();
+        let mut second_ctx = test_context();
+        second_ctx.error_rate = 0.30;
+        second_ctx.active_alerts = 6;
+
+        let first_recs = engine.recommend(&first_ctx, 1000).unwrap();
+        let first_health_check = first_recs
+            .iter()
+            .find(|rec| rec.action == "Run comprehensive system health check")
+            .expect("health check recommendation must always be present")
+            .clone();
+
+        let second_recs = engine.recommend(&second_ctx, 2000).unwrap();
+        let second_health_check = second_recs
+            .iter()
+            .find(|rec| rec.action == "Run comprehensive system health check")
+            .expect("health check recommendation must always be present");
+
+        assert_ne!(first_health_check.id, second_health_check.id);
+
+        engine
+            .accept_recommendation(&first_health_check, 3000)
+            .unwrap();
+        let (_, replay) = engine
+            .execute_recommendation(&first_health_check, [1u8; 32], [2u8; 32], &first_ctx)
+            .expect("original recommendation should still bind to its original context");
+        assert_eq!(replay.input_context_fingerprint, first_ctx.fingerprint());
+    }
+
+    #[test]
+    fn test_repeated_deterministic_recommendation_does_not_reopen_accepted_entry() {
+        let mut engine = make_engine();
+        let ctx = test_context();
+
+        let first = engine.recommend(&ctx, 1000).unwrap();
+        let rec = first[0].clone();
+        engine.accept_recommendation(&rec, 1001).unwrap();
+
+        let repeated = engine.recommend(&ctx, 1000).unwrap();
+        let err = engine
+            .accept_recommendation(&repeated[0], 1002)
+            .unwrap_err();
+        assert!(matches!(err, OIError::NoContext(_)));
+    }
+
+    #[test]
+    fn test_accepted_recommendation_stays_closed_after_audit_eviction() {
+        let mut engine = make_engine();
+        let ctx = test_context();
+
+        let first = engine.recommend(&ctx, 1000).unwrap();
+        let rec = first[0].clone();
+        engine.accept_recommendation(&rec, 1001).unwrap();
+
+        let mut churn_timestamp = 2000;
+        while engine
+            .audit_trail()
+            .iter()
+            .any(|entry| entry.recommendation_id == rec.id)
+        {
+            let _ = engine.recommend(&ctx, churn_timestamp).unwrap();
+            churn_timestamp = churn_timestamp.saturating_add(1);
+        }
+
+        let repeated = engine.recommend(&ctx, 1000).unwrap();
+        let err = engine
+            .accept_recommendation(&repeated[0], churn_timestamp)
+            .unwrap_err();
+        assert!(matches!(err, OIError::NoContext(_)));
+    }
+
+    #[test]
+    fn test_accepted_recommendation_remains_executable_after_audit_eviction() {
+        let mut engine = make_engine();
+        let ctx = test_context();
+
+        let first = engine.recommend(&ctx, 1000).unwrap();
+        let rec = first[0].clone();
+        engine.accept_recommendation(&rec, 1001).unwrap();
+
+        let mut churn_timestamp = 2000;
+        while engine
+            .audit_trail()
+            .iter()
+            .any(|entry| entry.recommendation_id == rec.id)
+        {
+            let _ = engine.recommend(&ctx, churn_timestamp).unwrap();
+            churn_timestamp = churn_timestamp.saturating_add(1);
+        }
+
+        let (_, replay) = engine
+            .execute_recommendation(&rec, [0x11; 32], [0x22; 32], &ctx)
+            .expect("accepted recommendation should still execute after audit eviction");
+        assert_eq!(replay.recommendation_id, rec.id);
+        assert_eq!(replay.input_context_fingerprint, ctx.fingerprint());
+    }
+
+    #[test]
+    fn test_rejected_recommendation_stays_closed_after_audit_eviction() {
+        let mut engine = make_engine();
+        let ctx = test_context();
+
+        let first = engine.recommend(&ctx, 1000).unwrap();
+        let rec = first[0].clone();
+        engine.reject_recommendation(&rec, 1001).unwrap();
+
+        let mut churn_timestamp = 2000;
+        while engine
+            .audit_trail()
+            .iter()
+            .any(|entry| entry.recommendation_id == rec.id)
+        {
+            let _ = engine.recommend(&ctx, churn_timestamp).unwrap();
+            churn_timestamp = churn_timestamp.saturating_add(1);
+        }
+
+        let repeated = engine.recommend(&ctx, 1000).unwrap();
+        let err = engine
+            .reject_recommendation(&repeated[0], churn_timestamp)
+            .unwrap_err();
+        assert!(matches!(err, OIError::NoContext(_)));
     }
 
     #[test]

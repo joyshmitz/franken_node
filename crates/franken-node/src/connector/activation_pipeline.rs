@@ -4,16 +4,10 @@
 //! Partial activation failure cleans up ephemeral secrets before returning.
 //! Same inputs produce the same activation transcript on replay.
 
-/// Maximum number of mounted secrets tracked before oldest-first eviction.
-const MAX_MOUNTED_SECRETS: usize = 4096;
+use std::collections::BTreeMap;
 
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    items.push(item);
-    if items.len() > cap {
-        let overflow = items.len() - cap;
-        items.drain(0..overflow);
-    }
-}
+/// Maximum number of mounted secrets tracked for exact cleanup coverage.
+const MAX_MOUNTED_SECRETS: usize = 4096;
 
 /// Activation stages in fixed execution order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -125,8 +119,16 @@ pub struct EphemeralSecretTracker {
 }
 
 impl EphemeralSecretTracker {
-    pub fn mount(&mut self, secret_ref: &str) {
-        push_bounded(&mut self.mounted, secret_ref.to_string(), MAX_MOUNTED_SECRETS);
+    pub fn mount(&mut self, secret_ref: &str) -> Result<(), String> {
+        if self.mounted.len() >= MAX_MOUNTED_SECRETS {
+            return Err(format!(
+                "mounted secret tracker exhausted at {} entries",
+                MAX_MOUNTED_SECRETS
+            ));
+        }
+        self.mounted.push(secret_ref.to_string());
+        self.cleaned = false;
+        Ok(())
     }
 
     /// Clean up all mounted secrets. Idempotent.
@@ -142,6 +144,50 @@ impl EphemeralSecretTracker {
     pub fn mounted_count(&self) -> usize {
         self.mounted.len()
     }
+}
+
+fn validate_mounted_secret_set(requested: &[String], mounted: &[String]) -> Result<(), String> {
+    if requested.len() != mounted.len() {
+        return Err(format!(
+            "mounted {} secrets but expected {}",
+            mounted.len(),
+            requested.len()
+        ));
+    }
+
+    let mut requested_counts = BTreeMap::new();
+    for secret in requested {
+        *requested_counts.entry(secret.as_str()).or_insert(0usize) += 1;
+    }
+
+    let mut mounted_counts = BTreeMap::new();
+    for secret in mounted {
+        *mounted_counts.entry(secret.as_str()).or_insert(0usize) += 1;
+    }
+
+    if requested_counts == mounted_counts {
+        return Ok(());
+    }
+
+    let mut missing = Vec::new();
+    for (secret, expected_count) in &requested_counts {
+        let actual_count = mounted_counts.get(secret).copied().unwrap_or(0);
+        if actual_count < *expected_count {
+            missing.push((*secret).to_string());
+        }
+    }
+
+    let mut unexpected = Vec::new();
+    for (secret, actual_count) in &mounted_counts {
+        let expected_count = requested_counts.get(secret).copied().unwrap_or(0);
+        if *actual_count > expected_count {
+            unexpected.push((*secret).to_string());
+        }
+    }
+
+    Err(format!(
+        "mounted secret set mismatch: missing={missing:?}, unexpected={unexpected:?}"
+    ))
 }
 
 /// Stage executor trait for dependency injection in tests.
@@ -255,7 +301,37 @@ pub fn activate(input: &ActivationInput, executor: &dyn StageExecutor) -> Activa
     match executor.mount_secrets(&input.secret_refs) {
         Ok(mounted) => {
             for m in &mounted {
-                tracker.mount(m);
+                if let Err(reason) = tracker.mount(m) {
+                    stages.push(StageResult {
+                        stage: ActivationStage::SecretMount,
+                        success: false,
+                        error: Some(StageError::SecretMountFailed { reason }),
+                        timestamp: input.timestamp.clone(),
+                    });
+                    tracker.cleanup();
+                    return ActivationTranscript {
+                        connector_id: input.connector_id.clone(),
+                        stages,
+                        completed: false,
+                        trace_id: input.trace_id.clone(),
+                    };
+                }
+            }
+
+            if let Err(reason) = validate_mounted_secret_set(&input.secret_refs, &mounted) {
+                stages.push(StageResult {
+                    stage: ActivationStage::SecretMount,
+                    success: false,
+                    error: Some(StageError::SecretMountFailed { reason }),
+                    timestamp: input.timestamp.clone(),
+                });
+                tracker.cleanup();
+                return ActivationTranscript {
+                    connector_id: input.connector_id.clone(),
+                    stages,
+                    completed: false,
+                    trace_id: input.trace_id.clone(),
+                };
             }
             stages.push(StageResult {
                 stage: ActivationStage::SecretMount,
@@ -615,13 +691,25 @@ mod tests {
     #[test]
     fn ephemeral_tracker_cleanup() {
         let mut tracker = EphemeralSecretTracker::default();
-        tracker.mount("s1");
-        tracker.mount("s2");
+        tracker.mount("s1").unwrap();
+        tracker.mount("s2").unwrap();
         assert_eq!(tracker.mounted_count(), 2);
         assert!(!tracker.is_clean());
         tracker.cleanup();
         assert!(tracker.is_clean());
         assert_eq!(tracker.mounted_count(), 0);
+    }
+
+    #[test]
+    fn ephemeral_tracker_rejects_overflow() {
+        let mut tracker = EphemeralSecretTracker::default();
+        for idx in 0..MAX_MOUNTED_SECRETS {
+            tracker.mount(&format!("s-{idx}")).unwrap();
+        }
+
+        let err = tracker.mount("overflow").unwrap_err();
+        assert!(err.contains("tracker exhausted"));
+        assert_eq!(tracker.mounted_count(), MAX_MOUNTED_SECRETS);
     }
 
     #[test]
@@ -634,6 +722,113 @@ mod tests {
         // by the pipeline code path. The transcript shows 3 stages
         // with the third failed.
         assert_eq!(t.stages.len(), 3);
+    }
+
+    struct PartialSecretMount;
+    impl StageExecutor for PartialSecretMount {
+        fn create_sandbox(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn mount_secrets(&self, refs: &[String]) -> Result<Vec<String>, String> {
+            Ok(refs.iter().take(1).cloned().collect())
+        }
+        fn issue_capabilities(&self, _: &[String]) -> Result<(), String> {
+            Ok(())
+        }
+        fn health_check(&self) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn partial_secret_mount_fails_closed() {
+        let t = activate(&test_input(), &PartialSecretMount);
+        assert!(!t.completed);
+        assert_eq!(t.stages.len(), 2);
+        let error = t.stages[1]
+            .error
+            .as_ref()
+            .expect("partial secret mount must fail stage 2");
+        assert_eq!(error.code(), "ACT_SECRET_MOUNT_FAILED");
+        assert!(
+            error
+                .to_string()
+                .contains("mounted 1 secrets but expected 2"),
+            "unexpected error: {error}"
+        );
+    }
+
+    struct ExtraSecretMount;
+    impl StageExecutor for ExtraSecretMount {
+        fn create_sandbox(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn mount_secrets(&self, refs: &[String]) -> Result<Vec<String>, String> {
+            let mut mounted = refs.to_vec();
+            mounted.push("rogue-secret".into());
+            Ok(mounted)
+        }
+        fn issue_capabilities(&self, _: &[String]) -> Result<(), String> {
+            Ok(())
+        }
+        fn health_check(&self) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn unexpected_secret_mount_fails_closed() {
+        let t = activate(&test_input(), &ExtraSecretMount);
+        assert!(!t.completed);
+        assert_eq!(t.stages.len(), 2);
+        let error = t.stages[1]
+            .error
+            .as_ref()
+            .expect("unexpected secret mount must fail stage 2");
+        assert_eq!(error.code(), "ACT_SECRET_MOUNT_FAILED");
+        assert!(
+            error
+                .to_string()
+                .contains("mounted 3 secrets but expected 2"),
+            "unexpected error: {error}"
+        );
+    }
+
+    struct DuplicateSecretMount;
+    impl StageExecutor for DuplicateSecretMount {
+        fn create_sandbox(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn mount_secrets(&self, refs: &[String]) -> Result<Vec<String>, String> {
+            Ok(vec![refs[0].clone(), refs[0].clone()])
+        }
+        fn issue_capabilities(&self, _: &[String]) -> Result<(), String> {
+            Ok(())
+        }
+        fn health_check(&self) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn duplicate_secret_mount_fails_closed() {
+        let t = activate(&test_input(), &DuplicateSecretMount);
+        assert!(!t.completed);
+        assert_eq!(t.stages.len(), 2);
+        let error = t.stages[1]
+            .error
+            .as_ref()
+            .expect("duplicate secret mount must fail stage 2");
+        assert_eq!(error.code(), "ACT_SECRET_MOUNT_FAILED");
+        let error_text = error.to_string();
+        assert!(
+            error_text.contains("missing=[\"secret-b\"]"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            error_text.contains("unexpected=[\"secret-a\"]"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
