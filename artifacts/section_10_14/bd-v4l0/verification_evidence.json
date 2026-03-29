@@ -3,8 +3,8 @@
   "title": "Remote Bulkhead",
   "section": "10.14",
   "verdict": "PASS",
-  "passed": 15,
-  "total": 15,
+  "passed": 16,
+  "total": 16,
   "checks": [
     {
       "check": "SOURCE_EXISTS",
@@ -24,7 +24,7 @@
     {
       "check": "ERROR_CODES",
       "passed": true,
-      "detail": "9/9 error codes"
+      "detail": "11/11 error codes"
     },
     {
       "check": "CORE_TYPES",
@@ -45,6 +45,11 @@
       "check": "LATENCY_TRACKING",
       "passed": true,
       "detail": "p99 latency tracking with target gate"
+    },
+    {
+      "check": "LATENCY_EVENT_TIMESTAMP",
+      "passed": true,
+      "detail": "latency events use caller-supplied now_ms"
     },
     {
       "check": "BACKPRESSURE_POLICY",
@@ -74,7 +79,7 @@
     {
       "check": "TEST_COVERAGE",
       "passed": true,
-      "detail": "12 tests found (minimum 10)"
+      "detail": "20 tests found (minimum 10)"
     },
     {
       "check": "SPEC_CONTRACT",

@@ -24,6 +24,7 @@
   ],
   "resolved_config": {
     "compatibility": {
+      "default_receipt_ttl_secs": 3600,
       "emit_divergence_receipts": true,
       "mode": "balanced"
     },
@@ -44,9 +45,16 @@
       "require_provenance": true,
       "require_signatures": true
     },
+    "remote": {
+      "idempotency_ttl_secs": 604800
+    },
     "replay": {
       "bundle_version": "v1",
+      "max_replay_capsule_freshness_secs": 3600,
       "persist_high_severity": true
+    },
+    "security": {
+      "max_degraded_duration_secs": 3600
     },
     "trust": {
       "dangerous_requires_fresh_revocation": true,

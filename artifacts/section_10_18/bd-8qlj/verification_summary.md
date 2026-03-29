@@ -34,7 +34,7 @@ The control-transition gate is implemented in `crates/franken-node/src/vef/contr
 - **Expired evidence:** Denied with ERR-CTL-EXPIRED-EVIDENCE / CTL-004.
 - **Scope mismatch:** Denied with ERR-CTL-SCOPE-MISMATCH / CTL-005.
 - **Invalid evidence:** Denied with ERR-CTL-INVALID-HASH / CTL-007.
-- **Unverified evidence:** Produces PendingVerification decision / CTL-006.
+- **Unverified evidence:** Produces `PendingVerification` only when the combined verified and pending evidence set can still satisfy the effective `min_evidence_count`; otherwise the request fails closed with ERR-CTL-MISSING-EVIDENCE / CTL-003.
 - **Trust level enforcement:** Actors below the minimum trust level are denied with ERR-CTL-INSUFFICIENT-TRUST / CTL-008.
 - **Per-transition overrides:** GatePolicy supports per-TransitionType min_evidence_count, max_evidence_age_millis, and min_trust_level overrides.
 - **Batch evaluation:** `evaluate_batch` processes multiple requests in order.
@@ -53,39 +53,40 @@ The control-transition gate is implemented in `crates/franken-node/src/vef/contr
 | CTL-007 | Denied: invalid evidence hash |
 | CTL-008 | Denied: insufficient trust level |
 
-### Unit Tests (31)
+### Unit Tests (32)
 
 1. `test_authorize_with_valid_evidence` -- valid evidence produces Authorized
 2. `test_deny_missing_evidence` -- no evidence produces Denied (INV-CTL-EVIDENCE-REQUIRED)
 3. `test_deny_expired_evidence` -- expired evidence produces Denied
 4. `test_deny_scope_mismatch` -- wrong-scope evidence produces Denied
 5. `test_deny_invalid_evidence_state` -- Invalid state produces Denied
-6. `test_pending_verification_for_unverified` -- Unverified produces PendingVerification
-7. `test_all_transition_types_require_evidence` -- INV-CTL-NO-BYPASS
-8. `test_denial_emits_events` -- INV-CTL-DENY-LOGGED
-9. `test_multiple_evidence_one_valid` -- mixed evidence, one valid suffices
-10. `test_empty_hash_rejected` -- empty hash string rejected
-11. `test_policy_override_min_evidence` -- per-type min_evidence enforced
-12. `test_policy_override_min_evidence_satisfied` -- per-type min_evidence satisfied
-13. `test_deny_insufficient_trust_level` -- trust level below minimum denied
-14. `test_deny_evidence_too_old` -- evidence age exceeds max
-15. `test_per_transition_type_metrics` -- per-type metrics tracked
-16. `test_batch_evaluate` -- batch evaluation works
-17. `test_drain_events` -- drain clears events
-18. `test_schema_version_defined` -- schema version constant
-19. `test_invariant_constants_defined` -- invariant constants
-20. `test_transition_type_display` -- Display trait
-21. `test_verification_state_validity` -- is_valid predicate
-22. `test_evidence_ref_expiration` -- is_expired_at
-23. `test_evidence_ref_scope_coverage` -- covers_transition
-24. `test_set_now_millis` -- time advancement
-25. `test_gate_policy_defaults` -- default policy values
-26. `test_authorization_decision_predicates` -- is_authorized/denied/pending
-27. `test_expired_verification_state_rejected` -- Expired state rejected
-28. `test_denial_reason_display` -- DenialReason Display
-29. `test_serde_roundtrip_transition_request` -- serde round-trip
-30. `test_serde_roundtrip_authorization_decision` -- serde round-trip
-31. `test_gate_event_trace_id_propagation` -- trace_id in events
+6. `test_pending_verification_for_unverified` -- feasible unverified evidence produces PendingVerification
+7. `test_pending_verification_requires_feasible_min_evidence` -- infeasible pending evidence fails closed with ERR-CTL-MISSING-EVIDENCE
+8. `test_all_transition_types_require_evidence` -- INV-CTL-NO-BYPASS
+9. `test_denial_emits_events` -- INV-CTL-DENY-LOGGED
+10. `test_multiple_evidence_one_valid` -- mixed evidence, one valid suffices
+11. `test_empty_hash_rejected` -- empty hash string rejected
+12. `test_policy_override_min_evidence` -- per-type min_evidence enforced
+13. `test_policy_override_min_evidence_satisfied` -- per-type min_evidence satisfied
+14. `test_deny_insufficient_trust_level` -- trust level below minimum denied
+15. `test_deny_evidence_too_old` -- evidence age exceeds max
+16. `test_per_transition_type_metrics` -- per-type metrics tracked
+17. `test_batch_evaluate` -- batch evaluation works
+18. `test_drain_events` -- drain clears events
+19. `test_schema_version_defined` -- schema version constant
+20. `test_invariant_constants_defined` -- invariant constants
+21. `test_transition_type_display` -- Display trait
+22. `test_verification_state_validity` -- is_valid predicate
+23. `test_evidence_ref_expiration` -- is_expired_at
+24. `test_evidence_ref_scope_coverage` -- covers_transition
+25. `test_set_now_millis` -- time advancement
+26. `test_gate_policy_defaults` -- default policy values
+27. `test_authorization_decision_predicates` -- is_authorized/denied/pending
+28. `test_expired_verification_state_rejected` -- Expired state rejected
+29. `test_denial_reason_display` -- DenialReason Display
+30. `test_serde_roundtrip_transition_request` -- serde round-trip
+31. `test_serde_roundtrip_authorization_decision` -- serde round-trip
+32. `test_gate_event_trace_id_propagation` -- trace_id in events
 
 ## Verification Artifacts
 

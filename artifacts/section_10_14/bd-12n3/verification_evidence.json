@@ -2,8 +2,8 @@
   "bead_id": "bd-12n3",
   "section": "10.14",
   "title": "Idempotency key derivation from request bytes with epoch binding",
-  "generated_at": "2026-02-22T01:32:36Z",
-  "status": "completed_with_baseline_workspace_failures",
+  "generated_at": "2026-03-29T05:24:00Z",
+  "status": "contract_gates_pass_with_partial_remote_verification",
   "checks": [
     {
       "name": "implementation_surface_present",
@@ -19,8 +19,8 @@
       "output_path": "artifacts/section_10_14/bd-12n3/check_report_idempotency_key_derivation.json",
       "summary": {
         "verdict": "PASS",
-        "checks_passed": 28,
-        "checks_total": 28
+        "checks_passed": 30,
+        "checks_total": 30
       }
     },
     {
@@ -32,34 +32,45 @@
     },
     {
       "name": "pytest_gate_tests",
-      "command": "pytest -q tests/test_check_idempotency_key_derivation.py",
+      "command": "python3 -m pytest -q tests/test_check_idempotency_key_derivation.py",
       "exit_code": 0,
       "status": "PASS",
       "output_path": "artifacts/section_10_14/bd-12n3/pytest_check_idempotency_key_derivation.log"
     },
     {
+      "name": "rustfmt_touched_files",
+      "command": "rustfmt --edition 2024 --check crates/franken-node/src/remote/idempotency.rs tests/conformance/idempotency_key_derivation.rs",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "git_diff_check_touched_files",
+      "command": "git diff --check -- crates/franken-node/src/remote/idempotency.rs tests/conformance/idempotency_key_derivation.rs docs/specs/section_10_14/bd-12n3_contract.md docs/integration/control_idempotency_adoption.md scripts/check_idempotency_key_derivation.py tests/test_check_idempotency_key_derivation.py artifacts/10.14/idempotency_vectors.json artifacts/section_10_14/bd-12n3/check_report_idempotency_key_derivation.json",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
       "name": "cargo_check_all_targets_via_rch",
-      "command": "rch exec -- cargo check --all-targets",
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/bd-3vmoo-check2 cargo check -p frankenengine-node --all-targets",
       "exit_code": 101,
-      "status": "FAIL_BASELINE",
+      "status": "FAIL_INFRA",
       "output_path": "artifacts/section_10_14/bd-12n3/rch_cargo_check_all_targets.log",
-      "note": "Pre-existing workspace compile debt outside bd-12n3 scope."
+      "note": "Remote worker failed creating a temp dir under target/bd-3vmoo-check2 while compiling sibling frankenengine-engine."
     },
     {
       "name": "cargo_clippy_all_targets_via_rch",
-      "command": "rch exec -- cargo clippy --all-targets -- -D warnings",
-      "exit_code": 101,
-      "status": "FAIL_BASELINE",
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/bd-3vmoo-clippy cargo clippy -p frankenengine-node --all-targets -- -D warnings",
+      "exit_code": null,
+      "status": "PENDING",
       "output_path": "artifacts/section_10_14/bd-12n3/rch_cargo_clippy_all_targets.log",
-      "note": "Pre-existing workspace lint/compile debt outside bd-12n3 scope."
+      "note": "Remote clippy run did not return a final verdict before this evidence file was updated."
     },
     {
-      "name": "cargo_fmt_check_via_rch",
-      "command": "rch exec -- cargo fmt --check",
-      "exit_code": 1,
-      "status": "FAIL_BASELINE",
-      "output_path": "artifacts/section_10_14/bd-12n3/rch_cargo_fmt_check.log",
-      "note": "Pre-existing workspace formatting drift outside bd-12n3 scope."
+      "name": "focused_collision_regression_via_rch",
+      "command": "rch exec -- env CARGO_TARGET_DIR=target/bd-3vmoo-filter2 cargo test -p frankenengine-node separator_collision_inputs_do_not_alias_after_derivation_fix -- --nocapture",
+      "exit_code": null,
+      "status": "PENDING",
+      "note": "Focused remote test stayed active/quiet on the worker when this evidence file was updated."
     }
   ],
   "contract_surface": {

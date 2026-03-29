@@ -94,7 +94,7 @@
     {
       "check": "impl_test_count",
       "passed": true,
-      "detail": "12 tests (>=12)"
+      "detail": "20 tests (>=12)"
     },
     {
       "check": "perf_test_imports_impl",

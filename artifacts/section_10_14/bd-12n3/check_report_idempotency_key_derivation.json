@@ -2,8 +2,8 @@
   "bead_id": "bd-12n3",
   "section": "10.14",
   "gate_script": "check_idempotency_key_derivation.py",
-  "checks_passed": 28,
-  "checks_total": 28,
+  "checks_passed": 30,
+  "checks_total": 30,
   "verdict": "PASS",
   "checks": [
     {
@@ -97,6 +97,11 @@
       "detail": "collision_check_10k_is_clean"
     },
     {
+      "check": "conf_marker_separator_collision_inputs_do_not_alias_after_derivation_fix",
+      "passed": true,
+      "detail": "separator_collision_inputs_do_not_alias_after_derivation_fix"
+    },
+    {
       "check": "conf_marker_registry_rejection_happens_before_derivation",
       "passed": true,
       "detail": "registry_rejection_happens_before_derivation"
@@ -107,9 +112,14 @@
       "detail": "artifacts/10.14/idempotency_vectors.json"
     },
     {
+      "check": "injective_canonical_framing",
+      "passed": true,
+      "detail": "length-prefixed framing + derivation tag present"
+    },
+    {
       "check": "impl_test_count",
       "passed": true,
-      "detail": "12 tests (>=12)"
+      "detail": "13 tests (>=12)"
     },
     {
       "check": "vectors_exists",

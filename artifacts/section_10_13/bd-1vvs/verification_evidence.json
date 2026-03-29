@@ -2,7 +2,7 @@
   "gate": "isolation_backend_verification",
   "bead": "bd-1vvs",
   "section": "10.13",
-  "verdict": "FAIL",
+  "verdict": "PASS",
   "checks": [
     {
       "id": "ISOL-IMPL",
@@ -39,8 +39,8 @@
     {
       "id": "ISOL-TESTS",
       "description": "Rust unit tests pass",
-      "status": "FAIL",
-      "details": "Command '['/home/ubuntu/.cargo/bin/cargo', 'test', '--', 'security::isolation_backend']' timed out after 120 seconds"
+      "status": "PASS",
+      "details": "15 tests passed"
     },
     {
       "id": "ISOL-SPEC",
@@ -50,7 +50,7 @@
   ],
   "summary": {
     "total_checks": 8,
-    "passing_checks": 7,
-    "failing_checks": 1
+    "passing_checks": 8,
+    "failing_checks": 0
   }
 }

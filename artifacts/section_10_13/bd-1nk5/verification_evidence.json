@@ -45,7 +45,7 @@
       "id": "SSRF-TESTS",
       "description": "Rust unit tests pass",
       "status": "PASS",
-      "details": "999 tests passed"
+      "details": "53 tests passed"
     },
     {
       "id": "SSRF-SPEC",

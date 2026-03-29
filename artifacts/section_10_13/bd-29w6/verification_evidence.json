@@ -2,7 +2,7 @@
   "gate": "offline_coverage_verification",
   "bead": "bd-29w6",
   "section": "10.13",
-  "verdict": "FAIL",
+  "verdict": "PASS",
   "checks": [
     {
       "id": "OCT-IMPL",
@@ -28,8 +28,8 @@
     {
       "id": "OCT-TESTS",
       "description": "Rust unit tests pass",
-      "status": "FAIL",
-      "details": "Command '['/home/ubuntu/.cargo/bin/cargo', 'test', '--', 'connector::offline_coverage']' timed out after 120 seconds"
+      "status": "PASS",
+      "details": "23 tests passed"
     },
     {
       "id": "OCT-SPEC",
@@ -39,7 +39,7 @@
   ],
   "summary": {
     "total_checks": 6,
-    "passing_checks": 5,
-    "failing_checks": 1
+    "passing_checks": 6,
+    "failing_checks": 0
   }
 }

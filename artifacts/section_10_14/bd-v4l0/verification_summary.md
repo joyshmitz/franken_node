@@ -3,7 +3,7 @@
 ## Global Remote Bulkhead with Deterministic Backpressure
 
 **Section:** 10.14 (FrankenSQLite Deep-Mined Expansion)
-**Status:** PASS (15/15 checks)
+**Status:** PASS (16/16 checks)
 **Agent:** CrimsonCrane (claude-code, claude-opus-4-6)
 **Date:** 2026-02-21
 
@@ -31,7 +31,7 @@
 - `BulkheadPermit` -- permit_id, issued_at_ms, cap_snapshot
 - `BulkheadEvent` -- event_code, now_ms, in_flight, max_in_flight, detail
 - `ForegroundLatencySample` -- in_flight, latency_ms
-- `BulkheadError` -- 9 error variants with stable RB_ERR_* codes
+- `BulkheadError` -- 11 error variants with stable RB_ERR_* codes
 - `RemoteBulkhead` -- main concurrency limiter struct
 
 ## Event Codes
@@ -57,7 +57,9 @@
 | RB_ERR_QUEUED | PASS |
 | RB_ERR_QUEUE_TIMEOUT | PASS |
 | RB_ERR_UNKNOWN_REQUEST | PASS |
+| RB_ERR_DUPLICATE_REQUEST | PASS |
 | RB_ERR_UNKNOWN_PERMIT | PASS |
+| RB_ERR_INVALID_REQUEST_ID | PASS |
 | RB_ERR_DRAINING | PASS |
 | RB_ERR_INVALID_CONFIG | PASS |
 
@@ -70,15 +72,15 @@
 | `release()` | Return permit, decrement in-flight, clear drain if below target |
 | `poll_queued()` | Retry admission for queued request |
 | `set_max_in_flight()` | Hot-reload cap with drain semantics |
-| `record_foreground_latency()` | Record latency observation |
+| `record_foreground_latency(latency_ms, now_ms)` | Record latency observation with an audit timestamp |
 | `p99_foreground_latency_ms()` | Deterministic p99 computation |
 | `latency_within_target()` | SLO gate: p99 <= target |
 
 ## Test Results
 
-- **12 Rust unit tests** -- all passing (acquire/release, reject policy, queue policy, queue saturation, queue timeout, drain mode, cap increase, RemoteCap gating, p99 computation, latency target, unknown permit, event log)
-- **15 verification checks** -- all passing
-- **22 Python unit tests** -- all passing (structure, individual checks, self-test, CLI JSON, CLI self-test, human output)
+- **Rust unit tests** -- passing, including latency timestamp audit coverage
+- **Verification checks** -- passing, including latency-event timestamp enforcement
+- **Python unit tests** -- passing (structure, individual checks, self-test, CLI JSON, CLI self-test, human output)
 
 ## Verification Checks
 
@@ -87,15 +89,16 @@
 | 1 | SOURCE_EXISTS | PASS | Implementation file present |
 | 2 | EVENT_CODES | PASS | 8/8 event codes |
 | 3 | EVENT_CODES_MODULE | PASS | `pub mod event_codes` present |
-| 4 | ERROR_CODES | PASS | 9/9 error codes |
+| 4 | ERROR_CODES | PASS | 11/11 error codes |
 | 5 | CORE_TYPES | PASS | 6/6 types |
 | 6 | REMOTECAP_GATING | PASS | RemoteCap gating on acquire |
 | 7 | DRAIN_MODE | PASS | drain mode on cap reduction |
 | 8 | LATENCY_TRACKING | PASS | p99 latency tracking with target gate |
-| 9 | BACKPRESSURE_POLICY | PASS | Reject and Queue policies |
-| 10 | CORE_OPERATIONS | PASS | 3/3 operations |
-| 11 | PERMIT_LIFECYCLE | PASS | permit issuance and tracking |
-| 12 | QUEUE_TIMEOUT | PASS | queue timeout eviction |
-| 13 | SERDE_DERIVES | PASS | Serialize/Deserialize on public types |
-| 14 | TEST_COVERAGE | PASS | 12 tests (minimum 10) |
-| 15 | SPEC_CONTRACT | PASS | spec contract exists |
+| 9 | LATENCY_EVENT_TIMESTAMP | PASS | latency events use caller-supplied now_ms |
+| 10 | BACKPRESSURE_POLICY | PASS | Reject and Queue policies |
+| 11 | CORE_OPERATIONS | PASS | 3/3 operations |
+| 12 | PERMIT_LIFECYCLE | PASS | permit issuance and tracking |
+| 13 | QUEUE_TIMEOUT | PASS | queue timeout eviction |
+| 14 | SERDE_DERIVES | PASS | Serialize/Deserialize on public types |
+| 15 | TEST_COVERAGE | PASS | 20 tests found (minimum 10) |
+| 16 | SPEC_CONTRACT | PASS | spec contract exists |

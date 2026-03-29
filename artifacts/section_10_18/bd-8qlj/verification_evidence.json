@@ -60,7 +60,7 @@
         "INV-CTL-DENY-LOGGED",
         "INV-CTL-NO-BYPASS"
       ],
-      "unit_test_count": 31,
+      "unit_test_count": 32,
       "deterministic_ordering": true,
       "serde_roundtrip": true
     },
@@ -70,7 +70,7 @@
       "expired_evidence_denied": true,
       "scope_mismatch_denied": true,
       "invalid_hash_denied": true,
-      "pending_verification_for_unverified": true,
+      "pending_verification_requires_feasible_min_evidence": true,
       "valid_evidence_authorized": true,
       "denial_event_logged": true,
       "per_transition_overrides": true,

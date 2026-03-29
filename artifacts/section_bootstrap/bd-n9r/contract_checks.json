@@ -63,7 +63,7 @@
     {
       "check": "main_init_uses_resolver",
       "passed": true,
-      "detail": "count=2"
+      "detail": "count=3"
     },
     {
       "check": "main_doctor_outputs_decisions",
@@ -118,7 +118,7 @@
     {
       "check": "snapshot_sha256",
       "passed": true,
-      "detail": "182eebca3e72c9220e4522f4114e1ff3f869f84af1f66a32b0de0d76c98f159a"
+      "detail": "d7619cc96bdd851c97738f80d2ef7fd16d126d048cd841d1f28d20937e09daba"
     }
   ]
 }

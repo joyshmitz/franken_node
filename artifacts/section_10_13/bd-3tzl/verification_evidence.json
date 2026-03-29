@@ -2,7 +2,7 @@
   "gate": "frame_parser_verification",
   "bead": "bd-3tzl",
   "section": "10.13",
-  "verdict": "FAIL",
+  "verdict": "PASS",
   "checks": [
     {
       "id": "BPG-IMPL",
@@ -28,8 +28,8 @@
     {
       "id": "BPG-TESTS",
       "description": "Rust unit tests pass",
-      "status": "FAIL",
-      "details": "Command '['/home/ubuntu/.cargo/bin/cargo', 'test', '--', 'connector::frame_parser']' timed out after 120 seconds"
+      "status": "PASS",
+      "details": "17 tests passed"
     },
     {
       "id": "BPG-SPEC",
@@ -39,7 +39,7 @@
   ],
   "summary": {
     "total_checks": 6,
-    "passing_checks": 5,
-    "failing_checks": 1
+    "passing_checks": 6,
+    "failing_checks": 0
   }
 }

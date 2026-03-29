@@ -1,7 +1,8 @@
 # bd-12n3 Verification Summary
 
 ## Result
-PASS (bead scope) with pre-existing workspace baseline cargo failures.
+PASS on the contract/gate surface after the canonical framing fix.
+Remote cargo verification remains partially blocked by worker infrastructure.
 
 ## Delivered
 - `crates/franken-node/src/remote/idempotency.rs`
@@ -20,9 +21,10 @@ PASS (bead scope) with pre-existing workspace baseline cargo failures.
 - `artifacts/section_10_14/bd-12n3/verification_evidence.json`
 
 ## Gate Results
-- `python3 scripts/check_idempotency_key_derivation.py --json` -> PASS (`28/28` checks).
+- `python3 scripts/check_idempotency_key_derivation.py --json` -> PASS (`30/30` checks).
 - `python3 scripts/check_idempotency_key_derivation.py --self-test` -> PASS.
-- `pytest -q tests/test_check_idempotency_key_derivation.py` -> PASS (`6 passed`).
-- `rch exec -- cargo check --all-targets` -> `101` (baseline workspace failures).
-- `rch exec -- cargo clippy --all-targets -- -D warnings` -> `101` (baseline workspace failures).
-- `rch exec -- cargo fmt --check` -> `1` (baseline workspace formatting drift).
+- `python3 -m pytest -q tests/test_check_idempotency_key_derivation.py` -> PASS (`7 passed`).
+- `rustfmt --edition 2024 --check crates/franken-node/src/remote/idempotency.rs tests/conformance/idempotency_key_derivation.rs` -> PASS.
+- `git diff --check` on the touched bd-12n3 surface -> PASS.
+- `rch exec -- env CARGO_TARGET_DIR=target/bd-3vmoo-check2 cargo check -p frankenengine-node --all-targets` -> `101`, but from remote temp-dir creation failure while compiling sibling `frankenengine-engine`, not from a bd-12n3 Rust diagnostic.
+- `rch exec -- env CARGO_TARGET_DIR=target/bd-3vmoo-filter2 cargo test -p frankenengine-node separator_collision_inputs_do_not_alias_after_derivation_fix -- --nocapture` -> still active/quiet on the worker when this summary was updated.

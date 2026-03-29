@@ -2,7 +2,7 @@
   "bead_id": "bd-273",
   "section": "10.4",
   "title": "Extension Certification Levels Tied to Policy Controls",
-  "timestamp": "2026-03-25T05:24:01.563786+00:00",
+  "timestamp": "2026-03-29T01:49:58.244659+00:00",
   "overall_pass": true,
   "checks": {
     "files": {
@@ -14,7 +14,7 @@
       "rust_impl": {
         "path": "crates/franken-node/src/supply_chain/certification.rs",
         "exists": true,
-        "size_bytes": 66297
+        "size_bytes": 66351
       },
       "mod_rs": {
         "path": "crates/franken-node/src/supply_chain/mod.rs",

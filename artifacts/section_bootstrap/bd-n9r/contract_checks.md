@@ -17,7 +17,7 @@
 | merge_stage_enum | true | MergeStage |
 | precedence_doc_string | true | resolver precedence |
 | contract_precedence_doc | true | contract precedence |
-| main_init_uses_resolver | true | count=2 |
+| main_init_uses_resolver | true | count=3 |
 | main_doctor_outputs_decisions | true | doctor merge tracing |
 | cli_init_config_option | true | InitArgs --config |
 | cli_doctor_config_option | true | count=3 |
@@ -28,6 +28,6 @@
 | example_profiles_balanced | true | profiles.balanced |
 | example_profiles_legacy | true | profiles.legacy-risky |
 | snapshot_written | true | /data/projects/franken_node/artifacts/section_bootstrap/bd-n9r/resolved_config_snapshot.json |
-| snapshot_sha256 | true | 182eebca3e72c9220e4522f4114e1ff3f869f84af1f66a32b0de0d76c98f159a |
+| snapshot_sha256 | true | d7619cc96bdd851c97738f80d2ef7fd16d126d048cd841d1f28d20937e09daba |
 
 Verdict: **PASS** (23/23)
