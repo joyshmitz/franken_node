@@ -40,7 +40,7 @@ fn simulate(cap: usize, policy: BackpressurePolicy, target_p99_ms: u64) -> Vec<S
         // higher cap raises baseline while preserving <= target p99.
         let baseline = 8 + (cap as u64 / 8);
         let burst = if idx % 50 == 0 { 20 } else { idx % 9 };
-        bulkhead.record_foreground_latency(baseline + burst);
+        bulkhead.record_foreground_latency(baseline + burst, idx);
     }
 
     let mut samples = bulkhead
@@ -91,7 +91,10 @@ fn p99_stays_within_target_for_cap_profiles() {
 fn reject_policy_reports_rejections_under_saturation() {
     let rows = simulate(8, BackpressurePolicy::Reject, 50);
     let row = &rows[0];
-    assert!(row.rejected_count > 0, "reject policy should reject overload");
+    assert!(
+        row.rejected_count > 0,
+        "reject policy should reject overload"
+    );
     assert_eq!(row.queue_depth, 0, "reject policy should not queue");
 }
 
@@ -106,5 +109,8 @@ fn queue_policy_accumulates_queue_depth_under_saturation() {
         50,
     );
     let row = &rows[0];
-    assert!(row.queue_depth > 0, "queue policy should accumulate queued work");
+    assert!(
+        row.queue_depth > 0,
+        "queue policy should accumulate queued work"
+    );
 }

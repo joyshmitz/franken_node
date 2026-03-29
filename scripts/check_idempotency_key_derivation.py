@@ -40,6 +40,7 @@ REQUIRED_IMPL_MARKERS = [
 REQUIRED_CONF_MARKERS = [
     "published_idempotency_vectors_match_derivation",
     "collision_check_10k_is_clean",
+    "separator_collision_inputs_do_not_alias_after_derivation_fix",
     "registry_rejection_happens_before_derivation",
     "artifacts/10.14/idempotency_vectors.json",
 ]
@@ -50,18 +51,19 @@ def _read(path: str) -> str:
         return f.read()
 
 
+def _len_prefixed(data: bytes) -> bytes:
+    return len(data).to_bytes(8, "big", signed=False) + data
+
+
 def _derive(prefix: str, computation_name: str, epoch: int, request_hex: str) -> str:
     payload = bytes.fromhex(request_hex)
     digest_input = (
-        prefix.encode("utf-8")
-        + b"\x1f"
-        + computation_name.encode("utf-8")
-        + b"\x1f"
+        _len_prefixed(prefix.encode("utf-8"))
+        + _len_prefixed(computation_name.encode("utf-8"))
         + epoch.to_bytes(8, "big", signed=False)
-        + b"\x1f"
-        + payload
+        + _len_prefixed(payload)
     )
-    return hashlib.sha256(digest_input).hexdigest()
+    return hashlib.sha256(b"idempotency_key_derive_v1:" + digest_input).hexdigest()
 
 
 def _check_vectors_document() -> list[dict[str, Any]]:
@@ -147,6 +149,7 @@ def _checks() -> list[dict[str, Any]]:
     ok("vectors_exists", os.path.isfile(VECTORS), VECTORS)
 
     src = _read(IMPL) if os.path.isfile(IMPL) else ""
+    production_src = src.partition("#[cfg(test)]")[0]
     mod_src = _read(MOD_RS) if os.path.isfile(MOD_RS) else ""
     conf_src = _read(CONF_TEST) if os.path.isfile(CONF_TEST) else ""
 
@@ -161,6 +164,17 @@ def _checks() -> list[dict[str, Any]]:
 
     for marker in REQUIRED_CONF_MARKERS:
         ok(f"conf_marker_{marker}", marker in conf_src, marker)
+
+    has_len_prefix_helper = "append_len_prefixed_field" in production_src
+    uses_raw_separator_framing = "input.push(0x1F)" in production_src
+    has_derivation_tag = "idempotency_key_derive_v1:" in production_src
+    ok(
+        "injective_canonical_framing",
+        has_len_prefix_helper and not uses_raw_separator_framing and has_derivation_tag,
+        "length-prefixed framing + derivation tag present"
+        if has_len_prefix_helper and not uses_raw_separator_framing and has_derivation_tag
+        else "missing length-prefixed framing or derivation tag, or raw separator framing still present",
+    )
 
     test_count = len(re.findall(r"#\[test\]", src))
     ok("impl_test_count", test_count >= 12, f"{test_count} tests (>=12)")

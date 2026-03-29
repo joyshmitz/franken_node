@@ -24,7 +24,7 @@
       "tests": [
         {"id": "TF-CONFIG-001", "scenario": "default resolution", "path_type": "happy", "fixture": null},
         {"id": "TF-CONFIG-002", "scenario": "env var override", "path_type": "happy", "fixture": "config/env_override.env"},
-        {"id": "TF-CONFIG-003", "scenario": "CLI profile flag", "path_type": "happy", "fixture": "config/base.toml"},
+        {"id": "TF-CONFIG-003", "scenario": "CLI profile flag (legacy-risky override)", "path_type": "happy", "fixture": "config/base.toml"},
         {"id": "TF-CONFIG-004", "scenario": "precedence stack", "path_type": "edge", "fixture": "config/precedence_stack/"},
         {"id": "TF-CONFIG-005", "scenario": "unknown profile", "path_type": "error", "fixture": "config/base.toml"},
         {"id": "TF-CONFIG-006", "scenario": "empty config", "path_type": "edge", "fixture": "config/empty.toml"},

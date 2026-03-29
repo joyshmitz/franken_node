@@ -108,24 +108,29 @@ Construct and emit an initialization audit event.
 ### `start_saga(artifact_id, has_remote_cap, trace_id) -> Result<String, String>`
 Create a new saga. Requires `has_remote_cap == true` (INV-ES-GATED). Returns saga_id.
 
-### `begin_upload(saga_id, trace_id) -> Result<(), String>`
-Advance from Created to Uploading.
+### `begin_upload(saga_id, timestamp_ms, trace_id) -> Result<(), String>`
+Advance from Created to Uploading and persist `timestamp_ms` into the phase transition log.
 
-### `complete_upload(saga_id, trace_id) -> Result<(), String>`
-Advance from Uploading to Verifying. Sets `l3_present = true`.
+### `complete_upload(saga_id, timestamp_ms, trace_id) -> Result<(), String>`
+Advance from Uploading to Verifying. Sets `l3_present = true` and persists `timestamp_ms`
+into the phase transition log.
 
-### `complete_verify(saga_id, trace_id) -> Result<(), String>`
-Advance from Verifying to Retiring. Sets `l3_verified = true`.
+### `complete_verify(saga_id, timestamp_ms, trace_id) -> Result<(), String>`
+Advance from Verifying to Retiring. Sets `l3_verified = true` and persists `timestamp_ms`
+into the phase transition log.
 
-### `complete_retire(saga_id, trace_id) -> Result<(), String>`
-Advance from Retiring to Complete. Sets `l2_present = false`.
+### `complete_retire(saga_id, timestamp_ms, trace_id) -> Result<(), String>`
+Advance from Retiring to Complete. Sets `l2_present = false` and persists `timestamp_ms`
+into the phase transition log.
 
-### `cancel_saga(saga_id, trace_id) -> Result<CompensationAction, String>`
+### `cancel_saga(saga_id, timestamp_ms, trace_id) -> Result<CompensationAction, String>`
 Cancel saga at current phase. Applies deterministic compensation (INV-ES-CANCEL-SAFE).
-Transitions through Compensating to Compensated.
+Transitions through Compensating to Compensated and records `timestamp_ms` in the
+transition log plus cancellation/compensation audit events.
 
-### `recover_saga(saga_id, trace_id) -> Result<CompensationAction, String>`
-Crash recovery: determine compensation action for persisted phase (INV-ES-PERSISTED).
+### `recover_saga(saga_id, timestamp_ms, trace_id) -> Result<CompensationAction, String>`
+Crash recovery: determine compensation action for persisted phase (INV-ES-PERSISTED)
+and record `timestamp_ms` in any recovery transition or audit event emitted.
 
 ### `leak_check(trace_id) -> LeakCheckResult`
 Scan all sagas for orphaned artifacts (INV-ES-LEAK-FREE).

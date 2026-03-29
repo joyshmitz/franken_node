@@ -12,13 +12,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from pathlib import Path
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from scripts.lib.test_logger import configure_test_logging
 
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "vef" / "control_integration.rs"
@@ -277,11 +278,15 @@ def check_contract_compliance() -> None:
         "invalid hash/state handling",
     )
 
-    # Pending verification
+    # Pending verification must remain feasible relative to the effective
+    # min_evidence_count rather than triggering on any unverified evidence.
     _check(
-        "contract_pending_verification",
-        "PendingVerification" in src and "Unverified" in src,
-        "PendingVerification for Unverified evidence",
+        "contract_pending_verification_requires_feasible_min_evidence",
+        "PendingVerification" in src
+        and "Unverified" in src
+        and "valid_evidence_ids.len() + pending_evidence_ids.len() >= min_evidence" in src
+        and "!pending_evidence_ids.is_empty()" in src,
+        "PendingVerification requires feasible min_evidence_count",
     )
 
     # Trust level enforcement
@@ -337,10 +342,34 @@ def check_evidence_summary() -> None:
             evidence.get("verdict") == "PASS",
             str(evidence.get("verdict")),
         )
+        impl = evidence.get("evidence", {}).get("implementation", {})
+        contract = evidence.get("evidence", {}).get("contract_compliance", {})
+        _check(
+            "evidence_unit_test_count",
+            impl.get("unit_test_count", 0) >= 32,
+            str(impl.get("unit_test_count")),
+        )
+        _check(
+            "evidence_pending_verification_requires_feasible_min_evidence",
+            contract.get("pending_verification_requires_feasible_min_evidence") is True,
+            str(contract.get("pending_verification_requires_feasible_min_evidence")),
+        )
 
+    spec_contract = _read(SPEC_CONTRACT)
+    _check("spec_mentions_bead", "bd-8qlj" in spec_contract, "bd-8qlj")
+    _check(
+        "spec_pending_verification_feasibility",
+        "can still satisfy the effective min_evidence_count" in spec_contract,
+        "PendingVerification requires feasible min_evidence_count",
+    )
     summary = _read(SUMMARY)
     _check("summary_mentions_bead", "bd-8qlj" in summary, "bd-8qlj")
     _check("summary_mentions_pass", "PASS" in summary, "PASS")
+    _check(
+        "summary_pending_verification_feasibility",
+        "can still satisfy the effective `min_evidence_count`" in summary,
+        "PendingVerification requires feasible min_evidence_count",
+    )
 
 
 def run_all() -> dict[str, Any]:

@@ -56,7 +56,9 @@ Error type with stable error codes:
 - `Queued { request_id, position, timeout_ms }` -- `RB_ERR_QUEUED`
 - `QueueTimeout { request_id }` -- `RB_ERR_QUEUE_TIMEOUT`
 - `UnknownRequest { request_id }` -- `RB_ERR_UNKNOWN_REQUEST`
+- `DuplicateRequest { request_id }` -- `RB_ERR_DUPLICATE_REQUEST`
 - `UnknownPermit { permit_id }` -- `RB_ERR_UNKNOWN_PERMIT`
+- `InvalidRequestId { detail }` -- `RB_ERR_INVALID_REQUEST_ID`
 - `Draining { in_flight, target_cap }` -- `RB_ERR_DRAINING`
 - `InvalidConfig { reason }` -- `RB_ERR_INVALID_CONFIG`
 
@@ -100,9 +102,10 @@ when capacity becomes available.
 Hot-reload max concurrency cap. If cap is reduced below current in-flight
 count, activates drain mode.
 
-### `record_foreground_latency(latency_ms)`
+### `record_foreground_latency(latency_ms, now_ms)`
 
-Record a foreground latency observation under current load.
+Record a foreground latency observation under current load and emit an
+`RB_LATENCY_REPORT` event with the supplied timestamp.
 
 ### `p99_foreground_latency_ms() -> Option<u64>`
 

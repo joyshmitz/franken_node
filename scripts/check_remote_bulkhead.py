@@ -55,7 +55,7 @@ def _checks():
         "event_codes module present" if has_event_mod else "event_codes module missing",
     )
 
-    # 4. Error codes (9 stable error codes on BulkheadError)
+    # 4. Error codes (11 stable error codes on BulkheadError)
     error_codes = [
         "RB_ERR_NO_REMOTECAP",
         "RB_ERR_AT_CAPACITY",
@@ -63,7 +63,9 @@ def _checks():
         "RB_ERR_QUEUED",
         "RB_ERR_QUEUE_TIMEOUT",
         "RB_ERR_UNKNOWN_REQUEST",
+        "RB_ERR_DUPLICATE_REQUEST",
         "RB_ERR_UNKNOWN_PERMIT",
+        "RB_ERR_INVALID_REQUEST_ID",
         "RB_ERR_DRAINING",
         "RB_ERR_INVALID_CONFIG",
     ]
@@ -124,6 +126,22 @@ def _checks():
         "p99 latency tracking with target gate"
         if (has_p99 and has_within and has_record)
         else "missing latency functions",
+    )
+
+    has_latency_timestamp_param = re.search(
+        r"fn\s+record_foreground_latency\(\s*&mut self,\s*latency_ms:\s*u64,\s*now_ms:\s*u64\s*\)",
+        src,
+    )
+    uses_placeholder_latency_timestamp = re.search(
+        r"RB_LATENCY_REPORT,\s*0,",
+        src,
+    )
+    check(
+        "LATENCY_EVENT_TIMESTAMP",
+        bool(has_latency_timestamp_param) and uses_placeholder_latency_timestamp is None,
+        "latency events use caller-supplied now_ms"
+        if bool(has_latency_timestamp_param) and uses_placeholder_latency_timestamp is None
+        else "missing now_ms parameter or latency event still uses placeholder timestamp",
     )
 
     # 9. Backpressure policy variants

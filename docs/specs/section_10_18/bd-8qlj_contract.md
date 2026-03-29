@@ -56,7 +56,7 @@ with structured denial containing a stable reason code.
 
 | Code                         | Meaning                          |
 |------------------------------|----------------------------------|
-| ERR-CTL-MISSING-EVIDENCE     | No evidence provided             |
+| ERR-CTL-MISSING-EVIDENCE     | No evidence provided or insufficient feasible evidence |
 | ERR-CTL-EXPIRED-EVIDENCE     | All evidence has expired         |
 | ERR-CTL-SCOPE-MISMATCH      | Evidence does not cover scope    |
 | ERR-CTL-INVALID-HASH         | Evidence hash invalid            |
@@ -80,7 +80,7 @@ with structured denial containing a stable reason code.
 3. Expired evidence produces a Denied decision with ERR-CTL-EXPIRED-EVIDENCE.
 4. Scope-mismatched evidence produces a Denied decision with ERR-CTL-SCOPE-MISMATCH.
 5. Invalid evidence state produces a Denied decision with ERR-CTL-INVALID-HASH.
-6. Unverified evidence produces a PendingVerification decision.
+6. Unverified evidence produces PendingVerification only when the combined verified and pending evidence set can still satisfy the effective min_evidence_count; otherwise the decision is Denied with ERR-CTL-MISSING-EVIDENCE.
 7. Valid evidence with correct scope produces an Authorized decision.
 8. Every denial emits a structured GateEvent (INV-CTL-DENY-LOGGED).
 9. Per-transition-type policy overrides are respected.

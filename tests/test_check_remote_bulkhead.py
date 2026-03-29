@@ -84,6 +84,10 @@ class TestIndividualChecks(unittest.TestCase):
         r = self.by_name["LATENCY_TRACKING"]
         self.assertTrue(r["passed"], r["detail"])
 
+    def test_latency_event_timestamp(self):
+        r = self.by_name["LATENCY_EVENT_TIMESTAMP"]
+        self.assertTrue(r["passed"], r["detail"])
+
     def test_backpressure_policy(self):
         r = self.by_name["BACKPRESSURE_POLICY"]
         self.assertTrue(r["passed"], r["detail"])

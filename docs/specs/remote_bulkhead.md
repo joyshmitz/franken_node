@@ -10,6 +10,7 @@ foreground latency collapse.
 - `poll_queued(request_id, now_ms) -> Result<BulkheadPermit, BulkheadError>`
 - `release(permit, now_ms) -> Result<(), BulkheadError>`
 - `set_max_in_flight(new_cap, now_ms) -> Result<(), BulkheadError>`
+- `record_foreground_latency(latency_ms, now_ms)`
 - `current_in_flight() -> usize`
 
 ## Backpressure Policies
@@ -33,6 +34,7 @@ Missing capability fails closed (`RB_ERR_NO_REMOTECAP`).
 
 ## Latency Budget Contract
 - Foreground latency samples are recorded and p99 is computed deterministically.
+- `RB_LATENCY_REPORT` events carry the supplied `now_ms` timestamp rather than a placeholder.
 - Release gate target: `p99 <= 50ms` under saturation profiles (cap 8/32/128).
 
 ## Structured Event Codes

@@ -49,6 +49,11 @@ def _checks():
 
     check("REMOTECAP_GATING", "has_remote_cap" in src and "RemoteCap required" in src, "RemoteCap gate on saga start")
     check("CANCEL_SAFETY", "cancel_saga" in src and "compensation_action" in src, "cancel-safe compensation")
+    check(
+        "COMPENSATION_START_AUDIT",
+        re.search(r"self\.log\(\s*event_codes::ES_COMPENSATION_START[\s\S]{0,300}?timestamp_ms", src) is not None,
+        "cancel path emits ES_COMPENSATION_START with timestamp",
+    )
     check("LEAK_DETECTION", "leak_check" in src and "orphans" in src, "leak/orphan detection")
     check("CRASH_RECOVERY", "recover_saga" in src and "ES_CRASH_RECOVERY" in src, "crash recovery support")
     check("AUDIT_TRAIL", "export_audit_log_jsonl" in src and "export_saga_trace_jsonl" in src, "audit + trace export")

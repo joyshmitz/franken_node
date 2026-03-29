@@ -35,6 +35,8 @@ IdempotencyKeyDeriver::derive_key(computation_name, epoch, request_bytes)
 - `request_bytes`: the serialized request payload
 
 Keys are SHA-256 digests (32 bytes) with a domain prefix of `franken_node.idempotency.v1`.
+The canonical byte stream is length-prefixed before hashing, so control bytes in
+`computation_name` or `request_bytes` cannot alias distinct retry tuples.
 
 ## Dedupe Contract
 

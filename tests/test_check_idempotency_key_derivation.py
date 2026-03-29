@@ -55,7 +55,7 @@ class TestVectorValidation:
         with tempfile.TemporaryDirectory() as tmpdir:
             vectors_path = Path(tmpdir) / "vectors.json"
             vectors_doc = {
-                "schema_version": "ik-v1.0",
+                "schema_version": "ik-v1.1",
                 "domain_prefix": "franken_node.idempotency.v1",
                 "vectors": [
                     {
@@ -81,6 +81,13 @@ class TestVectorValidation:
 
 
 class TestOverall:
+    def test_injective_canonical_framing_check_passes(self):
+        checks = module._checks()
+        check_map = {c["check"]: c for c in checks}
+        assert check_map["injective_canonical_framing"]["passed"], check_map[
+            "injective_canonical_framing"
+        ]["detail"]
+
     def test_all_checks_pass(self):
         checks = module._checks()
         failed = [c for c in checks if not c["passed"]]

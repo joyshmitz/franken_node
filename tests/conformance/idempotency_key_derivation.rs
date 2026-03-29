@@ -72,8 +72,7 @@ fn demo_registry() -> ComputationRegistry {
 
 #[test]
 fn published_idempotency_vectors_match_derivation() {
-    let raw = fs::read_to_string(vector_path())
-        .expect("idempotency vectors artifact must exist");
+    let raw = fs::read_to_string(vector_path()).expect("idempotency vectors artifact must exist");
     let bundle: VectorBundle = serde_json::from_str(&raw).expect("vector json must parse");
     assert!(
         bundle.vectors.len() >= 20,
@@ -138,6 +137,54 @@ fn collision_check_10k_is_clean() {
         .collision_count("core.remote_compute.v1", 9, &payloads)
         .expect("collision check should execute");
     assert_eq!(collisions, 0, "expected zero collisions for 10k samples");
+}
+
+fn legacy_separator_framing(
+    prefix: &[u8],
+    computation_name: &str,
+    epoch: u64,
+    request_bytes: &[u8],
+) -> Vec<u8> {
+    let mut input = Vec::new();
+    input.extend_from_slice(prefix);
+    input.push(0x1f);
+    input.extend_from_slice(computation_name.as_bytes());
+    input.push(0x1f);
+    input.extend_from_slice(&epoch.to_be_bytes());
+    input.push(0x1f);
+    input.extend_from_slice(request_bytes);
+    input
+}
+
+#[test]
+fn separator_collision_inputs_do_not_alias_after_derivation_fix() {
+    let deriver = IdempotencyKeyDeriver::default();
+    let computation_a = "core.remote_compute.v1";
+    let computation_b = "core.remote_compute.v1\u{1f}\0\0\0\0\0\0\0\0\u{1f}suffix";
+    let request_a = b"suffix\x1f\0\0\0\0\0\0\0\x01\x1frest";
+    let request_b = b"rest";
+
+    let legacy_a = legacy_separator_framing(
+        idempotency::IDEMPOTENCY_DOMAIN_PREFIX,
+        computation_a,
+        0,
+        request_a,
+    );
+    let legacy_b = legacy_separator_framing(
+        idempotency::IDEMPOTENCY_DOMAIN_PREFIX,
+        computation_b,
+        1,
+        request_b,
+    );
+    assert_eq!(legacy_a, legacy_b, "legacy framing should collide here");
+
+    let key_a = deriver
+        .derive_key(computation_a, 0, request_a)
+        .expect("derive key a");
+    let key_b = deriver
+        .derive_key(computation_b, 1, request_b)
+        .expect("derive key b");
+    assert_ne!(key_a, key_b, "fixed derivation must not alias");
 }
 
 #[test]

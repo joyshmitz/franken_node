@@ -88,6 +88,16 @@ class TestCancelSafety(unittest.TestCase):
         self.assertTrue(results["CANCEL_SAFETY"]["passed"])
 
 
+class TestCompensationStartAudit(unittest.TestCase):
+    def test_compensation_start_audit(self):
+        results = {r["check"]: r for r in mod._checks()}
+        self.assertTrue(results["COMPENSATION_START_AUDIT"]["passed"])
+        self.assertIn(
+            "ES_COMPENSATION_START",
+            results["COMPENSATION_START_AUDIT"]["detail"],
+        )
+
+
 class TestLeakDetection(unittest.TestCase):
     def test_leak_detection(self):
         results = {r["check"]: r for r in mod._checks()}

@@ -34,7 +34,7 @@ Each test family maps to an owning bead and is consumed by the bootstrap verific
 |---|---|---|---|---|---|
 | TF-CONFIG-001 | Default config resolution | Happy | none (uses built-in defaults) | default profile active | — |
 | TF-CONFIG-002 | Profile override via env var | Happy | `config/env_override.env` | env profile values override defaults | — |
-| TF-CONFIG-003 | Profile override via CLI flag | Happy | `config/base.toml` + `--profile dev` | dev profile merged over base | — |
+| TF-CONFIG-003 | Profile override via CLI flag | Happy | `config/base.toml` + `--profile legacy-risky` | legacy-risky profile merged over base | — |
 | TF-CONFIG-004 | Precedence: CLI > env > file > default | Edge | `config/precedence_stack/` | CLI value wins | — |
 | TF-CONFIG-005 | Unknown profile name | Error | `config/base.toml` + `--profile nonexistent` | profile-not-found error | — |
 | TF-CONFIG-006 | Empty config file | Edge | `config/empty.toml` | defaults used, no crash | — |
