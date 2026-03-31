@@ -479,7 +479,7 @@ pub struct FleetControlManager {
     events: Vec<FleetControlEvent>,
     /// Counter for generating operation IDs.
     next_op_id: u64,
-    /// Epoch used to keep operation IDs unique across counter rollover.
+    /// Optional epoch component for non-default operation ID domains.
     op_epoch: u64,
     /// Set after the final unique operation ID has been allocated.
     operation_ids_exhausted: bool,
@@ -856,22 +856,29 @@ impl FleetControlManager {
             return Err(FleetControlError::not_activated());
         }
 
-        let incident = self
-            .incidents
-            .get_mut(incident_id)
-            .ok_or_else(|| FleetControlError::rollback_failed(incident_id, "incident not found"))?;
+        let (zone_id, action_type) = {
+            let incident = self.incidents.get(incident_id).ok_or_else(|| {
+                FleetControlError::rollback_failed(incident_id, "incident not found")
+            })?;
 
-        if incident.status == IncidentStatus::Released {
-            return Err(FleetControlError::rollback_failed(
-                incident_id,
-                "incident already released",
-            ));
-        }
+            if incident.status == IncidentStatus::Released {
+                return Err(FleetControlError::rollback_failed(
+                    incident_id,
+                    "incident already released",
+                ));
+            }
+
+            (incident.zone_id.clone(), incident.action_type.clone())
+        };
+
+        let op_id = self.next_operation_id()?;
+        let now = chrono::Utc::now().to_rfc3339();
 
         // Mark as released
+        let incident = self.incidents.get_mut(incident_id).ok_or_else(|| {
+            FleetControlError::rollback_failed(incident_id, "incident disappeared during release")
+        })?;
         incident.status = IncidentStatus::Released;
-        let zone_id = incident.zone_id.clone();
-        let action_type = incident.action_type.clone();
 
         // Decrement zone active count
         if let Some(zone) = self.zone_status.get_mut(&zone_id) {
@@ -884,8 +891,6 @@ impl FleetControlManager {
         self.incident_convergences.remove(incident_id);
         self.sync_zone_pending_convergences(&zone_id);
 
-        let op_id = self.next_operation_id()?;
-        let now = chrono::Utc::now().to_rfc3339();
         let receipt = self.build_receipt(&op_id, &identity.principal, &zone_id, &now);
 
         let event = FleetControlEvent::fleet_released(&trace.trace_id, &zone_id, incident_id);
@@ -1024,16 +1029,10 @@ impl FleetControlManager {
             sequence: self.next_op_id,
         };
 
-        if self.next_op_id == u64::MAX {
-            if self.op_epoch == u64::MAX {
-                self.operation_ids_exhausted = true;
-            } else {
-                // Roll to the next epoch so IDs stay unique at counter boundaries.
-                self.next_op_id = 1;
-                self.op_epoch = self.op_epoch.saturating_add(1);
-            }
+        if let Some(next) = self.next_op_id.checked_add(1) {
+            self.next_op_id = next;
         } else {
-            self.next_op_id = self.next_op_id.saturating_add(1);
+            self.operation_ids_exhausted = true;
         }
 
         Ok(slot)
@@ -2169,6 +2168,35 @@ mod tests {
     }
 
     #[test]
+    fn release_fails_closed_before_mutating_state_when_operation_ids_are_exhausted() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+        let scope = test_quarantine_scope();
+        mgr.quarantine("ext-1", &scope, &admin_identity(), &test_trace())
+            .expect("quarantine");
+
+        let incident_id = mgr
+            .active_incidents()
+            .first()
+            .expect("incident present")
+            .incident_id
+            .clone();
+        mgr.operation_ids_exhausted = true;
+
+        let err = mgr
+            .release(&incident_id, &admin_identity(), &test_trace())
+            .expect_err("release should fail closed");
+        assert_eq!(err.error_code(), FLEET_OPERATION_ID_EXHAUSTED);
+
+        let incident = mgr.incidents.get(&incident_id).expect("incident retained");
+        assert_eq!(incident.status, IncidentStatus::Active);
+
+        let status = mgr.status("zone-us-east-1").expect("status");
+        assert_eq!(status.active_quarantines, 1);
+        assert_eq!(status.pending_convergences.len(), 1);
+    }
+
+    #[test]
     fn release_removes_matching_convergence_when_zone_has_multiple_quarantines() {
         let mut mgr = FleetControlManager::new();
         mgr.activate();
@@ -2847,18 +2875,20 @@ mod tests {
     }
 
     #[test]
-    fn operation_id_rollover_preserves_uniqueness() {
+    fn operation_id_uses_terminal_value_before_failing_closed() {
         let mut mgr = FleetControlManager::new();
         mgr.next_op_id = u64::MAX;
 
-        let first = mgr.next_operation_id().expect("first");
-        let second = mgr.next_operation_id().expect("second");
+        let final_id = mgr.next_operation_id().expect("final id");
+        assert_eq!(final_id, "fleet-op-18446744073709551615");
+        assert!(mgr.operation_ids_exhausted);
+        assert_eq!(mgr.next_op_id, u64::MAX);
+        assert_eq!(mgr.op_epoch, 0);
 
-        assert_ne!(first, second);
-        assert_eq!(first, "fleet-op-18446744073709551615");
-        assert_eq!(second, "fleet-op-0000000000000001-0000000000000001");
-        assert_eq!(mgr.op_epoch, 1);
-        assert_eq!(mgr.next_op_id, 2);
+        let err = mgr
+            .next_operation_id()
+            .expect_err("allocator should fail after terminal id");
+        assert_eq!(err.error_code(), FLEET_OPERATION_ID_EXHAUSTED);
     }
 
     #[test]
@@ -2877,28 +2907,31 @@ mod tests {
     }
 
     #[test]
-    fn quarantine_rollover_keeps_operation_incident_and_receipt_ids_unique() {
+    fn quarantine_uses_terminal_operation_id_before_failing_closed() {
         let mut mgr = FleetControlManager::new();
         mgr.activate();
         mgr.next_op_id = u64::MAX;
         let scope = test_quarantine_scope();
 
         let first = mgr
-            .quarantine("ext-1", &scope, &admin_identity(), &test_trace())
-            .expect("first quarantine");
-        let second = mgr
-            .quarantine("ext-2", &scope, &admin_identity(), &test_trace())
-            .expect("second quarantine");
+            .quarantine("ext-final", &scope, &admin_identity(), &test_trace())
+            .expect("final quarantine");
+        assert_eq!(first.operation_id, "fleet-op-18446744073709551615");
+        assert_eq!(
+            first.receipt.receipt_id,
+            "rcpt-fleet-op-18446744073709551615"
+        );
+        assert!(
+            mgr.incidents
+                .contains_key("inc-fleet-op-18446744073709551615")
+        );
+        assert!(mgr.operation_ids_exhausted);
 
-        assert_ne!(first.operation_id, second.operation_id);
-        assert_ne!(first.receipt.receipt_id, second.receipt.receipt_id);
-
-        let incident_ids: std::collections::BTreeSet<_> = mgr
-            .active_incidents()
-            .iter()
-            .map(|i| i.incident_id.clone())
-            .collect();
-        assert_eq!(incident_ids.len(), 2);
+        let err = mgr
+            .quarantine("ext-overflow", &scope, &admin_identity(), &test_trace())
+            .expect_err("second quarantine should fail closed");
+        assert_eq!(err.error_code(), FLEET_OPERATION_ID_EXHAUSTED);
+        assert_eq!(mgr.active_incidents().len(), 1);
     }
 
     #[test]
