@@ -309,7 +309,7 @@ impl OptimizationProposal {
     pub fn is_valid(&self) -> bool {
         !self.proposal_id.is_empty()
             && !self.trace_id.is_empty()
-            && self.predicted.error_rate_pct >= 0.0
+            && (0.0..=100.0).contains(&self.predicted.error_rate_pct)
     }
 }
 
@@ -1013,6 +1013,13 @@ mod tests {
     fn test_proposal_invalid_negative_error_rate() {
         let mut p = good_proposal("p1");
         p.predicted.error_rate_pct = -1.0;
+        assert!(!p.is_valid());
+    }
+
+    #[test]
+    fn test_proposal_invalid_excessive_error_rate() {
+        let mut p = good_proposal("p1");
+        p.predicted.error_rate_pct = 101.0;
         assert!(!p.is_valid());
     }
 

@@ -8,7 +8,7 @@
 // bd-2ko — Section 10.11
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use super::virtual_transport::LinkFaultConfig;
@@ -53,6 +53,18 @@ pub const ERR_SB_DUPLICATE_NODE: &str = "ERR_SB_DUPLICATE_NODE";
 pub const ERR_SB_DUPLICATE_LINK: &str = "ERR_SB_DUPLICATE_LINK";
 /// Scenario name is empty.
 pub const ERR_SB_EMPTY_NAME: &str = "ERR_SB_EMPTY_NAME";
+/// Failed to serialize scenario JSON.
+pub const ERR_SB_JSON_SERIALIZE: &str = "ERR_SB_JSON_SERIALIZE";
+/// Failed to parse scenario JSON.
+pub const ERR_SB_JSON_PARSE: &str = "ERR_SB_JSON_PARSE";
+/// Scenario schema version is unsupported.
+pub const ERR_SB_INVALID_SCHEMA_VERSION: &str = "ERR_SB_INVALID_SCHEMA_VERSION";
+/// Fault profile references an unknown link.
+pub const ERR_SB_UNKNOWN_FAULT_PROFILE_LINK: &str = "ERR_SB_UNKNOWN_FAULT_PROFILE_LINK";
+/// Fault profile content is invalid.
+pub const ERR_SB_INVALID_FAULT_PROFILE: &str = "ERR_SB_INVALID_FAULT_PROFILE";
+/// Assertion references a node that does not exist in the scenario.
+pub const ERR_SB_INVALID_ASSERTION_NODE: &str = "ERR_SB_INVALID_ASSERTION_NODE";
 
 // ---------------------------------------------------------------------------
 // Invariant constants
@@ -245,8 +257,18 @@ pub enum ScenarioBuilderError {
     DuplicateLink { link_id: String },
     /// Scenario name is empty.
     EmptyName,
+    /// Failed to serialize scenario JSON output.
+    JsonSerialize { message: String },
     /// Failed to parse JSON input.
     JsonParse { message: String },
+    /// Scenario schema version is unsupported.
+    InvalidSchemaVersion { found: String },
+    /// Fault profile references an unknown link.
+    UnknownFaultProfileLink { link_id: String },
+    /// Fault profile content is invalid.
+    InvalidFaultProfile { link_id: String, message: String },
+    /// Assertion references a node that does not exist in the scenario.
+    InvalidAssertionNode { assertion: String, node_id: String },
 }
 
 impl fmt::Display for ScenarioBuilderError {
@@ -287,10 +309,40 @@ impl fmt::Display for ScenarioBuilderError {
                 )
             }
             Self::EmptyName => write!(f, "{ERR_SB_EMPTY_NAME}: scenario name must not be empty"),
+            Self::JsonSerialize { message } => {
+                write!(
+                    f,
+                    "{ERR_SB_JSON_SERIALIZE}: failed to serialize scenario JSON: {message}"
+                )
+            }
             Self::JsonParse { message } => {
                 write!(
                     f,
-                    "ERR_SB_JSON_PARSE: failed to parse scenario JSON: {message}"
+                    "{ERR_SB_JSON_PARSE}: failed to parse scenario JSON: {message}"
+                )
+            }
+            Self::InvalidSchemaVersion { found } => {
+                write!(
+                    f,
+                    "{ERR_SB_INVALID_SCHEMA_VERSION}: unsupported schema_version={found}, expected={SCHEMA_VERSION}"
+                )
+            }
+            Self::UnknownFaultProfileLink { link_id } => {
+                write!(
+                    f,
+                    "{ERR_SB_UNKNOWN_FAULT_PROFILE_LINK}: fault profile references unknown link '{link_id}'"
+                )
+            }
+            Self::InvalidFaultProfile { link_id, message } => {
+                write!(
+                    f,
+                    "{ERR_SB_INVALID_FAULT_PROFILE}: link '{link_id}' has invalid fault profile: {message}"
+                )
+            }
+            Self::InvalidAssertionNode { assertion, node_id } => {
+                write!(
+                    f,
+                    "{ERR_SB_INVALID_ASSERTION_NODE}: assertion '{assertion}' references unknown node '{node_id}'"
                 )
             }
         }
@@ -332,6 +384,108 @@ pub struct Scenario {
 }
 
 impl Scenario {
+    fn validate(&self) -> Result<(), ScenarioBuilderError> {
+        if self.schema_version != SCHEMA_VERSION {
+            return Err(ScenarioBuilderError::InvalidSchemaVersion {
+                found: self.schema_version.clone(),
+            });
+        }
+        if self.name.is_empty() {
+            return Err(ScenarioBuilderError::EmptyName);
+        }
+        if self.seed == 0 {
+            return Err(ScenarioBuilderError::NoSeed);
+        }
+        if self.nodes.len() < MIN_NODES {
+            return Err(ScenarioBuilderError::TooFewNodes {
+                count: self.nodes.len(),
+                minimum: MIN_NODES,
+            });
+        }
+        if self.nodes.len() > MAX_NODES {
+            return Err(ScenarioBuilderError::TooManyNodes {
+                count: self.nodes.len(),
+                maximum: MAX_NODES,
+            });
+        }
+
+        let mut node_ids = BTreeSet::new();
+        for node in &self.nodes {
+            if !node_ids.insert(node.id.clone()) {
+                return Err(ScenarioBuilderError::DuplicateNode {
+                    node_id: node.id.clone(),
+                });
+            }
+        }
+
+        let mut link_ids = BTreeSet::new();
+        for link in &self.links {
+            if !link_ids.insert(link.id.clone()) {
+                return Err(ScenarioBuilderError::DuplicateLink {
+                    link_id: link.id.clone(),
+                });
+            }
+            if !node_ids.contains(&link.source_node) {
+                return Err(ScenarioBuilderError::InvalidLinkEndpoint {
+                    link_id: link.id.clone(),
+                    missing_node: link.source_node.clone(),
+                });
+            }
+            if !node_ids.contains(&link.target_node) {
+                return Err(ScenarioBuilderError::InvalidLinkEndpoint {
+                    link_id: link.id.clone(),
+                    missing_node: link.target_node.clone(),
+                });
+            }
+        }
+
+        for (link_id, config) in &self.fault_profiles {
+            if !link_ids.contains(link_id) {
+                return Err(ScenarioBuilderError::UnknownFaultProfileLink {
+                    link_id: link_id.clone(),
+                });
+            }
+            config
+                .validate()
+                .map_err(|err| ScenarioBuilderError::InvalidFaultProfile {
+                    link_id: link_id.clone(),
+                    message: err.to_string(),
+                })?;
+        }
+
+        for assertion in &self.assertions {
+            match assertion {
+                ScenarioAssertion::AllNodesReachQuiescence
+                | ScenarioAssertion::EpochTransitionCompleted { .. }
+                | ScenarioAssertion::NoDeadlock { .. } => {}
+                ScenarioAssertion::MessageDelivered { from, to, .. } => {
+                    if !node_ids.contains(from) {
+                        return Err(ScenarioBuilderError::InvalidAssertionNode {
+                            assertion: "MessageDelivered.from".to_string(),
+                            node_id: from.clone(),
+                        });
+                    }
+                    if !node_ids.contains(to) {
+                        return Err(ScenarioBuilderError::InvalidAssertionNode {
+                            assertion: "MessageDelivered.to".to_string(),
+                            node_id: to.clone(),
+                        });
+                    }
+                }
+                ScenarioAssertion::PartitionDetected { by_node, .. } => {
+                    if !node_ids.contains(by_node) {
+                        return Err(ScenarioBuilderError::InvalidAssertionNode {
+                            assertion: "PartitionDetected.by_node".to_string(),
+                            node_id: by_node.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Return the number of nodes.
     pub fn node_count(&self) -> usize {
         self.nodes.len()
@@ -357,16 +511,22 @@ impl Scenario {
         self.fault_profiles.get(link_id)
     }
 
-    /// Serialize to a deterministic JSON string.
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_default()
+    /// Serialize to a deterministic JSON string after validation.
+    pub fn to_json(&self) -> Result<String, ScenarioBuilderError> {
+        self.validate()?;
+        serde_json::to_string(self).map_err(|e| ScenarioBuilderError::JsonSerialize {
+            message: e.to_string(),
+        })
     }
 
     /// Deserialize from JSON.
     pub fn from_json(s: &str) -> Result<Self, ScenarioBuilderError> {
-        serde_json::from_str(s).map_err(|e| ScenarioBuilderError::JsonParse {
-            message: e.to_string(),
-        })
+        let scenario: Self =
+            serde_json::from_str(s).map_err(|e| ScenarioBuilderError::JsonParse {
+                message: e.to_string(),
+            })?;
+        scenario.validate()?;
+        Ok(scenario)
     }
 }
 
@@ -518,48 +678,7 @@ impl ScenarioBuilder {
     /// - INV-SB-NODE-BOUNDS: node count must be in [MIN_NODES, MAX_NODES].
     /// - Scenario name must not be empty.
     pub fn build(self) -> Result<Scenario, ScenarioBuilderError> {
-        // Validate name.
-        if self.name.is_empty() {
-            return Err(ScenarioBuilderError::EmptyName);
-        }
-
-        // INV-SB-NONZERO-SEED
-        if self.seed == 0 {
-            return Err(ScenarioBuilderError::NoSeed);
-        }
-
-        // INV-SB-NODE-BOUNDS
-        if self.nodes.len() < MIN_NODES {
-            return Err(ScenarioBuilderError::TooFewNodes {
-                count: self.nodes.len(),
-                minimum: MIN_NODES,
-            });
-        }
-        if self.nodes.len() > MAX_NODES {
-            return Err(ScenarioBuilderError::TooManyNodes {
-                count: self.nodes.len(),
-                maximum: MAX_NODES,
-            });
-        }
-
-        // INV-SB-VALID-TOPOLOGY: validate all link endpoints.
-        let node_ids: Vec<&str> = self.nodes.iter().map(|n| n.id.as_str()).collect();
-        for link in &self.links {
-            if !node_ids.contains(&link.source_node.as_str()) {
-                return Err(ScenarioBuilderError::InvalidLinkEndpoint {
-                    link_id: link.id.clone(),
-                    missing_node: link.source_node.clone(),
-                });
-            }
-            if !node_ids.contains(&link.target_node.as_str()) {
-                return Err(ScenarioBuilderError::InvalidLinkEndpoint {
-                    link_id: link.id.clone(),
-                    missing_node: link.target_node.clone(),
-                });
-            }
-        }
-
-        Ok(Scenario {
+        let scenario = Scenario {
             schema_version: SCHEMA_VERSION.to_string(),
             name: self.name,
             description: self.description,
@@ -568,7 +687,9 @@ impl ScenarioBuilder {
             links: self.links,
             fault_profiles: self.fault_profiles,
             assertions: self.assertions,
-        })
+        };
+        scenario.validate()?;
+        Ok(scenario)
     }
 }
 
@@ -969,7 +1090,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let json = scenario.to_json();
+        let json = scenario.to_json().unwrap();
         assert!(!json.is_empty());
 
         let restored = Scenario::from_json(&json).unwrap();
@@ -981,6 +1102,50 @@ mod tests {
         assert_eq!(restored.links, scenario.links);
         assert_eq!(restored.fault_profiles, scenario.fault_profiles);
         assert_eq!(restored.assertions, scenario.assertions);
+    }
+
+    #[test]
+    fn test_scenario_to_json_rejects_invalid_fault_profile_before_serialization() {
+        let scenario = Scenario {
+            schema_version: SCHEMA_VERSION.to_string(),
+            name: "invalid".to_string(),
+            description: String::new(),
+            seed: 42,
+            nodes: vec![
+                VirtualNode {
+                    id: "n1".to_string(),
+                    name: "Node 1".to_string(),
+                    role: NodeRole::Coordinator,
+                },
+                VirtualNode {
+                    id: "n2".to_string(),
+                    name: "Node 2".to_string(),
+                    role: NodeRole::Participant,
+                },
+            ],
+            links: vec![VirtualLink {
+                id: "link-1".to_string(),
+                source_node: "n1".to_string(),
+                target_node: "n2".to_string(),
+                bidirectional: true,
+            }],
+            fault_profiles: BTreeMap::from([(
+                "link-1".to_string(),
+                LinkFaultConfig {
+                    drop_probability: f64::NAN,
+                    ..LinkFaultConfig::default()
+                },
+            )]),
+            assertions: Vec::new(),
+        };
+
+        let err = scenario
+            .to_json()
+            .expect_err("invalid fault profile must fail");
+        assert!(matches!(
+            err,
+            ScenarioBuilderError::InvalidFaultProfile { .. }
+        ));
     }
 
     #[test]
@@ -1027,6 +1192,147 @@ mod tests {
         let json = serde_json::to_string(&scenario).unwrap();
         let restored: Scenario = serde_json::from_str(&json).unwrap();
         assert_eq!(restored.assertions, scenario.assertions);
+    }
+
+    #[test]
+    fn test_build_rejects_fault_profile_for_unknown_link() {
+        let err = two_node_builder()
+            .unwrap()
+            .set_fault_profile("ghost-link", LinkFaultConfig::default())
+            .build()
+            .expect_err("fault profile must target an existing link");
+
+        assert!(matches!(
+            err,
+            ScenarioBuilderError::UnknownFaultProfileLink { ref link_id }
+                if link_id == "ghost-link"
+        ));
+    }
+
+    #[test]
+    fn test_build_rejects_invalid_fault_profile() {
+        let err = two_node_builder()
+            .unwrap()
+            .add_link("link-1", "n1", "n2", true)
+            .unwrap()
+            .set_fault_profile(
+                "link-1",
+                LinkFaultConfig {
+                    drop_probability: 1.5,
+                    ..LinkFaultConfig::default()
+                },
+            )
+            .build()
+            .expect_err("invalid fault profile must fail closed");
+
+        assert!(matches!(
+            err,
+            ScenarioBuilderError::InvalidFaultProfile { ref link_id, .. }
+                if link_id == "link-1"
+        ));
+    }
+
+    #[test]
+    fn test_scenario_from_json_rejects_invalid_schema_version() {
+        let scenario = two_node_builder().unwrap().build().unwrap();
+        let mut value = serde_json::to_value(&scenario).unwrap();
+        value["schema_version"] = serde_json::Value::String("sb-v0.9".to_string());
+
+        let json = serde_json::to_string(&value).unwrap();
+        let err = Scenario::from_json(&json).expect_err("schema version must be validated");
+        assert!(matches!(
+            err,
+            ScenarioBuilderError::InvalidSchemaVersion { ref found } if found == "sb-v0.9"
+        ));
+    }
+
+    #[test]
+    fn test_scenario_from_json_rejects_fault_profile_for_unknown_link() {
+        let scenario = two_node_builder().unwrap().build().unwrap();
+        let mut value = serde_json::to_value(&scenario).unwrap();
+        value["fault_profiles"] = serde_json::json!({
+            "ghost-link": {
+                "drop_probability": 0.0,
+                "reorder_depth": 0,
+                "corrupt_bit_count": 0,
+                "delay_ticks": 0,
+                "partition": false
+            }
+        });
+
+        let json = serde_json::to_string(&value).unwrap();
+        let err = Scenario::from_json(&json).expect_err("unknown fault profile link must fail");
+        assert!(matches!(
+            err,
+            ScenarioBuilderError::UnknownFaultProfileLink { ref link_id }
+                if link_id == "ghost-link"
+        ));
+    }
+
+    #[test]
+    fn test_build_rejects_assertion_reference_to_unknown_node() {
+        let err = two_node_builder()
+            .unwrap()
+            .add_assertion(ScenarioAssertion::MessageDelivered {
+                from: "n1".into(),
+                to: "ghost".into(),
+                within_ticks: 10,
+            })
+            .build()
+            .expect_err("assertions must reference existing nodes");
+
+        assert!(matches!(
+            err,
+            ScenarioBuilderError::InvalidAssertionNode {
+                ref assertion,
+                ref node_id
+            } if assertion == "MessageDelivered.to" && node_id == "ghost"
+        ));
+    }
+
+    #[test]
+    fn test_scenario_from_json_rejects_assertion_reference_to_unknown_node() {
+        let scenario = two_node_builder().unwrap().build().unwrap();
+        let mut value = serde_json::to_value(&scenario).unwrap();
+        value["assertions"] = serde_json::json!([
+            {
+                "MessageDelivered": {
+                    "from": "n1",
+                    "to": "ghost",
+                    "within_ticks": 10
+                }
+            }
+        ]);
+
+        let json = serde_json::to_string(&value).unwrap();
+        let err = Scenario::from_json(&json).expect_err("assertions must be validated");
+        assert!(matches!(
+            err,
+            ScenarioBuilderError::InvalidAssertionNode {
+                ref assertion,
+                ref node_id
+            } if assertion == "MessageDelivered.to" && node_id == "ghost"
+        ));
+    }
+
+    #[test]
+    fn test_build_rejects_partition_detection_assertion_reference_to_unknown_node() {
+        let err = two_node_builder()
+            .unwrap()
+            .add_assertion(ScenarioAssertion::PartitionDetected {
+                by_node: "ghost".into(),
+                within_ticks: 10,
+            })
+            .build()
+            .expect_err("partition assertions must reference existing nodes");
+
+        assert!(matches!(
+            err,
+            ScenarioBuilderError::InvalidAssertionNode {
+                ref assertion,
+                ref node_id
+            } if assertion == "PartitionDetected.by_node" && node_id == "ghost"
+        ));
     }
 
     // ---------------------------------------------------------------
@@ -1203,6 +1509,65 @@ mod tests {
         assert!(e.to_string().contains(ERR_SB_EMPTY_NAME));
     }
 
+    #[test]
+    fn test_error_display_json_serialize() {
+        let e = ScenarioBuilderError::JsonSerialize {
+            message: "NaN is not valid JSON".into(),
+        };
+        assert!(e.to_string().contains(ERR_SB_JSON_SERIALIZE));
+    }
+
+    #[test]
+    fn test_error_display_json_parse() {
+        let e = ScenarioBuilderError::JsonParse {
+            message: "expected value".into(),
+        };
+        assert!(e.to_string().contains(ERR_SB_JSON_PARSE));
+    }
+
+    #[test]
+    fn test_error_display_invalid_schema_version() {
+        let e = ScenarioBuilderError::InvalidSchemaVersion {
+            found: "sb-v0.9".into(),
+        };
+        let s = e.to_string();
+        assert!(s.contains(ERR_SB_INVALID_SCHEMA_VERSION));
+        assert!(s.contains("sb-v0.9"));
+    }
+
+    #[test]
+    fn test_error_display_unknown_fault_profile_link() {
+        let e = ScenarioBuilderError::UnknownFaultProfileLink {
+            link_id: "ghost-link".into(),
+        };
+        let s = e.to_string();
+        assert!(s.contains(ERR_SB_UNKNOWN_FAULT_PROFILE_LINK));
+        assert!(s.contains("ghost-link"));
+    }
+
+    #[test]
+    fn test_error_display_invalid_fault_profile() {
+        let e = ScenarioBuilderError::InvalidFaultProfile {
+            link_id: "link-1".into(),
+            message: "ERR_VT_INVALID_PROBABILITY".into(),
+        };
+        let s = e.to_string();
+        assert!(s.contains(ERR_SB_INVALID_FAULT_PROFILE));
+        assert!(s.contains("link-1"));
+    }
+
+    #[test]
+    fn test_error_display_invalid_assertion_node() {
+        let e = ScenarioBuilderError::InvalidAssertionNode {
+            assertion: "MessageDelivered.to".into(),
+            node_id: "ghost".into(),
+        };
+        let s = e.to_string();
+        assert!(s.contains(ERR_SB_INVALID_ASSERTION_NODE));
+        assert!(s.contains("MessageDelivered.to"));
+        assert!(s.contains("ghost"));
+    }
+
     // ---------------------------------------------------------------
     // Event codes are well-formed
     // ---------------------------------------------------------------
@@ -1239,6 +1604,12 @@ mod tests {
             ERR_SB_DUPLICATE_NODE,
             ERR_SB_DUPLICATE_LINK,
             ERR_SB_EMPTY_NAME,
+            ERR_SB_JSON_SERIALIZE,
+            ERR_SB_JSON_PARSE,
+            ERR_SB_INVALID_SCHEMA_VERSION,
+            ERR_SB_UNKNOWN_FAULT_PROFILE_LINK,
+            ERR_SB_INVALID_FAULT_PROFILE,
+            ERR_SB_INVALID_ASSERTION_NODE,
         ];
         for code in codes {
             assert!(code.starts_with("ERR_SB_"), "bad prefix: {code}");
@@ -1255,12 +1626,18 @@ mod tests {
             ERR_SB_DUPLICATE_NODE,
             ERR_SB_DUPLICATE_LINK,
             ERR_SB_EMPTY_NAME,
+            ERR_SB_JSON_SERIALIZE,
+            ERR_SB_JSON_PARSE,
+            ERR_SB_INVALID_SCHEMA_VERSION,
+            ERR_SB_UNKNOWN_FAULT_PROFILE_LINK,
+            ERR_SB_INVALID_FAULT_PROFILE,
+            ERR_SB_INVALID_ASSERTION_NODE,
         ];
         let mut seen = std::collections::BTreeSet::new();
         for c in &codes {
             assert!(seen.insert(*c), "Duplicate error code: {c}");
         }
-        assert_eq!(seen.len(), 7);
+        assert_eq!(seen.len(), 13);
     }
 
     // ---------------------------------------------------------------

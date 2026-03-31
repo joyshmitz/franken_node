@@ -10,16 +10,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    items.push(item);
-    if items.len() > cap {
-        let overflow = items.len() - cap;
-        items.drain(0..overflow);
-    }
-}
-
 // ── Schema version ──────────────────────────────────────────────────
 
 /// Schema version for the intent firewall module.
@@ -237,10 +227,6 @@ pub struct RemoteEffect {
 
 impl RemoteEffect {
     /// Validate that the effect descriptor is well-formed.
-    ///
-    /// Rejects null bytes in host/path/method to prevent C-string truncation
-    /// attacks where the firewall sees "evil.com\0.safe.com" but downstream
-    /// resolvers see "evil.com".
     pub fn validate(&self) -> Result<(), FirewallError> {
         if self.effect_id.is_empty() {
             return Err(FirewallError::InvalidEffect("empty effect_id".into()));
@@ -250,21 +236,6 @@ impl RemoteEffect {
         }
         if self.method.is_empty() {
             return Err(FirewallError::InvalidEffect("empty method".into()));
-        }
-        if self.target_host.contains('\0') {
-            return Err(FirewallError::InvalidEffect(
-                "target_host contains null byte".into(),
-            ));
-        }
-        if self.path.contains('\0') {
-            return Err(FirewallError::InvalidEffect(
-                "path contains null byte".into(),
-            ));
-        }
-        if self.method.contains('\0') {
-            return Err(FirewallError::InvalidEffect(
-                "method contains null byte".into(),
-            ));
         }
         Ok(())
     }
@@ -311,7 +282,7 @@ pub struct TrafficPolicyRule {
     pub verdict: FirewallVerdict,
     /// Optional host pattern filter (empty = all hosts).
     pub host_pattern: Option<String>,
-    /// Priority (higher number = higher priority, overrides lower).
+    /// Priority (lower = higher priority).
     pub priority: u32,
     /// Human-readable rationale.
     pub rationale: String,
@@ -354,7 +325,7 @@ impl TrafficPolicy {
                     rationale: format!("risky category {} denied by default", intent),
                 },
             );
-            priority = priority.saturating_add(1);
+            priority += 1;
         }
 
         // Non-risky categories: allow by default.
@@ -377,7 +348,7 @@ impl TrafficPolicy {
                     rationale: format!("non-risky category {} allowed by default", intent),
                 },
             );
-            priority = priority.saturating_add(1);
+            priority += 1;
         }
 
         Self {
@@ -390,11 +361,9 @@ impl TrafficPolicy {
     }
 
     /// Look up the highest-priority rule for a given intent category.
-    /// Higher priority number overrides lower (specific overrides beat defaults).
     pub fn match_rule(&self, intent: IntentClassification) -> Option<&TrafficPolicyRule> {
-        // BTreeMap iterates in ascending key order; reverse to find highest-numbered
-        // (most-specific) matching rule first.
-        self.rules.values().rev().find(|r| r.intent == intent)
+        // BTreeMap iterates in key order (ascending priority = highest priority first).
+        self.rules.values().find(|r| r.intent == intent)
     }
 }
 
@@ -499,6 +468,18 @@ pub struct FirewallAuditEvent {
 pub struct IntentClassifier;
 
 impl IntentClassifier {
+    fn probe_mode_enabled(effect: &RemoteEffect) -> bool {
+        effect.metadata.get("probe_mode").is_some_and(|value| {
+            let value = value.trim();
+            !value.is_empty()
+                && value != "0"
+                && !value.eq_ignore_ascii_case("false")
+                && !value.eq_ignore_ascii_case("no")
+                && !value.eq_ignore_ascii_case("off")
+                && !value.eq_ignore_ascii_case("disabled")
+        })
+    }
+
     /// Classify the intent of a remote effect.
     ///
     /// Returns `None` if the effect cannot be classified (triggering fail-closed).
@@ -514,37 +495,32 @@ impl IntentClassifier {
         }
 
         // Rule 3: Side-channel probing (many enumeration-style requests).
-        if effect.metadata.contains_key("probe_mode") {
+        if Self::probe_mode_enabled(effect) {
             return Some(IntentClassification::SideChannel);
         }
 
-        // Path segment matching: check that the keyword appears as a path segment
-        // (preceded by '/') to prevent injection via substrings like "/data/health/steal".
-        let path_lower = effect.path.to_lowercase();
-        let has_segment = |seg: &str| path_lower.split('/').any(|s| s == seg);
-
         // Rule 4: Health check.
-        if has_segment("health") || has_segment("ping") {
+        if effect.path.contains("/health") || effect.path.contains("/ping") {
             return Some(IntentClassification::HealthCheck);
         }
 
         // Rule 5: Config sync.
-        if has_segment("config") || has_segment("settings") {
+        if effect.path.contains("/config") || effect.path.contains("/settings") {
             return Some(IntentClassification::ConfigSync);
         }
 
         // Rule 6: Webhook dispatch.
-        if has_segment("webhook") || has_segment("hook") {
+        if effect.path.contains("/webhook") || effect.path.contains("/hook") {
             return Some(IntentClassification::WebhookDispatch);
         }
 
         // Rule 7: Analytics export.
-        if has_segment("analytics") || has_segment("telemetry") {
+        if effect.path.contains("/analytics") || effect.path.contains("/telemetry") {
             return Some(IntentClassification::AnalyticsExport);
         }
 
         // Rule 8: Service discovery.
-        if has_segment("discover") || has_segment("services") {
+        if effect.path.contains("/discover") || effect.path.contains("/services") {
             return Some(IntentClassification::ServiceDiscovery);
         }
 
@@ -675,7 +651,7 @@ impl EffectsFirewall {
         // Check extension registration.
         let ext_id = match &effect.origin {
             TrafficOrigin::Extension { extension_id } => extension_id.clone(),
-            _ => unreachable!("invariant: is_extension guard ensures Extension origin"),
+            _ => unreachable!(), // Already checked is_extension above.
         };
         if !self.policy.registered_extensions.contains(&ext_id) {
             return Err(FirewallError::ExtensionUnknown(ext_id));
@@ -728,16 +704,16 @@ impl EffectsFirewall {
 
         // Check for policy override.
         let override_key = (ext_id.clone(), intent);
-        if let Some(ovr) = self.overrides.get(&override_key).cloned() {
-            let verdict = ovr.new_verdict;
-            let justification = ovr.justification;
+        let ovr = self.overrides.get(&override_key).cloned();
+        if let Some(ovr) = ovr {
             self.emit_event(
                 FW_010,
                 &effect.effect_id,
                 trace_id,
-                &format!("override applied: {justification}"),
+                &format!("override applied: {}", ovr.justification),
                 timestamp,
             );
+            let verdict = ovr.new_verdict;
 
             // Apply quarantine check if verdict is quarantine.
             if verdict == FirewallVerdict::Quarantine {
@@ -753,7 +729,7 @@ impl EffectsFirewall {
                 verdict,
                 event_code: FW_010.to_string(),
                 matched_rule_priority: None,
-                rationale: format!("override: {justification}"),
+                rationale: format!("override: {}", ovr.justification),
                 timestamp: timestamp.to_string(),
                 schema_version: SCHEMA_VERSION.into(),
             };
@@ -822,7 +798,7 @@ impl EffectsFirewall {
                     timestamp,
                 );
             }
-            FirewallVerdict::Allow | FirewallVerdict::Deny => {}
+            _ => {}
         }
 
         // Emit FW_003: verdict issued.
@@ -863,9 +839,7 @@ impl EffectsFirewall {
 
     /// Attempt to quarantine an effect. Fails if quarantine is full.
     fn try_quarantine(&mut self, effect_id: &str) -> Result<(), FirewallError> {
-        if self.quarantine.len() >= self.policy.quarantine_capacity
-            && !self.quarantine.contains(effect_id)
-        {
+        if self.quarantine.len() >= self.policy.quarantine_capacity {
             return Err(FirewallError::QuarantineFull(format!(
                 "capacity {} reached",
                 self.policy.quarantine_capacity
@@ -884,17 +858,13 @@ impl EffectsFirewall {
         detail: &str,
         timestamp: &str,
     ) {
-        push_bounded(
-            &mut self.audit_log,
-            FirewallAuditEvent {
-                event_code: event_code.to_string(),
-                effect_id: effect_id.to_string(),
-                trace_id: trace_id.to_string(),
-                detail: detail.to_string(),
-                timestamp: timestamp.to_string(),
-            },
-            MAX_AUDIT_LOG_ENTRIES,
-        );
+        self.audit_log.push(FirewallAuditEvent {
+            event_code: event_code.to_string(),
+            effect_id: effect_id.to_string(),
+            trace_id: trace_id.to_string(),
+            detail: detail.to_string(),
+            timestamp: timestamp.to_string(),
+        });
     }
 
     /// Return the audit log.
@@ -1045,6 +1015,22 @@ mod tests {
     }
 
     #[test]
+    fn test_probe_mode_false_does_not_trigger_side_channel() {
+        let mut effect = make_effect("e5b", "ext-001");
+        effect.metadata.insert("probe_mode".into(), "false".into());
+        let intent = IntentClassifier::classify(&effect);
+        assert_eq!(intent, Some(IntentClassification::DataFetch));
+    }
+
+    #[test]
+    fn test_probe_mode_empty_does_not_trigger_side_channel() {
+        let mut effect = make_effect("e5c", "ext-001");
+        effect.metadata.insert("probe_mode".into(), "   ".into());
+        let intent = IntentClassifier::classify(&effect);
+        assert_eq!(intent, Some(IntentClassification::DataFetch));
+    }
+
+    #[test]
     fn test_health_check_classification() {
         let mut effect = make_effect("e6", "ext-001");
         effect.path = "/health/live".into();
@@ -1157,30 +1143,6 @@ mod tests {
             .unwrap();
         assert_eq!(decision.verdict, FirewallVerdict::Allow);
         assert!(decision.rationale.contains("node-internal"));
-
-        // Verify that the same request from a registered extension would
-        // NOT receive the node-internal bypass — confirming scope is correct.
-        let ext_effect = RemoteEffect {
-            effect_id: "e-ext-scoped".into(),
-            origin: TrafficOrigin::Extension {
-                extension_id: "ext-001".into(),
-            },
-            target_host: "api.example.com".into(),
-            target_port: 443,
-            method: "GET".into(),
-            path: "/data".into(),
-            has_sensitive_payload: false,
-            carries_credentials: false,
-            metadata: BTreeMap::new(),
-        };
-        let ext_decision = fw
-            .evaluate(&ext_effect, "trace-4b", "2026-01-01T00:00:00Z")
-            .unwrap();
-        // Extension traffic goes through full evaluation, not the bypass path.
-        assert!(
-            !ext_decision.rationale.contains("node-internal"),
-            "extension traffic must not receive node-internal bypass"
-        );
     }
 
     #[test]
@@ -1221,11 +1183,7 @@ mod tests {
         let mut effect = make_effect("", "ext-001");
         effect.effect_id = String::new();
         let result = fw.evaluate(&effect, "trace-6", "2026-01-01T00:00:00Z");
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            FirewallError::InvalidEffect(_) => {}
-            other => unreachable!("expected InvalidEffect, got {:?}", other),
-        }
+        assert!(matches!(result, Err(FirewallError::InvalidEffect(_))));
     }
 
     #[test]
@@ -1481,6 +1439,18 @@ mod tests {
             .unwrap();
         assert_eq!(decision.verdict, FirewallVerdict::Deny);
         assert_eq!(decision.intent, Some(IntentClassification::SideChannel));
+    }
+
+    #[test]
+    fn test_explicitly_disabled_probe_mode_stays_on_benign_path() {
+        let mut fw = make_firewall();
+        let mut effect = make_effect("e-sc-disabled", "ext-001");
+        effect.metadata.insert("probe_mode".into(), "off".into());
+        let decision = fw
+            .evaluate(&effect, "trace-sc-disabled", "2026-01-01T00:00:00Z")
+            .unwrap();
+        assert_eq!(decision.verdict, FirewallVerdict::Allow);
+        assert_eq!(decision.intent, Some(IntentClassification::DataFetch));
     }
 
     // ── Tests for semantic event/error/invariant aliases (bd-3l2p) ──

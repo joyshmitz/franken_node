@@ -542,6 +542,7 @@ pub(crate) fn compute_capsule_integrity_hash(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 pub(crate) fn replay_capsule_signature_payload(
     capsule_id: &str,
     schema_version: &str,

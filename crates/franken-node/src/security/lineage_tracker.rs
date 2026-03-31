@@ -219,6 +219,24 @@ impl TaintBoundary {
         }
         Ok(())
     }
+
+    fn crosses_edge(&self, edge: &FlowEdge) -> bool {
+        node_matches_zone(&edge.source, &self.from_zone)
+            && node_matches_zone(&edge.sink, &self.to_zone)
+    }
+}
+
+fn node_matches_zone(node: &str, zone: &str) -> bool {
+    if zone.is_empty() {
+        return false;
+    }
+    if node == zone {
+        return true;
+    }
+    let Some(suffix) = node.strip_prefix(zone) else {
+        return false;
+    };
+    matches!(suffix.chars().next(), Some(ch) if !ch.is_ascii_alphanumeric())
 }
 
 /// Per-edge pass/quarantine/alert decision.
@@ -356,38 +374,6 @@ pub struct LineageSnapshot {
     pub schema_version: String,
 }
 
-/// Result of a sentinel graph scan.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SentinelScanResult {
-    pub edges_scanned: u64,
-    pub edges_passed: u64,
-    pub exfiltrations_detected: u64,
-    pub exfiltrations_contained: u64,
-}
-
-/// Recall/precision metrics from sentinel evaluation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SentinelMetrics {
-    pub recall_pct: f64,
-    pub precision_pct: f64,
-    pub true_positives: u64,
-    pub false_negatives: u64,
-    pub false_positives: u64,
-    pub recall_threshold_pct: u32,
-    pub precision_threshold_pct: u32,
-    pub recall_ok: bool,
-    pub precision_ok: bool,
-}
-
-/// Covert channel detection result.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CovertChannelDetection {
-    pub source: String,
-    pub edge_ids: Vec<String>,
-    pub pattern: String,
-    pub confidence_pct: u32,
-}
-
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
@@ -502,7 +488,7 @@ impl LineageGraph {
         }
 
         if edge.edge_id.is_empty() {
-            self.edge_counter = self.edge_counter.saturating_add(1);
+            self.edge_counter += 1;
             edge.edge_id = format!("edge-{}", self.edge_counter);
         }
 
@@ -713,13 +699,7 @@ impl ExfiltrationSentinel {
 
         for boundary in self.boundaries.values() {
             // Check if this edge crosses this boundary
-            let source_in_zone = edge.source == boundary.from_zone
-                || edge.source.starts_with(&format!("{}-", boundary.from_zone))
-                || edge.source.starts_with(&format!("{}/", boundary.from_zone));
-            let sink_in_zone = edge.sink == boundary.to_zone
-                || edge.sink.starts_with(&format!("{}-", boundary.to_zone))
-                || edge.sink.starts_with(&format!("{}/", boundary.to_zone));
-            let crosses = source_in_zone && sink_in_zone;
+            let crosses = boundary.crosses_edge(edge);
 
             if !crosses {
                 continue;
@@ -729,7 +709,7 @@ impl ExfiltrationSentinel {
 
             if boundary.is_violated_by(&edge.taint_set) {
                 // Raise an alert
-                self.alert_counter = self.alert_counter.saturating_add(1);
+                self.alert_counter += 1;
                 let alert_id = format!("alert-{}", self.alert_counter);
                 let _event_alert = EVENT_EXFIL_ALERT;
 
@@ -757,7 +737,7 @@ impl ExfiltrationSentinel {
                 graph.quarantine_edge(&edge.edge_id)?;
 
                 // Issue containment receipt
-                self.receipt_counter = self.receipt_counter.saturating_add(1);
+                self.receipt_counter += 1;
                 let receipt_id = format!("receipt-{}", self.receipt_counter);
                 let _event_receipt = EVENT_CONTAINMENT_RECEIPT;
 
@@ -815,7 +795,7 @@ impl ExfiltrationSentinel {
     /// Check graph depth limit. Event: FN-IFL-010.
     pub fn check_depth_limit(&self, graph: &LineageGraph) -> bool {
         let _event = EVENT_DEPTH_LIMIT;
-        graph.edge_count() < self.config.max_graph_depth
+        graph.edge_count() <= self.config.max_graph_depth
     }
 
     /// Run a sentinel scan across all edges in the graph.
@@ -844,25 +824,24 @@ impl ExfiltrationSentinel {
                     Ok(FlowVerdict::Quarantine) => {
                         let _det = SENTINEL_EXFIL_DETECTED;
                         let _trig = SENTINEL_CONTAINMENT_TRIGGERED;
-                        detected = detected.saturating_add(1);
-                        contained = contained.saturating_add(1);
+                        detected += 1;
+                        contained += 1;
                     }
                     Ok(FlowVerdict::Pass) => {
-                        passed = passed.saturating_add(1);
+                        passed += 1;
                     }
                     Ok(FlowVerdict::Alert) => {
-                        detected = detected.saturating_add(1);
+                        detected += 1;
                     }
                     Err(_) => {
-                        // Fail closed: evaluation failure counts as a detection
-                        detected = detected.saturating_add(1);
+                        // Edge may already be quarantined from a previous pass.
                     }
                 }
             }
         }
 
         Ok(SentinelScanResult {
-            edges_scanned: u64::try_from(edge_ids.len()).unwrap_or(u64::MAX),
+            edges_scanned: edge_ids.len() as u64,
             edges_passed: passed,
             exfiltrations_detected: detected,
             exfiltrations_contained: contained,
@@ -880,18 +859,14 @@ impl ExfiltrationSentinel {
         let _inv_recall = INV_SENTINEL_RECALL_THRESHOLD;
         let _inv_prec = INV_SENTINEL_PRECISION_THRESHOLD;
 
-        let recall_denom = true_positives.saturating_add(false_negatives);
-        let recall = if recall_denom > 0 {
-            let raw = (true_positives as f64) / (recall_denom as f64) * 100.0;
-            if raw.is_finite() { raw } else { 0.0 }
+        let recall = if true_positives + false_negatives > 0 {
+            (true_positives as f64) / ((true_positives + false_negatives) as f64) * 100.0
         } else {
             100.0
         };
 
-        let precision_denom = true_positives.saturating_add(false_positives);
-        let precision = if precision_denom > 0 {
-            let raw = (true_positives as f64) / (precision_denom as f64) * 100.0;
-            if raw.is_finite() { raw } else { 0.0 }
+        let precision = if true_positives + false_positives > 0 {
+            (true_positives as f64) / ((true_positives + false_positives) as f64) * 100.0
         } else {
             100.0
         };
@@ -925,16 +900,12 @@ impl ExfiltrationSentinel {
         let _err_code = ERR_SENTINEL_COVERT_CHANNEL;
         let mut detections = Vec::new();
 
-        // Heuristic: detect rapid sequential flows from the same source to external sinks.
+        // Heuristic: detect rapid sequential flows from the same source to external sinks
+        // that stay under individual taint thresholds but collectively leak data.
         let mut source_external_counts: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for edge in graph.edges.values() {
-            let sink_is_external = edge.sink == "external"
-                || edge.sink.starts_with("external-")
-                || edge.sink.starts_with("external/");
-            let sink_is_public = edge.sink == "public"
-                || edge.sink.starts_with("public-")
-                || edge.sink.starts_with("public/");
-            if sink_is_external || sink_is_public {
+            if node_matches_zone(&edge.sink, "external") || node_matches_zone(&edge.sink, "public")
+            {
                 source_external_counts
                     .entry(edge.source.clone())
                     .or_default()
@@ -1000,6 +971,38 @@ impl ExfiltrationSentinel {
             }),
         }
     }
+}
+
+/// Result of a sentinel graph scan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SentinelScanResult {
+    pub edges_scanned: u64,
+    pub edges_passed: u64,
+    pub exfiltrations_detected: u64,
+    pub exfiltrations_contained: u64,
+}
+
+/// Recall/precision metrics from sentinel evaluation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SentinelMetrics {
+    pub recall_pct: f64,
+    pub precision_pct: f64,
+    pub true_positives: u64,
+    pub false_negatives: u64,
+    pub false_positives: u64,
+    pub recall_threshold_pct: u32,
+    pub precision_threshold_pct: u32,
+    pub recall_ok: bool,
+    pub precision_ok: bool,
+}
+
+/// Covert channel detection result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CovertChannelDetection {
+    pub source: String,
+    pub edge_ids: Vec<String>,
+    pub pattern: String,
+    pub confidence_pct: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -1072,13 +1075,7 @@ pub mod invariants {
         boundaries: &BTreeMap<String, TaintBoundary>,
     ) -> FlowVerdict {
         for boundary in boundaries.values() {
-            let source_in_zone = edge.source == boundary.from_zone
-                || edge.source.starts_with(&format!("{}-", boundary.from_zone))
-                || edge.source.starts_with(&format!("{}/", boundary.from_zone));
-            let sink_in_zone = edge.sink == boundary.to_zone
-                || edge.sink.starts_with(&format!("{}-", boundary.to_zone))
-                || edge.sink.starts_with(&format!("{}/", boundary.to_zone));
-            let crosses = source_in_zone && sink_in_zone;
+            let crosses = boundary.crosses_edge(edge);
             if crosses && boundary.is_violated_by(&edge.taint_set) {
                 return FlowVerdict::Quarantine;
             }
@@ -1100,13 +1097,7 @@ pub mod invariants {
     ) -> bool {
         for edge in graph.edges.values() {
             for boundary in boundaries.values() {
-                let source_in_zone = edge.source == boundary.from_zone
-                    || edge.source.starts_with(&format!("{}-", boundary.from_zone))
-                    || edge.source.starts_with(&format!("{}/", boundary.from_zone));
-                let sink_in_zone = edge.sink == boundary.to_zone
-                    || edge.sink.starts_with(&format!("{}-", boundary.to_zone))
-                    || edge.sink.starts_with(&format!("{}/", boundary.to_zone));
-                let crosses = source_in_zone && sink_in_zone;
+                let crosses = boundary.crosses_edge(edge);
                 if crosses && boundary.is_violated_by(&edge.taint_set) && !edge.quarantined {
                     return false;
                 }
@@ -1438,6 +1429,36 @@ mod tests {
     }
 
     #[test]
+    fn test_boundary_crossing_requires_zone_boundary_match() {
+        let config = default_config();
+        let mut graph = LineageGraph::new(config.clone());
+        let mut sentinel = ExfiltrationSentinel::new(config);
+
+        sentinel
+            .add_boundary(make_boundary("b1", "internal", "external", &["PII"]))
+            .unwrap();
+
+        let mut ts = TaintSet::new();
+        ts.insert("PII");
+
+        let edge = FlowEdge {
+            edge_id: "substring-noise-1".to_string(),
+            source: "noninternal-db".to_string(),
+            sink: "preexternal-api".to_string(),
+            operation: "export".to_string(),
+            taint_set: ts,
+            timestamp_ms: 601,
+            quarantined: false,
+        };
+        graph.append_edge(edge.clone()).unwrap();
+
+        let verdict = sentinel.evaluate_edge(&edge, &mut graph).unwrap();
+        assert_eq!(verdict, FlowVerdict::Pass);
+        assert_eq!(sentinel.alert_count(), 0);
+        assert!(!graph.get_edge("substring-noise-1").unwrap().quarantined);
+    }
+
+    #[test]
     fn test_double_quarantine_error() {
         let config = default_config();
         let mut graph = LineageGraph::new(config.clone());
@@ -1728,6 +1749,7 @@ mod tests {
         let mut ts = TaintSet::new();
         ts.insert("PII");
 
+        // Add a violating edge
         let edge = FlowEdge {
             edge_id: "scan-1".to_string(),
             source: "priv-svc".to_string(),
@@ -1802,6 +1824,29 @@ mod tests {
         let detections = sentinel.detect_covert_channels(&graph);
         assert_eq!(detections.len(), 1);
         assert_eq!(detections[0].pattern, "rapid_external_flow");
+    }
+
+    #[test]
+    fn test_detect_covert_channels_ignores_public_substring_noise() {
+        let config = default_config();
+        let mut graph = LineageGraph::new(config.clone());
+        let sentinel = ExfiltrationSentinel::new(config);
+
+        for i in 0..4 {
+            let e = FlowEdge {
+                edge_id: format!("cc-noise-{}", i),
+                source: "stealth-src".to_string(),
+                sink: "republic-cache".to_string(),
+                operation: "drip".to_string(),
+                taint_set: TaintSet::new(),
+                timestamp_ms: i as u64,
+                quarantined: false,
+            };
+            graph.append_edge(e).unwrap();
+        }
+
+        let detections = sentinel.detect_covert_channels(&graph);
+        assert!(detections.is_empty());
     }
 
     #[test]

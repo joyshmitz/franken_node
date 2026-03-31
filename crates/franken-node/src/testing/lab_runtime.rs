@@ -54,6 +54,8 @@ pub const EVT_SCENARIO_FAILED: &str = "FN-LB-008";
 pub const EVT_VIRTUAL_LINK_CREATED: &str = "FN-LB-009";
 /// The test clock was advanced.
 pub const EVT_TEST_CLOCK_ADVANCED: &str = "FN-LB-010";
+/// A message send was processed by a virtual link.
+pub const EVT_MESSAGE_PROCESSED: &str = "FN-LB-011";
 
 // ---------------------------------------------------------------------------
 // Error codes
@@ -63,6 +65,8 @@ pub const EVT_TEST_CLOCK_ADVANCED: &str = "FN-LB-010";
 pub const ERR_LB_NO_SEED: &str = "ERR_LB_NO_SEED";
 /// Test clock tick would overflow u64.
 pub const ERR_LB_TICK_OVERFLOW: &str = "ERR_LB_TICK_OVERFLOW";
+/// Timer identifiers are exhausted and can no longer be allocated safely.
+pub const ERR_LB_TIMER_ID_EXHAUSTED: &str = "ERR_LB_TIMER_ID_EXHAUSTED";
 /// Referenced virtual link does not exist.
 pub const ERR_LB_LINK_NOT_FOUND: &str = "ERR_LB_LINK_NOT_FOUND";
 /// Virtual-link capacity would be exceeded.
@@ -108,6 +112,8 @@ pub enum LabError {
     NoSeed,
     /// Test clock would overflow.
     TickOverflow { current: u64, delta: u64 },
+    /// Timer identifiers are exhausted.
+    TimerIdExhausted,
     /// Virtual link not found.
     LinkNotFound { source: String, target: String },
     /// Virtual-link capacity exceeded.
@@ -137,6 +143,12 @@ impl fmt::Display for LabError {
                 write!(
                     f,
                     "{ERR_LB_TICK_OVERFLOW}: current={current}, delta={delta}"
+                )
+            }
+            Self::TimerIdExhausted => {
+                write!(
+                    f,
+                    "{ERR_LB_TIMER_ID_EXHAUSTED}: timer identifiers exhausted"
                 )
             }
             Self::LinkNotFound { source, target } => {
@@ -415,8 +427,13 @@ impl TestClock {
                 current: self.current_tick,
                 delta: delay,
             })?;
+        if self.next_timer_id == 0 {
+            return Err(LabError::TimerIdExhausted);
+        }
         let id = self.next_timer_id;
-        self.next_timer_id = self.next_timer_id.saturating_add(1);
+        // Reserve `0` as a terminal sentinel so the final valid identifier is
+        // issued exactly once and later allocations fail closed.
+        self.next_timer_id = self.next_timer_id.checked_add(1).unwrap_or(0);
         self.pending_timers
             .entry(fire_tick)
             .or_default()
@@ -544,26 +561,51 @@ pub struct ReproBundle {
 impl ReproBundle {
     fn validate(&self) -> Result<(), LabError> {
         if self.schema_version != SCHEMA_VERSION {
-            return Err(LabError::BundleValidation {
-                detail: format!(
-                    "unsupported schema_version={}, expected={SCHEMA_VERSION}",
-                    self.schema_version
-                ),
-            });
+            return Err(Self::validation_error(format!(
+                "unsupported schema_version={}, expected={SCHEMA_VERSION}",
+                self.schema_version
+            )));
         }
         if self.seed != self.config.seed {
-            return Err(LabError::BundleValidation {
-                detail: format!(
-                    "seed mismatch: bundle.seed={}, config.seed={}",
-                    self.seed, self.config.seed
-                ),
-            });
+            return Err(Self::validation_error(format!(
+                "seed mismatch: bundle.seed={}, config.seed={}",
+                self.seed, self.config.seed
+            )));
+        }
+        if self.links.len() > MAX_VIRTUAL_LINKS {
+            return Err(Self::validation_error(format!(
+                "bundle has {} links, exceeds runtime limit {MAX_VIRTUAL_LINKS}",
+                self.links.len()
+            )));
+        }
+        self.config
+            .validate()
+            .map_err(|err| Self::validation_error(format!("invalid config: {err}")))?;
+        for (idx, link) in self.links.iter().enumerate() {
+            link.fault_profile.validate().map_err(|err| {
+                Self::validation_error(format!(
+                    "invalid fault profile for link[{idx}] {}->{}: {err}",
+                    link.source, link.target
+                ))
+            })?;
         }
         Ok(())
     }
 
-    /// Serialize to a deterministic JSON string.
+    fn validation_error(detail: impl Into<String>) -> LabError {
+        LabError::BundleValidation {
+            detail: detail.into(),
+        }
+    }
+
+    /// Serialize to a deterministic JSON string after validation.
     pub fn to_json(&self) -> Result<String, LabError> {
+        self.validate().map_err(|err| match err {
+            LabError::BundleValidation { detail } => LabError::BundleSerialization { detail },
+            other => LabError::BundleSerialization {
+                detail: other.to_string(),
+            },
+        })?;
         serde_json::to_string(self).map_err(|err| LabError::BundleSerialization {
             detail: err.to_string(),
         })
@@ -703,7 +745,9 @@ impl LabRuntime {
         let roll_drop = self.rng.next_f64();
         if roll_drop < profile.drop_pct {
             self.emit(EVT_FAULT_INJECTED, format!("dropped on {source}->{target}"));
-            return Ok(MessageOutcome::Dropped);
+            let outcome = MessageOutcome::Dropped;
+            self.emit_message_processed(&source, &target, message, &outcome);
+            return Ok(outcome);
         }
 
         let roll_corrupt = self.rng.next_f64();
@@ -712,9 +756,11 @@ impl LabRuntime {
                 EVT_FAULT_INJECTED,
                 format!("corrupted on {source}->{target}"),
             );
-            return Ok(MessageOutcome::Corrupted {
+            let outcome = MessageOutcome::Corrupted {
                 delay_ticks: profile.delay_ticks,
-            });
+            };
+            self.emit_message_processed(&source, &target, message, &outcome);
+            return Ok(outcome);
         }
 
         if self.reorder_buffers.len() <= link_idx {
@@ -750,16 +796,20 @@ impl LabRuntime {
                     EVT_FAULT_INJECTED,
                     format!("reordered {} messages on {}->{}", len, source, target),
                 );
-                return Ok(MessageOutcome::Reordered {
+                let outcome = MessageOutcome::Reordered {
                     buffer_position: len - 1,
                     delay_ticks: profile.delay_ticks,
-                });
+                };
+                self.emit_message_processed(&source, &target, message, &outcome);
+                return Ok(outcome);
             }
         }
 
-        Ok(MessageOutcome::Delivered {
+        let outcome = MessageOutcome::Delivered {
             delay_ticks: profile.delay_ticks,
-        })
+        };
+        self.emit_message_processed(&source, &target, message, &outcome);
+        Ok(outcome)
     }
 
     /// Schedule a timer on the test clock.
@@ -996,6 +1046,36 @@ impl LabRuntime {
             MAX_EVENTS,
         );
     }
+
+    fn emit_message_processed(
+        &mut self,
+        source: &str,
+        target: &str,
+        message: &str,
+        outcome: &MessageOutcome,
+    ) {
+        let outcome_detail = match outcome {
+            MessageOutcome::Delivered { delay_ticks } => {
+                format!("outcome=delivered, delay_ticks={delay_ticks}")
+            }
+            MessageOutcome::Dropped => "outcome=dropped".to_string(),
+            MessageOutcome::Corrupted { delay_ticks } => {
+                format!("outcome=corrupted, delay_ticks={delay_ticks}")
+            }
+            MessageOutcome::Reordered {
+                buffer_position,
+                delay_ticks,
+            } => {
+                format!(
+                    "outcome=reordered, buffer_position={buffer_position}, delay_ticks={delay_ticks}"
+                )
+            }
+        };
+        self.emit(
+            EVT_MESSAGE_PROCESSED,
+            format!("source={source}, target={target}, message={message:?}, {outcome_detail}"),
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1194,6 +1274,21 @@ mod tests {
         assert_eq!(fired[0].1.label, "max-tick");
     }
 
+    #[test]
+    fn test_clock_timer_id_exhaustion_fails_closed_after_terminal_id() {
+        let mut clock = TestClock::new();
+        clock.next_timer_id = u64::MAX;
+
+        let id = clock.schedule_timer(0, "terminal-id").unwrap();
+        assert_eq!(id, u64::MAX);
+
+        let err = clock
+            .schedule_timer(0, "duplicate-id")
+            .expect_err("timer id exhaustion must fail closed");
+        assert!(matches!(err, LabError::TimerIdExhausted));
+        assert_eq!(clock.pending_count(), 1);
+    }
+
     // ---------------------------------------------------------------
     // FaultProfile validation
     // ---------------------------------------------------------------
@@ -1376,6 +1471,29 @@ mod tests {
             MessageOutcome::Delivered { delay_ticks } => assert_eq!(delay_ticks, 5),
             other => unreachable!("expected Delivered, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_send_message_emits_message_trace_for_delivery() {
+        let mut rt = LabRuntime::new(default_config()).unwrap();
+        rt.add_link(make_link("a", "b", FaultProfile::default()))
+            .unwrap();
+
+        let outcome = rt.send_message(0, "ping").unwrap();
+        assert!(matches!(
+            outcome,
+            MessageOutcome::Delivered { delay_ticks: 0 }
+        ));
+
+        let message_event = rt
+            .events()
+            .iter()
+            .find(|event| event.event_code == EVT_MESSAGE_PROCESSED)
+            .expect("message processing event should be recorded");
+        assert!(message_event.payload.contains("source=a"));
+        assert!(message_event.payload.contains("target=b"));
+        assert!(message_event.payload.contains("message=\"ping\""));
+        assert!(message_event.payload.contains("outcome=delivered"));
     }
 
     #[test]
@@ -1740,6 +1858,43 @@ mod tests {
     }
 
     #[test]
+    fn test_repro_bundle_from_json_rejects_invalid_fault_profile() {
+        let mut bundle = LabRuntime::new(default_config())
+            .unwrap()
+            .export_repro_bundle(true);
+        bundle.links.push(VirtualLink {
+            source: "a".into(),
+            target: "b".into(),
+            fault_profile: FaultProfile {
+                drop_pct: 2.0,
+                ..FaultProfile::default()
+            },
+        });
+
+        let json = serde_json::to_string(&bundle).unwrap();
+        let err = ReproBundle::from_json(&json).expect_err("invalid link profile must fail");
+        assert!(matches!(err, LabError::BundleValidation { .. }));
+    }
+
+    #[test]
+    fn test_repro_bundle_from_json_rejects_link_capacity_overflow() {
+        let mut bundle = LabRuntime::new(default_config())
+            .unwrap()
+            .export_repro_bundle(true);
+        bundle.links = (0..=MAX_VIRTUAL_LINKS)
+            .map(|i| VirtualLink {
+                source: format!("n{i}"),
+                target: format!("n{}", i + 1),
+                fault_profile: FaultProfile::default(),
+            })
+            .collect();
+
+        let json = serde_json::to_string(&bundle).unwrap();
+        let err = ReproBundle::from_json(&json).expect_err("link overflow must fail early");
+        assert!(matches!(err, LabError::BundleValidation { .. }));
+    }
+
+    #[test]
     fn test_repro_bundle_replay_deterministic() {
         // INV-LB-REPLAY: replay preserves the full failure trace.
         let config = default_config();
@@ -1774,7 +1929,7 @@ mod tests {
     #[test]
     fn test_repro_bundle_replay_divergence_detected() {
         // INV-LB-REPLAY: divergent replay is detected.
-        let mut rt = LabRuntime::new(default_config()).unwrap();
+        let rt = LabRuntime::new(default_config()).unwrap();
         let bundle = rt.export_repro_bundle(false); // original: failed
 
         // Replay with a scenario that passes → divergence.
@@ -1861,7 +2016,7 @@ mod tests {
 
     #[test]
     fn test_repro_bundle_schema_version() {
-        let mut rt = LabRuntime::new(default_config()).unwrap();
+        let rt = LabRuntime::new(default_config()).unwrap();
         let bundle = rt.export_repro_bundle(true);
         assert_eq!(bundle.schema_version, SCHEMA_VERSION);
     }
@@ -2036,6 +2191,7 @@ mod tests {
             EVT_SCENARIO_FAILED,
             EVT_VIRTUAL_LINK_CREATED,
             EVT_TEST_CLOCK_ADVANCED,
+            EVT_MESSAGE_PROCESSED,
         ];
         for code in codes {
             assert!(code.starts_with("FN-LB-"), "bad prefix: {code}");
@@ -2047,10 +2203,15 @@ mod tests {
         let codes = [
             ERR_LB_NO_SEED,
             ERR_LB_TICK_OVERFLOW,
+            ERR_LB_TIMER_ID_EXHAUSTED,
             ERR_LB_LINK_NOT_FOUND,
+            ERR_LB_LINK_CAPACITY_EXCEEDED,
             ERR_LB_FAULT_RANGE,
             ERR_LB_BUDGET_EXCEEDED,
             ERR_LB_REPLAY_DIVERGENCE,
+            ERR_LB_BUNDLE_SERIALIZATION,
+            ERR_LB_BUNDLE_DESERIALIZATION,
+            ERR_LB_BUNDLE_VALIDATION,
         ];
         for code in codes {
             assert!(code.starts_with("ERR_LB_"), "bad prefix: {code}");

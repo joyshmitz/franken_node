@@ -64,6 +64,8 @@ pub mod error_codes {
     pub const ERR_VT_INVALID_PROBABILITY: &str = "ERR_VT_INVALID_PROBABILITY";
     /// Link is partitioned; message delivery is blocked.
     pub const ERR_VT_PARTITIONED: &str = "ERR_VT_PARTITIONED";
+    /// Message IDs are exhausted; no unique IDs remain.
+    pub const ERR_VT_MESSAGE_ID_EXHAUSTED: &str = "ERR_VT_MESSAGE_ID_EXHAUSTED";
 }
 
 // ── Invariants ───────────────────────────────────────────────────────────────
@@ -250,6 +252,8 @@ pub enum VirtualTransportError {
     InvalidProbability { field: String, value: f64 },
     /// The link is partitioned and cannot deliver messages.
     Partitioned { link_id: String },
+    /// No unique message IDs remain.
+    MessageIdExhausted,
 }
 
 impl fmt::Display for VirtualTransportError {
@@ -272,6 +276,9 @@ impl fmt::Display for VirtualTransportError {
             }
             VirtualTransportError::Partitioned { link_id } => {
                 write!(f, "{}: {}", error_codes::ERR_VT_PARTITIONED, link_id)
+            }
+            VirtualTransportError::MessageIdExhausted => {
+                write!(f, "{}", error_codes::ERR_VT_MESSAGE_ID_EXHAUSTED)
             }
         }
     }
@@ -401,7 +408,15 @@ impl VirtualTransportLayer {
             .filter(|l| l.active && !l.config.partition)
             .count();
         let partitioned_links = self.links.values().filter(|l| l.config.partition).count();
-        let delivered = self.total_messages.saturating_sub(self.dropped_messages);
+        let buffered_messages = self
+            .links
+            .values()
+            .map(|link| link.buffer.len() as u64)
+            .sum::<u64>();
+        let delivered = self
+            .total_messages
+            .saturating_sub(self.dropped_messages)
+            .saturating_sub(buffered_messages);
         TransportStats {
             total_messages: self.total_messages,
             dropped_messages: self.dropped_messages,
@@ -515,8 +530,12 @@ impl VirtualTransportLayer {
             }
         }
 
+        if self.next_message_id == 0 {
+            return Err(VirtualTransportError::MessageIdExhausted);
+        }
+
         let msg_id = self.next_message_id;
-        self.next_message_id = self.next_message_id.saturating_add(1);
+        self.next_message_id = if msg_id == u64::MAX { 0 } else { msg_id + 1 };
         self.total_messages = self.total_messages.saturating_add(1);
 
         // Read config values before mutable borrow.
@@ -1018,8 +1037,37 @@ mod tests {
         let stats = vt.stats();
         assert_eq!(stats.total_messages, 2);
         assert_eq!(stats.dropped_messages, 0);
+        assert_eq!(stats.delivered_messages, 0);
         assert_eq!(stats.active_links, 1);
         assert_eq!(stats.partitioned_links, 1);
+    }
+
+    // -- Test 15b: delivered stats exclude buffered in-flight messages
+    #[test]
+    fn test_stats_delivered_messages_tracks_actual_delivery() {
+        let mut vt = VirtualTransportLayer::new(42);
+        vt.create_link("a", "b", LinkFaultConfig::no_faults())
+            .unwrap();
+
+        vt.send_message("a", "b", b"msg1".to_vec()).unwrap();
+        vt.send_message("a", "b", b"msg2".to_vec()).unwrap();
+
+        let before_delivery = vt.stats();
+        assert_eq!(before_delivery.total_messages, 2);
+        assert_eq!(before_delivery.delivered_messages, 0);
+
+        let delivered = vt.deliver_next("a->b").unwrap().unwrap();
+        assert_eq!(delivered.payload, b"msg1".to_vec());
+
+        let after_one_delivery = vt.stats();
+        assert_eq!(after_one_delivery.delivered_messages, 1);
+        assert_eq!(vt.buffered_count("a->b").unwrap(), 1);
+
+        let remaining = vt.deliver_all("a->b").unwrap();
+        assert_eq!(remaining.len(), 1);
+
+        let after_all_delivery = vt.stats();
+        assert_eq!(after_all_delivery.delivered_messages, 2);
     }
 
     // -- Test 16: event log records all events
@@ -1095,12 +1143,13 @@ mod tests {
             error_codes::ERR_VT_LINK_NOT_FOUND,
             error_codes::ERR_VT_INVALID_PROBABILITY,
             error_codes::ERR_VT_PARTITIONED,
+            error_codes::ERR_VT_MESSAGE_ID_EXHAUSTED,
         ];
         let mut seen = std::collections::BTreeSet::new();
         for c in &codes {
             assert!(seen.insert(*c), "Duplicate error code: {c}");
         }
-        assert_eq!(seen.len(), 4);
+        assert_eq!(seen.len(), 5);
     }
 
     // -- Test 20: invariants are distinct
@@ -1166,6 +1215,25 @@ mod tests {
         let delivered = vt.deliver_all("a->b").unwrap();
         assert_eq!(delivered.len(), 3);
         assert_eq!(vt.buffered_count("a->b").unwrap(), 0);
+    }
+
+    // -- Test 23b: terminal message ID is issued once, then the layer fails closed
+    #[test]
+    fn test_message_id_exhaustion_fails_closed_after_terminal_id() {
+        let mut vt = VirtualTransportLayer::new(42);
+        vt.create_link("a", "b", LinkFaultConfig::no_faults())
+            .unwrap();
+        vt.next_message_id = u64::MAX;
+
+        let terminal = vt.send_message("a", "b", b"terminal".to_vec()).unwrap();
+        assert_eq!(terminal, u64::MAX);
+
+        let err = vt
+            .send_message("a", "b", b"after-terminal".to_vec())
+            .unwrap_err();
+        assert!(matches!(err, VirtualTransportError::MessageIdExhausted));
+        assert_eq!(format!("{}", err), error_codes::ERR_VT_MESSAGE_ID_EXHAUSTED);
+        assert_eq!(vt.total_messages, 1);
     }
 
     // -- Test 24: message Display implementation
