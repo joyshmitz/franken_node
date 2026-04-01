@@ -529,7 +529,7 @@ impl ControlLanePolicy {
             .saturating_sub(timed_slots);
 
         // Schedule: Cancel first (priority), then Timed, then Ready
-        let cancel_run = cancel_pending.min(cancel_slots.max(1)); // at least 1 if pending
+        let cancel_run = cancel_pending.min(cancel_slots.max(1).min(total_slots)); // at least 1 if pending, bounded by total_slots
         let timed_run = timed_pending.min(timed_slots);
         let ready_run = ready_pending.min(ready_slots);
 
