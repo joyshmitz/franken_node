@@ -789,9 +789,7 @@ impl StakingLedger {
                 .state
                 .stakes
                 .iter()
-                .find(|(_, s)| {
-                    matches!(s.state, StakeState::Withdrawn | StakeState::Expired)
-                })
+                .find(|(_, s)| matches!(s.state, StakeState::Withdrawn | StakeState::Expired))
                 .map(|(k, _)| *k);
             if let Some(key) = terminal_key {
                 self.state.stakes.remove(&key);
@@ -1541,7 +1539,8 @@ mod tests {
                 assert_eq!(provided, 5);
                 assert_eq!(code, ERR_STAKE_INSUFFICIENT);
             }
-            other => unreachable!("unexpected error: {other}"),        }
+            other => unreachable!("unexpected error: {other}"),
+        }
     }
 
     #[test]
@@ -1604,7 +1603,8 @@ mod tests {
             .unwrap_err();
         match err {
             StakingError::AlreadySlashed { .. } => {}
-            other => unreachable!("unexpected error: {other}"),        }
+            other => unreachable!("unexpected error: {other}"),
+        }
     }
 
     #[test]
@@ -1625,7 +1625,8 @@ mod tests {
             .unwrap_err();
         match err {
             StakingError::AlreadySlashed { .. } => {}
-            other => unreachable!("unexpected error: {other}"),        }
+            other => unreachable!("unexpected error: {other}"),
+        }
     }
 
     #[test]
@@ -1702,7 +1703,8 @@ mod tests {
                 assert_eq!(from, StakeState::Slashed);
                 assert_eq!(to, StakeState::Withdrawn);
             }
-            other => unreachable!("unexpected error: {other}"),        }
+            other => unreachable!("unexpected error: {other}"),
+        }
     }
 
     #[test]
@@ -1730,7 +1732,8 @@ mod tests {
             StakingError::WithdrawalBlocked { code, .. } => {
                 assert_eq!(code, ERR_STAKE_WITHDRAWAL_BLOCKED);
             }
-            other => unreachable!("unexpected error: {other}"),        }
+            other => unreachable!("unexpected error: {other}"),
+        }
     }
 
     #[test]
@@ -1774,7 +1777,8 @@ mod tests {
             StakingError::AppealExpired { code, .. } => {
                 assert_eq!(code, ERR_STAKE_APPEAL_EXPIRED);
             }
-            other => unreachable!("unexpected error: {other}"),        }
+            other => unreachable!("unexpected error: {other}"),
+        }
     }
 
     #[test]
@@ -1799,7 +1803,8 @@ mod tests {
             StakingError::AppealExpired { code, .. } => {
                 assert_eq!(code, ERR_STAKE_APPEAL_EXPIRED);
             }
-            other => unreachable!("unexpected error: {other}"),        }
+            other => unreachable!("unexpected error: {other}"),
+        }
     }
 
     #[test]
@@ -1822,7 +1827,8 @@ mod tests {
             StakingError::InvalidTransition { code, .. } => {
                 assert_eq!(code, ERR_STAKE_INVALID_TRANSITION);
             }
-            other => unreachable!("unexpected error: {other}"),        }
+            other => unreachable!("unexpected error: {other}"),
+        }
     }
 
     #[test]
@@ -1889,7 +1895,8 @@ mod tests {
                 assert_eq!(from, StakeState::Active);
                 assert_eq!(to, StakeState::Expired);
             }
-            other => unreachable!("unexpected error: {other}"),        }
+            other => unreachable!("unexpected error: {other}"),
+        }
     }
 
     #[test]
@@ -1900,7 +1907,8 @@ mod tests {
         let err = ledger.expire(id, 400).unwrap_err();
         match err {
             StakingError::InvalidTransition { .. } => {}
-            other => unreachable!("unexpected error: {other}"),        }
+            other => unreachable!("unexpected error: {other}"),
+        }
     }
 
     #[test]
@@ -2061,7 +2069,8 @@ mod tests {
             StakingError::StakeNotFound { code, .. } => {
                 assert_eq!(code, ERR_STAKE_NOT_FOUND);
             }
-            other => unreachable!("unexpected error: {other}"),        }
+            other => unreachable!("unexpected error: {other}"),
+        }
     }
 
     #[test]
@@ -2189,10 +2198,9 @@ mod security_verifier_economy_integration_tests {
     use super::*;
     use crate::security::sybil_defense::{SybilDefensePipeline, TrustNode, TrustSignal};
     use crate::verifier_economy::{
-        attestation_signature_payload, AttestationClaim, AttestationEvidence,
-        AttestationSignature, AttestationSubmission, ReputationDimensions, VEP_001, VEP_002,
-        VEP_004, VEP_005, VEP_006, VerificationDimension, VerifierEconomyRegistry,
-        VerifierRegistration, VerifierTier,
+        AttestationClaim, AttestationEvidence, AttestationSignature, AttestationSubmission,
+        ReputationDimensions, VEP_001, VEP_002, VEP_004, VEP_005, VEP_006, VerificationDimension,
+        VerifierEconomyRegistry, VerifierRegistration, VerifierTier, attestation_signature_payload,
     };
     use ed25519_dalek::{Signer, SigningKey};
     use std::collections::BTreeMap;

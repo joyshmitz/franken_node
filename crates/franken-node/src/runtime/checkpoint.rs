@@ -50,7 +50,10 @@ fn checkpoint_is_exact_replay(latest: &CheckpointMeta, record: &CheckpointRecord
         && latest.epoch == record.epoch
         && ct_eq(&latest.checkpoint_id, &record.checkpoint_id)
         && ct_eq(&latest.progress_state_hash, &record.progress_state_hash)
-        && match (&latest.previous_checkpoint_hash, &record.previous_checkpoint_hash) {
+        && match (
+            &latest.previous_checkpoint_hash,
+            &record.previous_checkpoint_hash,
+        ) {
             (Some(a), Some(b)) => ct_eq(a, b),
             (None, None) => true,
             _ => false,

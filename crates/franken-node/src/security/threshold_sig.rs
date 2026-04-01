@@ -257,7 +257,10 @@ pub fn verify_threshold(
         }
 
         // Verify signature first to prevent invalid signatures from poisoning the seen set
-        let key = config.signer_keys.iter().find(|k| ct_eq(&k.key_id, &sig.key_id));
+        let key = config
+            .signer_keys
+            .iter()
+            .find(|k| ct_eq(&k.key_id, &sig.key_id));
         if let Some(key) = key {
             if !verify_signature(key, &artifact.content_hash, sig) {
                 if first_failure.is_none() {

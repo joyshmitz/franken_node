@@ -785,7 +785,8 @@ mod tests {
             timestamp: "2026-02-20T12:00:00Z".to_string(),
         };
         let json = serde_json::to_string(&record).expect("to_string should succeed");
-        let record2: VersionBumpRecord = serde_json::from_str(&json).expect("from_str should succeed");
+        let record2: VersionBumpRecord =
+            serde_json::from_str(&json).expect("from_str should succeed");
         assert_eq!(record.domain, record2.domain);
         assert_eq!(record.old_version, record2.old_version);
     }

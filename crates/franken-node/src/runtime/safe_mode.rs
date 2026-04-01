@@ -477,12 +477,8 @@ impl SafeModeEntryReceipt {
         };
 
         // Compute trust proof digest over state + anomalies.
-        let trust_proof_digest = compute_trust_proof_digest(
-            trust_state_hash,
-            &inconsistencies,
-            &anomalies,
-            timestamp,
-        );
+        let trust_proof_digest =
+            compute_trust_proof_digest(trust_state_hash, &inconsistencies, &anomalies, timestamp);
 
         Self {
             timestamp: timestamp.to_string(),
@@ -1068,7 +1064,9 @@ impl SafeModeController {
 
         // 5. Check evidence freshness (staleness detection).
         if input.last_evidence_epoch > 0
-            && input.current_epoch.saturating_sub(input.last_evidence_epoch)
+            && input
+                .current_epoch
+                .saturating_sub(input.last_evidence_epoch)
                 >= input.staleness_threshold
         {
             inconsistencies.push(format!(
@@ -1261,8 +1259,10 @@ mod tests {
     #[test]
     fn test_flags_deterministic_parsing() {
         // INV-SMO-FLAGPARSE: same input => same output.
-        let a = OperationFlags::parse_args(&["--safe-mode", "--read-only"]).expect("should succeed");
-        let b = OperationFlags::parse_args(&["--safe-mode", "--read-only"]).expect("should succeed");
+        let a =
+            OperationFlags::parse_args(&["--safe-mode", "--read-only"]).expect("should succeed");
+        let b =
+            OperationFlags::parse_args(&["--safe-mode", "--read-only"]).expect("should succeed");
         assert_eq!(a, b);
     }
 
@@ -1791,12 +1791,9 @@ mod tests {
         ctrl.exit_safe_mode(&verification, "operator-1", "2026-02-20T11:00:00Z")
             .expect("should succeed");
 
-        assert!(
-            ctrl.events()
-                .iter()
-                .any(|e| e.code == SMO_005_SAFE_MODE_DEACTIVATED
-                    && e.message == "Safe mode deactivated")
-        );
+        assert!(ctrl.events().iter().any(
+            |e| e.code == SMO_005_SAFE_MODE_DEACTIVATED && e.message == "Safe mode deactivated"
+        ));
     }
 
     #[test]
@@ -1906,7 +1903,8 @@ mod tests {
             evidence_ledger_intact: true,
             operator_confirmed: true,
         };
-        ctrl.exit_safe_mode(&verification, "op", "ts").expect("exit should succeed");
+        ctrl.exit_safe_mode(&verification, "op", "ts")
+            .expect("exit should succeed");
         let exit_entries: Vec<_> = ctrl
             .audit_log()
             .iter()
@@ -2168,7 +2166,12 @@ mod tests {
         let receipt = SafeModeController::verify_trust_state(&input);
         assert!(!receipt.pass);
         assert!(!receipt.inconsistencies.is_empty());
-        assert!(receipt.anomalies.iter().any(|a| matches!(a, AnomalyClassification::EmptyEvidenceLedger)));
+        assert!(
+            receipt
+                .anomalies
+                .iter()
+                .any(|a| matches!(a, AnomalyClassification::EmptyEvidenceLedger))
+        );
     }
 
     #[test]
@@ -2184,7 +2187,12 @@ mod tests {
         };
         let receipt = SafeModeController::verify_trust_state(&input);
         assert!(!receipt.pass);
-        assert!(receipt.anomalies.iter().any(|a| matches!(a, AnomalyClassification::MissingTrustHash)));
+        assert!(
+            receipt
+                .anomalies
+                .iter()
+                .any(|a| matches!(a, AnomalyClassification::MissingTrustHash))
+        );
     }
 
     #[test]
@@ -2201,7 +2209,12 @@ mod tests {
         let receipt = SafeModeController::verify_trust_state(&input);
         assert!(!receipt.pass);
         assert_eq!(receipt.disposition, DegradedDisposition::FailClosed);
-        assert!(receipt.anomalies.iter().any(|a| matches!(a, AnomalyClassification::TrustHashMismatch { .. })));
+        assert!(
+            receipt
+                .anomalies
+                .iter()
+                .any(|a| matches!(a, AnomalyClassification::TrustHashMismatch { .. }))
+        );
     }
 
     #[test]
@@ -2220,7 +2233,12 @@ mod tests {
         let receipt = SafeModeController::verify_trust_state(&input);
         assert!(!receipt.pass);
         assert_eq!(receipt.disposition, DegradedDisposition::WidenUncertainty);
-        assert!(receipt.anomalies.iter().any(|a| matches!(a, AnomalyClassification::StaleFrontier { .. })));
+        assert!(
+            receipt
+                .anomalies
+                .iter()
+                .any(|a| matches!(a, AnomalyClassification::StaleFrontier { .. }))
+        );
     }
 
     #[test]
@@ -2238,8 +2256,16 @@ mod tests {
             timestamp: "2026-02-20T00:00:00Z".to_string(),
         };
         let receipt = SafeModeController::verify_trust_state(&input);
-        assert!(!receipt.pass, "at exact staleness boundary, evidence must be treated as stale (fail-closed)");
-        assert!(receipt.anomalies.iter().any(|a| matches!(a, AnomalyClassification::StaleFrontier { .. })));
+        assert!(
+            !receipt.pass,
+            "at exact staleness boundary, evidence must be treated as stale (fail-closed)"
+        );
+        assert!(
+            receipt
+                .anomalies
+                .iter()
+                .any(|a| matches!(a, AnomalyClassification::StaleFrontier { .. }))
+        );
     }
 
     #[test]
@@ -2261,7 +2287,12 @@ mod tests {
         let receipt = SafeModeController::verify_trust_state(&input);
         // Crash loop anomaly added but evidence is valid → pass is false because anomaly present.
         assert!(!receipt.pass);
-        assert!(receipt.anomalies.iter().any(|a| matches!(a, AnomalyClassification::CrashLoopDetected { .. })));
+        assert!(
+            receipt
+                .anomalies
+                .iter()
+                .any(|a| matches!(a, AnomalyClassification::CrashLoopDetected { .. }))
+        );
     }
 
     #[test]
@@ -2282,7 +2313,12 @@ mod tests {
         };
         let receipt = SafeModeController::verify_trust_state(&input);
         assert!(!receipt.pass);
-        assert!(receipt.anomalies.iter().any(|a| matches!(a, AnomalyClassification::EpochMismatch { .. })));
+        assert!(
+            receipt
+                .anomalies
+                .iter()
+                .any(|a| matches!(a, AnomalyClassification::EpochMismatch { .. }))
+        );
     }
 
     // -- Event code constant tests ------------------------------------------
@@ -2385,7 +2421,10 @@ mod tests {
         let mut ctrl = SafeModeController::with_default_config();
         let trigger = ctrl.check_crash_loop_trigger(5, 60);
         assert!(trigger.is_some());
-        ctrl.enter_degraded_state(trigger.expect("trigger should exist"), "2026-02-20T10:00:00Z");
+        ctrl.enter_degraded_state(
+            trigger.expect("trigger should exist"),
+            "2026-02-20T10:00:00Z",
+        );
         assert!(ctrl.is_active());
         assert!(
             ctrl.events()
@@ -2611,7 +2650,10 @@ mod tests {
             operator_confirmed: true,
         };
         let result = ctrl.exit_safe_mode(&verification, "op", "ts");
-        assert!(result.is_err(), "exit_safe_mode should fail when not active");
+        assert!(
+            result.is_err(),
+            "exit_safe_mode should fail when not active"
+        );
         let err = result.expect_err("should fail");
         assert!(
             err.to_string().contains("not active"),

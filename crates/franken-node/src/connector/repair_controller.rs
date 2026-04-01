@@ -211,7 +211,9 @@ pub fn run_cycle(
             if total_used >= config.max_units_per_cycle {
                 break;
             }
-            let can_use = item.size_units.min(config.max_units_per_cycle.saturating_sub(total_used));
+            let can_use = item
+                .size_units
+                .min(config.max_units_per_cycle.saturating_sub(total_used));
             if can_use > 0 {
                 let alloc =
                     allocations
@@ -272,7 +274,8 @@ mod tests {
     #[test]
     fn single_tenant_allocation() {
         let items = vec![item("r1", "t1", 5, 10)];
-        let (allocs, audit) = run_cycle(&items, &config(), "c1", "tr", "ts").expect("should succeed");
+        let (allocs, audit) =
+            run_cycle(&items, &config(), "c1", "tr", "ts").expect("should succeed");
         assert_eq!(allocs.len(), 1);
         assert_eq!(allocs[0].tenant_id, "t1");
         assert!(allocs[0].units_used > 0);
@@ -324,7 +327,8 @@ mod tests {
     #[test]
     fn audit_has_trace() {
         let items = vec![item("r1", "t1", 5, 10)];
-        let (_, audit) = run_cycle(&items, &config(), "c1", "trace-x", "ts").expect("should succeed");
+        let (_, audit) =
+            run_cycle(&items, &config(), "c1", "trace-x", "ts").expect("should succeed");
         assert_eq!(audit.trace_id, "trace-x");
         assert_eq!(audit.cycle_id, "c1");
     }

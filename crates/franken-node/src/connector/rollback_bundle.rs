@@ -304,10 +304,7 @@ fn ct_eq_checksum_maps(left: &BTreeMap<String, String>, right: &BTreeMap<String,
 
     let mut mismatch = 0u8;
     for ((left_key, left_value), (right_key, right_value)) in left.iter().zip(right.iter()) {
-        mismatch |= u8::from(!crate::security::constant_time::ct_eq(
-            left_key,
-            right_key,
-        ));
+        mismatch |= u8::from(!crate::security::constant_time::ct_eq(left_key, right_key));
         mismatch |= u8::from(!crate::security::constant_time::ct_eq(
             left_value,
             right_value,

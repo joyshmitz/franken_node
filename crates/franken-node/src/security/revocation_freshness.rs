@@ -265,8 +265,8 @@ mod tests {
 
     #[test]
     fn risky_fresh_passes() {
-        let d =
-            evaluate_freshness(&policy(), &check_action(SafetyTier::Risky, 1000), None).expect("should succeed");
+        let d = evaluate_freshness(&policy(), &check_action(SafetyTier::Risky, 1000), None)
+            .expect("should succeed");
         assert!(d.allowed);
         assert_eq!(d.max_age_secs, Some(3600));
     }
@@ -280,8 +280,8 @@ mod tests {
 
     #[test]
     fn dangerous_fresh_passes() {
-        let d =
-            evaluate_freshness(&policy(), &check_action(SafetyTier::Dangerous, 100), None).expect("should succeed");
+        let d = evaluate_freshness(&policy(), &check_action(SafetyTier::Dangerous, 100), None)
+            .expect("should succeed");
         assert!(d.allowed);
         assert_eq!(d.max_age_secs, Some(300));
     }
@@ -326,7 +326,13 @@ mod tests {
             Some(&override_receipt()),
         )
         .expect("should succeed");
-        assert_eq!(d.override_receipt.as_ref().expect("should have receipt").actor, "admin");
+        assert_eq!(
+            d.override_receipt
+                .as_ref()
+                .expect("should have receipt")
+                .actor,
+            "admin"
+        );
     }
 
     #[test]
@@ -362,7 +368,10 @@ mod tests {
             risky_max_age_secs: 100,
             dangerous_max_age_secs: 200,
         };
-        assert_eq!(p.validate().expect_err("should fail").code(), "RF_POLICY_INVALID");
+        assert_eq!(
+            p.validate().expect_err("should fail").code(),
+            "RF_POLICY_INVALID"
+        );
     }
 
     #[test]
@@ -371,13 +380,16 @@ mod tests {
             risky_max_age_secs: 0,
             dangerous_max_age_secs: 0,
         };
-        assert_eq!(p.validate().expect_err("should fail").code(), "RF_POLICY_INVALID");
+        assert_eq!(
+            p.validate().expect_err("should fail").code(),
+            "RF_POLICY_INVALID"
+        );
     }
 
     #[test]
     fn decision_has_trace_id() {
-        let d =
-            evaluate_freshness(&policy(), &check_action(SafetyTier::Standard, 0), None).expect("should succeed");
+        let d = evaluate_freshness(&policy(), &check_action(SafetyTier::Standard, 0), None)
+            .expect("should succeed");
         assert_eq!(d.trace_id, "tr-1");
     }
 

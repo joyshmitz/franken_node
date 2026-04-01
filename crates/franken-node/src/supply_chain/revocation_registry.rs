@@ -254,10 +254,7 @@ impl RevocationRegistry {
                 });
             }
             registry.heads.insert(entry.zone_id.clone(), entry.sequence);
-            let zone_revoked = registry
-                .revoked
-                .entry(entry.zone_id.clone())
-                .or_default();
+            let zone_revoked = registry.revoked.entry(entry.zone_id.clone()).or_default();
             if zone_revoked.len() < MAX_REVOKED_PER_ZONE {
                 zone_revoked.insert(entry.revoked_artifact.clone());
             }

@@ -1011,12 +1011,16 @@ mod tests {
         );
         let result = evaluate_certification(&input);
         assert_eq!(result.level, CertificationLevel::Basic);
-        assert!(result
-            .satisfied_criteria
-            .contains(&"publisher_identity_verified".to_owned()));
-        assert!(result
-            .satisfied_criteria
-            .contains(&"manifest_declared".to_owned()));
+        assert!(
+            result
+                .satisfied_criteria
+                .contains(&"publisher_identity_verified".to_owned())
+        );
+        assert!(
+            result
+                .satisfied_criteria
+                .contains(&"manifest_declared".to_owned())
+        );
     }
 
     #[test]
@@ -1182,9 +1186,10 @@ mod tests {
         );
         // Even uncertified (actually Basic since publisher is set)
         reg.evaluate_and_register(&input, &ts(1));
-        assert!(reg
-            .check_deployment_gate("ext-1", "1.0.0", DeploymentContext::Development)
-            .is_ok());
+        assert!(
+            reg.check_deployment_gate("ext-1", "1.0.0", DeploymentContext::Development)
+                .is_ok()
+        );
     }
 
     #[test]
@@ -1567,9 +1572,11 @@ mod tests {
         let result = evaluate_certification(&input);
         assert_eq!(result.level, CertificationLevel::Uncertified);
         assert!(result.derivation.is_none());
-        assert!(result
-            .unsatisfied_criteria
-            .contains(&"evidence_binding_present".to_owned()));
+        assert!(
+            result
+                .unsatisfied_criteria
+                .contains(&"evidence_binding_present".to_owned())
+        );
     }
 
     #[test]

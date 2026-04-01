@@ -1102,7 +1102,9 @@ mod tests {
     #[test]
     fn test_verify_chain_pass() {
         let sdk = test_sdk();
-        let r1 = sdk.verify_artifact(&valid_request()).expect("should verify");
+        let r1 = sdk
+            .verify_artifact(&valid_request())
+            .expect("should verify");
         let mut req2 = valid_request();
         req2.artifact_id = "artifact-002".to_string();
         req2.artifact_hash = deterministic_hash("artifact-002");
@@ -1114,7 +1116,9 @@ mod tests {
     #[test]
     fn test_verify_chain_report_fields() {
         let sdk = test_sdk();
-        let r1 = sdk.verify_artifact(&valid_request()).expect("should verify");
+        let r1 = sdk
+            .verify_artifact(&valid_request())
+            .expect("should verify");
         let chain_report = sdk.verify_chain(&[r1]).expect("should chain");
         assert!(chain_report.request_id.starts_with("vchn-"));
         assert_eq!(chain_report.schema_tag, SCHEMA_TAG);
@@ -1132,7 +1136,9 @@ mod tests {
     #[test]
     fn test_verify_chain_with_failing_report() {
         let sdk = test_sdk();
-        let passing = sdk.verify_artifact(&valid_request()).expect("should verify");
+        let passing = sdk
+            .verify_artifact(&valid_request())
+            .expect("should verify");
         let failing_req = VerificationRequest {
             artifact_id: "art-bad".to_string(),
             artifact_hash: "short".to_string(),
@@ -1149,8 +1155,12 @@ mod tests {
     fn test_verify_chain_deterministic() {
         // INV-VSK-DETERMINISTIC-VERIFY
         let sdk = test_sdk();
-        let r1 = sdk.verify_artifact(&valid_request()).expect("should verify");
-        let chain1 = sdk.verify_chain(std::slice::from_ref(&r1)).expect("should chain");
+        let r1 = sdk
+            .verify_artifact(&valid_request())
+            .expect("should verify");
+        let chain1 = sdk
+            .verify_chain(std::slice::from_ref(&r1))
+            .expect("should chain");
         let chain2 = sdk.verify_chain(&[r1]).expect("should chain");
         assert_eq!(chain1.binding_hash, chain2.binding_hash);
     }
@@ -1190,16 +1200,20 @@ mod tests {
     fn test_verification_request_serde_roundtrip() {
         let req = valid_request();
         let json = serde_json::to_string(&req).expect("serialize should succeed");
-        let parsed: VerificationRequest = serde_json::from_str(&json).expect("deserialize should succeed");
+        let parsed: VerificationRequest =
+            serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(req, parsed);
     }
 
     #[test]
     fn test_verification_report_serde_roundtrip() {
         let sdk = test_sdk();
-        let report = sdk.verify_artifact(&valid_request()).expect("should verify");
+        let report = sdk
+            .verify_artifact(&valid_request())
+            .expect("should verify");
         let json = serde_json::to_string(&report).expect("serialize should succeed");
-        let parsed: VerificationReport = serde_json::from_str(&json).expect("deserialize should succeed");
+        let parsed: VerificationReport =
+            serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(report, parsed);
     }
 
@@ -1211,7 +1225,8 @@ mod tests {
             VerifyVerdict::Inconclusive("maybe".to_string()),
         ] {
             let json = serde_json::to_string(&v).expect("serialize should succeed");
-            let parsed: VerifyVerdict = serde_json::from_str(&json).expect("deserialize should succeed");
+            let parsed: VerifyVerdict =
+                serde_json::from_str(&json).expect("deserialize should succeed");
             assert_eq!(v, parsed);
         }
     }
@@ -1224,7 +1239,8 @@ mod tests {
             detail: "ok".to_string(),
         };
         let json = serde_json::to_string(&entry).expect("serialize should succeed");
-        let parsed: EvidenceEntry = serde_json::from_str(&json).expect("deserialize should succeed");
+        let parsed: EvidenceEntry =
+            serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(entry, parsed);
     }
 
@@ -1244,7 +1260,8 @@ mod tests {
     fn test_verifier_config_serde_roundtrip() {
         let config = VerifierConfig::default();
         let json = serde_json::to_string(&config).expect("serialize should succeed");
-        let parsed: VerifierConfig = serde_json::from_str(&json).expect("deserialize should succeed");
+        let parsed: VerifierConfig =
+            serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(config, parsed);
     }
 

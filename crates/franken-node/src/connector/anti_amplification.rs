@@ -468,7 +468,8 @@ mod tests {
     #[test]
     fn audit_entry_complete() {
         let r = req("r1", "p1", true, 100, 5000, 500, 10);
-        let (_, audit) = check_response_bound(&r, &policy(), "trace-123", "2026-01-01").expect("should succeed");
+        let (_, audit) =
+            check_response_bound(&r, &policy(), "trace-123", "2026-01-01").expect("should succeed");
         assert_eq!(audit.request_id, "r1");
         assert_eq!(audit.peer_id, "p1");
         assert_eq!(audit.timestamp, "2026-01-01");
@@ -483,7 +484,8 @@ mod tests {
             req("r2", "p2", false, 10, 5000, 1500, 10), // should fail
             req("r3", "p3", true, 100, 5000, 400, 10),
         ];
-        let results = run_adversarial_harness(&requests, &policy(), "tr", "ts").expect("should succeed");
+        let results =
+            run_adversarial_harness(&requests, &policy(), "tr", "ts").expect("should succeed");
         assert_eq!(results.len(), 3);
         assert!(results[0].0.allowed);
         assert!(!results[1].0.allowed);

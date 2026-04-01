@@ -893,10 +893,7 @@ mod tests {
             iterations: 1000,
         }];
         let result = gate.evaluate(&measurements);
-        assert!(
-            !result.overall_pass,
-            "-Inf must not bypass budget gate"
-        );
+        assert!(!result.overall_pass, "-Inf must not bypass budget gate");
     }
 
     #[test]

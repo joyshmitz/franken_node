@@ -417,16 +417,20 @@ impl DurableClaimGate {
         let claim_id = claim.claim_id.clone();
         let trace_id = claim.trace_id.clone();
         let epoch = claim.epoch;
-        push_bounded(&mut self.events, ClaimGateEvent {
-            event_code: event_code.to_string(),
-            claim_id,
-            proof_type,
-            denial_reason,
-            marker_count,
-            proof_count,
-            trace_id,
-            epoch,
-        }, MAX_EVENTS);
+        push_bounded(
+            &mut self.events,
+            ClaimGateEvent {
+                event_code: event_code.to_string(),
+                claim_id,
+                proof_type,
+                denial_reason,
+                marker_count,
+                proof_count,
+                trace_id,
+                epoch,
+            },
+            MAX_EVENTS,
+        );
     }
 }
 

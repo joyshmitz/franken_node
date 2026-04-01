@@ -647,12 +647,12 @@ impl Supervisor {
         child_name: &str,
     ) -> Result<SupervisionAction, SupervisionError> {
         // Verify child exists and is in a failurable state.
-        let record = self
-            .children
-            .get(child_name)
-            .ok_or_else(|| SupervisionError::ChildNotFound {
-                name: child_name.to_string(),
-            })?;
+        let record =
+            self.children
+                .get(child_name)
+                .ok_or_else(|| SupervisionError::ChildNotFound {
+                    name: child_name.to_string(),
+                })?;
         match record.state {
             ChildState::Running | ChildState::Restarting | ChildState::Failed => {}
             other => {

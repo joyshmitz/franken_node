@@ -651,10 +651,14 @@ mod tests {
             .with_signer("validator-A")
             .with_threshold(0.05);
         // Manually disable the signer by setting the bool to false.
-        config.accepted_signers.insert("validator-A".to_string(), false);
+        config
+            .accepted_signers
+            .insert("validator-A".to_string(), false);
         let lab = IncidentLab::new(config);
         let plan = make_test_plan("p-disabled", "validator-A", 0.5);
-        let err = lab.validate_mitigation(&plan).expect_err("disabled signer should be rejected");
+        let err = lab
+            .validate_mitigation(&plan)
+            .expect_err("disabled signer should be rejected");
         assert_eq!(err.code, error_codes::ERR_ILAB_MITIGATION_INVALID);
         assert!(err.message.contains("validator-A"));
     }
@@ -776,7 +780,8 @@ mod tests {
     fn test_evaluate_scenario_promotes_good_mitigation() {
         let lab = lab();
         let scenario = make_test_scenario("t-e2e-1", "p-e2e-1", "validator-A", 0.5, 100.0, 10.0);
-        let (replay, synthesis, contract) = lab.evaluate_scenario(&scenario).expect("should succeed");
+        let (replay, synthesis, contract) =
+            lab.evaluate_scenario(&scenario).expect("should succeed");
         assert!(!replay.replay_digest.is_empty());
         assert!(synthesis.promoted);
         assert!(contract.is_some());

@@ -515,7 +515,12 @@ impl DurabilityController {
             };
             let claim = DurabilityClaim::derive(&mode, &outcome);
             matrix.insert(
-                format!("quorum({})+acked({}/{})", min_acks, min_acks, min_acks.saturating_add(2)),
+                format!(
+                    "quorum({})+acked({}/{})",
+                    min_acks,
+                    min_acks,
+                    min_acks.saturating_add(2)
+                ),
                 claim,
             );
 

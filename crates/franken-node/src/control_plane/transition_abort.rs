@@ -20,7 +20,9 @@ use std::fmt;
 
 /// Schema version for abort event records.
 pub const SCHEMA_VERSION: &str = "ta-v1.0";
-pub use crate::capacity_defaults::aliases::{MAX_ABORT_EVENTS, MAX_AUDIT_LOG_ENTRIES, MAX_FORCE_EVENTS};
+pub use crate::capacity_defaults::aliases::{
+    MAX_ABORT_EVENTS, MAX_AUDIT_LOG_ENTRIES, MAX_FORCE_EVENTS,
+};
 
 // ---- Event codes ----
 

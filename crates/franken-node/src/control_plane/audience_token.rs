@@ -211,9 +211,9 @@ impl AudienceBoundToken {
 
     /// Check if audience contains a specific service identity.
     pub fn audience_contains(&self, service_id: &str) -> bool {
-        self.audience
-            .iter()
-            .fold(false, |acc, a| acc | crate::security::constant_time::ct_eq(a, service_id))
+        self.audience.iter().fold(false, |acc, a| {
+            acc | crate::security::constant_time::ct_eq(a, service_id)
+        })
     }
 }
 
@@ -552,7 +552,12 @@ impl TokenValidator {
     /// Record a root token issuance.
     pub fn record_issuance(&mut self, token: &AudienceBoundToken, trace_id: &str, now_ms: u64) {
         self.tokens_issued = self.tokens_issued.saturating_add(1);
-        insert_nonce_bounded(&mut self.seen_nonces, &mut self.seen_nonces_queue, token.nonce.clone(), MAX_NONCES);
+        insert_nonce_bounded(
+            &mut self.seen_nonces,
+            &mut self.seen_nonces_queue,
+            token.nonce.clone(),
+            MAX_NONCES,
+        );
         push_bounded(
             &mut self.events,
             TokenEvent {
@@ -581,7 +586,12 @@ impl TokenValidator {
         now_ms: u64,
     ) {
         self.tokens_delegated = self.tokens_delegated.saturating_add(1);
-        insert_nonce_bounded(&mut self.seen_nonces, &mut self.seen_nonces_queue, token.nonce.clone(), MAX_NONCES);
+        insert_nonce_bounded(
+            &mut self.seen_nonces,
+            &mut self.seen_nonces_queue,
+            token.nonce.clone(),
+            MAX_NONCES,
+        );
         push_bounded(
             &mut self.events,
             TokenEvent {
@@ -744,7 +754,12 @@ impl TokenValidator {
 
         // All checks passed: record all token nonces and emit success event.
         for token in tokens.iter() {
-            insert_nonce_bounded(&mut self.seen_nonces, &mut self.seen_nonces_queue, token.nonce.clone(), MAX_NONCES);
+            insert_nonce_bounded(
+                &mut self.seen_nonces,
+                &mut self.seen_nonces_queue,
+                token.nonce.clone(),
+                MAX_NONCES,
+            );
         }
         self.tokens_verified = self.tokens_verified.saturating_add(1);
         push_bounded(

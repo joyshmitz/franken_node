@@ -611,7 +611,8 @@ mod tests {
     fn test_capsule_serde_roundtrip() {
         let cap = test_capsule();
         let json = serde_json::to_string(&cap).expect("serialize should succeed");
-        let parsed: ReplayCapsule = serde_json::from_str(&json).expect("deserialize should succeed");
+        let parsed: ReplayCapsule =
+            serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(cap, parsed);
     }
 
@@ -628,7 +629,8 @@ mod tests {
         let cap = test_capsule();
         let output = &cap.expected_outputs[0];
         let json = serde_json::to_string(output).expect("serialize should succeed");
-        let parsed: CapsuleOutput = serde_json::from_str(&json).expect("deserialize should succeed");
+        let parsed: CapsuleOutput =
+            serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(*output, parsed);
     }
 
@@ -636,7 +638,8 @@ mod tests {
     fn test_environment_serde_roundtrip() {
         let env = test_env();
         let json = serde_json::to_string(&env).expect("serialize should succeed");
-        let parsed: EnvironmentSnapshot = serde_json::from_str(&json).expect("deserialize should succeed");
+        let parsed: EnvironmentSnapshot =
+            serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(env, parsed);
     }
 
@@ -768,7 +771,10 @@ mod tests {
         }];
         let cap = create_capsule("cap-meta", inputs, test_env()).expect("create should succeed");
         assert_eq!(cap.inputs[0].metadata.len(), 2);
-        assert_eq!(cap.inputs[0].metadata.get("source").expect("should exist"), "test");
+        assert_eq!(
+            cap.inputs[0].metadata.get("source").expect("should exist"),
+            "test"
+        );
     }
 
     // ── Environment properties ──────────────────────────────────────
@@ -780,7 +786,10 @@ mod tests {
             .insert("feature_flag".to_string(), "enabled".to_string());
         let cap = create_capsule("cap-env", test_inputs(), env).expect("create should succeed");
         assert_eq!(
-            cap.environment.properties.get("feature_flag").expect("should exist"),
+            cap.environment
+                .properties
+                .get("feature_flag")
+                .expect("should exist"),
             "true"
         );
     }

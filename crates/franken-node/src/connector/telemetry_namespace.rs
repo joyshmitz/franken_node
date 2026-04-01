@@ -311,7 +311,8 @@ mod tests {
             1,
         ))
         .expect("should succeed");
-        r.freeze("franken.security.auth_total").expect("freeze should succeed");
+        r.freeze("franken.security.auth_total")
+            .expect("freeze should succeed");
 
         // Same shape — OK
         let s = r

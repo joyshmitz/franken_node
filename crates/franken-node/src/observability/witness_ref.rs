@@ -908,8 +908,20 @@ mod tests {
         let entries = vec![(make_entry(DecisionKind::Escalate), set)];
 
         let audit = WitnessValidator::coverage_audit(&entries);
-        assert_eq!(*audit.witness_kind_counts.get("telemetry").expect("should succeed"), 2);
-        assert_eq!(*audit.witness_kind_counts.get("proof_artifact").expect("should succeed"), 1);
+        assert_eq!(
+            *audit
+                .witness_kind_counts
+                .get("telemetry")
+                .expect("should succeed"),
+            2
+        );
+        assert_eq!(
+            *audit
+                .witness_kind_counts
+                .get("proof_artifact")
+                .expect("should succeed"),
+            1
+        );
     }
 
     // ── All three high-impact kinds require witnesses ──

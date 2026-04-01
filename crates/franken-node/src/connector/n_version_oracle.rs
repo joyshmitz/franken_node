@@ -286,7 +286,9 @@ pub fn run_harness(
             true
         } else {
             let first_ref_digest = &available_refs[0].1;
-            available_refs.iter().all(|(_, d)| ct_eq(first_ref_digest, d))
+            available_refs
+                .iter()
+                .all(|(_, d)| ct_eq(first_ref_digest, d))
         };
 
         for (rt, ref_digest) in available_refs {
@@ -320,16 +322,20 @@ pub fn run_harness(
                         sample.boundary_name, rt.runtime_id
                     ),
                 };
-                push_bounded(&mut divergences, BoundaryDivergence {
-                    divergence_id: format!("div-{div_counter:04}"),
-                    boundary_name: sample.boundary_name.clone(),
-                    franken_engine_output_digest: fe_digest.clone(),
-                    reference_output_digest: ref_digest,
-                    reference_runtime: rt.clone(),
-                    risk_tier,
-                    classification_reason: reason,
-                    l1_oracle_link: None,
-                }, MAX_DIVERGENCES);
+                push_bounded(
+                    &mut divergences,
+                    BoundaryDivergence {
+                        divergence_id: format!("div-{div_counter:04}"),
+                        boundary_name: sample.boundary_name.clone(),
+                        franken_engine_output_digest: fe_digest.clone(),
+                        reference_output_digest: ref_digest,
+                        reference_runtime: rt.clone(),
+                        risk_tier,
+                        classification_reason: reason,
+                        l1_oracle_link: None,
+                    },
+                    MAX_DIVERGENCES,
+                );
             }
         }
     }
@@ -355,7 +361,11 @@ pub fn run_harness(
             RiskTier::High => {
                 high = high.saturating_add(1);
                 // INV-ORACLE-HIGH-RISK-BLOCKS: high risk always blocks.
-                push_bounded(&mut high_risk_unresolved, div.divergence_id.clone(), MAX_DIVERGENCES);
+                push_bounded(
+                    &mut high_risk_unresolved,
+                    div.divergence_id.clone(),
+                    MAX_DIVERGENCES,
+                );
             }
             RiskTier::Medium | RiskTier::Low => {
                 match div.risk_tier {
@@ -367,7 +377,11 @@ pub fn run_harness(
                     Some(receipt) => {
                         // INV-ORACLE-L1-LINKAGE: receipt must have valid L1 link.
                         if config.require_l1_links && receipt.l1_oracle_result_link.is_empty() {
-                            push_bounded(&mut broken_l1, div.divergence_id.clone(), MAX_DIVERGENCES);
+                            push_bounded(
+                                &mut broken_l1,
+                                div.divergence_id.clone(),
+                                MAX_DIVERGENCES,
+                            );
                         } else {
                             // ORACLE_POLICY_RECEIPT_ISSUED
                             let _ = event_codes::ORACLE_POLICY_RECEIPT_ISSUED;
@@ -376,7 +390,11 @@ pub fn run_harness(
                     }
                     None => {
                         // INV-ORACLE-LOW-RISK-RECEIPTED
-                        push_bounded(&mut missing_receipt, div.divergence_id.clone(), MAX_DIVERGENCES);
+                        push_bounded(
+                            &mut missing_receipt,
+                            div.divergence_id.clone(),
+                            MAX_DIVERGENCES,
+                        );
                     }
                 }
             }
@@ -386,19 +404,31 @@ pub fn run_harness(
     if !high_risk_unresolved.is_empty() {
         // ORACLE_RELEASE_BLOCKED
         let _ = event_codes::ORACLE_RELEASE_BLOCKED;
-        push_bounded(&mut block_reasons, ReleaseBlockReason::HighRiskUnresolved {
-            divergence_ids: high_risk_unresolved.clone(),
-        }, MAX_BLOCK_REASONS);
+        push_bounded(
+            &mut block_reasons,
+            ReleaseBlockReason::HighRiskUnresolved {
+                divergence_ids: high_risk_unresolved.clone(),
+            },
+            MAX_BLOCK_REASONS,
+        );
     }
     if !missing_receipt.is_empty() {
-        push_bounded(&mut block_reasons, ReleaseBlockReason::MissingReceipt {
-            divergence_ids: missing_receipt,
-        }, MAX_BLOCK_REASONS);
+        push_bounded(
+            &mut block_reasons,
+            ReleaseBlockReason::MissingReceipt {
+                divergence_ids: missing_receipt,
+            },
+            MAX_BLOCK_REASONS,
+        );
     }
     if !broken_l1.is_empty() {
-        push_bounded(&mut block_reasons, ReleaseBlockReason::L1LinkBroken {
-            divergence_ids: broken_l1,
-        }, MAX_BLOCK_REASONS);
+        push_bounded(
+            &mut block_reasons,
+            ReleaseBlockReason::L1LinkBroken {
+                divergence_ids: broken_l1,
+            },
+            MAX_BLOCK_REASONS,
+        );
     }
 
     let verdict = if block_reasons.is_empty() {

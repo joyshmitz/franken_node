@@ -189,7 +189,10 @@ mod tests {
 
     #[test]
     fn test_error_codes_defined() {
-        assert_eq!(ERR_CAPSULE_SIGNATURE_INVALID, "ERR_CAPSULE_SIGNATURE_INVALID");
+        assert_eq!(
+            ERR_CAPSULE_SIGNATURE_INVALID,
+            "ERR_CAPSULE_SIGNATURE_INVALID"
+        );
         assert_eq!(ERR_CAPSULE_SCHEMA_MISMATCH, "ERR_CAPSULE_SCHEMA_MISMATCH");
         assert_eq!(ERR_CAPSULE_REPLAY_DIVERGED, "ERR_CAPSULE_REPLAY_DIVERGED");
         assert_eq!(ERR_CAPSULE_VERDICT_MISMATCH, "ERR_CAPSULE_VERDICT_MISMATCH");
@@ -201,8 +204,14 @@ mod tests {
     fn test_invariant_codes_defined() {
         assert_eq!(INV_CAPSULE_STABLE_SCHEMA, "INV-CAPSULE-STABLE-SCHEMA");
         assert_eq!(INV_CAPSULE_VERSIONED_API, "INV-CAPSULE-VERSIONED-API");
-        assert_eq!(INV_CAPSULE_NO_PRIVILEGED_ACCESS, "INV-CAPSULE-NO-PRIVILEGED-ACCESS");
-        assert_eq!(INV_CAPSULE_VERDICT_REPRODUCIBLE, "INV-CAPSULE-VERDICT-REPRODUCIBLE");
+        assert_eq!(
+            INV_CAPSULE_NO_PRIVILEGED_ACCESS,
+            "INV-CAPSULE-NO-PRIVILEGED-ACCESS"
+        );
+        assert_eq!(
+            INV_CAPSULE_VERDICT_REPRODUCIBLE,
+            "INV-CAPSULE-VERDICT-REPRODUCIBLE"
+        );
     }
 
     #[test]

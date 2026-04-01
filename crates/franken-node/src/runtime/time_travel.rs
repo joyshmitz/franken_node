@@ -892,7 +892,9 @@ mod tests {
     fn capture_session_records_frames() {
         let mut session = CaptureSession::start("snap-1", 42);
         let d = make_decision("d1", b"p1");
-        session.capture_frame(1, b"input1", d).expect("capture should succeed");
+        session
+            .capture_frame(1, b"input1", d)
+            .expect("capture should succeed");
         assert_eq!(session.frame_count(), 1);
     }
 
@@ -900,7 +902,9 @@ mod tests {
     fn capture_session_rejects_clock_regression() {
         let mut session = CaptureSession::start("snap-1", 42);
         let d1 = make_decision("d1", b"p1");
-        session.capture_frame(10, b"i1", d1).expect("capture should succeed");
+        session
+            .capture_frame(10, b"i1", d1)
+            .expect("capture should succeed");
         let d2 = make_decision("d2", b"p2");
         let err = session.capture_frame(5, b"i2", d2).unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_TTR_CLOCK_REGRESSION);
@@ -920,7 +924,9 @@ mod tests {
         let mut session = CaptureSession::start("snap-1", 42);
         assert_eq!(session.events(), &[event_codes::TTR_001]);
         let d = make_decision("d1", b"p1");
-        session.capture_frame(1, b"i", d).expect("capture should succeed");
+        session
+            .capture_frame(1, b"i", d)
+            .expect("capture should succeed");
         assert_eq!(session.events().len(), 2);
         assert_eq!(session.events()[1], event_codes::TTR_002);
     }
@@ -953,7 +959,8 @@ mod tests {
     fn snapshot_round_trip_json() {
         let snap = simple_capture(42, &[b"a", b"b"]);
         let bytes = snap.to_json_bytes().expect("serialize should succeed");
-        let restored = WorkflowSnapshot::from_json_bytes(&bytes).expect("deserialize should succeed");
+        let restored =
+            WorkflowSnapshot::from_json_bytes(&bytes).expect("deserialize should succeed");
         assert_eq!(snap, restored);
     }
 
@@ -991,7 +998,8 @@ mod tests {
     fn snapshot_from_json_rejects_frame_count_mismatch() {
         let snap = simple_capture(42, &[b"a", b"b"]);
         let bytes = snap.to_json_bytes().expect("serialize should succeed");
-        let mut json: serde_json::Value = serde_json::from_slice(&bytes).expect("deserialize should succeed");
+        let mut json: serde_json::Value =
+            serde_json::from_slice(&bytes).expect("deserialize should succeed");
         json["frame_count"] = serde_json::json!(999_u64);
         let tampered = serde_json::to_vec(&json).expect("serialize should succeed");
 
@@ -1003,7 +1011,8 @@ mod tests {
     fn snapshot_from_json_rejects_schema_mismatch() {
         let snap = simple_capture(42, &[b"a"]);
         let bytes = snap.to_json_bytes().expect("serialize should succeed");
-        let mut json: serde_json::Value = serde_json::from_slice(&bytes).expect("deserialize should succeed");
+        let mut json: serde_json::Value =
+            serde_json::from_slice(&bytes).expect("deserialize should succeed");
         json["schema_version"] = serde_json::json!("ttr-v9.9");
         let tampered = serde_json::to_vec(&json).expect("serialize should succeed");
 
@@ -1096,7 +1105,9 @@ mod tests {
         let snap = simple_capture(42, &[b"a"]);
         let mut session = ReplaySession::start(snap, 42).expect("start should succeed");
         let bad_decision = make_decision("wrong", b"wrong-payload");
-        let err = session.verify_decision(&bad_decision).expect_err("should fail");
+        let err = session
+            .verify_decision(&bad_decision)
+            .expect_err("should fail");
         assert_eq!(err.code(), error_codes::ERR_TTR_DIVERGENCE);
     }
 
@@ -1124,7 +1135,9 @@ mod tests {
         let mut rt = TimeTravelRuntime::new();
         let snap = simple_capture(42, &[b"a"]);
         rt.store_snapshot(snap);
-        let session = rt.begin_replay("snap-test", 42).expect("begin should succeed");
+        let session = rt
+            .begin_replay("snap-test", 42)
+            .expect("begin should succeed");
         assert_eq!(session.total_frames(), 1);
     }
 
@@ -1133,7 +1146,9 @@ mod tests {
         let mut rt = TimeTravelRuntime::new();
         let snap = simple_capture(42, &[b"a", b"b"]);
         rt.store_snapshot(snap);
-        let bytes = rt.serialize_snapshot("snap-test").expect("serialize should succeed");
+        let bytes = rt
+            .serialize_snapshot("snap-test")
+            .expect("serialize should succeed");
         let mut rt2 = TimeTravelRuntime::new();
         let id = rt2.load_snapshot(&bytes).expect("load should succeed");
         assert_eq!(id, "snap-test");
@@ -1167,7 +1182,9 @@ mod tests {
         for input in &inputs {
             let tick = session.cursor() as u64 + 1;
             let replayed = deterministic_decision(seed, tick, input);
-            session.verify_decision(&replayed).expect("verify should succeed");
+            session
+                .verify_decision(&replayed)
+                .expect("verify should succeed");
             if session.cursor() + 1 < session.total_frames() {
                 session.step_forward().expect("step should succeed");
             }

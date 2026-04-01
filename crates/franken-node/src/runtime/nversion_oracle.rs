@@ -1426,11 +1426,16 @@ mod tests {
     fn disabled_active_check_allows_rerun() {
         // An active_check entry with value=false should NOT block a new check.
         let mut oracle = RuntimeOracle::new("trace-disabled", 66);
-        oracle.register_runtime(sample_runtime("a")).expect("register should succeed");
+        oracle
+            .register_runtime(sample_runtime("a"))
+            .expect("register should succeed");
         // Manually insert a "disabled" check flag
         oracle.active_checks.insert("chk-1".to_string(), false);
         let outputs = BTreeMap::new();
         let result = oracle.run_cross_check("chk-1", BoundaryScope::IO, b"in", &outputs);
-        assert!(result.is_ok(), "disabled (false) active check should allow re-run");
+        assert!(
+            result.is_ok(),
+            "disabled (false) active check should allow re-run"
+        );
     }
 }

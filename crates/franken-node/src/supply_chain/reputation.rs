@@ -417,7 +417,12 @@ impl ReputationRegistry {
         timestamp: &str,
     ) -> Result<TransitionExplanation, ReputationError> {
         // Reject duplicate signals.
-        if self.ingested_signals.get(&signal.signal_id).copied().unwrap_or(false) {
+        if self
+            .ingested_signals
+            .get(&signal.signal_id)
+            .copied()
+            .unwrap_or(false)
+        {
             return Err(ReputationError::DuplicateSignal(signal.signal_id.clone()));
         }
 
@@ -1266,10 +1271,15 @@ mod tests {
         // A signal inserted with value=false should NOT block re-ingestion.
         let mut registry = ReputationRegistry::new();
         // Manually insert a "disabled" signal entry
-        registry.ingested_signals.insert("sig-disabled".to_string(), false);
+        registry
+            .ingested_signals
+            .insert("sig-disabled".to_string(), false);
         // A new signal with the same ID should succeed (not treated as duplicate)
         let signal = make_signal("sig-disabled", "pub-1", SignalKind::RevocationEvent);
         let result = registry.ingest_signal(&signal, &ts(1));
-        assert!(result.is_ok(), "disabled (false) signal should allow re-ingestion");
+        assert!(
+            result.is_ok(),
+            "disabled (false) signal should allow re-ingestion"
+        );
     }
 }

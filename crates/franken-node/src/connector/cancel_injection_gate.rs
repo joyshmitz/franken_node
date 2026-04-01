@@ -1212,7 +1212,10 @@ mod tests {
         let cross_wire_failure = malformed
             .failures
             .iter()
-            .find(|f| f.failure_type == error_codes::ERR_CIG_MATRIX_INCOMPLETE && f.detail.contains("instead of custom:connector_lifecycle"))
+            .find(|f| {
+                f.failure_type == error_codes::ERR_CIG_MATRIX_INCOMPLETE
+                    && f.detail.contains("instead of custom:connector_lifecycle")
+            })
             .expect("should have cross wire failure");
         assert!(cross_wire_failure.detail.contains("instead of"));
     }

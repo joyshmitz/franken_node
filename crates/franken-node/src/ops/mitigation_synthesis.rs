@@ -328,10 +328,8 @@ impl IncidentLab {
 
         // Scale the adjustment: each unit of policy shift reduces/increases
         // expected loss by a proportional amount, clamped to prevent extreme swings.
-        let adjustment_per_decision: i64 = net_shift
-            .checked_neg()
-            .unwrap_or(i64::MAX)
-            .clamp(-100, 100);
+        let adjustment_per_decision: i64 =
+            net_shift.checked_neg().unwrap_or(i64::MAX).clamp(-100, 100);
 
         let counterfactual_decisions: Vec<LabDecision> = trace
             .decisions
@@ -403,7 +401,10 @@ impl IncidentLab {
                 code: event_codes::LAB_REPLAY_COMPARED.to_string(),
                 detail: format!(
                     "incident={} mitigation={} baseline={} cf={}",
-                    trace.incident_id, candidate.mitigation_id, baseline_total_loss, counterfactual_total_loss
+                    trace.incident_id,
+                    candidate.mitigation_id,
+                    baseline_total_loss,
+                    counterfactual_total_loss
                 ),
             },
             MAX_LAB_EVENTS,
@@ -669,7 +670,10 @@ mod tests {
             trace.decisions.len()
         );
         assert_eq!(lab.events().len(), 1);
-        assert_eq!(lab.events()[0].code, event_codes::LAB_MITIGATION_SYNTHESIZED);
+        assert_eq!(
+            lab.events()[0].code,
+            event_codes::LAB_MITIGATION_SYNTHESIZED
+        );
     }
 
     #[test]

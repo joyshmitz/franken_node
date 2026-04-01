@@ -950,7 +950,7 @@ impl FleetControlManager {
             .retain(|_, inc| inc.status != IncidentStatus::Released);
         self.incident_convergences
             .retain(|incident_id, _| self.incidents.contains_key(incident_id));
-            
+
         // Mark all remaining active incident convergences as fully converged
         for convergence in self.incident_convergences.values_mut() {
             convergence.converged_nodes = convergence.total_nodes;

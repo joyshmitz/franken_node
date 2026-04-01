@@ -1464,10 +1464,23 @@ mod tests {
 
     #[test]
     fn integrity_hash_is_full_sha256() {
-        let bundle = sample_bundle("hash-test", "inc-1", Severity::High, RetentionTier::Hot, 100);
+        let bundle = sample_bundle(
+            "hash-test",
+            "inc-1",
+            Severity::High,
+            RetentionTier::Hot,
+            100,
+        );
         let hash = compute_integrity_hash(&bundle);
         // Full SHA-256 hex is 64 chars (32 bytes), not 16 chars (8 bytes)
-        assert_eq!(hash.len(), 64, "integrity hash must be full SHA-256 (64 hex chars)");
-        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()), "hash must be hex");
+        assert_eq!(
+            hash.len(),
+            64,
+            "integrity hash must be full SHA-256 (64 hex chars)"
+        );
+        assert!(
+            hash.chars().all(|c| c.is_ascii_hexdigit()),
+            "hash must be hex"
+        );
     }
 }

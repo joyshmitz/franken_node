@@ -370,9 +370,7 @@ impl EcosystemReputationApi {
             .ok_or_else(|| ReputationApiError::PublisherNotFound(publisher_id.to_owned()))?;
 
         if pub_record.frozen {
-            return Err(ReputationApiError::PublisherFrozen(
-                publisher_id.to_owned(),
-            ));
+            return Err(ReputationApiError::PublisherFrozen(publisher_id.to_owned()));
         }
 
         let old_score = pub_record.score;

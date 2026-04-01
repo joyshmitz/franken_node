@@ -1392,8 +1392,8 @@ mod tests {
             KeyRole::Signing,
             pub_key(1),
             "auth",
-            100,   // bound_at
-            3600,  // max_validity_seconds
+            100,  // bound_at
+            3600, // max_validity_seconds
             &tid(1),
         )
         .unwrap();
@@ -1418,7 +1418,10 @@ mod tests {
         )
         .unwrap();
         // now=3699 < 100+3600=3700 → still valid
-        assert!(reg.verify_role("k-pre", KeyRole::Encryption, 3699, &tid(2)).is_ok());
+        assert!(
+            reg.verify_role("k-pre", KeyRole::Encryption, 3699, &tid(2))
+                .is_ok()
+        );
     }
 
     #[test]
@@ -1695,8 +1698,14 @@ mod tests {
         assert_eq!(reg.active_count(), 4);
 
         // Verify roles.
-        assert!(reg.verify_role("k-s", KeyRole::Signing, 150, &tid(5)).is_ok());
-        assert!(reg.verify_role("k-e", KeyRole::Encryption, 150, &tid(6)).is_ok());
+        assert!(
+            reg.verify_role("k-s", KeyRole::Signing, 150, &tid(5))
+                .is_ok()
+        );
+        assert!(
+            reg.verify_role("k-e", KeyRole::Encryption, 150, &tid(6))
+                .is_ok()
+        );
 
         // Cross-role is rejected.
         assert!(

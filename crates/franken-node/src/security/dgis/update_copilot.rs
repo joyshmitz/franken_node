@@ -626,8 +626,8 @@ impl UpdateCopilot {
 
         // History depth: derived from available historical data signals.
         // More transitive dependencies and higher fan-out indicate richer signal history.
-        let dep_signal = (proposal.post_update_metrics.transitive_dependency_count as f64)
-            .min(50.0) / 50.0; // Normalize: 50+ deps = full depth
+        let dep_signal =
+            (proposal.post_update_metrics.transitive_dependency_count as f64).min(50.0) / 50.0; // Normalize: 50+ deps = full depth
         let update_history_signal = {
             let fo = proposal.post_update_metrics.fan_out;
             if fo.is_finite() && fo > 0.0 {
@@ -1242,8 +1242,15 @@ mod tests {
         let mut proposal = make_low_risk_proposal();
         proposal.post_update_metrics.trust_bottleneck_score = f64::NAN;
         let rec = copilot.evaluate_proposal(&proposal, &make_trace_id());
-        let has_sandbox = rec.containment.recommended_barriers.iter().any(|b| b.barrier_type == "sandbox_escalation");
-        assert!(has_sandbox, "NaN trust_bottleneck_score must trigger sandbox_escalation barrier");
+        let has_sandbox = rec
+            .containment
+            .recommended_barriers
+            .iter()
+            .any(|b| b.barrier_type == "sandbox_escalation");
+        assert!(
+            has_sandbox,
+            "NaN trust_bottleneck_score must trigger sandbox_escalation barrier"
+        );
     }
 
     #[test]
@@ -1252,8 +1259,15 @@ mod tests {
         let mut proposal = make_low_risk_proposal();
         proposal.post_update_metrics.trust_bottleneck_score = f64::INFINITY;
         let rec = copilot.evaluate_proposal(&proposal, &make_trace_id());
-        let has_sandbox = rec.containment.recommended_barriers.iter().any(|b| b.barrier_type == "sandbox_escalation");
-        assert!(has_sandbox, "Inf trust_bottleneck_score must trigger sandbox_escalation barrier");
+        let has_sandbox = rec
+            .containment
+            .recommended_barriers
+            .iter()
+            .any(|b| b.barrier_type == "sandbox_escalation");
+        assert!(
+            has_sandbox,
+            "Inf trust_bottleneck_score must trigger sandbox_escalation barrier"
+        );
     }
 
     // === No playbook for low risk ===

@@ -1269,7 +1269,8 @@ mod tests {
             transitioned_at: "2026-02-10T08:00:00Z".into(),
         };
         let json = serde_json::to_string(&record).expect("serialize");
-        let parsed: LifecycleTransitionCacheRecord = serde_json::from_str(&json).expect("deserialize");
+        let parsed: LifecycleTransitionCacheRecord =
+            serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, record);
     }
 

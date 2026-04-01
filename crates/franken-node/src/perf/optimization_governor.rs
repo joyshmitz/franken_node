@@ -791,7 +791,9 @@ mod tests {
     fn test_enumerate_knobs_has_concurrency_limit() {
         let mut gate = GovernorGate::with_defaults();
         let enumeration = gate.enumerate_knobs();
-        let desc = enumeration.get(&RuntimeKnob::ConcurrencyLimit).expect("should exist");
+        let desc = enumeration
+            .get(&RuntimeKnob::ConcurrencyLimit)
+            .expect("should exist");
         assert_eq!(desc.current_value, 64);
         assert!(!desc.locked);
         assert_eq!(desc.label, "concurrency_limit");
@@ -801,7 +803,9 @@ mod tests {
     fn test_enumerate_knobs_has_batch_size() {
         let mut gate = GovernorGate::with_defaults();
         let enumeration = gate.enumerate_knobs();
-        let desc = enumeration.get(&RuntimeKnob::BatchSize).expect("should exist");
+        let desc = enumeration
+            .get(&RuntimeKnob::BatchSize)
+            .expect("should exist");
         assert_eq!(desc.current_value, 128);
     }
 
@@ -824,7 +828,9 @@ mod tests {
         gov.lock_knob(RuntimeKnob::RetryBudget);
         let mut gate = GovernorGate::new(gov);
         let enumeration = gate.enumerate_knobs();
-        let retry = enumeration.get(&RuntimeKnob::RetryBudget).expect("should exist");
+        let retry = enumeration
+            .get(&RuntimeKnob::RetryBudget)
+            .expect("should exist");
         assert!(retry.locked);
         assert_eq!(enumeration.locked().len(), 1);
         assert_eq!(enumeration.unlocked().len(), 4);
@@ -854,7 +860,9 @@ mod tests {
         let mut gate = GovernorGate::with_defaults();
         gate.submit(good_proposal("p1")); // ConcurrencyLimit 64 → 128
         let enumeration = gate.enumerate_knobs();
-        let desc = enumeration.get(&RuntimeKnob::ConcurrencyLimit).expect("should exist");
+        let desc = enumeration
+            .get(&RuntimeKnob::ConcurrencyLimit)
+            .expect("should exist");
         assert_eq!(desc.current_value, 128);
     }
 

@@ -129,7 +129,11 @@ pub fn build_replay_context(
     for (i, candidate_name) in entry.candidates_considered.iter().enumerate() {
         if *candidate_name != entry.decision_id {
             let raw_score = (0.5 - (i as f64 * 0.01)).max(0.0);
-            let score = if raw_score.is_finite() { raw_score } else { 0.0 };
+            let score = if raw_score.is_finite() {
+                raw_score
+            } else {
+                0.0
+            };
             push_bounded(
                 &mut candidates,
                 Candidate {

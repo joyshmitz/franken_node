@@ -790,7 +790,8 @@ impl ReplayEngine {
         {
             self.traces.remove(&oldest_trace_id);
         }
-        self.trace_registration_order.push_back(trace.trace_id.clone());
+        self.trace_registration_order
+            .push_back(trace.trace_id.clone());
         self.traces.insert(trace.trace_id.clone(), trace);
         Ok(())
     }
@@ -1254,14 +1255,18 @@ mod tests {
     fn engine_registers_trace() {
         let mut engine = ReplayEngine::new();
         let trace = one_step_trace("r1");
-        engine.register_trace(trace).expect("register should succeed");
+        engine
+            .register_trace(trace)
+            .expect("register should succeed");
         assert_eq!(engine.trace_count(), 1);
     }
 
     #[test]
     fn engine_rejects_duplicate_trace() {
         let mut engine = ReplayEngine::new();
-        engine.register_trace(one_step_trace("dup")).expect("register should succeed");
+        engine
+            .register_trace(one_step_trace("dup"))
+            .expect("register should succeed");
         let err = engine.register_trace(one_step_trace("dup")).unwrap_err();
         assert!(matches!(err, TimeTravelError::DuplicateTrace { .. }));
     }
@@ -1269,7 +1274,9 @@ mod tests {
     #[test]
     fn engine_get_trace() {
         let mut engine = ReplayEngine::new();
-        engine.register_trace(one_step_trace("g1")).expect("register should succeed");
+        engine
+            .register_trace(one_step_trace("g1"))
+            .expect("register should succeed");
         assert!(engine.get_trace("g1").is_some());
         assert!(engine.get_trace("missing").is_none());
     }
@@ -1277,16 +1284,24 @@ mod tests {
     #[test]
     fn engine_trace_ids_sorted() {
         let mut engine = ReplayEngine::new();
-        engine.register_trace(one_step_trace("z")).expect("register should succeed");
-        engine.register_trace(one_step_trace("a")).expect("register should succeed");
-        engine.register_trace(one_step_trace("m")).expect("register should succeed");
+        engine
+            .register_trace(one_step_trace("z"))
+            .expect("register should succeed");
+        engine
+            .register_trace(one_step_trace("a"))
+            .expect("register should succeed");
+        engine
+            .register_trace(one_step_trace("m"))
+            .expect("register should succeed");
         assert_eq!(engine.trace_ids(), vec!["a", "m", "z"]);
     }
 
     #[test]
     fn engine_remove_trace() {
         let mut engine = ReplayEngine::new();
-        engine.register_trace(one_step_trace("rm")).expect("register should succeed");
+        engine
+            .register_trace(one_step_trace("rm"))
+            .expect("register should succeed");
         let removed = engine.remove_trace("rm");
         assert!(removed.is_some());
         assert_eq!(engine.trace_count(), 0);
@@ -1342,8 +1357,12 @@ mod tests {
     #[test]
     fn identity_replay_produces_identical_verdict() {
         let mut engine = ReplayEngine::new();
-        engine.register_trace(multi_step_trace("id1", 5)).expect("register should succeed");
-        let result = engine.replay_identity("id1").expect("replay should succeed");
+        engine
+            .register_trace(multi_step_trace("id1", 5))
+            .expect("register should succeed");
+        let result = engine
+            .replay_identity("id1")
+            .expect("replay should succeed");
         assert_eq!(result.verdict, ReplayVerdict::Identical);
         assert!(result.divergences.is_empty());
         assert_eq!(result.steps_replayed, 5);
@@ -1352,8 +1371,12 @@ mod tests {
     #[test]
     fn identity_replay_emits_ttr_004_005_007() {
         let mut engine = ReplayEngine::new();
-        engine.register_trace(one_step_trace("audit1")).expect("register should succeed");
-        engine.replay_identity("audit1").expect("replay should succeed");
+        engine
+            .register_trace(one_step_trace("audit1"))
+            .expect("register should succeed");
+        engine
+            .replay_identity("audit1")
+            .expect("replay should succeed");
         let log = engine.audit_log();
         assert!(log.iter().any(|e| e.event_code == event_codes::TTR_004));
         assert!(log.iter().any(|e| e.event_code == event_codes::TTR_005));
@@ -1365,7 +1388,9 @@ mod tests {
     #[test]
     fn divergent_replay_detected() {
         let mut engine = ReplayEngine::new();
-        engine.register_trace(multi_step_trace("div1", 3)).expect("register should succeed");
+        engine
+            .register_trace(multi_step_trace("div1", 3))
+            .expect("register should succeed");
 
         // Replay function that always returns different output
         fn bad_replay(step: &TraceStep, _env: &EnvironmentSnapshot) -> (Vec<u8>, Vec<SideEffect>) {
@@ -1374,7 +1399,9 @@ mod tests {
             (output, step.side_effects.clone())
         }
 
-        let result = engine.replay("div1", bad_replay).expect("replay should succeed");
+        let result = engine
+            .replay("div1", bad_replay)
+            .expect("replay should succeed");
         assert_eq!(result.verdict, ReplayVerdict::Diverged(3));
         assert_eq!(result.divergences.len(), 3);
         for div in &result.divergences {
@@ -1385,7 +1412,9 @@ mod tests {
     #[test]
     fn side_effect_divergence_detected() {
         let mut engine = ReplayEngine::new();
-        engine.register_trace(one_step_trace("se-div")).expect("register should succeed");
+        engine
+            .register_trace(one_step_trace("se-div"))
+            .expect("register should succeed");
 
         fn bad_effects(
             _step: &TraceStep,
@@ -1397,7 +1426,9 @@ mod tests {
             )
         }
 
-        let result = engine.replay("se-div", bad_effects).expect("replay should succeed");
+        let result = engine
+            .replay("se-div", bad_effects)
+            .expect("replay should succeed");
         assert_eq!(result.verdict, ReplayVerdict::Diverged(1));
         assert_eq!(
             result.divergences[0].kind,
@@ -1408,26 +1439,34 @@ mod tests {
     #[test]
     fn full_mismatch_divergence() {
         let mut engine = ReplayEngine::new();
-        engine.register_trace(one_step_trace("full-div")).expect("register should succeed");
+        engine
+            .register_trace(one_step_trace("full-div"))
+            .expect("register should succeed");
 
         fn bad_all(_step: &TraceStep, _env: &EnvironmentSnapshot) -> (Vec<u8>, Vec<SideEffect>) {
             (vec![0xFF], vec![SideEffect::new("different", vec![99])])
         }
 
-        let result = engine.replay("full-div", bad_all).expect("replay should succeed");
+        let result = engine
+            .replay("full-div", bad_all)
+            .expect("replay should succeed");
         assert_eq!(result.divergences[0].kind, DivergenceKind::FullMismatch);
     }
 
     #[test]
     fn divergence_emits_ttr_006() {
         let mut engine = ReplayEngine::new();
-        engine.register_trace(one_step_trace("div-audit")).expect("register should succeed");
+        engine
+            .register_trace(one_step_trace("div-audit"))
+            .expect("register should succeed");
 
         fn bad_replay(step: &TraceStep, _env: &EnvironmentSnapshot) -> (Vec<u8>, Vec<SideEffect>) {
             (vec![0xFF], step.side_effects.clone())
         }
 
-        engine.replay("div-audit", bad_replay).expect("replay should succeed");
+        engine
+            .replay("div-audit", bad_replay)
+            .expect("replay should succeed");
         assert!(
             engine
                 .audit_log()
@@ -1450,8 +1489,12 @@ mod tests {
     #[test]
     fn drain_audit_log_empties() {
         let mut engine = ReplayEngine::new();
-        engine.register_trace(one_step_trace("drain")).expect("register should succeed");
-        engine.replay_identity("drain").expect("replay should succeed");
+        engine
+            .register_trace(one_step_trace("drain"))
+            .expect("register should succeed");
+        engine
+            .replay_identity("drain")
+            .expect("replay should succeed");
         let drained = engine.drain_audit_log();
         assert!(!drained.is_empty());
         assert!(engine.audit_log().is_empty());
@@ -1463,7 +1506,8 @@ mod tests {
     fn workflow_trace_serde_roundtrip() {
         let trace = multi_step_trace("serde1", 3);
         let json = serde_json::to_string(&trace).expect("serialize should succeed");
-        let deserialized: WorkflowTrace = serde_json::from_str(&json).expect("deserialize should succeed");
+        let deserialized: WorkflowTrace =
+            serde_json::from_str(&json).expect("deserialize should succeed");
         assert_eq!(trace, deserialized);
     }
 
@@ -1610,7 +1654,9 @@ mod tests {
     fn multi_step_identity_replay_all_identical() {
         let mut engine = ReplayEngine::new();
         let trace = multi_step_trace("multi-id", 20);
-        engine.register_trace(trace).expect("register should succeed");
+        engine
+            .register_trace(trace)
+            .expect("register should succeed");
         let result = engine.replay_identity("multi-id").unwrap();
         assert_eq!(result.verdict, ReplayVerdict::Identical);
         assert_eq!(result.steps_replayed, 20);
@@ -1634,7 +1680,9 @@ mod tests {
             }
         }
 
-        let result = engine.replay("partial", even_bad).expect("replay should succeed");
+        let result = engine
+            .replay("partial", even_bad)
+            .expect("replay should succeed");
         // Steps 0, 2, 4 diverge
         assert_eq!(result.verdict, ReplayVerdict::Diverged(3));
         assert_eq!(result.divergences.len(), 3);
