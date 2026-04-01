@@ -1215,7 +1215,7 @@ pub fn demo_registry(now_secs: u64) -> Result<TrustCardRegistry, TrustCardError>
             provenance_summary: ProvenanceSummary {
                 attestation_level: "slsa-l3".to_string(),
                 source_uri: "https://registry.example/acme/auth-guard".to_string(),
-                artifact_hashes: vec!["sha256:".to_string() + &"a".repeat(64)],
+                artifact_hashes: vec![format!("sha256:deadbeef{}", "a".repeat(56))],
                 verified_at: "2026-02-20T12:00:00Z".to_string(),
             },
             reputation_score_basis_points: 920,
@@ -1265,7 +1265,7 @@ pub fn demo_registry(now_secs: u64) -> Result<TrustCardRegistry, TrustCardError>
             provenance_summary: ProvenanceSummary {
                 attestation_level: "slsa-l2".to_string(),
                 source_uri: "https://registry.example/beta/telemetry-bridge".to_string(),
-                artifact_hashes: vec!["sha256:".to_string() + &"b".repeat(64)],
+                artifact_hashes: vec![format!("sha256:deadbeef{}", "b".repeat(56))],
                 verified_at: "2026-02-20T12:00:01Z".to_string(),
             },
             reputation_score_basis_points: 680,

@@ -405,6 +405,16 @@ fn now_unix_secs() -> u64 {
     if ts <= 0 { 0 } else { ts as u64 }
 }
 
+fn rfc3339_timestamp_from_secs(timestamp_secs: u64) -> String {
+    let secs = match i64::try_from(timestamp_secs) {
+        Ok(secs) => secs,
+        Err(_) => return "1970-01-01T00:00:00Z".to_string(),
+    };
+    chrono::DateTime::from_timestamp(secs, 0)
+        .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+        .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string())
+}
+
 fn parse_ttl_secs(ttl: &str) -> Result<u64> {
     let raw = ttl.trim();
     if raw.is_empty() {
@@ -1982,6 +1992,40 @@ mod trust_command_tests {
             RevocationStatus::Active
         ));
     }
+
+    #[test]
+    fn trust_revoke_uses_logical_now_secs_for_timestamps() {
+        let now_secs = 1_700_000_123;
+        let mut registry = demo_trust_registry(now_secs).expect("registry");
+
+        let card = revoke_trust_card(&mut registry, "npm:@acme/auth-guard", now_secs)
+            .expect("revoke should succeed");
+        let expected_timestamp = rfc3339_timestamp_from_secs(now_secs);
+
+        assert_eq!(card.last_verified_timestamp, expected_timestamp);
+        assert!(matches!(
+            &card.revocation_status,
+            RevocationStatus::Revoked { revoked_at, .. } if revoked_at == &expected_timestamp
+        ));
+    }
+
+    #[test]
+    fn trust_quarantine_matches_sha256_prefix_and_uses_logical_now_secs() {
+        let now_secs = 1_700_000_456;
+        let mut registry = demo_trust_registry(now_secs).expect("registry");
+
+        let updates = quarantine_trust_cards(&mut registry, "sha256:deadbeef", now_secs)
+            .expect("quarantine should succeed");
+        let expected_timestamp = rfc3339_timestamp_from_secs(now_secs);
+
+        assert_eq!(updates.len(), 2);
+        assert!(updates.iter().all(|card| card.active_quarantine));
+        assert!(
+            updates
+                .iter()
+                .all(|card| card.last_verified_timestamp == expected_timestamp)
+        );
+    }
 }
 
 #[cfg(test)]
@@ -2901,7 +2945,7 @@ fn revoke_trust_card(
     extension_id: &str,
     now_secs: u64,
 ) -> Result<TrustCard> {
-    let now_rfc3339 = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let now_rfc3339 = rfc3339_timestamp_from_secs(now_secs);
     registry
         .update(
             extension_id,
@@ -2932,7 +2976,7 @@ fn quarantine_trust_cards(
     artifact: &str,
     now_secs: u64,
 ) -> Result<Vec<TrustCard>> {
-    let now_rfc3339 = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let now_rfc3339 = rfc3339_timestamp_from_secs(now_secs);
     let mut targets = Vec::new();
 
     let direct_match = registry
@@ -2954,7 +2998,7 @@ fn quarantine_trust_cards(
                 card.provenance_summary
                     .artifact_hashes
                     .iter()
-                    .any(|h| h == artifact)
+                    .any(|hash| hash == artifact || hash.starts_with(artifact))
             })
             .map(|card| card.extension.extension_id)
             .collect();
