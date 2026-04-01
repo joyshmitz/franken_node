@@ -212,6 +212,7 @@ impl BarrierError {
             Self::UnknownParticipant { .. } => error_codes::ERR_BARRIER_UNKNOWN_PARTICIPANT,
             Self::BarrierIdMismatch { .. } => error_codes::ERR_BARRIER_ID_MISMATCH,
             Self::EpochMismatch { .. } => error_codes::ERR_BARRIER_EPOCH_MISMATCH,
+            Self::NotAllAcked { .. } => error_codes::ERR_BARRIER_NOT_ALL_ACKED,
         }
     }
 }
@@ -297,6 +298,14 @@ impl fmt::Display for BarrierError {
                     self.code(),
                     expected,
                     provided
+                )
+            }
+            Self::NotAllAcked { missing } => {
+                write!(
+                    f,
+                    "{}: missing ACKs from {}",
+                    self.code(),
+                    missing.join(", ")
                 )
             }
         }
@@ -705,11 +714,7 @@ impl EpochTransitionBarrier {
                     });
             }
 
-            return Err(BarrierError::Timeout {
-                barrier_id: barrier.barrier_id.clone(),
-                missing,
-                elapsed_ms: elapsed,
-            });
+            return Err(BarrierError::NotAllAcked { missing });
         }
 
         // All ACKs received: commit

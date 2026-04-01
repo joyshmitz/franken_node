@@ -578,6 +578,12 @@ impl RollbackDetector {
                     actual_parent: sv.parent_state_hash.clone(),
                 });
             }
+            if sv.epoch > last.epoch + 1 {
+                return Err(ForkDetectionError::RfdGapDetected {
+                    local_epoch: last.epoch,
+                    remote_epoch: sv.epoch,
+                });
+            }
             // The new state's parent_state_hash must match the last state's state_hash
             if !crate::security::constant_time::ct_eq(&sv.parent_state_hash, &last.state_hash) {
                 let proof = RollbackProof {
