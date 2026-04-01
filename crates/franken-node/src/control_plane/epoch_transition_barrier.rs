@@ -60,6 +60,7 @@ pub mod event_codes {
 pub mod error_codes {
     pub const ERR_BARRIER_CONCURRENT: &str = "ERR_BARRIER_CONCURRENT";
     pub const ERR_BARRIER_NO_PARTICIPANTS: &str = "ERR_BARRIER_NO_PARTICIPANTS";
+    pub const ERR_BARRIER_NOT_ALL_ACKED: &str = "ERR_BARRIER_NOT_ALL_ACKED";
     pub const ERR_BARRIER_TIMEOUT: &str = "ERR_BARRIER_TIMEOUT";
     pub const ERR_BARRIER_DRAIN_FAILED: &str = "ERR_BARRIER_DRAIN_FAILED";
     pub const ERR_BARRIER_ALREADY_COMPLETE: &str = "ERR_BARRIER_ALREADY_COMPLETE";
@@ -157,6 +158,8 @@ pub enum BarrierError {
     ConcurrentBarrier { active_barrier_id: BarrierId },
     /// No participants registered.
     NoParticipants,
+    /// Drain ACKs are still outstanding, but the barrier has not timed out yet.
+    NotAllAcked { missing: Vec<ParticipantId> },
     /// Barrier timed out waiting for drain ACKs.
     Timeout {
         barrier_id: BarrierId,
@@ -1056,7 +1059,13 @@ mod tests {
             .unwrap();
 
         let err = b.try_commit(1100, "t1").unwrap_err();
-        assert_eq!(err.code(), error_codes::ERR_BARRIER_TIMEOUT);
+        assert_eq!(err.code(), error_codes::ERR_BARRIER_NOT_ALL_ACKED);
+        assert_eq!(
+            err,
+            BarrierError::NotAllAcked {
+                missing: vec!["svc-2".into()],
+            }
+        );
     }
 
     // ---- INV-BARRIER-ABORT-SAFE ----
@@ -1451,6 +1460,9 @@ mod tests {
                 active_barrier_id: "b1".into(),
             },
             BarrierError::NoParticipants,
+            BarrierError::NotAllAcked {
+                missing: vec!["svc-w".into()],
+            },
             BarrierError::Timeout {
                 barrier_id: "b2".into(),
                 missing: vec!["svc-x".into()],
