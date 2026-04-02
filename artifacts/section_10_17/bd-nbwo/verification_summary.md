@@ -18,8 +18,9 @@ tooling surface rather than detached cryptographic authority.
 
 The workspace replay-capsule companion contract now explicitly requires
 sha256-shaped `expected_output_hash` values and exact `manifest.input_refs`
-to replayed `inputs` binding, with duplicate declared refs rejected before
-verdict evaluation.
+to replayed `inputs` binding, plus non-empty external `verifier://...`
+identities, with duplicate declared refs and non-verifier callers rejected
+before verdict evaluation.
 
 ## Deliverables
 
@@ -57,7 +58,7 @@ verdict evaluation.
 - `validate_manifest` -- Validate capsule manifest completeness, schema version, and sha256-shaped `expected_output_hash`
 - `verify_capsule_signature` -- Verify the detached Ed25519 capsule signature
 - `sign_capsule` -- Compute and set the detached Ed25519 capsule signature
-- `replay_capsule` -- Replay capsule, reject duplicate or mismatched declared `input_refs`, and produce verdict
+- `replay_capsule` -- Replay capsule, reject duplicate or mismatched declared `input_refs`, reject non-external verifier identities, and produce verdict
 - `create_session` -- Create new verification session
 - `record_session_step` -- Append replay result to session
 - `seal_session` -- Seal session and compute final verdict
@@ -119,13 +120,14 @@ invariants:
 - `expected_output_hash` must be a 64-character hex sha256 digest
 - declared `manifest.input_refs` must be unique and exactly match replayed `inputs`
 - `created_at` must be present before replay or verdict evaluation
+- `verifier_identity` must use the external `verifier://` scheme before replay proceeds
 
 ## Verification
 
-- Check script: `scripts/check_verifier_sdk_capsule.py` -- 87/87 checks PASS
+- Check script: `scripts/check_verifier_sdk_capsule.py` -- 89/89 checks PASS
 - Self-test: 15/15 checks PASS
-- Unit tests: `tests/test_check_verifier_sdk_capsule.py` -- 21/21 tests PASS
-- Rust unit tests: 54 inline tests in implementation, 49 across the SDK facade crate
+- Unit tests: `tests/test_check_verifier_sdk_capsule.py` -- 22/22 tests PASS
+- Rust unit tests: 54 inline tests in implementation, 53 across the SDK facade crate
 - Clippy: 0 warnings with `-D warnings`
 - All types are Send + Sync, serde-serializable, BTreeMap for determinism
 
