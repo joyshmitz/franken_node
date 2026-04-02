@@ -308,6 +308,21 @@ fn validate_declared_input_refs(capsule: &ReplayCapsule) -> Result<(), CapsuleEr
     Ok(())
 }
 
+fn validate_verifier_identity(verifier_identity: &str) -> Result<(), CapsuleError> {
+    let normalized = verifier_identity.trim();
+    let Some(remainder) = normalized.strip_prefix("verifier://") else {
+        return Err(CapsuleError::AccessDenied(
+            "verifier_identity must use the external verifier:// scheme".into(),
+        ));
+    };
+    if remainder.is_empty() {
+        return Err(CapsuleError::AccessDenied(
+            "verifier_identity must include a non-empty verifier name".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Sign a capsule by computing its structural signature digest.
 ///
 /// The structural signature digest binds the manifest, payload, and inputs via
@@ -336,26 +351,29 @@ pub fn verify_signature(capsule: &ReplayCapsule) -> Result<(), CapsuleError> {
 /// INV-CAPSULE-VERDICT-REPRODUCIBLE: deterministic for same inputs.
 pub fn replay(
     capsule: &ReplayCapsule,
-    _verifier_identity: &str,
+    verifier_identity: &str,
 ) -> Result<CapsuleReplayResult, CapsuleError> {
     // Step 1: Validate manifest
     validate_manifest(&capsule.manifest)?;
 
-    // Step 2: Verify signature
+    // Step 2: Ensure the caller is an external verifier identity.
+    validate_verifier_identity(verifier_identity)?;
+
+    // Step 3: Verify signature
     verify_signature(capsule)?;
 
-    // Step 3: Bind the declared input inventory to the replayed inputs.
+    // Step 4: Bind the declared input inventory to the replayed inputs.
     validate_declared_input_refs(capsule)?;
 
-    // Step 4: Check non-empty payload
+    // Step 5: Check non-empty payload
     if capsule.payload.is_empty() {
         return Err(CapsuleError::EmptyPayload("payload is empty".into()));
     }
 
-    // Step 5: Compute actual output hash using length-prefixed encoding
+    // Step 6: Compute actual output hash using length-prefixed encoding
     let actual_hash = compute_replay_hash(&capsule.payload, &capsule.inputs);
 
-    // Step 6: Compare
+    // Step 7: Compare
     let verdict = if ct_eq(&actual_hash, &capsule.manifest.expected_output_hash) {
         CapsuleVerdict::Pass
     } else {
@@ -521,7 +539,7 @@ mod tests {
     #[test]
     fn test_replay_pass() {
         let capsule = build_reference_capsule();
-        let result = replay(&capsule, "verifier-1").unwrap();
+        let result = replay(&capsule, "verifier://verifier-1").unwrap();
         assert_eq!(result.verdict, CapsuleVerdict::Pass);
         assert_eq!(result.actual_hash, result.expected_hash);
     }
@@ -530,8 +548,8 @@ mod tests {
     fn test_replay_deterministic() {
         // INV-CAPSULE-VERDICT-REPRODUCIBLE
         let capsule = build_reference_capsule();
-        let r1 = replay(&capsule, "v1").unwrap();
-        let r2 = replay(&capsule, "v1").unwrap();
+        let r1 = replay(&capsule, "verifier://v1").unwrap();
+        let r2 = replay(&capsule, "verifier://v1").unwrap();
         assert_eq!(r1.verdict, r2.verdict);
         assert_eq!(r1.actual_hash, r2.actual_hash);
     }
@@ -541,7 +559,7 @@ mod tests {
         let mut capsule = build_reference_capsule();
         capsule.manifest.expected_output_hash = "f".repeat(64);
         sign_capsule(&mut capsule);
-        let result = replay(&capsule, "v1").unwrap();
+        let result = replay(&capsule, "verifier://v1").unwrap();
         assert_eq!(result.verdict, CapsuleVerdict::Fail);
     }
 
@@ -550,7 +568,7 @@ mod tests {
         let mut capsule = build_reference_capsule();
         capsule.manifest.expected_output_hash = "wrong_hash".to_string();
         sign_capsule(&mut capsule);
-        match replay(&capsule, "v1") {
+        match replay(&capsule, "verifier://v1") {
             Err(CapsuleError::ManifestIncomplete(msg)) => {
                 assert!(msg.contains("expected_output_hash"));
                 assert!(msg.contains("sha256"));
@@ -564,7 +582,7 @@ mod tests {
         let mut capsule = build_reference_capsule();
         capsule.manifest.created_at = String::new();
         sign_capsule(&mut capsule);
-        match replay(&capsule, "v1") {
+        match replay(&capsule, "verifier://v1") {
             Err(CapsuleError::ManifestIncomplete(msg)) => {
                 assert!(msg.contains("created_at"));
             }
@@ -577,7 +595,7 @@ mod tests {
         let mut capsule = build_reference_capsule();
         capsule.payload = String::new();
         sign_capsule(&mut capsule);
-        match replay(&capsule, "v1") {
+        match replay(&capsule, "verifier://v1") {
             Err(CapsuleError::EmptyPayload(_)) => {}
             other => panic!("expected EmptyPayload, got {other:?}"),
         }
@@ -587,7 +605,7 @@ mod tests {
     fn test_replay_tampered_signature() {
         let mut capsule = build_reference_capsule();
         capsule.signature = "tampered".to_string();
-        match replay(&capsule, "v1") {
+        match replay(&capsule, "verifier://v1") {
             Err(CapsuleError::SignatureInvalid(_)) => {}
             other => panic!("expected SignatureInvalid, got {other:?}"),
         }
@@ -598,7 +616,7 @@ mod tests {
         let mut capsule = build_reference_capsule();
         capsule.inputs.remove("artifact_b");
         sign_capsule(&mut capsule);
-        match replay(&capsule, "v1") {
+        match replay(&capsule, "verifier://v1") {
             Err(CapsuleError::ManifestIncomplete(msg)) => {
                 assert!(msg.contains("input_refs"));
                 assert!(msg.contains("missing=[artifact_b]"));
@@ -614,7 +632,7 @@ mod tests {
             .inputs
             .insert("artifact_c".to_string(), "content_of_c".to_string());
         sign_capsule(&mut capsule);
-        match replay(&capsule, "v1") {
+        match replay(&capsule, "verifier://v1") {
             Err(CapsuleError::ManifestIncomplete(msg)) => {
                 assert!(msg.contains("input_refs"));
                 assert!(msg.contains("extra=[artifact_c]"));
@@ -628,7 +646,7 @@ mod tests {
         let mut capsule = build_reference_capsule();
         capsule.manifest.input_refs.push("artifact_a".to_string());
         sign_capsule(&mut capsule);
-        match replay(&capsule, "v1") {
+        match replay(&capsule, "verifier://v1") {
             Err(CapsuleError::ManifestIncomplete(msg)) => {
                 assert!(msg.contains("input_refs"));
                 assert!(msg.contains("duplicate"));
@@ -692,8 +710,30 @@ mod tests {
     fn test_capsule_no_privileged_access() {
         // INV-CAPSULE-NO-PRIVILEGED-ACCESS: replay is local, no network needed
         let capsule = build_reference_capsule();
-        let result = replay(&capsule, "offline-verifier").unwrap();
+        let result = replay(&capsule, "verifier://offline-verifier").unwrap();
         assert_eq!(result.verdict, CapsuleVerdict::Pass);
+    }
+
+    #[test]
+    fn test_replay_rejects_empty_verifier_identity() {
+        let capsule = build_reference_capsule();
+        match replay(&capsule, "   ") {
+            Err(CapsuleError::AccessDenied(msg)) => {
+                assert!(msg.contains("verifier://"));
+            }
+            other => panic!("expected AccessDenied, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_replay_rejects_non_verifier_identity_scheme() {
+        let capsule = build_reference_capsule();
+        match replay(&capsule, "creator://test@example.com") {
+            Err(CapsuleError::AccessDenied(msg)) => {
+                assert!(msg.contains("verifier://"));
+            }
+            other => panic!("expected AccessDenied, got {other:?}"),
+        }
     }
 
     #[test]
@@ -797,7 +837,7 @@ mod tests {
         let mut swapped = capsule.clone();
         swapped.payload = "completely_different_payload".to_string();
         // Don't re-sign — attacker reuses old signature
-        match replay(&swapped, "v1") {
+        match replay(&swapped, "verifier://v1") {
             Err(CapsuleError::SignatureInvalid(_)) => {}
             other => panic!("expected SignatureInvalid for swapped payload, got {other:?}"),
         }

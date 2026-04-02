@@ -35,6 +35,11 @@ A replay capsule is a self-contained, structurally bound unit consisting of:
 4. **Signature** -- detached Ed25519 signature covering the manifest, payload,
    metadata, input refs, and inputs via the canonical signing payload.
 
+External replay callers identify themselves with a non-empty
+`verifier://...` `verifier_identity`. Other schemes are treated as
+privileged/internal identities and are rejected by the workspace replay
+capsule companion surface.
+
 ### Schema Version
 
 All capsules carry `schema_version = "vsdk-v1.0"`. The version is checked
@@ -68,14 +73,16 @@ that binds the following material:
 
 1. Validate the capsule manifest (schema version, required fields, and
    `expected_output_hash` shape).
-2. Verify the capsule detached Ed25519 signature against the canonical signing
+2. Validate `verifier_identity` as a non-empty external `verifier://...`
+   identity and reject privileged/internal schemes.
+3. Verify the capsule detached Ed25519 signature against the canonical signing
    payload using the signer public key embedded in manifest metadata.
-3. Verify the declared `input_refs` are unique and exactly match the replayed
+4. Verify the declared `input_refs` are unique and exactly match the replayed
    `inputs` set.
-4. Verify the payload is non-empty.
-5. Compute the deterministic output hash from payload and inputs.
-6. Compare the actual output hash against `expected_output_hash`.
-7. Emit verdict: PASS if hashes match, FAIL otherwise.
+5. Verify the payload is non-empty.
+6. Compute the deterministic output hash from payload and inputs.
+7. Compare the actual output hash against `expected_output_hash`.
+8. Emit verdict: PASS if hashes match, FAIL otherwise.
 
 ## Verification Sessions
 
@@ -155,7 +162,7 @@ Multi-step verification workflows are modeled as `VerificationSession`:
 - `validate_manifest(manifest)` -- validate capsule manifest completeness
 - `verify_capsule_signature(capsule)` -- verify the detached Ed25519 capsule signature
 - `sign_capsule(capsule)` -- compute and set the detached Ed25519 capsule signature
-- `replay_capsule(capsule, verifier_identity)` -- replay and produce verdict
+- `replay_capsule(capsule, verifier_identity)` -- replay and produce verdict; `verifier_identity` must use the external `verifier://` scheme
 - `create_session(id, verifier)` -- create new verification session
 - `record_session_step(session, result)` -- append replay result to session
 - `seal_session(session)` -- seal session and compute final verdict

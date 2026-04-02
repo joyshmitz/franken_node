@@ -148,6 +148,7 @@ class TestCapsuleContract(unittest.TestCase):
         self.assertIn("SDK package metadata avoids signed-capsule overclaim", check_names)
         self.assertIn("Public docs pin sha256-shaped expected_output_hash", check_names)
         self.assertIn("Public docs pin exact input_refs to inputs binding", check_names)
+        self.assertIn("Public docs pin external verifier:// identity scheme", check_names)
         self.assertIn(
             "Workspace replay capsule rejects malformed expected_output_hash",
             check_names,
@@ -159,6 +160,10 @@ class TestCapsuleContract(unittest.TestCase):
         )
         self.assertIn(
             "Workspace replay capsule binds declared input_refs to inputs",
+            check_names,
+        )
+        self.assertIn(
+            "Workspace replay capsule rejects non-verifier identities",
             check_names,
         )
 
@@ -229,6 +234,19 @@ class TestCapsuleContract(unittest.TestCase):
             contract = mod.run_all()["capsule_contract"]
 
         self.assertFalse(contract["workspace_manifest_binding_explicit"])
+
+    def test_no_privileged_access_contract_fails_closed_when_guard_check_missing(self):
+        baseline = mod.run_all_checks()
+        mutated_checks = [
+            check
+            for check in baseline
+            if check["check"] != "Workspace replay capsule rejects non-verifier identities"
+        ]
+
+        with mock.patch.object(mod, "run_all_checks", return_value=mutated_checks):
+            contract = mod.run_all()["capsule_contract"]
+
+        self.assertFalse(contract["no_privileged_access"])
 
 
 class TestEvents(unittest.TestCase):

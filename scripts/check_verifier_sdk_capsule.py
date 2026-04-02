@@ -296,6 +296,13 @@ def run_all_checks() -> list[dict]:
         and "Verify the declared `input_refs` are unique and exactly match the replayed `inputs` set."
         in spec_doc
     )
+    workspace_docs_verifier_identity_scheme = all(
+        marker in sdk_doc_src
+        for marker in (
+            "`verifier://...` `verifier_identity`",
+            "must use the external `verifier://` scheme",
+        )
+    )
     workspace_metadata_structural_only = (
         'description = "Structural-only verifier SDK for replaying structurally bound capsules and reproducing claim verdicts"'
         in sdk_cargo_src
@@ -379,6 +386,12 @@ def run_all_checks() -> list[dict]:
     ))
 
     checks.append(_check(
+        "Public docs pin external verifier:// identity scheme",
+        workspace_docs_verifier_identity_scheme,
+        "spec + bd-nbwo contract require non-empty external verifier:// verifier_identity values",
+    ))
+
+    checks.append(_check(
         "SDK package metadata marks structural-only posture",
         workspace_metadata_structural_only,
         "sdk/verifier/Cargo.toml description aligns with structural-only posture",
@@ -456,6 +469,22 @@ def run_all_checks() -> list[dict]:
             )
         ),
         "sdk/verifier/src/capsule.rs enforces unique input_refs that exactly match replayed inputs",
+    ))
+
+    checks.append(_check(
+        "Workspace replay capsule rejects non-verifier identities",
+        all(
+            marker in sdk_capsule_src
+            for marker in (
+                "fn validate_verifier_identity",
+                'strip_prefix("verifier://")',
+                "CapsuleError::AccessDenied",
+                "validate_verifier_identity(verifier_identity)?",
+                "test_replay_rejects_empty_verifier_identity",
+                "test_replay_rejects_non_verifier_identity_scheme",
+            )
+        ),
+        "sdk/verifier/src/capsule.rs fail-closes on empty or non-verifier:// verifier_identity inputs",
     ))
 
     # -- Implementation event codes ------------------------------------------
@@ -617,7 +646,13 @@ def run_all() -> dict:
         "invariants": REQUIRED_INVARIANTS,
         "capsule_contract": {
             "capsule_replay_deterministic": True,
-            "no_privileged_access": True,
+            "no_privileged_access": _required_checks_pass(
+                checks,
+                {
+                    "Public docs pin external verifier:// identity scheme",
+                    "Workspace replay capsule rejects non-verifier identities",
+                },
+            ),
             "schema_versioned": True,
             "signature_bound": True,
             "workspace_sdk_structural_only_posture_explicit": _required_checks_pass(

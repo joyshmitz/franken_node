@@ -47,6 +47,11 @@ const EXPECTED_MANIFEST_BINDING_CHECKS: [&str; 5] = [
     "Workspace replay capsule binds declared input_refs to inputs",
 ];
 
+const EXPECTED_ACCESS_GUARD_CHECKS: [&str; 2] = [
+    "Public docs pin external verifier:// identity scheme",
+    "Workspace replay capsule rejects non-verifier identities",
+];
+
 // ---------------------------------------------------------------------------
 // Report structures
 // ---------------------------------------------------------------------------
@@ -208,6 +213,17 @@ fn report_contains_manifest_binding_checks() {
         assert!(
             report.checks.iter().any(|check| check.check == check_name),
             "missing manifest-binding check: {check_name}"
+        );
+    }
+}
+
+#[test]
+fn report_contains_access_guard_checks() {
+    let report = report();
+    for check_name in EXPECTED_ACCESS_GUARD_CHECKS {
+        assert!(
+            report.checks.iter().any(|check| check.check == check_name),
+            "missing access-guard check: {check_name}"
         );
     }
 }

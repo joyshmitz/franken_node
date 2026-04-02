@@ -25,7 +25,9 @@ manifest fields, signer metadata, payload, and ordered inputs.
 The workspace replay-capsule companion surface still enforces concrete manifest
 binding rules. `expected_output_hash` must be a 64-character hex sha256
 digest. Declared `input_refs` must be unique and exactly match the replayed
-`inputs` keys.
+`inputs` keys. Replay callers must present a non-empty external
+`verifier://...` `verifier_identity`; privileged/internal schemes are rejected
+at the workspace replay-capsule boundary.
 
 ## Acceptance Criteria
 
@@ -42,6 +44,8 @@ digest. Declared `input_refs` must be unique and exactly match the replayed
 6. Error codes ERR_VSDK_* (7 codes) cover all failure modes.
 7. Five invariants (INV-VSDK-*) are documented and enforced in code.
 8. Minimum 20 inline `#[cfg(test)]` unit tests.
+9. Workspace replay capsule rejects empty or non-`verifier://` verifier
+   identities with `ERR_CAPSULE_ACCESS_DENIED`.
 
 ## Module: `connector::universal_verifier_sdk`
 
@@ -100,7 +104,8 @@ digest. Declared `input_refs` must be unique and exactly match the replayed
 - `verify_capsule_signature(capsule)` -- verify the detached Ed25519 capsule signature
 - `sign_capsule(capsule)` -- compute and set the detached Ed25519 capsule signature
 - `replay_capsule(capsule, verifier_identity)` -- replay, reject duplicate or
-  mismatched declared `input_refs`, and produce verdict
+  mismatched declared `input_refs`, reject non-external verifier identities,
+  and produce verdict
 - `create_session(id, verifier)` -- create new verification session
 - `record_session_step(session, result)` -- append replay result to session
 - `seal_session(session)` -- seal session and compute final verdict
