@@ -217,9 +217,9 @@ pub struct VerifyReleaseArgs {
     /// Path to the release directory containing artifacts, .sig files, and SHA256SUMS manifest.
     pub release_path: PathBuf,
 
-    /// Directory containing trusted public keys (current and rotated).
+    /// Directory containing trusted public keys (current and rotated). Required: no built-in trust roots are accepted.
     #[arg(long)]
-    pub key_dir: Option<PathBuf>,
+    pub key_dir: PathBuf,
 
     /// Emit structured JSON output instead of human-readable text.
     #[arg(long)]

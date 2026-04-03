@@ -126,12 +126,17 @@ fn evaluate_policy(
     if !delta.cascade_risk_delta.is_finite()
         || delta.cascade_risk_delta > thresholds.max_cascade_risk_delta
     {
-        reasons.push(RejectionReason {
-            code: "DGIS-MIGRATE-RISK-DELTA".to_string(),
-            detail: format!(
+        let detail = if !delta.cascade_risk_delta.is_finite() {
+            format!("cascade risk delta {} is not finite", delta.cascade_risk_delta)
+        } else {
+            format!(
                 "cascade risk delta {:.4} exceeds max {:.4}",
                 delta.cascade_risk_delta, thresholds.max_cascade_risk_delta
-            ),
+            )
+        };
+        reasons.push(RejectionReason {
+            code: "DGIS-MIGRATE-RISK-DELTA".to_string(),
+            detail,
         });
     }
 

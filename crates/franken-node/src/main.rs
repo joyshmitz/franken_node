@@ -3222,40 +3222,34 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
     None
 }
 
-fn load_verifying_keys(key_dir: Option<&Path>) -> Result<Vec<ed25519_dalek::VerifyingKey>> {
-    if let Some(key_dir) = key_dir {
-        if !key_dir.is_dir() {
-            anyhow::bail!("--key-dir must point to a directory: {}", key_dir.display());
-        }
-
-        let mut paths = std::fs::read_dir(key_dir)?
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| path.is_file())
-            .collect::<Vec<_>>();
-        paths.sort();
-
-        let mut keys = Vec::new();
-        for path in paths {
-            let raw = std::fs::read(&path)
-                .with_context(|| format!("failed reading {}", path.display()))?;
-            if let Some(key) = parse_verifying_key_from_blob(&raw) {
-                keys.push(key);
-            }
-        }
-
-        if keys.is_empty() {
-            anyhow::bail!(
-                "no usable Ed25519 public keys found in key directory {}",
-                key_dir.display()
-            );
-        }
-        Ok(keys)
-    } else {
-        Ok(vec![
-            supply_chain::artifact_signing::demo_signing_key().verifying_key(),
-        ])
+fn load_verifying_keys(key_dir: &Path) -> Result<Vec<ed25519_dalek::VerifyingKey>> {
+    if !key_dir.is_dir() {
+        anyhow::bail!("--key-dir must point to a directory: {}", key_dir.display());
     }
+
+    let mut paths = std::fs::read_dir(key_dir)?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file())
+        .collect::<Vec<_>>();
+    paths.sort();
+
+    let mut keys = Vec::new();
+    for path in paths {
+        let raw =
+            std::fs::read(&path).with_context(|| format!("failed reading {}", path.display()))?;
+        if let Some(key) = parse_verifying_key_from_blob(&raw) {
+            keys.push(key);
+        }
+    }
+
+    if keys.is_empty() {
+        anyhow::bail!(
+            "no usable Ed25519 public keys found in key directory {}",
+            key_dir.display()
+        );
+    }
+    Ok(keys)
 }
 
 fn collect_release_files(root: &Path) -> Result<Vec<String>> {
@@ -3311,7 +3305,7 @@ fn find_unlisted_artifacts(
 
 fn load_release_verification_context(
     release_dir: &Path,
-    key_dir: Option<&Path>,
+    key_dir: &Path,
 ) -> Result<ReleaseVerificationContext> {
     use supply_chain::artifact_signing::{ChecksumManifest, KeyRing, verify_signature};
 
@@ -3410,7 +3404,7 @@ fn handle_verify_release(args: &VerifyReleaseArgs) -> Result<()> {
     };
 
     let release_dir = &args.release_path;
-    let context = load_release_verification_context(release_dir, args.key_dir.as_deref())?;
+    let context = load_release_verification_context(release_dir, &args.key_dir)?;
     let mut report = verify_release(
         &context.manifest,
         &context.artifacts,

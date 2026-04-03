@@ -76,6 +76,24 @@ fn write_signed_release_fixture(release_dir: &Path, artifacts: &[(&str, &[u8])])
     );
 }
 
+fn write_release_key_dir(key_dir: &Path) {
+    std::fs::create_dir_all(key_dir).expect("key dir");
+
+    let wrong_key = demo_signing_key_2();
+    std::fs::write(
+        key_dir.join("00-rotated.pub"),
+        hex::encode(wrong_key.verifying_key().as_bytes()),
+    )
+    .expect("write rotated key");
+    let correct_key = demo_signing_key();
+    std::fs::write(
+        key_dir.join("10-current.pub"),
+        hex::encode(correct_key.verifying_key().as_bytes()),
+    )
+    .expect("write current key");
+    std::fs::write(key_dir.join("README.txt"), "non-key metadata").expect("write non-key file");
+}
+
 fn parse_json_stdout(output: &Output) -> serde_json::Value {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
@@ -164,7 +182,6 @@ fn verify_release_succeeds_with_hex_encoded_signatures_and_key_dir() {
     let release_dir = temp.path().join("release");
     let key_dir = temp.path().join("keys");
     std::fs::create_dir_all(&release_dir).expect("release dir");
-    std::fs::create_dir_all(&key_dir).expect("key dir");
 
     let artifacts = [
         (
@@ -177,20 +194,7 @@ fn verify_release_succeeds_with_hex_encoded_signatures_and_key_dir() {
         ),
     ];
     write_signed_release_fixture(&release_dir, &artifacts);
-
-    let wrong_key = demo_signing_key_2();
-    std::fs::write(
-        key_dir.join("00-rotated.pub"),
-        hex::encode(wrong_key.verifying_key().as_bytes()),
-    )
-    .expect("write rotated key");
-    let correct_key = demo_signing_key();
-    std::fs::write(
-        key_dir.join("10-current.pub"),
-        hex::encode(correct_key.verifying_key().as_bytes()),
-    )
-    .expect("write current key");
-    std::fs::write(key_dir.join("README.txt"), "non-key metadata").expect("write non-key file");
+    write_release_key_dir(&key_dir);
 
     let release_arg = release_dir.to_string_lossy().to_string();
     let key_dir_arg = key_dir.to_string_lossy().to_string();
@@ -227,6 +231,7 @@ fn verify_release_succeeds_with_hex_encoded_signatures_and_key_dir() {
 fn verify_release_fails_when_unlisted_artifact_exists() {
     let temp = TempDir::new().expect("temp dir");
     let release_dir = temp.path().join("release");
+    let key_dir = temp.path().join("keys");
     std::fs::create_dir_all(&release_dir).expect("release dir");
 
     let artifacts = [(
@@ -234,11 +239,20 @@ fn verify_release_fails_when_unlisted_artifact_exists() {
         b"artifact-linux-x64" as &[u8],
     )];
     write_signed_release_fixture(&release_dir, &artifacts);
+    write_release_key_dir(&key_dir);
     std::fs::write(release_dir.join("rogue-extra.bin"), b"rogue payload")
         .expect("write rogue artifact");
 
     let release_arg = release_dir.to_string_lossy().to_string();
-    let output = run_cli(&["verify", "release", &release_arg, "--json"]);
+    let key_dir_arg = key_dir.to_string_lossy().to_string();
+    let output = run_cli(&[
+        "verify",
+        "release",
+        &release_arg,
+        "--key-dir",
+        &key_dir_arg,
+        "--json",
+    ]);
     assert!(
         !output.status.success(),
         "expected verify release failure for unlisted artifact"
@@ -265,6 +279,29 @@ fn verify_release_fails_when_unlisted_artifact_exists() {
             .unwrap_or_default()
             .contains("not listed")
     );
+}
+
+#[test]
+fn verify_release_fails_without_key_dir() {
+    let temp = TempDir::new().expect("temp dir");
+    let release_dir = temp.path().join("release");
+    std::fs::create_dir_all(&release_dir).expect("release dir");
+
+    let artifacts = [(
+        "franken-node-linux-x64.tar.xz",
+        b"artifact-linux-x64" as &[u8],
+    )];
+    write_signed_release_fixture(&release_dir, &artifacts);
+
+    let release_arg = release_dir.to_string_lossy().to_string();
+    let output = run_cli(&["verify", "release", &release_arg, "--json"]);
+    assert!(
+        !output.status.success(),
+        "expected verify release failure without an explicit key directory"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--key-dir"));
 }
 
 #[test]
