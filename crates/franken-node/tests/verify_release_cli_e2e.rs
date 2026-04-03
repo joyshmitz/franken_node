@@ -138,6 +138,72 @@ fn verify_module_fails_for_unknown_module() {
 }
 
 #[test]
+fn verify_module_rejects_unsupported_compat_version() {
+    let output = run_cli(&[
+        "verify",
+        "module",
+        "runtime",
+        "--compat-version",
+        "1",
+        "--json",
+    ]);
+    assert!(
+        !output.status.success(),
+        "verify module should reject unsupported compat version"
+    );
+
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["command"], "verify module");
+    assert_eq!(payload["compat_version"], 1);
+    assert_eq!(payload["verdict"], "ERROR");
+    assert_eq!(payload["status"], "error");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(
+        payload["reason"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("unsupported --compat-version=1")
+    );
+}
+
+#[test]
+fn verify_migration_passes_for_known_verify_lane() {
+    let output = run_cli(&["verify", "migration", "rewrite", "--json"]);
+    assert!(
+        output.status.success(),
+        "verify migration should pass for known lane; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["command"], "verify migration");
+    assert_eq!(payload["verdict"], "PASS");
+    assert_eq!(payload["status"], "pass");
+    assert_eq!(payload["exit_code"], 0);
+}
+
+#[test]
+fn verify_migration_fails_for_unknown_target() {
+    let output = run_cli(&["verify", "migration", "definitely-not-a-lane", "--json"]);
+    assert!(
+        !output.status.success(),
+        "verify migration should fail for unknown lane"
+    );
+
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["command"], "verify migration");
+    assert_eq!(payload["verdict"], "FAIL");
+    assert_eq!(payload["status"], "fail");
+    assert_eq!(payload["exit_code"], 1);
+    assert!(
+        payload["reason"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("unknown migration target")
+    );
+}
+
+#[test]
 fn verify_compatibility_accepts_known_profile_targets() {
     let output = run_cli(&["verify", "compatibility", "strict", "--json"]);
     assert!(
@@ -148,6 +214,30 @@ fn verify_compatibility_accepts_known_profile_targets() {
     let payload = parse_json_stdout(&output);
     assert_eq!(payload["command"], "verify compatibility");
     assert_eq!(payload["verdict"], "PASS");
+    assert_eq!(payload["exit_code"], 0);
+}
+
+#[test]
+fn verify_compatibility_accepts_previous_major_compat_version() {
+    let output = run_cli(&[
+        "verify",
+        "compatibility",
+        "strict",
+        "--compat-version",
+        "2",
+        "--json",
+    ]);
+    assert!(
+        output.status.success(),
+        "verify compatibility should accept previous major compat version; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["command"], "verify compatibility");
+    assert_eq!(payload["compat_version"], 2);
+    assert_eq!(payload["verdict"], "PASS");
+    assert_eq!(payload["status"], "pass");
     assert_eq!(payload["exit_code"], 0);
 }
 
@@ -174,6 +264,35 @@ fn verify_corpus_accepts_existing_artifact_path() {
     assert_eq!(payload["command"], "verify corpus");
     assert_eq!(payload["verdict"], "PASS");
     assert_eq!(payload["exit_code"], 0);
+}
+
+#[test]
+fn verify_corpus_rejects_unsupported_compat_version_before_path_checks() {
+    let output = run_cli(&[
+        "verify",
+        "corpus",
+        "missing-corpus.json",
+        "--compat-version",
+        "1",
+        "--json",
+    ]);
+    assert!(
+        !output.status.success(),
+        "verify corpus should reject unsupported compat version before searching for artifacts"
+    );
+
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["command"], "verify corpus");
+    assert_eq!(payload["compat_version"], 1);
+    assert_eq!(payload["verdict"], "ERROR");
+    assert_eq!(payload["status"], "error");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(
+        payload["reason"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("unsupported --compat-version=1")
+    );
 }
 
 #[test]
