@@ -184,6 +184,14 @@ class TestPolicyGovernance(unittest.TestCase):
         self.assertEqual(len(checks), 6)
 
 
+class TestPolicyMappingContract(unittest.TestCase):
+    def test_six_keywords(self):
+        checker.RESULTS.clear()
+        checker.check_policy_mapping_contract()
+        checks = [r for r in checker.RESULTS if r["name"].startswith("policy_mapping:")]
+        self.assertEqual(len(checks), 6)
+
+
 class TestPlaybookSections(unittest.TestCase):
     def test_five_sections(self):
         checker.RESULTS.clear()
@@ -222,12 +230,28 @@ class TestPlaybookVariance(unittest.TestCase):
         self.assertEqual(len(checks), 3)
 
 
+class TestPlaybookModeContract(unittest.TestCase):
+    def test_five_keywords(self):
+        checker.RESULTS.clear()
+        checker.check_playbook_mode_contract()
+        checks = [r for r in checker.RESULTS if r["name"].startswith("playbook_mode:")]
+        self.assertEqual(len(checks), 5)
+
+
 class TestClaimsFormat(unittest.TestCase):
     def test_five_fields(self):
         checker.RESULTS.clear()
         checker.check_claims_format()
         checks = [r for r in checker.RESULTS if r["name"].startswith("claims_field:")]
         self.assertEqual(len(checks), 5)
+
+
+class TestClaimsMappingFields(unittest.TestCase):
+    def test_three_fields(self):
+        checker.RESULTS.clear()
+        checker.check_claims_mapping_fields()
+        checks = [r for r in checker.RESULTS if r["name"].startswith("claims_mapping_field:")]
+        self.assertEqual(len(checks), 3)
 
 
 class TestClaimsEntries(unittest.TestCase):

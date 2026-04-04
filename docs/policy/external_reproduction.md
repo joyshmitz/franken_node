@@ -62,6 +62,34 @@ The automation script executes in ordered phases:
 4. **Report Generation**: Assemble the reproduction report with environment
    fingerprint, per-claim results, overall verdict, timestamp, and duration.
 
+### 3.2.1 Claim-to-Harness Mapping Contract
+
+Each claim entry MUST resolve to an executable public check without relying on
+claim-specific branching inside `scripts/reproduce.py`. The mapping contract is:
+
+| Field | Meaning |
+|-------|---------|
+| `procedure_ref` | Public procedure or evidence-bundle path resolved before execution |
+| `harness_kind` | Adapter used to run the claim (`procedure`, `cargo_test`, `cargo_bench`, `cli`, `python`) |
+| `measurement_key` | Stable result field compared against `acceptance_threshold` |
+
+The automation layer performs: `claim registry -> mapping fields -> harness adapter -> structured result`.
+
+If any mapping field is absent or contradictory, the claim is an execution
+error. The script MUST surface that error explicitly; it MUST NOT synthesize a
+passing result.
+
+### 3.2.2 Harness Invocation Rules
+
+- `procedure` uses the referenced public procedure as the source of truth and
+  records the resolved procedure path in the report.
+- `cargo_test` runs a named Rust test target and derives success/failure from
+  the executed target plus any declared measurement extraction.
+- `cargo_bench` runs the designated benchmark surface and records the measured
+  metric named by `measurement_key`.
+- `cli` executes a public CLI command, preferably one that emits JSON.
+- `python` executes a public Python verification script with structured output.
+
 ### 3.3 Failure Handling
 
 - If any phase fails, the script continues to subsequent phases but records
@@ -69,6 +97,39 @@ The automation script executes in ordered phases:
 - The overall verdict is FAIL if any headline claim fails its threshold.
 - All failures are logged with the relevant event code (ERP-001 through
   ERP-004).
+
+### 3.4 Structured Result Schema
+
+The report schema MUST distinguish planning from evidence-bearing execution.
+
+Top-level fields:
+
+| Field | Meaning |
+|-------|---------|
+| `schema_version` | Stable report schema identifier |
+| `run_mode` | `plan` for `--dry-run`, `executed` for real verification |
+| `verdict` | `PLANNED`, `PASS`, `FAIL`, or `ERROR` |
+
+Per-claim fields:
+
+| Field | Meaning |
+|-------|---------|
+| `execution_state` | `planned`, `executed`, `skipped`, or `error` |
+| `result_kind` | `not_run`, `pass`, `fail`, or `error` |
+| `procedure_ref` | Resolved public procedure path |
+| `harness_kind` | Adapter used for this claim |
+| `measurement_key` | Stable metric key used for threshold comparison |
+| `measured_value` | Present only when execution actually occurred |
+
+### 3.5 Dry-Run / Planning Semantics
+
+`--dry-run` is allowed, but it is explicitly report-only:
+
+- Top-level `run_mode` MUST be `plan`
+- Top-level `verdict` MUST be `PLANNED`
+- every claim MUST emit `execution_state = planned`
+- every claim MUST emit `result_kind = not_run`
+- planning output MUST NOT set or imply a passing verdict for an unexecuted claim
 
 ## 4. Environment Specification
 
@@ -138,7 +199,18 @@ category = "compatibility"
 Every claim entry MUST have all five fields: `claim_id`, `claim_text`,
 `verification_method`, `acceptance_threshold`, `test_reference`.
 
-### 6.3 Categories
+### 6.3 Execution Mapping Fields
+
+In addition to the core descriptive fields, every claim entry MUST carry:
+
+- `procedure_ref` -- the public procedure or evidence-bundle path used by the harness
+- `harness_kind` -- the adapter that executes the claim
+- `measurement_key` -- the stable report field used for pass/fail comparison
+
+These fields are what make claim-to-check mapping explicit rather than tribal
+knowledge.
+
+### 6.4 Categories
 
 Claims are categorized as:
 
@@ -148,7 +220,7 @@ Claims are categorized as:
 - `migration` -- migration pathway correctness
 - `trust` -- supply chain trust and integrity
 
-### 6.4 Coverage
+### 6.5 Coverage
 
 Every headline claim made in project documentation (README, website, talks)
 MUST have a corresponding entry in the registry. The verification script
@@ -196,6 +268,9 @@ included in the registry.
 | ERP-002 | Headline claim failed its threshold | ERROR |
 | ERP-003 | Environment toolchain version mismatch | WARNING |
 | ERP-004 | Fixture file absent or checksum mismatch | ERROR |
+
+Planning runs reuse the same schema but must emit `PLANNED` / `not_run`
+semantics instead of synthetic PASS results.
 
 ## 10. Revision History
 

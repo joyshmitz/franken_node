@@ -104,7 +104,44 @@ To verify a specific headline claim:
 python3 scripts/reproduce.py --claim HC-001
 ```
 
-### 3.3 Expected Duration
+The claim registry is the dispatch table for this command. Each claim maps to a
+public procedure plus a harness adapter through:
+
+- `procedure_ref`
+- `harness_kind`
+- `measurement_key`
+
+The reproduction script must resolve those fields before execution rather than
+special-casing claim IDs in code.
+
+### 3.3 Dry-Run Planning Output
+
+`--dry-run` is a planning surface only. It previews the resolved claim
+mappings, but it does not produce evidence-bearing results.
+
+Example planning payload:
+
+```json
+{
+  "schema_version": "erp-report.v2",
+  "run_mode": "plan",
+  "verdict": "PLANNED",
+  "claims": [
+    {
+      "claim_id": "HC-001",
+      "execution_state": "planned",
+      "result_kind": "not_run",
+      "procedure_ref": "artifacts/.../procedure.md",
+      "harness_kind": "cargo_test",
+      "measurement_key": "pass_rate"
+    }
+  ]
+}
+```
+
+An unexecuted claim must never be shown as `PASS`.
+
+### 3.4 Expected Duration
 
 | Suite | Approximate Duration |
 |-------|---------------------|
@@ -116,7 +153,7 @@ python3 scripts/reproduce.py --claim HC-001
 Duration varies by hardware. The automation script reports actual wall-clock
 time for each phase.
 
-### 3.4 Resource Usage During Execution
+### 3.5 Resource Usage During Execution
 
 - Peak memory: ~4 GB during compilation, ~2 GB during test execution.
 - CPU: All available cores used during compilation; benchmarks use controlled
@@ -145,9 +182,20 @@ The reproduction report (`reproduction_report.json`) contains:
 
 ```json
 {
+  "schema_version": "erp-report.v2",
+  "run_mode": "executed",
   "environment": { "os": "...", "cpu": "...", "memory_gb": 64, "rust_version": "...", "node_version": "...", "python_version": "..." },
   "claims": [
-    { "claim_id": "HC-001", "measured_value": "100%", "threshold": "100%", "pass": true }
+    {
+      "claim_id": "HC-001",
+      "execution_state": "executed",
+      "result_kind": "pass",
+      "procedure_ref": "artifacts/.../procedure.md",
+      "harness_kind": "cargo_test",
+      "measurement_key": "pass_rate",
+      "measured_value": "100%",
+      "threshold": "100%"
+    }
   ],
   "verdict": "PASS",
   "timestamp": "2026-02-20T12:00:00Z",
@@ -155,8 +203,9 @@ The reproduction report (`reproduction_report.json`) contains:
 }
 ```
 
-- `verdict`: PASS if all claims pass; FAIL if any claim fails.
-- `claims`: Per-claim breakdown with measured vs. threshold values.
+- `run_mode`: `plan` for dry-run output, `executed` for evidence-bearing runs.
+- `verdict`: `PLANNED` for dry-run output; PASS if all executed claims pass; FAIL if any executed claim fails.
+- `claims`: Per-claim breakdown with mapping metadata, execution state, and measured vs. threshold values.
 - `environment`: Full fingerprint for traceability.
 
 ### 4.4 Sharing Results

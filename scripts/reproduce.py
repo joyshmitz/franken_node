@@ -18,6 +18,8 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import re
+import shlex
 import subprocess
 import sys
 import time
@@ -29,14 +31,29 @@ ROOT = Path(__file__).resolve().parent.parent
 CLAIMS_PATH = ROOT / "docs" / "headline_claims.toml"
 PLAYBOOK_PATH = ROOT / "docs" / "reproduction_playbook.md"
 REPORT_PATH = ROOT / "reproduction_report.json"
+SCHEMA_VERSION = "erp-report.v2"
+DEFAULT_TIMEOUT_SECONDS = 300
+SUPPORTED_HARNESS_KINDS = {"python"}
 
 
-def _parse_claims_toml(path: Path) -> list[dict[str, str]]:
-    """Minimal TOML parser for [[claim]] entries."""
+def _parse_claims_toml(path: Path) -> list[dict[str, Any]]:
+    """Load [[claim]] entries from TOML with a minimal fallback parser."""
     if not path.is_file():
         return []
+    try:
+        import tomllib
+    except ImportError:
+        tomllib = None  # type: ignore[assignment]
+
+    if tomllib is not None:
+        with path.open("rb") as handle:
+            data = tomllib.load(handle)
+        claims = data.get("claim", [])
+        if isinstance(claims, list):
+            return [claim for claim in claims if isinstance(claim, dict)]
+
     text = path.read_text(encoding="utf-8")
-    claims: list[dict[str, str]] = []
+    claims: list[dict[str, Any]] = []
     current: dict[str, str] = {}
     for line in text.splitlines():
         stripped = line.strip()
@@ -69,6 +86,13 @@ def environment_fingerprint() -> dict[str, str]:
         fp["rust_version"] = result.stdout.strip() if result.returncode == 0 else "not found"
     except (FileNotFoundError, subprocess.TimeoutExpired):
         fp["rust_version"] = "not found"
+    try:
+        result = subprocess.run(
+            ["cargo", "--version"], capture_output=True, text=True, timeout=10
+        )
+        fp["cargo_version"] = result.stdout.strip() if result.returncode == 0 else "not found"
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        fp["cargo_version"] = "not found"
 
     # Node version
     try:
@@ -89,24 +113,22 @@ def environment_fingerprint() -> dict[str, str]:
     return fp
 
 
-def dry_run_steps(claims: list[dict[str, str]]) -> list[str]:
-    """Return the list of steps that would be executed."""
-    steps = [
-        "1. Environment check: verify OS, toolchain versions, resources",
-        "2. Fixture acquisition: download/generate fixtures, verify checksums",
-    ]
-    for i, claim in enumerate(claims, start=3):
-        cid = claim.get("claim_id", "unknown")
-        method = claim.get("verification_method", "unknown")
-        steps.append(f"{i}. Verify {cid}: {claim.get('claim_text', '')} [{method}]")
-    steps.append(f"{len(claims) + 3}. Generate reproduction report")
-    return steps
+def _stringify_scalar(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    return str(value)
 
 
-def verify_claim(claim: dict[str, str]) -> dict[str, Any]:
-    """Simulate verification of a single claim."""
-    # In a real implementation this would execute the referenced tests.
-    # For the verification framework, we produce a structured result.
+def _resolve_path(ref: str) -> Path:
+    path = Path(ref)
+    if not path.is_absolute():
+        path = ROOT / path
+    return path.resolve()
+
+
+def _base_claim_result(claim: dict[str, Any]) -> dict[str, Any]:
     return {
         "claim_id": claim.get("claim_id", "unknown"),
         "claim_text": claim.get("claim_text", ""),
@@ -114,10 +136,195 @@ def verify_claim(claim: dict[str, str]) -> dict[str, Any]:
         "acceptance_threshold": claim.get("acceptance_threshold", ""),
         "test_reference": claim.get("test_reference", ""),
         "category": claim.get("category", ""),
-        "measured_value": claim.get("acceptance_threshold", "N/A"),
-        "pass": True,
-        "detail": "verification simulated (full execution requires test harness)",
+        "procedure_ref": claim.get("procedure_ref", ""),
+        "harness_kind": claim.get("harness_kind", ""),
+        "measurement_key": claim.get("measurement_key", ""),
     }
+
+
+def _claim_command(claim: dict[str, Any]) -> list[str]:
+    procedure_ref = str(claim.get("procedure_ref", "")).strip()
+    harness_kind = str(claim.get("harness_kind", "")).strip()
+    missing = [
+        field
+        for field in ("procedure_ref", "harness_kind", "measurement_key")
+        if not str(claim.get(field, "")).strip()
+    ]
+    if missing:
+        raise ValueError(f"missing mapping fields: {', '.join(missing)}")
+    if harness_kind not in SUPPORTED_HARNESS_KINDS:
+        raise ValueError(f"unsupported harness kind: {harness_kind}")
+    resolved = _resolve_path(procedure_ref)
+    if not resolved.is_file():
+        raise ValueError(f"procedure not found: {procedure_ref}")
+    if harness_kind == "python":
+        return [sys.executable, str(resolved), "--json"]
+    raise ValueError(f"unsupported harness kind: {harness_kind}")
+
+
+def _format_command(command: list[str]) -> str:
+    return shlex.join(command)
+
+
+def _extract_measurement(payload: dict[str, Any], measurement_key: str) -> Any:
+    value: Any = payload
+    for segment in measurement_key.split("."):
+        if not isinstance(value, dict) or segment not in value:
+            raise ValueError(f"measurement key not found: {measurement_key}")
+        value = value[segment]
+    return value
+
+
+def _coerce_threshold_value(raw: str) -> Any:
+    token = raw.strip()
+    lowered = token.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if re.fullmatch(r"-?\d+(?:\.\d+)?", token):
+        return float(token) if "." in token else int(token)
+    return token
+
+
+def _evaluate_threshold(
+    measured_value: Any,
+    threshold: str,
+    measurement_key: str,
+) -> bool:
+    for operator in ("<=", ">=", "==", "=", "<", ">"):
+        if operator in threshold:
+            lhs, rhs = threshold.split(operator, 1)
+            lhs = lhs.strip()
+            rhs_value = _coerce_threshold_value(rhs)
+            if lhs and lhs != measurement_key:
+                raise ValueError(
+                    f"threshold references '{lhs}' but measurement_key is '{measurement_key}'"
+                )
+            break
+    else:
+        operator = "=="
+        rhs_value = _coerce_threshold_value(threshold)
+
+    if operator == "=":
+        operator = "=="
+
+    if operator == "==":
+        return measured_value == rhs_value
+    if operator == "<=":
+        return measured_value <= rhs_value
+    if operator == ">=":
+        return measured_value >= rhs_value
+    if operator == "<":
+        return measured_value < rhs_value
+    if operator == ">":
+        return measured_value > rhs_value
+    raise ValueError(f"unsupported threshold operator in '{threshold}'")
+
+
+def dry_run_steps(claims: list[dict[str, Any]]) -> list[str]:
+    """Return the list of steps that would be executed."""
+    steps = [
+        "1. Environment check: verify OS, toolchain versions, resources",
+        "2. Fixture acquisition: download/generate fixtures, verify checksums",
+    ]
+    for i, claim in enumerate(claims, start=3):
+        cid = claim.get("claim_id", "unknown")
+        method = claim.get("harness_kind", claim.get("verification_method", "unknown"))
+        procedure_ref = claim.get("procedure_ref", "<unmapped>")
+        steps.append(
+            f"{i}. Verify {cid}: {claim.get('claim_text', '')} [{method}] via {procedure_ref}"
+        )
+    steps.append(f"{len(claims) + 3}. Generate reproduction report")
+    return steps
+
+
+def _planned_claim(claim: dict[str, Any]) -> dict[str, Any]:
+    result = _base_claim_result(claim)
+    result["execution_state"] = "planned"
+    result["result_kind"] = "not_run"
+    try:
+        result["command"] = _format_command(_claim_command(claim))
+    except ValueError as exc:
+        result["detail"] = f"mapping unresolved: {exc}"
+    return result
+
+
+def verify_claim(
+    claim: dict[str, Any],
+    *,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Execute the configured verification procedure for a single claim."""
+    result = _base_claim_result(claim)
+    result["execution_state"] = "error"
+    result["result_kind"] = "error"
+
+    try:
+        command = _claim_command(claim)
+        result["command"] = _format_command(command)
+    except ValueError as exc:
+        result["detail"] = str(exc)
+        return result
+
+    start = time.monotonic()
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            cwd=str(ROOT),
+        )
+    except subprocess.TimeoutExpired:
+        result["detail"] = f"procedure timed out after {timeout_seconds}s"
+        result["duration_seconds"] = round(time.monotonic() - start, 2)
+        return result
+    except OSError as exc:
+        result["detail"] = f"procedure launch failed: {exc}"
+        result["duration_seconds"] = round(time.monotonic() - start, 2)
+        return result
+
+    result["duration_seconds"] = round(time.monotonic() - start, 2)
+    result["exit_code"] = completed.returncode
+    stdout = completed.stdout.strip()
+    stderr = completed.stderr.strip()
+    if stderr:
+        result["stderr"] = stderr
+
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        result["detail"] = f"procedure output was not valid JSON: {exc}"
+        return result
+
+    measurement_key = str(claim.get("measurement_key", "")).strip()
+    try:
+        measured_value = _extract_measurement(payload, measurement_key)
+        result["measured_value"] = measured_value
+        passed = _evaluate_threshold(
+            measured_value,
+            str(claim.get("acceptance_threshold", "")).strip(),
+            measurement_key,
+        )
+    except ValueError as exc:
+        result["detail"] = str(exc)
+        return result
+
+    result["execution_state"] = "executed"
+    if completed.returncode == 0 and passed:
+        result["result_kind"] = "pass"
+        result["detail"] = "procedure executed successfully and met threshold"
+        return result
+    if not passed:
+        result["result_kind"] = "fail"
+        result["detail"] = "procedure executed but did not meet threshold"
+        return result
+
+    result["detail"] = (
+        "procedure exited non-zero despite meeting the declared threshold"
+    )
+    return result
 
 
 def run_reproduction(
@@ -125,6 +332,7 @@ def run_reproduction(
     skip_install: bool = False,
     dry_run: bool = False,
     claim_filter: str | None = None,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     """Execute the full reproduction flow."""
     start = time.monotonic()
@@ -132,29 +340,59 @@ def run_reproduction(
 
     if claim_filter:
         claims = [c for c in claims if c.get("claim_id") == claim_filter]
+        if not claims:
+            return {
+                "schema_version": SCHEMA_VERSION,
+                "run_mode": "executed",
+                "verdict": "ERROR",
+                "claim_count": 0,
+                "claims": [],
+                "error": f"unknown claim id: {claim_filter}",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "duration_seconds": round(time.monotonic() - start, 2),
+            }
 
     if dry_run:
+        planned_claims = [_planned_claim(claim) for claim in claims]
         steps = dry_run_steps(claims)
         return {
-            "mode": "dry_run",
+            "schema_version": SCHEMA_VERSION,
+            "run_mode": "plan",
+            "verdict": "PLANNED",
             "steps": steps,
+            "claims": planned_claims,
             "claim_count": len(claims),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "skip_install": skip_install,
         }
 
     env = environment_fingerprint()
-    results = [verify_claim(c) for c in claims]
-    all_pass = all(r["pass"] for r in results)
+    results = [verify_claim(c, timeout_seconds=timeout_seconds) for c in claims]
     elapsed = time.monotonic() - start
+    passed_count = sum(1 for r in results if r["result_kind"] == "pass")
+    failed_count = sum(1 for r in results if r["result_kind"] == "fail")
+    error_count = sum(1 for r in results if r["result_kind"] == "error")
+
+    if error_count:
+        verdict = "ERROR"
+    elif failed_count:
+        verdict = "FAIL"
+    else:
+        verdict = "PASS"
 
     report: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "run_mode": "executed",
         "environment": env,
         "claims": results,
-        "verdict": "PASS" if all_pass else "FAIL",
+        "verdict": verdict,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "duration_seconds": round(elapsed, 2),
         "claim_count": len(results),
-        "passed_count": sum(1 for r in results if r["pass"]),
-        "failed_count": sum(1 for r in results if not r["pass"]),
+        "passed_count": passed_count,
+        "failed_count": failed_count,
+        "error_count": error_count,
+        "skip_install": skip_install,
     }
 
     # Write report
@@ -171,18 +409,25 @@ def main() -> None:
     parser.add_argument("--json", action="store_true", help="Structured JSON output")
     parser.add_argument("--yes", action="store_true", help="Skip confirmation prompts")
     parser.add_argument("--claim", type=str, default=None, help="Verify a single claim by ID")
+    parser.add_argument(
+        "--timeout-seconds",
+        type=int,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help="Per-claim procedure timeout in seconds",
+    )
     args = parser.parse_args()
 
     report = run_reproduction(
         skip_install=args.skip_install,
         dry_run=args.dry_run,
         claim_filter=args.claim,
+        timeout_seconds=args.timeout_seconds,
     )
 
     if args.json:
         print(json.dumps(report, indent=2))
     else:
-        if args.dry_run:
+        if report.get("run_mode") == "plan":
             print("=== DRY RUN ===")
             for step in report["steps"]:
                 print(f"  {step}")
@@ -191,12 +436,16 @@ def main() -> None:
             verdict = report["verdict"]
             passed = report["passed_count"]
             total = report["claim_count"]
-            print(f"Reproduction verdict: {verdict} ({passed}/{total} claims passed)")
+            errors = report.get("error_count", 0)
+            print(
+                f"Reproduction verdict: {verdict} "
+                f"({passed}/{total} claims passed, {errors} errors)"
+            )
             for claim in report["claims"]:
-                status = "PASS" if claim["pass"] else "FAIL"
+                status = claim["result_kind"].upper()
                 print(f"  [{status}] {claim['claim_id']}: {claim['claim_text']}")
 
-    sys.exit(0 if report.get("verdict", "PASS") == "PASS" else 1)
+    sys.exit(0 if report.get("verdict") in {"PASS", "PLANNED"} else 1)
 
 
 if __name__ == "__main__":

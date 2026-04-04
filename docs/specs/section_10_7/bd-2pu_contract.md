@@ -55,6 +55,13 @@ claim with:
 | `verification_method` | How the claim is verified (test suite, benchmark, audit) |
 | `acceptance_threshold` | Quantitative pass/fail boundary |
 | `test_reference` | Path to the specific test or benchmark |
+| `procedure_ref` | Public procedure or evidence-bundle path the harness resolves before execution |
+| `harness_kind` | Adapter used to execute the claim (`procedure`, `cargo_test`, `cargo_bench`, `cli`, or `python`) |
+| `measurement_key` | Stable result field compared against `acceptance_threshold` |
+
+The registry is the authoritative dispatch table for external reproduction.
+The automation layer must resolve a claim through these mapping fields instead
+of embedding claim-specific shortcuts in `scripts/reproduce.py`.
 
 ### Reproduction Report
 
@@ -63,11 +70,27 @@ The automation script produces a structured JSON report
 
 | Field | Description |
 |-------|-------------|
+| `schema_version` | Report schema identifier for downstream automation |
+| `run_mode` | `plan` for `--dry-run`, `executed` for real verification |
 | `environment` | OS, CPU, memory, toolchain versions |
-| `claims` | Per-claim results: claim_id, measured_value, threshold, pass/fail |
-| `verdict` | Overall PASS/FAIL |
+| `claims` | Per-claim results including mapping metadata, execution state, measurement, and artifact refs |
+| `verdict` | Overall `PLANNED`, `PASS`, `FAIL`, or `ERROR` |
 | `timestamp` | ISO-8601 UTC timestamp |
 | `duration_seconds` | Total wall-clock duration |
+
+Per-claim results must carry:
+
+- `execution_state` — `planned`, `executed`, `skipped`, or `error`
+- `result_kind` — `not_run`, `pass`, `fail`, or `error`
+- `procedure_ref`, `harness_kind`, and `measurement_key`
+- `measured_value` only when execution actually occurred
+
+`--dry-run` / planning output is explicitly non-evidence-bearing:
+
+- `run_mode` MUST be `plan`
+- `verdict` MUST be `PLANNED`
+- each claim MUST emit `execution_state = planned` and `result_kind = not_run`
+- an unexecuted claim MUST NOT be rendered as `PASS`
 
 ## Event Codes
 
@@ -111,9 +134,12 @@ The automation script produces a structured JSON report
 2. `scripts/reproduce.py` automates the full reproduction flow as a single
    command with structured JSON output.
 3. `docs/headline_claims.toml` lists every headline claim with verification
-   method, acceptance threshold, and test reference.
+   method, acceptance threshold, test reference, and explicit
+   claim-to-harness mapping fields (`procedure_ref`, `harness_kind`,
+   `measurement_key`).
 4. Reproduction report (`reproduction_report.json`) includes environment
-   fingerprint, per-claim results, overall verdict, and timestamp.
+   fingerprint, explicit `run_mode`, per-claim execution state, overall
+   verdict, and timestamp.
 5. The reproduction flow works with only publicly available tools and fixtures
    -- no internal CI access required.
 6. Script is idempotent and supports `--skip-install` for pre-configured
@@ -124,6 +150,9 @@ The automation script produces a structured JSON report
 8. Unit tests in `tests/test_check_external_reproduction.py` cover claim
    registry parsing, report generation, environment fingerprinting, and
    threshold evaluation.
+9. Dry-run output cannot be mistaken for executed evidence: planning mode uses
+   `PLANNED` / `not_run` semantics and never manufactures passing claim
+   verdicts.
 
 ## Artifacts
 

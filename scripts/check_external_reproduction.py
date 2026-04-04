@@ -180,6 +180,26 @@ def check_policy_governance() -> int:
     return ok
 
 
+def check_policy_mapping_contract() -> int:
+    if not POLICY_PATH.is_file():
+        _check("policy_mapping_contract:present", False, "policy missing")
+        return 0
+    text = POLICY_PATH.read_text().lower()
+    keywords = [
+        "procedure_ref",
+        "harness_kind",
+        "measurement_key",
+        "execution_state",
+        "result_kind",
+        "planned",
+    ]
+    ok = 0
+    for kw in keywords:
+        if _check(f"policy_mapping:{kw}", kw in text, f"policy mapping: {kw}"):
+            ok += 1
+    return ok
+
+
 # ---------------------------------------------------------------------------
 # Playbook completeness checks (INV-ERP-COMPLETE)
 # ---------------------------------------------------------------------------
@@ -242,6 +262,19 @@ def check_playbook_variance() -> int:
     return ok
 
 
+def check_playbook_mode_contract() -> int:
+    if not PLAYBOOK_PATH.is_file():
+        _check("playbook_mode_contract:present", False, "playbook missing")
+        return 0
+    text = PLAYBOOK_PATH.read_text().lower()
+    keywords = ["run_mode", "execution_state", "result_kind", "planned", "executed"]
+    ok = 0
+    for kw in keywords:
+        if _check(f"playbook_mode:{kw}", kw in text, f"playbook mode: {kw}"):
+            ok += 1
+    return ok
+
+
 # ---------------------------------------------------------------------------
 # Headline claims registry checks
 # ---------------------------------------------------------------------------
@@ -256,6 +289,19 @@ def check_claims_format() -> int:
     ok = 0
     for field in required_fields:
         if _check(f"claims_field:{field}", field in text, f"claims field: {field}"):
+            ok += 1
+    return ok
+
+
+def check_claims_mapping_fields() -> int:
+    if not CLAIMS_PATH.is_file():
+        _check("claims_mapping_fields:present", False, "claims registry missing")
+        return 0
+    text = CLAIMS_PATH.read_text()
+    required_fields = ["procedure_ref", "harness_kind", "measurement_key"]
+    ok = 0
+    for field in required_fields:
+        if _check(f"claims_mapping_field:{field}", field in text, f"claims mapping field: {field}"):
             ok += 1
     return ok
 
@@ -363,11 +409,14 @@ def run_all() -> dict:
     check_policy_sections()
     check_policy_event_codes()
     check_policy_governance()
+    check_policy_mapping_contract()
     check_playbook_sections()
     check_playbook_environment()
     check_playbook_commands()
     check_playbook_variance()
+    check_playbook_mode_contract()
     check_claims_format()
+    check_claims_mapping_fields()
     check_claims_entries()
     check_claims_categories()
     check_claims_ids()
