@@ -1181,7 +1181,7 @@ mod tests {
 
     #[test]
     fn allowlist_capacity_enforced() {
-        let mut p = test_template();
+        let mut p = SsrfPolicyTemplate::default_template("test-conn".into());
         for i in 0..MAX_ALLOWLIST_ENTRIES {
             p.add_allowlist(&format!("host-{i}"), None, "r", "t", "time").unwrap();
         }

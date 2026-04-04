@@ -69,6 +69,7 @@ Every barrier enforcement action produces a signed receipt:
 - Content hash is deterministic (SHA-256 over canonical fields)
 - Receipts export as JSONL for post-hoc audit and replay
 - Trace correlation IDs link enforcement to barrier plans
+- Missing barrier coverage emits an explicit `not_applicable` receipt rather than a synthetic pass
 
 ## Event Codes
 
@@ -80,6 +81,7 @@ Every barrier enforcement action produces a signed receipt:
 | `DGIS-BARRIER-004` | Barrier expired |
 | `DGIS-BARRIER-005` | Barrier check passed |
 | `DGIS-BARRIER-006` | Barrier check denied |
+| `DGIS-BARRIER-007` | Barrier check not applicable because no matching authoritative barrier exists |
 | `DGIS-BARRIER-010` | Sandbox tier escalated |
 | `DGIS-BARRIER-020` | Composition firewall enforced |
 | `DGIS-BARRIER-030` | Fork pin verified successfully |

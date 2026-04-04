@@ -35,6 +35,7 @@ pub mod event_codes {
     pub const BARRIER_EXPIRED: &str = "DGIS-BARRIER-004";
     pub const BARRIER_CHECK_PASSED: &str = "DGIS-BARRIER-005";
     pub const BARRIER_CHECK_DENIED: &str = "DGIS-BARRIER-006";
+    pub const BARRIER_CHECK_NOT_APPLICABLE: &str = "DGIS-BARRIER-007";
     pub const SANDBOX_ESCALATED: &str = "DGIS-BARRIER-010";
     pub const FIREWALL_ENFORCED: &str = "DGIS-BARRIER-020";
     pub const FORK_PIN_VERIFIED: &str = "DGIS-BARRIER-030";
@@ -378,6 +379,7 @@ pub enum BarrierAction {
     Applied,
     Removed,
     CheckPassed,
+    NotApplicable,
     CheckDenied,
     Overridden,
     Expired,
@@ -614,11 +616,16 @@ impl BarrierEngine {
         trace_id: &str,
     ) -> Result<BarrierAuditReceipt, BarrierError> {
         let barrier_ids = self.get_node_barrier_ids(node_id);
+        let mut matched_barrier = None;
 
         for barrier_id in &barrier_ids {
             if let Some(barrier) = self.barriers.get(barrier_id).cloned()
                 && let BarrierConfig::SandboxEscalation(ref cfg) = barrier.config
             {
+                if matched_barrier.is_none() {
+                    matched_barrier = Some(barrier.clone());
+                }
+
                 // Enforce minimum tier
                 if current_tier.level() < cfg.min_tier.level() {
                     let receipt = BarrierAuditReceipt::new(
@@ -662,16 +669,31 @@ impl BarrierEngine {
             }
         }
 
-        // Build a synthetic barrier for the receipt (use first matching or create placeholder)
-        let receipt = self.make_pass_receipt(
-            node_id,
-            BarrierType::SandboxEscalation,
-            event_codes::SANDBOX_ESCALATED,
-            trace_id,
-            serde_json::json!({
-                "capability": requested_capability,
-                "tier": format!("{current_tier}"),
-            }),
+        let receipt = matched_barrier.map_or_else(
+            || {
+                self.make_not_applicable_receipt(
+                    node_id,
+                    BarrierType::SandboxEscalation,
+                    trace_id,
+                    serde_json::json!({
+                        "reason": "no_sandbox_barrier_configured",
+                        "capability": requested_capability,
+                        "tier": format!("{current_tier}"),
+                    }),
+                )
+            },
+            |barrier| {
+                BarrierAuditReceipt::new(
+                    event_codes::SANDBOX_ESCALATED,
+                    &barrier,
+                    BarrierAction::CheckPassed,
+                    trace_id,
+                    serde_json::json!({
+                        "capability": requested_capability,
+                        "tier": format!("{current_tier}"),
+                    }),
+                )
+            },
         );
         self.push_audit(receipt.clone());
         Ok(receipt)
@@ -690,12 +712,17 @@ impl BarrierEngine {
         trace_id: &str,
     ) -> Result<BarrierAuditReceipt, BarrierError> {
         let barrier_ids = self.get_node_barrier_ids(node_id);
+        let mut matched_barrier = None;
 
         for barrier_id in &barrier_ids {
-            if let Some(barrier) = self.barriers.get(barrier_id)
+            if let Some(barrier) = self.barriers.get(barrier_id).cloned()
                 && let BarrierConfig::CompositionFirewall(ref cfg) = barrier.config
                 && cfg.boundary_id == target_boundary
             {
+                if matched_barrier.is_none() {
+                    matched_barrier = Some(barrier.clone());
+                }
+
                 // Capability blocked unless in allow list
                 let is_allowed = cfg.allow_list.contains(&capability.to_string());
                 let is_blocked = cfg.blocked_capabilities.contains(&capability.to_string());
@@ -703,7 +730,7 @@ impl BarrierEngine {
                 if is_blocked && !is_allowed {
                     let receipt = BarrierAuditReceipt::new(
                         event_codes::BARRIER_CHECK_DENIED,
-                        barrier,
+                        &barrier,
                         BarrierAction::CheckDenied,
                         trace_id,
                         serde_json::json!({
@@ -721,15 +748,31 @@ impl BarrierEngine {
             }
         }
 
-        let receipt = self.make_pass_receipt(
-            node_id,
-            BarrierType::CompositionFirewall,
-            event_codes::FIREWALL_ENFORCED,
-            trace_id,
-            serde_json::json!({
-                "capability": capability,
-                "boundary": target_boundary,
-            }),
+        let receipt = matched_barrier.map_or_else(
+            || {
+                self.make_not_applicable_receipt(
+                    node_id,
+                    BarrierType::CompositionFirewall,
+                    trace_id,
+                    serde_json::json!({
+                        "reason": "no_matching_firewall_boundary",
+                        "capability": capability,
+                        "boundary": target_boundary,
+                    }),
+                )
+            },
+            |barrier| {
+                BarrierAuditReceipt::new(
+                    event_codes::FIREWALL_ENFORCED,
+                    &barrier,
+                    BarrierAction::CheckPassed,
+                    trace_id,
+                    serde_json::json!({
+                        "capability": capability,
+                        "boundary": target_boundary,
+                    }),
+                )
+            },
         );
         self.push_audit(receipt.clone());
         Ok(receipt)
@@ -747,39 +790,60 @@ impl BarrierEngine {
         trace_id: &str,
     ) -> Result<BarrierAuditReceipt, BarrierError> {
         let barrier_ids = self.get_node_barrier_ids(node_id);
+        let mut matched_barrier = None;
 
         for barrier_id in &barrier_ids {
             if let Some(barrier) = self.barriers.get(barrier_id).cloned()
                 && let BarrierConfig::VerifiedForkPin(ref cfg) = barrier.config
-                && !ct_eq(&cfg.expected_digest, artifact_digest)
             {
-                let receipt = BarrierAuditReceipt::new(
-                    event_codes::FORK_PIN_REJECTED,
-                    &barrier,
-                    BarrierAction::CheckDenied,
-                    trace_id,
-                    serde_json::json!({
-                        "expected_digest": cfg.expected_digest,
-                        "actual_digest": artifact_digest,
-                        "pinned_commit": cfg.pinned_commit,
-                    }),
-                );
-                self.push_audit(receipt);
-                return Err(BarrierError::ForkPinVerification(format!(
-                    "digest mismatch for node {node_id}: expected {}, got {artifact_digest}",
-                    cfg.expected_digest
-                )));
+                if matched_barrier.is_none() {
+                    matched_barrier = Some(barrier.clone());
+                }
+
+                if !ct_eq(&cfg.expected_digest, artifact_digest) {
+                    let receipt = BarrierAuditReceipt::new(
+                        event_codes::FORK_PIN_REJECTED,
+                        &barrier,
+                        BarrierAction::CheckDenied,
+                        trace_id,
+                        serde_json::json!({
+                            "expected_digest": cfg.expected_digest,
+                            "actual_digest": artifact_digest,
+                            "pinned_commit": cfg.pinned_commit,
+                        }),
+                    );
+                    self.push_audit(receipt);
+                    return Err(BarrierError::ForkPinVerification(format!(
+                        "digest mismatch for node {node_id}: expected {}, got {artifact_digest}",
+                        cfg.expected_digest
+                    )));
+                }
             }
         }
 
-        let receipt = self.make_pass_receipt(
-            node_id,
-            BarrierType::VerifiedForkPin,
-            event_codes::FORK_PIN_VERIFIED,
-            trace_id,
-            serde_json::json!({
-                "artifact_digest": artifact_digest,
-            }),
+        let receipt = matched_barrier.map_or_else(
+            || {
+                self.make_not_applicable_receipt(
+                    node_id,
+                    BarrierType::VerifiedForkPin,
+                    trace_id,
+                    serde_json::json!({
+                        "reason": "no_verified_fork_barrier_configured",
+                        "artifact_digest": artifact_digest,
+                    }),
+                )
+            },
+            |barrier| {
+                BarrierAuditReceipt::new(
+                    event_codes::FORK_PIN_VERIFIED,
+                    &barrier,
+                    BarrierAction::CheckPassed,
+                    trace_id,
+                    serde_json::json!({
+                        "artifact_digest": artifact_digest,
+                    }),
+                )
+            },
         );
         self.push_audit(receipt.clone());
         Ok(receipt)
@@ -1030,22 +1094,21 @@ impl BarrierEngine {
         Ok(())
     }
 
-    /// Create a pass receipt for a node that has no matching barrier (pass-through).
-    fn make_pass_receipt(
+    /// Create an explicit receipt for a node that has no matching authoritative barrier.
+    fn make_not_applicable_receipt(
         &self,
         node_id: &str,
         barrier_type: BarrierType,
-        event_code: &str,
         trace_id: &str,
         details: serde_json::Value,
     ) -> BarrierAuditReceipt {
         BarrierAuditReceipt {
             receipt_id: Uuid::now_v7().to_string(),
-            event_code: event_code.to_string(),
-            barrier_id: format!("passthrough-{node_id}"),
+            event_code: event_codes::BARRIER_CHECK_NOT_APPLICABLE.to_string(),
+            barrier_id: format!("not-applicable:{barrier_type}:{node_id}"),
             node_id: node_id.to_string(),
             barrier_type,
-            action: BarrierAction::CheckPassed,
+            action: BarrierAction::NotApplicable,
             timestamp: Utc::now().to_rfc3339(),
             trace_id: trace_id.to_string(),
             details,
@@ -1206,12 +1269,16 @@ mod tests {
     fn sandbox_escalation_allows_at_min_tier() {
         let mut engine = BarrierEngine::new();
         let barrier = make_sandbox_barrier("node-b", SandboxTier::Strict);
+        let barrier_id = barrier.barrier_id.clone();
         let trace = make_trace_id();
         engine.apply_barrier(barrier, &trace).unwrap();
 
-        let result =
-            engine.check_sandbox_escalation("node-b", "network_http", SandboxTier::Strict, &trace);
-        assert!(result.is_ok());
+        let receipt = engine
+            .check_sandbox_escalation("node-b", "network_http", SandboxTier::Strict, &trace)
+            .unwrap();
+        assert_eq!(receipt.barrier_id, barrier_id);
+        assert_eq!(receipt.event_code, event_codes::SANDBOX_ESCALATED);
+        assert_eq!(receipt.action, BarrierAction::CheckPassed);
     }
 
     #[test]
@@ -1270,13 +1337,17 @@ mod tests {
     fn firewall_allows_capability_in_allow_list() {
         let mut engine = BarrierEngine::new();
         let barrier = make_firewall_barrier("node-f", "trust-boundary-1");
+        let barrier_id = barrier.barrier_id.clone();
         let trace = make_trace_id();
         engine.apply_barrier(barrier, &trace).unwrap();
 
         // network_raw is in both blocked and allow_list; allow_list wins
-        let result =
-            engine.check_composition_firewall("node-f", "network_raw", "trust-boundary-1", &trace);
-        assert!(result.is_ok());
+        let receipt = engine
+            .check_composition_firewall("node-f", "network_raw", "trust-boundary-1", &trace)
+            .unwrap();
+        assert_eq!(receipt.barrier_id, barrier_id);
+        assert_eq!(receipt.event_code, event_codes::FIREWALL_ENFORCED);
+        assert_eq!(receipt.action, BarrierAction::CheckPassed);
     }
 
     #[test]
@@ -1308,11 +1379,16 @@ mod tests {
     fn fork_pin_accepts_matching_digest() {
         let mut engine = BarrierEngine::new();
         let barrier = make_fork_pin_barrier("dep-y", "sha256:aabbccdd");
+        let barrier_id = barrier.barrier_id.clone();
         let trace = make_trace_id();
         engine.apply_barrier(barrier, &trace).unwrap();
 
-        let result = engine.check_fork_pin("dep-y", "sha256:aabbccdd", &trace);
-        assert!(result.is_ok());
+        let receipt = engine
+            .check_fork_pin("dep-y", "sha256:aabbccdd", &trace)
+            .unwrap();
+        assert_eq!(receipt.barrier_id, barrier_id);
+        assert_eq!(receipt.event_code, event_codes::FORK_PIN_VERIFIED);
+        assert_eq!(receipt.action, BarrierAction::CheckPassed);
     }
 
     // === Staged rollout fence tests ===
@@ -1583,31 +1659,49 @@ mod tests {
         }
     }
 
-    // === Passthrough behavior ===
+    // === Explicit no-barrier behavior ===
 
     #[test]
     fn check_passes_when_no_barriers_exist() {
         let mut engine = BarrierEngine::new();
         let trace = make_trace_id();
 
-        let result = engine.check_sandbox_escalation(
-            "unbarriered-node",
-            "anything",
-            SandboxTier::Permissive,
-            &trace,
+        let sandbox_receipt = engine
+            .check_sandbox_escalation(
+                "unbarriered-node",
+                "anything",
+                SandboxTier::Permissive,
+                &trace,
+            )
+            .unwrap();
+        assert_eq!(
+            sandbox_receipt.event_code,
+            event_codes::BARRIER_CHECK_NOT_APPLICABLE
         );
-        assert!(result.is_ok());
+        assert_eq!(sandbox_receipt.action, BarrierAction::NotApplicable);
+        assert!(sandbox_receipt.barrier_id.starts_with("not-applicable:"));
 
-        let result = engine.check_composition_firewall(
-            "unbarriered-node",
-            "exec_child",
-            "any-boundary",
-            &trace,
+        let firewall_receipt = engine
+            .check_composition_firewall("unbarriered-node", "exec_child", "any-boundary", &trace)
+            .unwrap();
+        assert_eq!(
+            firewall_receipt.event_code,
+            event_codes::BARRIER_CHECK_NOT_APPLICABLE
         );
-        assert!(result.is_ok());
+        assert_eq!(firewall_receipt.action, BarrierAction::NotApplicable);
+        assert_eq!(
+            firewall_receipt.details["reason"],
+            serde_json::json!("no_matching_firewall_boundary")
+        );
 
-        let result = engine.check_fork_pin("unbarriered-node", "any-digest", &trace);
-        assert!(result.is_ok());
+        let fork_pin_receipt = engine
+            .check_fork_pin("unbarriered-node", "any-digest", &trace)
+            .unwrap();
+        assert_eq!(
+            fork_pin_receipt.event_code,
+            event_codes::BARRIER_CHECK_NOT_APPLICABLE
+        );
+        assert_eq!(fork_pin_receipt.action, BarrierAction::NotApplicable);
     }
 
     #[test]
