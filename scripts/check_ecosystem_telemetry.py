@@ -32,6 +32,20 @@ REQUIRED_INVARIANTS = [
     "INV-TEL-QUERY",
     "INV-TEL-EXPORT",
     "INV-TEL-GOVERNANCE",
+    "INV-TEL-EXPORT-PROVENANCE",
+    "INV-TEL-EXPORT-NO-PLACEHOLDER",
+    "INV-TEL-COMPROMISE",
+    "INV-TEL-CERT-DIST",
+]
+
+REQUIRED_SPEC_MARKERS = [
+    "artifacts/13/compromise_reduction_report.json",
+    "baseline_compromised / hardened_compromised",
+    "complete_containment",
+    "SignedExtensionRegistry.list(Some(ExtensionStatus::Active))",
+    "CertificationRegistry",
+    "uncertified",
+    "trust_card.rs",
 ]
 
 REQUIRED_RUST_SYMBOLS = [
@@ -48,6 +62,10 @@ REQUIRED_RUST_SYMBOLS = [
     "pub struct AnomalyConfig",
     "pub struct TelemetryQuery",
     "pub struct TelemetryQueryResult",
+    "pub enum DerivedMetricAvailability",
+    "pub struct DerivedMetricContract",
+    "pub fn compromise_reduction_factor_contract()",
+    "pub fn certification_distribution_contract()",
     "pub struct EcosystemHealthExport",
     "pub struct ResourceBudget",
     "pub struct TelemetryPipeline",
@@ -115,6 +133,8 @@ REQUIRED_TESTS = [
     "test_health_export",
     "test_resource_budget_eviction",
     "test_governance_default_opt_in",
+    "test_compromise_reduction_contract_declares_complete_containment",
+    "test_certification_distribution_contract_uses_active_registry_and_uncertified_fallback",
 ]
 
 
@@ -203,6 +223,7 @@ def run_all_checks() -> dict[str, Any]:
             "mod_rs": check_file_exists(MOD_PATH),
         },
         "spec_invariants": check_content("spec", SPEC_PATH, REQUIRED_INVARIANTS),
+        "spec_metric_contracts": check_content("spec", SPEC_PATH, REQUIRED_SPEC_MARKERS),
         "rust_symbols": check_content("rust", RUST_IMPL_PATH, REQUIRED_RUST_SYMBOLS),
         "event_codes": check_content("rust", RUST_IMPL_PATH, REQUIRED_EVENT_CODES),
         "trust_metrics": check_content("rust", RUST_IMPL_PATH, REQUIRED_TRUST_METRICS),
@@ -218,6 +239,7 @@ def run_all_checks() -> dict[str, Any]:
 
     check_results = [
         checks["spec_invariants"],
+        checks["spec_metric_contracts"],
         checks["rust_symbols"],
         checks["event_codes"],
         checks["trust_metrics"],
@@ -243,9 +265,9 @@ def run_all_checks() -> dict[str, Any]:
         "overall_pass": all_pass and file_pass,
         "checks": checks,
         "summary": {
-            "total_checks": 13,
+            "total_checks": 14,
             "passed": passed_count,
-            "failed": 13 - passed_count,
+            "failed": 14 - passed_count,
         },
     }
 
@@ -295,7 +317,7 @@ def self_test() -> bool:
     assert "checks" in evidence
     assert "summary" in evidence
     expected = [
-        "files", "spec_invariants", "rust_symbols", "event_codes",
+        "files", "spec_invariants", "spec_metric_contracts", "rust_symbols", "event_codes",
         "trust_metrics", "adoption_metrics", "anomaly_types",
         "pipeline_methods", "tests", "mod_registration",
         "privacy_governance", "anomaly_detection", "resource_budget",

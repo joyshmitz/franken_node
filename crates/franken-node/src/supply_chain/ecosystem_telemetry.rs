@@ -257,6 +257,89 @@ pub struct TelemetryQueryResult {
     pub privacy_filtered: bool,
 }
 
+/// Explicit availability states for derived health-export metrics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DerivedMetricAvailability {
+    Available,
+    MissingUpstream,
+    StaleUpstream,
+    CompleteContainment,
+    BaselineAbsent,
+}
+
+/// Machine-readable contract for a derived ecosystem health metric.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DerivedMetricContract {
+    /// Stable metric identifier.
+    pub metric_id: String,
+    /// Authoritative upstream inputs that the implementation must read.
+    pub authoritative_inputs: Vec<String>,
+    /// Canonical computation rule.
+    pub formula: String,
+    /// Required non-placeholder behaviors for missing or edge-case inputs.
+    pub missing_data_semantics: Vec<DerivedMetricAvailability>,
+    /// Notes that keep the follow-on implementation bead narrowly scoped.
+    pub implementation_scope: Vec<String>,
+}
+
+/// Contract for the compromise reduction metric.
+#[must_use]
+pub fn compromise_reduction_factor_contract() -> DerivedMetricContract {
+    DerivedMetricContract {
+        metric_id: "compromise_reduction_factor".to_string(),
+        authoritative_inputs: vec![
+            "artifacts/13/compromise_reduction_report.json".to_string(),
+            "docs/specs/section_13/bd-3cpa_contract.md".to_string(),
+        ],
+        formula: "baseline_compromised / hardened_compromised".to_string(),
+        missing_data_semantics: vec![
+            DerivedMetricAvailability::MissingUpstream,
+            DerivedMetricAvailability::StaleUpstream,
+            DerivedMetricAvailability::CompleteContainment,
+            DerivedMetricAvailability::BaselineAbsent,
+        ],
+        implementation_scope: vec![
+            "Read only a verified compromise-reduction report for the same reporting window."
+                .to_string(),
+            "Emit a numeric factor only when both baseline_compromised and hardened_compromised are greater than zero."
+                .to_string(),
+            "When hardened_compromised == 0 and baseline_compromised > 0, surface complete_containment instead of inventing a capped ratio or placeholder 1.0."
+                .to_string(),
+            "When baseline_compromised == 0, surface baseline_absent because the ratio is undefined."
+                .to_string(),
+        ],
+    }
+}
+
+/// Contract for the certification distribution metric.
+#[must_use]
+pub fn certification_distribution_contract() -> DerivedMetricContract {
+    DerivedMetricContract {
+        metric_id: "certification_distribution".to_string(),
+        authoritative_inputs: vec![
+            "SignedExtensionRegistry.list(Some(ExtensionStatus::Active))".to_string(),
+            "CertificationRegistry records keyed by extension_id@version".to_string(),
+        ],
+        formula: "count active extension versions grouped by canonical certification::CertificationLevel label; missing certification records fall back to uncertified".to_string(),
+        missing_data_semantics: vec![
+            DerivedMetricAvailability::Available,
+            DerivedMetricAvailability::MissingUpstream,
+            DerivedMetricAvailability::StaleUpstream,
+        ],
+        implementation_scope: vec![
+            "Count only the active extension set from the signed extension registry."
+                .to_string(),
+            "Join active extension_id@version entries against CertificationRegistry."
+                .to_string(),
+            "Use canonical certification.rs levels (uncertified/basic/standard/verified/audited), not the presentation tiers exposed by trust_card.rs."
+                .to_string(),
+            "If an active extension version lacks a certification record, place it in the uncertified bucket rather than dropping it silently."
+                .to_string(),
+        ],
+    }
+}
+
 // ── Export for Section 13 success criteria ────────────────────────────────────
 
 /// Ecosystem health export for program success measurement.
@@ -269,10 +352,20 @@ pub struct EcosystemHealthExport {
     /// Average migration velocity (extensions migrated per period).
     pub migration_velocity: f64,
     /// Compromise reduction metric (relative to baseline).
+    ///
+    /// Canonical formula and missing-data behavior are defined by
+    /// `compromise_reduction_factor_contract()`. The current numeric export
+    /// remains a placeholder until bead `bd-2fqyv.9.2` wires authoritative
+    /// Section 13 evidence into this surface.
     pub compromise_reduction_factor: f64,
     /// Provenance coverage rate (0.0..=1.0).
     pub provenance_coverage: f64,
     /// Certification level distribution.
+    ///
+    /// Canonical grouping rules are defined by
+    /// `certification_distribution_contract()`. The current map remains a
+    /// placeholder until bead `bd-2fqyv.9.2` joins active extensions against
+    /// certification records.
     pub certification_distribution: BTreeMap<String, u64>,
     /// Average quarantine-to-resolution time (seconds).
     pub avg_quarantine_resolution_secs: f64,
@@ -501,6 +594,10 @@ impl TelemetryPipeline {
     }
 
     /// Generate an ecosystem health export for Section 13 success criteria.
+    ///
+    /// `compromise_reduction_factor` and `certification_distribution` remain
+    /// intentionally non-authoritative until the follow-on implementation bead
+    /// replaces the placeholder values with the contract helpers above.
     #[must_use]
     pub fn export_health(&self, timestamp: &str) -> EcosystemHealthExport {
         EcosystemHealthExport {
@@ -888,6 +985,47 @@ mod tests {
         let export = pipeline.export_health(&ts(5));
         assert!(export.provenance_coverage.is_finite());
         assert!((export.provenance_coverage - 0.875).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_compromise_reduction_contract_declares_complete_containment() {
+        let contract = compromise_reduction_factor_contract();
+        assert_eq!(contract.metric_id, "compromise_reduction_factor");
+        assert_eq!(
+            contract.formula,
+            "baseline_compromised / hardened_compromised"
+        );
+        assert!(contract
+            .authoritative_inputs
+            .iter()
+            .any(|input| input == "artifacts/13/compromise_reduction_report.json"));
+        assert!(contract
+            .missing_data_semantics
+            .contains(&DerivedMetricAvailability::CompleteContainment));
+        assert!(contract
+            .implementation_scope
+            .iter()
+            .any(|item| item.contains("placeholder 1.0")));
+    }
+
+    #[test]
+    fn test_certification_distribution_contract_uses_active_registry_and_uncertified_fallback() {
+        let contract = certification_distribution_contract();
+        assert_eq!(contract.metric_id, "certification_distribution");
+        assert!(contract
+            .authoritative_inputs
+            .iter()
+            .any(|input| input
+                .contains("SignedExtensionRegistry.list(Some(ExtensionStatus::Active))")));
+        assert!(contract
+            .authoritative_inputs
+            .iter()
+            .any(|input| input.contains("CertificationRegistry")));
+        assert!(contract.formula.contains("uncertified"));
+        assert!(contract
+            .implementation_scope
+            .iter()
+            .any(|item| item.contains("trust_card.rs")));
     }
 
     #[test]

@@ -1,9 +1,9 @@
 # Verification Summary: Ecosystem Telemetry for Trust and Adoption Metrics
 
 **Bead:** bd-phf | **Section:** 10.4
-**Timestamp:** 2026-03-29T01:49:58.299839+00:00
+**Timestamp:** 2026-04-04T01:03:11.093606+00:00
 **Overall:** PASS
-**Checks:** 13/13 passed
+**Checks:** 14/14 passed
 
 ## Check Results
 
@@ -11,8 +11,8 @@
 - **anomaly_detection:** PASS
 - **anomaly_types:** PASS
 - **event_codes:** PASS
-- **File spec:** PASS (docs/specs/section_10_4/bd-phf_contract.md, 3375 bytes)
-- **File rust_impl:** PASS (crates/franken-node/src/supply_chain/ecosystem_telemetry.rs, 33981 bytes)
+- **File spec:** PASS (docs/specs/section_10_4/bd-phf_contract.md, 6831 bytes)
+- **File rust_impl:** PASS (crates/franken-node/src/supply_chain/ecosystem_telemetry.rs, 40193 bytes)
 - **File mod_rs:** PASS (crates/franken-node/src/supply_chain/mod.rs, 368 bytes)
 - **mod_registration:** PASS
 - **pipeline_methods:** PASS
@@ -20,6 +20,7 @@
 - **resource_budget:** PASS
 - **rust_symbols:** PASS
 - **spec_invariants:** PASS
+- **spec_metric_contracts:** PASS
 - **tests:** PASS
 - **trust_metrics:** PASS
 

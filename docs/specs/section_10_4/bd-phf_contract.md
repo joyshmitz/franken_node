@@ -21,6 +21,10 @@ retention for ecosystem-level trust and adoption signals.
 | INV-TEL-QUERY | Query filtering supports metric kind, time range, aggregation level, label dimensions, and result limiting. |
 | INV-TEL-EXPORT | Ecosystem health export surfaces compatibility pass rate, migration velocity, provenance coverage, and active alerts. |
 | INV-TEL-GOVERNANCE | Data governance configuration controls collected and published categories independently. |
+| INV-TEL-EXPORT-PROVENANCE | Every derived export field documents its authoritative upstream inputs. |
+| INV-TEL-EXPORT-NO-PLACEHOLDER | Missing or stale upstream inputs must be surfaced explicitly; live exports may not silently substitute `1.0` or empty maps as if they were measured values. |
+| INV-TEL-COMPROMISE | `compromise_reduction_factor` is derived from the Section 13 compromise-reduction report, not from ad hoc local heuristics. |
+| INV-TEL-CERT-DIST | `certification_distribution` counts the active extension set using canonical certification levels from `certification.rs`, not the presentation tiers in `trust_card.rs`. |
 
 ## Metric Families
 
@@ -69,3 +73,47 @@ retention for ecosystem-level trust and adoption signals.
 
 - Upstream: bd-ml1 (publisher reputation), bd-273 (certification levels)
 - Downstream: bd-261k (section gate), bd-1xg (plan tracker)
+
+## Ecosystem Health Derived Metrics
+
+### `compromise_reduction_factor`
+
+| Aspect | Contract |
+|--------|----------|
+| Authoritative inputs | `artifacts/13/compromise_reduction_report.json` plus the schema/semantics in `docs/specs/section_13/bd-3cpa_contract.md` |
+| Canonical formula | `baseline_compromised / hardened_compromised` |
+| Counted unit | Successful host compromises recorded by the same adversarial campaign runbook |
+| Freshness rule | Use only a verified report from the same reporting/release window as the ecosystem health export |
+| Forbidden shortcut | Do not emit a placeholder `1.0` when the report is missing, stale, or not yet verified |
+
+Required missing-data semantics:
+
+- `missing_upstream`: no verified Section 13 report is available.
+- `stale_upstream`: the available report is outside the reporting/release window.
+- `complete_containment`: `hardened_compromised == 0` and `baseline_compromised > 0`; this must be surfaced explicitly instead of inventing a capped numeric ratio.
+- `baseline_absent`: `baseline_compromised == 0`, so the ratio is undefined.
+
+Implementation note for `bd-2fqyv.9.2`:
+
+- Because a bare `f64` cannot distinguish unavailable data from a real value, the implementation bead must add explicit availability/provenance metadata rather than preserving the current placeholder behavior.
+
+### `certification_distribution`
+
+| Aspect | Contract |
+|--------|----------|
+| Authoritative inputs | `SignedExtensionRegistry.list(Some(ExtensionStatus::Active))` and `CertificationRegistry` records keyed by `extension_id@version` |
+| Canonical grouping | `uncertified`, `basic`, `standard`, `verified`, `audited` from `crates/franken-node/src/supply_chain/certification.rs` |
+| Counted unit | One active `extension_id@version` per signed extension entry |
+| Inclusion rule | Count only `ExtensionStatus::Active` entries from the signed extension registry |
+| Missing-record rule | If an active extension version has no certification record, count it in the `uncertified` bucket |
+| Forbidden shortcut | Do not derive this metric from the bronze/silver/gold/platinum presentation tiers in `crates/franken-node/src/supply_chain/trust_card.rs` |
+
+Required missing-data semantics:
+
+- `missing_upstream`: the active extension set or certification registry is unavailable.
+- `stale_upstream`: the active extension snapshot or certification data is outside the export window.
+- Partial active-set coverage must be called out explicitly; the implementation must not silently drop unmatched active extensions.
+
+Implementation note for `bd-2fqyv.9.2`:
+
+- The implementation bead should introduce an explicit status/provenance payload for this metric if the export format would otherwise confuse "empty because nothing is certified" with "empty because upstream state was unavailable."

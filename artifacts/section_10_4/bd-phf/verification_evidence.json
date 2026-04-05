@@ -2,19 +2,19 @@
   "bead_id": "bd-phf",
   "section": "10.4",
   "title": "Ecosystem Telemetry for Trust and Adoption Metrics",
-  "timestamp": "2026-03-29T01:49:58.299839+00:00",
+  "timestamp": "2026-04-04T01:03:11.093606+00:00",
   "overall_pass": true,
   "checks": {
     "files": {
       "spec": {
         "path": "docs/specs/section_10_4/bd-phf_contract.md",
         "exists": true,
-        "size_bytes": 3375
+        "size_bytes": 6831
       },
       "rust_impl": {
         "path": "crates/franken-node/src/supply_chain/ecosystem_telemetry.rs",
         "exists": true,
-        "size_bytes": 33981
+        "size_bytes": 40193
       },
       "mod_rs": {
         "path": "crates/franken-node/src/supply_chain/mod.rs",
@@ -32,7 +32,24 @@
         "INV-TEL-BUDGET",
         "INV-TEL-QUERY",
         "INV-TEL-EXPORT",
-        "INV-TEL-GOVERNANCE"
+        "INV-TEL-GOVERNANCE",
+        "INV-TEL-EXPORT-PROVENANCE",
+        "INV-TEL-EXPORT-NO-PLACEHOLDER",
+        "INV-TEL-COMPROMISE",
+        "INV-TEL-CERT-DIST"
+      ],
+      "missing": []
+    },
+    "spec_metric_contracts": {
+      "pass": true,
+      "found": [
+        "artifacts/13/compromise_reduction_report.json",
+        "baseline_compromised / hardened_compromised",
+        "complete_containment",
+        "SignedExtensionRegistry.list(Some(ExtensionStatus::Active))",
+        "CertificationRegistry",
+        "uncertified",
+        "trust_card.rs"
       ],
       "missing": []
     },
@@ -52,6 +69,10 @@
         "pub struct AnomalyConfig",
         "pub struct TelemetryQuery",
         "pub struct TelemetryQueryResult",
+        "pub enum DerivedMetricAvailability",
+        "pub struct DerivedMetricContract",
+        "pub fn compromise_reduction_factor_contract()",
+        "pub fn certification_distribution_contract()",
         "pub struct EcosystemHealthExport",
         "pub struct ResourceBudget",
         "pub struct TelemetryPipeline"
@@ -136,7 +157,9 @@
         "test_no_anomaly_within_threshold",
         "test_health_export",
         "test_resource_budget_eviction",
-        "test_governance_default_opt_in"
+        "test_governance_default_opt_in",
+        "test_compromise_reduction_contract_declares_complete_containment",
+        "test_certification_distribution_contract_uses_active_registry_and_uncertified_fallback"
       ],
       "missing": []
     },
@@ -166,8 +189,8 @@
     }
   },
   "summary": {
-    "total_checks": 13,
-    "passed": 13,
+    "total_checks": 14,
+    "passed": 14,
     "failed": 0
   }
 }
