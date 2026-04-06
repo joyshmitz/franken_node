@@ -189,6 +189,86 @@ struct Ed25519SigningMaterial {
     signing_key: ed25519_dalek::SigningKey,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct RunPackageDependency {
+    dependency_name: String,
+    version_requirement: String,
+    section: String,
+    extension_id: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum RunDependencyTrustStatus {
+    Trusted,
+    Untracked,
+    Revoked,
+    Quarantined,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct RunDependencyTrustResult {
+    dependency_name: String,
+    version_requirement: String,
+    section: String,
+    extension_id: String,
+    status: RunDependencyTrustStatus,
+    trust_card_version: Option<u64>,
+    risk_level: Option<String>,
+    detail: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum TrustViolationKind {
+    RegistryCorrupt,
+    Revoked,
+    Quarantined,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct TrustViolation {
+    dependency_name: Option<String>,
+    extension_id: Option<String>,
+    kind: TrustViolationKind,
+    detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum PreFlightVerdict {
+    Passed {
+        checked: usize,
+        warnings: Vec<String>,
+        results: Vec<RunDependencyTrustResult>,
+    },
+    Blocked {
+        reason: String,
+        warnings: Vec<String>,
+        violations: Vec<TrustViolation>,
+        results: Vec<RunDependencyTrustResult>,
+    },
+    Skipped {
+        reason: String,
+    },
+}
+
+impl PreFlightVerdict {
+    const fn is_blocked(&self) -> bool {
+        matches!(self, Self::Blocked { .. })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+struct RunPreFlightReport {
+    app_path: String,
+    project_root: String,
+    policy_mode: String,
+    registry_path: Option<String>,
+    verdict: PreFlightVerdict,
+    receipt: Receipt,
+}
+
 fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> {
     use base64::Engine;
 

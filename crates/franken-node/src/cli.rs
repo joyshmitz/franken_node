@@ -121,6 +121,10 @@ pub struct RunArgs {
     #[arg(long, default_value = "balanced")]
     pub policy: String,
 
+    /// Emit a machine-readable trust pre-flight report.
+    #[arg(long)]
+    pub json: bool,
+
     /// Config file override.
     #[arg(long)]
     pub config: Option<PathBuf>,

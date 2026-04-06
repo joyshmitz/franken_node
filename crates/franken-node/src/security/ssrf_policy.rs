@@ -555,20 +555,38 @@ impl SsrfPolicyTemplate {
     pub fn to_egress_policy(&self) -> EgressPolicy {
         let mut policy = EgressPolicy::new(self.connector_id.clone(), Action::Deny);
 
-        // Add allowlist entries first (higher priority)
+        // Add allowlist entries first (higher priority).
+        // Log failures — a silently dropped allow rule means a host
+        // becomes blocked without operator awareness.
         for entry in &self.allowlist {
-            let _ = policy.add_rule(EgressRule {
+            if let Err(err) = policy.add_rule(EgressRule {
                 host: entry.host.clone(),
                 port: entry.port,
                 action: Action::Allow,
                 protocol: Protocol::Http,
-            });
-            let _ = policy.add_rule(EgressRule {
+            }) {
+                tracing::error!(
+                    host = %entry.host,
+                    port = ?entry.port,
+                    protocol = "http",
+                    error = %err,
+                    "SSRF allowlist rule could not be added — host will be BLOCKED"
+                );
+            }
+            if let Err(err) = policy.add_rule(EgressRule {
                 host: entry.host.clone(),
                 port: entry.port,
                 action: Action::Allow,
                 protocol: Protocol::Tcp,
-            });
+            }) {
+                tracing::error!(
+                    host = %entry.host,
+                    port = ?entry.port,
+                    protocol = "tcp",
+                    error = %err,
+                    "SSRF allowlist rule could not be added — host will be BLOCKED"
+                );
+            }
         }
 
         policy

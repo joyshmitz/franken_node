@@ -1010,7 +1010,17 @@ impl CancellationRuntime {
     pub fn export_audit_log_jsonl(&self) -> String {
         self.audit_log
             .iter()
-            .map(|r| serde_json::to_string(r).unwrap_or_default())
+            .filter_map(|r| match serde_json::to_string(r) {
+                Ok(json) => Some(json),
+                Err(err) => {
+                    tracing::error!(
+                        task_id = %r.task_id,
+                        error = %err,
+                        "failed serializing audit record — record lost"
+                    );
+                    None
+                }
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }
