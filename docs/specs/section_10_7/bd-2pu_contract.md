@@ -41,6 +41,7 @@ playbook:
 - Collects results into a structured reproduction report.
 - Supports `--skip-install` for pre-configured environments.
 - Supports `--dry-run` to list steps without executing.
+- Supports `--verbose` to print resolved command/status detail per claim.
 - Is idempotent and can be re-run safely.
 
 ### Headline Claims Registry
@@ -77,12 +78,14 @@ The automation script produces a structured JSON report
 | `verdict` | Overall `PLANNED`, `PASS`, `FAIL`, or `ERROR` |
 | `timestamp` | ISO-8601 UTC timestamp |
 | `duration_seconds` | Total wall-clock duration |
+| `execution_log` | Ordered structured events for plan resolution, claim execution, and report completion |
 
 Per-claim results must carry:
 
 - `execution_state` — `planned`, `executed`, `skipped`, or `error`
 - `result_kind` — `not_run`, `pass`, `fail`, or `error`
 - `procedure_ref`, `harness_kind`, and `measurement_key`
+- `command`, `resolved_procedure_ref`, and `detail`
 - `measured_value` only when execution actually occurred
 
 `--dry-run` / planning output is explicitly non-evidence-bearing:
@@ -153,6 +156,9 @@ Per-claim results must carry:
 9. Dry-run output cannot be mistaken for executed evidence: planning mode uses
    `PLANNED` / `not_run` semantics and never manufactures passing claim
    verdicts.
+10. The reproduction report carries structured execution-log events, and
+    subprocess-driven tests cover dry-run, missing-mapping, harness-failure,
+    and verbose CLI status surfaces.
 
 ## Artifacts
 

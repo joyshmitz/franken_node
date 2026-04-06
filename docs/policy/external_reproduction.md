@@ -45,6 +45,7 @@ It MUST:
 - Be executable with `python3 scripts/reproduce.py` from the repo root.
 - Accept `--skip-install` to bypass dependency installation.
 - Accept `--dry-run` to list all steps without executing them.
+- Accept `--verbose` to print resolved command/status details for each claim.
 - Accept `--yes` to skip interactive confirmation prompts.
 - Produce structured JSON output when passed `--json`.
 - Be idempotent: re-running produces the same result.
@@ -109,6 +110,7 @@ Top-level fields:
 | `schema_version` | Stable report schema identifier |
 | `run_mode` | `plan` for `--dry-run`, `executed` for real verification |
 | `verdict` | `PLANNED`, `PASS`, `FAIL`, or `ERROR` |
+| `execution_log` | Ordered structured events describing plan resolution, claim execution, and report emission |
 
 Per-claim fields:
 
@@ -119,7 +121,26 @@ Per-claim fields:
 | `procedure_ref` | Resolved public procedure path |
 | `harness_kind` | Adapter used for this claim |
 | `measurement_key` | Stable metric key used for threshold comparison |
+| `command` | Exact harness command line the automation resolved |
+| `resolved_procedure_ref` | Repo-relative or absolute path to the procedure actually selected |
+| `detail` | Human-readable explanation of planning, success, failure, or execution error |
 | `measured_value` | Present only when execution actually occurred |
+
+### 3.4.1 Detailed Execution Logging
+
+Structured reports MUST carry an `execution_log` array with enough detail to
+audit the distinction between planning and real execution:
+
+- planning runs emit `claim_planned` events with the resolved command or an
+  explicit mapping error
+- executed runs emit `claim_execution_started` and
+  `claim_execution_finished` events per claim
+- completion events include the claim id, execution/result state, command,
+  resolved procedure path, and the final detail string
+
+Human-readable `--verbose` output mirrors that same information so operators
+can inspect the resolved command, execution state, and failure detail without
+opening the JSON report.
 
 ### 3.5 Dry-Run / Planning Semantics
 

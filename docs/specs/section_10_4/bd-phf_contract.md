@@ -96,6 +96,7 @@ Required missing-data semantics:
 Implementation note for `bd-2fqyv.9.2`:
 
 - Because a bare `f64` cannot distinguish unavailable data from a real value, the implementation bead must add explicit availability/provenance metadata rather than preserving the current placeholder behavior.
+- The current Rust export surface carries this explicitly via `compromise_reduction_metadata` and `certification_distribution_metadata`, both of which expose `DerivedMetricAvailability`, authoritative input lists, observed inputs, source timestamps, and a human-readable provenance detail string.
 
 ### `certification_distribution`
 
@@ -117,3 +118,23 @@ Required missing-data semantics:
 Implementation note for `bd-2fqyv.9.2`:
 
 - The implementation bead should introduce an explicit status/provenance payload for this metric if the export format would otherwise confuse "empty because nothing is certified" with "empty because upstream state was unavailable."
+
+## Validation Workflow
+
+`bd-2fqyv.9.3` ratchets this surface with a scenario matrix and artifact-backed verification workflow so the telemetry export cannot drift back toward placeholders.
+
+| Scenario | Inputs | Expected export semantics | Locked by |
+|----------|--------|---------------------------|-----------|
+| `complete_inputs` | Verified compromise report plus current active extension and certification registries | Numeric compromise ratio and certification counts with populated provenance metadata | `test_health_export_computes_compromise_reduction_from_authoritative_report`, `test_health_export_counts_active_extensions_using_certification_registry` |
+| `partial_active_set_coverage` | Active extension exists without a certification record | Extension remains counted via the `uncertified` bucket instead of being silently dropped | `test_health_export_counts_active_extensions_using_certification_registry` |
+| `missing_inputs` | No report and/or no registry inputs | Export metadata marks the field as `missing_upstream` instead of emitting placeholder values | `test_health_export` |
+| `stale_compromise_report` | Verified report from a different reporting window | `compromise_reduction_metadata.availability = stale_upstream` | `test_health_export_surfaces_stale_compromise_report` |
+| `stale_certification_inputs` | Active extension or certification evaluation timestamp is outside the export window | `certification_distribution_metadata.availability = stale_upstream` | `test_health_export_marks_stale_certification_distribution_inputs` |
+| `complete_containment_or_baseline_absent` | Edge-case report where `hardened_compromised == 0` or `baseline_compromised == 0` | Metadata exposes `complete_containment` or `baseline_absent`; no fabricated numeric ratio is emitted | `test_health_export_surfaces_complete_containment_instead_of_placeholder_ratio`, `test_health_export_surfaces_baseline_absent_for_undefined_compromise_ratio` |
+
+Verification artifacts and workflow:
+
+- Run `python3 scripts/check_ecosystem_telemetry.py --json`.
+- Treat `artifacts/section_10_4/bd-phf/verification_evidence.json` as the report-level fixture for required symbols, tests, and contract markers.
+- Treat `artifacts/section_10_4/bd-phf/verification_summary.md` as the operator-facing verification digest.
+- Derived metric provenance must remain inspectable through `authoritative_inputs`, `observed_inputs`, `source_timestamp`, and `detail`.

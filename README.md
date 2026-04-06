@@ -178,7 +178,7 @@ franken-node incident list --severity high
 | `franken-node incident bundle` | Export deterministic incident bundle from authoritative evidence | `franken-node incident bundle --id INC-2026-0007 --evidence-path ./incidents/INC-2026-0007/evidence.v1.json --verify` |
 | `franken-node incident replay` | Replay incident timeline locally | `franken-node incident replay --bundle ./INC-2026-0007.fnbundle` |
 | `franken-node incident counterfactual` | Simulate alternative policy actions | `franken-node incident counterfactual --bundle ./INC-2026-0007.fnbundle --policy strict` |
-| `franken-node registry publish` | Publish signed extension artifact | `franken-node registry publish ./dist/plugin.fnext` |
+| `franken-node registry publish` | Publish signed extension artifact | `franken-node registry publish ./dist/plugin.fnext --signing-key ./keys/publisher.ed25519` |
 | `franken-node registry search` | Query extension registry with trust filters | `franken-node registry search auth --min-assurance 3` |
 | `franken-node bench run` | Run benchmark suite and emit signed report | `franken-node bench run --scenario secure-extension-heavy` |
 | `franken-node doctor` | Diagnose environment and policy setup (optionally with live policy activation telemetry) | `franken-node doctor --verbose --policy-activation-input ./fixtures/policy_activation/doctor_policy_activation_pass.json` |
@@ -187,6 +187,8 @@ franken-node incident list --severity high
 or from
 `<project-root>/.franken-node/state/incidents/<incident-id-slug>/evidence.v1.json`.
 Deterministic fixture timelines remain test-only.
+
+`franken-node registry publish` fails closed unless you provide `--signing-key <path>` with an Ed25519 private key file (raw 32-byte key, hex, base64, or supported JSON wrapper).
 
 ## Configuration
 

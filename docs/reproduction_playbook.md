@@ -96,6 +96,12 @@ The automation script handles everything:
 python3 scripts/reproduce.py --skip-install
 ```
 
+For operator-facing command/status detail during a real run:
+
+```bash
+python3 scripts/reproduce.py --claim HC-001 --verbose
+```
+
 ### 3.2 Individual Claim Verification
 
 To verify a specific headline claim:
@@ -131,9 +137,20 @@ Example planning payload:
       "claim_id": "HC-001",
       "execution_state": "planned",
       "result_kind": "not_run",
-      "procedure_ref": "artifacts/.../procedure.md",
-      "harness_kind": "cargo_test",
-      "measurement_key": "pass_rate"
+      "procedure_ref": "scripts/check_compatibility_corpus_pass_gate.py",
+      "harness_kind": "python",
+      "measurement_key": "verdict",
+      "command": "python3 scripts/check_compatibility_corpus_pass_gate.py --json",
+      "resolved_procedure_ref": "scripts/check_compatibility_corpus_pass_gate.py",
+      "detail": "claim mapped successfully; execution not requested"
+    }
+  ],
+  "execution_log": [
+    {
+      "phase": "planning",
+      "event": "claim_planned",
+      "claim_id": "HC-001",
+      "result_kind": "not_run"
     }
   ]
 }
@@ -190,11 +207,22 @@ The reproduction report (`reproduction_report.json`) contains:
       "claim_id": "HC-001",
       "execution_state": "executed",
       "result_kind": "pass",
-      "procedure_ref": "artifacts/.../procedure.md",
-      "harness_kind": "cargo_test",
-      "measurement_key": "pass_rate",
-      "measured_value": "100%",
-      "threshold": "100%"
+      "procedure_ref": "scripts/check_compatibility_corpus_pass_gate.py",
+      "harness_kind": "python",
+      "measurement_key": "verdict",
+      "command": "python3 scripts/check_compatibility_corpus_pass_gate.py --json",
+      "resolved_procedure_ref": "scripts/check_compatibility_corpus_pass_gate.py",
+      "measured_value": "PASS",
+      "acceptance_threshold": "verdict = PASS",
+      "detail": "procedure executed successfully and met threshold"
+    }
+  ],
+  "execution_log": [
+    {
+      "phase": "claim",
+      "event": "claim_execution_finished",
+      "claim_id": "HC-001",
+      "result_kind": "pass"
     }
   ],
   "verdict": "PASS",
@@ -205,8 +233,10 @@ The reproduction report (`reproduction_report.json`) contains:
 
 - `run_mode`: `plan` for dry-run output, `executed` for evidence-bearing runs.
 - `verdict`: `PLANNED` for dry-run output; PASS if all executed claims pass; FAIL if any executed claim fails.
-- `claims`: Per-claim breakdown with mapping metadata, execution state, and measured vs. threshold values.
+- `claims`: Per-claim breakdown with mapping metadata, resolved command/path detail, execution state, and measured vs. threshold values.
 - `environment`: Full fingerprint for traceability.
+- `execution_log`: Ordered structured events that show whether a claim was merely planned or actually executed.
+- `result_kind = error` with `execution_state = executed`: The harness ran, but the execution path failed operationally and must not be treated as a passing verification.
 
 ### 4.4 Sharing Results
 
@@ -282,5 +312,7 @@ Performance benchmarks are sensitive to system load. For best results:
 - Run benchmarks multiple times and take the median.
 
 ```bash
-python3 scripts/reproduce.py --claim HC-003 --iterations 5
+for run in 1 2 3 4 5; do
+  python3 scripts/reproduce.py --claim HC-003 --json > "reproduction-hc003-${run}.json"
+done
 ```

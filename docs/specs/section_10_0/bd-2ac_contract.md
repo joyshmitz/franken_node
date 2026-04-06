@@ -52,7 +52,17 @@ and publisher reputation linkage.
    with configurable policies, batched provenance chain validation.
 
 8. **CLI surface** — `franken-node registry publish` / `registry search` in
-   `src/cli.rs` with `RegistryPublishArgs` and `RegistrySearchArgs`.
+   `src/cli.rs` with `RegistryPublishArgs` and `RegistrySearchArgs`. Live
+   `registry publish` must require operator-provided Ed25519 signing material;
+   no deterministic demo key or hidden fallback is permitted in the publish
+   path.
+
+## Operator Signing Requirement
+
+- `franken-node registry publish` requires `--signing-key <path>`.
+- The key file must decode to a 32-byte Ed25519 private key.
+- Human-readable publish output must report the resulting `publisher_key_id`
+  and the signing-key source/path used for the registration.
 
 ## Invariants
 
