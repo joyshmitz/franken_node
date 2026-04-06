@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -55,6 +57,39 @@ def _write_python_procedure(path: Path, payload: dict[str, object], exit_code: i
     )
 
 
+def _write_raw_claims(path: Path, content: str) -> None:
+    path.write_text(textwrap.dedent(content).strip() + "\n", encoding="utf-8")
+
+
+def _copy_reproduce_script(root: Path) -> Path:
+    scripts_dir = root / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    target = scripts_dir / "reproduce.py"
+    shutil.copy2(Path(reproduce.__file__), target)
+    return target
+
+
+def _run_reproduce_cli(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    env = dict(os.environ)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    return subprocess.run(
+        [sys.executable, str(root / "scripts" / "reproduce.py"), *args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+
+def _load_cli_json(result: subprocess.CompletedProcess[str]) -> dict[str, object]:
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:  # pragma: no cover - assertion helper
+        raise AssertionError(f"CLI did not emit valid JSON: {exc}\nstdout={result.stdout}") from exc
+    return payload
+
+
 class TestReproductionRunner(unittest.TestCase):
     def setUp(self) -> None:
         self.tmpdir = tempfile.TemporaryDirectory()
@@ -85,6 +120,11 @@ class TestReproductionRunner(unittest.TestCase):
         self.assertEqual(report["claims"][0]["execution_state"], "planned")
         self.assertEqual(report["claims"][0]["result_kind"], "not_run")
         self.assertIn("command", report["claims"][0])
+        self.assertEqual(report["claims"][0]["resolved_procedure_ref"], "check_claim.py")
+        self.assertTrue(report["execution_log"])
+        self.assertTrue(
+            any(event["event"] == "claim_planned" for event in report["execution_log"])
+        )
 
     def test_executed_claim_passes_when_procedure_passes(self) -> None:
         _write_python_procedure(self.procedure_path, {"verdict": "PASS"})
@@ -105,7 +145,15 @@ class TestReproductionRunner(unittest.TestCase):
         self.assertEqual(claim["execution_state"], "executed")
         self.assertEqual(claim["result_kind"], "pass")
         self.assertEqual(claim["measured_value"], "PASS")
+        self.assertEqual(claim["resolved_procedure_ref"], "check_claim.py")
         self.assertTrue(self.report_path.is_file())
+        self.assertTrue(
+            any(
+                event["event"] == "claim_execution_finished"
+                and event.get("result_kind") == "pass"
+                for event in report["execution_log"]
+            )
+        )
 
     def test_executed_claim_fails_when_procedure_reports_fail(self) -> None:
         _write_python_procedure(self.procedure_path, {"verdict": "FAIL"}, exit_code=1)
@@ -124,21 +172,34 @@ class TestReproductionRunner(unittest.TestCase):
         self.assertEqual(claim["measured_value"], "FAIL")
         self.assertEqual(claim["exit_code"], 1)
 
+    def test_non_zero_exit_with_passing_payload_is_error(self) -> None:
+        _write_python_procedure(self.procedure_path, {"verdict": "PASS"}, exit_code=2)
+        _write_claims(self.claims_path, self.procedure_path.name)
+        with self._patch_paths(), patch.object(
+            reproduce,
+            "environment_fingerprint",
+            return_value={"os": "test", "python_version": "3.11.0"},
+        ):
+            report = reproduce.run_reproduction()
+
+        self.assertEqual(report["verdict"], "ERROR")
+        claim = report["claims"][0]
+        self.assertEqual(claim["execution_state"], "executed")
+        self.assertEqual(claim["result_kind"], "error")
+        self.assertIn("exited non-zero", claim["detail"])
+
     def test_missing_mapping_fields_becomes_error(self) -> None:
-        self.claims_path.write_text(
-            textwrap.dedent(
-                """
-                [[claim]]
-                claim_id = "HC-001"
-                claim_text = "sample claim"
-                verification_method = "test_suite"
-                acceptance_threshold = "verdict = PASS"
-                test_reference = "scripts/check_claim.py"
-                category = "compatibility"
-                """
-            ).strip()
-            + "\n",
-            encoding="utf-8",
+        _write_raw_claims(
+            self.claims_path,
+            """
+            [[claim]]
+            claim_id = "HC-001"
+            claim_text = "sample claim"
+            verification_method = "test_suite"
+            acceptance_threshold = "verdict = PASS"
+            test_reference = "scripts/check_claim.py"
+            category = "compatibility"
+            """,
         )
         with self._patch_paths(), patch.object(
             reproduce,
@@ -152,6 +213,13 @@ class TestReproductionRunner(unittest.TestCase):
         self.assertEqual(claim["execution_state"], "error")
         self.assertEqual(claim["result_kind"], "error")
         self.assertIn("missing mapping fields", claim["detail"])
+        self.assertTrue(
+            any(
+                event["event"] == "claim_execution_finished"
+                and event.get("result_kind") == "error"
+                for event in report["execution_log"]
+            )
+        )
 
     def test_unknown_claim_filter_returns_error_report(self) -> None:
         _write_python_procedure(self.procedure_path, {"verdict": "PASS"})
@@ -181,3 +249,82 @@ class TestReproductionRunner(unittest.TestCase):
         claim = report["claims"][0]
         self.assertEqual(claim["result_kind"], "error")
         self.assertIn("timed out", claim["detail"])
+
+
+class TestReproductionCliE2E(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+        self.root = Path(self.tmpdir.name)
+        (self.root / "docs").mkdir(parents=True, exist_ok=True)
+        (self.root / "scripts").mkdir(parents=True, exist_ok=True)
+        _copy_reproduce_script(self.root)
+        self.claims_path = self.root / "docs" / "headline_claims.toml"
+        self.procedure_path = self.root / "scripts" / "check_claim.py"
+
+    def test_cli_dry_run_json_keeps_planned_semantics(self) -> None:
+        _write_python_procedure(self.procedure_path, {"verdict": "PASS"})
+        _write_claims(self.claims_path, "scripts/check_claim.py")
+
+        result = _run_reproduce_cli(self.root, "--dry-run", "--json")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = _load_cli_json(result)
+        self.assertEqual(payload["run_mode"], "plan")
+        self.assertEqual(payload["verdict"], "PLANNED")
+        self.assertEqual(payload["claims"][0]["execution_state"], "planned")
+        self.assertEqual(payload["claims"][0]["result_kind"], "not_run")
+        self.assertEqual(payload["claims"][0]["resolved_procedure_ref"], "scripts/check_claim.py")
+        self.assertTrue(
+            any(event["event"] == "claim_planned" for event in payload["execution_log"])
+        )
+
+    def test_cli_harness_failure_returns_error_without_passing_verdict(self) -> None:
+        _write_python_procedure(self.procedure_path, {"verdict": "PASS"}, exit_code=2)
+        _write_claims(self.claims_path, "scripts/check_claim.py")
+
+        result = _run_reproduce_cli(self.root, "--json")
+
+        self.assertEqual(result.returncode, 1)
+        payload = _load_cli_json(result)
+        self.assertEqual(payload["verdict"], "ERROR")
+        claim = payload["claims"][0]
+        self.assertEqual(claim["execution_state"], "executed")
+        self.assertEqual(claim["result_kind"], "error")
+        self.assertIn("exited non-zero", claim["detail"])
+
+    def test_cli_missing_mapping_surfaces_explicit_error(self) -> None:
+        _write_raw_claims(
+            self.claims_path,
+            """
+            [[claim]]
+            claim_id = "HC-001"
+            claim_text = "sample claim"
+            verification_method = "test_suite"
+            acceptance_threshold = "verdict = PASS"
+            test_reference = "scripts/check_claim.py"
+            category = "compatibility"
+            """,
+        )
+
+        result = _run_reproduce_cli(self.root, "--json")
+
+        self.assertEqual(result.returncode, 1)
+        payload = _load_cli_json(result)
+        self.assertEqual(payload["verdict"], "ERROR")
+        claim = payload["claims"][0]
+        self.assertEqual(claim["result_kind"], "error")
+        self.assertIn("missing mapping fields", claim["detail"])
+
+    def test_cli_verbose_human_output_prints_command_and_detail(self) -> None:
+        _write_python_procedure(self.procedure_path, {"verdict": "FAIL"}, exit_code=1)
+        _write_claims(self.claims_path, "scripts/check_claim.py")
+
+        result = _run_reproduce_cli(self.root, "--verbose")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Reproduction verdict: FAIL", result.stdout)
+        self.assertIn("command:", result.stdout)
+        self.assertIn("resolved_procedure_ref:", result.stdout)
+        self.assertIn("execution_state: executed", result.stdout)
+        self.assertIn("detail:", result.stdout)
