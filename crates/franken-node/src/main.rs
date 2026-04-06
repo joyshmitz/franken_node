@@ -4636,11 +4636,11 @@ fn main() -> Result<()> {
             let mut stdout_config_toml: Option<String> = None;
             let mut file_actions = Vec::new();
 
-            if let Some(out_dir) = out_dir {
-                std::fs::create_dir_all(&out_dir).with_context(|| {
+            if let Some(ref out_dir) = out_dir {
+                std::fs::create_dir_all(out_dir).with_context(|| {
                     format!("failed creating init output dir {}", out_dir.display())
                 })?;
-                let (config_path, profile_path) = init_target_paths(&out_dir);
+                let (config_path, profile_path) = init_target_paths(out_dir);
 
                 if !overwrite && !backup_existing {
                     let existing = [&config_path, &profile_path]

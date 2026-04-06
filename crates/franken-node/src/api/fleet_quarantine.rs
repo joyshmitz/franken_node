@@ -19,7 +19,9 @@
 //! - INV-FLEET-ROLLBACK     — release deterministically rolls back quarantine state
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -92,7 +94,6 @@ pub const INV_FLEET_ROLLBACK: &str = "INV-FLEET-ROLLBACK";
 
 /// Quarantine scope limits blast-radius to zones/tenants.
 /// Enforces INV-FLEET-ZONE-SCOPE.
-#[cfg(any(test, feature = "extended-surfaces"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuarantineScope {
     /// Zone identifier (required).
@@ -106,7 +107,6 @@ pub struct QuarantineScope {
 }
 
 /// Revocation scope with extension and zone targeting.
-#[cfg(any(test, feature = "extended-surfaces"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RevocationScope {
     /// Zone identifier (required).
@@ -120,7 +120,6 @@ pub struct RevocationScope {
 }
 
 /// Severity of a revocation action.
-#[cfg(any(test, feature = "extended-surfaces"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RevocationSeverity {
     /// Advisory only — logged but not enforced.
@@ -132,7 +131,6 @@ pub enum RevocationSeverity {
 }
 
 /// A fleet action requested by the operator.
-#[cfg(feature = "extended-surfaces")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FleetAction {
     /// Quarantine an extension in a scope.
@@ -147,6 +145,11 @@ pub enum FleetAction {
     },
     /// Release a quarantine incident.
     Release { incident_id: String },
+    /// Publish a policy update for downstream fleet agents.
+    PolicyUpdate {
+        policy_version: String,
+        summary: String,
+    },
     /// Query fleet status for a zone.
     Status { zone_id: String },
     /// Reconcile fleet state across zones.
@@ -234,6 +237,337 @@ pub struct FleetStatus {
     pub activated: bool,
     /// Pending convergence operations.
     pub pending_convergences: Vec<ConvergenceState>,
+}
+
+/// Shared node-health vocabulary for transport-backed fleet state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NodeHealth {
+    Healthy,
+    Degraded,
+    Unreachable,
+    Quarantined,
+}
+
+/// Per-node fleet heartbeat persisted by transport backends.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeStatus {
+    pub node_id: String,
+    pub last_seen: chrono::DateTime<chrono::Utc>,
+    pub quarantine_version: u64,
+    pub health: NodeHealth,
+}
+
+impl NodeStatus {
+    pub fn new(
+        node_id: impl Into<String>,
+        last_seen: chrono::DateTime<chrono::Utc>,
+        quarantine_version: u64,
+        health: NodeHealth,
+    ) -> Result<Self, FleetTransportError> {
+        let status = Self {
+            node_id: node_id.into(),
+            last_seen,
+            quarantine_version,
+            health,
+        };
+        status.validate()?;
+        Ok(status)
+    }
+
+    pub fn validate(&self) -> Result<(), FleetTransportError> {
+        validate_node_id(&self.node_id)?;
+        Ok(())
+    }
+}
+
+/// Action-log entry shared across transport implementations.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FleetActionEnvelope {
+    pub action_id: String,
+    pub trace_id: String,
+    pub zone_id: String,
+    pub issued_at: chrono::DateTime<chrono::Utc>,
+    pub quarantine_version: u64,
+    pub action: FleetAction,
+}
+
+impl FleetActionEnvelope {
+    pub fn new(
+        action_id: impl Into<String>,
+        trace_id: impl Into<String>,
+        zone_id: impl Into<String>,
+        issued_at: chrono::DateTime<chrono::Utc>,
+        quarantine_version: u64,
+        action: FleetAction,
+    ) -> Result<Self, FleetTransportError> {
+        let envelope = Self {
+            action_id: action_id.into(),
+            trace_id: trace_id.into(),
+            zone_id: zone_id.into(),
+            issued_at,
+            quarantine_version,
+            action,
+        };
+        envelope.validate()?;
+        Ok(envelope)
+    }
+
+    pub fn validate(&self) -> Result<(), FleetTransportError> {
+        if self.action_id.trim().is_empty() {
+            return Err(FleetTransportError::serialization(
+                "fleet action envelope action_id must not be empty",
+            ));
+        }
+        if self.trace_id.trim().is_empty() {
+            return Err(FleetTransportError::serialization(
+                "fleet action envelope trace_id must not be empty",
+            ));
+        }
+        validate_zone_id_for_transport(&self.zone_id)?;
+
+        match &self.action {
+            FleetAction::Quarantine { scope, .. } => {
+                validate_zone_id_for_transport(&scope.zone_id)?;
+                if scope.zone_id != self.zone_id {
+                    return Err(FleetTransportError::serialization(
+                        "quarantine scope zone_id must match envelope zone_id",
+                    ));
+                }
+            }
+            FleetAction::Revoke { scope, .. } => {
+                validate_zone_id_for_transport(&scope.zone_id)?;
+                if scope.zone_id != self.zone_id {
+                    return Err(FleetTransportError::serialization(
+                        "revocation scope zone_id must match envelope zone_id",
+                    ));
+                }
+            }
+            FleetAction::Release { incident_id } => {
+                if incident_id.trim().is_empty() {
+                    return Err(FleetTransportError::serialization(
+                        "release incident_id must not be empty",
+                    ));
+                }
+            }
+            FleetAction::PolicyUpdate {
+                policy_version,
+                summary,
+            } => {
+                if policy_version.trim().is_empty() {
+                    return Err(FleetTransportError::serialization(
+                        "policy update policy_version must not be empty",
+                    ));
+                }
+                if summary.trim().is_empty() {
+                    return Err(FleetTransportError::serialization(
+                        "policy update summary must not be empty",
+                    ));
+                }
+            }
+            FleetAction::Status { zone_id } => {
+                validate_zone_id_for_transport(zone_id)?;
+            }
+            FleetAction::Reconcile => {}
+        }
+
+        Ok(())
+    }
+}
+
+pub const FLEET_TRANSPORT_SCHEMA_VERSION: &str = "fleet-transport-v1";
+
+/// Canonical transport snapshot used by CLI/status surfaces and backend tests.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FleetStateSnapshot {
+    pub schema_version: String,
+    pub actions: Vec<FleetActionEnvelope>,
+    pub nodes: Vec<NodeStatus>,
+}
+
+impl Default for FleetStateSnapshot {
+    fn default() -> Self {
+        Self {
+            schema_version: FLEET_TRANSPORT_SCHEMA_VERSION.to_string(),
+            actions: Vec::new(),
+            nodes: Vec::new(),
+        }
+    }
+}
+
+impl FleetStateSnapshot {
+    pub fn validate(&self) -> Result<(), FleetTransportError> {
+        if self.schema_version.trim().is_empty() {
+            return Err(FleetTransportError::serialization(
+                "fleet state snapshot schema_version must not be empty",
+            ));
+        }
+        for action in &self.actions {
+            action.validate()?;
+        }
+        for node in &self.nodes {
+            node.validate()?;
+        }
+        Ok(())
+    }
+}
+
+/// Stable filesystem layout for transport implementations that persist shared state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FleetStateLayout {
+    pub root_dir: PathBuf,
+    pub actions_log_path: PathBuf,
+    pub node_status_dir: PathBuf,
+    pub lock_dir: PathBuf,
+    pub policy_state_path: PathBuf,
+}
+
+impl FleetStateLayout {
+    #[must_use]
+    pub fn new(root_dir: impl Into<PathBuf>) -> Self {
+        let root_dir = root_dir.into();
+        Self {
+            actions_log_path: root_dir.join("actions.jsonl"),
+            node_status_dir: root_dir.join("nodes"),
+            lock_dir: root_dir.join("locks"),
+            policy_state_path: root_dir.join("policy.json"),
+            root_dir,
+        }
+    }
+
+    pub fn create_all(&self) -> Result<(), FleetTransportError> {
+        std::fs::create_dir_all(&self.root_dir).map_err(|err| {
+            FleetTransportError::io(format!(
+                "failed creating fleet state root {}: {err}",
+                self.root_dir.display()
+            ))
+        })?;
+        std::fs::create_dir_all(&self.node_status_dir).map_err(|err| {
+            FleetTransportError::io(format!(
+                "failed creating fleet node-status directory {}: {err}",
+                self.node_status_dir.display()
+            ))
+        })?;
+        std::fs::create_dir_all(&self.lock_dir).map_err(|err| {
+            FleetTransportError::io(format!(
+                "failed creating fleet lock directory {}: {err}",
+                self.lock_dir.display()
+            ))
+        })?;
+        Ok(())
+    }
+}
+
+/// Shared transport failure vocabulary for fleet backends.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FleetTransportError {
+    IoError { detail: String },
+    SerializationError { detail: String },
+    LockContention { detail: String },
+    StaleState { detail: String },
+    NotInitialized { detail: String },
+}
+
+impl FleetTransportError {
+    pub fn io(detail: impl Into<String>) -> Self {
+        Self::IoError {
+            detail: detail.into(),
+        }
+    }
+
+    pub fn serialization(detail: impl Into<String>) -> Self {
+        Self::SerializationError {
+            detail: detail.into(),
+        }
+    }
+
+    pub fn lock_contention(detail: impl Into<String>) -> Self {
+        Self::LockContention {
+            detail: detail.into(),
+        }
+    }
+
+    pub fn stale_state(detail: impl Into<String>) -> Self {
+        Self::StaleState {
+            detail: detail.into(),
+        }
+    }
+
+    pub fn not_initialized(detail: impl Into<String>) -> Self {
+        Self::NotInitialized {
+            detail: detail.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for FleetTransportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::IoError { detail } => write!(f, "io error: {detail}"),
+            Self::SerializationError { detail } => write!(f, "serialization error: {detail}"),
+            Self::LockContention { detail } => write!(f, "lock contention: {detail}"),
+            Self::StaleState { detail } => write!(f, "stale state: {detail}"),
+            Self::NotInitialized { detail } => write!(f, "not initialized: {detail}"),
+        }
+    }
+}
+
+impl std::error::Error for FleetTransportError {}
+
+/// Object-safe transport contract for shared fleet state propagation.
+pub trait FleetTransport: Send + Sync {
+    fn initialize(&self) -> Result<(), FleetTransportError>;
+
+    fn append_action(
+        &self,
+        action: &FleetActionEnvelope,
+    ) -> Result<FleetActionEnvelope, FleetTransportError>;
+
+    fn snapshot(&self) -> Result<FleetStateSnapshot, FleetTransportError>;
+
+    fn record_node_status(&self, status: &NodeStatus) -> Result<NodeStatus, FleetTransportError>;
+
+    fn list_stale_nodes(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+        staleness_threshold: Duration,
+    ) -> Result<Vec<NodeStatus>, FleetTransportError>;
+}
+
+fn validate_zone_id_for_transport(zone_id: &str) -> Result<(), FleetTransportError> {
+    if zone_id.trim().is_empty() {
+        return Err(FleetTransportError::serialization(
+            "zone_id must not be empty",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_node_id(node_id: &str) -> Result<(), FleetTransportError> {
+    let trimmed = node_id.trim();
+    if trimmed.is_empty() {
+        return Err(FleetTransportError::serialization(
+            "node_id must not be empty",
+        ));
+    }
+    if trimmed.len() > 128 {
+        return Err(FleetTransportError::serialization(
+            "node_id must be at most 128 characters",
+        ));
+    }
+    if trimmed == "." || trimmed == ".." {
+        return Err(FleetTransportError::serialization(
+            "node_id must not be `.` or `..`",
+        ));
+    }
+    if !trimmed
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+    {
+        return Err(FleetTransportError::serialization(
+            "node_id must match [a-zA-Z0-9._-]{1,128}",
+        ));
+    }
+    Ok(())
 }
 
 /// Handle for an incident created by quarantine/revocation.
@@ -2989,5 +3323,295 @@ mod tests {
             r1.payload_hash, r2.payload_hash,
             "length-prefixed encoding must prevent delimiter collision"
         );
+    }
+
+    #[derive(Debug)]
+    struct RecordingFleetTransport {
+        layout: FleetStateLayout,
+        initialized: Mutex<bool>,
+        actions: Mutex<Vec<FleetActionEnvelope>>,
+        nodes: Mutex<BTreeMap<String, NodeStatus>>,
+    }
+
+    impl RecordingFleetTransport {
+        fn new(root_dir: PathBuf) -> Self {
+            Self {
+                layout: FleetStateLayout::new(root_dir),
+                initialized: Mutex::new(false),
+                actions: Mutex::new(Vec::new()),
+                nodes: Mutex::new(BTreeMap::new()),
+            }
+        }
+
+        fn ensure_initialized(&self) -> Result<(), FleetTransportError> {
+            let initialized = self
+                .initialized
+                .lock()
+                .map_err(|_| FleetTransportError::lock_contention("initialized lock poisoned"))?;
+            if !*initialized {
+                return Err(FleetTransportError::not_initialized(
+                    "fleet transport initialize() must succeed before use",
+                ));
+            }
+            Ok(())
+        }
+    }
+
+    impl FleetTransport for RecordingFleetTransport {
+        fn initialize(&self) -> Result<(), FleetTransportError> {
+            self.layout.create_all()?;
+            let mut initialized = self
+                .initialized
+                .lock()
+                .map_err(|_| FleetTransportError::lock_contention("initialized lock poisoned"))?;
+            *initialized = true;
+            Ok(())
+        }
+
+        fn append_action(
+            &self,
+            action: &FleetActionEnvelope,
+        ) -> Result<FleetActionEnvelope, FleetTransportError> {
+            self.ensure_initialized()?;
+            action.validate()?;
+            let mut actions = self
+                .actions
+                .lock()
+                .map_err(|_| FleetTransportError::lock_contention("actions lock poisoned"))?;
+            actions.push(action.clone());
+            Ok(action.clone())
+        }
+
+        fn snapshot(&self) -> Result<FleetStateSnapshot, FleetTransportError> {
+            self.ensure_initialized()?;
+            let mut actions = self
+                .actions
+                .lock()
+                .map_err(|_| FleetTransportError::lock_contention("actions lock poisoned"))?
+                .clone();
+            actions.sort_by(|left, right| {
+                left.quarantine_version
+                    .cmp(&right.quarantine_version)
+                    .then_with(|| left.action_id.cmp(&right.action_id))
+            });
+
+            let nodes = self
+                .nodes
+                .lock()
+                .map_err(|_| FleetTransportError::lock_contention("nodes lock poisoned"))?
+                .values()
+                .cloned()
+                .collect();
+
+            let snapshot = FleetStateSnapshot {
+                schema_version: FLEET_TRANSPORT_SCHEMA_VERSION.to_string(),
+                actions,
+                nodes,
+            };
+            snapshot.validate()?;
+            Ok(snapshot)
+        }
+
+        fn record_node_status(&self, status: &NodeStatus) -> Result<NodeStatus, FleetTransportError> {
+            self.ensure_initialized()?;
+            status.validate()?;
+            let mut nodes = self
+                .nodes
+                .lock()
+                .map_err(|_| FleetTransportError::lock_contention("nodes lock poisoned"))?;
+            nodes.insert(status.node_id.clone(), status.clone());
+            Ok(status.clone())
+        }
+
+        fn list_stale_nodes(
+            &self,
+            now: chrono::DateTime<chrono::Utc>,
+            staleness_threshold: Duration,
+        ) -> Result<Vec<NodeStatus>, FleetTransportError> {
+            self.ensure_initialized()?;
+            let staleness_threshold =
+                chrono::TimeDelta::from_std(staleness_threshold).map_err(|err| {
+                    FleetTransportError::stale_state(format!(
+                        "invalid fleet staleness threshold: {err}"
+                    ))
+                })?;
+
+            let mut stale_nodes: Vec<NodeStatus> = self
+                .nodes
+                .lock()
+                .map_err(|_| FleetTransportError::lock_contention("nodes lock poisoned"))?
+                .values()
+                .filter(|status| now.signed_duration_since(status.last_seen) > staleness_threshold)
+                .cloned()
+                .collect();
+            stale_nodes.sort_by(|left, right| left.node_id.cmp(&right.node_id));
+            Ok(stale_nodes)
+        }
+    }
+
+    fn exercise_transport(transport: &dyn FleetTransport) -> Result<FleetStateSnapshot, FleetTransportError> {
+        transport.initialize()?;
+        let status = NodeStatus::new(
+            "node-1",
+            chrono::Utc::now(),
+            7,
+            NodeHealth::Healthy,
+        )?;
+        transport.record_node_status(&status)?;
+        transport.snapshot()
+    }
+
+    #[test]
+    fn fleet_transport_trait_is_object_safe() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let transport = RecordingFleetTransport::new(tempdir.path().to_path_buf());
+
+        let snapshot = exercise_transport(&transport).expect("exercise transport");
+        assert_eq!(snapshot.nodes.len(), 1);
+        assert_eq!(snapshot.nodes[0].node_id, "node-1");
+    }
+
+    #[test]
+    fn initialize_creates_fleet_directory_structure_if_missing() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let root_dir = tempdir.path().join("fleet-state");
+        let transport = RecordingFleetTransport::new(root_dir.clone());
+
+        transport.initialize().expect("initialize transport");
+
+        let layout = FleetStateLayout::new(root_dir);
+        assert!(layout.root_dir.is_dir());
+        assert!(layout.node_status_dir.is_dir());
+        assert!(layout.lock_dir.is_dir());
+    }
+
+    #[test]
+    fn node_status_rejects_invalid_node_ids() {
+        for invalid in [
+            "",
+            ".",
+            "..",
+            "node/1",
+            "node 1",
+            "node:1",
+            "node\t1",
+        ] {
+            let err = NodeStatus::new(
+                invalid,
+                chrono::Utc::now(),
+                0,
+                NodeHealth::Healthy,
+            )
+            .expect_err("invalid node id must fail");
+            assert!(matches!(err, FleetTransportError::SerializationError { .. }));
+        }
+
+        let too_long = "a".repeat(129);
+        let err = NodeStatus::new(
+            too_long,
+            chrono::Utc::now(),
+            0,
+            NodeHealth::Healthy,
+        )
+        .expect_err("too-long node id must fail");
+        assert!(matches!(err, FleetTransportError::SerializationError { .. }));
+    }
+
+    #[test]
+    fn node_status_json_roundtrip_preserves_fields() {
+        let status = NodeStatus::new(
+            "node.alpha-1",
+            chrono::DateTime::parse_from_rfc3339("2026-04-06T12:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&chrono::Utc),
+            11,
+            NodeHealth::Quarantined,
+        )
+        .expect("node status");
+
+        let json = serde_json::to_string(&status).expect("serialize node status");
+        let decoded: NodeStatus = serde_json::from_str(&json).expect("deserialize node status");
+        assert_eq!(decoded, status);
+    }
+
+    #[test]
+    fn fleet_state_snapshot_roundtrip_preserves_policy_update_and_node_state() {
+        let action = FleetActionEnvelope::new(
+            "fleet-action-1",
+            "trace-fleet-1",
+            "zone-1",
+            chrono::DateTime::parse_from_rfc3339("2026-04-06T12:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&chrono::Utc),
+            42,
+            FleetAction::PolicyUpdate {
+                policy_version: "strict@2026-04-06".to_string(),
+                summary: "raise quarantine threshold and sync trust frontier".to_string(),
+            },
+        )
+        .expect("action");
+        let node = NodeStatus::new(
+            "node-2",
+            chrono::DateTime::parse_from_rfc3339("2026-04-06T12:05:00Z")
+                .expect("timestamp")
+                .with_timezone(&chrono::Utc),
+            42,
+            NodeHealth::Degraded,
+        )
+        .expect("node");
+        let snapshot = FleetStateSnapshot {
+            schema_version: FLEET_TRANSPORT_SCHEMA_VERSION.to_string(),
+            actions: vec![action],
+            nodes: vec![node],
+        };
+
+        snapshot.validate().expect("valid snapshot");
+        let json = serde_json::to_string(&snapshot).expect("serialize snapshot");
+        let decoded: FleetStateSnapshot =
+            serde_json::from_str(&json).expect("deserialize snapshot");
+        decoded.validate().expect("decoded snapshot");
+        assert_eq!(decoded, snapshot);
+    }
+
+    #[test]
+    fn list_stale_nodes_uses_last_seen_threshold() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let transport = RecordingFleetTransport::new(tempdir.path().to_path_buf());
+        transport.initialize().expect("initialize transport");
+
+        let now = chrono::DateTime::parse_from_rfc3339("2026-04-06T12:10:00Z")
+            .expect("timestamp")
+            .with_timezone(&chrono::Utc);
+        let stale = NodeStatus::new(
+            "node-stale",
+            chrono::DateTime::parse_from_rfc3339("2026-04-06T12:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&chrono::Utc),
+            3,
+            NodeHealth::Degraded,
+        )
+        .expect("stale node");
+        let fresh = NodeStatus::new(
+            "node-fresh",
+            chrono::DateTime::parse_from_rfc3339("2026-04-06T12:09:30Z")
+                .expect("timestamp")
+                .with_timezone(&chrono::Utc),
+            3,
+            NodeHealth::Healthy,
+        )
+        .expect("fresh node");
+
+        transport
+            .record_node_status(&stale)
+            .expect("record stale node");
+        transport
+            .record_node_status(&fresh)
+            .expect("record fresh node");
+
+        let stale_nodes = transport
+            .list_stale_nodes(now, Duration::from_secs(60))
+            .expect("stale nodes");
+        assert_eq!(stale_nodes.len(), 1);
+        assert_eq!(stale_nodes[0].node_id, "node-stale");
     }
 }

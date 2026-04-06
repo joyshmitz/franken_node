@@ -8,6 +8,7 @@ pub mod divergence_gate;
 pub mod dpor_exploration;
 pub mod epoch_transition_barrier;
 pub mod evidence_replay_gate;
+pub mod fleet_transport;
 pub mod fork_detection;
 pub mod key_role_separation;
 pub mod marker_stream;
