@@ -5079,3 +5079,166 @@ fn main() -> Result<()> {
 
     Ok(())
 }
+
+// ── State directory bootstrap tests ───────────────────────────────────
+
+#[cfg(test)]
+mod state_bootstrap_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn bootstrap_creates_all_directories() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+
+        let actions =
+            bootstrap_state_directory(root, "balanced").expect("bootstrap");
+
+        for subdir in STATE_BOOTSTRAP_SUBDIRS {
+            let dir_path = root.join(".franken-node").join(subdir);
+            assert!(
+                dir_path.is_dir(),
+                "expected directory to exist: {}",
+                dir_path.display()
+            );
+        }
+
+        let created_count = actions
+            .iter()
+            .filter(|a| matches!(a.action, InitFileActionKind::DirectoryCreated))
+            .count();
+        assert!(
+            created_count >= STATE_BOOTSTRAP_SUBDIRS.len(),
+            "expected at least {} DirectoryCreated actions, got {created_count}",
+            STATE_BOOTSTRAP_SUBDIRS.len()
+        );
+    }
+
+    #[test]
+    fn bootstrap_creates_empty_trust_registry() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+
+        bootstrap_state_directory(root, "strict").expect("bootstrap");
+
+        let registry_path =
+            root.join(".franken-node/state/trust-card-registry.v1.json");
+        assert!(
+            registry_path.is_file(),
+            "trust-card registry should exist: {}",
+            registry_path.display()
+        );
+
+        let raw =
+            std::fs::read_to_string(&registry_path).expect("read registry");
+        let snapshot: serde_json::Value =
+            serde_json::from_str(&raw).expect("parse registry JSON");
+        assert_eq!(
+            snapshot["schema_version"],
+            "franken-node/trust-card-registry-state/v1"
+        );
+        let cards = snapshot["cards_by_extension"]
+            .as_object()
+            .expect("cards_by_extension should be an object");
+        assert!(cards.is_empty(), "registry should start empty");
+    }
+
+    #[test]
+    fn bootstrap_creates_gitignore() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+
+        bootstrap_state_directory(root, "balanced").expect("bootstrap");
+
+        let gitignore_path = root.join(".franken-node/.gitignore");
+        assert!(gitignore_path.is_file(), ".gitignore should exist");
+
+        let contents =
+            std::fs::read_to_string(&gitignore_path).expect("read .gitignore");
+        assert!(
+            contents.contains("keys/"),
+            ".gitignore should exclude keys/"
+        );
+        assert!(
+            contents.contains("execution-receipts/"),
+            ".gitignore should exclude execution-receipts/"
+        );
+    }
+
+    #[test]
+    fn bootstrap_is_idempotent() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+
+        let first_actions =
+            bootstrap_state_directory(root, "balanced").expect("first bootstrap");
+        let first_created = first_actions
+            .iter()
+            .filter(|a| {
+                matches!(
+                    a.action,
+                    InitFileActionKind::DirectoryCreated
+                        | InitFileActionKind::Created
+                )
+            })
+            .count();
+        assert!(first_created > 0, "first run should create items");
+
+        let second_actions = bootstrap_state_directory(root, "balanced")
+            .expect("second bootstrap");
+        let second_created = second_actions
+            .iter()
+            .filter(|a| {
+                matches!(
+                    a.action,
+                    InitFileActionKind::DirectoryCreated
+                        | InitFileActionKind::Created
+                )
+            })
+            .count();
+        assert_eq!(
+            second_created, 0,
+            "second run should create nothing (idempotent)"
+        );
+
+        let skipped = second_actions
+            .iter()
+            .filter(|a| matches!(a.action, InitFileActionKind::SkippedExisting))
+            .count();
+        assert!(skipped > 0, "second run should skip existing items");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bootstrap_sets_keys_dir_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+
+        bootstrap_state_directory(root, "strict").expect("bootstrap");
+
+        let keys_dir = root.join(".franken-node/keys");
+        let mode =
+            keys_dir.metadata().expect("metadata").permissions().mode();
+        assert_eq!(
+            mode & 0o777,
+            0o700,
+            "keys/ should have 0700 permissions, got {:#o}",
+            mode & 0o777
+        );
+    }
+
+    #[test]
+    fn ensure_state_dir_creates_on_demand() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+
+        assert!(!root.join(".franken-node/state").is_dir());
+
+        let result = ensure_state_dir(root);
+        assert!(result.is_ok());
+        assert!(root.join(".franken-node/state").is_dir());
+    }
+}
