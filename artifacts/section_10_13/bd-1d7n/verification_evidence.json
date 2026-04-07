@@ -40,7 +40,7 @@
       "id": "AP-TESTS",
       "description": "Rust unit tests pass",
       "status": "FAIL",
-      "details": "Command '['/home/ubuntu/.cargo/bin/cargo', 'test', '-p', 'frankenengine-node', '--', 'connector::activation_pipeline']' timed out after 120 seconds"
+      "details": "0 tests passed"
     },
     {
       "id": "AP-SPEC",

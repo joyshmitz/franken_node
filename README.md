@@ -110,14 +110,11 @@ local source builds require both repositories checked out side-by-side.
 curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/franken_node/main/install.sh | bash
 ```
 
-### Option 2: Homebrew
+Homebrew is not currently published for `franken-node`; the public
+`Dicklesworthstone/homebrew-tap` repository does not yet ship a `franken-node`
+formula. Use the installer above or build from source instead.
 
-```bash
-brew tap dicklesworthstone/tap
-brew install franken-node
-```
-
-### Option 3: Build from source (split repo layout required)
+### Option 2: Build from source (split repo layout required)
 
 ```bash
 git clone https://github.com/Dicklesworthstone/franken_engine.git

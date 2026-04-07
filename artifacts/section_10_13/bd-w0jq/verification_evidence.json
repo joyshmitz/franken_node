@@ -31,10 +31,15 @@
       "status": "PASS"
     },
     {
+      "id": "DM-HARNESS",
+      "description": "Cargo harness wires degraded-mode conformance tests",
+      "status": "PASS"
+    },
+    {
       "id": "DM-TESTS",
-      "description": "Rust unit tests pass",
+      "description": "Rust degraded-mode unit and conformance tests pass",
       "status": "FAIL",
-      "details": "Command '['/home/ubuntu/.cargo/bin/cargo', 'test', '-p', 'frankenengine-node', '--', 'security::degraded_mode_audit']' timed out after 120 seconds"
+      "details": "unit 0 passed / 0 ran / 0 filtered; conformance 0 passed / 0 ran / 0 filtered; rc=(101, 101); error[E0004]: non-exhaustive patterns: `&Ir1Op::CallMethod { .. }` not covered | --> /data/projects/franken_engine/crates/franken-engine/src/ir_contract.rs:508:15 | | | 508 |         match self { | |               ^^^^ pattern `&Ir1Op::CallMethod { .. }` not covered | |"
     },
     {
       "id": "DM-SPEC",
@@ -43,8 +48,8 @@
     }
   ],
   "summary": {
-    "total_checks": 7,
-    "passing_checks": 6,
+    "total_checks": 8,
+    "passing_checks": 7,
     "failing_checks": 1
   }
 }

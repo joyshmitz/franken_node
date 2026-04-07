@@ -36,10 +36,15 @@
       "status": "PASS"
     },
     {
+      "id": "GUARD-HARNESS",
+      "description": "Cargo harness wires remote capability enforcement tests",
+      "status": "PASS"
+    },
+    {
       "id": "GUARD-TESTS",
-      "description": "Rust unit tests pass",
+      "description": "Rust network guard unit and security tests pass",
       "status": "PASS",
-      "details": "27 tests passed"
+      "details": "unit 27 passed / 27 ran / 6103 filtered; security 9 passed / 9 ran / 0 filtered"
     },
     {
       "id": "GUARD-SPEC",
@@ -48,8 +53,8 @@
     }
   ],
   "summary": {
-    "total_checks": 8,
-    "passing_checks": 8,
+    "total_checks": 9,
+    "passing_checks": 9,
     "failing_checks": 0
   }
 }

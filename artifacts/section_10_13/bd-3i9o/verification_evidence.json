@@ -2,7 +2,7 @@
   "gate": "provenance_gate_verification",
   "bead": "bd-3i9o",
   "section": "10.13",
-  "verdict": "PASS",
+  "verdict": "FAIL",
   "checks": [
     {
       "id": "PG-IMPL",
@@ -37,10 +37,15 @@
       "status": "PASS"
     },
     {
+      "id": "PG-HARNESS",
+      "description": "Cargo harness wires provenance gate security tests",
+      "status": "PASS"
+    },
+    {
       "id": "PG-TESTS",
-      "description": "Rust unit tests pass",
-      "status": "PASS",
-      "details": "16 tests passed"
+      "description": "Rust provenance gate unit and security tests pass",
+      "status": "FAIL",
+      "details": "unit 0 passed / 0 ran / 0 filtered; security 7 passed / 7 ran / 0 filtered; rc=(101, 0); error[E0119]: conflicting implementations of trait `Debug` for type `MethodKind` | --> /data/projects/franken_engine/crates/franken-engine/src/ast.rs:1100:5 | | | 1093 |     Debug, | |     ----- first implementation here | ..."
     },
     {
       "id": "PG-SPEC",
@@ -49,8 +54,8 @@
     }
   ],
   "summary": {
-    "total_checks": 8,
+    "total_checks": 9,
     "passing_checks": 8,
-    "failing_checks": 0
+    "failing_checks": 1
   }
 }
