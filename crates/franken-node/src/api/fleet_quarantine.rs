@@ -3412,7 +3412,10 @@ mod tests {
             Ok(snapshot)
         }
 
-        fn record_node_status(&self, status: &NodeStatus) -> Result<NodeStatus, FleetTransportError> {
+        fn record_node_status(
+            &self,
+            status: &NodeStatus,
+        ) -> Result<NodeStatus, FleetTransportError> {
             self.ensure_initialized()?;
             status.validate()?;
             let mut nodes = self
@@ -3449,14 +3452,11 @@ mod tests {
         }
     }
 
-    fn exercise_transport(transport: &dyn FleetTransport) -> Result<FleetStateSnapshot, FleetTransportError> {
+    fn exercise_transport(
+        transport: &dyn FleetTransport,
+    ) -> Result<FleetStateSnapshot, FleetTransportError> {
         transport.initialize()?;
-        let status = NodeStatus::new(
-            "node-1",
-            chrono::Utc::now(),
-            7,
-            NodeHealth::Healthy,
-        )?;
+        let status = NodeStatus::new("node-1", chrono::Utc::now(), 7, NodeHealth::Healthy)?;
         transport.record_node_status(&status)?;
         transport.snapshot()
     }
@@ -3487,34 +3487,22 @@ mod tests {
 
     #[test]
     fn node_status_rejects_invalid_node_ids() {
-        for invalid in [
-            "",
-            ".",
-            "..",
-            "node/1",
-            "node 1",
-            "node:1",
-            "node\t1",
-        ] {
-            let err = NodeStatus::new(
-                invalid,
-                chrono::Utc::now(),
-                0,
-                NodeHealth::Healthy,
-            )
-            .expect_err("invalid node id must fail");
-            assert!(matches!(err, FleetTransportError::SerializationError { .. }));
+        for invalid in ["", ".", "..", "node/1", "node 1", "node:1", "node\t1"] {
+            let err = NodeStatus::new(invalid, chrono::Utc::now(), 0, NodeHealth::Healthy)
+                .expect_err("invalid node id must fail");
+            assert!(matches!(
+                err,
+                FleetTransportError::SerializationError { .. }
+            ));
         }
 
         let too_long = "a".repeat(129);
-        let err = NodeStatus::new(
-            too_long,
-            chrono::Utc::now(),
-            0,
-            NodeHealth::Healthy,
-        )
-        .expect_err("too-long node id must fail");
-        assert!(matches!(err, FleetTransportError::SerializationError { .. }));
+        let err = NodeStatus::new(too_long, chrono::Utc::now(), 0, NodeHealth::Healthy)
+            .expect_err("too-long node id must fail");
+        assert!(matches!(
+            err,
+            FleetTransportError::SerializationError { .. }
+        ));
     }
 
     #[test]

@@ -149,11 +149,15 @@ franken-node migrate audit ./my-app --out migration-audit.json
 ```bash
 franken-node verify lockstep ./my-app --runtimes node,bun,franken-node
 ```
-4. Run in policy-governed mode:
+4. Seed trust cards from your dependency graph:
+```bash
+franken-node trust scan ./my-app
+```
+5. Run in policy-governed mode:
 ```bash
 franken-node run ./my-app --policy strict
 ```
-5. Check trust state and incidents:
+6. Check trust state and incidents:
 ```bash
 franken-node trust list --risk high
 franken-node incident list --severity high
@@ -163,7 +167,7 @@ franken-node incident list --severity high
 
 | Command | Purpose | Example |
 |---|---|---|
-| `franken-node init` | Bootstrap config, policy profile, and workspace metadata | `franken-node init --profile strict` |
+| `franken-node init` | Bootstrap config, policy profile, and workspace metadata | `franken-node init --profile strict --scan` |
 | `franken-node run` | Run app under policy-governed runtime controls | `franken-node run ./my-app --policy balanced` |
 | `franken-node migrate audit` | Inventory migration risk and emit findings | `franken-node migrate audit ./my-app --format json` |
 | `franken-node migrate rewrite` | Apply migration transforms with rollback artifacts | `franken-node migrate rewrite ./my-app --apply` |
@@ -171,6 +175,8 @@ franken-node incident list --severity high
 | `franken-node verify lockstep` | Compare behavior across runtimes | `franken-node verify lockstep ./my-app --runtimes node,bun,franken-node` |
 | `franken-node trust card` | Show trust profile for one extension | `franken-node trust card npm:@example/plugin` |
 | `franken-node trust list` | List extensions by risk/status filters | `franken-node trust list --risk high --revoked false` |
+| `franken-node trust scan` | Populate baseline trust cards from package.json dependencies | `franken-node trust scan ./my-app --deep --audit` |
+| `franken-node trust sync` | Refresh trust-card cache and npm vulnerability state from OSV | `franken-node trust sync --force` |
 | `franken-node trust revoke` | Revoke artifact or publisher trust | `franken-node trust revoke npm:@example/plugin@2.4.1` |
 | `franken-node trust quarantine` | Quarantine a suspicious artifact fleet-wide | `franken-node trust quarantine --artifact sha256:...` |
 | `franken-node fleet status` | Show policy and quarantine state across nodes | `franken-node fleet status --zone prod-us-east` |
@@ -286,7 +292,7 @@ max_degraded_duration_secs = 3600
 | Symptom | Cause | Fix |
 |---|---|---|
 | `lockstep validation failed` | Behavior delta across runtimes | Run `franken-node verify lockstep --emit-fixtures` and inspect generated divergence fixtures |
-| `revocation frontier stale` | Local trust state is older than policy requirement | Run `franken-node trust sync --force` and retry risky action |
+| `revocation frontier stale` | Local trust state is older than policy requirement or vulnerability refresh has not been re-run since the last registry change | Run `franken-node trust sync --force`; the command refreshes npm cards against OSV, preserves stale data if the network fails, and emits warnings for packages that could not be refreshed |
 | `artifact rejected: missing attestation` | Registry policy requires provenance proofs | Rebuild artifact with provenance metadata and re-sign before publish |
 | `quarantine not converged` | One or more nodes did not apply control action in time | Run `franken-node fleet status --verbose`, then `franken-node fleet reconcile` |
 | `incident replay nondeterministic` | Missing, corrupted, or stale incident evidence / bundle components | Re-export with `franken-node incident bundle --id INC-2026-0007 --verify --evidence-path ./incidents/INC-2026-0007/evidence.v1.json` or ensure `<project-root>/.franken-node/state/incidents/<incident-id-slug>/evidence.v1.json` exists |

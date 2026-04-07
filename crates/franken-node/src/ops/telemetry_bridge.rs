@@ -1,5 +1,6 @@
 use crate::storage::frankensqlite_adapter::{FrankensqliteAdapter, PersistenceClass};
 use anyhow::Result;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, ErrorKind};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -14,8 +15,10 @@ const PERSIST_QUEUE_CAPACITY: usize = 256;
 const ENQUEUE_TIMEOUT_MS: u64 = 50;
 const MAX_EVENT_BYTES: usize = 64 * 1024;
 const MAX_RECENT_EVENTS: usize = 256;
+const MAX_RUNTIME_EVENTS: usize = 256;
 const MAX_ACTIVE_CONNECTIONS: usize = 64;
 const ACCEPT_POLL_INTERVAL_MS: u64 = 100;
+const CONNECTION_READ_TIMEOUT_MS: u64 = 500;
 const DEFAULT_DRAIN_TIMEOUT_MS: u64 = 5000;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
@@ -74,6 +77,13 @@ pub enum ShutdownReason {
     Requested,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RuntimeTelemetryEvent {
+    pub timestamp: String,
+    pub event_type: String,
+    pub payload: serde_json::Value,
+}
+
 /// Final report from a telemetry bridge runtime after join().
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TelemetryRuntimeReport {
@@ -86,6 +96,7 @@ pub struct TelemetryRuntimeReport {
     pub retry_total: u64,
     pub drain_completed: bool,
     pub drain_duration_ms: u64,
+    pub telemetry_events: Vec<RuntimeTelemetryEvent>,
     pub recent_events: Vec<TelemetryBridgeEvent>,
 }
 
@@ -135,6 +146,7 @@ pub mod reason_codes {
     pub const PERSIST_FAILED: &str = "persist_failed";
     pub const QUEUE_DISCONNECTED: &str = "queue_disconnected";
     pub const READ_FAILED: &str = "reader_failed";
+    pub const INVALID_EVENT: &str = "invalid_event";
     pub const EVENT_TOO_LARGE: &str = "event_too_large";
     pub const CONNECTION_CAP: &str = "connection_cap";
     pub const SHUTDOWN_REQUESTED: &str = "shutdown_requested";
@@ -194,6 +206,7 @@ struct TelemetryBridgeState {
     retry_total: u64,
     next_connection_id: u64,
     next_bridge_seq: u64,
+    telemetry_events: Vec<RuntimeTelemetryEvent>,
     recent_events: Vec<TelemetryBridgeEvent>,
 }
 
@@ -211,6 +224,7 @@ impl TelemetryBridgeState {
             retry_total: 0,
             next_connection_id: 1,
             next_bridge_seq: 1,
+            telemetry_events: Vec::new(),
             recent_events: Vec::new(),
         }
     }
@@ -271,6 +285,50 @@ impl TelemetryBridgeState {
             MAX_RECENT_EVENTS,
         );
     }
+
+    fn record_runtime_event(&mut self, event: RuntimeTelemetryEvent) {
+        push_bounded(&mut self.telemetry_events, event, MAX_RUNTIME_EVENTS);
+    }
+}
+
+fn normalize_runtime_event_type(value: &str) -> Option<String> {
+    let normalized = value.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "module_load" | "network_request" | "policy_check" | "error" | "metric" => Some(normalized),
+        _ => None,
+    }
+}
+
+fn parse_runtime_telemetry_event(
+    payload: &[u8],
+) -> std::result::Result<RuntimeTelemetryEvent, String> {
+    let value = serde_json::from_slice::<serde_json::Value>(payload)
+        .map_err(|err| format!("invalid telemetry JSON: {err}"))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| "telemetry line must be a JSON object".to_string())?;
+
+    let timestamp = object
+        .get("timestamp")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| Utc::now().to_rfc3339());
+    let event_type = object
+        .get("event_type")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| object.get("event").and_then(serde_json::Value::as_str))
+        .and_then(normalize_runtime_event_type)
+        .unwrap_or_else(|| "metric".to_string());
+    let payload = object
+        .get("payload")
+        .cloned()
+        .unwrap_or_else(|| value.clone());
+
+    Ok(RuntimeTelemetryEvent {
+        timestamp,
+        event_type,
+        payload,
+    })
 }
 
 /// Owned runtime handle returned by `TelemetryBridge::start()`.
@@ -446,6 +504,11 @@ impl TelemetryRuntimeHandle {
         }
 
         let snapshot = self.snapshot();
+        let telemetry_events = self
+            .state
+            .lock()
+            .map(|state| state.telemetry_events.clone())
+            .unwrap_or_default();
         Ok(TelemetryRuntimeReport {
             final_state: self.lifecycle_state(),
             bridge_id: snapshot.bridge_id,
@@ -456,6 +519,7 @@ impl TelemetryRuntimeHandle {
             retry_total: snapshot.retry_total,
             drain_completed,
             drain_duration_ms: u64::try_from(drain_duration.as_millis()).unwrap_or(u64::MAX),
+            telemetry_events,
             recent_events: snapshot.recent_events,
         })
     }
@@ -845,7 +909,7 @@ impl TelemetryBridge {
         stop_flag: Arc<AtomicBool>,
     ) {
         if let Err(err) =
-            stream.set_read_timeout(Some(Duration::from_millis(ACCEPT_POLL_INTERVAL_MS)))
+            stream.set_read_timeout(Some(Duration::from_millis(CONNECTION_READ_TIMEOUT_MS)))
         {
             Self::with_state(&state, |metrics| {
                 metrics.record_event(
@@ -867,7 +931,7 @@ impl TelemetryBridge {
             return;
         }
         let mut reader = BufReader::new(stream);
-        let mut event_json = String::new();
+        let mut event_bytes = Vec::new();
 
         loop {
             // Stop flag check: refuse new events during drain
@@ -875,17 +939,21 @@ impl TelemetryBridge {
                 break;
             }
 
-            match reader.read_line(&mut event_json) {
+            match reader.read_until(b'\n', &mut event_bytes) {
                 Ok(0) => break,
                 Ok(_) => {
-                    if event_json.ends_with('\n') {
-                        event_json.pop();
-                        if event_json.ends_with('\r') {
-                            event_json.pop();
+                    if event_bytes.ends_with(b"\n") {
+                        event_bytes.pop();
+                        if event_bytes.ends_with(b"\r") {
+                            event_bytes.pop();
                         }
                     }
 
-                    if event_json.len() > MAX_EVENT_BYTES {
+                    if event_bytes.is_empty() {
+                        continue;
+                    }
+
+                    if event_bytes.len() > MAX_EVENT_BYTES {
                         Self::with_state(&state, |metrics| {
                             metrics.shed_total = metrics.shed_total.saturating_add(1);
                             metrics.record_event(
@@ -896,9 +964,30 @@ impl TelemetryBridge {
                                 format!("event exceeded {} bytes", MAX_EVENT_BYTES),
                             );
                         });
-                        event_json.clear();
+                        event_bytes.clear();
                         continue;
                     }
+
+                    let parsed_event = match parse_runtime_telemetry_event(&event_bytes) {
+                        Ok(event) => event,
+                        Err(err) => {
+                            Self::with_state(&state, |metrics| {
+                                metrics.shed_total = metrics.shed_total.saturating_add(1);
+                                metrics.record_event(
+                                    event_codes::ADMISSION_SHED,
+                                    Some(connection_id),
+                                    None,
+                                    Some(reason_codes::INVALID_EVENT),
+                                    format!("skipped invalid telemetry line: {err}"),
+                                );
+                            });
+                            event_bytes.clear();
+                            continue;
+                        }
+                    };
+                    Self::with_state(&state, |metrics| {
+                        metrics.record_runtime_event(parsed_event);
+                    });
 
                     let bridge_seq =
                         Self::with_state(&state, TelemetryBridgeState::next_bridge_seq)
@@ -906,10 +995,9 @@ impl TelemetryBridge {
                     let envelope = PersistEnvelope {
                         connection_id,
                         bridge_seq,
-                        payload: event_json.as_bytes().to_vec(),
+                        payload: event_bytes.clone(),
                     };
-
-                    event_json.clear();
+                    event_bytes.clear();
 
                     let admitted = Self::enqueue_with_timeout(
                         &sender,
@@ -1861,11 +1949,20 @@ mod tests {
             thread::sleep(Duration::from_millis(10));
         }
 
+        let shutdown_started = Instant::now();
         let report = handle
             .stop_and_join(ShutdownReason::Requested)
             .expect("stop_and_join");
+        assert!(
+            shutdown_started.elapsed() < Duration::from_secs(2),
+            "idle connection shutdown should complete after the per-read timeout budget",
+        );
         assert!(report.drain_completed);
         assert_eq!(report.final_state, BridgeLifecycleState::Stopped);
+        assert!(
+            report.telemetry_events.is_empty(),
+            "idle connection should not fabricate telemetry events",
+        );
         assert!(
             report
                 .recent_events
@@ -1887,10 +1984,13 @@ mod tests {
         let bridge = TelemetryBridge::new(sock.to_str().expect("utf8"), adapter);
         let handle = bridge.start().expect("start");
 
-        let event_count = 10;
+        let event_count = 10usize;
         let mut stream = UnixStream::connect(&sock).expect("connect");
         for i in 0..event_count {
-            writeln!(stream, r#"{{"event":"multi","seq":{i}}}"#).expect("write");
+            let event = format!(
+                r#"{{"timestamp":"2026-04-06T00:00:{i:02}Z","event_type":"metric","payload":{{"seq":{i}}}}}"#
+            );
+            writeln!(stream, "{event}").expect("write");
         }
         drop(stream);
 
@@ -1901,12 +2001,26 @@ mod tests {
             .expect("stop_and_join");
         assert!(report.drain_completed);
         assert_eq!(
-            report.accepted_total, event_count,
+            report.accepted_total, event_count as u64,
             "all events should be accepted"
         );
         assert_eq!(
-            report.persisted_total, event_count,
+            report.persisted_total, event_count as u64,
             "all events should be persisted"
+        );
+        assert_eq!(
+            report.telemetry_events.len(),
+            event_count,
+            "all NDJSON telemetry events should be surfaced in the final report",
+        );
+        assert_eq!(report.telemetry_events[0].event_type, "metric");
+        assert_eq!(
+            report.telemetry_events[0].payload,
+            serde_json::json!({ "seq": 0 })
+        );
+        assert_eq!(
+            report.telemetry_events.last().map(|event| &event.payload),
+            Some(&serde_json::json!({ "seq": 9 }))
         );
     }
 
@@ -1998,6 +2112,99 @@ mod tests {
     }
 
     #[test]
+    fn partial_write_survives_read_timeout_and_collects_event() {
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let sock = tmp.path().join("test_partial_write.sock");
+        let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+        let bridge = TelemetryBridge::new(sock.to_str().expect("utf8"), adapter);
+        let handle = bridge.start().expect("start");
+
+        let mut stream = UnixStream::connect(&sock).expect("connect");
+        stream
+            .write_all(br#"{"timestamp":"2026-04-06T00:00:00Z","event_type":"metric","#)
+            .expect("write first fragment");
+        thread::sleep(Duration::from_millis(CONNECTION_READ_TIMEOUT_MS + 100));
+        stream
+            .write_all(br#""payload":{"seq":7}}"#)
+            .expect("write second fragment");
+        stream.write_all(b"\n").expect("write newline");
+        drop(stream);
+
+        thread::sleep(Duration::from_millis(300));
+
+        let report = handle
+            .stop_and_join(ShutdownReason::Requested)
+            .expect("stop_and_join");
+        assert!(report.drain_completed);
+        assert_eq!(report.accepted_total, 1);
+        assert_eq!(report.persisted_total, 1);
+        assert_eq!(report.shed_total, 0);
+        assert_eq!(
+            report.telemetry_events,
+            vec![RuntimeTelemetryEvent {
+                timestamp: "2026-04-06T00:00:00Z".to_string(),
+                event_type: "metric".to_string(),
+                payload: serde_json::json!({ "seq": 7 }),
+            }]
+        );
+    }
+
+    #[test]
+    fn binary_garbage_line_is_shed_and_next_event_is_collected() {
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let sock = tmp.path().join("test_binary_garbage.sock");
+        let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+        let bridge = TelemetryBridge::new(sock.to_str().expect("utf8"), adapter);
+        let handle = bridge.start().expect("start");
+
+        let mut stream = UnixStream::connect(&sock).expect("connect");
+        stream
+            .write_all(&[0xff, 0xfe, 0x00, b'\n'])
+            .expect("write garbage");
+        writeln!(
+            stream,
+            r#"{{"timestamp":"2026-04-06T00:00:01Z","event_type":"module_load","payload":{{"module":"leftpad"}}}}"#
+        )
+        .expect("write valid event");
+        drop(stream);
+
+        thread::sleep(Duration::from_millis(300));
+
+        let report = handle
+            .stop_and_join(ShutdownReason::Requested)
+            .expect("stop_and_join");
+        assert!(report.drain_completed);
+        assert_eq!(report.shed_total, 1, "binary garbage should be discarded");
+        assert_eq!(
+            report.accepted_total, 1,
+            "valid line should still be admitted"
+        );
+        assert_eq!(report.persisted_total, 1);
+        assert_eq!(
+            report.telemetry_events,
+            vec![RuntimeTelemetryEvent {
+                timestamp: "2026-04-06T00:00:01Z".to_string(),
+                event_type: "module_load".to_string(),
+                payload: serde_json::json!({ "module": "leftpad" }),
+            }]
+        );
+        assert!(
+            report
+                .recent_events
+                .iter()
+                .any(|event| event.code == event_codes::ADMISSION_SHED
+                    && event.reason_code.as_deref() == Some(reason_codes::INVALID_EVENT)),
+            "invalid lines should emit an INVALID_EVENT shed record",
+        );
+    }
+
+    #[test]
     fn stop_and_join_convenience_method() {
         let tmp = tempfile::TempDir::new().expect("tempdir");
         let sock = tmp.path().join("test_stop_join.sock");
@@ -2013,6 +2220,10 @@ mod tests {
         assert_eq!(report.persisted_total, 0);
         assert_eq!(report.shed_total, 0);
         assert_eq!(report.dropped_total, 0);
+        assert!(
+            report.telemetry_events.is_empty(),
+            "empty telemetry sessions should produce an empty report",
+        );
     }
 
     #[test]
@@ -2304,6 +2515,11 @@ mod tests {
             retry_total: 3,
             drain_completed: true,
             drain_duration_ms: 150,
+            telemetry_events: vec![RuntimeTelemetryEvent {
+                timestamp: "2026-04-06T00:00:00Z".to_string(),
+                event_type: "metric".to_string(),
+                payload: serde_json::json!({ "seq": 1 }),
+            }],
             recent_events: vec![],
         };
         // Verify all report fields are accessible and correct
@@ -2316,6 +2532,12 @@ mod tests {
         assert_eq!(report.retry_total, 3);
         assert!(report.drain_completed);
         assert_eq!(report.drain_duration_ms, 150);
+        assert_eq!(report.telemetry_events.len(), 1);
+        assert_eq!(report.telemetry_events[0].event_type, "metric");
+        assert_eq!(
+            report.telemetry_events[0].payload,
+            serde_json::json!({ "seq": 1 })
+        );
         assert!(report.recent_events.is_empty());
         // Debug representation should be available for forensic logging
         let debug = format!("{report:?}");

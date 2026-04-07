@@ -1,8 +1,15 @@
 use std::fs;
+use std::io::{Read, Write};
+use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 
-use frankenengine_node::supply_chain::trust_card::fixture_registry;
+use frankenengine_node::supply_chain::trust_card::{
+    TrustCardListFilter, TrustCardMutation, TrustCardRegistry, fixture_registry,
+};
 use serde_json::Value;
 
 const FIXTURE_RECEIPT_KEY_ID: &str = "72416df9f1dcd9b3";
@@ -43,7 +50,132 @@ fn run_cli_in_workspace_with_env(workspace: &Path, args: &[&str], env: &[(&str, 
         .unwrap_or_else(|err| panic!("failed running `{}`: {err}", args.join(" ")))
 }
 
-fn seeded_fixture_trust_workspace() -> tempfile::TempDir {
+fn read_http_request(stream: &mut impl Read) -> String {
+    let mut buffer = Vec::new();
+    let mut chunk = [0_u8; 1024];
+
+    loop {
+        let bytes_read = stream.read(&mut chunk).expect("read request chunk");
+        if bytes_read == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&chunk[..bytes_read]);
+
+        let Some(headers_end) = buffer.windows(4).position(|window| window == b"\r\n\r\n") else {
+            continue;
+        };
+        let headers = String::from_utf8_lossy(&buffer[..headers_end + 4]);
+        let content_length = headers
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("Content-Length")
+                    .then(|| value.trim().parse::<usize>().ok())
+                    .flatten()
+            })
+            .unwrap_or(0);
+        let total_length = headers_end + 4 + content_length;
+        if buffer.len() >= total_length {
+            break;
+        }
+    }
+
+    String::from_utf8_lossy(&buffer).to_string()
+}
+
+fn spawn_osv_fixture_server() -> (String, Arc<Mutex<Vec<String>>>, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind OSV fixture server");
+    let address = format!("http://{}", listener.local_addr().expect("local addr"));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let captured_requests = Arc::clone(&requests);
+
+    let handle = thread::spawn(move || {
+        for stream in listener.incoming().take(2) {
+            let mut stream = stream.expect("accept fixture connection");
+            let request = read_http_request(&mut stream);
+            let body = request
+                .split("\r\n\r\n")
+                .nth(1)
+                .unwrap_or_default()
+                .to_string();
+            captured_requests
+                .lock()
+                .expect("lock requests")
+                .push(body.clone());
+
+            let (status_code, status_text, response_body) = if body.contains("\"@acme/auth-guard\"")
+            {
+                (
+                    200,
+                    "OK",
+                    r#"{"vulns":[{"id":"OSV-2026-0001"}]}"#.to_string(),
+                )
+            } else if body.contains("\"@beta/telemetry-bridge\"") {
+                (
+                    503,
+                    "Service Unavailable",
+                    r#"{"error":"upstream unavailable"}"#.to_string(),
+                )
+            } else {
+                (
+                    404,
+                    "Not Found",
+                    r#"{"error":"unexpected package"}"#.to_string(),
+                )
+            };
+
+            let response = format!(
+                "HTTP/1.1 {status_code} {status_text}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                response_body.len(),
+                response_body
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("write fixture response");
+        }
+    });
+
+    (format!("{address}/query"), requests, handle)
+}
+
+fn spawn_osv_observer_server() -> (String, Arc<Mutex<usize>>, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind observer server");
+    listener
+        .set_nonblocking(true)
+        .expect("set observer listener nonblocking");
+    let address = format!("http://{}", listener.local_addr().expect("local addr"));
+    let request_count = Arc::new(Mutex::new(0_usize));
+    let captured_count = Arc::clone(&request_count);
+
+    let handle = thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    let _ = read_http_request(&mut stream);
+                    *captured_count.lock().expect("lock observer count") += 1;
+                    let response_body = r#"{"vulns":[]}"#;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        response_body.len(),
+                        response_body
+                    );
+                    stream
+                        .write_all(response.as_bytes())
+                        .expect("write observer response");
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(err) => panic!("observer accept failed: {err}"),
+            }
+        }
+    });
+
+    (format!("{address}/query"), request_count, handle)
+}
+
+fn seeded_fixture_trust_workspace_with_timestamp(now_secs: u64) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(
         dir.path().join("franken_node.toml"),
@@ -51,7 +183,7 @@ fn seeded_fixture_trust_workspace() -> tempfile::TempDir {
     )
     .expect("write config");
 
-    let registry = fixture_registry(1_000).expect("fixture registry");
+    let registry = fixture_registry(now_secs).expect("fixture registry");
     let path = dir
         .path()
         .join(".franken-node/state/trust-card-registry.v1.json");
@@ -73,6 +205,50 @@ fn seeded_fixture_trust_workspace() -> tempfile::TempDir {
     dir
 }
 
+fn seeded_fixture_trust_workspace() -> tempfile::TempDir {
+    seeded_fixture_trust_workspace_with_timestamp(1_000)
+}
+
+fn rewrite_fixture_last_verified_timestamps(workspace: &Path, now_secs: u64) {
+    let registry_path = workspace.join(".franken-node/state/trust-card-registry.v1.json");
+    let mut registry = TrustCardRegistry::load_authoritative_state(&registry_path, 60, now_secs)
+        .expect("load authoritative trust registry");
+    let cards = registry
+        .list(
+            &TrustCardListFilter::empty(),
+            "trace-cli-test-refresh-list",
+            now_secs,
+        )
+        .expect("list authoritative trust registry");
+    let timestamp = chrono::DateTime::from_timestamp(now_secs as i64, 0)
+        .expect("valid test timestamp")
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+
+    for card in cards {
+        registry
+            .update(
+                &card.extension.extension_id,
+                TrustCardMutation {
+                    certification_level: None,
+                    revocation_status: None,
+                    active_quarantine: None,
+                    reputation_score_basis_points: None,
+                    reputation_trend: None,
+                    user_facing_risk_assessment: None,
+                    last_verified_timestamp: Some(timestamp.clone()),
+                    evidence_refs: None,
+                },
+                now_secs,
+                "trace-cli-test-refresh-update",
+            )
+            .expect("refresh trust card timestamp");
+    }
+
+    registry
+        .persist_authoritative_state(&registry_path)
+        .expect("persist refreshed trust registry");
+}
+
 fn config_only_workspace() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(
@@ -81,6 +257,80 @@ fn config_only_workspace() -> tempfile::TempDir {
     )
     .expect("write config");
     dir
+}
+
+fn scannable_trust_workspace() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(
+        dir.path().join("franken_node.toml"),
+        "profile = \"balanced\"\n",
+    )
+    .expect("write config");
+    fs::write(
+        dir.path().join("package.json"),
+        r#"{
+  "name": "scan-fixture",
+  "version": "1.0.0",
+  "dependencies": {
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "optionalDependencies": {
+    "@types/node": "^24.9.2"
+  }
+}
+"#,
+    )
+    .expect("write package manifest");
+    fs::write(
+        dir.path().join("package-lock.json"),
+        r#"{
+  "name": "scan-fixture",
+  "lockfileVersion": 3,
+  "packages": {
+    "": {
+      "name": "scan-fixture",
+      "version": "1.0.0"
+    },
+    "node_modules/react": {
+      "version": "19.2.4",
+      "integrity": "sha512-AQIDBA=="
+    },
+    "node_modules/typescript": {
+      "version": "5.8.3",
+      "integrity": "sha512-BQYHCA=="
+    },
+    "node_modules/@types/node": {
+      "version": "24.9.2",
+      "integrity": "sha512-CQoLDA=="
+    }
+  }
+}
+"#,
+    )
+    .expect("write package lockfile");
+    dir
+}
+
+fn write_run_package_manifest(workspace: &Path, dependencies: &[(&str, &str)]) {
+    let dependency_map = dependencies
+        .iter()
+        .map(|(name, version)| ((*name).to_string(), Value::String((*version).to_string())))
+        .collect::<serde_json::Map<String, Value>>();
+    let manifest = serde_json::json!({
+        "name": "trust-gate-e2e",
+        "version": "1.0.0",
+        "main": "index.js",
+        "dependencies": dependency_map,
+    });
+    fs::write(
+        workspace.join("package.json"),
+        serde_json::to_string_pretty(&manifest).expect("manifest"),
+    )
+    .expect("write package.json");
+    fs::write(workspace.join("index.js"), "console.log('hello');\n").expect("write index.js");
 }
 
 fn parse_json_stdout(output: &Output, context: &str) -> Value {
@@ -110,6 +360,37 @@ fn trust_card_displays_known_extension_details() {
     assert!(stdout.contains("extension: npm:@acme/auth-guard@1.4.2"));
     assert!(stdout.contains("publisher: Acme Security"));
     assert!(stdout.contains("risk: Low"));
+}
+
+#[test]
+fn run_json_emits_blocked_preflight_verdict_for_revoked_dependency() {
+    let workspace = seeded_fixture_trust_workspace();
+    write_run_package_manifest(workspace.path(), &[("@beta/telemetry-bridge", "^0.9.1")]);
+
+    let output = run_cli_in_workspace(
+        workspace.path(),
+        &["run", "--policy", "strict", "--json", "."],
+    );
+    assert!(
+        !output.status.success(),
+        "run should block on revoked dependency"
+    );
+
+    let payload = parse_json_stdout(&output, "run --json blocked preflight");
+    assert_eq!(payload["verdict"]["status"], "blocked");
+    let violations = payload["verdict"]["violations"]
+        .as_array()
+        .expect("violations array");
+    assert!(
+        violations
+            .iter()
+            .any(|violation| violation["kind"] == "revoked")
+    );
+    assert_eq!(
+        payload["receipt"]["action_name"],
+        "run_preflight_trust_gate"
+    );
+    assert_eq!(payload["receipt"]["decision"], "denied");
 }
 
 #[test]
@@ -392,7 +673,12 @@ fn trust_quarantine_receipt_export_uses_config_signing_key() {
 #[test]
 fn trust_sync_reports_summary_counts() {
     let workspace = seeded_fixture_trust_workspace();
-    let output = run_cli_in_workspace(workspace.path(), &["trust", "sync", "--force"]);
+    let (osv_url, requests, server) = spawn_osv_fixture_server();
+    let output = run_cli_in_workspace_with_env(
+        workspace.path(),
+        &["trust", "sync", "--force"],
+        &[("FRANKEN_NODE_OSV_QUERY_URL", osv_url.as_str())],
+    );
     assert!(
         output.status.success(),
         "trust sync failed: {}",
@@ -402,8 +688,190 @@ fn trust_sync_reports_summary_counts() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("trust sync completed: force=true"));
     assert!(stdout.contains("cards=2"));
+    assert!(stdout.contains("refreshed=1"));
+    assert!(stdout.contains("vulnerabilities=1"));
+    assert!(stdout.contains("network_errors=1"));
     assert!(stdout.contains("revoked=1"));
     assert!(stdout.contains("quarantined=1"));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("warning: @beta/telemetry-bridge"));
+
+    let exported = run_cli_in_workspace(
+        workspace.path(),
+        &["trust-card", "export", "npm:@acme/auth-guard", "--json"],
+    );
+    assert!(
+        exported.status.success(),
+        "trust-card export after trust sync failed: {}",
+        String::from_utf8_lossy(&exported.stderr)
+    );
+    let payload = parse_json_stdout(&exported, "trust-card export after trust sync");
+    assert_eq!(payload["user_facing_risk_assessment"]["level"], "high");
+    assert!(
+        payload["user_facing_risk_assessment"]["summary"]
+            .as_str()
+            .expect("risk summary")
+            .contains("OSV-2026-0001")
+    );
+
+    server.join().expect("join OSV fixture server");
+    assert_eq!(requests.lock().expect("lock requests").len(), 2);
+}
+
+#[test]
+fn trust_sync_without_force_skips_fresh_network_refresh() {
+    let now_secs = chrono::Utc::now().timestamp() as u64;
+    let workspace = seeded_fixture_trust_workspace_with_timestamp(now_secs);
+    rewrite_fixture_last_verified_timestamps(workspace.path(), now_secs);
+    let (osv_url, request_count, server) = spawn_osv_observer_server();
+    let output = run_cli_in_workspace_with_env(
+        workspace.path(),
+        &["trust", "sync"],
+        &[("FRANKEN_NODE_OSV_QUERY_URL", osv_url.as_str())],
+    );
+    assert!(
+        output.status.success(),
+        "trust sync without force failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("force=false"));
+    assert!(stdout.contains("refreshed=0"));
+    assert!(stdout.contains("vulnerabilities=0"));
+    assert!(stdout.contains("cache_hits=2"));
+
+    server.join().expect("join observer server");
+    assert_eq!(*request_count.lock().expect("lock observer count"), 0);
+}
+
+#[test]
+fn trust_scan_seeds_registry_from_manifest_and_lockfile() {
+    let workspace = scannable_trust_workspace();
+    let output = run_cli_in_workspace(workspace.path(), &["trust", "scan", "."]);
+    assert!(
+        output.status.success(),
+        "trust scan failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("created=3"));
+    assert!(stdout.contains("npm:react@19.2.4"));
+    assert!(stdout.contains("npm:typescript@5.8.3"));
+    assert!(stdout.contains("npm:@types/node@24.9.2"));
+
+    let listed = run_cli_in_workspace(workspace.path(), &["trust", "list"]);
+    assert!(
+        listed.status.success(),
+        "trust list failed after scan: {}",
+        String::from_utf8_lossy(&listed.stderr)
+    );
+    let listed_stdout = String::from_utf8_lossy(&listed.stdout);
+    assert!(listed_stdout.contains("npm:react"));
+    assert!(listed_stdout.contains("npm:typescript"));
+    assert!(listed_stdout.contains("npm:@types/node"));
+
+    let exported = run_cli_in_workspace(
+        workspace.path(),
+        &["trust-card", "export", "npm:react", "--json"],
+    );
+    assert!(
+        exported.status.success(),
+        "trust-card export after scan failed: {}",
+        String::from_utf8_lossy(&exported.stderr)
+    );
+    let payload = parse_json_stdout(&exported, "trust-card export after scan");
+    assert_eq!(payload["extension"]["version"], "19.2.4");
+    assert_eq!(
+        payload["provenance_summary"]["artifact_hashes"][0],
+        "sha512:01020304"
+    );
+}
+
+#[test]
+fn trust_scan_is_idempotent() {
+    let workspace = scannable_trust_workspace();
+    let first = run_cli_in_workspace(workspace.path(), &["trust", "scan", "."]);
+    assert!(
+        first.status.success(),
+        "initial trust scan failed: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+
+    let second = run_cli_in_workspace(workspace.path(), &["trust", "scan", "."]);
+    assert!(
+        second.status.success(),
+        "second trust scan failed: {}",
+        String::from_utf8_lossy(&second.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&second.stdout);
+    assert!(stdout.contains("created=0"));
+    assert!(stdout.contains("skipped_existing=3"));
+}
+
+#[test]
+fn trust_scan_fails_when_package_manifest_is_missing() {
+    let workspace = config_only_workspace();
+    let output = run_cli_in_workspace(workspace.path(), &["trust", "scan", "."]);
+    assert!(
+        !output.status.success(),
+        "trust scan should fail when package.json is absent"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("package.json not found at project path"));
+}
+
+#[test]
+fn init_scan_populates_trust_registry() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    fs::write(
+        workspace.path().join("package.json"),
+        r#"{
+  "name": "init-scan-fixture",
+  "version": "1.0.0",
+  "dependencies": {
+    "react": "^19.2.0"
+  }
+}
+"#,
+    )
+    .expect("write package manifest");
+    fs::write(
+        workspace.path().join("package-lock.json"),
+        r#"{
+  "name": "init-scan-fixture",
+  "lockfileVersion": 3,
+  "packages": {
+    "": {
+      "name": "init-scan-fixture",
+      "version": "1.0.0"
+    },
+    "node_modules/react": {
+      "version": "19.2.4",
+      "integrity": "sha512-AQIDBA=="
+    }
+  }
+}
+"#,
+    )
+    .expect("write package lockfile");
+
+    let output = run_cli_in_workspace(workspace.path(), &["init", "--out-dir", ".", "--scan"]);
+    assert!(
+        output.status.success(),
+        "init --scan failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let registry_path = workspace
+        .path()
+        .join(".franken-node/state/trust-card-registry.v1.json");
+    let registry = fs::read_to_string(&registry_path).expect("read trust registry");
+    assert!(registry.contains("npm:react"));
+    assert!(registry.contains("19.2.4"));
 }
 
 #[test]

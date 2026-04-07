@@ -70,6 +70,8 @@ use crate::policy::{
     policy_explainer::{PolicyExplainer, PolicyExplanation, WordingValidation, validate_wording},
 };
 use anyhow::{Context, Result};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use clap::Parser;
 #[cfg(test)]
 use frankenengine_node::tools::replay_bundle::{fixture_incident_events, generate_replay_bundle};
@@ -84,14 +86,17 @@ use frankenengine_node::{
         remote_cap::{CapabilityProvider, RemoteOperation, RemoteScope},
     },
     supply_chain::{
+        certification::{EvidenceType, VerifiedEvidenceRef},
         extension_registry::{
             AdmissionKernel, ExtensionSignature, ExtensionStatus, RegistrationRequest,
             SignedExtension, SignedExtensionRegistry, VersionEntry,
         },
         trust_card::{
+            BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
+            DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary, PublisherIdentity,
             ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard,
-            TrustCardListFilter, TrustCardMutation, TrustCardRegistry, TrustCardSyncReport,
-            render_comparison_human, render_trust_card_human,
+            TrustCardInput, TrustCardListFilter, TrustCardMutation, TrustCardRegistry,
+            TrustCardSyncReport, render_comparison_human, render_trust_card_human,
             to_canonical_json as trust_card_to_json,
         },
     },
@@ -165,10 +170,14 @@ const TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH: &str =
     ".franken-node/state/trust-card-registry.v1.json";
 const INCIDENT_EVIDENCE_RELATIVE_DIR: &str = ".franken-node/state/incidents";
 const INCIDENT_EVIDENCE_FILE_NAME: &str = "evidence.v1.json";
+const TRUST_SCAN_NPM_REGISTRY_BASE_URL: &str = "https://registry.npmjs.org";
+const TRUST_SCAN_OSV_QUERY_URL: &str = "https://api.osv.dev/v1/query";
+const TRUST_SCAN_DEPS_DEV_BASE_URL: &str = "https://api.deps.dev/v3alpha";
 
 struct TrustCardCliRegistryState {
     path: PathBuf,
     registry: TrustCardRegistry,
+    cache_ttl_secs: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -216,6 +225,71 @@ struct RunDependencyTrustResult {
     trust_card_version: Option<u64>,
     risk_level: Option<String>,
     detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum TrustScanItemStatus {
+    Created,
+    SkippedExisting,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct TrustScanItem {
+    dependency_name: String,
+    section: String,
+    extension_id: String,
+    extension_version: String,
+    status: TrustScanItemStatus,
+    publisher_id: String,
+    risk_level: String,
+    integrity_hash_count: usize,
+    vulnerability_count: usize,
+    dependent_count: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct TrustScanReport {
+    command: String,
+    project_root: String,
+    registry_path: String,
+    scanned_dependencies: usize,
+    created_cards: usize,
+    skipped_existing: usize,
+    lockfile_entries: usize,
+    deep: bool,
+    audit: bool,
+    warnings: Vec<String>,
+    items: Vec<TrustScanItem>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct TrustScanLockfileMetadata {
+    resolved_version: Option<String>,
+    integrity_hashes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct TrustScanDeepMetadata {
+    publisher_id: Option<String>,
+    publisher_display_name: Option<String>,
+    published_at: Option<String>,
+    dependent_count: Option<u64>,
+    resolved_version: Option<String>,
+    registry_integrity_hashes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct TrustScanAuditMetadata {
+    vulnerability_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct TrustSyncAuditRefreshReport {
+    refreshed_count: usize,
+    vulnerabilities_found: usize,
+    network_errors: usize,
+    warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -781,6 +855,7 @@ struct InitReport {
     wrote_to_stdout: bool,
     stdout_config_toml: Option<String>,
     file_actions: Vec<InitFileAction>,
+    trust_scan: Option<TrustScanReport>,
     merge_decision_count: usize,
     merge_decisions: Vec<config::MergeDecision>,
 }
@@ -866,6 +941,7 @@ fn build_init_report(
     trace_id: &str,
     resolved: &config::ResolvedConfig,
     file_actions: Vec<InitFileAction>,
+    trust_scan: Option<TrustScanReport>,
     wrote_to_stdout: bool,
     stdout_config_toml: Option<String>,
 ) -> InitReport {
@@ -881,6 +957,7 @@ fn build_init_report(
         wrote_to_stdout,
         stdout_config_toml,
         file_actions,
+        trust_scan,
         merge_decision_count: resolved.decisions.len(),
         merge_decisions: resolved.decisions.clone(),
     }
@@ -917,6 +994,37 @@ fn render_init_report_human(report: &InitReport, verbose: bool) -> String {
                     .clone()
                     .unwrap_or_else(|| "<none>".to_string())
             ));
+        }
+    }
+
+    if let Some(trust_scan) = &report.trust_scan {
+        lines.push(format!(
+            "trust_scan: project={} created={} skipped_existing={} warnings={} deep={} audit={}",
+            trust_scan.project_root,
+            trust_scan.created_cards,
+            trust_scan.skipped_existing,
+            trust_scan.warnings.len(),
+            trust_scan.deep,
+            trust_scan.audit
+        ));
+        if verbose {
+            for item in &trust_scan.items {
+                lines.push(format!(
+                    "  trust_scan_item status={:?} extension={} version={} publisher={} risk={} vulns={} dependents={} integrity_hashes={}",
+                    item.status,
+                    item.extension_id,
+                    item.extension_version,
+                    item.publisher_id,
+                    item.risk_level,
+                    item.vulnerability_count,
+                    item.dependent_count
+                        .map_or_else(|| "<unknown>".to_string(), |count| count.to_string()),
+                    item.integrity_hash_count
+                ));
+            }
+            for warning in &trust_scan.warnings {
+                lines.push(format!("  trust_scan_warning {warning}"));
+            }
         }
     }
 
@@ -962,10 +1070,7 @@ state/execution-receipts/
 /// Creates all required subdirectories, an empty trust-card registry, and a
 /// `.gitignore` that excludes sensitive material. The operation is idempotent:
 /// existing directories and files are skipped without error.
-fn bootstrap_state_directory(
-    root: &Path,
-    profile_name: &str,
-) -> Result<Vec<InitFileAction>> {
+fn bootstrap_state_directory(root: &Path, profile_name: &str) -> Result<Vec<InitFileAction>> {
     let mut actions = Vec::new();
     let dot_dir = root.join(".franken-node");
 
@@ -986,16 +1091,10 @@ fn bootstrap_state_directory(
             #[cfg(unix)]
             if *subdir == "keys" {
                 use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(
-                    &dir_path,
-                    std::fs::Permissions::from_mode(0o700),
-                )
-                .with_context(|| {
-                    format!(
-                        "failed setting permissions on {}",
-                        dir_path.display()
-                    )
-                })?;
+                std::fs::set_permissions(&dir_path, std::fs::Permissions::from_mode(0o700))
+                    .with_context(|| {
+                        format!("failed setting permissions on {}", dir_path.display())
+                    })?;
             }
             actions.push(InitFileAction {
                 path: dir_path.display().to_string(),
@@ -1014,9 +1113,8 @@ fn bootstrap_state_directory(
             backup_path: None,
         });
     } else {
-        std::fs::write(&gitignore_path, STATE_GITIGNORE_CONTENTS).with_context(|| {
-            format!("failed writing {}", gitignore_path.display())
-        })?;
+        std::fs::write(&gitignore_path, STATE_GITIGNORE_CONTENTS)
+            .with_context(|| format!("failed writing {}", gitignore_path.display()))?;
         actions.push(InitFileAction {
             path: gitignore_path.display().to_string(),
             action: InitFileActionKind::Created,
@@ -1062,9 +1160,8 @@ fn bootstrap_state_directory(
 fn ensure_state_dir(project_root: &Path) -> Result<PathBuf> {
     let state_dir = project_root.join(".franken-node/state");
     if !state_dir.is_dir() {
-        std::fs::create_dir_all(&state_dir).with_context(|| {
-            format!("failed creating state directory {}", state_dir.display())
-        })?;
+        std::fs::create_dir_all(&state_dir)
+            .with_context(|| format!("failed creating state directory {}", state_dir.display()))?;
         tracing::warn!(
             state_dir = %state_dir.display(),
             "state directory created on demand; consider running `franken-node init` to bootstrap the full directory structure"
@@ -2081,6 +2178,170 @@ mod init_tests {
 }
 
 #[cfg(test)]
+mod trust_scan_tests {
+    use super::*;
+
+    #[test]
+    fn normalize_integrity_hash_decodes_base64_payload() {
+        assert_eq!(
+            normalize_integrity_hash("sha512-AQIDBA=="),
+            Some("sha512:01020304".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_trust_scan_npm_metadata_prefers_requested_version() {
+        let payload = serde_json::json!({
+            "dist-tags": {"latest": "2.0.0"},
+            "maintainers": [{"name": "maintainer", "email": "maintainer@example.com"}],
+            "time": {
+                "1.5.0": "2026-01-01T00:00:00Z",
+                "2.0.0": "2026-02-01T00:00:00Z"
+            },
+            "versions": {
+                "1.5.0": {
+                    "dist": {"integrity": "sha512-AQIDBA=="}
+                },
+                "2.0.0": {
+                    "dist": {"integrity": "sha512-BQYHCA=="}
+                }
+            }
+        });
+
+        let metadata = parse_trust_scan_npm_metadata(&payload, "example", Some("1.5.0"));
+        assert_eq!(metadata.resolved_version.as_deref(), Some("1.5.0"));
+        assert_eq!(
+            metadata.published_at.as_deref(),
+            Some("2026-01-01T00:00:00Z")
+        );
+        assert_eq!(
+            metadata.registry_integrity_hashes,
+            vec!["sha512:01020304".to_string()]
+        );
+        assert_eq!(
+            metadata.publisher_id.as_deref(),
+            Some("npm-maintainer:maintainer")
+        );
+    }
+
+    #[test]
+    fn parse_deps_dev_dependent_count_reads_count() {
+        let payload = serde_json::json!({
+            "dependentCount": 1234,
+            "directDependentCount": 1200,
+            "indirectDependentCount": 34
+        });
+        assert_eq!(
+            parse_deps_dev_dependent_count(&payload).expect("dependent count"),
+            1234
+        );
+    }
+
+    #[test]
+    fn parse_osv_vulnerability_ids_deduplicates_values() {
+        let payload = serde_json::json!({
+            "vulns": [
+                {"id": "OSV-2"},
+                {"id": "OSV-1"},
+                {"id": "OSV-2"}
+            ]
+        });
+        assert_eq!(
+            parse_osv_vulnerability_ids(&payload),
+            vec!["OSV-1".to_string(), "OSV-2".to_string()]
+        );
+    }
+
+    #[test]
+    fn trust_sync_card_needs_network_refresh_honors_ttl_and_force() {
+        let registry =
+            supply_chain::trust_card::fixture_registry(1_000).expect("fixture trust registry");
+        let card = registry
+            .snapshot()
+            .cards_by_extension
+            .get("npm:@acme/auth-guard")
+            .and_then(|history| history.last())
+            .cloned()
+            .expect("fixture card");
+        let verified_secs = chrono::DateTime::parse_from_rfc3339(&card.last_verified_timestamp)
+            .expect("parse timestamp")
+            .timestamp() as u64;
+
+        assert!(!trust_sync_card_needs_network_refresh(
+            &card,
+            verified_secs.saturating_add(30),
+            60,
+            false
+        ));
+        assert!(trust_sync_card_needs_network_refresh(
+            &card,
+            verified_secs.saturating_add(61),
+            60,
+            false
+        ));
+        assert!(trust_sync_card_needs_network_refresh(
+            &card,
+            verified_secs.saturating_add(30),
+            60,
+            true
+        ));
+    }
+
+    #[test]
+    fn refresh_trust_sync_audit_with_updates_vulnerable_cards_and_records_warnings() {
+        let now_secs = 2_000;
+        let registry =
+            supply_chain::trust_card::fixture_registry(now_secs).expect("fixture trust registry");
+        let path = tempfile::tempdir()
+            .expect("tempdir")
+            .path()
+            .join("trust-sync.json");
+        let mut state = TrustCardCliRegistryState {
+            path,
+            registry,
+            cache_ttl_secs: 60,
+        };
+
+        let report =
+            refresh_trust_sync_audit_with(&mut state, now_secs + 120, true, |name, _| match name {
+                "@acme/auth-guard" => Ok(TrustScanAuditMetadata {
+                    vulnerability_ids: vec!["OSV-2026-0001".to_string()],
+                }),
+                "@beta/telemetry-bridge" => Err(anyhow::anyhow!("simulated network failure")),
+                other => Err(anyhow::anyhow!("unexpected package {other}")),
+            });
+
+        assert_eq!(report.refreshed_count, 1);
+        assert_eq!(report.vulnerabilities_found, 1);
+        assert_eq!(report.network_errors, 1);
+        assert_eq!(report.warnings.len(), 1);
+
+        let cards = state
+            .registry
+            .list(
+                &TrustCardListFilter::empty(),
+                "trace-test-trust-sync-refresh",
+                now_secs + 120,
+            )
+            .expect("list cards");
+        let auth_guard = cards
+            .iter()
+            .find(|card| card.extension.extension_id == "npm:@acme/auth-guard")
+            .expect("auth guard card");
+        assert_eq!(
+            auth_guard.user_facing_risk_assessment.level,
+            RiskLevel::High
+        );
+        assert!(
+            auth_guard
+                .user_facing_risk_assessment
+                .summary
+                .contains("OSV-2026-0001")
+        );
+    }
+}
+
+#[cfg(test)]
 mod doctor_tests {
     use super::*;
 
@@ -2969,7 +3230,11 @@ fn trust_card_cli_registry(now_secs: u64) -> Result<TrustCardCliRegistryState> {
     let cache_ttl = resolved.config.trust.card_cache_ttl_secs.unwrap_or(60);
     let registry = TrustCardRegistry::load_authoritative_state(&path, cache_ttl, now_secs)
         .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-    Ok(TrustCardCliRegistryState { path, registry })
+    Ok(TrustCardCliRegistryState {
+        path,
+        registry,
+        cache_ttl_secs: cache_ttl,
+    })
 }
 
 fn persist_trust_card_cli_registry(state: &TrustCardCliRegistryState) -> Result<()> {
@@ -3009,6 +3274,1212 @@ fn project_local_root_from_source_path(
             format!("failed resolving current working directory for {authoritative_surface}")
         })
         .map(|cwd| cwd.join(root))
+}
+
+fn run_project_root(app_path: &Path) -> PathBuf {
+    if app_path.is_dir() {
+        return app_path.to_path_buf();
+    }
+
+    app_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf()
+}
+
+fn dependency_extension_id(dependency_name: &str) -> String {
+    if dependency_name.starts_with("npm:") {
+        dependency_name.to_string()
+    } else {
+        format!("npm:{dependency_name}")
+    }
+}
+
+fn read_package_manifest_object(
+    project_root: &Path,
+    context: &str,
+) -> Result<Option<serde_json::Map<String, serde_json::Value>>> {
+    let package_json_path = project_root.join("package.json");
+    if !package_json_path.is_file() {
+        return Ok(None);
+    }
+
+    let raw = std::fs::read_to_string(&package_json_path).with_context(|| {
+        format!(
+            "failed reading dependency manifest {}",
+            package_json_path.display()
+        )
+    })?;
+    let manifest = serde_json::from_str::<serde_json::Value>(&raw).with_context(|| {
+        format!(
+            "invalid dependency manifest JSON while evaluating {context}: {}",
+            package_json_path.display()
+        )
+    })?;
+    let object = manifest.as_object().cloned().ok_or_else(|| {
+        anyhow::anyhow!(
+            "dependency manifest must be a JSON object: {}",
+            package_json_path.display()
+        )
+    })?;
+
+    Ok(Some(object))
+}
+
+fn collect_package_dependencies(
+    project_root: &Path,
+    sections: &[&str],
+    context: &str,
+) -> Result<Option<Vec<RunPackageDependency>>> {
+    let Some(object) = read_package_manifest_object(project_root, context)? else {
+        return Ok(None);
+    };
+
+    let mut dependencies = BTreeMap::new();
+    for section in sections {
+        let Some(entries) = object.get(*section).and_then(serde_json::Value::as_object) else {
+            continue;
+        };
+
+        for (dependency_name, version_requirement) in entries {
+            dependencies
+                .entry(dependency_name.clone())
+                .or_insert_with(|| RunPackageDependency {
+                    dependency_name: dependency_name.clone(),
+                    version_requirement: version_requirement
+                        .as_str()
+                        .map_or_else(|| version_requirement.to_string(), ToString::to_string),
+                    section: (*section).to_string(),
+                    extension_id: dependency_extension_id(dependency_name),
+                });
+        }
+    }
+
+    Ok(Some(dependencies.into_values().collect()))
+}
+
+fn collect_run_package_dependencies(
+    project_root: &Path,
+) -> Result<Option<Vec<RunPackageDependency>>> {
+    collect_package_dependencies(
+        project_root,
+        &["dependencies", "optionalDependencies", "peerDependencies"],
+        "run trust preflight",
+    )
+}
+
+fn collect_trust_scan_dependencies(project_root: &Path) -> Result<Vec<RunPackageDependency>> {
+    collect_package_dependencies(
+        project_root,
+        &[
+            "dependencies",
+            "devDependencies",
+            "optionalDependencies",
+            "peerDependencies",
+        ],
+        "trust scan",
+    )?
+    .ok_or_else(|| {
+        anyhow::anyhow!(
+            "package.json not found at project path {}; trust scan requires an npm project root",
+            project_root.display()
+        )
+    })
+}
+
+fn trust_scan_user_agent() -> String {
+    format!("franken-node/{}", env!("CARGO_PKG_VERSION"))
+}
+
+fn percent_encode_path_component(raw: &str) -> String {
+    let mut encoded = String::new();
+    for byte in raw.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                encoded.push(char::from(byte))
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
+
+fn trust_scan_registry_state(
+    project_root: &Path,
+    now_secs: u64,
+) -> Result<TrustCardCliRegistryState> {
+    ensure_state_dir(project_root)?;
+    let path = project_root.join(TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH);
+    let registry = if path.is_file() {
+        TrustCardRegistry::load_authoritative_state(&path, 60, now_secs)
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?
+    } else {
+        let registry = TrustCardRegistry::default();
+        registry
+            .persist_authoritative_state(&path)
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        registry
+    };
+
+    Ok(TrustCardCliRegistryState {
+        path,
+        registry,
+        cache_ttl_secs: 60,
+    })
+}
+
+fn merge_trust_scan_lockfile_entry(
+    entries: &mut BTreeMap<String, TrustScanLockfileMetadata>,
+    dependency_name: &str,
+    resolved_version: Option<&str>,
+    integrity_hashes: impl IntoIterator<Item = String>,
+) {
+    let entry = entries.entry(dependency_name.to_string()).or_default();
+    if entry.resolved_version.is_none() {
+        entry.resolved_version = resolved_version.map(ToString::to_string);
+    }
+    for integrity_hash in integrity_hashes {
+        if !entry.integrity_hashes.contains(&integrity_hash) {
+            entry.integrity_hashes.push(integrity_hash);
+        }
+    }
+}
+
+fn parse_lockfile_dependency_name(
+    package_path: &str,
+    package_value: &serde_json::Value,
+) -> Option<String> {
+    if package_path.is_empty() {
+        return None;
+    }
+    if let Some(rest) = package_path.strip_prefix("node_modules/")
+        && rest.contains("/node_modules/")
+    {
+        return None;
+    }
+    if let Some(name) = package_value
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+    {
+        return Some(name.to_string());
+    }
+
+    let rest = package_path.strip_prefix("node_modules/")?;
+    Some(rest.to_string())
+}
+
+fn parse_trust_scan_lockfile_metadata(
+    project_root: &Path,
+) -> Result<BTreeMap<String, TrustScanLockfileMetadata>> {
+    let mut entries = BTreeMap::new();
+    let mut lockfile_path = None;
+    for candidate in ["package-lock.json", "npm-shrinkwrap.json"] {
+        let path = project_root.join(candidate);
+        if path.is_file() {
+            lockfile_path = Some(path);
+            break;
+        }
+    }
+
+    let Some(lockfile_path) = lockfile_path else {
+        return Ok(entries);
+    };
+
+    let raw = std::fs::read_to_string(&lockfile_path)
+        .with_context(|| format!("failed reading lockfile {}", lockfile_path.display()))?;
+    let payload = serde_json::from_str::<serde_json::Value>(&raw)
+        .with_context(|| format!("invalid lockfile JSON: {}", lockfile_path.display()))?;
+
+    if let Some(packages) = payload
+        .get("packages")
+        .and_then(serde_json::Value::as_object)
+    {
+        for (package_path, package_value) in packages {
+            let Some(dependency_name) = parse_lockfile_dependency_name(package_path, package_value)
+            else {
+                continue;
+            };
+            let integrity_hashes = package_value
+                .get("integrity")
+                .and_then(serde_json::Value::as_str)
+                .and_then(normalize_integrity_hash)
+                .into_iter();
+            merge_trust_scan_lockfile_entry(
+                &mut entries,
+                &dependency_name,
+                package_value
+                    .get("version")
+                    .and_then(serde_json::Value::as_str),
+                integrity_hashes,
+            );
+        }
+    }
+
+    if let Some(dependencies) = payload
+        .get("dependencies")
+        .and_then(serde_json::Value::as_object)
+    {
+        for (dependency_name, dependency_value) in dependencies {
+            let integrity_hashes = dependency_value
+                .get("integrity")
+                .and_then(serde_json::Value::as_str)
+                .and_then(normalize_integrity_hash)
+                .into_iter();
+            merge_trust_scan_lockfile_entry(
+                &mut entries,
+                dependency_name,
+                dependency_value
+                    .get("version")
+                    .and_then(serde_json::Value::as_str),
+                integrity_hashes,
+            );
+        }
+    }
+
+    Ok(entries)
+}
+
+fn normalize_integrity_hash(raw: &str) -> Option<String> {
+    let token = raw.split_whitespace().next()?.trim();
+    let (algorithm, encoded) = token.split_once('-')?;
+    let decoded = BASE64_STANDARD.decode(encoded).ok()?;
+    Some(format!("{algorithm}:{}", hex::encode(decoded)))
+}
+
+fn parse_trust_scan_npm_metadata(
+    payload: &serde_json::Value,
+    dependency_name: &str,
+    preferred_version: Option<&str>,
+) -> TrustScanDeepMetadata {
+    let versions = payload
+        .get("versions")
+        .and_then(serde_json::Value::as_object);
+    let resolved_version = preferred_version
+        .and_then(|version| {
+            versions
+                .and_then(|versions| versions.get(version))
+                .map(|_| version)
+        })
+        .map(ToString::to_string)
+        .or_else(|| {
+            payload
+                .get("dist-tags")
+                .and_then(serde_json::Value::as_object)
+                .and_then(|tags| tags.get("latest"))
+                .and_then(serde_json::Value::as_str)
+                .map(ToString::to_string)
+        });
+    let version_payload = resolved_version
+        .as_deref()
+        .and_then(|version| versions.and_then(|versions| versions.get(version)));
+
+    let maintainer = version_payload
+        .and_then(|version| {
+            version
+                .get("maintainers")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|maintainers| maintainers.first())
+        })
+        .or_else(|| {
+            payload
+                .get("maintainers")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|maintainers| maintainers.first())
+        });
+
+    let author_name = version_payload
+        .and_then(|version| version.get("author"))
+        .or_else(|| payload.get("author"))
+        .and_then(|author| match author {
+            serde_json::Value::String(value) => Some(value.to_string()),
+            serde_json::Value::Object(map) => map
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .map(ToString::to_string),
+            _ => None,
+        });
+
+    let (publisher_id, publisher_display_name) = maintainer
+        .and_then(serde_json::Value::as_object)
+        .and_then(|maintainer| {
+            maintainer
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .map(|name| {
+                    (
+                        format!("npm-maintainer:{name}"),
+                        maintainer
+                            .get("email")
+                            .and_then(serde_json::Value::as_str)
+                            .map_or_else(|| name.to_string(), |email| format!("{name} <{email}>")),
+                    )
+                })
+        })
+        .or_else(|| author_name.map(|name| (format!("npm-author:{name}"), name)))
+        .unwrap_or_else(|| {
+            let publisher = default_trust_scan_publisher(dependency_name);
+            (publisher.publisher_id, publisher.display_name)
+        });
+
+    let published_at = resolved_version.as_deref().and_then(|version| {
+        payload
+            .get("time")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|times| times.get(version))
+            .and_then(serde_json::Value::as_str)
+            .map(ToString::to_string)
+    });
+
+    let mut registry_integrity_hashes = Vec::new();
+    if let Some(dist) = version_payload
+        .and_then(|version| version.get("dist"))
+        .and_then(serde_json::Value::as_object)
+    {
+        if let Some(integrity_hash) = dist
+            .get("integrity")
+            .and_then(serde_json::Value::as_str)
+            .and_then(normalize_integrity_hash)
+        {
+            registry_integrity_hashes.push(integrity_hash);
+        } else if let Some(shasum) = dist.get("shasum").and_then(serde_json::Value::as_str) {
+            registry_integrity_hashes.push(format!("sha1:{shasum}"));
+        }
+    }
+
+    TrustScanDeepMetadata {
+        publisher_id: Some(publisher_id),
+        publisher_display_name: Some(publisher_display_name),
+        published_at,
+        dependent_count: None,
+        resolved_version,
+        registry_integrity_hashes,
+    }
+}
+
+fn fetch_trust_scan_dependent_count(dependency_name: &str, resolved_version: &str) -> Result<u64> {
+    let package_name = percent_encode_path_component(dependency_name);
+    let version = percent_encode_path_component(resolved_version);
+    let url = format!(
+        "{TRUST_SCAN_DEPS_DEV_BASE_URL}/systems/npm/packages/{package_name}/versions/{version}:dependents"
+    );
+    let response = ureq::get(&url)
+        .set("User-Agent", &trust_scan_user_agent())
+        .call()
+        .map_err(|err| anyhow::anyhow!("dependents query failed for {dependency_name}: {err}"))?;
+    let body = response.into_string().map_err(|err| {
+        anyhow::anyhow!("failed reading dependents response for {dependency_name}: {err}")
+    })?;
+    let payload = serde_json::from_str::<serde_json::Value>(&body).with_context(|| {
+        format!("invalid deps.dev JSON while scanning dependents for {dependency_name}")
+    })?;
+    parse_deps_dev_dependent_count(&payload)
+}
+
+fn parse_deps_dev_dependent_count(payload: &serde_json::Value) -> Result<u64> {
+    payload
+        .get("dependentCount")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| anyhow::anyhow!("deps.dev response did not include dependentCount"))
+}
+
+fn fetch_trust_scan_npm_metadata(
+    dependency_name: &str,
+    preferred_version: Option<&str>,
+) -> Result<TrustScanDeepMetadata> {
+    let package_name = percent_encode_path_component(dependency_name);
+    let url = format!("{TRUST_SCAN_NPM_REGISTRY_BASE_URL}/{package_name}");
+    let response = ureq::get(&url)
+        .set("User-Agent", &trust_scan_user_agent())
+        .call()
+        .map_err(|err| anyhow::anyhow!("npm registry query failed for {dependency_name}: {err}"))?;
+    let body = response.into_string().map_err(|err| {
+        anyhow::anyhow!("failed reading npm registry response for {dependency_name}: {err}")
+    })?;
+    let payload = serde_json::from_str::<serde_json::Value>(&body)
+        .with_context(|| format!("invalid npm registry JSON for {dependency_name}"))?;
+    let mut metadata = parse_trust_scan_npm_metadata(&payload, dependency_name, preferred_version);
+    if let Some(resolved_version) = metadata.resolved_version.clone() {
+        metadata.dependent_count = Some(fetch_trust_scan_dependent_count(
+            dependency_name,
+            &resolved_version,
+        )?);
+    }
+    Ok(metadata)
+}
+
+fn parse_osv_vulnerability_ids(payload: &serde_json::Value) -> Vec<String> {
+    let mut ids = payload
+        .get("vulns")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            entry
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .map(ToString::to_string)
+        })
+        .collect::<Vec<_>>();
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+fn fetch_trust_scan_audit_metadata(
+    dependency_name: &str,
+    resolved_version: Option<&str>,
+) -> Result<TrustScanAuditMetadata> {
+    let mut body = serde_json::json!({
+        "package": {
+            "name": dependency_name,
+            "ecosystem": "npm",
+        }
+    });
+    if let Some(version) = resolved_version {
+        body["version"] = serde_json::Value::String(version.to_string());
+    }
+
+    let response = ureq::post(&trust_scan_osv_query_url())
+        .set("User-Agent", &trust_scan_user_agent())
+        .set("Content-Type", "application/json")
+        .send_string(&body.to_string())
+        .map_err(|err| anyhow::anyhow!("OSV query failed for {dependency_name}: {err}"))?;
+    let payload = response.into_string().map_err(|err| {
+        anyhow::anyhow!("failed reading OSV response for {dependency_name}: {err}")
+    })?;
+    let payload = serde_json::from_str::<serde_json::Value>(&payload)
+        .with_context(|| format!("invalid OSV JSON for {dependency_name}"))?;
+    Ok(TrustScanAuditMetadata {
+        vulnerability_ids: parse_osv_vulnerability_ids(&payload),
+    })
+}
+
+fn trust_scan_osv_query_url() -> String {
+    std::env::var("FRANKEN_NODE_OSV_QUERY_URL")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| TRUST_SCAN_OSV_QUERY_URL.to_string())
+}
+
+fn default_trust_scan_publisher(dependency_name: &str) -> PublisherIdentity {
+    if let Some(scope) = dependency_name
+        .strip_prefix('@')
+        .and_then(|name| name.split('/').next())
+    {
+        return PublisherIdentity {
+            publisher_id: format!("npm-scope:{scope}"),
+            display_name: format!("@{scope}"),
+        };
+    }
+
+    PublisherIdentity {
+        publisher_id: format!("npm-package:{dependency_name}"),
+        display_name: dependency_name.to_string(),
+    }
+}
+
+fn build_trust_scan_evidence_ref(
+    dependency: &RunPackageDependency,
+    version: &str,
+    artifact_hashes: &[String],
+    now_secs: u64,
+) -> VerifiedEvidenceRef {
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(b"trust_scan_manifest_admission_v1:");
+    hasher.update(dependency.extension_id.as_bytes());
+    hasher.update(version.as_bytes());
+    for artifact_hash in artifact_hashes {
+        hasher.update(artifact_hash.as_bytes());
+    }
+
+    VerifiedEvidenceRef {
+        evidence_id: format!("manifest-admission:{}@{version}", dependency.extension_id),
+        evidence_type: EvidenceType::ManifestAdmission,
+        verified_at_epoch: now_secs,
+        verification_receipt_hash: format!("sha256:{}", hex::encode(hasher.finalize())),
+    }
+}
+
+fn build_trust_scan_card_input(
+    dependency: &RunPackageDependency,
+    lockfile_metadata: Option<&TrustScanLockfileMetadata>,
+    deep_metadata: &TrustScanDeepMetadata,
+    audit_metadata: &TrustScanAuditMetadata,
+    now_secs: u64,
+) -> TrustCardInput {
+    let timestamp = chrono::DateTime::from_timestamp(now_secs as i64, 0)
+        .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+        .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string());
+    let version = lockfile_metadata
+        .and_then(|metadata| metadata.resolved_version.clone())
+        .or_else(|| deep_metadata.resolved_version.clone())
+        .unwrap_or_else(|| dependency.version_requirement.clone());
+
+    let publisher = if let (Some(publisher_id), Some(display_name)) = (
+        deep_metadata.publisher_id.clone(),
+        deep_metadata.publisher_display_name.clone(),
+    ) {
+        PublisherIdentity {
+            publisher_id,
+            display_name,
+        }
+    } else {
+        default_trust_scan_publisher(&dependency.dependency_name)
+    };
+
+    let mut artifact_hashes = BTreeSet::new();
+    if let Some(lockfile_metadata) = lockfile_metadata {
+        artifact_hashes.extend(lockfile_metadata.integrity_hashes.iter().cloned());
+    }
+    artifact_hashes.extend(deep_metadata.registry_integrity_hashes.iter().cloned());
+    let artifact_hashes = artifact_hashes.into_iter().collect::<Vec<_>>();
+
+    let vulnerability_count = audit_metadata.vulnerability_ids.len();
+    let risk_level = if vulnerability_count >= 3 {
+        RiskLevel::Critical
+    } else if vulnerability_count > 0 {
+        RiskLevel::High
+    } else if artifact_hashes.is_empty() {
+        RiskLevel::Medium
+    } else {
+        RiskLevel::Low
+    };
+
+    let mut reputation_score_basis_points = match risk_level {
+        RiskLevel::Low => 620_u16,
+        RiskLevel::Medium => 440_u16,
+        RiskLevel::High => 220_u16,
+        RiskLevel::Critical => 80_u16,
+    };
+    if let Some(dependent_count) = deep_metadata.dependent_count {
+        let popularity_bonus = ((dependent_count / 50).min(220)) as u16;
+        reputation_score_basis_points =
+            reputation_score_basis_points.saturating_add(popularity_bonus);
+    }
+    if !artifact_hashes.is_empty() {
+        reputation_score_basis_points = reputation_score_basis_points.saturating_add(30).min(950);
+    }
+    let vulnerability_penalty = (vulnerability_count.min(5) as u16).saturating_mul(90);
+    reputation_score_basis_points =
+        reputation_score_basis_points.saturating_sub(vulnerability_penalty);
+
+    let reputation_trend = if vulnerability_count > 0 {
+        ReputationTrend::Declining
+    } else if deep_metadata.dependent_count.unwrap_or(0) > 500 {
+        ReputationTrend::Improving
+    } else {
+        ReputationTrend::Stable
+    };
+
+    let mut summary_bits = vec![format!(
+        "Seeded from {} requirement `{}`",
+        dependency.section, dependency.version_requirement
+    )];
+    if let Some(published_at) = &deep_metadata.published_at {
+        summary_bits.push(format!("published_at={published_at}"));
+    }
+    if let Some(dependent_count) = deep_metadata.dependent_count {
+        summary_bits.push(format!("dependents={dependent_count}"));
+    }
+    if !audit_metadata.vulnerability_ids.is_empty() {
+        summary_bits.push(format!(
+            "osv_vulns={}",
+            audit_metadata.vulnerability_ids.join(",")
+        ));
+    }
+
+    TrustCardInput {
+        extension: ExtensionIdentity {
+            extension_id: dependency.extension_id.clone(),
+            version: version.clone(),
+        },
+        publisher,
+        certification_level: CertificationLevel::Unknown,
+        capability_declarations: vec![CapabilityDeclaration {
+            name: format!("manifest.{}", dependency.section),
+            description: format!(
+                "Dependency discovered from package.json {} entry",
+                dependency.section
+            ),
+            risk: CapabilityRisk::Low,
+        }],
+        behavioral_profile: BehavioralProfile {
+            network_access: false,
+            filesystem_access: false,
+            subprocess_access: false,
+            profile_summary:
+                "Baseline dependency inventory only; behavioral telemetry not collected yet"
+                    .to_string(),
+        },
+        revocation_status: RevocationStatus::Active,
+        provenance_summary: ProvenanceSummary {
+            attestation_level: if artifact_hashes.is_empty() {
+                "manifest_scan".to_string()
+            } else {
+                "manifest_lockfile_scan".to_string()
+            },
+            source_uri: format!("pkg:npm/{}", dependency.dependency_name),
+            artifact_hashes: artifact_hashes.clone(),
+            verified_at: timestamp.clone(),
+        },
+        reputation_score_basis_points,
+        reputation_trend,
+        active_quarantine: false,
+        dependency_trust_summary: vec![DependencyTrustStatus {
+            dependency_id: dependency.dependency_name.clone(),
+            trust_level: format!("seeded_from_{}", dependency.section),
+        }],
+        last_verified_timestamp: timestamp.clone(),
+        user_facing_risk_assessment: RiskAssessment {
+            level: risk_level,
+            summary: summary_bits.join("; "),
+        },
+        evidence_refs: vec![build_trust_scan_evidence_ref(
+            dependency,
+            &version,
+            &artifact_hashes,
+            now_secs,
+        )],
+    }
+}
+
+fn build_trust_scan_item(
+    dependency: &RunPackageDependency,
+    card: &TrustCard,
+    status: TrustScanItemStatus,
+    vulnerability_count: usize,
+    dependent_count: Option<u64>,
+) -> TrustScanItem {
+    TrustScanItem {
+        dependency_name: dependency.dependency_name.clone(),
+        section: dependency.section.clone(),
+        extension_id: dependency.extension_id.clone(),
+        extension_version: card.extension.version.clone(),
+        status,
+        publisher_id: card.publisher.publisher_id.clone(),
+        risk_level: format!("{:?}", card.user_facing_risk_assessment.level).to_ascii_lowercase(),
+        integrity_hash_count: card.provenance_summary.artifact_hashes.len(),
+        vulnerability_count,
+        dependent_count,
+    }
+}
+
+fn render_trust_scan_human(report: &TrustScanReport) -> String {
+    let mut lines = vec![format!(
+        "trust scan completed: project={} scanned={} created={} skipped_existing={} lockfile_entries={} deep={} audit={} warnings={}",
+        report.project_root,
+        report.scanned_dependencies,
+        report.created_cards,
+        report.skipped_existing,
+        report.lockfile_entries,
+        report.deep,
+        report.audit,
+        report.warnings.len()
+    )];
+    for item in &report.items {
+        lines.push(format!(
+            "  {} {}@{} section={} publisher={} risk={} vulns={} dependents={} integrity_hashes={}",
+            match item.status {
+                TrustScanItemStatus::Created => "created",
+                TrustScanItemStatus::SkippedExisting => "skipped",
+            },
+            item.extension_id,
+            item.extension_version,
+            item.section,
+            item.publisher_id,
+            item.risk_level,
+            item.vulnerability_count,
+            item.dependent_count
+                .map_or_else(|| "<unknown>".to_string(), |count| count.to_string()),
+            item.integrity_hash_count
+        ));
+    }
+    for warning in &report.warnings {
+        lines.push(format!("  warning: {warning}"));
+    }
+    lines.join("\n")
+}
+
+fn run_trust_scan(project_root: &Path, deep: bool, audit: bool) -> Result<TrustScanReport> {
+    let project_root = if project_root.is_absolute() {
+        project_root.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .context("failed resolving current working directory for trust scan")?
+            .join(project_root)
+    };
+    let dependencies = collect_trust_scan_dependencies(&project_root)?;
+    let lockfile_metadata = parse_trust_scan_lockfile_metadata(&project_root)?;
+    let now_secs = now_unix_secs();
+    let mut state = trust_scan_registry_state(&project_root, now_secs)?;
+    let mut warnings = Vec::new();
+    let mut items = Vec::new();
+    let mut created_cards = 0usize;
+    let mut skipped_existing = 0usize;
+
+    for dependency in &dependencies {
+        if let Some(existing) = state
+            .registry
+            .read(&dependency.extension_id, now_secs, "trace-cli-trust-scan")
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?
+        {
+            skipped_existing += 1;
+            items.push(build_trust_scan_item(
+                dependency,
+                &existing,
+                TrustScanItemStatus::SkippedExisting,
+                0,
+                None,
+            ));
+            continue;
+        }
+
+        let lockfile_entry = lockfile_metadata.get(&dependency.dependency_name);
+        let mut deep_metadata = TrustScanDeepMetadata::default();
+        if deep {
+            match fetch_trust_scan_npm_metadata(
+                &dependency.dependency_name,
+                lockfile_entry.and_then(|entry| entry.resolved_version.as_deref()),
+            ) {
+                Ok(metadata) => deep_metadata = metadata,
+                Err(err) => warnings.push(format!(
+                    "deep metadata unavailable for {}: {err}",
+                    dependency.dependency_name
+                )),
+            }
+        }
+
+        let mut audit_metadata = TrustScanAuditMetadata::default();
+        if audit {
+            let resolved_version = lockfile_entry
+                .and_then(|entry| entry.resolved_version.as_deref())
+                .or(deep_metadata.resolved_version.as_deref());
+            match fetch_trust_scan_audit_metadata(&dependency.dependency_name, resolved_version) {
+                Ok(metadata) => audit_metadata = metadata,
+                Err(err) => warnings.push(format!(
+                    "OSV audit unavailable for {}: {err}",
+                    dependency.dependency_name
+                )),
+            }
+        }
+
+        let input = build_trust_scan_card_input(
+            dependency,
+            lockfile_entry,
+            &deep_metadata,
+            &audit_metadata,
+            now_secs,
+        );
+        let card = state
+            .registry
+            .create(input, now_secs, "trace-cli-trust-scan")
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        created_cards += 1;
+        items.push(build_trust_scan_item(
+            dependency,
+            &card,
+            TrustScanItemStatus::Created,
+            audit_metadata.vulnerability_ids.len(),
+            deep_metadata.dependent_count,
+        ));
+    }
+
+    if created_cards > 0 || !state.path.is_file() {
+        persist_trust_card_cli_registry(&state)?;
+    }
+
+    Ok(TrustScanReport {
+        command: "trust_scan".to_string(),
+        project_root: project_root.display().to_string(),
+        registry_path: state.path.display().to_string(),
+        scanned_dependencies: dependencies.len(),
+        created_cards,
+        skipped_existing,
+        lockfile_entries: lockfile_metadata.len(),
+        deep,
+        audit,
+        warnings,
+        items,
+    })
+}
+
+fn run_preflight_decision(verdict: &PreFlightVerdict) -> Decision {
+    match verdict {
+        PreFlightVerdict::Passed { .. } => Decision::Approved,
+        PreFlightVerdict::Blocked { .. } => Decision::Denied,
+        PreFlightVerdict::Skipped { .. } => Decision::Escalated,
+    }
+}
+
+fn run_preflight_rationale(verdict: &PreFlightVerdict) -> String {
+    match verdict {
+        PreFlightVerdict::Passed {
+            checked, warnings, ..
+        } if warnings.is_empty() => {
+            format!("trust preflight passed after checking {checked} dependency entries")
+        }
+        PreFlightVerdict::Passed { warnings, .. } => {
+            format!(
+                "trust preflight passed with {} warning(s): {}",
+                warnings.len(),
+                warnings.join("; ")
+            )
+        }
+        PreFlightVerdict::Blocked {
+            reason, violations, ..
+        } => format!(
+            "{reason}; {} blocking trust violation(s) detected",
+            violations.len()
+        ),
+        PreFlightVerdict::Skipped { reason } => reason.clone(),
+    }
+}
+
+fn run_preflight_confidence(verdict: &PreFlightVerdict) -> f64 {
+    match verdict {
+        PreFlightVerdict::Passed {
+            warnings, results, ..
+        } if warnings.is_empty() && !results.is_empty() => 0.97,
+        PreFlightVerdict::Passed { warnings, .. } if warnings.is_empty() => 0.9,
+        PreFlightVerdict::Passed { .. } => 0.78,
+        PreFlightVerdict::Blocked { violations, .. } if violations.len() > 1 => 0.99,
+        PreFlightVerdict::Blocked { .. } => 0.96,
+        PreFlightVerdict::Skipped { .. } => 0.55,
+    }
+}
+
+fn build_run_preflight_receipt(
+    app_path: &Path,
+    project_root: &Path,
+    policy_mode: Profile,
+    registry_path: Option<&Path>,
+    verdict: &PreFlightVerdict,
+) -> Result<Receipt> {
+    Receipt::new(
+        "run_preflight_trust_gate",
+        "franken-node run",
+        &serde_json::json!({
+            "app_path": app_path.display().to_string(),
+            "project_root": project_root.display().to_string(),
+            "policy_mode": policy_mode.to_string(),
+            "registry_path": registry_path.map(|path| path.display().to_string()),
+        }),
+        &serde_json::json!({
+            "verdict": verdict,
+            "registry_path": registry_path.map(|path| path.display().to_string()),
+        }),
+        run_preflight_decision(verdict),
+        &run_preflight_rationale(verdict),
+        registry_path
+            .map(|path| vec![format!("state:{}", path.display())])
+            .unwrap_or_default(),
+        vec!["policy.run.preflight.trust".to_string()],
+        run_preflight_confidence(verdict),
+        "franken-node trust sync --force",
+    )
+    .map_err(|err| anyhow::anyhow!(err.to_string()))
+}
+
+fn evaluate_run_trust_preflight(
+    app_path: &Path,
+    policy_mode: Profile,
+    config: &config::Config,
+    now_secs: u64,
+) -> Result<RunPreFlightReport> {
+    let project_root = run_project_root(app_path);
+    let dependencies = collect_run_package_dependencies(&project_root)?;
+    let cache_ttl = config.trust.card_cache_ttl_secs.unwrap_or(60);
+    let mut registry_path = None::<PathBuf>;
+
+    let verdict = match dependencies {
+        None => PreFlightVerdict::Skipped {
+            reason: format!(
+                "package.json not found under {}; skipping dependency trust preflight",
+                project_root.display()
+            ),
+        },
+        Some(dependencies) if dependencies.is_empty() => PreFlightVerdict::Passed {
+            checked: 0,
+            warnings: Vec::new(),
+            results: Vec::new(),
+        },
+        Some(dependencies) => {
+            ensure_state_dir(&project_root)?;
+            let authoritative_registry = project_root.join(TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH);
+            registry_path = Some(authoritative_registry.clone());
+
+            if !authoritative_registry.is_file() {
+                PreFlightVerdict::Skipped {
+                    reason: format!(
+                        "authoritative trust registry missing at {}; run `franken-node init --profile {}` to bootstrap trust state",
+                        authoritative_registry.display(),
+                        policy_mode
+                    ),
+                }
+            } else {
+                match TrustCardRegistry::load_authoritative_state(
+                    &authoritative_registry,
+                    cache_ttl,
+                    now_secs,
+                ) {
+                    Ok(mut registry) => {
+                        let mut warnings = Vec::new();
+                        let mut violations = Vec::new();
+                        let mut results = Vec::new();
+
+                        for dependency in dependencies {
+                            let dependency_name = dependency.dependency_name.clone();
+                            let extension_id = dependency.extension_id.clone();
+                            match registry
+                                .read(&extension_id, now_secs, "trace-run-trust-preflight")
+                                .map_err(|err| anyhow::anyhow!(err.to_string()))?
+                            {
+                                None => {
+                                    let detail = format!(
+                                        "dependency `{extension_id}` is untracked in the authoritative trust registry"
+                                    );
+                                    warnings.push(detail.clone());
+                                    results.push(RunDependencyTrustResult {
+                                        dependency_name,
+                                        version_requirement: dependency.version_requirement,
+                                        section: dependency.section,
+                                        extension_id,
+                                        status: RunDependencyTrustStatus::Untracked,
+                                        trust_card_version: None,
+                                        risk_level: None,
+                                        detail,
+                                    });
+                                }
+                                Some(card) => {
+                                    let risk_level = Some(
+                                        format!("{:?}", card.user_facing_risk_assessment.level)
+                                            .to_ascii_lowercase(),
+                                    );
+
+                                    if let RevocationStatus::Revoked { reason, .. } =
+                                        &card.revocation_status
+                                    {
+                                        let detail = format!(
+                                            "dependency `{extension_id}` is revoked: {reason}"
+                                        );
+                                        if policy_mode == Profile::LegacyRisky {
+                                            warnings.push(detail.clone());
+                                        } else {
+                                            violations.push(TrustViolation {
+                                                dependency_name: Some(dependency_name.clone()),
+                                                extension_id: Some(extension_id.clone()),
+                                                kind: TrustViolationKind::Revoked,
+                                                detail: detail.clone(),
+                                            });
+                                        }
+
+                                        results.push(RunDependencyTrustResult {
+                                            dependency_name,
+                                            version_requirement: dependency.version_requirement,
+                                            section: dependency.section,
+                                            extension_id,
+                                            status: RunDependencyTrustStatus::Revoked,
+                                            trust_card_version: Some(card.trust_card_version),
+                                            risk_level,
+                                            detail,
+                                        });
+                                        continue;
+                                    }
+
+                                    if card.active_quarantine {
+                                        let detail =
+                                            format!("dependency `{extension_id}` is quarantined");
+                                        if policy_mode == Profile::LegacyRisky {
+                                            warnings.push(detail.clone());
+                                        } else {
+                                            violations.push(TrustViolation {
+                                                dependency_name: Some(dependency_name.clone()),
+                                                extension_id: Some(extension_id.clone()),
+                                                kind: TrustViolationKind::Quarantined,
+                                                detail: detail.clone(),
+                                            });
+                                        }
+
+                                        results.push(RunDependencyTrustResult {
+                                            dependency_name,
+                                            version_requirement: dependency.version_requirement,
+                                            section: dependency.section,
+                                            extension_id,
+                                            status: RunDependencyTrustStatus::Quarantined,
+                                            trust_card_version: Some(card.trust_card_version),
+                                            risk_level,
+                                            detail,
+                                        });
+                                        continue;
+                                    }
+
+                                    results.push(RunDependencyTrustResult {
+                                        dependency_name,
+                                        version_requirement: dependency.version_requirement,
+                                        section: dependency.section,
+                                        extension_id,
+                                        status: RunDependencyTrustStatus::Trusted,
+                                        trust_card_version: Some(card.trust_card_version),
+                                        risk_level,
+                                        detail: format!(
+                                            "verified trust card v{} allows execution",
+                                            card.trust_card_version
+                                        ),
+                                    });
+                                }
+                            }
+                        }
+
+                        if violations.is_empty() {
+                            PreFlightVerdict::Passed {
+                                checked: results.len(),
+                                warnings,
+                                results,
+                            }
+                        } else {
+                            let reason = violations
+                                .iter()
+                                .map(|violation| violation.detail.as_str())
+                                .collect::<Vec<_>>()
+                                .join("; ");
+                            PreFlightVerdict::Blocked {
+                                reason: format!("blocking trust findings detected: {reason}"),
+                                warnings,
+                                violations,
+                                results,
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        let detail = format!(
+                            "failed loading authoritative trust registry {}: {err}",
+                            authoritative_registry.display()
+                        );
+                        if policy_mode == Profile::LegacyRisky {
+                            PreFlightVerdict::Skipped { reason: detail }
+                        } else {
+                            PreFlightVerdict::Blocked {
+                                reason: "authoritative trust registry is unreadable or corrupt"
+                                    .to_string(),
+                                warnings: Vec::new(),
+                                violations: vec![TrustViolation {
+                                    dependency_name: None,
+                                    extension_id: None,
+                                    kind: TrustViolationKind::RegistryCorrupt,
+                                    detail,
+                                }],
+                                results: Vec::new(),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    let receipt = build_run_preflight_receipt(
+        app_path,
+        &project_root,
+        policy_mode,
+        registry_path.as_deref(),
+        &verdict,
+    )?;
+
+    Ok(RunPreFlightReport {
+        app_path: app_path.display().to_string(),
+        project_root: project_root.display().to_string(),
+        policy_mode: policy_mode.to_string(),
+        registry_path: registry_path.map(|path| path.display().to_string()),
+        verdict,
+        receipt,
+    })
+}
+
+fn render_run_preflight_human(report: &RunPreFlightReport) -> String {
+    let mut lines = vec![format!(
+        "run trust preflight: policy={} app={}",
+        report.policy_mode, report.app_path
+    )];
+
+    match &report.verdict {
+        PreFlightVerdict::Passed {
+            checked,
+            warnings,
+            results,
+        } => {
+            lines.push(format!(
+                "  verdict: passed checked={} warnings={} trusted={} untracked={}",
+                checked,
+                warnings.len(),
+                results
+                    .iter()
+                    .filter(|result| result.status == RunDependencyTrustStatus::Trusted)
+                    .count(),
+                results
+                    .iter()
+                    .filter(|result| result.status == RunDependencyTrustStatus::Untracked)
+                    .count()
+            ));
+            for warning in warnings {
+                lines.push(format!("  warning: {warning}"));
+            }
+        }
+        PreFlightVerdict::Blocked {
+            reason,
+            warnings,
+            violations,
+            ..
+        } => {
+            lines.push(format!(
+                "  verdict: blocked violations={} reason={reason}",
+                violations.len()
+            ));
+            for violation in violations {
+                lines.push(format!("  violation: {}", violation.detail));
+            }
+            for warning in warnings {
+                lines.push(format!("  warning: {warning}"));
+            }
+        }
+        PreFlightVerdict::Skipped { reason } => {
+            lines.push(format!("  verdict: skipped reason={reason}"));
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn emit_run_preflight_report(report: &RunPreFlightReport, json: bool) -> Result<()> {
+    if json {
+        let rendered = serde_json::to_string_pretty(report)
+            .context("failed serializing run preflight report")?;
+        if report.verdict.is_blocked() {
+            println!("{rendered}");
+        } else {
+            eprintln!("{rendered}");
+        }
+        return Ok(());
+    }
+
+    match &report.verdict {
+        PreFlightVerdict::Passed { warnings, .. } if warnings.is_empty() => Ok(()),
+        _ => {
+            eprintln!("{}", render_run_preflight_human(report));
+            Ok(())
+        }
+    }
+}
+
+fn run_preflight_block_message(report: &RunPreFlightReport) -> String {
+    match &report.verdict {
+        PreFlightVerdict::Blocked { reason, .. } => format!(
+            "run blocked by trust preflight: {reason}. Inspect `franken-node trust list --revoked true` and refresh trust state with `{}`",
+            report.receipt.rollback_command
+        ),
+        _ => "run blocked by trust preflight".to_string(),
+    }
 }
 
 fn resolve_incident_evidence_path(
@@ -3761,6 +5232,7 @@ fn quarantine_trust_cards(
 fn render_trust_sync_summary(
     cards: &[TrustCard],
     sync_report: &TrustCardSyncReport,
+    audit_report: &TrustSyncAuditRefreshReport,
     force: bool,
 ) -> String {
     let revoked = cards
@@ -3773,9 +5245,11 @@ fn render_trust_sync_summary(
         .filter(|card| card.user_facing_risk_assessment.level == RiskLevel::Critical)
         .count();
     format!(
-        "trust sync completed: force={force} cards={} refreshed={} cache_hits={} cache_misses={} stale_refreshes={} forced_refreshes={} revoked={} quarantined={} critical_risk={critical}",
+        "trust sync completed: force={force} cards={} refreshed={} vulnerabilities={} network_errors={} cache_hits={} cache_misses={} stale_refreshes={} forced_refreshes={} revoked={} quarantined={} critical_risk={critical}",
         cards.len(),
-        sync_report.cache_misses + sync_report.stale_refreshes + sync_report.forced_refreshes,
+        audit_report.refreshed_count,
+        audit_report.vulnerabilities_found,
+        audit_report.network_errors,
         sync_report.cache_hits,
         sync_report.cache_misses,
         sync_report.stale_refreshes,
@@ -3783,6 +5257,137 @@ fn render_trust_sync_summary(
         revoked,
         quarantined
     )
+}
+
+fn trust_sync_card_needs_network_refresh(
+    card: &TrustCard,
+    now_secs: u64,
+    cache_ttl_secs: u64,
+    force: bool,
+) -> bool {
+    if force {
+        return true;
+    }
+
+    chrono::DateTime::parse_from_rfc3339(&card.last_verified_timestamp)
+        .ok()
+        .and_then(|timestamp| u64::try_from(timestamp.timestamp()).ok())
+        .map(|verified_secs| now_secs.saturating_sub(verified_secs) > cache_ttl_secs)
+        .unwrap_or(true)
+}
+
+fn refresh_trust_sync_audit_with<F>(
+    state: &mut TrustCardCliRegistryState,
+    now_secs: u64,
+    force: bool,
+    mut fetcher: F,
+) -> TrustSyncAuditRefreshReport
+where
+    F: FnMut(&str, Option<&str>) -> Result<TrustScanAuditMetadata>,
+{
+    let cards = match state.registry.list(
+        &TrustCardListFilter::empty(),
+        "trace-cli-trust-sync-refresh",
+        now_secs,
+    ) {
+        Ok(cards) => cards,
+        Err(err) => {
+            return TrustSyncAuditRefreshReport {
+                network_errors: 1,
+                warnings: vec![format!(
+                    "failed listing trust cards for sync refresh: {err}"
+                )],
+                ..TrustSyncAuditRefreshReport::default()
+            };
+        }
+    };
+
+    let now_rfc3339 = rfc3339_timestamp_from_secs(now_secs);
+    let mut report = TrustSyncAuditRefreshReport::default();
+
+    for card in cards {
+        let Some(package_name) = card.extension.extension_id.strip_prefix("npm:") else {
+            continue;
+        };
+        if !trust_sync_card_needs_network_refresh(&card, now_secs, state.cache_ttl_secs, force) {
+            continue;
+        }
+
+        match fetcher(package_name, Some(card.extension.version.as_str())) {
+            Ok(audit_metadata) => {
+                report.refreshed_count = report.refreshed_count.saturating_add(1);
+                report.vulnerabilities_found = report
+                    .vulnerabilities_found
+                    .saturating_add(audit_metadata.vulnerability_ids.len());
+
+                let mutation = if audit_metadata.vulnerability_ids.is_empty() {
+                    TrustCardMutation {
+                        certification_level: None,
+                        revocation_status: None,
+                        active_quarantine: None,
+                        reputation_score_basis_points: None,
+                        reputation_trend: None,
+                        user_facing_risk_assessment: None,
+                        last_verified_timestamp: Some(now_rfc3339.clone()),
+                        evidence_refs: None,
+                    }
+                } else {
+                    let computed_risk = if audit_metadata.vulnerability_ids.len() >= 3 {
+                        RiskLevel::Critical
+                    } else {
+                        RiskLevel::High
+                    };
+                    let risk_level = card.user_facing_risk_assessment.level.max(computed_risk);
+                    let vulnerability_summary = format!(
+                        "OSV refresh reported {} vulnerability record(s): {}",
+                        audit_metadata.vulnerability_ids.len(),
+                        audit_metadata.vulnerability_ids.join(", ")
+                    );
+                    let vulnerability_penalty =
+                        (audit_metadata.vulnerability_ids.len().min(5) as u16).saturating_mul(90);
+                    let reputation_score_basis_points = card
+                        .reputation_score_basis_points
+                        .saturating_sub(vulnerability_penalty);
+
+                    TrustCardMutation {
+                        certification_level: None,
+                        revocation_status: None,
+                        active_quarantine: None,
+                        reputation_score_basis_points: Some(reputation_score_basis_points),
+                        reputation_trend: Some(ReputationTrend::Declining),
+                        user_facing_risk_assessment: Some(RiskAssessment {
+                            level: risk_level,
+                            summary: vulnerability_summary,
+                        }),
+                        last_verified_timestamp: Some(now_rfc3339.clone()),
+                        evidence_refs: None,
+                    }
+                };
+
+                if let Err(err) = state.registry.update(
+                    &card.extension.extension_id,
+                    mutation,
+                    now_secs,
+                    "trace-cli-trust-sync-refresh",
+                ) {
+                    report.network_errors = report.network_errors.saturating_add(1);
+                    report.warnings.push(format!(
+                        "{}: failed applying OSV refresh result: {}",
+                        card.extension.extension_id, err
+                    ));
+                }
+            }
+            Err(err) => {
+                report.network_errors = report.network_errors.saturating_add(1);
+                report.warnings.push(format!(
+                    "{}@{}: {}",
+                    package_name, card.extension.version, err
+                ));
+            }
+        }
+    }
+
+    report
 }
 
 fn fleet_cli_identity() -> AuthIdentity {
@@ -4692,6 +6297,7 @@ fn main() -> Result<()> {
                 out_dir,
                 overwrite,
                 backup_existing,
+                scan,
                 json,
                 trace_id,
                 state_dir,
@@ -4699,6 +6305,9 @@ fn main() -> Result<()> {
             } = args;
 
             validate_init_flags(overwrite, backup_existing)?;
+            if scan && no_state {
+                anyhow::bail!("`init --scan` requires state bootstrapping; remove `--no-state`");
+            }
             let profile_override = parse_profile_override(profile.as_deref())?;
             let resolved = config::Config::resolve(
                 config.as_deref(),
@@ -4715,6 +6324,10 @@ fn main() -> Result<()> {
             let mut wrote_to_stdout = false;
             let mut stdout_config_toml: Option<String> = None;
             let mut file_actions = Vec::new();
+            let bootstrap_root = state_dir
+                .as_deref()
+                .or(out_dir.as_deref())
+                .unwrap_or_else(|| Path::new("."));
 
             if let Some(ref out_dir) = out_dir {
                 std::fs::create_dir_all(out_dir).with_context(|| {
@@ -4758,21 +6371,23 @@ fn main() -> Result<()> {
 
             // Bootstrap .franken-node/ state directory structure unless --no-state.
             if !no_state {
-                let bootstrap_root = state_dir
-                    .as_deref()
-                    .or(out_dir.as_deref())
-                    .unwrap_or_else(|| Path::new("."));
                 let state_actions = bootstrap_state_directory(
                     bootstrap_root,
                     &resolved.selected_profile.to_string(),
                 )?;
                 file_actions.extend(state_actions);
             }
+            let trust_scan = if scan {
+                Some(run_trust_scan(bootstrap_root, false, false)?)
+            } else {
+                None
+            };
 
             let report = build_init_report(
                 &trace_id,
                 &resolved,
                 file_actions,
+                trust_scan,
                 wrote_to_stdout,
                 stdout_config_toml.clone(),
             );
@@ -4790,17 +6405,36 @@ fn main() -> Result<()> {
         }
 
         Command::Run(args) => {
-            let profile_override = parse_profile_override(Some(&args.policy))?;
+            let cli::RunArgs {
+                app_path,
+                policy,
+                json,
+                config,
+                engine_bin,
+            } = args;
+
+            let profile_override = parse_profile_override(Some(&policy))?;
             let resolved = config::Config::resolve(
-                args.config.as_deref(),
+                config.as_deref(),
                 CliOverrides {
                     profile: profile_override,
                 },
             )
             .context("failed resolving configuration for run")?;
 
-            let dispatcher = ops::engine_dispatcher::EngineDispatcher::new(args.engine_bin);
-            dispatcher.dispatch_run(&args.app_path, &resolved.config, &args.policy)?;
+            let preflight = evaluate_run_trust_preflight(
+                &app_path,
+                resolved.selected_profile,
+                &resolved.config,
+                now_unix_secs(),
+            )?;
+            emit_run_preflight_report(&preflight, json)?;
+            if preflight.verdict.is_blocked() {
+                anyhow::bail!("{}", run_preflight_block_message(&preflight));
+            }
+
+            let dispatcher = ops::engine_dispatcher::EngineDispatcher::new(engine_bin);
+            dispatcher.dispatch_run(&app_path, &resolved.config, &policy)?;
         }
 
         Command::Migrate(sub) => match sub {
@@ -4934,6 +6568,14 @@ fn main() -> Result<()> {
                     filter_trust_cards_for_trust_command(cards, risk_filter, args.revoked);
                 println!("{}", render_trust_card_list(&filtered));
             }
+            TrustCommand::Scan(args) => {
+                let project_root = args
+                    .project_path
+                    .as_deref()
+                    .unwrap_or_else(|| Path::new("."));
+                let report = run_trust_scan(project_root, args.deep, args.audit)?;
+                println!("{}", render_trust_scan_human(&report));
+            }
             TrustCommand::Revoke(args) => {
                 let receipt_signing_material = prepare_receipt_signing_material(
                     args.receipt_out.as_deref(),
@@ -4987,6 +6629,18 @@ fn main() -> Result<()> {
                     .registry
                     .sync_cache(now_secs, "trace-cli-trust-sync", args.force)
                     .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                let audit_report = refresh_trust_sync_audit_with(
+                    &mut state,
+                    now_secs,
+                    args.force,
+                    fetch_trust_scan_audit_metadata,
+                );
+                if audit_report.refreshed_count > 0 {
+                    persist_trust_card_cli_registry(&state)?;
+                }
+                for warning in &audit_report.warnings {
+                    eprintln!("warning: {warning}");
+                }
                 let cards = state
                     .registry
                     .list(
@@ -4997,7 +6651,7 @@ fn main() -> Result<()> {
                     .map_err(|err| anyhow::anyhow!(err.to_string()))?;
                 println!(
                     "{}",
-                    render_trust_sync_summary(&cards, &sync_report, args.force)
+                    render_trust_sync_summary(&cards, &sync_report, &audit_report, args.force)
                 );
             }
         },
@@ -5172,8 +6826,7 @@ mod state_bootstrap_tests {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
 
-        let actions =
-            bootstrap_state_directory(root, "balanced").expect("bootstrap");
+        let actions = bootstrap_state_directory(root, "balanced").expect("bootstrap");
 
         for subdir in STATE_BOOTSTRAP_SUBDIRS {
             let dir_path = root.join(".franken-node").join(subdir);
@@ -5202,18 +6855,15 @@ mod state_bootstrap_tests {
 
         bootstrap_state_directory(root, "strict").expect("bootstrap");
 
-        let registry_path =
-            root.join(".franken-node/state/trust-card-registry.v1.json");
+        let registry_path = root.join(".franken-node/state/trust-card-registry.v1.json");
         assert!(
             registry_path.is_file(),
             "trust-card registry should exist: {}",
             registry_path.display()
         );
 
-        let raw =
-            std::fs::read_to_string(&registry_path).expect("read registry");
-        let snapshot: serde_json::Value =
-            serde_json::from_str(&raw).expect("parse registry JSON");
+        let raw = std::fs::read_to_string(&registry_path).expect("read registry");
+        let snapshot: serde_json::Value = serde_json::from_str(&raw).expect("parse registry JSON");
         assert_eq!(
             snapshot["schema_version"],
             "franken-node/trust-card-registry-state/v1"
@@ -5234,8 +6884,7 @@ mod state_bootstrap_tests {
         let gitignore_path = root.join(".franken-node/.gitignore");
         assert!(gitignore_path.is_file(), ".gitignore should exist");
 
-        let contents =
-            std::fs::read_to_string(&gitignore_path).expect("read .gitignore");
+        let contents = std::fs::read_to_string(&gitignore_path).expect("read .gitignore");
         assert!(
             contents.contains("keys/"),
             ".gitignore should exclude keys/"
@@ -5251,29 +6900,25 @@ mod state_bootstrap_tests {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
 
-        let first_actions =
-            bootstrap_state_directory(root, "balanced").expect("first bootstrap");
+        let first_actions = bootstrap_state_directory(root, "balanced").expect("first bootstrap");
         let first_created = first_actions
             .iter()
             .filter(|a| {
                 matches!(
                     a.action,
-                    InitFileActionKind::DirectoryCreated
-                        | InitFileActionKind::Created
+                    InitFileActionKind::DirectoryCreated | InitFileActionKind::Created
                 )
             })
             .count();
         assert!(first_created > 0, "first run should create items");
 
-        let second_actions = bootstrap_state_directory(root, "balanced")
-            .expect("second bootstrap");
+        let second_actions = bootstrap_state_directory(root, "balanced").expect("second bootstrap");
         let second_created = second_actions
             .iter()
             .filter(|a| {
                 matches!(
                     a.action,
-                    InitFileActionKind::DirectoryCreated
-                        | InitFileActionKind::Created
+                    InitFileActionKind::DirectoryCreated | InitFileActionKind::Created
                 )
             })
             .count();
@@ -5300,8 +6945,7 @@ mod state_bootstrap_tests {
         bootstrap_state_directory(root, "strict").expect("bootstrap");
 
         let keys_dir = root.join(".franken-node/keys");
-        let mode =
-            keys_dir.metadata().expect("metadata").permissions().mode();
+        let mode = keys_dir.metadata().expect("metadata").permissions().mode();
         assert_eq!(
             mode & 0o777,
             0o700,
@@ -5320,5 +6964,227 @@ mod state_bootstrap_tests {
         let result = ensure_state_dir(root);
         assert!(result.is_ok());
         assert!(root.join(".franken-node/state").is_dir());
+    }
+}
+
+#[cfg(test)]
+mod run_trust_gate_tests {
+    use super::*;
+    use frankenengine_node::supply_chain::trust_card::fixture_registry;
+    use serde_json::{Map, Value};
+    use tempfile::TempDir;
+
+    fn write_demo_project(root: &Path, dependencies: &[(&str, &str)]) {
+        let deps = dependencies
+            .iter()
+            .map(|(name, version)| (name.to_string(), Value::String((*version).to_string())))
+            .collect::<Map<String, Value>>();
+        let manifest = serde_json::json!({
+            "name": "trust-gate-demo",
+            "version": "1.0.0",
+            "main": "index.js",
+            "dependencies": deps,
+        });
+        std::fs::write(
+            root.join("package.json"),
+            serde_json::to_string_pretty(&manifest).expect("manifest"),
+        )
+        .expect("write package.json");
+        std::fs::write(root.join("index.js"), "console.log('hello');\n").expect("write entrypoint");
+    }
+
+    fn write_fixture_registry_to(root: &Path) {
+        let registry = fixture_registry(1_000).expect("fixture registry");
+        let path = root.join(TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH);
+        registry
+            .persist_authoritative_state(&path)
+            .expect("persist trust registry");
+    }
+
+    fn evaluate_preflight(root: &Path, policy_mode: Profile) -> RunPreFlightReport {
+        evaluate_run_trust_preflight(
+            root,
+            policy_mode,
+            &config::Config::for_profile(policy_mode),
+            2_000,
+        )
+        .expect("preflight report")
+    }
+
+    #[test]
+    fn trust_gate_skips_when_package_manifest_missing() {
+        let tmp = TempDir::new().expect("tempdir");
+        let report = evaluate_preflight(tmp.path(), Profile::Balanced);
+
+        match &report.verdict {
+            PreFlightVerdict::Skipped { reason } => {
+                assert!(reason.contains("package.json not found"));
+            }
+            other => panic!("expected skipped verdict, got {other:?}"),
+        }
+        assert_eq!(report.receipt.decision, Decision::Escalated);
+    }
+
+    #[test]
+    fn trust_gate_skips_missing_registry_first_run() {
+        let tmp = TempDir::new().expect("tempdir");
+        write_demo_project(tmp.path(), &[("@acme/auth-guard", "^1.4.2")]);
+
+        let report = evaluate_preflight(tmp.path(), Profile::Strict);
+
+        match &report.verdict {
+            PreFlightVerdict::Skipped { reason } => {
+                assert!(reason.contains("authoritative trust registry missing"));
+                assert!(reason.contains("franken-node init --profile strict"));
+            }
+            other => panic!("expected skipped verdict, got {other:?}"),
+        }
+        assert!(tmp.path().join(".franken-node/state").is_dir());
+    }
+
+    #[test]
+    fn trust_gate_blocks_revoked_dependency_in_strict() {
+        let tmp = TempDir::new().expect("tempdir");
+        write_demo_project(tmp.path(), &[("@beta/telemetry-bridge", "^0.9.1")]);
+        write_fixture_registry_to(tmp.path());
+
+        let report = evaluate_preflight(tmp.path(), Profile::Strict);
+
+        match &report.verdict {
+            PreFlightVerdict::Blocked {
+                reason,
+                violations,
+                results,
+                ..
+            } => {
+                assert!(reason.contains("blocking trust findings detected"));
+                assert!(
+                    violations
+                        .iter()
+                        .any(|violation| violation.kind == TrustViolationKind::Revoked)
+                );
+                assert!(
+                    results
+                        .iter()
+                        .any(|result| result.status == RunDependencyTrustStatus::Revoked)
+                );
+            }
+            other => panic!("expected blocked verdict, got {other:?}"),
+        }
+        assert_eq!(report.receipt.decision, Decision::Denied);
+    }
+
+    #[test]
+    fn trust_gate_blocks_quarantined_dependency_in_balanced() {
+        let tmp = TempDir::new().expect("tempdir");
+        write_demo_project(tmp.path(), &[("@acme/auth-guard", "^1.4.2")]);
+        write_fixture_registry_to(tmp.path());
+
+        let registry_path = tmp.path().join(TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH);
+        let mut registry =
+            TrustCardRegistry::load_authoritative_state(&registry_path, 60, 2_000).expect("load");
+        registry
+            .update(
+                "npm:@acme/auth-guard",
+                TrustCardMutation {
+                    certification_level: None,
+                    revocation_status: None,
+                    active_quarantine: Some(true),
+                    reputation_score_basis_points: None,
+                    reputation_trend: Some(ReputationTrend::Declining),
+                    user_facing_risk_assessment: Some(RiskAssessment {
+                        level: RiskLevel::High,
+                        summary: "temporarily quarantined for operator review".to_string(),
+                    }),
+                    last_verified_timestamp: Some("2026-02-20T12:02:00Z".to_string()),
+                    evidence_refs: None,
+                },
+                2_001,
+                "trace-test-quarantine",
+            )
+            .expect("update");
+        registry
+            .persist_authoritative_state(&registry_path)
+            .expect("persist updated registry");
+
+        let report = evaluate_preflight(tmp.path(), Profile::Balanced);
+
+        match &report.verdict {
+            PreFlightVerdict::Blocked { violations, .. } => {
+                assert!(
+                    violations
+                        .iter()
+                        .any(|violation| violation.kind == TrustViolationKind::Quarantined)
+                );
+            }
+            other => panic!("expected blocked verdict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn trust_gate_warns_on_untracked_dependency_in_balanced() {
+        let tmp = TempDir::new().expect("tempdir");
+        write_demo_project(tmp.path(), &[("left-pad", "^1.3.0")]);
+        write_fixture_registry_to(tmp.path());
+
+        let report = evaluate_preflight(tmp.path(), Profile::Balanced);
+
+        match &report.verdict {
+            PreFlightVerdict::Passed {
+                checked,
+                warnings,
+                results,
+            } => {
+                assert_eq!(*checked, 1);
+                assert_eq!(warnings.len(), 1);
+                assert_eq!(results.len(), 1);
+                assert_eq!(results[0].status, RunDependencyTrustStatus::Untracked);
+            }
+            other => panic!("expected passed verdict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn trust_gate_legacy_risky_warns_but_does_not_block_revoked_dependency() {
+        let tmp = TempDir::new().expect("tempdir");
+        write_demo_project(tmp.path(), &[("@beta/telemetry-bridge", "^0.9.1")]);
+        write_fixture_registry_to(tmp.path());
+
+        let report = evaluate_preflight(tmp.path(), Profile::LegacyRisky);
+
+        match &report.verdict {
+            PreFlightVerdict::Passed {
+                warnings, results, ..
+            } => {
+                assert_eq!(warnings.len(), 1);
+                assert_eq!(results.len(), 1);
+                assert_eq!(results[0].status, RunDependencyTrustStatus::Revoked);
+            }
+            other => panic!("expected passed verdict, got {other:?}"),
+        }
+        assert_eq!(report.receipt.decision, Decision::Approved);
+    }
+
+    #[test]
+    fn trust_gate_blocks_corrupt_registry_in_balanced() {
+        let tmp = TempDir::new().expect("tempdir");
+        write_demo_project(tmp.path(), &[("@acme/auth-guard", "^1.4.2")]);
+        ensure_state_dir(tmp.path()).expect("state dir");
+        let registry_path = tmp.path().join(TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH);
+        std::fs::write(&registry_path, "{ definitely not json\n").expect("write corrupt registry");
+
+        let report = evaluate_preflight(tmp.path(), Profile::Balanced);
+
+        match &report.verdict {
+            PreFlightVerdict::Blocked { violations, .. } => {
+                assert_eq!(violations.len(), 1);
+                assert_eq!(violations[0].kind, TrustViolationKind::RegistryCorrupt);
+            }
+            other => panic!("expected blocked verdict, got {other:?}"),
+        }
+
+        let rendered = serde_json::to_value(&report).expect("json");
+        assert_eq!(rendered["verdict"]["status"], "blocked");
+        assert_eq!(rendered["receipt"]["decision"], "denied");
     }
 }

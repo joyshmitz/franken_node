@@ -93,6 +93,10 @@ pub struct InitArgs {
     #[arg(long)]
     pub backup_existing: bool,
 
+    /// Run a baseline dependency trust scan after bootstrapping workspace state.
+    #[arg(long)]
+    pub scan: bool,
+
     /// Emit machine-readable init report.
     #[arg(long)]
     pub json: bool,
@@ -304,6 +308,9 @@ pub enum TrustCommand {
     /// List extensions by risk/status filters.
     List(TrustListArgs),
 
+    /// Populate baseline trust cards from package.json dependencies.
+    Scan(TrustScanArgs),
+
     /// Revoke artifact or publisher trust.
     Revoke(TrustRevokeArgs),
 
@@ -329,6 +336,20 @@ pub struct TrustListArgs {
     /// Filter by revocation status.
     #[arg(long)]
     pub revoked: Option<bool>,
+}
+
+#[derive(Debug, Parser)]
+pub struct TrustScanArgs {
+    /// Path to the project whose package.json should seed trust cards (default: current directory).
+    pub project_path: Option<PathBuf>,
+
+    /// Query upstream package metadata for publisher, publish date, and dependent counts.
+    #[arg(long)]
+    pub deep: bool,
+
+    /// Query OSV for known npm vulnerabilities during the scan.
+    #[arg(long)]
+    pub audit: bool,
 }
 
 #[derive(Debug, Parser)]
