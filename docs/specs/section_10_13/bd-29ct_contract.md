@@ -8,6 +8,13 @@ campaign runner executes seeds against targets, triages crashes into
 reproducible fixtures, and enforces a minimum health budget (no regressions
 from known seeds).
 
+The current implementation intentionally exposes two different surfaces:
+
+- `DeterministicFuzzTestAdapter::run_fixture_gate()` for synthetic fixture and
+  modeling coverage only
+- `run_truthful_fuzz_gate(...)` for checked-in empirical target execution and
+  explicit coverage/artifact reporting
+
 ## Fuzz Targets
 
 | Target | Category | Description |
@@ -27,14 +34,21 @@ from known seeds).
   with the triggering input, target, and error details.
 - **INV-FCG-GATE** — The CI gate checks that all known seeds run without
   regression; any new crash fails the gate with a reproducer.
+- **INV-FCG-FIXTURE-BOUNDARY** — Deterministic fixture execution is exposed only
+  through a named synthetic adapter and carries explicit synthetic markers.
 
 ## Types
 
-- `FuzzTarget` — name, category, description
-- `FuzzSeed` — target, input data, expected outcome
-- `FuzzCampaignResult` — target, seeds_run, crashes, hangs, coverage
-- `TriagedCrash` — target, seed, error, reproducer
-- `FuzzGateVerdict` — per-target results, overall pass/fail
+- `DeterministicFuzzTestAdapter` — named synthetic fixture adapter for tests
+  and modeling
+- `DeterministicFuzzTarget` — fixture target name, category, description
+- `DeterministicFuzzSeed` — fixture target, input data, expected outcome
+- `DeterministicFuzzGateReport` — synthetic adapter report with
+  `adapter_kind`, `execution_mode`, and `runner_detail`
+- `DeterministicTriagedCrash` — fixture target, seed, synthetic error,
+  reproducer
+- `TruthfulFuzzGateReport` — live empirical report with target summaries,
+  coverage observations, and artifact references
 - `FuzzError` — error codes
 
 ## Error Codes

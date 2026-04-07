@@ -6,7 +6,12 @@
   "checks": [
     {
       "id": "FCG-IMPL",
-      "description": "Implementation with all required types",
+      "description": "Implementation exposes explicit deterministic fixture adapter types",
+      "status": "PASS"
+    },
+    {
+      "id": "FCG-LIVE-IMPL",
+      "description": "Truthful live gate surface present",
       "status": "PASS"
     },
     {
@@ -26,10 +31,20 @@
       "status": "PASS"
     },
     {
+      "id": "FCG-FIXTURE-INTEG",
+      "description": "Integration tests prove the deterministic fixture adapter is explicitly marked",
+      "status": "PASS"
+    },
+    {
+      "id": "FCG-LIVE-INTEG",
+      "description": "Integration tests cover truthful live gate execution/reporting",
+      "status": "PASS"
+    },
+    {
       "id": "FCG-TESTS",
       "description": "Rust unit tests pass",
       "status": "PASS",
-      "details": "11 tests passed"
+      "details": "39 tests passed"
     },
     {
       "id": "FCG-SPEC",
@@ -38,8 +53,8 @@
     }
   ],
   "summary": {
-    "total_checks": 6,
-    "passing_checks": 6,
+    "total_checks": 9,
+    "passing_checks": 9,
     "failing_checks": 0
   }
 }
