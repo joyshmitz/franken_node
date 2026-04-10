@@ -36,9 +36,11 @@ tracing = { workspace = true }
 subtle = "2.6.1"
 tempfile = "3.15"
 ureq = "2"
+url = "2.5"
 which = "8.0.2"
 
 [dev-dependencies]
+assert2 = "0.4.0"
 syn = { version = "2.0", features = ["full"] }
 tracing-subscriber = { workspace = true }
 
