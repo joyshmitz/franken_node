@@ -1,19 +1,47 @@
-use crate::config::{Config, PreferredRuntime};
 use crate::ops::telemetry_bridge::{
     ShutdownReason, TelemetryBridge, TelemetryRuntimeHandle, TelemetryRuntimeReport,
 };
 use crate::runtime::lockstep_harness::LockstepHarness;
 use crate::storage::frankensqlite_adapter::FrankensqliteAdapter;
+use crate::{
+    ActionableError,
+    config::{Config, PreferredRuntime},
+};
 use anyhow::{Context, Result};
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus};
+use std::process::{Command, Output};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 pub struct EngineDispatcher {
     engine_bin_path: String,
     configured_path: Option<PathBuf>,
     requested_runtime: PreferredRuntime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapturedProcessOutput {
+    pub stdout: String,
+    pub stderr: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunDispatchReport {
+    pub runtime: String,
+    pub runtime_path: String,
+    pub target: String,
+    pub working_dir: String,
+    pub used_fallback_runtime: bool,
+    pub started_at_utc: String,
+    pub finished_at_utc: String,
+    pub duration_ms: u64,
+    pub exit_code: Option<i32>,
+    pub terminated_by_signal: bool,
+    pub telemetry: Option<TelemetryRuntimeReport>,
+    pub captured_output: CapturedProcessOutput,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +65,18 @@ struct DispatchResolutionInputs<'a> {
     cli_path: Option<&'a Path>,
     config_path: Option<&'a Path>,
     candidates: &'a [PathBuf],
+}
+
+struct DispatchReportInputs<'a> {
+    runtime: &'a str,
+    runtime_path: &'a Path,
+    target: &'a Path,
+    working_dir: &'a Path,
+    used_fallback_runtime: bool,
+    started_at: chrono::DateTime<Utc>,
+    duration: std::time::Duration,
+    output: Output,
+    telemetry: Option<TelemetryRuntimeReport>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,14 +107,14 @@ impl std::error::Error for EngineProcessError {}
 
 #[derive(Debug)]
 enum DispatchResolutionError {
-    RequestedRuntimeUnavailable(String),
+    RequestedRuntimeUnavailable(ActionableError),
     Resolution(anyhow::Error),
 }
 
 impl std::fmt::Display for DispatchResolutionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::RequestedRuntimeUnavailable(message) => f.write_str(message),
+            Self::RequestedRuntimeUnavailable(error) => error.fmt(f),
             Self::Resolution(err) => err.fmt(f),
         }
     }
@@ -83,13 +123,52 @@ impl std::fmt::Display for DispatchResolutionError {
 impl std::error::Error for DispatchResolutionError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::RequestedRuntimeUnavailable(_) => None,
+            Self::RequestedRuntimeUnavailable(error) => Some(error),
             Self::Resolution(err) => Some(err.as_ref()),
         }
     }
 }
 
 type DispatchResolutionResult<T> = std::result::Result<T, DispatchResolutionError>;
+
+const NODE_INSTALL_URL: &str = "https://nodejs.org/en/download";
+const BUN_INSTALL_URL: &str = "https://bun.sh/docs/installation";
+
+fn requested_runtime_unavailable_error(runtime: &str, app_path: &Path) -> ActionableError {
+    ActionableError::new(
+        format!(
+            "requested runtime `{runtime}` was not found; install it, adjust PATH, or use `--runtime auto`"
+        ),
+        format!("franken-node run --runtime auto {}", app_path.display()),
+    )
+    .with_help_url(NODE_INSTALL_URL)
+    .with_help_url(BUN_INSTALL_URL)
+}
+
+fn fallback_runtime_unavailable_error(app_path: &Path) -> ActionableError {
+    ActionableError::new(
+        "franken-engine was not found and no fallback runtime is available; install node or bun, or configure --engine-bin/FRANKEN_ENGINE_BIN/FRANKEN_NODE_ENGINE_BINARY_PATH",
+        format!(
+            "franken-node run --engine-bin /absolute/path/to/franken-engine {}",
+            app_path.display()
+        ),
+    )
+    .with_help_url(NODE_INSTALL_URL)
+    .with_help_url(BUN_INSTALL_URL)
+}
+
+fn configured_engine_binary_missing_error(binary: &Path, app_path: &Path) -> ActionableError {
+    ActionableError::new(
+        format!(
+            "configured franken-engine binary `{}` was not found; fix --engine-bin, FRANKEN_ENGINE_BIN, FRANKEN_NODE_ENGINE_BINARY_PATH, or [engine].binary_path",
+            binary.display()
+        ),
+        format!(
+            "franken-node run --engine-bin /absolute/path/to/franken-engine {}",
+            app_path.display()
+        ),
+    )
+}
 
 /// Returns the list of candidate paths to search for the franken-engine binary.
 fn default_engine_binary_candidates() -> Vec<PathBuf> {
@@ -281,9 +360,9 @@ fn resolve_requested_runtime_plan_with(
 
     let runtime_path = resolve_command_path_with(runtime, path_env.as_ref(), path_exists)
         .ok_or_else(|| {
-            DispatchResolutionError::RequestedRuntimeUnavailable(format!(
-                "requested runtime `{runtime}` was not found; install it, adjust PATH, or use `--runtime auto`"
-            ))
+            DispatchResolutionError::RequestedRuntimeUnavailable(
+                requested_runtime_unavailable_error(runtime, app_path),
+            )
         })?;
 
     let target = LockstepHarness::resolve_runtime_target(runtime, app_path)
@@ -320,12 +399,13 @@ fn resolve_fallback_runtime_plan_with(
         });
     }
 
-    Err(DispatchResolutionError::Resolution(anyhow::anyhow!(
-        "franken-engine was not found and no fallback runtime is available; install node or bun, or configure --engine-bin/FRANKEN_ENGINE_BIN/FRANKEN_NODE_ENGINE_BINARY_PATH"
-    )))
+    Err(DispatchResolutionError::RequestedRuntimeUnavailable(
+        fallback_runtime_unavailable_error(app_path),
+    ))
 }
 
 fn resolve_explicit_engine_plan_with(
+    app_path: &Path,
     inputs: DispatchResolutionInputs<'_>,
     path_env: Option<OsString>,
     path_exists: &impl Fn(&Path) -> bool,
@@ -341,7 +421,12 @@ fn resolve_explicit_engine_plan_with(
 
     if !command_exists_with(&binary, path_env, path_exists) {
         return Err(DispatchResolutionError::RequestedRuntimeUnavailable(
-            "requested runtime `franken-engine` was not found; fix --engine-bin, FRANKEN_ENGINE_BIN, FRANKEN_NODE_ENGINE_BINARY_PATH, or [engine].binary_path".to_string(),
+            ActionableError::new(
+                "requested runtime `franken-engine` was not found; fix --engine-bin, FRANKEN_ENGINE_BIN, FRANKEN_NODE_ENGINE_BINARY_PATH, or [engine].binary_path",
+                format!("franken-node run --runtime auto {}", app_path.display()),
+            )
+            .with_help_url(NODE_INSTALL_URL)
+            .with_help_url(BUN_INSTALL_URL),
         ));
     }
 
@@ -366,7 +451,7 @@ fn resolve_dispatch_plan_with(
             .map(DispatchPlan::RuntimeFallback);
         }
         PreferredRuntime::FrankenEngine => {
-            return resolve_explicit_engine_plan_with(inputs, path_env, path_exists);
+            return resolve_explicit_engine_plan_with(app_path, inputs, path_env, path_exists);
         }
         PreferredRuntime::Auto => {}
     }
@@ -390,25 +475,20 @@ fn resolve_dispatch_plan_with(
             .env_override
             .is_some_and(|value| !value.trim().is_empty());
     if explicit_override {
-        return Err(DispatchResolutionError::Resolution(anyhow::anyhow!(
-            "configured franken-engine binary `{binary}` was not found; fix --engine-bin, FRANKEN_ENGINE_BIN, FRANKEN_NODE_ENGINE_BINARY_PATH, or [engine].binary_path"
-        )));
+        return Err(DispatchResolutionError::RequestedRuntimeUnavailable(
+            configured_engine_binary_missing_error(Path::new(&binary), app_path),
+        ));
     }
 
     resolve_fallback_runtime_plan_with(app_path, PreferredRuntime::Auto, path_env, path_exists)
         .map(DispatchPlan::RuntimeFallback)
 }
 
-fn finish_child_status(status: ExitStatus, process_label: &str) -> Result<()> {
-    if status.success() {
-        return Ok(());
+fn captured_output_from(output: Output) -> CapturedProcessOutput {
+    CapturedProcessOutput {
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
     }
-
-    if let Some(code) = status.code() {
-        std::process::exit(code);
-    }
-
-    anyhow::bail!("{process_label} exited abnormally (terminated by signal)");
 }
 
 impl Default for EngineDispatcher {
@@ -446,10 +526,17 @@ impl EngineDispatcher {
     /// 4. Stop telemetry bridge with appropriate reason
     /// 5. Join telemetry workers (drain remaining events)
     /// 6. Clean up temp directory
-    pub fn dispatch_run(&self, app_path: &Path, config: &Config, policy_mode: &str) -> Result<()> {
+    pub fn dispatch_run(
+        &self,
+        app_path: &Path,
+        config: &Config,
+        policy_mode: &str,
+    ) -> Result<RunDispatchReport> {
         // Precedence: explicit runtime selection > CLI --engine-bin > FRANKEN_ENGINE_BIN env > config [engine].binary_path > candidates.
         let env_override = std::env::var("FRANKEN_ENGINE_BIN").ok();
         let config_path = config.engine.binary_path.as_deref();
+        let started_at = Utc::now();
+        let started = Instant::now();
         let dispatch_plan = match resolve_dispatch_plan_with(
             app_path,
             self.requested_runtime,
@@ -464,8 +551,8 @@ impl EngineDispatcher {
             &|path| path.exists(),
         ) {
             Ok(plan) => plan,
-            Err(DispatchResolutionError::RequestedRuntimeUnavailable(message)) => {
-                eprintln!("{message}");
+            Err(DispatchResolutionError::RequestedRuntimeUnavailable(error)) => {
+                eprintln!("{error}");
                 std::process::exit(127);
             }
             Err(DispatchResolutionError::Resolution(err)) => return Err(err),
@@ -480,7 +567,7 @@ impl EngineDispatcher {
                     "franken-engine unavailable; falling back to alternate runtime with reduced guarantees"
                 );
                 eprintln!(
-                    "franken-engine unavailable; falling back to `{}` for {}. Reduced guarantees: no engine-native policy enforcement, telemetry bridge, or post-execution receipts.",
+                    "franken-engine unavailable; falling back to `{}` for {}. Reduced guarantees: no engine-native policy enforcement or telemetry bridge.",
                     plan.runtime,
                     app_path.display(),
                 );
@@ -496,7 +583,7 @@ impl EngineDispatcher {
                     .env("FRANKEN_NODE_FALLBACK_RUNTIME", &plan.runtime)
                     .env("FRANKEN_NODE_FALLBACK_REASON", "franken_engine_unavailable");
             }
-            let status = command.status().with_context(|| {
+            let output = command.output().with_context(|| {
                 format!(
                     "failed launching runtime `{}` for {}",
                     plan.runtime,
@@ -504,7 +591,18 @@ impl EngineDispatcher {
                 )
             })?;
 
-            return finish_child_status(status, &plan.runtime);
+            return Ok(Self::build_dispatch_report(DispatchReportInputs {
+                runtime: &plan.runtime,
+                runtime_path: &plan.runtime_path,
+                target: &plan.target,
+                working_dir: &plan.working_dir,
+                used_fallback_runtime: plan.mode
+                    == RuntimeExecutionMode::FallbackFrankenEngineUnavailable,
+                started_at,
+                duration: started.elapsed(),
+                output,
+                telemetry: None,
+            }));
         }
 
         let DispatchPlan::FrankenEngine { binary: bin_path } = dispatch_plan else {
@@ -540,7 +638,7 @@ impl EngineDispatcher {
                 telemetry_handle.socket_path().to_string_lossy().as_ref(),
             );
 
-        let (status, report) = Self::run_engine_process(&mut cmd, telemetry_handle)
+        let (output, report) = Self::run_engine_process(&mut cmd, telemetry_handle)
             .map_err(|err| anyhow::anyhow!("{err}"))?;
         if !report.drain_completed {
             eprintln!(
@@ -555,25 +653,56 @@ impl EngineDispatcher {
         // Clean up temp directory explicitly before potential process exit
         drop(temp_dir);
 
-        finish_child_status(status, "franken_engine")
+        Ok(Self::build_dispatch_report(DispatchReportInputs {
+            runtime: "franken_engine",
+            runtime_path: Path::new(&bin_path),
+            target: app_path,
+            working_dir: project_root_for_path(app_path),
+            used_fallback_runtime: false,
+            started_at,
+            duration: started.elapsed(),
+            output,
+            telemetry: Some(report),
+        }))
+    }
+
+    fn build_dispatch_report(inputs: DispatchReportInputs<'_>) -> RunDispatchReport {
+        let finished_at = Utc::now();
+        let exit_code = inputs.output.status.code();
+        let terminated_by_signal = exit_code.is_none();
+
+        RunDispatchReport {
+            runtime: inputs.runtime.to_string(),
+            runtime_path: inputs.runtime_path.display().to_string(),
+            target: inputs.target.display().to_string(),
+            working_dir: inputs.working_dir.display().to_string(),
+            used_fallback_runtime: inputs.used_fallback_runtime,
+            started_at_utc: inputs.started_at.to_rfc3339(),
+            finished_at_utc: finished_at.to_rfc3339(),
+            duration_ms: u64::try_from(inputs.duration.as_millis()).unwrap_or(u64::MAX),
+            exit_code,
+            terminated_by_signal,
+            telemetry: inputs.telemetry,
+            captured_output: captured_output_from(inputs.output),
+        }
     }
 
     fn run_engine_process(
         cmd: &mut Command,
         telemetry_handle: TelemetryRuntimeHandle,
-    ) -> std::result::Result<(ExitStatus, TelemetryRuntimeReport), EngineProcessError> {
-        match cmd.status() {
-            Ok(status) => {
+    ) -> std::result::Result<(Output, TelemetryRuntimeReport), EngineProcessError> {
+        match cmd.output() {
+            Ok(output) => {
                 let report = telemetry_handle
                     .stop_and_join(ShutdownReason::EngineExit {
-                        exit_code: status.code(),
+                        exit_code: output.status.code(),
                     })
                     .map_err(|err| {
                         EngineProcessError::TelemetryDrain(format!(
                             "telemetry drain failed after engine exit: {err}"
                         ))
                     })?;
-                Ok((status, report))
+                Ok((output, report))
             }
             Err(spawn_err) => match telemetry_handle.stop_and_join(ShutdownReason::Requested) {
                 Ok(report) if report.drain_completed => Err(EngineProcessError::Spawn {

@@ -83,6 +83,7 @@ use frankenengine_node::control_plane::fleet_transport::{
 #[cfg(test)]
 use frankenengine_node::tools::replay_bundle::{fixture_incident_events, generate_replay_bundle};
 use frankenengine_node::{
+    ActionableError,
     config::{self, CliOverrides, Profile},
     ops, runtime,
     security::{
@@ -102,9 +103,9 @@ use frankenengine_node::{
             BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
             DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary, PublisherIdentity,
             ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard,
-            TrustCardInput, TrustCardListFilter, TrustCardMutation, TrustCardRegistry,
-            TrustCardSyncReport, render_comparison_human, render_trust_card_human,
-            to_canonical_json as trust_card_to_json,
+            TrustCardError, TrustCardInput, TrustCardListFilter, TrustCardMutation,
+            TrustCardRegistry, TrustCardSyncReport, render_comparison_human,
+            render_trust_card_human, to_canonical_json as trust_card_to_json,
         },
     },
     tools::{
@@ -652,6 +653,64 @@ fn load_registry_publish_signing_material(path: &Path) -> Result<Ed25519SigningM
     load_ed25519_signing_material_from_path(path, "registry publish signing key", "cli")
 }
 
+fn receipt_signing_key_fix_command() -> &'static str {
+    "mkdir -p .franken-node/keys && openssl rand -hex 32 > .franken-node/keys/receipt-signing.key"
+}
+
+fn missing_receipt_signing_key_error() -> ActionableError {
+    ActionableError::new(
+        "receipt export requested but no signing key was configured; pass --receipt-signing-key, set FRANKEN_NODE_SECURITY_DECISION_RECEIPT_SIGNING_KEY_PATH, or configure security.decision_receipt_signing_key_path",
+        receipt_signing_key_fix_command(),
+    )
+}
+
+fn missing_trust_registry_message(path: &Path, policy_mode: Profile) -> String {
+    ActionableError::new(
+        format!(
+            "authoritative trust registry missing at {}; bootstrap trust state before running",
+            path.display()
+        ),
+        format!("franken-node init --profile {policy_mode} --scan"),
+    )
+    .to_string()
+}
+
+fn run_preflight_block_error(report: &RunPreFlightReport) -> ActionableError {
+    match &report.verdict {
+        PreFlightVerdict::Blocked { reason, .. } => ActionableError::new(
+            format!(
+                "run blocked by trust preflight: {reason}. Refresh trust state with `{}` after remediation",
+                report.receipt.rollback_command
+            ),
+            "franken-node trust list --revoked true",
+        ),
+        _ => ActionableError::new(
+            "run blocked by trust preflight",
+            "franken-node trust list --revoked true",
+        ),
+    }
+}
+
+fn trust_card_not_found_error(extension_id: &str) -> ActionableError {
+    ActionableError::new(
+        format!("trust card not found: {extension_id}"),
+        "franken-node trust scan .",
+    )
+}
+
+fn registry_publish_signing_key_required_error(package_path: &Path) -> ActionableError {
+    ActionableError::new(
+        format!(
+            "registry publish requires --signing-key for {}",
+            package_path.display()
+        ),
+        format!(
+            "mkdir -p .franken-node/keys && openssl rand -hex 32 > .franken-node/keys/publisher.ed25519 && franken-node registry publish {} --signing-key .franken-node/keys/publisher.ed25519",
+            package_path.display()
+        ),
+    )
+}
+
 /// Prepare receipt export context with mandatory signing material.
 ///
 /// Returns `None` if no receipt export is requested (both paths are `None`).
@@ -666,11 +725,8 @@ fn prepare_receipt_export_context(
         return Ok(None);
     }
 
-    let signing_material = load_receipt_signing_material(cli_override)?.ok_or_else(|| {
-        anyhow::anyhow!(
-            "receipt export requested but no signing key was configured; pass --receipt-signing-key, set FRANKEN_NODE_SECURITY_DECISION_RECEIPT_SIGNING_KEY_PATH, or configure security.decision_receipt_signing_key_path"
-        )
-    })?;
+    let signing_material = load_receipt_signing_material(cli_override)?
+        .ok_or_else(missing_receipt_signing_key_error)?;
 
     Ok(Some(ReceiptExportContext {
         receipt_out: receipt_out.map(Path::to_path_buf),
@@ -3965,8 +4021,10 @@ mod registry_command_tests {
         let raw = std::fs::read_to_string(&stored.manifest_path).expect("read manifest");
         let mut manifest: LocalRegistryArtifactManifest =
             serde_json::from_str(&raw).expect("parse manifest");
-        let tampered_manifest_bytes =
-            format!("tampered:{}:{}", manifest.extension.name, manifest.artifact_sha256);
+        let tampered_manifest_bytes = format!(
+            "tampered:{}:{}",
+            manifest.extension.name, manifest.artifact_sha256
+        );
         manifest.manifest_bytes_b64 = BASE64_STANDARD.encode(tampered_manifest_bytes.as_bytes());
         std::fs::write(
             &stored.manifest_path,
@@ -5676,11 +5734,7 @@ fn evaluate_run_trust_preflight(
 
             if !authoritative_registry.is_file() {
                 PreFlightVerdict::Skipped {
-                    reason: format!(
-                        "authoritative trust registry missing at {}; run `franken-node init --profile {}` to bootstrap trust state",
-                        authoritative_registry.display(),
-                        policy_mode
-                    ),
+                    reason: missing_trust_registry_message(&authoritative_registry, policy_mode),
                 }
             } else {
                 match TrustCardRegistry::load_authoritative_state(
@@ -5933,16 +5987,6 @@ fn emit_run_preflight_report(report: &RunPreFlightReport, json: bool) -> Result<
             eprintln!("{}", render_run_preflight_human(report));
             Ok(())
         }
-    }
-}
-
-fn run_preflight_block_message(report: &RunPreFlightReport) -> String {
-    match &report.verdict {
-        PreFlightVerdict::Blocked { reason, .. } => format!(
-            "run blocked by trust preflight: {reason}. Inspect `franken-node trust list --revoked true` and refresh trust state with `{}`",
-            report.receipt.rollback_command
-        ),
-        _ => "run blocked by trust preflight".to_string(),
     }
 }
 
@@ -7414,7 +7458,11 @@ fn handle_registry_publish(args: &cli::RegistryPublishArgs) -> Result<()> {
     let package_bytes = std::fs::read(&args.package_path)
         .with_context(|| format!("failed reading package {}", args.package_path.display()))?;
     let content_hash = compute_registry_artifact_sha256(&package_bytes);
-    let signing_material = load_registry_publish_signing_material(&args.signing_key)?;
+    let signing_key_path = args
+        .signing_key
+        .as_deref()
+        .ok_or_else(|| registry_publish_signing_key_required_error(&args.package_path))?;
+    let signing_material = load_registry_publish_signing_material(signing_key_path)?;
     let request =
         build_registry_publish_request(&args.package_path, &content_hash, &signing_material)?;
     let request_for_storage = request.clone();
@@ -7515,23 +7563,26 @@ fn handle_registry_verify(args: &cli::RegistryVerifyArgs) -> Result<()> {
     let artifact = find_local_registry_artifact(&project_root, &args.extension_id)?;
     let verification = inspect_local_registry_artifact(&artifact);
     let artifact_path = registry_relative_display_path(&verification.artifact_path, &project_root);
+    let manifest_path = registry_relative_display_path(&artifact.manifest_path, &project_root);
     if verification.status != RegistryArtifactIntegrityStatus::Verified {
         anyhow::bail!(
-            "registry verify failed: extension_id={} integrity={} archived={} artifact_path={} detail={}",
+            "registry verify failed: extension_id={} integrity={} archived={} artifact_path={} manifest_path={} detail={}",
             artifact.manifest.extension.extension_id,
             verification.status.label(),
             artifact.archived,
             artifact_path,
+            manifest_path,
             verification.detail
         );
     }
 
     println!(
-        "registry verify: extension_id={} integrity={} archived={} artifact_path={} detail={}",
+        "registry verify: extension_id={} integrity={} archived={} artifact_path={} manifest_path={} detail={}",
         artifact.manifest.extension.extension_id,
         verification.status.label(),
         artifact.archived,
         artifact_path,
+        manifest_path,
         verification.detail
     );
     Ok(())
@@ -7690,7 +7741,12 @@ fn revoke_trust_card(
             now_secs,
             "trace-cli-trust-revoke",
         )
-        .map_err(|err| anyhow::anyhow!(err.to_string()))
+        .map_err(|err| match err {
+            TrustCardError::NotFound(missing_extension_id) => {
+                trust_card_not_found_error(&missing_extension_id).into()
+            }
+            other => anyhow::anyhow!(other.to_string()),
+        })
 }
 
 fn quarantine_trust_cards(
@@ -10196,7 +10252,7 @@ fn handle_trust_card_command(command: TrustCardCommand) -> Result<()> {
                 get_trust_card(&mut state.registry, &args.extension_id, now_secs, trace_id)?;
             let card = response
                 .data
-                .ok_or_else(|| anyhow::anyhow!("trust card not found: {}", args.extension_id))?;
+                .ok_or_else(|| trust_card_not_found_error(&args.extension_id))?;
             if args.json {
                 println!("{}", trust_card_to_json(&card)?);
             } else {
@@ -10212,7 +10268,7 @@ fn handle_trust_card_command(command: TrustCardCommand) -> Result<()> {
                 get_trust_card(&mut state.registry, &args.extension_id, now_secs, trace_id)?;
             let card = response
                 .data
-                .ok_or_else(|| anyhow::anyhow!("trust card not found: {}", args.extension_id))?;
+                .ok_or_else(|| trust_card_not_found_error(&args.extension_id))?;
             println!("{}", trust_card_to_json(&card)?);
         }
         TrustCardCommand::List(args) => {
@@ -10428,7 +10484,7 @@ fn main() -> Result<()> {
             )?;
             emit_run_preflight_report(&preflight, json)?;
             if preflight.verdict.is_blocked() {
-                anyhow::bail!("{}", run_preflight_block_message(&preflight));
+                return Err(run_preflight_block_error(&preflight).into());
             }
 
             let requested_runtime = parse_runtime_override(runtime.as_deref())?
@@ -10585,9 +10641,9 @@ fn main() -> Result<()> {
                     now_unix_secs(),
                     "trace-cli-trust-card",
                 )?;
-                let card = response.data.ok_or_else(|| {
-                    anyhow::anyhow!("trust card not found: {}", args.extension_id)
-                })?;
+                let card = response
+                    .data
+                    .ok_or_else(|| trust_card_not_found_error(&args.extension_id))?;
                 println!("{}", render_trust_card_human(&card));
             }
             TrustCommand::List(args) => {

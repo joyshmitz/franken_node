@@ -689,6 +689,12 @@ pub enum RegistryCommand {
 
     /// Query extension registry with trust filters.
     Search(RegistrySearchArgs),
+
+    /// Verify a locally stored registry artifact's hash and signature.
+    Verify(RegistryVerifyArgs),
+
+    /// Archive older locally stored registry artifacts, keeping the newest N active entries per lineage.
+    Gc(RegistryGcArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -698,7 +704,7 @@ pub struct RegistryPublishArgs {
 
     /// Path to the operator-managed Ed25519 signing key file.
     #[arg(long)]
-    pub signing_key: PathBuf,
+    pub signing_key: Option<PathBuf>,
 }
 
 #[derive(Debug, Parser)]
@@ -709,6 +715,19 @@ pub struct RegistrySearchArgs {
     /// Minimum assurance level (1-5).
     #[arg(long)]
     pub min_assurance: Option<u8>,
+}
+
+#[derive(Debug, Parser)]
+pub struct RegistryVerifyArgs {
+    /// Extension identifier to verify from the local registry artifact store.
+    pub extension_id: String,
+}
+
+#[derive(Debug, Parser)]
+pub struct RegistryGcArgs {
+    /// Number of most recent active artifacts to retain per publisher/name lineage.
+    #[arg(long, default_value_t = 5)]
+    pub keep: usize,
 }
 
 // -- bench --

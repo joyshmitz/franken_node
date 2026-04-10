@@ -1,6 +1,40 @@
 #![forbid(unsafe_code)]
 extern crate self as frankenengine_node;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionableError {
+    message: String,
+    fix_command: String,
+    help_urls: Vec<String>,
+}
+
+impl ActionableError {
+    pub fn new(message: impl Into<String>, fix_command: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            fix_command: fix_command.into(),
+            help_urls: Vec::new(),
+        }
+    }
+
+    pub fn with_help_url(mut self, help_url: impl Into<String>) -> Self {
+        self.help_urls.push(help_url.into());
+        self
+    }
+}
+
+impl std::fmt::Display for ActionableError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}\nfix_command={}", self.message, self.fix_command)?;
+        for help_url in &self.help_urls {
+            write!(f, "\nhelp_url={help_url}")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for ActionableError {}
+
 #[cfg(feature = "extended-surfaces")]
 pub mod api;
 pub mod capacity_defaults;

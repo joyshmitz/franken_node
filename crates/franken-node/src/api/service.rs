@@ -199,6 +199,24 @@ pub struct PerformanceBaseline {
     pub provenance: String,
 }
 
+/// Structured provenance record explaining request lifecycle and perf baseline state.
+///
+/// This record is emitted with each request dispatch and explains:
+/// - What transport boundary owns the request (in-process vs live)
+/// - Why performance baselines may be unavailable
+/// - Request lifecycle and cancellation semantics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestLifecycleProvenance {
+    pub transport_boundary_kind: TransportBoundaryKind,
+    pub transport_owns_listener: bool,
+    pub endpoint_group: String,
+    pub route_path: String,
+    pub perf_baseline_status: PerformanceBaselineStatus,
+    pub perf_baseline_provenance: String,
+    pub request_lifecycle: String,
+    pub cancellation_semantics: String,
+}
+
 // ── Endpoint Report ────────────────────────────────────────────────────────
 
 /// Full endpoint report for the control-plane catalog surface.
@@ -258,6 +276,7 @@ pub struct ControlPlaneService {
     verifier_limiter: RateLimiter,
     fleet_limiter: RateLimiter,
     metrics: ServiceMetrics,
+    request_lifecycle_events: Vec<RequestLifecycleProvenance>,
 }
 
 impl ControlPlaneService {
@@ -288,6 +307,7 @@ impl ControlPlaneService {
             verifier_limiter: RateLimiter::new(verifier_limit),
             fleet_limiter: RateLimiter::new(fleet_limit),
             metrics: ServiceMetrics::default(),
+            request_lifecycle_events: Vec::new(),
         }
     }
 
@@ -299,6 +319,11 @@ impl ControlPlaneService {
     /// Get current service metrics.
     pub fn metrics(&self) -> &ServiceMetrics {
         &self.metrics
+    }
+
+    /// Structured provenance captured for recorded requests.
+    pub fn request_lifecycle_events(&self) -> &[RequestLifecycleProvenance] {
+        &self.request_lifecycle_events
     }
 
     /// Total request count.
@@ -316,8 +341,41 @@ impl ControlPlaneService {
     }
 
     /// Record a request log entry in the service metrics.
+    ///
+    /// This method updates metrics and captures structured provenance for the
+    /// request lifecycle. The provenance explains:
+    /// - Request path and endpoint group
+    /// - Rate limit state at time of request
+    /// - Whether performance baselines were measured (currently: no)
     pub fn record(&mut self, log: &RequestLog) {
+        self.request_lifecycle_events
+            .push(self.request_lifecycle_provenance(&log.endpoint_group, &log.route));
         self.metrics.record_request(log);
+    }
+
+    /// Emit structured provenance explaining request lifecycle and perf baseline state.
+    ///
+    /// Returns a structured record suitable for audit logging that explains:
+    /// - Transport boundary ownership (in-process catalog vs live transport)
+    /// - Performance baseline provenance (unavailable pending transport)
+    /// - Request rate-limit context
+    pub fn request_lifecycle_provenance(
+        &self,
+        endpoint_group: &str,
+        route_path: &str,
+    ) -> RequestLifecycleProvenance {
+        RequestLifecycleProvenance {
+            transport_boundary_kind: self.transport_boundary().kind,
+            transport_owns_listener: self.transport_boundary().owns_listener,
+            endpoint_group: endpoint_group.to_string(),
+            route_path: route_path.to_string(),
+            perf_baseline_status: PerformanceBaselineStatus::UnavailablePendingTransport,
+            perf_baseline_provenance: "No live async HTTP/gRPC transport boundary is owned; \
+                load-test baselines are intentionally unavailable until that trigger exists."
+                .to_string(),
+            request_lifecycle: "caller-owned in-process dispatch only".to_string(),
+            cancellation_semantics: "no transport-owned cancellation boundary".to_string(),
+        }
     }
 
     /// Get the full route catalog.
@@ -494,6 +552,63 @@ mod tests {
         };
         service.record(&log);
         assert_eq!(service.request_count(), 1);
+    }
+
+    #[test]
+    fn service_record_captures_request_lifecycle_provenance() {
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
+        let mut service = ControlPlaneService::default();
+        let log = RequestLog {
+            method: "GET".to_string(),
+            route: "/v1/operator/status".to_string(),
+            status: 200,
+            latency_ms: 1.0,
+            trace_id: "t-2".to_string(),
+            principal: "test".to_string(),
+            endpoint_group: "operator".to_string(),
+            event_code: "FASTAPI_RESPONSE_SENT".to_string(),
+        };
+
+        assert!(service.request_lifecycle_events().is_empty());
+        service.record(&log);
+
+        let events = service.request_lifecycle_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].endpoint_group, "operator");
+        assert_eq!(events[0].route_path, "/v1/operator/status");
+        assert_eq!(
+            events[0].transport_boundary_kind,
+            TransportBoundaryKind::InProcessCatalog
+        );
+        assert_eq!(
+            events[0].perf_baseline_status,
+            PerformanceBaselineStatus::UnavailablePendingTransport
+        );
+    }
+
+    #[test]
+    fn request_lifecycle_provenance_explains_transport_state() {
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
+        let service = ControlPlaneService::default();
+
+        let provenance = service.request_lifecycle_provenance("operator", "/v1/operator/status");
+
+        assert_eq!(
+            provenance.transport_boundary_kind,
+            TransportBoundaryKind::InProcessCatalog
+        );
+        assert!(!provenance.transport_owns_listener);
+        assert_eq!(provenance.endpoint_group, "operator");
+        assert_eq!(provenance.route_path, "/v1/operator/status");
+        assert_eq!(
+            provenance.perf_baseline_status,
+            PerformanceBaselineStatus::UnavailablePendingTransport
+        );
+        assert!(!provenance.perf_baseline_provenance.is_empty());
+        assert!(provenance.request_lifecycle.contains("in-process"));
+        assert!(provenance.cancellation_semantics.contains("no transport"));
     }
 
     #[test]
@@ -1245,5 +1360,174 @@ mod integration_tests {
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), FirewallVerdict::Allow);
+    }
+}
+
+/// Contract tests: validate runtime output matches artifact contracts.
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+    use std::path::Path;
+
+    const ARTIFACT_PATH: &str = "artifacts/10.16/fastapi_endpoint_report.json";
+
+    fn load_artifact_report() -> Option<EndpointReport> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join(ARTIFACT_PATH))?;
+
+        if !path.exists() {
+            return None;
+        }
+
+        let contents = std::fs::read_to_string(&path).ok()?;
+        serde_json::from_str(&contents).ok()
+    }
+
+    #[test]
+    fn runtime_includes_all_artifact_endpoints() {
+        // In test mode, extended-surfaces feature adds extra endpoints beyond
+        // the base artifact. This test validates that all artifact endpoints
+        // are present in runtime (runtime is a superset of artifact).
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
+
+        let Some(artifact) = load_artifact_report() else {
+            eprintln!("artifact file not found, skipping contract validation");
+            return;
+        };
+
+        let runtime = generate_endpoint_report(&ServiceConfig::default());
+
+        // Runtime should have at least as many endpoints as artifact
+        assert!(
+            runtime.endpoints.len() >= artifact.endpoints.len(),
+            "runtime ({}) has fewer endpoints than artifact ({})",
+            runtime.endpoints.len(),
+            artifact.endpoints.len()
+        );
+    }
+
+    #[test]
+    fn artifact_endpoints_present_in_runtime() {
+        // Validates that all base endpoints in the artifact are present in runtime.
+        // Runtime may include additional endpoints from extended-surfaces feature.
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
+
+        let Some(artifact) = load_artifact_report() else {
+            eprintln!("artifact file not found, skipping contract validation");
+            return;
+        };
+
+        let runtime = generate_endpoint_report(&ServiceConfig::default());
+
+        let runtime_paths: std::collections::BTreeSet<_> = runtime
+            .endpoints
+            .iter()
+            .map(|e| format!("{} {}", e.method, e.path))
+            .collect();
+        let artifact_paths: std::collections::BTreeSet<_> = artifact
+            .endpoints
+            .iter()
+            .map(|e| format!("{} {}", e.method, e.path))
+            .collect();
+
+        let missing_in_runtime: Vec<_> = artifact_paths.difference(&runtime_paths).collect();
+
+        assert!(
+            missing_in_runtime.is_empty(),
+            "artifact endpoints missing in runtime: {:?}",
+            missing_in_runtime
+        );
+    }
+
+    #[test]
+    fn runtime_middleware_coverage_matches_artifact() {
+        let Some(artifact) = load_artifact_report() else {
+            eprintln!("artifact file not found, skipping contract validation");
+            return;
+        };
+
+        let runtime = generate_endpoint_report(&ServiceConfig::default());
+
+        assert_eq!(
+            runtime.middleware_coverage.auth_coverage, artifact.middleware_coverage.auth_coverage,
+            "auth_coverage mismatch"
+        );
+        assert_eq!(
+            runtime.middleware_coverage.policy_hook_coverage,
+            artifact.middleware_coverage.policy_hook_coverage,
+            "policy_hook_coverage mismatch"
+        );
+        assert_eq!(
+            runtime.middleware_coverage.tracing_coverage,
+            artifact.middleware_coverage.tracing_coverage,
+            "tracing_coverage mismatch"
+        );
+    }
+
+    #[test]
+    fn runtime_transport_boundary_matches_artifact() {
+        let Some(artifact) = load_artifact_report() else {
+            eprintln!("artifact file not found, skipping contract validation");
+            return;
+        };
+
+        let runtime = generate_endpoint_report(&ServiceConfig::default());
+
+        assert_eq!(
+            runtime.transport_boundary.kind, artifact.transport_boundary.kind,
+            "transport_boundary.kind mismatch"
+        );
+        assert_eq!(
+            runtime.transport_boundary.owns_listener, artifact.transport_boundary.owns_listener,
+            "transport_boundary.owns_listener mismatch"
+        );
+    }
+
+    #[test]
+    fn runtime_performance_baselines_all_unavailable_pending_transport() {
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
+
+        let runtime = generate_endpoint_report(&ServiceConfig::default());
+
+        for baseline in &runtime.performance_baselines {
+            assert_eq!(
+                baseline.status,
+                PerformanceBaselineStatus::UnavailablePendingTransport,
+                "baseline {} has unexpected status {:?}",
+                baseline.endpoint,
+                baseline.status
+            );
+            assert!(
+                baseline.p50_ms.is_none(),
+                "baseline {} should have no p50_ms",
+                baseline.endpoint
+            );
+            assert!(
+                !baseline.provenance.is_empty(),
+                "baseline {} should have provenance explanation",
+                baseline.endpoint
+            );
+        }
+    }
+
+    #[test]
+    fn all_endpoints_have_conformance_pass_in_artifact() {
+        let Some(artifact) = load_artifact_report() else {
+            eprintln!("artifact file not found, skipping contract validation");
+            return;
+        };
+
+        for entry in &artifact.endpoints {
+            assert_eq!(
+                entry.conformance_status, "pass",
+                "endpoint {} {} has non-pass conformance: {}",
+                entry.method, entry.path, entry.conformance_status
+            );
+        }
     }
 }

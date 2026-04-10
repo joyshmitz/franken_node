@@ -1228,25 +1228,22 @@ fn compute_receipt_id(
 }
 
 fn plan_replay_proven(state: &ConnectorState, steps: &[ExecutableMigrationStep]) -> bool {
-    let mut last_checksum = None::<String>;
-    for step in steps {
-        let Some(record) = state
-            .migration_journal
-            .iter()
-            .rev()
-            .find(|record| record.migration_id == step.step_id)
-        else {
-            return false;
-        };
-        if record.version_from != step.from_version.to_string()
-            || record.version_to != step.to_version.to_string()
-        {
-            return false;
-        }
-        last_checksum = Some(record.checksum.clone());
+    let Some(suffix_start) = state.migration_journal.len().checked_sub(steps.len()) else {
+        return false;
+    };
+    let suffix = &state.migration_journal[suffix_start..];
+
+    if !suffix.iter().zip(steps).all(|(record, step)| {
+        record.migration_id == step.step_id
+            && record.version_from == step.from_version.to_string()
+            && record.version_to == step.to_version.to_string()
+    }) {
+        return false;
     }
 
-    last_checksum.is_some_and(|checksum| checksum == state.state_hash)
+    suffix
+        .last()
+        .is_some_and(|record| record.checksum == state.state_hash)
 }
 
 fn step_already_applied(state: &ConnectorState, step: &ExecutableMigrationStep) -> bool {
@@ -1254,12 +1251,12 @@ fn step_already_applied(state: &ConnectorState, step: &ExecutableMigrationStep) 
         return false;
     }
 
-    state
-        .migration_journal
-        .iter()
-        .rev()
-        .find(|record| record.migration_id == step.step_id)
-        .is_some_and(|record| record.checksum == state.state_hash)
+    state.migration_journal.last().is_some_and(|record| {
+        record.migration_id == step.step_id
+            && record.version_from == step.from_version.to_string()
+            && record.version_to == step.to_version.to_string()
+            && record.checksum == state.state_hash
+    })
 }
 
 fn apply_executable_step(
@@ -1679,6 +1676,9 @@ mod tests {
         let receipt = execute_plan(&plan, &mut state, "2026-01-01T00:00:00Z");
         assert_eq!(receipt.outcome, MigrationOutcome::Applied);
         assert_eq!(receipt.steps_applied, 3);
+        assert_eq!(receipt.steps_total, 3);
+        assert_eq!(receipt.steps_already_applied, 0);
+        assert_eq!(receipt.steps_rolled_back, 0);
         assert_eq!(state.schema_version, v(2, 0, 0));
         assert_eq!(state.canonical_state.get("name"), None);
         assert_eq!(
@@ -1694,6 +1694,25 @@ mod tests {
             Some(&json!(2))
         );
         assert_eq!(state.migration_journal.len(), 3);
+        assert_eq!(receipt.final_state_hash, state.state_hash);
+        assert_eq!(receipt.journal_record_ids.len(), 3);
+        assert_eq!(receipt.step_results.len(), 3);
+        assert_eq!(
+            receipt.journal_record_ids,
+            state
+                .migration_journal
+                .iter()
+                .map(|record| record.migration_id.clone())
+                .collect::<Vec<_>>()
+        );
+        assert!(receipt.step_results.iter().all(|result| {
+            result.status == MigrationStepStatus::Applied
+                && !result.pre_state_hash.is_empty()
+                && !result.post_state_hash.is_empty()
+                && !result.checkpoint_ref.is_empty()
+                && result.journal_record_id.as_ref() == Some(&result.step_id)
+                && result.error_detail.is_none()
+        }));
     }
 
     #[test]
@@ -1708,6 +1727,13 @@ mod tests {
         let receipt = execute_plan(&plan, &mut state, "t");
         assert_eq!(receipt.outcome, MigrationOutcome::Applied);
         assert_eq!(receipt.steps_applied, 0);
+        assert_eq!(receipt.steps_total, 0);
+        assert_eq!(receipt.steps_already_applied, 0);
+        assert_eq!(receipt.steps_rolled_back, 0);
+        assert_eq!(receipt.initial_state_hash, state.state_hash);
+        assert_eq!(receipt.final_state_hash, state.state_hash);
+        assert!(receipt.journal_record_ids.is_empty());
+        assert!(receipt.step_results.is_empty());
     }
 
     #[test]
@@ -1781,6 +1807,13 @@ mod tests {
         assert_eq!(receipt.steps_rolled_back, 1);
         assert_eq!(receipt.rollback_result, RollbackResult::RestoredCheckpoint);
         assert_eq!(state, original);
+        assert_eq!(receipt.final_state_hash, original.state_hash);
+        assert_eq!(receipt.journal_record_ids.len(), 1);
+        assert_eq!(
+            receipt.error_code.as_deref(),
+            Some("MIGRATION_STATE_CONFLICT")
+        );
+        assert!(receipt.error_detail.is_some());
         assert!(
             receipt
                 .step_results
@@ -1793,6 +1826,14 @@ mod tests {
                 .iter()
                 .any(|result| result.status == MigrationStepStatus::Failed)
         );
+        let failed_step = receipt
+            .step_results
+            .iter()
+            .find(|result| result.status == MigrationStepStatus::Failed)
+            .unwrap();
+        assert_eq!(failed_step.journal_record_id, None);
+        assert_eq!(failed_step.post_state_hash, failed_step.pre_state_hash);
+        assert!(failed_step.error_detail.is_some());
     }
 
     #[test]
@@ -1804,7 +1845,21 @@ mod tests {
         assert_eq!(first.outcome, MigrationOutcome::Applied);
         let second = execute_plan(&plan, &mut state, "2026-01-01T00:00:00Z");
         assert_eq!(second.outcome, MigrationOutcome::AlreadyApplied);
+        assert_eq!(second.steps_total, 3);
+        assert_eq!(second.steps_applied, 0);
         assert_eq!(second.steps_already_applied, 3);
+        assert_eq!(second.steps_rolled_back, 0);
+        assert_eq!(second.initial_state_hash, state.state_hash);
+        assert_eq!(second.final_state_hash, state.state_hash);
+        assert_eq!(second.journal_record_ids.len(), 3);
+        assert_eq!(second.step_results.len(), 3);
+        assert!(second.step_results.iter().all(|result| {
+            result.status == MigrationStepStatus::AlreadyApplied
+                && result.journal_record_id.as_ref() == Some(&result.step_id)
+                && result.pre_state_hash == state.state_hash
+                && result.post_state_hash == state.state_hash
+                && result.error_detail.is_none()
+        }));
     }
 
     #[test]
@@ -1826,6 +1881,100 @@ mod tests {
         assert_eq!(
             receipt.error_code.as_deref(),
             Some("MIGRATION_STATE_CONFLICT")
+        );
+        assert_eq!(receipt.steps_applied, 0);
+        assert_eq!(receipt.steps_already_applied, 0);
+        assert_eq!(receipt.steps_rolled_back, 0);
+        assert!(receipt.journal_record_ids.is_empty());
+    }
+
+    #[test]
+    fn target_version_with_journal_but_hash_divergence_fails_closed() {
+        let reg = sample_registry();
+        let plan = reg.build_plan("conn-1", &v(1, 0, 0), &v(2, 0, 0)).unwrap();
+        let mut state = sample_state();
+
+        let applied = execute_plan(&plan, &mut state, "2026-01-01T00:00:00Z");
+        assert_eq!(applied.outcome, MigrationOutcome::Applied);
+
+        state
+            .canonical_state
+            .insert("tampered".to_string(), json!(true));
+        state.refresh_state_hash().unwrap();
+
+        let replay = execute_plan(&plan, &mut state, "2026-01-01T00:00:00Z");
+        assert!(matches!(replay.outcome, MigrationOutcome::Failed { .. }));
+        assert_eq!(
+            replay.error_code.as_deref(),
+            Some("MIGRATION_STATE_CONFLICT")
+        );
+        assert_eq!(replay.steps_applied, 0);
+        assert_eq!(replay.steps_already_applied, 0);
+        assert!(replay.journal_record_ids.is_empty());
+    }
+
+    #[test]
+    fn replay_requires_latest_journal_suffix_for_proof() {
+        let reg = sample_registry();
+        let plan = reg.build_plan("conn-1", &v(1, 0, 0), &v(2, 0, 0)).unwrap();
+        let mut state = sample_state();
+
+        let applied = execute_plan(&plan, &mut state, "2026-01-01T00:00:00Z");
+        assert_eq!(applied.outcome, MigrationOutcome::Applied);
+
+        state.migration_journal.push(SchemaMigrationRecord {
+            migration_id: "unexpected-tail".to_string(),
+            version_from: "2.0.0".to_string(),
+            version_to: "2.0.0".to_string(),
+            applied_at: "2026-01-01T00:00:01Z".to_string(),
+            checksum: state.state_hash.clone(),
+            reversible: false,
+        });
+
+        let replay = execute_plan(&plan, &mut state, "2026-01-01T00:00:02Z");
+        assert!(matches!(replay.outcome, MigrationOutcome::Failed { .. }));
+        assert_eq!(
+            replay.error_code.as_deref(),
+            Some("MIGRATION_STATE_CONFLICT")
+        );
+        assert_eq!(replay.steps_applied, 0);
+        assert_eq!(replay.steps_already_applied, 0);
+        assert_eq!(replay.steps_rolled_back, 0);
+        assert!(replay.journal_record_ids.is_empty());
+    }
+
+    #[test]
+    fn replay_allows_older_history_before_latest_proven_suffix() {
+        let reg = sample_registry();
+        let plan = reg.build_plan("conn-1", &v(1, 0, 0), &v(2, 0, 0)).unwrap();
+        let mut state = sample_state();
+
+        let applied = execute_plan(&plan, &mut state, "2026-01-01T00:00:00Z");
+        assert_eq!(applied.outcome, MigrationOutcome::Applied);
+
+        state.migration_journal.insert(
+            0,
+            SchemaMigrationRecord {
+                migration_id: "legacy-history".to_string(),
+                version_from: "0.9.0".to_string(),
+                version_to: "1.0.0".to_string(),
+                applied_at: "2025-12-31T23:59:59Z".to_string(),
+                checksum: "legacy-checksum".to_string(),
+                reversible: true,
+            },
+        );
+
+        let replay = execute_plan(&plan, &mut state, "2026-01-01T00:00:02Z");
+        assert_eq!(replay.outcome, MigrationOutcome::AlreadyApplied);
+        assert_eq!(replay.steps_applied, 0);
+        assert_eq!(replay.steps_already_applied, 3);
+        assert_eq!(replay.steps_rolled_back, 0);
+        assert_eq!(replay.journal_record_ids.len(), 3);
+        assert!(
+            replay
+                .journal_record_ids
+                .iter()
+                .all(|journal_id| journal_id != "legacy-history")
         );
     }
 
@@ -1925,6 +2074,28 @@ mod tests {
         assert_eq!(parsed.connector_id, "conn-1");
         assert_eq!(parsed.steps_applied, 2);
         assert_eq!(parsed.receipt_schema_version, RECEIPT_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn migration_receipt_bytes_are_deterministic_for_identical_inputs() {
+        let reg = sample_registry();
+        let plan = reg.build_plan("conn-1", &v(1, 0, 0), &v(1, 2, 0)).unwrap();
+        let mut first_state = sample_state();
+        let mut second_state = sample_state();
+
+        let first_receipt = execute_plan(&plan, &mut first_state, "2026-01-01T00:00:00Z");
+        let second_receipt = execute_plan(&plan, &mut second_state, "2026-01-01T00:00:00Z");
+
+        let first_bytes = serde_json::to_vec(&first_receipt).unwrap();
+        let second_bytes = serde_json::to_vec(&second_receipt).unwrap();
+
+        assert_eq!(first_receipt.receipt_id, second_receipt.receipt_id);
+        assert_eq!(first_receipt.plan_id, second_receipt.plan_id);
+        assert_eq!(
+            first_receipt.final_state_hash,
+            second_receipt.final_state_hash
+        );
+        assert_eq!(first_bytes, second_bytes);
     }
 
     #[test]

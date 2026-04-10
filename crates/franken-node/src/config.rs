@@ -108,6 +108,7 @@ impl Config {
                 observability: ObservabilityConfig {
                     namespace: "franken_node".to_string(),
                     emit_structured_audit_events: true,
+                    max_receipts: None,
                 },
                 remote: RemoteConfig {
                     idempotency_ttl_secs: 604_800,
@@ -165,6 +166,7 @@ impl Config {
                 observability: ObservabilityConfig {
                     namespace: "franken_node".to_string(),
                     emit_structured_audit_events: true,
+                    max_receipts: None,
                 },
                 remote: RemoteConfig {
                     idempotency_ttl_secs: 604_800,
@@ -222,6 +224,7 @@ impl Config {
                 observability: ObservabilityConfig {
                     namespace: "franken_node".to_string(),
                     emit_structured_audit_events: false,
+                    max_receipts: None,
                 },
                 remote: RemoteConfig {
                     idempotency_ttl_secs: 604_800,
@@ -677,6 +680,14 @@ impl Config {
                     value,
                 ));
             }
+            if let Some(value) = section.max_receipts {
+                self.observability.max_receipts = Some(value);
+                decisions.push(MergeDecision::new(
+                    stage.clone(),
+                    "observability.max_receipts",
+                    value,
+                ));
+            }
         }
 
         if let Some(section) = &overrides.remote
@@ -1114,6 +1125,15 @@ impl Config {
             "observability.emit_structured_audit_events",
             decisions,
         )?;
+        if let Some(raw) = env_lookup("FRANKEN_NODE_OBSERVABILITY_MAX_RECEIPTS") {
+            let parsed = parse_env_usize("FRANKEN_NODE_OBSERVABILITY_MAX_RECEIPTS", &raw)?;
+            self.observability.max_receipts = Some(parsed);
+            decisions.push(MergeDecision::new(
+                MergeStage::Env,
+                "observability.max_receipts",
+                parsed,
+            ));
+        }
         if let Some(raw) = env_lookup("FRANKEN_NODE_REMOTE_IDEMPOTENCY_TTL_SECS") {
             let parsed = parse_env_u64("FRANKEN_NODE_REMOTE_IDEMPOTENCY_TTL_SECS", &raw)?;
             self.remote.idempotency_ttl_secs = parsed;
@@ -1283,6 +1303,11 @@ impl Config {
         if self.observability.namespace.trim().is_empty() {
             return Err(ConfigError::ValidationFailed(
                 "observability.namespace must be non-empty".to_string(),
+            ));
+        }
+        if self.observability.max_receipts == Some(0) {
+            return Err(ConfigError::ValidationFailed(
+                "observability.max_receipts must be > 0 when configured".to_string(),
             ));
         }
         if self.remote.idempotency_ttl_secs == 0 {
@@ -1662,6 +1687,7 @@ struct FleetOverrides {
 struct ObservabilityOverrides {
     pub namespace: Option<String>,
     pub emit_structured_audit_events: Option<bool>,
+    pub max_receipts: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -1897,6 +1923,9 @@ pub struct ObservabilityConfig {
     pub namespace: String,
     /// Emit structured audit events.
     pub emit_structured_audit_events: bool,
+    /// Optional cap on active on-disk receipts before older entries are archived.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_receipts: Option<usize>,
 }
 
 // -- Remote --
