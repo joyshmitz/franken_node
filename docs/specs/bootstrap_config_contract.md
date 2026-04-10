@@ -72,8 +72,11 @@ Supported `FRANKEN_NODE_*` keys:
 - `FRANKEN_NODE_OBSERVABILITY_EMIT_STRUCTURED_AUDIT_EVENTS`
 - `FRANKEN_NODE_REMOTE_IDEMPOTENCY_TTL_SECS`
 - `FRANKEN_NODE_SECURITY_MAX_DEGRADED_DURATION_SECS`
+- `FRANKEN_NODE_SECURITY_DECISION_RECEIPT_SIGNING_KEY_PATH`
 
 Boolean env values accept: `true/false/1/0/yes/no/on/off`.
+
+Path values (e.g., `decision_receipt_signing_key_path`) are trimmed and resolved relative to the current working directory.
 
 ## Validation Rules
 
@@ -90,6 +93,7 @@ Resolution fails with stable diagnostics when:
 - `observability.namespace` is empty
 - `remote.idempotency_ttl_secs` is `0`
 - `security.max_degraded_duration_secs` is `0`
+- `security.decision_receipt_signing_key_path` is configured but does not point to a readable file (checked at command execution time when receipt export is requested)
 
 ## Merge Provenance
 

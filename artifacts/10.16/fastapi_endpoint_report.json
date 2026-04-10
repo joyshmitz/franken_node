@@ -1,130 +1,249 @@
 {
-  "gate_verdict": "PASS",
-  "summary": {
-    "total_endpoints": 10,
-    "operator_count": 4,
-    "verifier_count": 3,
-    "fleet_control_count": 3,
-    "middleware_layers": 6
-  },
   "endpoints": [
     {
       "group": "operator",
       "path": "/v1/operator/status",
       "method": "GET",
-      "auth_method": "api_key",
-      "policy_hook": "operator_read",
+      "auth_method": "ApiKey",
+      "policy_hook": "operator.status.read",
       "lifecycle": "stable",
-      "status_codes": [200, 401, 403, 500],
       "trace_propagation": true,
+      "status_codes": [200, 400, 401, 403, 404, 429, 500, 503],
       "conformance_status": "pass"
     },
     {
       "group": "operator",
       "path": "/v1/operator/health",
       "method": "GET",
-      "auth_method": "api_key",
-      "policy_hook": "operator_read",
+      "auth_method": "None",
+      "policy_hook": "operator.health.read",
       "lifecycle": "stable",
-      "status_codes": [200, 503],
       "trace_propagation": true,
+      "status_codes": [200, 400, 401, 403, 404, 429, 500, 503],
       "conformance_status": "pass"
     },
     {
       "group": "operator",
       "path": "/v1/operator/config",
       "method": "GET",
-      "auth_method": "api_key",
-      "policy_hook": "operator_read",
+      "auth_method": "ApiKey",
+      "policy_hook": "operator.config.read",
       "lifecycle": "stable",
-      "status_codes": [200, 401, 403],
       "trace_propagation": true,
+      "status_codes": [200, 400, 401, 403, 404, 429, 500, 503],
       "conformance_status": "pass"
     },
     {
       "group": "operator",
       "path": "/v1/operator/rollout",
       "method": "GET",
-      "auth_method": "api_key",
-      "policy_hook": "operator_read",
+      "auth_method": "ApiKey",
+      "policy_hook": "operator.rollout.read",
       "lifecycle": "stable",
-      "status_codes": [200, 401, 403, 404],
       "trace_propagation": true,
+      "status_codes": [200, 400, 401, 403, 404, 429, 500, 503],
       "conformance_status": "pass"
     },
     {
       "group": "verifier",
       "path": "/v1/verifier/conformance",
       "method": "POST",
-      "auth_method": "bearer_token",
-      "policy_hook": "verifier_trigger",
+      "auth_method": "BearerToken",
+      "policy_hook": "verifier.conformance.trigger",
       "lifecycle": "stable",
-      "status_codes": [200, 202, 401, 403, 500],
       "trace_propagation": true,
+      "status_codes": [200, 201, 400, 401, 403, 409, 429, 500, 503],
       "conformance_status": "pass"
     },
     {
       "group": "verifier",
-      "path": "/v1/verifier/evidence",
+      "path": "/v1/verifier/evidence/{check_id}",
       "method": "GET",
-      "auth_method": "bearer_token",
-      "policy_hook": "verifier_read",
+      "auth_method": "BearerToken",
+      "policy_hook": "verifier.evidence.read",
       "lifecycle": "stable",
-      "status_codes": [200, 401, 403, 404],
       "trace_propagation": true,
+      "status_codes": [200, 400, 401, 403, 404, 429, 500, 503],
       "conformance_status": "pass"
     },
     {
       "group": "verifier",
       "path": "/v1/verifier/audit-log",
       "method": "GET",
-      "auth_method": "bearer_token",
-      "policy_hook": "verifier_read",
+      "auth_method": "BearerToken",
+      "policy_hook": "verifier.audit.read",
       "lifecycle": "stable",
-      "status_codes": [200, 401, 403],
       "trace_propagation": true,
+      "status_codes": [200, 400, 401, 403, 404, 429, 500, 503],
       "conformance_status": "pass"
     },
     {
       "group": "fleet_control",
-      "path": "/v1/fleet/lease",
-      "method": "POST",
-      "auth_method": "mtls_cert",
-      "policy_hook": "fleet_mutate",
+      "path": "/v1/fleet/leases",
+      "method": "GET",
+      "auth_method": "BearerToken",
+      "policy_hook": "fleet.leases.read",
       "lifecycle": "stable",
-      "status_codes": [200, 201, 401, 403, 409, 500],
       "trace_propagation": true,
+      "status_codes": [200, 400, 401, 403, 404, 429, 500, 503],
+      "conformance_status": "pass"
+    },
+    {
+      "group": "fleet_control",
+      "path": "/v1/fleet/leases",
+      "method": "POST",
+      "auth_method": "BearerToken",
+      "policy_hook": "fleet.leases.acquire",
+      "lifecycle": "stable",
+      "trace_propagation": true,
+      "status_codes": [200, 201, 400, 401, 403, 409, 429, 500, 503],
+      "conformance_status": "pass"
+    },
+    {
+      "group": "fleet_control",
+      "path": "/v1/fleet/leases/{lease_id}",
+      "method": "DELETE",
+      "auth_method": "BearerToken",
+      "policy_hook": "fleet.leases.release",
+      "lifecycle": "stable",
+      "trace_propagation": true,
+      "status_codes": [200, 204, 400, 401, 403, 404, 429, 500, 503],
       "conformance_status": "pass"
     },
     {
       "group": "fleet_control",
       "path": "/v1/fleet/fence",
       "method": "POST",
-      "auth_method": "mtls_cert",
-      "policy_hook": "fleet_mutate",
+      "auth_method": "MtlsClientCert",
+      "policy_hook": "fleet.fence.execute",
       "lifecycle": "stable",
-      "status_codes": [200, 401, 403, 409, 500],
       "trace_propagation": true,
+      "status_codes": [200, 201, 400, 401, 403, 409, 429, 500, 503],
       "conformance_status": "pass"
     },
     {
       "group": "fleet_control",
       "path": "/v1/fleet/coordinate",
       "method": "POST",
-      "auth_method": "mtls_cert",
-      "policy_hook": "fleet_mutate",
-      "lifecycle": "stable",
-      "status_codes": [200, 202, 401, 403, 500],
+      "auth_method": "MtlsClientCert",
+      "policy_hook": "fleet.coordinate.execute",
+      "lifecycle": "experimental",
       "trace_propagation": true,
+      "status_codes": [200, 201, 400, 401, 403, 409, 429, 500, 503],
       "conformance_status": "pass"
     }
   ],
   "middleware_coverage": {
-    "trace_context": true,
-    "authentication": true,
-    "authorization": true,
-    "rate_limit": true,
-    "error_formatting": true,
-    "telemetry": true
-  }
+    "auth_coverage": true,
+    "policy_hook_coverage": true,
+    "error_formatting_coverage": true,
+    "tracing_coverage": true,
+    "rate_limiting_coverage": true
+  },
+  "transport_boundary": {
+    "kind": "in_process_catalog",
+    "owns_listener": false,
+    "bind_target_hint": "127.0.0.1:9090",
+    "request_lifecycle": "caller-owned in-process dispatch only",
+    "cancellation_semantics": "no transport-owned cancellation boundary"
+  },
+  "performance_baselines": [
+    {
+      "endpoint": "GET /v1/operator/status",
+      "status": "unavailable_pending_transport",
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "provenance": "No live async HTTP/gRPC transport boundary is owned; load-test baselines are intentionally unavailable until that trigger exists."
+    },
+    {
+      "endpoint": "GET /v1/operator/health",
+      "status": "unavailable_pending_transport",
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "provenance": "No live async HTTP/gRPC transport boundary is owned; load-test baselines are intentionally unavailable until that trigger exists."
+    },
+    {
+      "endpoint": "GET /v1/operator/config",
+      "status": "unavailable_pending_transport",
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "provenance": "No live async HTTP/gRPC transport boundary is owned; load-test baselines are intentionally unavailable until that trigger exists."
+    },
+    {
+      "endpoint": "GET /v1/operator/rollout",
+      "status": "unavailable_pending_transport",
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "provenance": "No live async HTTP/gRPC transport boundary is owned; load-test baselines are intentionally unavailable until that trigger exists."
+    },
+    {
+      "endpoint": "POST /v1/verifier/conformance",
+      "status": "unavailable_pending_transport",
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "provenance": "No live async HTTP/gRPC transport boundary is owned; load-test baselines are intentionally unavailable until that trigger exists."
+    },
+    {
+      "endpoint": "GET /v1/verifier/evidence/{check_id}",
+      "status": "unavailable_pending_transport",
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "provenance": "No live async HTTP/gRPC transport boundary is owned; load-test baselines are intentionally unavailable until that trigger exists."
+    },
+    {
+      "endpoint": "GET /v1/verifier/audit-log",
+      "status": "unavailable_pending_transport",
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "provenance": "No live async HTTP/gRPC transport boundary is owned; load-test baselines are intentionally unavailable until that trigger exists."
+    },
+    {
+      "endpoint": "GET /v1/fleet/leases",
+      "status": "unavailable_pending_transport",
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "provenance": "No live async HTTP/gRPC transport boundary is owned; load-test baselines are intentionally unavailable until that trigger exists."
+    },
+    {
+      "endpoint": "POST /v1/fleet/leases",
+      "status": "unavailable_pending_transport",
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "provenance": "No live async HTTP/gRPC transport boundary is owned; load-test baselines are intentionally unavailable until that trigger exists."
+    },
+    {
+      "endpoint": "DELETE /v1/fleet/leases/{lease_id}",
+      "status": "unavailable_pending_transport",
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "provenance": "No live async HTTP/gRPC transport boundary is owned; load-test baselines are intentionally unavailable until that trigger exists."
+    },
+    {
+      "endpoint": "POST /v1/fleet/fence",
+      "status": "unavailable_pending_transport",
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "provenance": "No live async HTTP/gRPC transport boundary is owned; load-test baselines are intentionally unavailable until that trigger exists."
+    },
+    {
+      "endpoint": "POST /v1/fleet/coordinate",
+      "status": "unavailable_pending_transport",
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "provenance": "No live async HTTP/gRPC transport boundary is owned; load-test baselines are intentionally unavailable until that trigger exists."
+    }
+  ],
+  "generated_at": "2026-04-10T03:08:00Z"
 }

@@ -90,7 +90,9 @@ def main() -> int:
             and "TrustRevokeArgs" in cli_content
             and "TrustQuarantineArgs" in cli_content
             and "IncidentBundleArgs" in cli_content
-            and "maybe_export_signed_receipts" in main_content
+            and "export_signed_receipts" in main_content
+            and "ReceiptExportContext" in main_content
+            and "prepare_receipt_export_context" in main_content
             and "FRANKEN_NODE_SECURITY_DECISION_RECEIPT_SIGNING_KEY_PATH" in main_content
             and "decision_receipt_signing_key_path" in main_content
         )

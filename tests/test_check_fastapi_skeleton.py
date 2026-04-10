@@ -12,31 +12,25 @@ import check_fastapi_skeleton as mod
 
 
 class TestConstants(unittest.TestCase):
+    def test_endpoint_count(self):
+        self.assertEqual(len(mod.ENDPOINTS), 12)
+
     def test_endpoint_paths_count(self):
-        self.assertEqual(len(mod.ENDPOINT_PATHS), 10)
-
-    def test_event_codes_count(self):
-        self.assertEqual(len(mod.EVENT_CODES), 6)
-
-    def test_invariants_count(self):
-        self.assertEqual(len(mod.INVARIANTS), 4)
-
-    def test_middleware_layers_count(self):
-        self.assertEqual(len(mod.MIDDLEWARE_LAYERS), 6)
+        self.assertEqual(len(mod.ENDPOINT_PATHS), 12)
 
     def test_required_types_count(self):
-        self.assertGreaterEqual(len(mod.REQUIRED_TYPES), 9)
+        self.assertGreaterEqual(len(mod.REQUIRED_TYPES), 10)
 
     def test_required_methods_count(self):
-        self.assertGreaterEqual(len(mod.REQUIRED_METHODS), 10)
+        self.assertGreaterEqual(len(mod.REQUIRED_METHODS), 15)
 
     def test_required_tests_count(self):
-        self.assertGreaterEqual(len(mod.REQUIRED_TESTS), 35)
+        self.assertGreaterEqual(len(mod.REQUIRED_TESTS), 11)
 
 
 class TestCheckFile(unittest.TestCase):
     def test_existing(self):
-        result = mod.check_file(mod.IMPL, "test")
+        result = mod.check_file(mod.IMPL, "implementation")
         self.assertTrue(result["pass"])
 
     def test_missing(self):
@@ -46,7 +40,7 @@ class TestCheckFile(unittest.TestCase):
 
 class TestCheckContent(unittest.TestCase):
     def test_found(self):
-        results = mod.check_content(mod.IMPL, ["pub enum EndpointLifecycle"], "type")
+        results = mod.check_content(mod.IMPL, ["pub struct EndpointReport"], "type")
         self.assertTrue(results[0]["pass"])
 
     def test_missing(self):
@@ -60,30 +54,37 @@ class TestCheckImplTestCount(unittest.TestCase):
         self.assertTrue(result["pass"])
 
 
+class TestRouteSources(unittest.TestCase):
+    def test_route_sources_pass(self):
+        results = mod.check_route_sources()
+        for result in results:
+            self.assertTrue(result["pass"], f"Failed: {result['check']}: {result['detail']}")
+
+
 class TestCheckReport(unittest.TestCase):
     def test_report_passes(self):
         results = mod.check_report()
-        for r in results:
-            self.assertTrue(r["pass"], f"Failed: {r['check']}: {r['detail']}")
+        for result in results:
+            self.assertTrue(result["pass"], f"Failed: {result['check']}: {result['detail']}")
 
-    def test_report_has_10_endpoints(self):
+    def test_report_has_12_endpoints(self):
         results = mod.check_report()
-        ep_check = [r for r in results if "10 endpoints" in r["check"]]
-        self.assertTrue(ep_check[0]["pass"])
+        endpoint_check = [result for result in results if "12 base endpoints" in result["check"]]
+        self.assertTrue(endpoint_check[0]["pass"])
 
     def test_report_all_endpoint_paths(self):
         results = mod.check_report()
-        path_checks = [r for r in results if r["check"].startswith("Report: endpoint /")]
-        self.assertEqual(len(path_checks), 10)
-        for r in path_checks:
-            self.assertTrue(r["pass"])
+        path_checks = [result for result in results if result["check"].startswith("Report: endpoint ")]
+        self.assertEqual(len(path_checks), 12)
+        for result in path_checks:
+            self.assertTrue(result["pass"])
 
 
 class TestCheckSpec(unittest.TestCase):
     def test_spec_passes(self):
         results = mod.check_spec()
-        for r in results:
-            self.assertTrue(r["pass"], f"Failed: {r['check']}")
+        for result in results:
+            self.assertTrue(result["pass"], f"Failed: {result['check']}")
 
 
 class TestRunChecks(unittest.TestCase):
@@ -125,43 +126,22 @@ class TestJsonOutput(unittest.TestCase):
 class TestAllTypes(unittest.TestCase):
     def test_found(self):
         results = mod.check_content(mod.IMPL, mod.REQUIRED_TYPES, "type")
-        for r in results:
-            self.assertTrue(r["pass"], r["check"])
+        for result in results:
+            self.assertTrue(result["pass"], result["check"])
 
 
 class TestAllMethods(unittest.TestCase):
     def test_found(self):
         results = mod.check_content(mod.IMPL, mod.REQUIRED_METHODS, "method")
-        for r in results:
-            self.assertTrue(r["pass"], r["check"])
-
-
-class TestAllEvents(unittest.TestCase):
-    def test_found(self):
-        results = mod.check_content(mod.IMPL, mod.EVENT_CODES, "event_code")
-        for r in results:
-            self.assertTrue(r["pass"], r["check"])
-
-
-class TestAllInvariants(unittest.TestCase):
-    def test_found(self):
-        results = mod.check_content(mod.IMPL, mod.INVARIANTS, "invariant")
-        for r in results:
-            self.assertTrue(r["pass"], r["check"])
-
-
-class TestAllMiddleware(unittest.TestCase):
-    def test_found(self):
-        results = mod.check_content(mod.IMPL, mod.MIDDLEWARE_LAYERS, "middleware")
-        for r in results:
-            self.assertTrue(r["pass"], r["check"])
+        for result in results:
+            self.assertTrue(result["pass"], result["check"])
 
 
 class TestAllTests(unittest.TestCase):
     def test_found(self):
         results = mod.check_content(mod.IMPL, mod.REQUIRED_TESTS, "test")
-        for r in results:
-            self.assertTrue(r["pass"], r["check"])
+        for result in results:
+            self.assertTrue(result["pass"], result["check"])
 
 
 if __name__ == "__main__":

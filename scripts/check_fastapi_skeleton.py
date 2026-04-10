@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Verification script for bd-2f5l: fastapi_rust service skeleton.
-
-Usage:
-    python3 scripts/check_fastapi_skeleton.py          # human-readable
-    python3 scripts/check_fastapi_skeleton.py --json   # machine-readable
-"""
+"""Verification script for bd-2f5l: control-plane catalog boundary."""
 
 import json
 import re
@@ -14,120 +9,92 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-IMPL = ROOT / "tests" / "integration" / "fastapi_control_plane_endpoints.rs"
+IMPL = ROOT / "crates" / "franken-node" / "src" / "api" / "service.rs"
+ROUTE_FILES = [
+    ROOT / "crates" / "franken-node" / "src" / "api" / "operator_routes.rs",
+    ROOT / "crates" / "franken-node" / "src" / "api" / "verifier_routes.rs",
+    ROOT / "crates" / "franken-node" / "src" / "api" / "fleet_control_routes.rs",
+]
 REPORT = ROOT / "artifacts" / "10.16" / "fastapi_endpoint_report.json"
 SPEC = ROOT / "docs" / "specs" / "section_10_16" / "bd-2f5l_contract.md"
 
-# -- Constants ---------------------------------------------------------------
-
-ENDPOINT_PATHS = [
-    "/v1/operator/status",
-    "/v1/operator/health",
-    "/v1/operator/config",
-    "/v1/operator/rollout",
-    "/v1/verifier/conformance",
-    "/v1/verifier/evidence",
-    "/v1/verifier/audit-log",
-    "/v1/fleet/lease",
-    "/v1/fleet/fence",
-    "/v1/fleet/coordinate",
+ENDPOINTS = [
+    ("GET", "/v1/operator/status"),
+    ("GET", "/v1/operator/health"),
+    ("GET", "/v1/operator/config"),
+    ("GET", "/v1/operator/rollout"),
+    ("POST", "/v1/verifier/conformance"),
+    ("GET", "/v1/verifier/evidence/{check_id}"),
+    ("GET", "/v1/verifier/audit-log"),
+    ("GET", "/v1/fleet/leases"),
+    ("POST", "/v1/fleet/leases"),
+    ("DELETE", "/v1/fleet/leases/{lease_id}"),
+    ("POST", "/v1/fleet/fence"),
+    ("POST", "/v1/fleet/coordinate"),
 ]
-
-EVENT_CODES = [
-    "FASTAPI_SKELETON_INIT",
-    "FASTAPI_ENDPOINT_REGISTERED",
-    "FASTAPI_MIDDLEWARE_WIRED",
-    "FASTAPI_AUTH_REJECT",
-    "FASTAPI_RATE_LIMIT_HIT",
-    "FASTAPI_ERROR_RESPONSE",
-]
-
-INVARIANTS = [
-    "INV-FAS-ENDPOINTS",
-    "INV-FAS-MIDDLEWARE",
-    "INV-FAS-AUTH",
-    "INV-FAS-ERRORS",
-]
-
-MIDDLEWARE_LAYERS = [
-    "TraceContext",
-    "Authentication",
-    "Authorization",
-    "RateLimit",
-    "ErrorFormatting",
-    "Telemetry",
-]
+ENDPOINT_PATHS = [path for _, path in ENDPOINTS]
 
 REQUIRED_TYPES = [
-    "EndpointLifecycle",
-    "EndpointGroup",
-    "HttpMethod",
-    "AuthMethod",
-    "MiddlewareLayer",
-    "EndpointDef",
-    "ServiceEvent",
-    "FastapiSkeletonGate",
-    "SkeletonSummary",
+    "ServiceConfig",
+    "EndpointCatalogEntry",
+    "MiddlewareCoverage",
+    "TransportBoundaryKind",
+    "TransportBoundaryStatus",
+    "PerformanceBaselineStatus",
+    "PerformanceBaseline",
+    "RequestLifecycleProvenance",
+    "EndpointReport",
+    "ControlPlaneService",
 ]
 
 REQUIRED_METHODS = [
-    "fn all()",
-    "fn label(",
-    "fn is_active(",
-    "fn new()",
-    "fn register_endpoint(",
-    "fn wire_middleware(",
-    "fn gate_pass(",
-    "fn summary(",
-    "fn endpoints(",
-    "fn events(",
-    "fn take_events(",
-    "fn to_report(",
+    "pub fn build_endpoint_catalog()",
+    "pub fn all_route_metadata()",
+    "pub fn check_middleware_coverage()",
+    "pub fn generate_endpoint_report(",
+    "pub fn new(",
+    "pub fn config(",
+    "pub fn metrics(",
+    "pub fn request_count(",
+    "pub fn limiter_for_group(",
+    "pub fn record(",
+    "pub fn request_lifecycle_provenance(",
+    "pub fn request_lifecycle_events(",
+    "pub fn catalog(",
+    "pub fn transport_boundary(",
+    "pub fn report(",
 ]
 
 REQUIRED_TESTS = [
-    "test_lifecycle_all_count",
-    "test_lifecycle_labels",
-    "test_lifecycle_is_active",
-    "test_lifecycle_serde_roundtrip",
-    "test_endpoint_group_all_count",
-    "test_endpoint_group_labels",
-    "test_endpoint_group_serde_roundtrip",
-    "test_middleware_all_count",
-    "test_middleware_labels",
-    "test_canonical_endpoint_count",
-    "test_canonical_operator_count",
-    "test_canonical_verifier_count",
-    "test_canonical_fleet_control_count",
-    "test_canonical_all_stable",
-    "test_canonical_all_traced",
-    "test_canonical_unique_paths",
-    "test_gate_empty_fails",
-    "test_gate_all_wired_passes",
-    "test_gate_missing_middleware_fails",
-    "test_gate_missing_group_fails",
-    "test_register_endpoint_emits_event",
-    "test_wire_middleware_emits_event",
-    "test_init_emits_event",
-    "test_take_events_drains",
-    "test_summary_counts",
-    "test_report_structure",
-    "test_report_pass_verdict",
-    "test_report_fail_verdict_empty",
-    "test_report_endpoints_count",
-    "test_invariant_constants_defined",
-    "test_event_code_constants_defined",
-    "test_determinism_same_input_same_report",
-    "test_endpoint_def_serde_roundtrip",
-    "test_service_event_serde_roundtrip",
-    "test_auth_methods_by_group",
-    "test_fleet_control_uses_fleet_mutate_hook",
-    "test_all_endpoints_have_status_codes",
-    "test_all_versioned_paths",
+    "all_route_metadata_collects_all_groups",
+    "endpoint_catalog_has_all_routes",
+    "middleware_coverage_all_pass",
+    "endpoint_report_generation",
+    "service_default_construction",
+    "service_report_carries_configured_bind_target_hint",
+    "service_record_captures_request_lifecycle_provenance",
+    "request_lifecycle_provenance_explains_transport_state",
+    "fleet_mutations_have_fail_closed_rate_limit",
+    "operator_health_endpoint_unauthenticated",
+    "all_routes_versioned_v1",
 ]
 
+SPEC_MARKERS = [
+    "12 base-catalog endpoints",
+    "in-process control-plane catalog boundary",
+    "unavailable pending transport",
+    "feature/test-only quarantine routes",
+    "transport boundary status",
+    "performance baselines",
+    "request lifecycle provenance",
+]
 
-# -- Helpers -----------------------------------------------------------------
+MIN_IMPL_TESTS = 30
+BASELINE_PROVENANCE = (
+    "No live async HTTP/gRPC transport boundary is owned; load-test baselines "
+    "are intentionally unavailable until that trigger exists."
+)
+
 
 def check_file(path: Path, label: str) -> dict:
     ok = path.exists()
@@ -141,156 +108,392 @@ def check_file(path: Path, label: str) -> dict:
 def check_content(path: Path, needles: list[str], category: str) -> list[dict]:
     results = []
     if not path.exists():
-        for n in needles:
-            results.append({"check": f"{category}: {n}", "pass": False, "detail": "file missing"})
+        for needle in needles:
+            results.append(
+                {"check": f"{category}: {needle}", "pass": False, "detail": "file missing"}
+            )
         return results
-    text = path.read_text()
-    for n in needles:
-        found = n in text
-        results.append({
-            "check": f"{category}: {n}",
-            "pass": found,
-            "detail": "found" if found else "not found",
-        })
+
+    text = path.read_text(encoding="utf-8")
+    for needle in needles:
+        found = needle in text
+        results.append(
+            {
+                "check": f"{category}: {needle}",
+                "pass": found,
+                "detail": "found" if found else "not found",
+            }
+        )
     return results
 
 
 def check_impl_test_count() -> dict:
     if not IMPL.exists():
-        return {"check": "Rust test count >= 35", "pass": False, "detail": "file missing"}
-    text = IMPL.read_text()
+        return {
+            "check": f"Rust test count >= {MIN_IMPL_TESTS}",
+            "pass": False,
+            "detail": "file missing",
+        }
+    text = IMPL.read_text(encoding="utf-8")
     count = len(re.findall(r"#\[test\]", text))
     return {
-        "check": "Rust test count >= 35",
-        "pass": count >= 35,
+        "check": f"Rust test count >= {MIN_IMPL_TESTS}",
+        "pass": count >= MIN_IMPL_TESTS,
         "detail": f"{count} tests found",
     }
+
+
+def check_route_sources() -> list[dict]:
+    results = []
+    texts = []
+    for route_file in ROUTE_FILES:
+        if not route_file.exists():
+            results.append(
+                {
+                    "check": f"Route source exists: {route_file.name}",
+                    "pass": False,
+                    "detail": "file missing",
+                }
+            )
+            continue
+        results.append(
+            {
+                "check": f"Route source exists: {route_file.name}",
+                "pass": True,
+                "detail": str(route_file.relative_to(ROOT)),
+            }
+        )
+        texts.append(route_file.read_text(encoding="utf-8"))
+
+    combined = "\n".join(texts)
+    for path in ENDPOINT_PATHS:
+        found = path in combined
+        results.append(
+            {
+                "check": f"Source route path: {path}",
+                "pass": found,
+                "detail": "found" if found else "missing",
+            }
+        )
+    return results
+
+
+def _endpoint_lookup(endpoints: list[dict], method: str, path: str) -> dict | None:
+    for endpoint in endpoints:
+        if endpoint.get("method") == method and endpoint.get("path") == path:
+            return endpoint
+    return None
 
 
 def check_report() -> list[dict]:
     results = []
     if not REPORT.exists():
-        results.append({"check": "Report exists", "pass": False, "detail": "file missing"})
-        return results
-    data = json.loads(REPORT.read_text())
+        return [{"check": "Report exists", "pass": False, "detail": "file missing"}]
 
-    # gate verdict
-    results.append({
-        "check": "Report: gate verdict PASS",
-        "pass": data.get("gate_verdict") == "PASS",
-        "detail": data.get("gate_verdict", "missing"),
-    })
+    data = json.loads(REPORT.read_text(encoding="utf-8"))
+    endpoints = data.get("endpoints", [])
+    baselines = data.get("performance_baselines", [])
+    middleware = data.get("middleware_coverage", {})
+    transport = data.get("transport_boundary", {})
 
-    # endpoint count
-    eps = data.get("endpoints", [])
-    results.append({
-        "check": "Report: 10 endpoints",
-        "pass": len(eps) == 10,
-        "detail": f"{len(eps)} endpoints",
-    })
+    for key in [
+        "endpoints",
+        "middleware_coverage",
+        "transport_boundary",
+        "performance_baselines",
+        "generated_at",
+    ]:
+        results.append(
+            {
+                "check": f"Report key: {key}",
+                "pass": key in data,
+                "detail": "present" if key in data else "missing",
+            }
+        )
 
-    # all conformance pass
-    all_pass = all(e.get("conformance_status") == "pass" for e in eps)
-    results.append({
-        "check": "Report: all conformance pass",
-        "pass": all_pass,
-        "detail": "all pass" if all_pass else "some fail",
-    })
-
-    # group counts
-    groups = {}
-    for e in eps:
-        g = e.get("group", "unknown")
-        groups[g] = groups.get(g, 0) + 1
-    results.append({
-        "check": "Report: 4 operator endpoints",
-        "pass": groups.get("operator") == 4,
-        "detail": f"{groups.get('operator', 0)} operator",
-    })
-    results.append({
-        "check": "Report: 3 verifier endpoints",
-        "pass": groups.get("verifier") == 3,
-        "detail": f"{groups.get('verifier', 0)} verifier",
-    })
-    results.append({
-        "check": "Report: 3 fleet_control endpoints",
-        "pass": groups.get("fleet_control") == 3,
-        "detail": f"{groups.get('fleet_control', 0)} fleet_control",
-    })
-
-    # all traced
-    all_traced = all(e.get("trace_propagation") is True for e in eps)
-    results.append({
-        "check": "Report: all endpoints traced",
-        "pass": all_traced,
-        "detail": "all traced" if all_traced else "some untraced",
-    })
-
-    # middleware coverage
-    mw = data.get("middleware_coverage", {})
-    all_mw = all(mw.get(k) is True for k in [
-        "trace_context", "authentication", "authorization",
-        "rate_limit", "error_formatting", "telemetry",
-    ])
-    results.append({
-        "check": "Report: all middleware covered",
-        "pass": all_mw,
-        "detail": "all covered" if all_mw else "gaps",
-    })
-
-    # endpoint paths
-    for path in ENDPOINT_PATHS:
-        found = any(e.get("path") == path for e in eps)
-        results.append({
-            "check": f"Report: endpoint {path}",
-            "pass": found,
-            "detail": "found" if found else "missing",
-        })
-
-    # auth by group
-    operator_auth = all(
-        e.get("auth_method") == "api_key"
-        for e in eps if e.get("group") == "operator"
+    results.append(
+        {
+            "check": "Report: 12 base endpoints",
+            "pass": len(endpoints) == 12,
+            "detail": f"{len(endpoints)} endpoints",
+        }
     )
-    results.append({
-        "check": "Report: operator auth = api_key",
-        "pass": operator_auth,
-        "detail": "correct" if operator_auth else "wrong auth",
-    })
-    verifier_auth = all(
-        e.get("auth_method") == "bearer_token"
-        for e in eps if e.get("group") == "verifier"
+    results.append(
+        {
+            "check": "Report: 12 performance baselines",
+            "pass": len(baselines) == 12,
+            "detail": f"{len(baselines)} baselines",
+        }
     )
-    results.append({
-        "check": "Report: verifier auth = bearer_token",
-        "pass": verifier_auth,
-        "detail": "correct" if verifier_auth else "wrong auth",
-    })
-    fleet_auth = all(
-        e.get("auth_method") == "mtls_cert"
-        for e in eps if e.get("group") == "fleet_control"
+
+    groups: dict[str, int] = {}
+    for endpoint in endpoints:
+        group = endpoint.get("group", "unknown")
+        groups[group] = groups.get(group, 0) + 1
+
+    results.append(
+        {
+            "check": "Report: 4 operator endpoints",
+            "pass": groups.get("operator") == 4,
+            "detail": f"{groups.get('operator', 0)} operator",
+        }
     )
-    results.append({
-        "check": "Report: fleet_control auth = mtls_cert",
-        "pass": fleet_auth,
-        "detail": "correct" if fleet_auth else "wrong auth",
-    })
+    results.append(
+        {
+            "check": "Report: 3 verifier endpoints",
+            "pass": groups.get("verifier") == 3,
+            "detail": f"{groups.get('verifier', 0)} verifier",
+        }
+    )
+    results.append(
+        {
+            "check": "Report: 5 fleet_control endpoints",
+            "pass": groups.get("fleet_control") == 5,
+            "detail": f"{groups.get('fleet_control', 0)} fleet_control",
+        }
+    )
 
-    # all versioned
-    all_versioned = all(e.get("path", "").startswith("/v1/") for e in eps)
-    results.append({
-        "check": "Report: all paths versioned /v1/",
-        "pass": all_versioned,
-        "detail": "all versioned" if all_versioned else "some unversioned",
-    })
+    results.append(
+        {
+            "check": "Report: all conformance pass",
+            "pass": all(endpoint.get("conformance_status") == "pass" for endpoint in endpoints),
+            "detail": "all pass"
+            if all(endpoint.get("conformance_status") == "pass" for endpoint in endpoints)
+            else "some fail",
+        }
+    )
+    results.append(
+        {
+            "check": "Report: all endpoints traced",
+            "pass": all(endpoint.get("trace_propagation") is True for endpoint in endpoints),
+            "detail": "all traced"
+            if all(endpoint.get("trace_propagation") is True for endpoint in endpoints)
+            else "some untraced",
+        }
+    )
+    results.append(
+        {
+            "check": "Report: all paths versioned /v1/",
+            "pass": all(endpoint.get("path", "").startswith("/v1/") for endpoint in endpoints),
+            "detail": "all versioned"
+            if all(endpoint.get("path", "").startswith("/v1/") for endpoint in endpoints)
+            else "some unversioned",
+        }
+    )
+    results.append(
+        {
+            "check": "Report: all endpoints have status codes",
+            "pass": all(len(endpoint.get("status_codes", [])) > 0 for endpoint in endpoints),
+            "detail": "all have codes"
+            if all(len(endpoint.get("status_codes", [])) > 0 for endpoint in endpoints)
+            else "some empty",
+        }
+    )
 
-    # all have status codes
-    all_codes = all(len(e.get("status_codes", [])) > 0 for e in eps)
-    results.append({
-        "check": "Report: all endpoints have status codes",
-        "pass": all_codes,
-        "detail": "all have codes" if all_codes else "some empty",
-    })
+    for method, path in ENDPOINTS:
+        found = _endpoint_lookup(endpoints, method, path) is not None
+        results.append(
+            {
+                "check": f"Report: endpoint {method} {path}",
+                "pass": found,
+                "detail": "found" if found else "missing",
+            }
+        )
+
+    results.append(
+        {
+            "check": "Report: transport boundary kind in_process_catalog",
+            "pass": transport.get("kind") == "in_process_catalog",
+            "detail": transport.get("kind", "missing"),
+        }
+    )
+    results.append(
+        {
+            "check": "Report: transport boundary owns_listener false",
+            "pass": transport.get("owns_listener") is False,
+            "detail": str(transport.get("owns_listener")),
+        }
+    )
+    results.append(
+        {
+            "check": "Report: transport boundary bind target hint",
+            "pass": transport.get("bind_target_hint") == "127.0.0.1:9090",
+            "detail": transport.get("bind_target_hint", "missing"),
+        }
+    )
+    results.append(
+        {
+            "check": "Report: request lifecycle caller-owned",
+            "pass": transport.get("request_lifecycle")
+            == "caller-owned in-process dispatch only",
+            "detail": transport.get("request_lifecycle", "missing"),
+        }
+    )
+    results.append(
+        {
+            "check": "Report: cancellation semantics non-transport-owned",
+            "pass": transport.get("cancellation_semantics")
+            == "no transport-owned cancellation boundary",
+            "detail": transport.get("cancellation_semantics", "missing"),
+        }
+    )
+
+    for key in [
+        "auth_coverage",
+        "policy_hook_coverage",
+        "error_formatting_coverage",
+        "tracing_coverage",
+        "rate_limiting_coverage",
+    ]:
+        results.append(
+            {
+                "check": f"Report: middleware {key}",
+                "pass": middleware.get(key) is True,
+                "detail": str(middleware.get(key)),
+            }
+        )
+
+    results.append(
+        {
+            "check": "Report: baselines explicitly unavailable pending transport",
+            "pass": all(
+                baseline.get("status") == "unavailable_pending_transport"
+                for baseline in baselines
+            ),
+            "detail": "all unavailable"
+            if all(
+                baseline.get("status") == "unavailable_pending_transport"
+                for baseline in baselines
+            )
+            else "status drift",
+        }
+    )
+    results.append(
+        {
+            "check": "Report: baselines omit fake numeric latencies",
+            "pass": all(
+                baseline.get("p50_ms") is None
+                and baseline.get("p95_ms") is None
+                and baseline.get("p99_ms") is None
+                for baseline in baselines
+            ),
+            "detail": "all null" if all(
+                baseline.get("p50_ms") is None
+                and baseline.get("p95_ms") is None
+                and baseline.get("p99_ms") is None
+                for baseline in baselines
+            ) else "numeric drift",
+        }
+    )
+    results.append(
+        {
+            "check": "Report: baselines carry truthful provenance",
+            "pass": all(baseline.get("provenance") == BASELINE_PROVENANCE for baseline in baselines),
+            "detail": "all match" if all(
+                baseline.get("provenance") == BASELINE_PROVENANCE for baseline in baselines
+            ) else "provenance drift",
+        }
+    )
+
+    operator_health = _endpoint_lookup(endpoints, "GET", "/v1/operator/health")
+    results.append(
+        {
+            "check": "Report: operator health is unauthenticated",
+            "pass": operator_health is not None and operator_health.get("auth_method") == "None",
+            "detail": operator_health.get("auth_method", "missing")
+            if operator_health
+            else "missing endpoint",
+        }
+    )
+
+    operator_api_key_paths = [
+        "/v1/operator/status",
+        "/v1/operator/config",
+        "/v1/operator/rollout",
+    ]
+    results.append(
+        {
+            "check": "Report: operator read endpoints use ApiKey",
+            "pass": all(
+                (_endpoint_lookup(endpoints, "GET", path) or {}).get("auth_method") == "ApiKey"
+                for path in operator_api_key_paths
+            ),
+            "detail": "all ApiKey"
+            if all(
+                (_endpoint_lookup(endpoints, "GET", path) or {}).get("auth_method") == "ApiKey"
+                for path in operator_api_key_paths
+            )
+            else "auth drift",
+        }
+    )
+
+    verifier_paths = [
+        ("POST", "/v1/verifier/conformance"),
+        ("GET", "/v1/verifier/evidence/{check_id}"),
+        ("GET", "/v1/verifier/audit-log"),
+    ]
+    results.append(
+        {
+            "check": "Report: verifier endpoints use BearerToken",
+            "pass": all(
+                (_endpoint_lookup(endpoints, method, path) or {}).get("auth_method")
+                == "BearerToken"
+                for method, path in verifier_paths
+            ),
+            "detail": "all BearerToken"
+            if all(
+                (_endpoint_lookup(endpoints, method, path) or {}).get("auth_method")
+                == "BearerToken"
+                for method, path in verifier_paths
+            )
+            else "auth drift",
+        }
+    )
+
+    bearer_fleet_paths = [
+        ("GET", "/v1/fleet/leases"),
+        ("POST", "/v1/fleet/leases"),
+        ("DELETE", "/v1/fleet/leases/{lease_id}"),
+    ]
+    results.append(
+        {
+            "check": "Report: lease endpoints use BearerToken",
+            "pass": all(
+                (_endpoint_lookup(endpoints, method, path) or {}).get("auth_method")
+                == "BearerToken"
+                for method, path in bearer_fleet_paths
+            ),
+            "detail": "all BearerToken"
+            if all(
+                (_endpoint_lookup(endpoints, method, path) or {}).get("auth_method")
+                == "BearerToken"
+                for method, path in bearer_fleet_paths
+            )
+            else "auth drift",
+        }
+    )
+
+    mtls_fleet_paths = [
+        ("POST", "/v1/fleet/fence"),
+        ("POST", "/v1/fleet/coordinate"),
+    ]
+    results.append(
+        {
+            "check": "Report: fence and coordinate use MtlsClientCert",
+            "pass": all(
+                (_endpoint_lookup(endpoints, method, path) or {}).get("auth_method")
+                == "MtlsClientCert"
+                for method, path in mtls_fleet_paths
+            ),
+            "detail": "all MtlsClientCert"
+            if all(
+                (_endpoint_lookup(endpoints, method, path) or {}).get("auth_method")
+                == "MtlsClientCert"
+                for method, path in mtls_fleet_paths
+            )
+            else "auth drift",
+        }
+    )
 
     return results
 
@@ -298,65 +501,60 @@ def check_report() -> list[dict]:
 def check_spec() -> list[dict]:
     results = []
     if not SPEC.exists():
-        results.append({"check": "Spec doc exists", "pass": False, "detail": "file missing"})
-        return results
-    text = SPEC.read_text()
-    for section in ["Types", "Methods", "Event Codes", "Invariants", "Acceptance Criteria"]:
-        found = f"## {section}" in text
-        results.append({
-            "check": f"Spec: has {section}",
-            "pass": found,
-            "detail": "found" if found else "missing",
-        })
+        return [{"check": "Spec doc exists", "pass": False, "detail": "file missing"}]
+
+    text = SPEC.read_text(encoding="utf-8")
+    for section in [
+        "Purpose",
+        "Scope",
+        "Types",
+        "Methods",
+        "Report Contract",
+        "Acceptance Criteria",
+    ]:
+        results.append(
+            {
+                "check": f"Spec: has {section}",
+                "pass": f"## {section}" in text,
+                "detail": "found" if f"## {section}" in text else "missing",
+            }
+        )
+
+    for marker in SPEC_MARKERS:
+        results.append(
+            {
+                "check": f"Spec marker: {marker}",
+                "pass": marker in text,
+                "detail": "found" if marker in text else "missing",
+            }
+        )
+
     return results
 
-
-# -- Main --------------------------------------------------------------------
 
 def run_checks() -> dict:
     checks = []
 
-    # File existence
-    checks.append(check_file(IMPL, "integration tests"))
+    checks.append(check_file(IMPL, "control-plane service implementation"))
+    for route_file in ROUTE_FILES:
+        checks.append(check_file(route_file, route_file.name))
     checks.append(check_file(REPORT, "endpoint report"))
     checks.append(check_file(SPEC, "spec doc"))
 
-    # Rust test count
     checks.append(check_impl_test_count())
-
-    # Serde derives
-    checks.extend(check_content(IMPL, ["Serialize", "Deserialize"], "serde"))
-
-    # Types
     checks.extend(check_content(IMPL, REQUIRED_TYPES, "type"))
-
-    # Methods
     checks.extend(check_content(IMPL, REQUIRED_METHODS, "method"))
-
-    # Event codes
-    checks.extend(check_content(IMPL, EVENT_CODES, "event_code"))
-
-    # Invariants
-    checks.extend(check_content(IMPL, INVARIANTS, "invariant"))
-
-    # Middleware layers
-    checks.extend(check_content(IMPL, MIDDLEWARE_LAYERS, "middleware"))
-
-    # Test names
     checks.extend(check_content(IMPL, REQUIRED_TESTS, "test"))
-
-    # Report
+    checks.extend(check_route_sources())
     checks.extend(check_report())
-
-    # Spec
     checks.extend(check_spec())
 
-    passing = sum(1 for c in checks if c["pass"])
-    failing = sum(1 for c in checks if not c["pass"])
+    passing = sum(1 for check in checks if check["pass"])
+    failing = sum(1 for check in checks if not check["pass"])
 
     return {
         "bead_id": "bd-2f5l",
-        "title": "fastapi_rust service skeleton",
+        "title": "control-plane catalog boundary",
         "section": "10.16",
         "overall_pass": failing == 0,
         "verdict": "PASS" if failing == 0 else "FAIL",
@@ -369,7 +567,7 @@ def self_test() -> tuple[bool, str]:
     result = run_checks()
     if result["overall_pass"]:
         return True, f"All {result['summary']['total']} checks pass"
-    fails = [c["check"] for c in result["checks"] if not c["pass"]]
+    fails = [check["check"] for check in result["checks"] if not check["pass"]]
     return False, f"{len(fails)} failing: {'; '.join(fails[:5])}"
 
 
@@ -378,11 +576,11 @@ if __name__ == "__main__":
     if "--json" in sys.argv:
         print(json.dumps(result, indent=2))
     else:
-        for c in result["checks"]:
-            mark = "PASS" if c["pass"] else "FAIL"
-            print(f"  [{mark}] {c['check']}: {c['detail']}")
+        for check in result["checks"]:
+            mark = "PASS" if check["pass"] else "FAIL"
+            print(f"  [{mark}] {check['check']}: {check['detail']}")
         print()
-        s = result["summary"]
-        print(f"Result: {result['verdict']} ({s['passing']}/{s['total']} checks pass)")
+        summary = result["summary"]
+        print(f"Result: {result['verdict']} ({summary['passing']}/{summary['total']} checks pass)")
 
     sys.exit(0 if result["overall_pass"] else 1)
