@@ -19,6 +19,9 @@ pub const FLEET_ACTION_LOG_FILE: &str = "actions.jsonl";
 pub const FLEET_NODE_DIR: &str = "nodes";
 pub const FLEET_LOCK_DIR: &str = "locks";
 const MAX_NODE_ID_LEN: usize = 128;
+const MAX_ACTION_RECORD_BYTES: usize = 2_048;
+const ACTION_LOG_COMPACTION_THRESHOLD_BYTES: u64 = 10 * 1024 * 1024;
+const ACTION_LOG_RETENTION_DAYS: i64 = 30;
 const LOCK_RETRY_BACKOFF_MILLIS: [u64; 3] = [100, 200, 400];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,6 +45,7 @@ pub enum NodeHealth {
 pub enum FleetAction {
     Quarantine {
         zone_id: String,
+        incident_id: String,
         target_id: String,
         target_kind: FleetTargetKind,
         reason: String,
@@ -68,6 +72,7 @@ pub struct FleetActionRecord {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeStatus {
+    pub zone_id: String,
     pub node_id: String,
     pub last_seen: DateTime<Utc>,
     pub quarantine_version: u64,
@@ -231,7 +236,11 @@ pub trait FleetTransport {
         });
 
         let mut nodes = self.list_node_statuses()?;
-        nodes.sort_by(|left, right| left.node_id.cmp(&right.node_id));
+        nodes.sort_by(|left, right| {
+            left.zone_id
+                .cmp(&right.zone_id)
+                .then_with(|| left.node_id.cmp(&right.node_id))
+        });
 
         Ok(FleetSharedState {
             schema_version: FLEET_SHARED_STATE_SCHEMA.to_string(),
@@ -244,6 +253,26 @@ pub trait FleetTransport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileFleetTransport {
     layout: FleetTransportLayout,
+}
+
+struct TempFileGuard(Option<PathBuf>);
+
+impl TempFileGuard {
+    fn new(path: PathBuf) -> Self {
+        Self(Some(path))
+    }
+
+    fn defuse(&mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if let Some(path) = &self.0 {
+            let _ = fs::remove_file(path);
+        }
+    }
 }
 
 impl FileFleetTransport {
@@ -289,6 +318,97 @@ impl FileFleetTransport {
         Ok(())
     }
 
+    fn compact_action_log_if_needed(
+        &self,
+        max_file_size_bytes: u64,
+        retention_days: i64,
+        now: DateTime<Utc>,
+    ) -> Result<(), FleetTransportError> {
+        if retention_days <= 0 {
+            return Err(FleetTransportError::serialization(
+                "retention_days must be greater than zero",
+            ));
+        }
+
+        let metadata = fs::metadata(self.layout.actions_path()).map_err(|err| {
+            FleetTransportError::io(format!(
+                "failed reading fleet action log metadata {}: {err}",
+                self.layout.actions_path().display()
+            ))
+        })?;
+        if metadata.len() <= max_file_size_bytes {
+            return Ok(());
+        }
+
+        let file = self.action_log_file(true)?;
+        lock_file_with_backoff(&file, self.layout.actions_path(), false)?;
+        let compaction_result = (|| {
+            let retention_window = chrono::TimeDelta::days(retention_days);
+            let retained_actions =
+                parse_jsonl_records::<FleetActionRecord>(&file, self.layout.actions_path())?
+                    .into_iter()
+                    .filter(|record| {
+                        now.signed_duration_since(record.emitted_at) <= retention_window
+                    })
+                    .collect::<Vec<_>>();
+
+            let temp_path = self.layout.actions_path().with_extension("jsonl.tmp");
+            let mut temp_guard = TempFileGuard::new(temp_path.clone());
+            let mut temp_file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&temp_path)
+                .map_err(|err| {
+                    FleetTransportError::io(format!(
+                        "failed opening compacted fleet action log {}: {err}",
+                        temp_path.display()
+                    ))
+                })?;
+
+            for record in retained_actions {
+                let payload = serde_json::to_vec(&record).map_err(|err| {
+                    FleetTransportError::serialization(format!(
+                        "failed serializing compacted fleet action {}: {err}",
+                        record.action_id
+                    ))
+                })?;
+                temp_file.write_all(&payload).map_err(|err| {
+                    FleetTransportError::io(format!(
+                        "failed writing compacted fleet action log {}: {err}",
+                        temp_path.display()
+                    ))
+                })?;
+                temp_file.write_all(b"\n").map_err(|err| {
+                    FleetTransportError::io(format!(
+                        "failed writing compacted fleet action delimiter {}: {err}",
+                        temp_path.display()
+                    ))
+                })?;
+            }
+            temp_file.sync_data().map_err(|err| {
+                FleetTransportError::io(format!(
+                    "failed syncing compacted fleet action log {}: {err}",
+                    temp_path.display()
+                ))
+            })?;
+            fs::rename(&temp_path, self.layout.actions_path()).map_err(|err| {
+                FleetTransportError::io(format!(
+                    "failed promoting compacted fleet action log {} to {}: {err}",
+                    temp_path.display(),
+                    self.layout.actions_path().display()
+                ))
+            })?;
+            temp_guard.defuse();
+            Ok(())
+        })();
+
+        let unlock_result = unlock_file(&file, self.layout.actions_path());
+        compaction_result?;
+        unlock_result?;
+        Ok(())
+    }
+
     fn action_log_file(&self, write: bool) -> Result<File, FleetTransportError> {
         let mut options = OpenOptions::new();
         options.read(true);
@@ -326,8 +446,14 @@ impl FileFleetTransport {
     fn read_action_log(&self) -> Result<Vec<FleetActionRecord>, FleetTransportError> {
         let file = self.action_log_file(false)?;
         lock_file_with_backoff(&file, self.layout.actions_path(), true)?;
-        let read_result =
-            parse_jsonl_records::<FleetActionRecord>(&file, self.layout.actions_path());
+        let read_result = (|| {
+            let actions =
+                parse_jsonl_records::<FleetActionRecord>(&file, self.layout.actions_path())?;
+            for action in &actions {
+                validate_action_record(action)?;
+            }
+            Ok(actions)
+        })();
         let unlock_result = unlock_file(&file, self.layout.actions_path());
         let actions = read_result?;
         unlock_result?;
@@ -390,11 +516,17 @@ impl FileFleetTransport {
 
 impl FleetTransport for FileFleetTransport {
     fn initialize(&mut self) -> Result<(), FleetTransportError> {
-        self.layout.initialize()
+        self.layout.initialize()?;
+        self.compact_action_log_if_needed(
+            ACTION_LOG_COMPACTION_THRESHOLD_BYTES,
+            ACTION_LOG_RETENTION_DAYS,
+            Utc::now(),
+        )
     }
 
     fn publish_action(&mut self, action: &FleetActionRecord) -> Result<(), FleetTransportError> {
         self.ensure_initialized()?;
+        validate_action_record(action)?;
         let file = self.action_log_file(true)?;
         lock_file_with_backoff(&file, self.layout.actions_path(), false)?;
 
@@ -405,6 +537,12 @@ impl FleetTransport for FileFleetTransport {
                     action.action_id
                 ))
             })?;
+            if payload.len() > MAX_ACTION_RECORD_BYTES {
+                return Err(FleetTransportError::serialization(format!(
+                    "serialized fleet action {} exceeds {} bytes",
+                    action.action_id, MAX_ACTION_RECORD_BYTES
+                )));
+            }
 
             let mut handle = &file;
             handle.write_all(&payload).map_err(|err| {
@@ -441,6 +579,7 @@ impl FleetTransport for FileFleetTransport {
 
     fn upsert_node_status(&mut self, status: &NodeStatus) -> Result<(), FleetTransportError> {
         self.ensure_initialized()?;
+        validate_zone_id(&status.zone_id)?;
         validate_node_id(&status.node_id)?;
         self.write_node_status(status)
     }
@@ -478,12 +617,23 @@ impl FleetTransport for FileFleetTransport {
                     path.display()
                 ))
             })?;
+            validate_zone_id(&status.zone_id)?;
             validate_node_id(&status.node_id)?;
             nodes.push(status);
         }
 
         Ok(nodes)
     }
+}
+
+pub fn validate_zone_id(zone_id: &str) -> Result<&str, FleetTransportError> {
+    let zone_id = zone_id.trim();
+    if zone_id.is_empty() {
+        return Err(FleetTransportError::serialization(
+            "zone_id must not be empty",
+        ));
+    }
+    Ok(zone_id)
 }
 
 pub fn validate_node_id(node_id: &str) -> Result<&str, FleetTransportError> {
@@ -503,6 +653,67 @@ pub fn validate_node_id(node_id: &str) -> Result<&str, FleetTransportError> {
     Err(FleetTransportError::serialization(
         "node_id must match [a-zA-Z0-9._-]{1,128}",
     ))
+}
+
+fn validate_action_record(action: &FleetActionRecord) -> Result<(), FleetTransportError> {
+    if action.action_id.trim().is_empty() {
+        return Err(FleetTransportError::serialization(
+            "fleet action action_id must not be empty",
+        ));
+    }
+
+    match &action.action {
+        FleetAction::Quarantine {
+            zone_id,
+            incident_id,
+            target_id,
+            reason,
+            ..
+        } => {
+            validate_zone_id(zone_id)?;
+            if incident_id.trim().is_empty() {
+                return Err(FleetTransportError::serialization(
+                    "quarantine incident_id must not be empty",
+                ));
+            }
+            if target_id.trim().is_empty() {
+                return Err(FleetTransportError::serialization(
+                    "quarantine target_id must not be empty",
+                ));
+            }
+            if reason.trim().is_empty() {
+                return Err(FleetTransportError::serialization(
+                    "quarantine reason must not be empty",
+                ));
+            }
+        }
+        FleetAction::Release {
+            zone_id,
+            incident_id,
+            ..
+        } => {
+            validate_zone_id(zone_id)?;
+            if incident_id.trim().is_empty() {
+                return Err(FleetTransportError::serialization(
+                    "release incident_id must not be empty",
+                ));
+            }
+        }
+        FleetAction::PolicyUpdate {
+            zone_id,
+            policy_version,
+            ..
+        } => {
+            validate_zone_id(zone_id)?;
+            if policy_version.trim().is_empty() {
+                return Err(FleetTransportError::serialization(
+                    "policy_version must not be empty",
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn lock_retry_backoffs() -> [Duration; LOCK_RETRY_BACKOFF_MILLIS.len()] {
@@ -651,8 +862,10 @@ mod tests {
 
         fn upsert_node_status(&mut self, status: &NodeStatus) -> Result<(), FleetTransportError> {
             self.ensure_initialized()?;
+            let zone_id = validate_zone_id(&status.zone_id)?.to_string();
             let node_id = validate_node_id(&status.node_id)?.to_string();
             let status = NodeStatus {
+                zone_id,
                 node_id,
                 last_seen: status.last_seen,
                 quarantine_version: status.quarantine_version,
@@ -698,12 +911,14 @@ mod tests {
     }
 
     fn node_status(
+        zone_id: impl Into<String>,
         node_id: impl Into<String>,
         last_seen: &str,
         quarantine_version: u64,
         health: NodeHealth,
     ) -> NodeStatus {
         NodeStatus {
+            zone_id: zone_id.into(),
             node_id: node_id.into(),
             last_seen: DateTime::parse_from_rfc3339(last_seen)
                 .expect("timestamp")
@@ -752,6 +967,12 @@ mod tests {
     }
 
     #[test]
+    fn validate_zone_id_rejects_blank_values() {
+        assert!(validate_zone_id("").is_err());
+        assert!(validate_zone_id("   ").is_err());
+    }
+
+    #[test]
     fn fleet_action_roundtrip_preserves_policy_update_variant() {
         let record = FleetActionRecord {
             action_id: "fleet-action-0001".to_string(),
@@ -781,6 +1002,7 @@ mod tests {
                     .with_timezone(&Utc),
                 action: FleetAction::Quarantine {
                     zone_id: "prod-us-east".to_string(),
+                    incident_id: "inc-0002".to_string(),
                     target_id: "sha256:abc123".to_string(),
                     target_kind: FleetTargetKind::Artifact,
                     reason: "high-risk quarantine".to_string(),
@@ -788,6 +1010,7 @@ mod tests {
                 },
             }],
             nodes: vec![NodeStatus {
+                zone_id: "prod-us-east".to_string(),
                 node_id: "node-alpha".to_string(),
                 last_seen: DateTime::parse_from_rfc3339("2026-04-06T01:02:04Z")
                     .expect("timestamp")
@@ -863,6 +1086,7 @@ mod tests {
 
         transport
             .upsert_node_status(&NodeStatus {
+                zone_id: "prod".to_string(),
                 node_id: "node-z".to_string(),
                 last_seen: DateTime::parse_from_rfc3339("2026-04-06T01:02:04Z")
                     .expect("timestamp")
@@ -873,6 +1097,7 @@ mod tests {
             .expect("upsert node");
         transport
             .upsert_node_status(&NodeStatus {
+                zone_id: "prod".to_string(),
                 node_id: "node-a".to_string(),
                 last_seen: DateTime::parse_from_rfc3339("2026-04-06T01:02:05Z")
                     .expect("timestamp")
@@ -934,6 +1159,7 @@ mod tests {
             .expect("publish action");
         transport
             .upsert_node_status(&node_status(
+                "prod",
                 "node-alpha",
                 "2026-04-06T02:00:01Z",
                 10,
@@ -942,6 +1168,7 @@ mod tests {
             .expect("write node");
         transport
             .upsert_node_status(&node_status(
+                "prod",
                 "node-alpha",
                 "2026-04-06T02:00:02Z",
                 11,
@@ -1021,6 +1248,7 @@ mod tests {
 
         transport
             .upsert_node_status(&node_status(
+                "prod",
                 "node-fresh",
                 "2026-04-06T03:09:30Z",
                 3,
@@ -1029,6 +1257,7 @@ mod tests {
             .expect("write fresh node");
         transport
             .upsert_node_status(&node_status(
+                "prod",
                 "node-stale",
                 "2026-04-06T03:00:00Z",
                 3,
@@ -1091,5 +1320,72 @@ mod tests {
             "expected retry backoff budget to elapse, got {:?}",
             started.elapsed()
         );
+    }
+
+    #[test]
+    fn file_transport_rejects_oversized_action_records() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+
+        let error = transport
+            .publish_action(&FleetActionRecord {
+                action_id: "fleet-action-oversized".to_string(),
+                emitted_at: DateTime::parse_from_rfc3339("2026-04-06T04:00:00Z")
+                    .expect("timestamp")
+                    .with_timezone(&Utc),
+                action: FleetAction::Quarantine {
+                    zone_id: "prod".to_string(),
+                    incident_id: "inc-oversized".to_string(),
+                    target_id: "sha256:oversized".to_string(),
+                    target_kind: FleetTargetKind::Artifact,
+                    reason: "x".repeat(MAX_ACTION_RECORD_BYTES),
+                    quarantine_version: 7,
+                },
+            })
+            .expect_err("oversized action should be rejected");
+
+        assert!(matches!(
+            error,
+            FleetTransportError::SerializationError { .. }
+        ));
+    }
+
+    #[test]
+    fn file_transport_compacts_large_logs_by_retention_window() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+
+        transport
+            .publish_action(&release_action_record(
+                "fleet-action-old",
+                "2026-02-01T00:00:00Z",
+                "inc-old",
+            ))
+            .expect("publish old action");
+        transport
+            .publish_action(&release_action_record(
+                "fleet-action-new",
+                "2026-04-05T00:00:00Z",
+                "inc-new",
+            ))
+            .expect("publish new action");
+
+        transport
+            .compact_action_log_if_needed(
+                1,
+                ACTION_LOG_RETENTION_DAYS,
+                DateTime::parse_from_rfc3339("2026-04-06T00:00:00Z")
+                    .expect("timestamp")
+                    .with_timezone(&Utc),
+            )
+            .expect("compact action log");
+
+        let actions = transport.list_actions().expect("list actions");
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].action_id, "fleet-action-new");
     }
 }

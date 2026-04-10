@@ -561,6 +561,10 @@ pub struct FleetStatusArgs {
     /// Show verbose details.
     #[arg(long)]
     pub verbose: bool,
+
+    /// Emit JSON instead of human-readable output.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -568,10 +572,18 @@ pub struct FleetReleaseArgs {
     /// Incident ID to release.
     #[arg(long)]
     pub incident: String,
+
+    /// Emit JSON instead of human-readable output.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Parser)]
-pub struct FleetReconcileArgs {}
+pub struct FleetReconcileArgs {
+    /// Emit JSON instead of human-readable output.
+    #[arg(long)]
+    pub json: bool,
+}
 
 // -- incident --
 

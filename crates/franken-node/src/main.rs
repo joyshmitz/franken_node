@@ -44,8 +44,8 @@ mod policy {
 
 use crate::api::{
     fleet_quarantine::{
-        FleetActionResult, FleetStatus, ReleaseRequest, handle_reconcile as handle_fleet_reconcile,
-        handle_release as handle_fleet_release, handle_status as handle_fleet_status,
+        ConvergencePhase, ConvergenceState, DecisionReceipt, FLEET_RECONCILE_COMPLETED,
+        FLEET_RELEASED, FleetActionResult, FleetStatus,
     },
     middleware::{AuthIdentity, AuthMethod, TraceContext},
     trust_card_routes::{
@@ -72,7 +72,14 @@ use crate::policy::{
 use anyhow::{Context, Result};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use chrono::{DateTime, Utc};
 use clap::Parser;
+use frankenengine_node::control_plane::fleet_transport::{
+    FileFleetTransport, FleetAction as PersistedFleetAction,
+    FleetActionRecord as PersistedFleetActionRecord, FleetSharedState,
+    FleetTargetKind as PersistedFleetTargetKind, FleetTransport as PersistedFleetTransport,
+    NodeHealth as PersistedNodeHealth, NodeStatus as PersistedNodeStatus,
+};
 #[cfg(test)]
 use frankenengine_node::tools::replay_bundle::{fixture_incident_events, generate_replay_bundle};
 use frankenengine_node::{
@@ -125,6 +132,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::time::{Duration, Instant};
+use uuid::Uuid;
 
 mod migration;
 
@@ -192,6 +200,8 @@ struct VerifyContractOutput {
     status: String,
     exit_code: i32,
     reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    details: Option<serde_json::Value>,
 }
 
 struct Ed25519SigningMaterial {
@@ -2983,6 +2993,140 @@ mod fleet_command_tests {
         assert!(rendered.contains("success=true"));
         assert!(rendered.contains("event_code=FLEET-005"));
         assert!(rendered.contains("convergence=4/5 (80%)"));
+    }
+
+    #[test]
+    fn derive_active_fleet_incidents_excludes_released_incidents() {
+        let state = FleetSharedState {
+            schema_version: control_plane::fleet_transport::FLEET_SHARED_STATE_SCHEMA.to_string(),
+            actions: vec![
+                PersistedFleetActionRecord {
+                    action_id: "fleet-op-q1".to_string(),
+                    emitted_at: DateTime::parse_from_rfc3339("2026-04-06T01:00:00Z")
+                        .expect("timestamp")
+                        .with_timezone(&Utc),
+                    action: PersistedFleetAction::Quarantine {
+                        zone_id: "prod".to_string(),
+                        incident_id: "inc-q1".to_string(),
+                        target_id: "sha256:q1".to_string(),
+                        target_kind: PersistedFleetTargetKind::Artifact,
+                        reason: "quarantine-1".to_string(),
+                        quarantine_version: 3,
+                    },
+                },
+                PersistedFleetActionRecord {
+                    action_id: "fleet-op-q2".to_string(),
+                    emitted_at: DateTime::parse_from_rfc3339("2026-04-06T01:05:00Z")
+                        .expect("timestamp")
+                        .with_timezone(&Utc),
+                    action: PersistedFleetAction::Quarantine {
+                        zone_id: "prod".to_string(),
+                        incident_id: "inc-q2".to_string(),
+                        target_id: "sha256:q2".to_string(),
+                        target_kind: PersistedFleetTargetKind::Artifact,
+                        reason: "quarantine-2".to_string(),
+                        quarantine_version: 4,
+                    },
+                },
+                PersistedFleetActionRecord {
+                    action_id: "fleet-op-release".to_string(),
+                    emitted_at: DateTime::parse_from_rfc3339("2026-04-06T01:06:00Z")
+                        .expect("timestamp")
+                        .with_timezone(&Utc),
+                    action: PersistedFleetAction::Release {
+                        zone_id: "prod".to_string(),
+                        incident_id: "inc-q1".to_string(),
+                        reason: Some("resolved".to_string()),
+                    },
+                },
+            ],
+            nodes: vec![PersistedNodeStatus {
+                zone_id: "prod".to_string(),
+                node_id: "node-1".to_string(),
+                last_seen: DateTime::parse_from_rfc3339("2026-04-06T01:06:30Z")
+                    .expect("timestamp")
+                    .with_timezone(&Utc),
+                quarantine_version: 4,
+                health: PersistedNodeHealth::Healthy,
+            }],
+        };
+
+        let incidents = derive_active_fleet_incidents(&state, &[]);
+        assert_eq!(incidents.len(), 1);
+        assert_eq!(incidents[0].incident_id, "inc-q2");
+        assert_eq!(incidents[0].convergence.progress_pct, 100);
+    }
+
+    #[test]
+    fn fleet_status_from_loaded_state_uses_real_shared_state_counts() {
+        let loaded = LoadedFleetState {
+            state_dir: PathBuf::from("/tmp/fleet"),
+            convergence_timeout_seconds: 120,
+            state: FleetSharedState {
+                schema_version: control_plane::fleet_transport::FLEET_SHARED_STATE_SCHEMA
+                    .to_string(),
+                actions: Vec::new(),
+                nodes: vec![
+                    PersistedNodeStatus {
+                        zone_id: "prod".to_string(),
+                        node_id: "node-1".to_string(),
+                        last_seen: DateTime::parse_from_rfc3339("2026-04-06T01:06:30Z")
+                            .expect("timestamp")
+                            .with_timezone(&Utc),
+                        quarantine_version: 4,
+                        health: PersistedNodeHealth::Healthy,
+                    },
+                    PersistedNodeStatus {
+                        zone_id: "prod".to_string(),
+                        node_id: "node-2".to_string(),
+                        last_seen: DateTime::parse_from_rfc3339("2026-04-06T01:00:00Z")
+                            .expect("timestamp")
+                            .with_timezone(&Utc),
+                        quarantine_version: 1,
+                        health: PersistedNodeHealth::Degraded,
+                    },
+                ],
+            },
+            stale_nodes: vec![PersistedNodeStatus {
+                zone_id: "prod".to_string(),
+                node_id: "node-2".to_string(),
+                last_seen: DateTime::parse_from_rfc3339("2026-04-06T01:00:00Z")
+                    .expect("timestamp")
+                    .with_timezone(&Utc),
+                quarantine_version: 1,
+                health: PersistedNodeHealth::Degraded,
+            }],
+            active_incidents: vec![FleetCliPendingIncident {
+                incident_id: "inc-q2".to_string(),
+                zone_id: "prod".to_string(),
+                target_id: "sha256:q2".to_string(),
+                target_kind: PersistedFleetTargetKind::Artifact,
+                reason: "quarantine-2".to_string(),
+                quarantine_version: 4,
+                emitted_at: DateTime::parse_from_rfc3339("2026-04-06T01:05:00Z")
+                    .expect("timestamp")
+                    .with_timezone(&Utc),
+                convergence: ConvergenceState {
+                    converged_nodes: 1,
+                    total_nodes: 2,
+                    progress_pct: 50,
+                    eta_seconds: None,
+                    phase: ConvergencePhase::TimedOut,
+                },
+            }],
+        };
+
+        let status = fleet_status_from_loaded_state(&loaded, "prod");
+        assert!(status.activated);
+        assert_eq!(status.active_quarantines, 1);
+        assert_eq!(status.healthy_nodes, 1);
+        assert_eq!(status.total_nodes, 2);
+        assert_eq!(status.pending_convergences.len(), 1);
+        assert_eq!(status.pending_convergences[0].progress_pct, 50);
+        assert_eq!(
+            status.pending_convergences[0].phase,
+            ConvergencePhase::TimedOut
+        );
     }
 }
 
@@ -5860,6 +6004,439 @@ fn fleet_cli_trace(trace_id: &str) -> TraceContext {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct FleetCliPendingIncident {
+    incident_id: String,
+    zone_id: String,
+    target_id: String,
+    target_kind: PersistedFleetTargetKind,
+    reason: String,
+    quarantine_version: u64,
+    emitted_at: DateTime<Utc>,
+    convergence: ConvergenceState,
+}
+
+#[derive(Debug, Clone)]
+struct LoadedFleetState {
+    state_dir: PathBuf,
+    convergence_timeout_seconds: u64,
+    state: FleetSharedState,
+    stale_nodes: Vec<PersistedNodeStatus>,
+    active_incidents: Vec<FleetCliPendingIncident>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct FleetCliStatusReport {
+    status: FleetStatus,
+    state_dir: PathBuf,
+    convergence_timeout_seconds: u64,
+    stale_nodes: Vec<PersistedNodeStatus>,
+    active_incidents: Vec<FleetCliPendingIncident>,
+    state: FleetSharedState,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct FleetCliActionReport {
+    action: FleetActionResult,
+    status: FleetStatus,
+    state_dir: PathBuf,
+    convergence_timeout_seconds: u64,
+    stale_nodes: Vec<PersistedNodeStatus>,
+    active_incidents: Vec<FleetCliPendingIncident>,
+    state: FleetSharedState,
+}
+
+fn resolve_fleet_state_dir(
+    project_root: &Path,
+    resolved: &config::ResolvedConfig,
+) -> Result<PathBuf> {
+    if let Some(path) = &resolved.config.fleet.state_dir {
+        if path.is_absolute() {
+            return Ok(path.clone());
+        }
+        if let Some(source_root) = resolved.source_path.as_deref().and_then(Path::parent) {
+            return Ok(source_root.join(path));
+        }
+        return Ok(project_root.join(path));
+    }
+
+    Ok(ensure_state_dir(project_root)?.join("fleet"))
+}
+
+fn open_fleet_transport(project_root: &Path) -> Result<(u64, PathBuf, FileFleetTransport)> {
+    let resolved = config::Config::resolve(None, config::CliOverrides::default())
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+    let state_dir = resolve_fleet_state_dir(project_root, &resolved)?;
+    let mut transport = FileFleetTransport::new(state_dir.clone());
+    transport
+        .initialize()
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+    Ok((
+        resolved.config.fleet.convergence_timeout_seconds,
+        state_dir,
+        transport,
+    ))
+}
+
+fn fleet_operation_id(kind: &str) -> String {
+    format!("fleet-op-{kind}-{}", Uuid::now_v7().simple())
+}
+
+fn build_fleet_decision_receipt(
+    operation_id: &str,
+    principal: &str,
+    zone_id: &str,
+    issued_at: &str,
+) -> DecisionReceipt {
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(b"fleet_receipt_v1:");
+    for field in [operation_id, principal, zone_id, issued_at] {
+        hasher.update((field.len() as u64).to_le_bytes());
+        hasher.update(field.as_bytes());
+    }
+    DecisionReceipt {
+        receipt_id: format!("rcpt-{operation_id}"),
+        issuer: principal.to_string(),
+        issued_at: issued_at.to_string(),
+        zone_id: zone_id.to_string(),
+        payload_hash: hex::encode(hasher.finalize()),
+    }
+}
+
+fn zone_matches_filter(action_zone: &str, requested_zone: &str) -> bool {
+    requested_zone == "all" || action_zone == requested_zone
+}
+
+fn node_matches_filter(node: &PersistedNodeStatus, requested_zone: &str) -> bool {
+    requested_zone == "all" || node.zone_id == requested_zone
+}
+
+fn convergence_phase(
+    total_nodes: u32,
+    converged_nodes: u32,
+    stale_node_count: usize,
+) -> ConvergencePhase {
+    if total_nodes == 0 {
+        ConvergencePhase::Pending
+    } else if converged_nodes == total_nodes {
+        ConvergencePhase::Converged
+    } else if stale_node_count > 0 {
+        ConvergencePhase::TimedOut
+    } else {
+        ConvergencePhase::Propagating
+    }
+}
+
+fn convergence_progress(converged_nodes: u32, total_nodes: u32) -> u8 {
+    if total_nodes == 0 {
+        return 0;
+    }
+
+    let progress = (u64::from(converged_nodes) * 100) / u64::from(total_nodes);
+    u8::try_from(progress).unwrap_or(100)
+}
+
+fn derive_active_fleet_incidents(
+    state: &FleetSharedState,
+    stale_nodes: &[PersistedNodeStatus],
+) -> Vec<FleetCliPendingIncident> {
+    let mut active_by_incident = BTreeMap::<String, PersistedFleetActionRecord>::new();
+    for action in &state.actions {
+        match &action.action {
+            PersistedFleetAction::Quarantine { incident_id, .. } => {
+                active_by_incident.insert(incident_id.clone(), action.clone());
+            }
+            PersistedFleetAction::Release { incident_id, .. } => {
+                active_by_incident.remove(incident_id);
+            }
+            PersistedFleetAction::PolicyUpdate { .. } => {}
+        }
+    }
+
+    let stale_ids: BTreeSet<&str> = stale_nodes
+        .iter()
+        .map(|node| node.node_id.as_str())
+        .collect();
+    let mut incidents = active_by_incident
+        .into_values()
+        .filter_map(|record| match record.action {
+            PersistedFleetAction::Quarantine {
+                zone_id,
+                incident_id,
+                target_id,
+                target_kind,
+                reason,
+                quarantine_version,
+            } => {
+                let relevant_nodes: Vec<&PersistedNodeStatus> = state
+                    .nodes
+                    .iter()
+                    .filter(|node| node_matches_filter(node, &zone_id))
+                    .collect();
+                let stale_node_count = relevant_nodes
+                    .iter()
+                    .filter(|node| stale_ids.contains(node.node_id.as_str()))
+                    .count();
+                let total_nodes = u32::try_from(relevant_nodes.len()).unwrap_or(u32::MAX);
+                let converged_nodes = u32::try_from(
+                    relevant_nodes
+                        .iter()
+                        .filter(|node| {
+                            !stale_ids.contains(node.node_id.as_str())
+                                && node.quarantine_version >= quarantine_version
+                        })
+                        .count(),
+                )
+                .unwrap_or(u32::MAX);
+                let phase = convergence_phase(total_nodes, converged_nodes, stale_node_count);
+                let eta_seconds = match phase {
+                    ConvergencePhase::Converged => Some(0),
+                    ConvergencePhase::Pending => None,
+                    ConvergencePhase::Propagating => {
+                        Some(total_nodes.saturating_sub(converged_nodes))
+                    }
+                    ConvergencePhase::TimedOut => None,
+                };
+
+                Some(FleetCliPendingIncident {
+                    incident_id,
+                    zone_id,
+                    target_id,
+                    target_kind,
+                    reason,
+                    quarantine_version,
+                    emitted_at: record.emitted_at,
+                    convergence: ConvergenceState {
+                        converged_nodes,
+                        total_nodes,
+                        progress_pct: convergence_progress(converged_nodes, total_nodes),
+                        eta_seconds,
+                        phase,
+                    },
+                })
+            }
+            PersistedFleetAction::Release { .. } | PersistedFleetAction::PolicyUpdate { .. } => {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    incidents.sort_by(|left, right| {
+        left.zone_id
+            .cmp(&right.zone_id)
+            .then_with(|| left.incident_id.cmp(&right.incident_id))
+    });
+    incidents
+}
+
+fn load_fleet_state(project_root: &Path) -> Result<LoadedFleetState> {
+    let (convergence_timeout_seconds, state_dir, transport) = open_fleet_transport(project_root)?;
+    let state = transport
+        .read_shared_state()
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+    let stale_nodes = transport
+        .list_stale_nodes(Utc::now(), Duration::from_secs(convergence_timeout_seconds))
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+    let active_incidents = derive_active_fleet_incidents(&state, &stale_nodes);
+
+    Ok(LoadedFleetState {
+        state_dir,
+        convergence_timeout_seconds,
+        state,
+        stale_nodes,
+        active_incidents,
+    })
+}
+
+fn fleet_status_from_loaded_state(loaded: &LoadedFleetState, requested_zone: &str) -> FleetStatus {
+    let stale_ids: BTreeSet<&str> = loaded
+        .stale_nodes
+        .iter()
+        .map(|node| node.node_id.as_str())
+        .collect();
+    let relevant_nodes: Vec<&PersistedNodeStatus> = loaded
+        .state
+        .nodes
+        .iter()
+        .filter(|node| node_matches_filter(node, requested_zone))
+        .collect();
+    let healthy_nodes = u32::try_from(
+        relevant_nodes
+            .iter()
+            .filter(|node| {
+                node.health == PersistedNodeHealth::Healthy
+                    && !stale_ids.contains(node.node_id.as_str())
+            })
+            .count(),
+    )
+    .unwrap_or(u32::MAX);
+    let total_nodes = u32::try_from(relevant_nodes.len()).unwrap_or(u32::MAX);
+    let pending_convergences = loaded
+        .active_incidents
+        .iter()
+        .filter(|incident| zone_matches_filter(&incident.zone_id, requested_zone))
+        .map(|incident| incident.convergence.clone())
+        .collect::<Vec<_>>();
+
+    FleetStatus {
+        zone_id: requested_zone.to_string(),
+        active_quarantines: u32::try_from(pending_convergences.len()).unwrap_or(u32::MAX),
+        active_revocations: 0,
+        healthy_nodes,
+        total_nodes,
+        activated: true,
+        pending_convergences,
+    }
+}
+
+fn fleet_status_report(project_root: &Path, requested_zone: &str) -> Result<FleetCliStatusReport> {
+    let loaded = load_fleet_state(project_root)?;
+    let status = fleet_status_from_loaded_state(&loaded, requested_zone);
+    Ok(FleetCliStatusReport {
+        status,
+        state_dir: loaded.state_dir,
+        convergence_timeout_seconds: loaded.convergence_timeout_seconds,
+        stale_nodes: loaded.stale_nodes,
+        active_incidents: loaded.active_incidents,
+        state: loaded.state,
+    })
+}
+
+fn aggregate_convergence(active_incidents: &[FleetCliPendingIncident]) -> Option<ConvergenceState> {
+    if active_incidents.is_empty() {
+        return None;
+    }
+
+    let converged_nodes = active_incidents.iter().fold(0_u32, |acc, incident| {
+        acc.saturating_add(incident.convergence.converged_nodes)
+    });
+    let total_nodes = active_incidents.iter().fold(0_u32, |acc, incident| {
+        acc.saturating_add(incident.convergence.total_nodes)
+    });
+    let phase = if active_incidents
+        .iter()
+        .any(|incident| incident.convergence.phase == ConvergencePhase::TimedOut)
+    {
+        ConvergencePhase::TimedOut
+    } else if active_incidents
+        .iter()
+        .all(|incident| incident.convergence.phase == ConvergencePhase::Converged)
+    {
+        ConvergencePhase::Converged
+    } else if active_incidents
+        .iter()
+        .all(|incident| incident.convergence.phase == ConvergencePhase::Pending)
+    {
+        ConvergencePhase::Pending
+    } else {
+        ConvergencePhase::Propagating
+    };
+    let eta_seconds = match phase {
+        ConvergencePhase::Converged => Some(0),
+        ConvergencePhase::Pending => None,
+        ConvergencePhase::Propagating => Some(total_nodes.saturating_sub(converged_nodes)),
+        ConvergencePhase::TimedOut => None,
+    };
+
+    Some(ConvergenceState {
+        converged_nodes,
+        total_nodes,
+        progress_pct: convergence_progress(converged_nodes, total_nodes),
+        eta_seconds,
+        phase,
+    })
+}
+
+fn fleet_action_report(
+    project_root: &Path,
+    requested_zone: &str,
+    action: FleetActionResult,
+) -> Result<FleetCliActionReport> {
+    let loaded = load_fleet_state(project_root)?;
+    let status = fleet_status_from_loaded_state(&loaded, requested_zone);
+    Ok(FleetCliActionReport {
+        action,
+        status,
+        state_dir: loaded.state_dir,
+        convergence_timeout_seconds: loaded.convergence_timeout_seconds,
+        stale_nodes: loaded.stale_nodes,
+        active_incidents: loaded.active_incidents,
+        state: loaded.state,
+    })
+}
+
+fn emit_fleet_status_report(
+    report: &FleetCliStatusReport,
+    json: bool,
+    verbose: bool,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(report)?);
+    } else {
+        println!("{}", render_fleet_status_human(&report.status, verbose));
+    }
+    Ok(())
+}
+
+fn emit_fleet_action_report(report: &FleetCliActionReport, json: bool) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(report)?);
+    } else {
+        println!("{}", render_fleet_action_human(&report.action));
+    }
+    Ok(())
+}
+
+fn next_quarantine_version(state: &FleetSharedState, zone_id: &str) -> u64 {
+    state
+        .actions
+        .iter()
+        .filter_map(|record| match &record.action {
+            PersistedFleetAction::Quarantine {
+                zone_id: action_zone,
+                quarantine_version,
+                ..
+            } if action_zone == zone_id => Some(*quarantine_version),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1)
+}
+
+fn append_trust_quarantine_action(
+    project_root: &Path,
+    artifact: &str,
+    affected_cards: usize,
+) -> Result<String> {
+    let loaded = load_fleet_state(project_root)?;
+    let mut transport = FileFleetTransport::new(loaded.state_dir.clone());
+    transport
+        .initialize()
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+
+    let operation_id = fleet_operation_id("quarantine");
+    let incident_id = format!("inc-{operation_id}");
+    let now = Utc::now();
+    let quarantine_version = next_quarantine_version(&loaded.state, "all");
+    transport
+        .publish_action(&PersistedFleetActionRecord {
+            action_id: operation_id,
+            emitted_at: now,
+            action: PersistedFleetAction::Quarantine {
+                zone_id: "all".to_string(),
+                incident_id: incident_id.clone(),
+                target_id: artifact.to_string(),
+                target_kind: PersistedFleetTargetKind::Artifact,
+                reason: format!("manual trust quarantine via CLI; affected_cards={affected_cards}"),
+                quarantine_version,
+            },
+        })
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+
+    Ok(incident_id)
+}
+
 fn render_fleet_status_human(status: &FleetStatus, verbose: bool) -> String {
     let mut lines = vec![
         format!("fleet status: zone={}", status.zone_id),
@@ -5874,11 +6451,40 @@ fn render_fleet_status_human(status: &FleetStatus, verbose: bool) -> String {
         ),
     ];
 
+    lines.push(format!(
+        "  pending_convergences={}",
+        status.pending_convergences.len()
+    ));
+
+    if !status.pending_convergences.is_empty() {
+        let summary = status
+            .pending_convergences
+            .iter()
+            .map(|convergence| {
+                format!(
+                    "{}/{} ({}%) {:?}",
+                    convergence.converged_nodes,
+                    convergence.total_nodes,
+                    convergence.progress_pct,
+                    convergence.phase
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!("  convergence={summary}"));
+    }
+
     if verbose {
-        lines.push(format!(
-            "  pending_convergences={}",
-            status.pending_convergences.len()
-        ));
+        for (index, convergence) in status.pending_convergences.iter().enumerate() {
+            lines.push(format!(
+                "  convergence[{index}]={}/{} ({}%) phase={:?} eta_seconds={:?}",
+                convergence.converged_nodes,
+                convergence.total_nodes,
+                convergence.progress_pct,
+                convergence.phase,
+                convergence.eta_seconds
+            ));
+        }
     }
     lines.join("\n")
 }
@@ -6274,6 +6880,26 @@ fn build_verify_output(
     exit_code: i32,
     reason: impl Into<String>,
 ) -> VerifyContractOutput {
+    build_verify_output_with_details(
+        command,
+        compat_version,
+        verdict,
+        status,
+        exit_code,
+        reason,
+        None,
+    )
+}
+
+fn build_verify_output_with_details(
+    command: &str,
+    compat_version: Option<u16>,
+    verdict: &str,
+    status: &str,
+    exit_code: i32,
+    reason: impl Into<String>,
+    details: Option<serde_json::Value>,
+) -> VerifyContractOutput {
     VerifyContractOutput {
         command: command.to_string(),
         contract_version: frankenengine_node::schema_versions::VERIFY_CLI_CONTRACT.to_string(),
@@ -6283,6 +6909,7 @@ fn build_verify_output(
         status: status.to_string(),
         exit_code,
         reason: reason.into(),
+        details,
     }
 }
 
@@ -6387,33 +7014,622 @@ fn summarize_expected_ids(values: &[&str], preview_count: usize) -> String {
     preview.join(", ")
 }
 
+fn normalize_verify_identifier(raw: &str) -> String {
+    raw.trim().replace('-', "_").to_ascii_lowercase()
+}
+
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|path| path.parent())
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")))
+        .to_path_buf()
+}
+
+fn crate_source_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
+}
+
+fn resolve_verify_module_source(module_id: &str) -> Option<PathBuf> {
+    let src_root = crate_source_root();
+    let file = src_root.join(format!("{module_id}.rs"));
+    if file.is_file() {
+        return Some(file);
+    }
+
+    let dir_mod = src_root.join(module_id).join("mod.rs");
+    dir_mod.is_file().then_some(dir_mod)
+}
+
+fn parse_module_declaration_name(line: &str) -> Option<String> {
+    let trimmed = line.split("//").next().unwrap_or("").trim();
+    if !trimmed.ends_with(';') {
+        return None;
+    }
+
+    for prefix in ["pub(crate) mod ", "pub mod ", "mod "] {
+        if let Some(rest) = trimmed.strip_prefix(prefix) {
+            let name = rest.trim_end_matches(';').trim();
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+fn parse_path_attribute(line: &str) -> Option<String> {
+    let trimmed = line.split("//").next().unwrap_or("").trim();
+    if !trimmed.starts_with("#[path") {
+        return None;
+    }
+
+    let start = trimmed.find('"')?;
+    let rest = &trimmed[start + 1..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+fn contains_top_level_module_declaration(source: &str, module_id: &str) -> bool {
+    source.lines().any(|line| {
+        let trimmed = line.split("//").next().unwrap_or("").trim();
+        for prefix in ["pub(crate) mod ", "pub mod ", "mod "] {
+            if let Some(rest) = trimmed.strip_prefix(prefix) {
+                let candidate = rest
+                    .split(|ch: char| ch == ';' || ch == '{' || ch.is_whitespace())
+                    .next()
+                    .unwrap_or("");
+                if candidate == module_id {
+                    return true;
+                }
+            }
+        }
+        false
+    })
+}
+
+fn locate_verify_module_declaration(module_id: &str) -> Option<PathBuf> {
+    for candidate in [
+        crate_source_root().join("lib.rs"),
+        crate_source_root().join("main.rs"),
+    ] {
+        let Ok(source) = std::fs::read_to_string(&candidate) else {
+            continue;
+        };
+        if contains_top_level_module_declaration(&source, module_id) {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
+fn nested_module_root(module_source_path: &Path) -> PathBuf {
+    if module_source_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        == Some("mod.rs")
+    {
+        module_source_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf()
+    } else {
+        module_source_path.with_extension("")
+    }
+}
+
+fn resolve_nested_module_source(
+    module_source_path: &Path,
+    module_name: &str,
+    path_override: Option<&str>,
+) -> PathBuf {
+    let root = nested_module_root(module_source_path);
+    if let Some(path_override) = path_override {
+        return root.join(path_override);
+    }
+
+    let file = root.join(format!("{module_name}.rs"));
+    if file.is_file() {
+        return file;
+    }
+
+    root.join(module_name).join("mod.rs")
+}
+
+fn collect_declared_module_dependencies(
+    module_source_path: &Path,
+    source: &str,
+) -> Vec<serde_json::Value> {
+    let mut dependencies = Vec::new();
+    let mut pending_path_override: Option<String> = None;
+
+    for line in source.lines() {
+        let trimmed = line.split("//").next().unwrap_or("").trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Some(path_override) = parse_path_attribute(trimmed) {
+            pending_path_override = Some(path_override);
+            continue;
+        }
+
+        if let Some(module_name) = parse_module_declaration_name(trimmed) {
+            let path = resolve_nested_module_source(
+                module_source_path,
+                &module_name,
+                pending_path_override.as_deref(),
+            );
+            let exists = path.is_file();
+            dependencies.push(serde_json::json!({
+                "name": module_name,
+                "path": path.display().to_string(),
+                "exists": exists,
+            }));
+            pending_path_override = None;
+            continue;
+        }
+
+        pending_path_override = None;
+    }
+
+    dependencies
+}
+
+fn resolve_verify_migration_lane_source(migration_id: &str) -> Option<PathBuf> {
+    let src_root = crate_source_root().join("migration");
+    let path = match migration_id {
+        "audit" | "rewrite" | "validate" => src_root.join("mod.rs"),
+        "bpet_migration_gate" => src_root.join("bpet_migration_gate.rs"),
+        "dgis_migration_gate" => src_root.join("dgis_migration_gate.rs"),
+        _ => return None,
+    };
+
+    path.is_file().then_some(path)
+}
+
+fn migration_state_dir(project_root: &Path) -> PathBuf {
+    project_root.join(".franken-node/state/migrations")
+}
+
+fn resolve_verify_migration_record_path(
+    project_root: &Path,
+    raw_id: &str,
+    normalized_id: &str,
+) -> Option<PathBuf> {
+    let state_dir = migration_state_dir(project_root);
+    let mut candidates = vec![raw_id.trim().to_string()];
+    if !candidates
+        .iter()
+        .any(|candidate| candidate == normalized_id)
+    {
+        candidates.push(normalized_id.to_string());
+    }
+
+    candidates
+        .into_iter()
+        .filter(|candidate| !candidate.is_empty())
+        .map(|candidate| state_dir.join(format!("{candidate}.json")))
+        .find(|candidate| candidate.is_file())
+}
+
+fn extract_record_string(
+    record: &serde_json::Map<String, serde_json::Value>,
+    field: &str,
+) -> Option<String> {
+    record
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn migration_record_status(record: &serde_json::Map<String, serde_json::Value>) -> String {
+    extract_record_string(record, "status")
+        .map(|status| normalize_verify_identifier(&status))
+        .or_else(|| extract_record_string(record, "rolled_back_at").map(|_| "rolled_back".into()))
+        .or_else(|| extract_record_string(record, "applied_at").map(|_| "applied".into()))
+        .unwrap_or_else(|| "pending".to_string())
+}
+
+fn evaluate_migration_post_condition(
+    project_root: &Path,
+    condition: &serde_json::Value,
+    index: usize,
+) -> serde_json::Value {
+    match condition {
+        serde_json::Value::String(path) => {
+            let resolved = project_root.join(path);
+            let exists = resolved.exists();
+            serde_json::json!({
+                "index": index,
+                "path": path,
+                "resolved_path": resolved.display().to_string(),
+                "expected_exists": true,
+                "actual_exists": exists,
+                "passed": exists,
+            })
+        }
+        serde_json::Value::Object(object) => {
+            let raw_path = object
+                .get("path")
+                .or_else(|| object.get("file"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            let expected_exists = object
+                .get("exists")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(true);
+            let expected_contains = object
+                .get("contains")
+                .and_then(serde_json::Value::as_str)
+                .map(ToString::to_string);
+
+            let Some(raw_path) = raw_path else {
+                return serde_json::json!({
+                    "index": index,
+                    "passed": false,
+                    "error": "post-condition object is missing `path` or `file`",
+                });
+            };
+
+            let resolved = project_root.join(raw_path);
+            let actual_exists = resolved.exists();
+            let actual_contains = expected_contains.as_ref().and_then(|needle| {
+                std::fs::read_to_string(&resolved)
+                    .ok()
+                    .map(|contents| contents.contains(needle))
+            });
+            let contains_ok = match expected_contains.as_ref() {
+                Some(_) => actual_contains.unwrap_or(false),
+                None => true,
+            };
+            let passed = actual_exists == expected_exists && contains_ok;
+
+            serde_json::json!({
+                "index": index,
+                "path": raw_path,
+                "resolved_path": resolved.display().to_string(),
+                "expected_exists": expected_exists,
+                "actual_exists": actual_exists,
+                "expected_contains": expected_contains,
+                "actual_contains": actual_contains,
+                "passed": passed,
+            })
+        }
+        _ => serde_json::json!({
+            "index": index,
+            "passed": false,
+            "error": "post-condition must be a string path or object",
+        }),
+    }
+}
+
+fn evaluate_migration_post_conditions(
+    project_root: &Path,
+    record: &serde_json::Map<String, serde_json::Value>,
+) -> Vec<serde_json::Value> {
+    record
+        .get("post_conditions")
+        .and_then(serde_json::Value::as_array)
+        .map(|conditions| {
+            conditions
+                .iter()
+                .enumerate()
+                .map(|(index, condition)| {
+                    evaluate_migration_post_condition(project_root, condition, index)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn summarize_post_condition_results(results: &[serde_json::Value]) -> String {
+    if results.is_empty() {
+        return "no post-conditions declared".to_string();
+    }
+
+    let failures = results
+        .iter()
+        .filter(|result| {
+            !result
+                .get("passed")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+        })
+        .map(|result| {
+            result
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                .map(ToString::to_string)
+                .or_else(|| {
+                    result
+                        .get("error")
+                        .and_then(serde_json::Value::as_str)
+                        .map(ToString::to_string)
+                })
+                .unwrap_or_else(|| "unknown-post-condition".to_string())
+        })
+        .collect::<Vec<_>>();
+
+    if failures.is_empty() {
+        return format!("all {} post-conditions satisfied", results.len());
+    }
+
+    format!(
+        "{} of {} post-conditions failed: {}",
+        failures.len(),
+        results.len(),
+        failures.join(", ")
+    )
+}
+
+fn normalize_compatibility_runtime(raw: &str) -> Option<&'static str> {
+    match raw.trim().to_ascii_lowercase().replace('_', "-").as_str() {
+        "node" => Some("node"),
+        "bun" => Some("bun"),
+        "franken-node" | "franken-engine" | "frankenengine" => Some("franken-node"),
+        _ => None,
+    }
+}
+
+fn resolve_compatibility_runtime_binary(runtime: &str) -> Result<PathBuf> {
+    match runtime {
+        "node" | "bun" => which::which(runtime)
+            .with_context(|| format!("runtime `{runtime}` was not found on PATH")),
+        "franken-node" => std::env::current_exe()
+            .with_context(|| "failed resolving current franken-node binary".to_string()),
+        _ => anyhow::bail!("unsupported runtime target `{runtime}`"),
+    }
+}
+
+fn run_runtime_probe(binary: &Path, runtime: &str, args: &[&str], context: &str) -> Result<String> {
+    let output = ProcessCommand::new(binary)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .with_context(|| format!("failed running {context} using {}", binary.display()))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        anyhow::bail!(
+            "{context} failed for runtime `{runtime}` with exit code {:?}: {}",
+            output.status.code(),
+            if stderr.is_empty() {
+                "no stderr emitted".to_string()
+            } else {
+                stderr
+            }
+        );
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !stdout.is_empty() {
+        return Ok(stdout);
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !stderr.is_empty() {
+        return Ok(stderr);
+    }
+
+    Ok(String::new())
+}
+
+fn extract_runtime_major_version(raw_version: &str) -> Option<u64> {
+    let trimmed = raw_version.trim().trim_start_matches('v');
+    let major = trimmed
+        .chars()
+        .take_while(|ch| ch.is_ascii_digit())
+        .collect::<String>();
+    (!major.is_empty())
+        .then(|| major.parse::<u64>().ok())
+        .flatten()
+}
+
+fn runtime_major_satisfies_requirement(major: u64, requirement: &str) -> Option<bool> {
+    let mut saw_comparison = false;
+
+    for token in requirement.split_whitespace() {
+        let token = token.trim().trim_matches(',');
+        if token.is_empty() || token == "*" {
+            continue;
+        }
+
+        let (operator, raw_value) = if let Some(rest) = token.strip_prefix(">=") {
+            (">=", rest)
+        } else if let Some(rest) = token.strip_prefix("<=") {
+            ("<=", rest)
+        } else if let Some(rest) = token.strip_prefix('>') {
+            (">", rest)
+        } else if let Some(rest) = token.strip_prefix('<') {
+            ("<", rest)
+        } else if let Some(rest) = token.strip_prefix('=') {
+            ("=", rest)
+        } else if let Some(rest) = token.strip_prefix('^') {
+            (">=", rest)
+        } else if let Some(rest) = token.strip_prefix('~') {
+            (">=", rest)
+        } else {
+            ("=", token)
+        };
+
+        let Some(required_major) = extract_runtime_major_version(raw_value) else {
+            return None;
+        };
+        saw_comparison = true;
+
+        let satisfied = match operator {
+            ">=" => major >= required_major,
+            "<=" => major <= required_major,
+            ">" => major > required_major,
+            "<" => major < required_major,
+            "=" => major == required_major,
+            _ => false,
+        };
+        if !satisfied {
+            return Some(false);
+        }
+    }
+
+    saw_comparison.then_some(true)
+}
+
+fn read_runtime_engine_requirement(project_root: &Path, runtime: &str) -> Result<Option<String>> {
+    let engine_key = match runtime {
+        "node" => "node",
+        "bun" => "bun",
+        _ => return Ok(None),
+    };
+
+    let Some(object) = read_package_manifest_object(project_root, "verify compatibility")? else {
+        return Ok(None);
+    };
+
+    Ok(object
+        .get("engines")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|engines| engines.get(engine_key))
+        .map(|value| {
+            value
+                .as_str()
+                .map_or_else(|| value.to_string(), ToString::to_string)
+        }))
+}
+
+fn known_runtime_compatibility_issues(
+    runtime: &str,
+    major_version: Option<u64>,
+    engine_requirement: Option<&str>,
+    engine_requirement_satisfied: Option<bool>,
+) -> Vec<String> {
+    let mut issues = Vec::new();
+
+    match (runtime, major_version) {
+        ("node", Some(major)) if major < 20 => {
+            issues.push(
+                "node major versions below 20 are outside the supported migration baseline"
+                    .to_string(),
+            );
+        }
+        ("bun", Some(major)) if major < 1 => {
+            issues.push("bun major versions below 1 are not supported".to_string());
+        }
+        _ => {}
+    }
+
+    if let Some(requirement) = engine_requirement {
+        match engine_requirement_satisfied {
+            Some(false) => issues.push(format!(
+                "runtime version does not satisfy package.json engines requirement `{requirement}`"
+            )),
+            None => issues.push(format!(
+                "could not evaluate package.json engines requirement `{requirement}` against the detected runtime version"
+            )),
+            Some(true) => {}
+        }
+    }
+
+    issues
+}
+
 fn emit_verify_module(args: &VerifyModuleArgs) -> i32 {
     if let Some(error_payload) = validate_verify_compat("verify module", args.compat_version) {
         return emit_verify_output("verify module", &error_payload, args.json);
     }
 
-    let normalized = args.module_id.trim().replace('-', "_").to_ascii_lowercase();
-    let passed = VERIFY_MODULE_IDS.contains(&normalized.as_str());
-    let reason = if passed {
-        format!(
-            "module `{}` maps to `{normalized}` and is part of the franken-node module surface",
-            args.module_id
-        )
-    } else {
-        format!(
-            "unknown module `{}`; expected one of: {}",
-            args.module_id,
-            summarize_expected_ids(VERIFY_MODULE_IDS, 10)
-        )
+    let normalized = normalize_verify_identifier(&args.module_id);
+    let payload = match resolve_verify_module_source(&normalized) {
+        Some(source_path) => match std::fs::read_to_string(&source_path) {
+            Ok(source) => {
+                let declaration_path = locate_verify_module_declaration(&normalized);
+                let dependencies = collect_declared_module_dependencies(&source_path, &source);
+                let deps_satisfied = dependencies.iter().all(|dependency| {
+                    dependency
+                        .get("exists")
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(false)
+                });
+                let declared = declaration_path.is_some();
+                let health_declared = source.contains("fn health_check(");
+                let passed = declared && deps_satisfied;
+                let reason = if passed {
+                    format!(
+                        "module `{}` resolved to {} and all declared module dependencies are present",
+                        normalized,
+                        source_path.display()
+                    )
+                } else if !declared {
+                    format!(
+                        "module `{}` exists at {} but is not declared in lib.rs or main.rs",
+                        normalized,
+                        source_path.display()
+                    )
+                } else {
+                    format!(
+                        "module `{}` resolved to {} but one or more declared module dependencies are missing",
+                        normalized,
+                        source_path.display()
+                    )
+                };
+                build_verify_output_with_details(
+                    "verify module",
+                    args.compat_version,
+                    if passed { "PASS" } else { "FAIL" },
+                    if passed { "pass" } else { "fail" },
+                    if passed { 0 } else { 1 },
+                    reason,
+                    Some(serde_json::json!({
+                        "module_id": normalized,
+                        "exists": true,
+                        "source_path": source_path.display().to_string(),
+                        "declared_in": declaration_path.map(|path| path.display().to_string()),
+                        "integrity": {
+                            "algorithm": "sha256",
+                            "sha256": hex::encode(sha2::Sha256::digest(source.as_bytes())),
+                        },
+                        "deps_satisfied": deps_satisfied,
+                        "dependencies": dependencies,
+                        "health": if health_declared { "declared" } else { "not_declared" },
+                    })),
+                )
+            }
+            Err(err) => build_verify_output(
+                "verify module",
+                args.compat_version,
+                "FAIL",
+                "fail",
+                1,
+                format!(
+                    "failed reading module source for `{}` at {}: {err}",
+                    normalized,
+                    source_path.display()
+                ),
+            ),
+        },
+        None => build_verify_output_with_details(
+            "verify module",
+            args.compat_version,
+            "FAIL",
+            "fail",
+            1,
+            format!(
+                "unknown module `{}`; no source file found under {} (examples: {})",
+                args.module_id,
+                crate_source_root().display(),
+                summarize_expected_ids(VERIFY_MODULE_IDS, 10)
+            ),
+            Some(serde_json::json!({
+                "module_id": normalized,
+                "exists": false,
+                "search_root": crate_source_root().display().to_string(),
+            })),
+        ),
     };
-    let payload = build_verify_output(
-        "verify module",
-        args.compat_version,
-        if passed { "PASS" } else { "FAIL" },
-        if passed { "pass" } else { "fail" },
-        if passed { 0 } else { 1 },
-        reason,
-    );
     emit_verify_output("verify module", &payload, args.json)
 }
 
@@ -6422,32 +7638,156 @@ fn emit_verify_migration(args: &VerifyMigrationArgs) -> i32 {
         return emit_verify_output("verify migration", &error_payload, args.json);
     }
 
-    let normalized = args
-        .migration_id
-        .trim()
-        .replace('-', "_")
-        .to_ascii_lowercase();
-    let passed = VERIFY_MIGRATION_IDS.contains(&normalized.as_str());
-    let reason = if passed {
-        format!(
-            "migration target `{}` maps to `{normalized}` and is a supported verify lane",
-            args.migration_id
+    let normalized = normalize_verify_identifier(&args.migration_id);
+    let project_root = match std::env::current_dir() {
+        Ok(path) => path,
+        Err(err) => {
+            let payload = build_verify_output(
+                "verify migration",
+                args.compat_version,
+                "FAIL",
+                "fail",
+                1,
+                format!("failed determining current project directory: {err}"),
+            );
+            return emit_verify_output("verify migration", &payload, args.json);
+        }
+    };
+
+    let payload = if let Some(record_path) =
+        resolve_verify_migration_record_path(&project_root, &args.migration_id, &normalized)
+    {
+        match std::fs::read_to_string(&record_path) {
+            Ok(raw) => match serde_json::from_str::<serde_json::Value>(&raw) {
+                Ok(serde_json::Value::Object(record)) => {
+                    let status = migration_record_status(&record);
+                    let post_conditions =
+                        evaluate_migration_post_conditions(&project_root, &record);
+                    let post_conditions_met = post_conditions.iter().all(|entry| {
+                        entry
+                            .get("passed")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false)
+                    });
+                    let diff_summary = summarize_post_condition_results(&post_conditions);
+                    let passed =
+                        matches!(status.as_str(), "applied" | "rolled_back") && post_conditions_met;
+                    let reason = match status.as_str() {
+                        "applied" if post_conditions_met => format!(
+                            "migration `{}` is applied and all declared post-conditions passed",
+                            normalized
+                        ),
+                        "rolled_back" if post_conditions_met => format!(
+                            "migration `{}` is rolled back cleanly and all declared rollback conditions passed",
+                            normalized
+                        ),
+                        "pending" => format!(
+                            "migration `{}` is still pending in {}",
+                            normalized,
+                            record_path.display()
+                        ),
+                        _ => format!(
+                            "migration `{}` recorded status `{status}` and {diff_summary}",
+                            normalized
+                        ),
+                    };
+
+                    build_verify_output_with_details(
+                        "verify migration",
+                        args.compat_version,
+                        if passed { "PASS" } else { "FAIL" },
+                        if passed { "pass" } else { "fail" },
+                        if passed { 0 } else { 1 },
+                        reason,
+                        Some(serde_json::json!({
+                            "migration_id": normalized,
+                            "record_path": record_path.display().to_string(),
+                            "status": status,
+                            "post_conditions_met": post_conditions_met,
+                            "post_conditions": post_conditions,
+                            "diff_summary": diff_summary,
+                        })),
+                    )
+                }
+                Ok(_) => build_verify_output(
+                    "verify migration",
+                    args.compat_version,
+                    "FAIL",
+                    "fail",
+                    1,
+                    format!(
+                        "migration record {} must be a JSON object",
+                        record_path.display()
+                    ),
+                ),
+                Err(err) => build_verify_output(
+                    "verify migration",
+                    args.compat_version,
+                    "FAIL",
+                    "fail",
+                    1,
+                    format!(
+                        "invalid migration record JSON at {}: {err}",
+                        record_path.display()
+                    ),
+                ),
+            },
+            Err(err) => build_verify_output(
+                "verify migration",
+                args.compat_version,
+                "FAIL",
+                "fail",
+                1,
+                format!(
+                    "failed reading migration record {}: {err}",
+                    record_path.display()
+                ),
+            ),
+        }
+    } else if let Some(lane_source) = resolve_verify_migration_lane_source(&normalized) {
+        build_verify_output_with_details(
+            "verify migration",
+            args.compat_version,
+            "PASS",
+            "pass",
+            0,
+            format!(
+                "migration lane `{}` resolved to {} with no state record present under {}",
+                normalized,
+                lane_source.display(),
+                migration_state_dir(&project_root).display()
+            ),
+            Some(serde_json::json!({
+                "migration_id": normalized,
+                "record_path": serde_json::Value::Null,
+                "status": "source_present",
+                "post_conditions_met": serde_json::Value::Null,
+                "diff_summary": "no state record declared",
+                "lane_source": lane_source.display().to_string(),
+            })),
         )
     } else {
-        format!(
-            "unknown migration target `{}`; expected one of: {}",
-            args.migration_id,
-            summarize_expected_ids(VERIFY_MIGRATION_IDS, VERIFY_MIGRATION_IDS.len())
+        build_verify_output_with_details(
+            "verify migration",
+            args.compat_version,
+            "FAIL",
+            "fail",
+            1,
+            format!(
+                "unknown migration target `{}`; no state record found under {} and no verify lane source resolved (expected one of: {})",
+                args.migration_id,
+                migration_state_dir(&project_root).display(),
+                summarize_expected_ids(VERIFY_MIGRATION_IDS, VERIFY_MIGRATION_IDS.len())
+            ),
+            Some(serde_json::json!({
+                "migration_id": normalized,
+                "record_path": serde_json::Value::Null,
+                "status": "missing",
+                "post_conditions_met": false,
+                "diff_summary": "no migration record or lane source resolved",
+            })),
         )
     };
-    let payload = build_verify_output(
-        "verify migration",
-        args.compat_version,
-        if passed { "PASS" } else { "FAIL" },
-        if passed { "pass" } else { "fail" },
-        if passed { 0 } else { 1 },
-        reason,
-    );
     emit_verify_output("verify migration", &payload, args.json)
 }
 
@@ -6458,7 +7798,7 @@ fn emit_verify_compatibility(args: &VerifyCompatibilityArgs) -> i32 {
     }
 
     let payload = match parse_profile_override(Some(&args.target)) {
-        Ok(Some(profile)) => build_verify_output(
+        Ok(Some(profile)) => build_verify_output_with_details(
             "verify compatibility",
             args.compat_version,
             "PASS",
@@ -6468,23 +7808,125 @@ fn emit_verify_compatibility(args: &VerifyCompatibilityArgs) -> i32 {
                 "compatibility target `{}` resolved to profile `{}`",
                 args.target, profile
             ),
+            Some(serde_json::json!({
+                "target": args.target,
+                "target_kind": "profile",
+                "profile": profile.to_string(),
+            })),
         ),
-        Ok(None) => build_verify_output(
-            "verify compatibility",
-            args.compat_version,
-            "FAIL",
-            "fail",
-            1,
-            "compatibility target resolution produced no profile".to_string(),
-        ),
-        Err(err) => build_verify_output(
-            "verify compatibility",
-            args.compat_version,
-            "FAIL",
-            "fail",
-            1,
-            format!("invalid compatibility target `{}`: {}", args.target, err),
-        ),
+        Ok(None) | Err(_) => match normalize_compatibility_runtime(&args.target) {
+            Some(runtime) => {
+                let project_root = std::env::current_dir().unwrap_or_else(|_| workspace_root());
+                match resolve_compatibility_runtime_binary(runtime) {
+                    Ok(binary) => {
+                        let version_result =
+                            run_runtime_probe(&binary, runtime, &["--version"], "version probe");
+                        let smoke_result = match runtime {
+                            "node" | "bun" => run_runtime_probe(
+                                &binary,
+                                runtime,
+                                &["-e", "console.log(JSON.stringify({\"ok\":true}))"],
+                                "smoke probe",
+                            ),
+                            "franken-node" => {
+                                run_runtime_probe(&binary, runtime, &["--version"], "smoke probe")
+                            }
+                            _ => unreachable!("unsupported runtime normalization"),
+                        };
+                        match (version_result, smoke_result) {
+                            (Ok(version), Ok(smoke_output)) => {
+                                let major_version = extract_runtime_major_version(&version);
+                                let engine_requirement =
+                                    read_runtime_engine_requirement(&project_root, runtime)
+                                        .unwrap_or(None);
+                                let engine_requirement_satisfied =
+                                    match (major_version, engine_requirement.as_deref()) {
+                                        (Some(major), Some(requirement)) => {
+                                            runtime_major_satisfies_requirement(major, requirement)
+                                        }
+                                        _ => Some(true),
+                                    };
+                                let known_issues = known_runtime_compatibility_issues(
+                                    runtime,
+                                    major_version,
+                                    engine_requirement.as_deref(),
+                                    engine_requirement_satisfied,
+                                );
+                                let compatible = engine_requirement_satisfied.unwrap_or(false)
+                                    && known_issues.is_empty();
+
+                                build_verify_output_with_details(
+                                    "verify compatibility",
+                                    args.compat_version,
+                                    if compatible { "PASS" } else { "FAIL" },
+                                    if compatible { "pass" } else { "fail" },
+                                    if compatible { 0 } else { 1 },
+                                    if compatible {
+                                        format!(
+                                            "runtime `{runtime}` is installed, passed smoke checks, and is compatible"
+                                        )
+                                    } else {
+                                        format!(
+                                            "runtime `{runtime}` is installed but reported compatibility issues"
+                                        )
+                                    },
+                                    Some(serde_json::json!({
+                                        "target": args.target,
+                                        "target_kind": "runtime",
+                                        "runtime": runtime,
+                                        "installed": true,
+                                        "binary_path": binary.display().to_string(),
+                                        "version": version,
+                                        "major_version": major_version,
+                                        "smoke_output": smoke_output,
+                                        "engine_requirement": engine_requirement,
+                                        "compatible": compatible,
+                                        "known_issues": known_issues,
+                                    })),
+                                )
+                            }
+                            (Err(err), _) | (_, Err(err)) => build_verify_output(
+                                "verify compatibility",
+                                args.compat_version,
+                                "FAIL",
+                                "fail",
+                                1,
+                                format!("runtime `{runtime}` failed verification: {err:#}"),
+                            ),
+                        }
+                    }
+                    Err(err) => build_verify_output_with_details(
+                        "verify compatibility",
+                        args.compat_version,
+                        "FAIL",
+                        "fail",
+                        1,
+                        format!("runtime `{runtime}` is not installed or not resolvable: {err:#}"),
+                        Some(serde_json::json!({
+                            "target": args.target,
+                            "target_kind": "runtime",
+                            "runtime": runtime,
+                            "installed": false,
+                            "compatible": false,
+                            "known_issues": [
+                                format!("runtime `{runtime}` is not installed or not on PATH"),
+                            ],
+                        })),
+                    ),
+                }
+            }
+            None => build_verify_output(
+                "verify compatibility",
+                args.compat_version,
+                "FAIL",
+                "fail",
+                1,
+                format!(
+                    "invalid compatibility target `{}`: expected a profile (strict, balanced, legacy-risky) or a concrete runtime (node, bun, franken-node)",
+                    args.target
+                ),
+            ),
+        },
     };
 
     emit_verify_output("verify compatibility", &payload, args.json)
@@ -7064,12 +8506,15 @@ fn main() -> Result<()> {
                 let mut state = trust_card_cli_registry(now_secs)?;
                 let updates =
                     quarantine_trust_cards(&mut state.registry, &args.artifact, now_secs)?;
+                let fleet_incident_id =
+                    append_trust_quarantine_action(Path::new("."), &args.artifact, updates.len())?;
                 persist_trust_card_cli_registry(&state)?;
                 println!(
                     "quarantine applied: artifact={} affected_cards={}",
                     args.artifact,
                     updates.len()
                 );
+                println!("fleet propagation incident={fleet_incident_id}");
                 println!("{}", render_trust_card_list(&updates));
                 maybe_export_signed_receipts(
                     "quarantine",
@@ -7127,34 +8572,101 @@ fn main() -> Result<()> {
         Command::Fleet(sub) => match sub {
             FleetCommand::Status(args) => {
                 let zone_id = args.zone.unwrap_or_else(|| "all".to_string());
-                let identity = fleet_cli_identity();
-                let trace = fleet_cli_trace("trace-cli-fleet-status");
-                let response = handle_fleet_status(&identity, &trace, &zone_id)
-                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-                println!(
-                    "{}",
-                    render_fleet_status_human(&response.data, args.verbose)
-                );
+                let report = fleet_status_report(Path::new("."), &zone_id)?;
+                emit_fleet_status_report(&report, args.json, args.verbose)?;
             }
             FleetCommand::Release(args) => {
                 let identity = fleet_cli_identity();
                 let trace = fleet_cli_trace("trace-cli-fleet-release");
-                let response = handle_fleet_release(
-                    &identity,
-                    &trace,
-                    &ReleaseRequest {
-                        incident_id: args.incident,
+                let loaded = load_fleet_state(Path::new("."))?;
+                let incident = loaded
+                    .active_incidents
+                    .iter()
+                    .find(|incident| incident.incident_id == args.incident)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("incident `{}` not found", args.incident))?;
+                let (_, state_dir, mut transport) = open_fleet_transport(Path::new("."))?;
+                let operation_id = fleet_operation_id("release");
+                let issued_at = Utc::now().to_rfc3339();
+                transport
+                    .publish_action(&PersistedFleetActionRecord {
+                        action_id: operation_id.clone(),
+                        emitted_at: Utc::now(),
+                        action: PersistedFleetAction::Release {
+                            zone_id: incident.zone_id.clone(),
+                            incident_id: incident.incident_id.clone(),
+                            reason: Some("manual release via fleet CLI".to_string()),
+                        },
+                    })
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                let report = fleet_action_report(
+                    Path::new("."),
+                    &incident.zone_id,
+                    FleetActionResult {
+                        operation_id: operation_id.clone(),
+                        action_type: "release".to_string(),
+                        success: true,
+                        receipt: build_fleet_decision_receipt(
+                            &operation_id,
+                            &identity.principal,
+                            &incident.zone_id,
+                            &issued_at,
+                        ),
+                        convergence: None,
+                        trace_id: trace.trace_id.clone(),
+                        event_code: FLEET_RELEASED.to_string(),
                     },
-                )
-                .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-                println!("{}", render_fleet_action_human(&response.data));
+                )?;
+                debug_assert_eq!(report.state_dir, state_dir);
+                emit_fleet_action_report(&report, args.json)?;
             }
-            FleetCommand::Reconcile(_) => {
+            FleetCommand::Reconcile(args) => {
                 let identity = fleet_cli_identity();
                 let trace = fleet_cli_trace("trace-cli-fleet-reconcile");
-                let response = handle_fleet_reconcile(&identity, &trace)
-                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-                println!("{}", render_fleet_action_human(&response.data));
+                let loaded = load_fleet_state(Path::new("."))?;
+                if !loaded.stale_nodes.is_empty() && !loaded.active_incidents.is_empty() {
+                    let (_, _, mut transport) = open_fleet_transport(Path::new("."))?;
+                    let republished_at = Utc::now();
+                    for incident in &loaded.active_incidents {
+                        transport
+                            .publish_action(&PersistedFleetActionRecord {
+                                action_id: fleet_operation_id("reconcile-republish"),
+                                emitted_at: republished_at,
+                                action: PersistedFleetAction::Quarantine {
+                                    zone_id: incident.zone_id.clone(),
+                                    incident_id: incident.incident_id.clone(),
+                                    target_id: incident.target_id.clone(),
+                                    target_kind: incident.target_kind,
+                                    reason: incident.reason.clone(),
+                                    quarantine_version: incident.quarantine_version,
+                                },
+                            })
+                            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                    }
+                }
+
+                let refreshed = load_fleet_state(Path::new("."))?;
+                let operation_id = fleet_operation_id("reconcile");
+                let issued_at = Utc::now().to_rfc3339();
+                let report = fleet_action_report(
+                    Path::new("."),
+                    "all",
+                    FleetActionResult {
+                        operation_id: operation_id.clone(),
+                        action_type: "reconcile".to_string(),
+                        success: true,
+                        receipt: build_fleet_decision_receipt(
+                            &operation_id,
+                            &identity.principal,
+                            "all",
+                            &issued_at,
+                        ),
+                        convergence: aggregate_convergence(&refreshed.active_incidents),
+                        trace_id: trace.trace_id.clone(),
+                        event_code: FLEET_RECONCILE_COMPLETED.to_string(),
+                    },
+                )?;
+                emit_fleet_action_report(&report, args.json)?;
             }
         },
 

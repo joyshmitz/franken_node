@@ -660,10 +660,7 @@ fn source_vcs_signer_is_independent(attestation: &ProvenanceAttestation) -> bool
         .all(|signer| signer != source_signer)
 }
 
-fn role_signer_id(
-    attestation: &ProvenanceAttestation,
-    role: ChainLinkRole,
-) -> Option<&str> {
+fn role_signer_id(attestation: &ProvenanceAttestation, role: ChainLinkRole) -> Option<&str> {
     attestation
         .links
         .iter()

@@ -101,6 +101,7 @@ impl Config {
                     builder_identity: None,
                 },
                 fleet: FleetConfig {
+                    state_dir: None,
                     convergence_timeout_seconds: 60,
                     barrier_timeout_ms: None,
                 },
@@ -157,6 +158,7 @@ impl Config {
                     builder_identity: None,
                 },
                 fleet: FleetConfig {
+                    state_dir: None,
                     convergence_timeout_seconds: 120,
                     barrier_timeout_ms: None,
                 },
@@ -213,6 +215,7 @@ impl Config {
                     builder_identity: None,
                 },
                 fleet: FleetConfig {
+                    state_dir: None,
                     convergence_timeout_seconds: 300,
                     barrier_timeout_ms: None,
                 },
@@ -631,6 +634,14 @@ impl Config {
         }
 
         if let Some(section) = &overrides.fleet {
+            if let Some(value) = &section.state_dir {
+                self.fleet.state_dir = Some(value.clone());
+                decisions.push(MergeDecision::new(
+                    stage.clone(),
+                    "fleet.state_dir",
+                    value.display(),
+                ));
+            }
             if let Some(value) = section.convergence_timeout_seconds {
                 self.fleet.convergence_timeout_seconds = value;
                 decisions.push(MergeDecision::new(
@@ -1052,6 +1063,23 @@ impl Config {
             ));
         }
 
+        if let Some(raw) = env_lookup("FRANKEN_NODE_FLEET_STATE_DIR") {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                return Err(ConfigError::EnvParseFailed {
+                    key: "FRANKEN_NODE_FLEET_STATE_DIR".to_string(),
+                    value: raw,
+                    reason: "path must not be empty".to_string(),
+                });
+            }
+            let parsed = PathBuf::from(trimmed);
+            self.fleet.state_dir = Some(parsed.clone());
+            decisions.push(MergeDecision::new(
+                MergeStage::Env,
+                "fleet.state_dir",
+                parsed.display(),
+            ));
+        }
         if let Some(raw) = env_lookup("FRANKEN_NODE_FLEET_CONVERGENCE_TIMEOUT_SECONDS") {
             let parsed = parse_env_u64("FRANKEN_NODE_FLEET_CONVERGENCE_TIMEOUT_SECONDS", &raw)?;
             self.fleet.convergence_timeout_seconds = parsed;
@@ -1228,6 +1256,13 @@ impl Config {
         if self.fleet.convergence_timeout_seconds == 0 {
             return Err(ConfigError::ValidationFailed(
                 "fleet.convergence_timeout_seconds must be > 0".to_string(),
+            ));
+        }
+        if let Some(state_dir) = &self.fleet.state_dir
+            && state_dir.as_os_str().is_empty()
+        {
+            return Err(ConfigError::ValidationFailed(
+                "fleet.state_dir must be non-empty when configured".to_string(),
             ));
         }
         if self.replay.bundle_version.trim().is_empty() {
@@ -1617,6 +1652,7 @@ struct RegistryOverrides {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct FleetOverrides {
+    pub state_dir: Option<PathBuf>,
     pub convergence_timeout_seconds: Option<u64>,
     pub barrier_timeout_ms: Option<u64>,
 }
@@ -1842,6 +1878,9 @@ pub struct RegistryConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FleetConfig {
+    /// Optional override for the persisted fleet shared-state directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_dir: Option<PathBuf>,
     /// Fleet convergence timeout for quarantine/release operations (seconds).
     pub convergence_timeout_seconds: u64,
     /// Optional override for fleet barrier timeout (milliseconds).
@@ -2142,6 +2181,7 @@ mod tests {
         assert!(config.migration.autofix);
         assert!(config.trust.risky_requires_fresh_revocation);
         assert_eq!(config.registry.minimum_assurance_level, 3);
+        assert_eq!(config.fleet.state_dir, None);
         assert_eq!(config.compatibility.default_receipt_ttl_secs, 3_600);
         assert_eq!(config.replay.max_replay_capsule_freshness_secs, 3_600);
         assert_eq!(config.remote.idempotency_ttl_secs, 604_800);
@@ -2178,11 +2218,13 @@ mod tests {
     fn roundtrip_toml_serialization() {
         let mut config = Config::for_profile(Profile::Balanced);
         config.engine.binary_path = Some(PathBuf::from("/opt/franken-engine"));
+        config.fleet.state_dir = Some(PathBuf::from(".franken-node/state/fleet"));
         config.registry.builder_identity = Some("builder.example.internal".to_string());
         let toml_str = config.to_toml().expect("serialize");
         let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
         assert_eq!(parsed.profile, Profile::Balanced);
         assert_eq!(parsed.engine.binary_path, config.engine.binary_path);
+        assert_eq!(parsed.fleet.state_dir, config.fleet.state_dir);
         assert_eq!(
             parsed.registry.builder_identity,
             config.registry.builder_identity
@@ -2567,6 +2609,40 @@ binary_path = "/opt/from-file/franken-engine"
     }
 
     #[test]
+    fn resolve_applies_fleet_state_dir_file_and_env_overrides() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("franken_node.toml");
+        std::fs::write(
+            &path,
+            r#"
+[fleet]
+state_dir = "from-file/fleet"
+"#,
+        )
+        .unwrap();
+
+        let env = BTreeMap::from([(
+            "FRANKEN_NODE_FLEET_STATE_DIR".to_string(),
+            "/tmp/from-env/fleet".to_string(),
+        )]);
+
+        let resolved =
+            Config::resolve_with_env(Some(&path), CliOverrides::default(), &map_lookup(env))
+                .unwrap();
+
+        assert_eq!(
+            resolved.config.fleet.state_dir,
+            Some(PathBuf::from("/tmp/from-env/fleet"))
+        );
+        assert!(resolved.decisions.iter().any(|decision| {
+            decision.field == "fleet.state_dir" && decision.stage == MergeStage::File
+        }));
+        assert!(resolved.decisions.iter().any(|decision| {
+            decision.field == "fleet.state_dir" && decision.stage == MergeStage::Env
+        }));
+    }
+
+    #[test]
     fn resolve_applies_registry_builder_identity_file_and_env_overrides() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("franken_node.toml");
@@ -2686,6 +2762,28 @@ idempotency_ttl_secs = 0
         )
         .unwrap_err();
         assert!(err.to_string().contains("remote.idempotency_ttl_secs"));
+    }
+
+    #[test]
+    fn validation_rejects_empty_fleet_state_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("franken_node.toml");
+        std::fs::write(
+            &path,
+            r#"
+[fleet]
+state_dir = ""
+"#,
+        )
+        .unwrap();
+
+        let err = Config::resolve_with_env(
+            Some(&path),
+            CliOverrides::default(),
+            &map_lookup(BTreeMap::new()),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("fleet.state_dir"));
     }
 
     #[test]
