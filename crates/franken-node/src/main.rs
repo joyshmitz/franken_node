@@ -180,6 +180,10 @@ const TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH: &str =
     ".franken-node/state/trust-card-registry.v1.json";
 const INCIDENT_EVIDENCE_RELATIVE_DIR: &str = ".franken-node/state/incidents";
 const INCIDENT_EVIDENCE_FILE_NAME: &str = "evidence.v1.json";
+const RUN_EXECUTION_RECEIPT_SCHEMA_VERSION: &str = "franken-node/run-execution-receipt/v1";
+const RUN_EXECUTION_RECEIPT_ID_PLACEHOLDER: &str = "pending";
+const RUN_EXECUTION_RECEIPT_DEFAULT_MAX_RECEIPTS: usize = 100;
+const RUN_EXECUTION_RECEIPT_AUTO_QUARANTINE_THRESHOLD: usize = 1;
 const TRUST_SCAN_NPM_REGISTRY_BASE_URL: &str = "https://registry.npmjs.org";
 const TRUST_SCAN_OSV_QUERY_URL: &str = "https://api.osv.dev/v1/query";
 const TRUST_SCAN_DEPS_DEV_BASE_URL: &str = "https://api.deps.dev/v3alpha";
@@ -208,6 +212,18 @@ struct Ed25519SigningMaterial {
     path: PathBuf,
     source: &'static str,
     signing_key: ed25519_dalek::SigningKey,
+}
+
+/// Bundled context for receipt export with mandatory signing material.
+///
+/// When receipt export is requested (via `--receipt-out` or `--receipt-summary-out`),
+/// this struct ensures signing material is always available. The type system
+/// enforces the "sign-or-fail" contract: if you have a `ReceiptExportContext`,
+/// you have everything needed to produce a signed receipt.
+struct ReceiptExportContext {
+    receipt_out: Option<PathBuf>,
+    receipt_summary_out: Option<PathBuf>,
+    signing_material: Ed25519SigningMaterial,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -355,6 +371,86 @@ struct RunPreFlightReport {
     receipt: Receipt,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct RunExecutionTelemetrySummary {
+    final_state: Option<String>,
+    accepted_total: u64,
+    persisted_total: u64,
+    shed_total: u64,
+    dropped_total: u64,
+    retry_total: u64,
+    drain_completed: bool,
+    drain_duration_ms: u64,
+    recent_event_codes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+struct RunExecutionReceiptCore {
+    receipt_id: String,
+    schema_version: String,
+    app_path: String,
+    policy_mode: String,
+    profile: String,
+    start_time_utc: String,
+    end_time_utc: String,
+    duration_ms: u64,
+    exit_code: Option<i32>,
+    runtime_used: String,
+    runtime_version: Option<String>,
+    preflight_verdict: PreFlightVerdict,
+    telemetry_summary: Option<RunExecutionTelemetrySummary>,
+    ssrf_violations: Vec<String>,
+    lockstep_verdict: Option<serde_json::Value>,
+    violation_count: usize,
+    auto_quarantined_extensions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+struct RunExecutionReceipt {
+    #[serde(flatten)]
+    core: RunExecutionReceiptCore,
+    receipt_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct RunCommandOutput {
+    success: bool,
+    preflight: RunPreFlightReport,
+    dispatch: ops::engine_dispatcher::RunDispatchReport,
+    receipt: RunExecutionReceipt,
+    receipt_path: String,
+}
+
+struct TempFileGuard(Option<PathBuf>);
+
+impl TempFileGuard {
+    fn new(path: PathBuf) -> Self {
+        Self(Some(path))
+    }
+
+    fn abandoned_path(path: &Path) -> PathBuf {
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("run-receipt.json.tmp");
+        path.with_file_name(format!("{file_name}.orphaned-{}", Uuid::now_v7()))
+    }
+
+    fn defuse(&mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if let Some(path) = self.0.take() {
+            if path.is_file() {
+                let _ = std::fs::rename(&path, Self::abandoned_path(&path));
+            }
+        }
+    }
+}
+
 fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> {
     use base64::Engine;
 
@@ -477,37 +573,45 @@ fn load_registry_publish_signing_material(path: &Path) -> Result<Ed25519SigningM
     load_ed25519_signing_material_from_path(path, "registry publish signing key", "cli")
 }
 
-fn prepare_receipt_signing_material(
+/// Prepare receipt export context with mandatory signing material.
+///
+/// Returns `None` if no receipt export is requested (both paths are `None`).
+/// Returns `Some(ReceiptExportContext)` with required signing material if export is requested.
+/// Fails immediately if export is requested but no signing key is configured.
+fn prepare_receipt_export_context(
     receipt_out: Option<&Path>,
     receipt_summary_out: Option<&Path>,
     cli_override: Option<&Path>,
-) -> Result<Option<Ed25519SigningMaterial>> {
+) -> Result<Option<ReceiptExportContext>> {
     if receipt_out.is_none() && receipt_summary_out.is_none() {
         return Ok(None);
     }
 
-    load_receipt_signing_material(cli_override)?.ok_or_else(|| {
+    let signing_material = load_receipt_signing_material(cli_override)?.ok_or_else(|| {
         anyhow::anyhow!(
             "receipt export requested but no signing key was configured; pass --receipt-signing-key, set FRANKEN_NODE_SECURITY_DECISION_RECEIPT_SIGNING_KEY_PATH, or configure security.decision_receipt_signing_key_path"
         )
-    }).map(Some)
+    })?;
+
+    Ok(Some(ReceiptExportContext {
+        receipt_out: receipt_out.map(Path::to_path_buf),
+        receipt_summary_out: receipt_summary_out.map(Path::to_path_buf),
+        signing_material,
+    }))
 }
 
-fn maybe_export_signed_receipts(
+/// Export signed receipts using pre-validated context.
+///
+/// This function takes a `ReceiptExportContext` which guarantees signing material
+/// is available. The type system enforces the sign-or-fail contract: callers must
+/// obtain a `ReceiptExportContext` via `prepare_receipt_export_context`, which
+/// fails immediately if signing material cannot be loaded.
+fn export_signed_receipts(
     action_name: &str,
     actor_identity: &str,
     rationale: &str,
-    receipt_out: Option<&Path>,
-    receipt_summary_out: Option<&Path>,
-    signing_material: Option<&Ed25519SigningMaterial>,
+    ctx: &ReceiptExportContext,
 ) -> Result<()> {
-    if receipt_out.is_none() && receipt_summary_out.is_none() {
-        return Ok(());
-    }
-
-    let signing_material = signing_material.ok_or_else(|| {
-        anyhow::anyhow!("missing prepared receipt signing material for {action_name}")
-    })?;
     let mut chain = Vec::new();
 
     let receipt = Receipt::new(
@@ -528,14 +632,14 @@ fn maybe_export_signed_receipts(
         0.93,
         "franken-node trust sync --force",
     )?;
-    let signed = append_signed_receipt(&mut chain, receipt, &signing_material.signing_key)?;
+    let signed = append_signed_receipt(&mut chain, receipt, &ctx.signing_material.signing_key)?;
 
     let filter = ReceiptQuery::default();
-    if let Some(path) = receipt_out {
+    if let Some(ref path) = ctx.receipt_out {
         export_receipts_to_path(&chain, &filter, path)
             .with_context(|| format!("failed writing receipt export to {}", path.display()))?;
     }
-    if let Some(path) = receipt_summary_out {
+    if let Some(ref path) = ctx.receipt_summary_out {
         write_receipts_markdown(&chain, path)
             .with_context(|| format!("failed writing receipt summary to {}", path.display()))?;
     }
@@ -543,8 +647,8 @@ fn maybe_export_signed_receipts(
         "receipt export signed: action={} signer_key_id={} signing_source={} signing_key_path={}",
         action_name,
         signed.signer_key_id,
-        signing_material.source,
-        signing_material.path.display()
+        ctx.signing_material.source,
+        ctx.signing_material.path.display()
     );
 
     Ok(())
@@ -1189,6 +1293,418 @@ fn ensure_state_dir(project_root: &Path) -> Result<PathBuf> {
         );
     }
     Ok(state_dir)
+}
+
+fn configured_run_receipt_limit(config: &config::Config) -> usize {
+    config
+        .observability
+        .max_receipts
+        .unwrap_or(RUN_EXECUTION_RECEIPT_DEFAULT_MAX_RECEIPTS)
+}
+
+fn summarize_run_telemetry(
+    report: Option<&ops::telemetry_bridge::TelemetryRuntimeReport>,
+) -> Option<RunExecutionTelemetrySummary> {
+    report.map(|report| RunExecutionTelemetrySummary {
+        final_state: Some(format!("{:?}", report.final_state).to_ascii_lowercase()),
+        accepted_total: report.accepted_total,
+        persisted_total: report.persisted_total,
+        shed_total: report.shed_total,
+        dropped_total: report.dropped_total,
+        retry_total: report.retry_total,
+        drain_completed: report.drain_completed,
+        drain_duration_ms: report.drain_duration_ms,
+        recent_event_codes: report
+            .recent_events
+            .iter()
+            .map(|event| event.code.clone())
+            .collect(),
+    })
+}
+
+fn value_contains_ssrf_signal(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::String(text) => {
+            let normalized = text.to_ascii_lowercase();
+            normalized.contains("ssrf")
+                || normalized.contains("server-side request forgery")
+                || normalized.contains("server side request forgery")
+        }
+        serde_json::Value::Array(items) => items.iter().any(value_contains_ssrf_signal),
+        serde_json::Value::Object(map) => map.iter().any(|(key, item)| {
+            value_contains_ssrf_signal(&serde_json::Value::String(key.clone()))
+                || value_contains_ssrf_signal(item)
+        }),
+        _ => false,
+    }
+}
+
+fn extract_ssrf_violations(
+    report: Option<&ops::telemetry_bridge::TelemetryRuntimeReport>,
+) -> Vec<String> {
+    let mut violations = report
+        .into_iter()
+        .flat_map(|report| report.telemetry_events.iter())
+        .filter_map(|event| {
+            let payload = &event.payload;
+            let event_type_matches = matches!(
+                event.event_type.as_str(),
+                "network_request" | "policy_check" | "error"
+            );
+            let blocked = payload
+                .get("blocked")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+                || payload
+                    .get("decision")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|decision| {
+                        matches!(
+                            decision.to_ascii_lowercase().as_str(),
+                            "deny" | "denied" | "blocked"
+                        )
+                    })
+                || payload
+                    .get("verdict")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|verdict| {
+                        matches!(
+                            verdict.to_ascii_lowercase().as_str(),
+                            "deny" | "denied" | "blocked"
+                        )
+                    });
+            let has_ssrf_signal = value_contains_ssrf_signal(payload);
+
+            if !event_type_matches || !has_ssrf_signal || !blocked {
+                return None;
+            }
+
+            Some(
+                payload
+                    .get("detail")
+                    .or_else(|| payload.get("message"))
+                    .or_else(|| payload.get("reason"))
+                    .and_then(serde_json::Value::as_str)
+                    .map_or_else(
+                        || format!("{} reported an ssrf policy violation", event.event_type),
+                        std::string::ToString::to_string,
+                    ),
+            )
+        })
+        .collect::<Vec<_>>();
+    violations.sort();
+    violations.dedup();
+    violations
+}
+
+fn compute_run_execution_receipt_hash(core: &RunExecutionReceiptCore) -> Result<String> {
+    let payload =
+        serde_json::to_vec(core).context("failed serializing run execution receipt for hashing")?;
+    Ok(format!(
+        "sha256:{:x}",
+        sha2::Sha256::digest([b"run_execution_receipt_v1:" as &[u8], payload.as_slice()].concat())
+    ))
+}
+
+fn compute_run_execution_receipt_seed_hash(core: &RunExecutionReceiptCore) -> Result<String> {
+    let payload = serde_json::to_vec(core)
+        .context("failed serializing run execution receipt identity seed for hashing")?;
+    Ok(format!(
+        "sha256:{:x}",
+        sha2::Sha256::digest(
+            [
+                b"run_execution_receipt_identity_v1:" as &[u8],
+                payload.as_slice()
+            ]
+            .concat()
+        )
+    ))
+}
+
+fn deterministic_run_execution_receipt_id(seed_hash: &str) -> String {
+    let digest = sha2::Sha256::digest(seed_hash.as_bytes());
+    let mut bytes = [0_u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    bytes[6] = (bytes[6] & 0x0f) | 0x80;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Uuid::from_bytes(bytes).to_string()
+}
+
+fn build_run_execution_receipt(
+    app_path: &Path,
+    policy_mode: &str,
+    profile: Profile,
+    preflight: &RunPreFlightReport,
+    dispatch: &ops::engine_dispatcher::RunDispatchReport,
+    ssrf_violations: Vec<String>,
+    auto_quarantined_extensions: Vec<String>,
+) -> Result<RunExecutionReceipt> {
+    let violation_count = ssrf_violations.len();
+    let mut core = RunExecutionReceiptCore {
+        receipt_id: RUN_EXECUTION_RECEIPT_ID_PLACEHOLDER.to_string(),
+        schema_version: RUN_EXECUTION_RECEIPT_SCHEMA_VERSION.to_string(),
+        app_path: app_path.display().to_string(),
+        policy_mode: policy_mode.to_string(),
+        profile: profile.to_string(),
+        start_time_utc: dispatch.started_at_utc.clone(),
+        end_time_utc: dispatch.finished_at_utc.clone(),
+        duration_ms: dispatch.duration_ms,
+        exit_code: dispatch.exit_code,
+        runtime_used: dispatch.runtime.clone(),
+        runtime_version: None,
+        preflight_verdict: preflight.verdict.clone(),
+        telemetry_summary: summarize_run_telemetry(dispatch.telemetry.as_ref()),
+        ssrf_violations,
+        lockstep_verdict: None,
+        violation_count,
+        auto_quarantined_extensions,
+    };
+    let seed_hash = compute_run_execution_receipt_seed_hash(&core)?;
+    core.receipt_id = deterministic_run_execution_receipt_id(&seed_hash);
+    let receipt_hash = compute_run_execution_receipt_hash(&core)?;
+    Ok(RunExecutionReceipt { core, receipt_hash })
+}
+
+fn run_execution_receipts_root(project_root: &Path) -> Result<PathBuf> {
+    Ok(ensure_state_dir(project_root)?.join("execution-receipts"))
+}
+
+fn list_active_run_receipts(receipts_root: &Path) -> Result<Vec<PathBuf>> {
+    if !receipts_root.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let mut receipts = Vec::new();
+    for entry in std::fs::read_dir(receipts_root)
+        .with_context(|| format!("failed listing {}", receipts_root.display()))?
+    {
+        let entry = entry.with_context(|| format!("failed reading {}", receipts_root.display()))?;
+        let path = entry.path();
+        if !entry
+            .file_type()
+            .with_context(|| format!("failed reading file type for {}", path.display()))?
+            .is_dir()
+        {
+            continue;
+        }
+        if entry.file_name() == "archive" {
+            continue;
+        }
+
+        for file in std::fs::read_dir(&path)
+            .with_context(|| format!("failed listing {}", path.display()))?
+        {
+            let file = file.with_context(|| format!("failed reading {}", path.display()))?;
+            let file_path = file.path();
+            if file
+                .file_type()
+                .with_context(|| format!("failed reading file type for {}", file_path.display()))?
+                .is_file()
+                && file_path.extension().and_then(|ext| ext.to_str()) == Some("json")
+            {
+                receipts.push(file_path);
+            }
+        }
+    }
+
+    receipts.sort();
+    Ok(receipts)
+}
+
+fn archive_excess_run_receipts(receipts_root: &Path, max_receipts: usize) -> Result<()> {
+    let receipts = list_active_run_receipts(receipts_root)?;
+    let overflow = receipts.len().saturating_sub(max_receipts);
+    if overflow == 0 {
+        return Ok(());
+    }
+
+    let archive_root = receipts_root.join("archive");
+    for path in receipts.into_iter().take(overflow) {
+        let relative = path.strip_prefix(receipts_root).with_context(|| {
+            format!(
+                "failed deriving relative receipt path {} from {}",
+                path.display(),
+                receipts_root.display()
+            )
+        })?;
+        let archive_path = archive_root.join(relative);
+        if let Some(parent) = archive_path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed creating {}", parent.display()))?;
+        }
+        std::fs::rename(&path, &archive_path).with_context(|| {
+            format!(
+                "failed archiving old run receipt {} -> {}",
+                path.display(),
+                archive_path.display()
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+fn persist_run_execution_receipt(
+    project_root: &Path,
+    receipt: &RunExecutionReceipt,
+    max_receipts: usize,
+) -> Result<PathBuf> {
+    let receipts_root = run_execution_receipts_root(project_root)?;
+    let ended_at = DateTime::parse_from_rfc3339(&receipt.core.end_time_utc)
+        .context("run receipt end_time_utc was not valid RFC3339")?;
+    let day_dir = receipts_root.join(ended_at.format("%Y-%m-%d").to_string());
+    std::fs::create_dir_all(&day_dir)
+        .with_context(|| format!("failed creating {}", day_dir.display()))?;
+
+    let final_path = day_dir.join(format!("{}.json", receipt.core.receipt_id));
+    let temp_path = day_dir.join(format!("{}.json.tmp", receipt.core.receipt_id));
+    let mut temp_guard = TempFileGuard::new(temp_path.clone());
+    let rendered = serde_json::to_vec_pretty(receipt)
+        .context("failed serializing run execution receipt for persistence")?;
+    std::fs::write(&temp_path, rendered)
+        .with_context(|| format!("failed writing {}", temp_path.display()))?;
+    std::fs::rename(&temp_path, &final_path).with_context(|| {
+        format!(
+            "failed promoting run execution receipt {} -> {}",
+            temp_path.display(),
+            final_path.display()
+        )
+    })?;
+    temp_guard.defuse();
+
+    archive_excess_run_receipts(&receipts_root, max_receipts)?;
+    Ok(final_path)
+}
+
+fn maybe_auto_quarantine_run_dependencies(
+    project_root: &Path,
+    config: &config::Config,
+    preflight: &RunPreFlightReport,
+    violation_count: usize,
+    now_secs: u64,
+) -> Result<Vec<String>> {
+    if violation_count < RUN_EXECUTION_RECEIPT_AUTO_QUARANTINE_THRESHOLD
+        || !config.trust.quarantine_on_high_risk
+    {
+        return Ok(Vec::new());
+    }
+
+    let registry_path = project_root.join(TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH);
+    if !registry_path.is_file() {
+        tracing::warn!(
+            registry_path = %registry_path.display(),
+            "skipping automatic run quarantine because trust registry is unavailable"
+        );
+        return Ok(Vec::new());
+    }
+
+    let mut extension_ids = match &preflight.verdict {
+        PreFlightVerdict::Passed { results, .. } | PreFlightVerdict::Blocked { results, .. } => {
+            results
+                .iter()
+                .filter(|result| result.status == RunDependencyTrustStatus::Trusted)
+                .map(|result| result.extension_id.clone())
+                .collect::<Vec<_>>()
+        }
+        PreFlightVerdict::Skipped { .. } => Vec::new(),
+    };
+    extension_ids.sort();
+    extension_ids.dedup();
+    if extension_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let cache_ttl = config.trust.card_cache_ttl_secs.unwrap_or(60);
+    let mut registry =
+        TrustCardRegistry::load_authoritative_state(&registry_path, cache_ttl, now_secs)
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+    let now_rfc3339 = rfc3339_timestamp_from_secs(now_secs);
+    let mut quarantined = Vec::new();
+
+    for extension_id in extension_ids {
+        registry
+            .update(
+                &extension_id,
+                TrustCardMutation {
+                    certification_level: None,
+                    revocation_status: None,
+                    active_quarantine: Some(true),
+                    reputation_score_basis_points: None,
+                    reputation_trend: Some(ReputationTrend::Declining),
+                    user_facing_risk_assessment: Some(RiskAssessment {
+                        level: RiskLevel::High,
+                        summary: format!(
+                            "Automatically quarantined after runtime policy violations ({violation_count} violation(s))"
+                        ),
+                    }),
+                    last_verified_timestamp: Some(now_rfc3339.clone()),
+                    evidence_refs: None,
+                },
+                now_secs,
+                "trace-cli-run-auto-quarantine",
+            )
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        quarantined.push(extension_id);
+    }
+
+    registry
+        .persist_authoritative_state(&registry_path)
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+    Ok(quarantined)
+}
+
+fn render_run_execution_receipt_summary(
+    receipt: &RunExecutionReceipt,
+    receipt_path: &Path,
+) -> String {
+    format!(
+        "run receipt: id={} runtime={} exit_code={} violations={} auto_quarantined={} path={}",
+        receipt.core.receipt_id,
+        receipt.core.runtime_used,
+        receipt
+            .core
+            .exit_code
+            .map_or_else(|| "signal".to_string(), |code| code.to_string()),
+        receipt.core.violation_count,
+        receipt.core.auto_quarantined_extensions.len(),
+        receipt_path.display()
+    )
+}
+
+fn emit_run_completion_output(
+    preflight: &RunPreFlightReport,
+    dispatch: &ops::engine_dispatcher::RunDispatchReport,
+    receipt: &RunExecutionReceipt,
+    receipt_path: &Path,
+    json: bool,
+) -> Result<()> {
+    if json {
+        let output = RunCommandOutput {
+            success: dispatch.exit_code == Some(0) && !dispatch.terminated_by_signal,
+            preflight: preflight.clone(),
+            dispatch: dispatch.clone(),
+            receipt: receipt.clone(),
+            receipt_path: receipt_path.display().to_string(),
+        };
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output)
+                .context("failed serializing run completion output")?
+        );
+        return Ok(());
+    }
+
+    if !dispatch.captured_output.stdout.is_empty() {
+        print!("{}", dispatch.captured_output.stdout);
+    }
+    if !dispatch.captured_output.stderr.is_empty() {
+        eprint!("{}", dispatch.captured_output.stderr);
+    }
+    println!(
+        "{}",
+        render_run_execution_receipt_summary(receipt, receipt_path)
+    );
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -1847,6 +2363,199 @@ fn build_doctor_report_with_cwd_and_policy_input(
                     ),
                     "No action required.".to_string(),
                 )
+            },
+        ));
+    }
+
+    // DR-STORAGE-012: Probe real filesystem state for fleet state directory
+    if let Some(state_dir) = &resolved.config.fleet.state_dir {
+        let state_dir_clone = state_dir.clone();
+        checks.push(evaluate_doctor_check(
+            "DR-STORAGE-012",
+            "DOC-012",
+            "storage.state_dir",
+            move || {
+                if state_dir_clone.exists() {
+                    let test_path = state_dir_clone.join(".doctor_probe");
+                    match std::fs::write(&test_path, b"probe") {
+                        Ok(()) => {
+                            let _ = std::fs::remove_file(&test_path);
+                            (
+                                DoctorStatus::Pass,
+                                format!(
+                                    "Fleet state directory exists and is writable: {}",
+                                    state_dir_clone.display()
+                                ),
+                                "No action required.".to_string(),
+                            )
+                        }
+                        Err(err) => (
+                            DoctorStatus::Fail,
+                            format!(
+                                "Fleet state directory exists but is not writable: {}",
+                                state_dir_clone.display()
+                            ),
+                            format!(
+                                "Fix permissions on {} ({}).",
+                                state_dir_clone.display(),
+                                err
+                            ),
+                        ),
+                    }
+                } else {
+                    (
+                        DoctorStatus::Warn,
+                        format!(
+                            "Fleet state directory does not exist: {}",
+                            state_dir_clone.display()
+                        ),
+                        format!(
+                            "Create the directory with: mkdir -p {}",
+                            state_dir_clone.display()
+                        ),
+                    )
+                }
+            },
+        ));
+    }
+
+    // DR-SECURITY-013: Probe real filesystem state for receipt signing key
+    if let Some(key_path) = &resolved.config.security.decision_receipt_signing_key_path {
+        let key_path_clone = key_path.clone();
+        checks.push(evaluate_doctor_check(
+            "DR-SECURITY-013",
+            "DOC-013",
+            "security.signing_key",
+            move || {
+                if key_path_clone.exists() {
+                    match std::fs::metadata(&key_path_clone) {
+                        Ok(meta) if meta.is_file() => (
+                            DoctorStatus::Pass,
+                            format!(
+                                "Receipt signing key file exists: {}",
+                                key_path_clone.display()
+                            ),
+                            "No action required.".to_string(),
+                        ),
+                        Ok(_) => (
+                            DoctorStatus::Fail,
+                            format!(
+                                "Receipt signing key path is not a regular file: {}",
+                                key_path_clone.display()
+                            ),
+                            "Configure decision_receipt_signing_key_path to point to a regular file."
+                                .to_string(),
+                        ),
+                        Err(err) => (
+                            DoctorStatus::Fail,
+                            format!(
+                                "Cannot read receipt signing key file metadata: {}",
+                                key_path_clone.display()
+                            ),
+                            format!(
+                                "Fix file permissions or path ({}).",
+                                err
+                            ),
+                        ),
+                    }
+                } else {
+                    (
+                        DoctorStatus::Fail,
+                        format!(
+                            "Receipt signing key file does not exist: {}",
+                            key_path_clone.display()
+                        ),
+                        format!(
+                            "Create a signing key or update decision_receipt_signing_key_path. Current path: {}",
+                            key_path_clone.display()
+                        ),
+                    )
+                }
+            },
+        ));
+    }
+
+    // DR-ENGINE-014: Probe real filesystem state for engine binary
+    if let Some(engine_path) = &resolved.config.engine.binary_path {
+        let engine_path_clone = engine_path.clone();
+        checks.push(evaluate_doctor_check(
+            "DR-ENGINE-014",
+            "DOC-014",
+            "engine.binary",
+            move || {
+                if engine_path_clone.exists() {
+                    match std::fs::metadata(&engine_path_clone) {
+                        Ok(meta) if meta.is_file() => {
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                let mode = meta.permissions().mode();
+                                if mode & 0o111 != 0 {
+                                    (
+                                        DoctorStatus::Pass,
+                                        format!(
+                                            "Engine binary exists and is executable: {}",
+                                            engine_path_clone.display()
+                                        ),
+                                        "No action required.".to_string(),
+                                    )
+                                } else {
+                                    (
+                                        DoctorStatus::Warn,
+                                        format!(
+                                            "Engine binary exists but is not executable: {}",
+                                            engine_path_clone.display()
+                                        ),
+                                        format!(
+                                            "Add execute permission: chmod +x {}",
+                                            engine_path_clone.display()
+                                        ),
+                                    )
+                                }
+                            }
+                            #[cfg(not(unix))]
+                            {
+                                (
+                                    DoctorStatus::Pass,
+                                    format!(
+                                        "Engine binary exists: {}",
+                                        engine_path_clone.display()
+                                    ),
+                                    "No action required.".to_string(),
+                                )
+                            }
+                        }
+                        Ok(_) => (
+                            DoctorStatus::Fail,
+                            format!(
+                                "Engine binary path is not a regular file: {}",
+                                engine_path_clone.display()
+                            ),
+                            "Configure engine.binary_path to point to the franken_engine binary."
+                                .to_string(),
+                        ),
+                        Err(err) => (
+                            DoctorStatus::Fail,
+                            format!(
+                                "Cannot read engine binary metadata: {}",
+                                engine_path_clone.display()
+                            ),
+                            format!("Fix file permissions or path ({}).", err),
+                        ),
+                    }
+                } else {
+                    (
+                        DoctorStatus::Warn,
+                        format!(
+                            "Engine binary does not exist: {}",
+                            engine_path_clone.display()
+                        ),
+                        format!(
+                            "Install franken_engine or update engine.binary_path. Current path: {}",
+                            engine_path_clone.display()
+                        ),
+                    )
+                }
             },
         ));
     }
@@ -2587,6 +3296,181 @@ mod doctor_tests {
                 .all(|check| matches!(check.status, DoctorStatus::Fail))
         );
         assert_eq!(report.overall_status, DoctorStatus::Fail);
+    }
+
+    fn resolved_fixture_with_paths(
+        profile: Profile,
+        state_dir: Option<PathBuf>,
+        signing_key_path: Option<PathBuf>,
+        engine_binary_path: Option<PathBuf>,
+    ) -> config::ResolvedConfig {
+        let mut config = config::Config::for_profile(profile);
+        config.fleet.state_dir = state_dir;
+        config.security.decision_receipt_signing_key_path = signing_key_path;
+        config.engine.binary_path = engine_binary_path;
+        config::ResolvedConfig {
+            config,
+            selected_profile: profile,
+            source_path: None,
+            decisions: vec![],
+        }
+    }
+
+    #[test]
+    fn doctor_probes_real_filesystem_state_for_configured_paths() {
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        // Create a valid state directory
+        let state_dir = dir.path().join("state");
+        std::fs::create_dir_all(&state_dir).expect("create state dir");
+
+        // Create a valid signing key file
+        let signing_key_path = dir.path().join("signing.key");
+        std::fs::write(&signing_key_path, "test-key-material").expect("write signing key");
+
+        // Create a valid engine binary (just a regular file for this test)
+        let engine_path = dir.path().join("franken-engine");
+        std::fs::write(&engine_path, "#!/bin/sh\necho hello").expect("write engine");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&engine_path, std::fs::Permissions::from_mode(0o755))
+                .expect("set executable");
+        }
+
+        let report = build_doctor_report_with_cwd(
+            &resolved_fixture_with_paths(
+                Profile::Balanced,
+                Some(state_dir.clone()),
+                Some(signing_key_path.clone()),
+                Some(engine_path.clone()),
+            ),
+            "trace-fs-probes",
+            Ok(PathBuf::from(".")),
+        );
+
+        let codes = report
+            .checks
+            .iter()
+            .map(|check| check.code.as_str())
+            .collect::<Vec<_>>();
+
+        // Verify new system state probe checks are present
+        assert!(codes.contains(&"DR-STORAGE-012"), "storage check missing");
+        assert!(codes.contains(&"DR-SECURITY-013"), "security check missing");
+        assert!(codes.contains(&"DR-ENGINE-014"), "engine check missing");
+
+        // Verify all three pass when paths exist and are valid
+        let storage_check = report
+            .checks
+            .iter()
+            .find(|c| c.code == "DR-STORAGE-012")
+            .expect("storage check");
+        assert_eq!(
+            storage_check.status,
+            DoctorStatus::Pass,
+            "storage check should pass: {}",
+            storage_check.message
+        );
+
+        let security_check = report
+            .checks
+            .iter()
+            .find(|c| c.code == "DR-SECURITY-013")
+            .expect("security check");
+        assert_eq!(
+            security_check.status,
+            DoctorStatus::Pass,
+            "security check should pass: {}",
+            security_check.message
+        );
+
+        let engine_check = report
+            .checks
+            .iter()
+            .find(|c| c.code == "DR-ENGINE-014")
+            .expect("engine check");
+        assert_eq!(
+            engine_check.status,
+            DoctorStatus::Pass,
+            "engine check should pass: {}",
+            engine_check.message
+        );
+    }
+
+    #[test]
+    fn doctor_fails_when_signing_key_file_does_not_exist() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let nonexistent_key = dir.path().join("nonexistent.key");
+
+        let report = build_doctor_report_with_cwd(
+            &resolved_fixture_with_paths(Profile::Balanced, None, Some(nonexistent_key), None),
+            "trace-missing-key",
+            Ok(PathBuf::from(".")),
+        );
+
+        let security_check = report
+            .checks
+            .iter()
+            .find(|c| c.code == "DR-SECURITY-013")
+            .expect("security check");
+        assert_eq!(
+            security_check.status,
+            DoctorStatus::Fail,
+            "security check should fail for missing key: {}",
+            security_check.message
+        );
+        assert!(security_check.message.contains("does not exist"));
+    }
+
+    #[test]
+    fn doctor_warns_when_state_dir_does_not_exist() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let nonexistent_state = dir.path().join("nonexistent-state");
+
+        let report = build_doctor_report_with_cwd(
+            &resolved_fixture_with_paths(Profile::Balanced, Some(nonexistent_state), None, None),
+            "trace-missing-state",
+            Ok(PathBuf::from(".")),
+        );
+
+        let storage_check = report
+            .checks
+            .iter()
+            .find(|c| c.code == "DR-STORAGE-012")
+            .expect("storage check");
+        assert_eq!(
+            storage_check.status,
+            DoctorStatus::Warn,
+            "storage check should warn for missing dir: {}",
+            storage_check.message
+        );
+        assert!(storage_check.message.contains("does not exist"));
+    }
+
+    #[test]
+    fn doctor_warns_when_engine_binary_does_not_exist() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let nonexistent_engine = dir.path().join("nonexistent-engine");
+
+        let report = build_doctor_report_with_cwd(
+            &resolved_fixture_with_paths(Profile::Balanced, None, None, Some(nonexistent_engine)),
+            "trace-missing-engine",
+            Ok(PathBuf::from(".")),
+        );
+
+        let engine_check = report
+            .checks
+            .iter()
+            .find(|c| c.code == "DR-ENGINE-014")
+            .expect("engine check");
+        assert_eq!(
+            engine_check.status,
+            DoctorStatus::Warn,
+            "engine check should warn for missing binary: {}",
+            engine_check.message
+        );
+        assert!(engine_check.message.contains("does not exist"));
     }
 }
 
@@ -4775,7 +5659,9 @@ fn resolve_incident_evidence_path(
 }
 
 fn handle_incident_bundle_command(args: &cli::IncidentBundleArgs) -> Result<()> {
-    let receipt_signing_material = prepare_receipt_signing_material(
+    // Prepare receipt export context upfront - fails immediately if receipt export
+    // is requested but signing material is unavailable (sign-or-fail).
+    let receipt_export_ctx = prepare_receipt_export_context(
         args.receipt_out.as_deref(),
         args.receipt_summary_out.as_deref(),
         args.receipt_signing_key.as_deref(),
@@ -4815,14 +5701,14 @@ fn handle_incident_bundle_command(args: &cli::IncidentBundleArgs) -> Result<()> 
         )
     })?;
 
-    maybe_export_signed_receipts(
-        "incident_bundle",
-        "incident-control-plane",
-        "Incident bundle receipt export for deterministic replay evidence",
-        args.receipt_out.as_deref(),
-        args.receipt_summary_out.as_deref(),
-        receipt_signing_material.as_ref(),
-    )?;
+    if let Some(ref ctx) = receipt_export_ctx {
+        export_signed_receipts(
+            "incident_bundle",
+            "incident-control-plane",
+            "Incident bundle receipt export for deterministic replay evidence",
+            ctx,
+        )?;
+    }
     eprintln!(
         "incident bundle written: {} evidence={}",
         output_path.display(),
@@ -8500,7 +9386,43 @@ fn main() -> Result<()> {
                 .unwrap_or(resolved.config.runtime.preferred);
             let dispatcher =
                 ops::engine_dispatcher::EngineDispatcher::new(engine_bin, requested_runtime);
-            dispatcher.dispatch_run(&app_path, &resolved.config, &policy)?;
+            let dispatch = dispatcher.dispatch_run(&app_path, &resolved.config, &policy)?;
+            let project_root = run_project_root(&app_path);
+            let ssrf_violations = extract_ssrf_violations(dispatch.telemetry.as_ref());
+            let auto_quarantined_extensions = maybe_auto_quarantine_run_dependencies(
+                &project_root,
+                &resolved.config,
+                &preflight,
+                ssrf_violations.len(),
+                now_unix_secs(),
+            )?;
+            let receipt = build_run_execution_receipt(
+                &app_path,
+                &policy,
+                resolved.selected_profile,
+                &preflight,
+                &dispatch,
+                ssrf_violations,
+                auto_quarantined_extensions,
+            )?;
+            let receipt_path = persist_run_execution_receipt(
+                &project_root,
+                &receipt,
+                configured_run_receipt_limit(&resolved.config),
+            )?;
+            emit_run_completion_output(&preflight, &dispatch, &receipt, &receipt_path, json)?;
+
+            if dispatch.terminated_by_signal {
+                anyhow::bail!(
+                    "run exited abnormally: runtime `{}` terminated by signal",
+                    dispatch.runtime
+                );
+            }
+            if let Some(exit_code) = dispatch.exit_code
+                && exit_code != 0
+            {
+                std::process::exit(exit_code);
+            }
         }
 
         Command::Migrate(sub) => match sub {
@@ -8643,7 +9565,9 @@ fn main() -> Result<()> {
                 println!("{}", render_trust_scan_human(&report));
             }
             TrustCommand::Revoke(args) => {
-                let receipt_signing_material = prepare_receipt_signing_material(
+                // Prepare receipt export context upfront - fails immediately if receipt export
+                // is requested but signing material is unavailable (sign-or-fail).
+                let receipt_export_ctx = prepare_receipt_export_context(
                     args.receipt_out.as_deref(),
                     args.receipt_summary_out.as_deref(),
                     args.receipt_signing_key.as_deref(),
@@ -8653,17 +9577,19 @@ fn main() -> Result<()> {
                 let card = revoke_trust_card(&mut state.registry, &args.extension_id, now_secs)?;
                 persist_trust_card_cli_registry(&state)?;
                 println!("{}", render_trust_card_human(&card));
-                maybe_export_signed_receipts(
-                    "revocation",
-                    "trust-control-plane",
-                    "Revocation decision exported for audit traceability",
-                    args.receipt_out.as_deref(),
-                    args.receipt_summary_out.as_deref(),
-                    receipt_signing_material.as_ref(),
-                )?;
+                if let Some(ref ctx) = receipt_export_ctx {
+                    export_signed_receipts(
+                        "revocation",
+                        "trust-control-plane",
+                        "Revocation decision exported for audit traceability",
+                        ctx,
+                    )?;
+                }
             }
             TrustCommand::Quarantine(args) => {
-                let receipt_signing_material = prepare_receipt_signing_material(
+                // Prepare receipt export context upfront - fails immediately if receipt export
+                // is requested but signing material is unavailable (sign-or-fail).
+                let receipt_export_ctx = prepare_receipt_export_context(
                     args.receipt_out.as_deref(),
                     args.receipt_summary_out.as_deref(),
                     args.receipt_signing_key.as_deref(),
@@ -8682,14 +9608,14 @@ fn main() -> Result<()> {
                 );
                 println!("fleet propagation incident={fleet_incident_id}");
                 println!("{}", render_trust_card_list(&updates));
-                maybe_export_signed_receipts(
-                    "quarantine",
-                    "trust-control-plane",
-                    "Quarantine decision exported for incident forensics",
-                    args.receipt_out.as_deref(),
-                    args.receipt_summary_out.as_deref(),
-                    receipt_signing_material.as_ref(),
-                )?;
+                if let Some(ref ctx) = receipt_export_ctx {
+                    export_signed_receipts(
+                        "quarantine",
+                        "trust-control-plane",
+                        "Quarantine decision exported for incident forensics",
+                        ctx,
+                    )?;
+                }
             }
             TrustCommand::Sync(args) => {
                 let now_secs = now_unix_secs();
@@ -9109,6 +10035,9 @@ mod state_bootstrap_tests {
 #[cfg(test)]
 mod run_trust_gate_tests {
     use super::*;
+    use crate::ops::telemetry_bridge::{
+        BridgeLifecycleState, RuntimeTelemetryEvent, TelemetryRuntimeReport,
+    };
     use frankenengine_node::supply_chain::trust_card::fixture_registry;
     use serde_json::{Map, Value};
     use tempfile::TempDir;
@@ -9148,6 +10077,55 @@ mod run_trust_gate_tests {
             2_000,
         )
         .expect("preflight report")
+    }
+
+    fn sample_ssrf_telemetry_report() -> TelemetryRuntimeReport {
+        TelemetryRuntimeReport {
+            final_state: BridgeLifecycleState::Stopped,
+            bridge_id: "bridge-1".to_string(),
+            accepted_total: 1,
+            persisted_total: 1,
+            shed_total: 0,
+            dropped_total: 0,
+            retry_total: 0,
+            drain_completed: true,
+            drain_duration_ms: 10,
+            telemetry_events: vec![RuntimeTelemetryEvent {
+                timestamp: "2026-04-09T15:00:02Z".to_string(),
+                event_type: "policy_check".to_string(),
+                payload: serde_json::json!({
+                    "blocked": true,
+                    "detail": "blocked outbound request because ssrf metadata probe matched policy",
+                    "rule": "ssrf",
+                }),
+            }],
+            recent_events: Vec::new(),
+        }
+    }
+
+    fn sample_dispatch_report(
+        app_path: &Path,
+        started_at_utc: &str,
+        finished_at_utc: &str,
+        telemetry: Option<TelemetryRuntimeReport>,
+    ) -> ops::engine_dispatcher::RunDispatchReport {
+        ops::engine_dispatcher::RunDispatchReport {
+            runtime: "franken_engine".to_string(),
+            runtime_path: "/usr/local/bin/franken-engine".to_string(),
+            target: app_path.display().to_string(),
+            working_dir: run_project_root(app_path).display().to_string(),
+            used_fallback_runtime: false,
+            started_at_utc: started_at_utc.to_string(),
+            finished_at_utc: finished_at_utc.to_string(),
+            duration_ms: 5_000,
+            exit_code: Some(0),
+            terminated_by_signal: false,
+            telemetry,
+            captured_output: ops::engine_dispatcher::CapturedProcessOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+        }
     }
 
     #[test]
@@ -9325,5 +10303,181 @@ mod run_trust_gate_tests {
         let rendered = serde_json::to_value(&report).expect("json");
         assert_eq!(rendered["verdict"]["status"], "blocked");
         assert_eq!(rendered["receipt"]["decision"], "denied");
+    }
+
+    #[test]
+    fn run_receipt_id_and_hash_are_deterministic_for_same_inputs() {
+        let tmp = TempDir::new().expect("tempdir");
+        write_demo_project(tmp.path(), &[("@acme/auth-guard", "^1.4.2")]);
+        write_fixture_registry_to(tmp.path());
+
+        let preflight = evaluate_preflight(tmp.path(), Profile::Balanced);
+        let dispatch = sample_dispatch_report(
+            tmp.path(),
+            "2026-04-09T15:00:00Z",
+            "2026-04-09T15:00:05Z",
+            Some(sample_ssrf_telemetry_report()),
+        );
+        let ssrf_violations = extract_ssrf_violations(dispatch.telemetry.as_ref());
+
+        let first = build_run_execution_receipt(
+            tmp.path(),
+            "balanced",
+            Profile::Balanced,
+            &preflight,
+            &dispatch,
+            ssrf_violations.clone(),
+            Vec::new(),
+        )
+        .expect("first receipt");
+        let second = build_run_execution_receipt(
+            tmp.path(),
+            "balanced",
+            Profile::Balanced,
+            &preflight,
+            &dispatch,
+            ssrf_violations,
+            Vec::new(),
+        )
+        .expect("second receipt");
+
+        assert_eq!(first.core.receipt_id, second.core.receipt_id);
+        assert_eq!(first.receipt_hash, second.receipt_hash);
+    }
+
+    #[test]
+    fn temp_file_guard_orphans_abandoned_temp_files() {
+        let tmp = TempDir::new().expect("tempdir");
+        let temp_path = tmp.path().join("receipt.json.tmp");
+        std::fs::write(&temp_path, "pending").expect("write temp file");
+
+        {
+            let _guard = TempFileGuard::new(temp_path.clone());
+        }
+
+        assert!(!temp_path.exists(), "temp file should be moved aside");
+        let orphaned = std::fs::read_dir(tmp.path())
+            .expect("read dir")
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("receipt.json.tmp.orphaned-"))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(orphaned.len(), 1, "expected one orphaned temp artifact");
+    }
+
+    #[test]
+    fn persist_run_execution_receipt_archives_old_receipts_when_limit_is_exceeded() {
+        let tmp = TempDir::new().expect("tempdir");
+        write_demo_project(tmp.path(), &[("@acme/auth-guard", "^1.4.2")]);
+        write_fixture_registry_to(tmp.path());
+
+        let preflight = evaluate_preflight(tmp.path(), Profile::Balanced);
+        let receipt_one = build_run_execution_receipt(
+            tmp.path(),
+            "balanced",
+            Profile::Balanced,
+            &preflight,
+            &sample_dispatch_report(
+                tmp.path(),
+                "2026-04-01T00:00:00Z",
+                "2026-04-01T00:00:05Z",
+                None,
+            ),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("receipt one");
+        let receipt_two = build_run_execution_receipt(
+            tmp.path(),
+            "balanced",
+            Profile::Balanced,
+            &preflight,
+            &sample_dispatch_report(
+                tmp.path(),
+                "2026-04-02T00:00:00Z",
+                "2026-04-02T00:00:05Z",
+                None,
+            ),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("receipt two");
+        let receipt_three = build_run_execution_receipt(
+            tmp.path(),
+            "balanced",
+            Profile::Balanced,
+            &preflight,
+            &sample_dispatch_report(
+                tmp.path(),
+                "2026-04-03T00:00:00Z",
+                "2026-04-03T00:00:05Z",
+                None,
+            ),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("receipt three");
+
+        let path_one =
+            persist_run_execution_receipt(tmp.path(), &receipt_one, 2).expect("persist one");
+        let path_two =
+            persist_run_execution_receipt(tmp.path(), &receipt_two, 2).expect("persist two");
+        let path_three =
+            persist_run_execution_receipt(tmp.path(), &receipt_three, 2).expect("persist three");
+
+        assert!(
+            !path_one.exists(),
+            "oldest receipt should move into archive"
+        );
+        assert!(path_two.is_file(), "second receipt should remain active");
+        assert!(path_three.is_file(), "third receipt should remain active");
+
+        let archived_path = tmp.path().join(format!(
+            ".franken-node/state/execution-receipts/archive/2026-04-01/{}.json",
+            receipt_one.core.receipt_id
+        ));
+        assert!(
+            archived_path.is_file(),
+            "archived receipt should exist at {}",
+            archived_path.display()
+        );
+    }
+
+    #[test]
+    fn auto_quarantine_marks_trusted_dependencies_after_runtime_violations() {
+        let tmp = TempDir::new().expect("tempdir");
+        write_demo_project(tmp.path(), &[("@acme/auth-guard", "^1.4.2")]);
+        write_fixture_registry_to(tmp.path());
+
+        let config = config::Config::for_profile(Profile::Balanced);
+        let preflight = evaluate_preflight(tmp.path(), Profile::Balanced);
+        let quarantined = maybe_auto_quarantine_run_dependencies(
+            tmp.path(),
+            &config,
+            &preflight,
+            RUN_EXECUTION_RECEIPT_AUTO_QUARANTINE_THRESHOLD,
+            3_000,
+        )
+        .expect("auto quarantine");
+
+        assert_eq!(quarantined, vec!["npm:@acme/auth-guard".to_string()]);
+
+        let registry_path = tmp.path().join(TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH);
+        let mut registry =
+            TrustCardRegistry::load_authoritative_state(&registry_path, 60, 3_000).expect("load");
+        let card = registry
+            .read("npm:@acme/auth-guard", 3_000, "trace-test-auto-quarantine")
+            .expect("read")
+            .expect("trust card");
+        assert!(card.active_quarantine, "card should be quarantined");
+        assert_eq!(card.reputation_trend, ReputationTrend::Declining);
+        assert!(
+            card.user_facing_risk_assessment
+                .summary
+                .contains("Automatically quarantined")
+        );
     }
 }
