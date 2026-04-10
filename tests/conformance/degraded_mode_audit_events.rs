@@ -25,20 +25,30 @@ fn inv_dm_event_required() {
     let mut log = DegradedModeAuditLog::new();
     log.emit(event("act-1", "admin", "tr-1")).unwrap();
     // The event MUST exist after emit
-    assert!(log.assert_event_exists("act-1").is_ok(), "INV-DM-EVENT-REQUIRED violated");
+    assert!(
+        log.assert_event_exists("act-1").is_ok(),
+        "INV-DM-EVENT-REQUIRED violated"
+    );
 }
 
 #[test]
 fn inv_dm_event_missing_is_failure() {
     let log = DegradedModeAuditLog::new();
     let err = log.assert_event_exists("act-missing").unwrap_err();
-    assert_eq!(err.code(), "DM_EVENT_NOT_FOUND", "INV-DM-EVENT-REQUIRED: missing event must error");
+    assert_eq!(
+        err.code(),
+        "DM_EVENT_NOT_FOUND",
+        "INV-DM-EVENT-REQUIRED: missing event must error"
+    );
 }
 
 #[test]
 fn inv_dm_schema_complete_valid() {
     let e = event("act-1", "admin", "tr-1");
-    assert!(validate_schema(&e).is_ok(), "INV-DM-SCHEMA-COMPLETE violated on valid event");
+    assert!(
+        validate_schema(&e).is_ok(),
+        "INV-DM-SCHEMA-COMPLETE violated on valid event"
+    );
 }
 
 #[test]
@@ -46,7 +56,11 @@ fn inv_dm_schema_rejects_missing_actor() {
     let mut e = event("act-1", "admin", "tr-1");
     e.actor = String::new();
     let err = validate_schema(&e).unwrap_err();
-    assert_eq!(err.code(), "DM_MISSING_FIELD", "INV-DM-SCHEMA-COMPLETE: must reject empty actor");
+    assert_eq!(
+        err.code(),
+        "DM_MISSING_FIELD",
+        "INV-DM-SCHEMA-COMPLETE: must reject empty actor"
+    );
 }
 
 #[test]

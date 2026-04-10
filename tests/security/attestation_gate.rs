@@ -81,9 +81,11 @@ fn gate_result_has_trace_id() {
 #[test]
 fn custom_attestation_type_supported() {
     let mut pol = policy();
-    pol.required_attestations.push(AttestationType::Custom("sbom".into()));
+    pol.required_attestations
+        .push(AttestationType::Custom("sbom".into()));
     let mut prov = compliant_artifact();
-    prov.attestations.push(AttestationType::Custom("sbom".into()));
+    prov.attestations
+        .push(AttestationType::Custom("sbom".into()));
     let result = evaluate_gate(&pol, &prov, "t6", "ts");
     assert!(result.passed);
 }

@@ -7,6 +7,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use frankenengine_node::control_plane::fleet_transport::{
+    FileFleetTransport, FleetAction, FleetTransport, NodeHealth, NodeStatus,
+};
 use frankenengine_node::supply_chain::trust_card::{
     TrustCardListFilter, TrustCardMutation, TrustCardRegistry, fixture_registry,
 };
@@ -357,6 +360,12 @@ fn parse_json_stdout(output: &Output, context: &str) -> Value {
         .unwrap_or_else(|err| panic!("{context} should emit valid JSON: {err}\nstdout:\n{stdout}"))
 }
 
+fn shared_fleet_transport(shared_state_dir: &Path) -> FileFleetTransport {
+    let mut transport = FileFleetTransport::new(shared_state_dir);
+    transport.initialize().expect("initialize fleet transport");
+    transport
+}
+
 fn write_receipt_signing_key(path: &Path) {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).expect("create key dir");
@@ -606,6 +615,166 @@ fn trust_quarantine_supports_sha256_artifact_scope() {
     assert!(stdout.contains("affected_cards=2"));
     assert!(stdout.contains("npm:@acme/auth-guard"));
     assert!(stdout.contains("npm:@beta/telemetry-bridge"));
+}
+
+#[test]
+fn trust_quarantine_propagates_through_fleet_transport_pipeline() {
+    let workspace = seeded_fixture_trust_workspace();
+    let shared_fleet_dir = workspace.path().join("fleet-shared");
+    let fleet_state_env = shared_fleet_dir
+        .to_str()
+        .expect("shared fleet state dir should be utf8");
+    let env = [("FRANKEN_NODE_FLEET_STATE_DIR", fleet_state_env)];
+    let mut transport = shared_fleet_transport(&shared_fleet_dir);
+
+    for node_id in ["node-a", "node-b", "node-c"] {
+        let node_workspace = workspace.path().join("nodes").join(node_id);
+        fs::create_dir_all(node_workspace.join(".franken-node/state"))
+            .expect("create simulated node state dir");
+        transport
+            .upsert_node_status(&NodeStatus {
+                zone_id: "zone-shared".to_string(),
+                node_id: node_id.to_string(),
+                last_seen: chrono::Utc::now(),
+                quarantine_version: 0,
+                health: NodeHealth::Healthy,
+            })
+            .expect("seed node status");
+    }
+
+    let quarantine_output = run_cli_in_workspace_with_env(
+        workspace.path(),
+        &["trust", "quarantine", "--artifact", "sha256:deadbeef"],
+        &env,
+    );
+    assert!(
+        quarantine_output.status.success(),
+        "trust quarantine failed: {}",
+        String::from_utf8_lossy(&quarantine_output.stderr)
+    );
+    let quarantine_stdout = String::from_utf8_lossy(&quarantine_output.stdout);
+    let incident_id = quarantine_stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("fleet propagation incident="))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| {
+            panic!(
+                "trust quarantine did not emit a fleet incident id\nstdout:\n{}",
+                quarantine_stdout
+            )
+        })
+        .to_string();
+
+    let propagation_deadline = Instant::now() + Duration::from_secs(1);
+    let quarantine_version = loop {
+        let actions = transport.list_actions().expect("list fleet actions");
+        if let Some(version) = actions.iter().find_map(|record| match &record.action {
+            FleetAction::Quarantine {
+                incident_id: action_incident_id,
+                quarantine_version,
+                ..
+            } if action_incident_id == &incident_id => Some(*quarantine_version),
+            _ => None,
+        }) {
+            break version;
+        }
+        assert!(
+            Instant::now() < propagation_deadline,
+            "quarantine action did not reach shared fleet state within 1s\nstdout:\n{}",
+            quarantine_stdout
+        );
+        thread::sleep(Duration::from_millis(10));
+    };
+
+    let status_payload = parse_json_stdout(
+        &run_cli_in_workspace_with_env(workspace.path(), &["fleet", "status", "--json"], &env),
+        "fleet status after trust quarantine",
+    );
+    assert_eq!(
+        status_payload["state"]["nodes"]
+            .as_array()
+            .expect("fleet state nodes array")
+            .len(),
+        3,
+        "fleet status should report all simulated nodes: {status_payload:#}"
+    );
+    assert_eq!(
+        status_payload["status"]["total_nodes"], 3,
+        "fleet status should show three simulated nodes: {status_payload:#}"
+    );
+    assert_eq!(
+        status_payload["status"]["active_quarantines"], 1,
+        "fleet status should show one active quarantine after trust quarantine: {status_payload:#}"
+    );
+
+    for node_id in ["node-a", "node-b", "node-c"] {
+        transport
+            .upsert_node_status(&NodeStatus {
+                zone_id: "zone-shared".to_string(),
+                node_id: node_id.to_string(),
+                last_seen: chrono::Utc::now(),
+                quarantine_version,
+                health: NodeHealth::Healthy,
+            })
+            .expect("advance node convergence");
+    }
+
+    let converge_started = Instant::now();
+    let converged_payload = loop {
+        let payload = parse_json_stdout(
+            &run_cli_in_workspace_with_env(workspace.path(), &["fleet", "status", "--json"], &env),
+            "fleet status while waiting for convergence",
+        );
+        let progress = payload["status"]["pending_convergences"][0]["progress_pct"].as_u64();
+        if progress == Some(100) {
+            break payload;
+        }
+        assert!(
+            converge_started.elapsed() < Duration::from_secs(1),
+            "fleet convergence did not reach 100% within 1s: {payload:#}"
+        );
+        thread::sleep(Duration::from_millis(10));
+    };
+    assert_eq!(
+        converged_payload["status"]["pending_convergences"][0]["phase"], "Converged",
+        "fleet convergence should be marked converged: {converged_payload:#}"
+    );
+
+    let release_output = run_cli_in_workspace_with_env(
+        workspace.path(),
+        &[
+            "fleet",
+            "release",
+            "--incident",
+            incident_id.as_str(),
+            "--json",
+        ],
+        &env,
+    );
+    assert!(
+        release_output.status.success(),
+        "fleet release failed: {}",
+        String::from_utf8_lossy(&release_output.stderr)
+    );
+    let release_payload = parse_json_stdout(&release_output, "fleet release json");
+    assert_eq!(release_payload["action"]["action_type"], "release");
+
+    let released_status = parse_json_stdout(
+        &run_cli_in_workspace_with_env(workspace.path(), &["fleet", "status", "--json"], &env),
+        "fleet status after release",
+    );
+    assert_eq!(
+        released_status["status"]["active_quarantines"], 0,
+        "fleet release should clear active quarantines: {released_status:#}"
+    );
+    assert!(
+        released_status["status"]["pending_convergences"]
+            .as_array()
+            .expect("pending convergences array")
+            .is_empty(),
+        "fleet release should clear pending convergence state: {released_status:#}"
+    );
 }
 
 #[test]

@@ -22,15 +22,26 @@ fn resolve_binary_path() -> PathBuf {
 }
 
 fn run_cli(args: &[&str]) -> Output {
+    run_cli_in_dir(repo_root().as_path(), args)
+}
+
+fn run_cli_in_dir(current_dir: &Path, args: &[&str]) -> Output {
+    run_cli_in_dir_with_env(current_dir, args, &[])
+}
+
+fn run_cli_in_dir_with_env(current_dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Output {
     let binary_path = resolve_binary_path();
     assert!(
         binary_path.is_file(),
         "franken-node binary not found at {}",
         binary_path.display()
     );
-    Command::new(&binary_path)
-        .current_dir(repo_root())
-        .args(args)
+    let mut command = Command::new(&binary_path);
+    command.current_dir(current_dir).args(args);
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    command
         .output()
         .unwrap_or_else(|err| panic!("failed running `{}`: {err}", args.join(" ")))
 }
@@ -120,6 +131,9 @@ fn verify_module_passes_for_known_surface_module() {
     assert_eq!(payload["status"], "pass");
     assert_eq!(payload["exit_code"], 0);
     assert_eq!(payload["contract_version"], "3.0.0");
+    assert_eq!(payload["details"]["module_id"], "runtime");
+    assert_eq!(payload["details"]["exists"], true);
+    assert_eq!(payload["details"]["deps_satisfied"], true);
 }
 
 #[test]
@@ -180,6 +194,7 @@ fn verify_migration_passes_for_known_verify_lane() {
     assert_eq!(payload["verdict"], "PASS");
     assert_eq!(payload["status"], "pass");
     assert_eq!(payload["exit_code"], 0);
+    assert_eq!(payload["details"]["status"], "source_present");
 }
 
 #[test]
@@ -215,6 +230,7 @@ fn verify_compatibility_accepts_known_profile_targets() {
     assert_eq!(payload["command"], "verify compatibility");
     assert_eq!(payload["verdict"], "PASS");
     assert_eq!(payload["exit_code"], 0);
+    assert_eq!(payload["details"]["target_kind"], "profile");
 }
 
 #[test]
@@ -239,6 +255,122 @@ fn verify_compatibility_accepts_previous_major_compat_version() {
     assert_eq!(payload["verdict"], "PASS");
     assert_eq!(payload["status"], "pass");
     assert_eq!(payload["exit_code"], 0);
+}
+
+#[test]
+fn verify_migration_reads_state_record_and_checks_post_conditions() {
+    let temp = TempDir::new().expect("temp dir");
+    let state_dir = temp.path().join(".franken-node/state/migrations");
+    std::fs::create_dir_all(&state_dir).expect("create migration state dir");
+    let artifact_path = temp.path().join("dist/server.js");
+    ensure_parent_dir(&artifact_path);
+    std::fs::write(&artifact_path, "console.log('ok');").expect("write migration artifact");
+    std::fs::write(
+        state_dir.join("rewrite.json"),
+        serde_json::json!({
+            "migration_id": "rewrite",
+            "status": "applied",
+            "post_conditions": [
+                "dist/server.js",
+                {
+                    "path": "dist/server.js",
+                    "exists": true,
+                    "contains": "console.log"
+                }
+            ]
+        })
+        .to_string(),
+    )
+    .expect("write migration record");
+
+    let output = run_cli_in_dir(temp.path(), &["verify", "migration", "rewrite", "--json"]);
+    assert!(
+        output.status.success(),
+        "verify migration should pass for applied migration record; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["verdict"], "PASS");
+    assert_eq!(payload["details"]["status"], "applied");
+    assert_eq!(payload["details"]["post_conditions_met"], true);
+    assert_eq!(
+        payload["details"]["record_path"]
+            .as_str()
+            .unwrap_or_default()
+            .contains(".franken-node/state/migrations/rewrite.json"),
+        true
+    );
+}
+
+#[test]
+fn verify_migration_fails_when_post_condition_is_missing() {
+    let temp = TempDir::new().expect("temp dir");
+    let state_dir = temp.path().join(".franken-node/state/migrations");
+    std::fs::create_dir_all(&state_dir).expect("create migration state dir");
+    std::fs::write(
+        state_dir.join("rewrite.json"),
+        serde_json::json!({
+            "migration_id": "rewrite",
+            "status": "applied",
+            "post_conditions": [
+                "dist/missing.js"
+            ]
+        })
+        .to_string(),
+    )
+    .expect("write migration record");
+
+    let output = run_cli_in_dir(temp.path(), &["verify", "migration", "rewrite", "--json"]);
+    assert!(
+        !output.status.success(),
+        "verify migration should fail when a post-condition is missing"
+    );
+
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["verdict"], "FAIL");
+    assert_eq!(payload["details"]["status"], "applied");
+    assert_eq!(payload["details"]["post_conditions_met"], false);
+    assert!(
+        payload["details"]["diff_summary"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("dist/missing.js")
+    );
+}
+
+#[test]
+fn verify_compatibility_accepts_current_binary_runtime() {
+    let output = run_cli(&["verify", "compatibility", "franken-node", "--json"]);
+    assert!(
+        output.status.success(),
+        "verify compatibility should pass for the current franken-node binary; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["verdict"], "PASS");
+    assert_eq!(payload["details"]["target_kind"], "runtime");
+    assert_eq!(payload["details"]["runtime"], "franken-node");
+    assert_eq!(payload["details"]["installed"], true);
+}
+
+#[test]
+fn verify_compatibility_fails_when_runtime_is_missing_from_path() {
+    let output = run_cli_in_dir_with_env(
+        repo_root().as_path(),
+        &["verify", "compatibility", "node", "--json"],
+        &[("PATH", "")],
+    );
+    assert!(
+        !output.status.success(),
+        "verify compatibility should fail when node is missing from PATH"
+    );
+
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["verdict"], "FAIL");
+    assert_eq!(payload["details"]["runtime"], "node");
+    assert_eq!(payload["details"]["installed"], false);
 }
 
 #[test]

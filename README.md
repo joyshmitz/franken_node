@@ -237,6 +237,8 @@ require_provenance = true
 minimum_assurance_level = 3
 
 [fleet]
+# Optional override for the persisted fleet transport state root
+state_dir = ".franken-node/state/fleet"
 # Fleet convergence timeout for quarantine/release operations
 convergence_timeout_seconds = 120
 

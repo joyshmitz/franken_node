@@ -66,6 +66,7 @@ Supported `FRANKEN_NODE_*` keys:
 - `FRANKEN_NODE_REGISTRY_REQUIRE_SIGNATURES`
 - `FRANKEN_NODE_REGISTRY_REQUIRE_PROVENANCE`
 - `FRANKEN_NODE_REGISTRY_MINIMUM_ASSURANCE_LEVEL`
+- `FRANKEN_NODE_FLEET_STATE_DIR`
 - `FRANKEN_NODE_FLEET_CONVERGENCE_TIMEOUT_SECONDS`
 - `FRANKEN_NODE_OBSERVABILITY_NAMESPACE`
 - `FRANKEN_NODE_OBSERVABILITY_EMIT_STRUCTURED_AUDIT_EVENTS`
@@ -81,6 +82,7 @@ Resolution fails with stable diagnostics when:
 - profile/mode tokens are invalid
 - env values have invalid type encodings
 - `registry.minimum_assurance_level` is outside `[1,5]`
+- `fleet.state_dir` is present but empty
 - `fleet.convergence_timeout_seconds` is `0`
 - `compatibility.default_receipt_ttl_secs` is `0`
 - `replay.max_replay_capsule_freshness_secs` is `0`

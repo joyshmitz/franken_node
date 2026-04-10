@@ -31,6 +31,8 @@ minimum_assurance_level = 3
 builder_identity = "builder.local"
 
 [fleet]
+# Optional override for the persisted fleet transport state root.
+state_dir = ".franken-node/state/fleet"
 convergence_timeout_seconds = 120
 
 [observability]
