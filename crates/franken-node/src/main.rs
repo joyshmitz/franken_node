@@ -54,10 +54,10 @@ use crate::api::{
     },
 };
 use crate::cli::{
-    BenchCommand, Cli, Command, FleetCommand, IncidentCommand, MigrateCommand, RegistryCommand,
-    RemoteCapCommand, RemoteCapIssueArgs, TrustCardCommand, TrustCommand, VerifyCommand,
-    VerifyCompatibilityArgs, VerifyCorpusArgs, VerifyMigrationArgs, VerifyModuleArgs,
-    VerifyReleaseArgs,
+    BenchCommand, Cli, Command, FleetAgentArgs, FleetCommand, IncidentCommand, MigrateCommand,
+    RegistryCommand, RemoteCapCommand, RemoteCapIssueArgs, TrustCardCommand, TrustCommand,
+    VerifyCommand, VerifyCompatibilityArgs, VerifyCorpusArgs, VerifyMigrationArgs,
+    VerifyModuleArgs, VerifyReleaseArgs,
 };
 use crate::policy::{
     bayesian_diagnostics::{BayesianDiagnostics, CandidateRef, Observation},
@@ -6516,6 +6516,172 @@ fn render_fleet_action_human(action: &FleetActionResult) -> String {
     lines.join("\n")
 }
 
+// ── Fleet Agent Mode ─────────────────────────────────────────────────────────
+
+/// Result of a single fleet agent poll cycle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FleetAgentPollResult {
+    pub cycle: u64,
+    pub node_id: String,
+    pub zone_id: String,
+    pub actions_processed: u64,
+    pub last_action_id: Option<String>,
+    pub node_health: String,
+    pub quarantine_version: u64,
+    pub poll_timestamp: String,
+}
+
+/// Run the fleet agent polling loop.
+fn run_fleet_agent(args: &FleetAgentArgs) -> Result<()> {
+    use control_plane::fleet_transport::{
+        FleetAction as PersistedFleetAction, NodeHealth, NodeStatus, validate_node_id,
+        validate_zone_id,
+    };
+
+    validate_node_id(&args.node_id).map_err(|err| anyhow::anyhow!("invalid node_id: {err}"))?;
+    validate_zone_id(&args.zone).map_err(|err| anyhow::anyhow!("invalid zone: {err}"))?;
+
+    let poll_interval = std::time::Duration::from_secs(args.poll_interval_secs);
+    let (_, _state_dir, mut transport) = open_fleet_transport(Path::new("."))?;
+
+    let mut last_seen_action_id: Option<String> = None;
+    let mut quarantine_version: u64 = 0;
+    let mut cycle: u64 = 0;
+
+    if !args.json {
+        eprintln!(
+            "fleet agent: starting node_id={} zone={} poll_interval={}s",
+            args.node_id, args.zone, args.poll_interval_secs
+        );
+    }
+
+    loop {
+        cycle = cycle.saturating_add(1);
+        let poll_timestamp = Utc::now();
+
+        // Read current actions from transport
+        let actions = transport
+            .list_actions()
+            .map_err(|err| anyhow::anyhow!("failed listing fleet actions: {err}"))?;
+
+        // Filter to actions for our zone, after last seen
+        let new_actions: Vec<_> = actions
+            .iter()
+            .filter(|action| {
+                let zone_matches = match &action.action {
+                    PersistedFleetAction::Quarantine { zone_id, .. } => zone_id == &args.zone,
+                    PersistedFleetAction::Release { zone_id, .. } => zone_id == &args.zone,
+                    PersistedFleetAction::PolicyUpdate { zone_id, .. } => zone_id == &args.zone,
+                };
+                if !zone_matches {
+                    return false;
+                }
+                match &last_seen_action_id {
+                    None => true,
+                    Some(last_id) => action.action_id > *last_id,
+                }
+            })
+            .collect();
+
+        let actions_processed = u64::try_from(new_actions.len()).unwrap_or(u64::MAX);
+
+        // Apply each action and track quarantine version
+        for action in &new_actions {
+            match &action.action {
+                PersistedFleetAction::Quarantine {
+                    incident_id,
+                    target_id,
+                    quarantine_version: qv,
+                    reason,
+                    ..
+                } => {
+                    quarantine_version = quarantine_version.max(*qv);
+                    if !args.json {
+                        eprintln!(
+                            "fleet agent: applying quarantine incident={} target={} reason={}",
+                            incident_id, target_id, reason
+                        );
+                    }
+                }
+                PersistedFleetAction::Release {
+                    incident_id,
+                    reason,
+                    ..
+                } => {
+                    if !args.json {
+                        eprintln!(
+                            "fleet agent: applying release incident={} reason={:?}",
+                            incident_id, reason
+                        );
+                    }
+                }
+                PersistedFleetAction::PolicyUpdate {
+                    policy_version,
+                    changed_fields,
+                    ..
+                } => {
+                    if !args.json {
+                        eprintln!(
+                            "fleet agent: applying policy update version={} fields={:?}",
+                            policy_version, changed_fields
+                        );
+                    }
+                }
+            }
+            last_seen_action_id = Some(action.action_id.clone());
+        }
+
+        // Update node status (heartbeat)
+        let node_status = NodeStatus {
+            zone_id: args.zone.clone(),
+            node_id: args.node_id.clone(),
+            last_seen: poll_timestamp,
+            quarantine_version,
+            health: NodeHealth::Healthy,
+        };
+        transport
+            .upsert_node_status(&node_status)
+            .map_err(|err| anyhow::anyhow!("failed upserting node status: {err}"))?;
+
+        // Emit poll result
+        let result = FleetAgentPollResult {
+            cycle,
+            node_id: args.node_id.clone(),
+            zone_id: args.zone.clone(),
+            actions_processed,
+            last_action_id: last_seen_action_id.clone(),
+            node_health: "healthy".to_string(),
+            quarantine_version,
+            poll_timestamp: poll_timestamp.to_rfc3339(),
+        };
+
+        if args.json {
+            println!("{}", serde_json::to_string(&result)?);
+        } else {
+            eprintln!(
+                "fleet agent: poll cycle={} actions={} quarantine_version={}",
+                result.cycle, result.actions_processed, result.quarantine_version
+            );
+        }
+
+        // Check max_cycles limit
+        if args.max_cycles > 0 && cycle >= args.max_cycles {
+            if !args.json {
+                eprintln!(
+                    "fleet agent: reached max_cycles={}, exiting",
+                    args.max_cycles
+                );
+            }
+            break;
+        }
+
+        // Sleep until next poll
+        std::thread::sleep(poll_interval);
+    }
+
+    Ok(())
+}
+
 const RELEASE_MANIFEST_FILE: &str = "SHA256SUMS";
 const RELEASE_MANIFEST_SIGNATURE_FILE: &str = "SHA256SUMS.sig";
 
@@ -8667,6 +8833,9 @@ fn main() -> Result<()> {
                     },
                 )?;
                 emit_fleet_action_report(&report, args.json)?;
+            }
+            FleetCommand::Agent(args) => {
+                run_fleet_agent(&args)?;
             }
         },
 

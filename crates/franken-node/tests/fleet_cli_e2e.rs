@@ -287,3 +287,142 @@ fn fleet_status_json_includes_full_shared_state() {
     assert!(payload["state"]["actions"].is_array());
     assert!(payload["state"]["nodes"].is_array());
 }
+
+#[test]
+fn fleet_agent_runs_poll_cycles_and_exits_on_max_cycles() {
+    let fleet_state = tempdir().expect("tempdir");
+    let fleet_state_dir = fleet_state.path().join("fleet-state");
+    seed_transport(&fleet_state_dir);
+
+    let output = run_cli_with_fleet_state(
+        &[
+            "fleet",
+            "agent",
+            "--node-id",
+            "agent-node-1",
+            "--zone",
+            "zone-1",
+            "--poll-interval-secs",
+            "1",
+            "--max-cycles",
+            "2",
+            "--json",
+        ],
+        &fleet_state_dir,
+    );
+    assert!(
+        output.status.success(),
+        "fleet agent failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines.len(),
+        2,
+        "expected 2 JSON poll results for max_cycles=2"
+    );
+
+    let poll1: serde_json::Value = serde_json::from_str(lines[0]).expect("poll result 1 json");
+    assert_eq!(poll1["cycle"], 1);
+    assert_eq!(poll1["node_id"], "agent-node-1");
+    assert_eq!(poll1["zone_id"], "zone-1");
+    assert_eq!(poll1["node_health"], "healthy");
+
+    let poll2: serde_json::Value = serde_json::from_str(lines[1]).expect("poll result 2 json");
+    assert_eq!(poll2["cycle"], 2);
+}
+
+#[test]
+fn fleet_agent_processes_quarantine_actions_and_updates_heartbeat() {
+    let fleet_state = tempdir().expect("tempdir");
+    let fleet_state_dir = fleet_state.path().join("fleet-state");
+    let mut transport = seed_transport(&fleet_state_dir);
+    let now = Utc::now();
+
+    transport
+        .publish_action(&FleetActionRecord {
+            action_id: "fleet-op-quarantine-agent".to_string(),
+            emitted_at: now,
+            action: FleetAction::Quarantine {
+                zone_id: "zone-agent".to_string(),
+                incident_id: "inc-agent-1".to_string(),
+                target_id: "sha256:agent-test".to_string(),
+                target_kind: FleetTargetKind::Artifact,
+                reason: "agent test quarantine".to_string(),
+                quarantine_version: 10,
+            },
+        })
+        .expect("publish quarantine");
+
+    let output = run_cli_with_fleet_state(
+        &[
+            "fleet",
+            "agent",
+            "--node-id",
+            "agent-node-2",
+            "--zone",
+            "zone-agent",
+            "--poll-interval-secs",
+            "1",
+            "--max-cycles",
+            "1",
+            "--json",
+        ],
+        &fleet_state_dir,
+    );
+    assert!(
+        output.status.success(),
+        "fleet agent failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let poll: serde_json::Value = serde_json::from_str(stdout.trim()).expect("poll result json");
+    assert_eq!(poll["actions_processed"], 1);
+    assert_eq!(poll["quarantine_version"], 10);
+    assert_eq!(poll["last_action_id"], "fleet-op-quarantine-agent");
+
+    // Verify heartbeat was written
+    let nodes = transport.list_node_statuses().expect("list nodes");
+    let agent_node = nodes
+        .iter()
+        .find(|n| n.node_id == "agent-node-2")
+        .expect("agent node status");
+    assert_eq!(agent_node.zone_id, "zone-agent");
+    assert_eq!(agent_node.quarantine_version, 10);
+    assert_eq!(agent_node.health, NodeHealth::Healthy);
+}
+
+#[test]
+fn fleet_agent_rejects_invalid_node_id() {
+    let fleet_state = tempdir().expect("tempdir");
+    let fleet_state_dir = fleet_state.path().join("fleet-state");
+    seed_transport(&fleet_state_dir);
+
+    let output = run_cli_with_fleet_state(
+        &[
+            "fleet",
+            "agent",
+            "--node-id",
+            "",
+            "--zone",
+            "zone-1",
+            "--poll-interval-secs",
+            "1",
+            "--max-cycles",
+            "1",
+        ],
+        &fleet_state_dir,
+    );
+    assert!(
+        !output.status.success(),
+        "fleet agent should fail with empty node_id"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("invalid node_id"),
+        "expected invalid node_id error, got: {stderr}"
+    );
+}

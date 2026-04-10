@@ -1,4 +1,9 @@
-//! Cross-cutting middleware for the control-plane service skeleton.
+//! Cross-cutting middleware for the control-plane in-process catalog surface.
+//!
+//! This module provides reusable middleware primitives (rate limiting, auth
+//! resolution, trace context) for the control-plane service assembly. It does
+//! not own a live HTTP/gRPC transport boundary; the middleware types are wired
+//! through in-process dispatch today.
 //!
 //! Implements the middleware chain defined in the fastapi_rust integration
 //! contract (bd-3ndj):

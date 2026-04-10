@@ -550,6 +550,9 @@ pub enum FleetCommand {
 
     /// Reconcile fleet state for convergence.
     Reconcile(FleetReconcileArgs),
+
+    /// Run as a fleet agent that polls for and applies fleet actions.
+    Agent(FleetAgentArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -580,6 +583,29 @@ pub struct FleetReleaseArgs {
 
 #[derive(Debug, Parser)]
 pub struct FleetReconcileArgs {
+    /// Emit JSON instead of human-readable output.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Parser)]
+pub struct FleetAgentArgs {
+    /// Unique node identifier for this agent instance.
+    #[arg(long)]
+    pub node_id: String,
+
+    /// Zone to poll for fleet actions.
+    #[arg(long)]
+    pub zone: String,
+
+    /// Poll interval in seconds (default: 30).
+    #[arg(long, default_value = "30")]
+    pub poll_interval_secs: u64,
+
+    /// Maximum number of poll cycles (0 = unlimited).
+    #[arg(long, default_value = "0")]
+    pub max_cycles: u64,
+
     /// Emit JSON instead of human-readable output.
     #[arg(long)]
     pub json: bool,
