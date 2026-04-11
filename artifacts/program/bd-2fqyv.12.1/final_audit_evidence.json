@@ -1,0 +1,60 @@
+{
+  "bead_id": "bd-2fqyv.12.1",
+  "parent_bead_id": "bd-2fqyv.12",
+  "audit_timestamp": "2026-04-10T22:40:00Z",
+  "scanner_version": "placeholder-surface-scanner-v1.0",
+  "verdict": "PASS",
+  "audit_summary": {
+    "total_rules": 12,
+    "failed_rules": 0,
+    "inventory_entries": 9,
+    "allowlisted_occurrences": 62,
+    "documented_occurrences": 21,
+    "unexpected_occurrences": 0,
+    "allowlist_escapes": 0,
+    "inventory_drift_failures": 0,
+    "missing_anchor_markers": 0
+  },
+  "steady_state_achieved": {
+    "disallowed_live_shortcuts_remaining": 0,
+    "truthful_partial_surfaces_documented": true,
+    "deferred_skeletons_quarantined": true,
+    "allowlisted_simulations_confined_to_tests": true
+  },
+  "remaining_documented_debt": [
+    {
+      "inventory_id": "PSI-004",
+      "classification": "deferred_skeleton",
+      "surface": "Control-plane catalog boundary with explicitly unavailable perf baselines",
+      "file": "crates/franken-node/src/api/service.rs",
+      "occurrence_count": 15,
+      "rationale": "Route catalog and middleware exist but explicitly declare TransportBoundaryKind::InProcessCatalog. Perf baselines marked unavailable pending real transport boundary.",
+      "acceptable": true
+    },
+    {
+      "inventory_id": "PSI-006",
+      "classification": "allowlisted_simulation",
+      "surface": "Deterministic fuzz fixture adapter",
+      "file": "crates/franken-node/src/connector/fuzz_corpus.rs",
+      "occurrence_count": 6,
+      "rationale": "Synthetic path confined to named fixture adapter with execution_mode=synthetic_test_fixture. Live gates must use run_truthful_fuzz_gate() instead.",
+      "acceptable": true
+    }
+  ],
+  "remediation_complete": {
+    "PSI-001_trust_cli_demo_registry": "CLOSED - Live CLI uses authoritative persisted state",
+    "PSI-002_demo_receipt_signing": "CLOSED - ReceiptExportContext enforces sign-or-fail with explicit signing material",
+    "PSI-003_fixture_incident_timeline": "CLOSED - Live incident bundle reads from --evidence-path",
+    "PSI-005_migration_live_surface": "CLOSED - Real state-transforming executor with 34 conformance tests",
+    "PSI-007_obligation_guard_rollback": "CLOSED - Real tracker-backed rollback with structured diagnostics",
+    "PSI-008_ecosystem_health_export": "CLOSED - DerivedMetricAvailability metadata for undefined ratios",
+    "PSI-009_dgis_barrier_receipts": "CLOSED - Authoritative pass vs not_applicable receipt distinction",
+    "PSI-010_reproduction_script": "DOCUMENTED - Explicitly simulated pending bd-2fqyv.10.2 harness contract"
+  },
+  "verification_command": "python3 scripts/check_placeholder_surface_inventory.py --write-artifacts --json",
+  "evidence_artifacts": [
+    "artifacts/program/bd-2fqyv.1.3/verification_evidence.json",
+    "artifacts/program/bd-2fqyv.1.3/verification_summary.md"
+  ],
+  "conclusion": "All disallowed live shortcuts have been remediated. Remaining documented occurrences are properly classified as deferred_skeleton or allowlisted_simulation with explicit truth anchors. The placeholder remediation program has achieved its steady state."
+}
