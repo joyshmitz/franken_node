@@ -27,12 +27,21 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
     crate::security::constant_time::ct_eq(a, b)
 }
 
-/// RAII guard that removes a temp file on drop (unless defused after rename).
+/// RAII guard that orphans a temp file on drop (unless defused after rename).
+#[must_use]
 struct TempFileGuard(Option<PathBuf>);
 
 impl TempFileGuard {
     fn new(path: PathBuf) -> Self {
         Self(Some(path))
+    }
+
+    fn abandoned_path(path: &Path) -> PathBuf {
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("root-pointer.tmp");
+        path.with_file_name(format!("{file_name}.orphaned-{}", Uuid::now_v7()))
     }
 
     /// Prevent cleanup after a successful rename (file no longer at this path).
@@ -43,8 +52,10 @@ impl TempFileGuard {
 
 impl Drop for TempFileGuard {
     fn drop(&mut self) {
-        if let Some(path) = &self.0 {
-            let _ = fs::remove_file(path);
+        if let Some(path) = self.0.take()
+            && path.is_file()
+        {
+            let _ = fs::rename(&path, Self::abandoned_path(&path));
         }
     }
 }
@@ -818,6 +829,29 @@ mod tests {
             .unwrap_or(chars.len().saturating_sub(1));
         chars[idx] = if chars[idx] == '0' { '1' } else { '0' };
         chars.into_iter().collect()
+    }
+
+    #[test]
+    fn temp_file_guard_orphans_abandoned_temp_files() {
+        let dir = TempDir::new().expect("tempdir");
+        let temp_path = dir.path().join("root_pointer.json.tmp");
+        fs::write(&temp_path, "pending").expect("write temp");
+
+        {
+            let _guard = TempFileGuard::new(temp_path.clone());
+        }
+
+        assert!(!temp_path.exists(), "temp file should be moved aside");
+        let orphaned = fs::read_dir(dir.path())
+            .expect("read dir")
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("root_pointer.json.tmp.orphaned-"))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(orphaned.len(), 1, "expected one orphaned temp artifact");
     }
 
     #[test]

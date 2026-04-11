@@ -749,7 +749,7 @@ impl Config {
             decisions.push(MergeDecision::new(
                 stage.clone(),
                 "security.authorized_api_keys",
-                format!("{value:?}"),
+                format!("[{} keys configured]", value.len()),
             ));
         }
 

@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 use crate::control_plane::control_epoch::{
@@ -304,6 +304,38 @@ fn persist_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+/// RAII guard that orphans a temp file on drop (unless defused after rename).
+#[must_use]
+struct TempFileGuard(Option<PathBuf>);
+
+impl TempFileGuard {
+    fn new(path: PathBuf) -> Self {
+        Self(Some(path))
+    }
+
+    fn abandoned_path(path: &Path) -> PathBuf {
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("rollout-state.json.tmp");
+        path.with_file_name(format!("{file_name}.orphaned-{}", uuid::Uuid::now_v7()))
+    }
+
+    fn defuse(&mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if let Some(path) = self.0.take()
+            && path.is_file()
+        {
+            let _ = std::fs::rename(&path, Self::abandoned_path(&path));
+        }
+    }
+}
+
 /// Save rollout state to a JSON file atomically.
 ///
 /// If a file already exists at `path`, the version in it must be less than
@@ -331,16 +363,14 @@ pub fn persist(state: &RolloutState, path: &Path) -> Result<(), PersistError> {
     // Write to temp file then rename for atomicity (UUID suffix avoids collisions).
     // TempFileGuard ensures cleanup on rename failure.
     let tmp_path = path.with_extension(format!("tmp.{}", uuid::Uuid::now_v7()));
+    let mut tmp_guard = TempFileGuard::new(tmp_path.clone());
     std::fs::write(&tmp_path, &json).map_err(|e| PersistError::IoError {
         message: e.to_string(),
     })?;
-    let rename_result = std::fs::rename(&tmp_path, path);
-    if rename_result.is_err() {
-        let _ = std::fs::remove_file(&tmp_path);
-    }
-    rename_result.map_err(|e| PersistError::IoError {
+    std::fs::rename(&tmp_path, path).map_err(|e| PersistError::IoError {
         message: e.to_string(),
     })?;
+    tmp_guard.defuse();
 
     Ok(())
 }
@@ -466,6 +496,22 @@ mod tests {
         )
     }
 
+    fn temp_leftovers(dir: &Path, marker: &str) -> Vec<String> {
+        let mut leftovers = Vec::new();
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(_) => return leftovers,
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.contains(marker) {
+                leftovers.push(name);
+            }
+        }
+        leftovers.sort();
+        leftovers
+    }
+
     #[test]
     fn new_state_has_version_1() {
         let state = sample_state();
@@ -503,6 +549,35 @@ mod tests {
         persist(&state, &path).unwrap();
         let loaded = load(&path).unwrap();
         assert_eq!(state, loaded);
+    }
+
+    #[test]
+    fn persist_cleans_temp_files() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("state.json");
+        let state = sample_state();
+        persist(&state, &path).unwrap();
+
+        let leftovers = temp_leftovers(dir.path(), ".tmp.");
+        assert!(
+            leftovers.is_empty(),
+            "found temp rollout leftovers: {leftovers:?}"
+        );
+    }
+
+    #[test]
+    fn temp_file_guard_orphans_abandoned_temp_files() {
+        let dir = TempDir::new().unwrap();
+        let temp_path = dir.path().join("state.json.tmp");
+        std::fs::write(&temp_path, "pending").unwrap();
+
+        {
+            let _guard = TempFileGuard::new(temp_path.clone());
+        }
+
+        assert!(!temp_path.exists(), "temp file should be moved aside");
+        let leftovers = temp_leftovers(dir.path(), "state.json.tmp.orphaned-");
+        assert_eq!(leftovers.len(), 1, "expected one orphaned temp artifact");
     }
 
     #[test]

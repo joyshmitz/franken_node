@@ -130,6 +130,7 @@ pub use frankenengine_node::{connector, control_plane, observability, security, 
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::time::{Duration, Instant};
@@ -501,6 +502,8 @@ struct RegistrySearchDisplayRow {
     integrity_status: String,
 }
 
+/// RAII guard that orphans a temp file on drop (unless defused after rename).
+#[must_use]
 struct TempFileGuard(Option<PathBuf>);
 
 impl TempFileGuard {
@@ -531,6 +534,8 @@ impl Drop for TempFileGuard {
     }
 }
 
+/// RAII guard that orphans a temp directory on drop (unless defused after rename).
+#[must_use]
 struct TempDirGuard(Option<PathBuf>);
 
 impl TempDirGuard {
@@ -563,11 +568,30 @@ impl Drop for TempDirGuard {
 
 fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> {
     use base64::Engine;
+    use std::borrow::Cow;
 
-    if raw.len() == 32
-        && let Ok(bytes) = <[u8; 32]>::try_from(raw)
-    {
-        return Some(ed25519_dalek::SigningKey::from_bytes(&bytes));
+    fn signing_key_from_bytes(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> {
+        match raw.len() {
+            32 => {
+                let bytes = <[u8; 32]>::try_from(raw).ok()?;
+                Some(ed25519_dalek::SigningKey::from_bytes(&bytes))
+            }
+            64 => {
+                let seed = <[u8; 32]>::try_from(&raw[..32]).ok()?;
+                let public = <[u8; 32]>::try_from(&raw[32..]).ok()?;
+                let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+                if signing_key.verifying_key().to_bytes() == public {
+                    Some(signing_key)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    if let Some(signing_key) = signing_key_from_bytes(raw) {
+        return Some(signing_key);
     }
 
     let Ok(text) = std::str::from_utf8(raw) else {
@@ -579,41 +603,884 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
     }
 
     let mut candidates = vec![trimmed.to_string()];
-    if trimmed.starts_with('{')
-        && let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed)
-    {
-        for field in [
-            "private_key",
-            "signing_key",
-            "secret_key",
-            "ed25519_private_key",
-        ] {
-            if let Some(entry) = value.get(field).and_then(serde_json::Value::as_str) {
-                candidates.push(entry.to_string());
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        let parse_byte_array = |values: &[serde_json::Value]| -> Option<Vec<u8>> {
+            if values.len() != 32 && values.len() != 64 {
+                return None;
             }
+            let mut bytes = Vec::with_capacity(values.len());
+            for value in values {
+                let byte = value.as_u64().and_then(|value| u8::try_from(value).ok())?;
+                bytes.push(byte);
+            }
+            Some(bytes)
+        };
+
+        match value {
+            serde_json::Value::String(value) => candidates.push(value),
+            serde_json::Value::Array(values) => {
+                if let Some(bytes) = parse_byte_array(&values)
+                    && let Some(signing_key) = signing_key_from_bytes(&bytes)
+                {
+                    return Some(signing_key);
+                }
+                for entry in values {
+                    if let serde_json::Value::String(value) = entry {
+                        candidates.push(value);
+                    }
+                }
+            }
+            serde_json::Value::Object(value) => {
+                for field in [
+                    "private_key",
+                    "signing_key",
+                    "secret_key",
+                    "ed25519_private_key",
+                    "private-key",
+                    "signing-key",
+                    "secret-key",
+                    "ed25519-private-key",
+                    "privateKey",
+                    "signingKey",
+                    "secretKey",
+                    "ed25519PrivateKey",
+                ] {
+                    if let Some(entry) = value.get(field) {
+                        if let Some(bytes) =
+                            entry.as_array().and_then(|values| parse_byte_array(values))
+                            && let Some(signing_key) = signing_key_from_bytes(&bytes)
+                        {
+                            return Some(signing_key);
+                        }
+                        if let Some(entry) = entry.as_str() {
+                            candidates.push(entry.to_string());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn strip_prefix_ignore_ascii_case<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
+        if value
+            .get(..prefix.len())
+            .is_some_and(|candidate| candidate.eq_ignore_ascii_case(prefix))
+        {
+            Some(&value[prefix.len()..])
+        } else {
+            None
         }
     }
 
     for candidate in candidates {
-        let normalized = candidate.trim().trim_start_matches("ed25519:").trim();
+        let trimmed = candidate.trim();
+        let mut normalized = trimmed;
+        if let Some(remainder) = strip_prefix_ignore_ascii_case(normalized, "ed25519:") {
+            normalized = remainder;
+        }
+        let mut stripped_encoding = false;
+        for prefix in ["base64:", "b64:", "base64url:", "b64url:", "hex:"] {
+            if let Some(remainder) = strip_prefix_ignore_ascii_case(normalized, prefix) {
+                normalized = remainder;
+                stripped_encoding = true;
+                break;
+            }
+        }
+        if stripped_encoding
+            && let Some(remainder) = strip_prefix_ignore_ascii_case(normalized, "ed25519:")
+        {
+            normalized = remainder;
+        }
+        let normalized = normalized.trim();
         if normalized.is_empty() {
             continue;
         }
 
-        if let Ok(decoded_hex) = hex::decode(normalized)
-            && let Ok(bytes) = <[u8; 32]>::try_from(decoded_hex.as_slice())
+        let normalized = if normalized.chars().any(|value| value.is_whitespace()) {
+            Cow::Owned(normalized.split_whitespace().collect::<String>())
+        } else {
+            Cow::Borrowed(normalized)
+        };
+        let normalized = normalized.as_ref();
+
+        let normalized_hex = normalized
+            .strip_prefix("0x")
+            .or_else(|| normalized.strip_prefix("0X"))
+            .unwrap_or(normalized)
+            .replace(['_', ':', '-'], "");
+        if let Ok(decoded_hex) = hex::decode(&normalized_hex)
+            && let Some(signing_key) = signing_key_from_bytes(&decoded_hex)
         {
-            return Some(ed25519_dalek::SigningKey::from_bytes(&bytes));
+            return Some(signing_key);
         }
 
-        if let Ok(decoded_b64) = base64::engine::general_purpose::STANDARD.decode(normalized)
-            && let Ok(bytes) = <[u8; 32]>::try_from(decoded_b64.as_slice())
-        {
-            return Some(ed25519_dalek::SigningKey::from_bytes(&bytes));
+        for engine in [
+            base64::engine::general_purpose::STANDARD,
+            base64::engine::general_purpose::STANDARD_NO_PAD,
+            base64::engine::general_purpose::URL_SAFE,
+            base64::engine::general_purpose::URL_SAFE_NO_PAD,
+        ] {
+            if let Ok(decoded_b64) = engine.decode(normalized)
+                && let Some(signing_key) = signing_key_from_bytes(&decoded_b64)
+            {
+                return Some(signing_key);
+            }
         }
     }
 
     None
+}
+
+#[cfg(test)]
+mod signing_key_parsing_tests {
+    use super::*;
+    use base64::Engine;
+
+    fn key_id_for(signing_key: &ed25519_dalek::SigningKey) -> String {
+        supply_chain::artifact_signing::KeyId::from_verifying_key(&signing_key.verifying_key())
+            .to_string()
+    }
+
+    fn key_id_from_bytes(bytes: &[u8; 32]) -> String {
+        key_id_for(&ed25519_dalek::SigningKey::from_bytes(bytes))
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_raw_bytes() {
+        let bytes = [42_u8; 32];
+        let parsed = parse_signing_key_from_blob(&bytes).expect("parsed raw bytes");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_raw_keypair_bytes() {
+        let seed = [44_u8; 32];
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+        let verifying_key = signing_key.verifying_key().to_bytes();
+        let mut bytes = [0_u8; 64];
+        bytes[..32].copy_from_slice(&seed);
+        bytes[32..].copy_from_slice(&verifying_key);
+        let parsed = parse_signing_key_from_blob(&bytes).expect("parsed keypair bytes");
+        assert_eq!(key_id_for(&parsed), key_id_for(&signing_key));
+    }
+
+    #[test]
+    fn parse_signing_key_rejects_mismatched_keypair_bytes() {
+        let seed = [45_u8; 32];
+        let mut bytes = [0_u8; 64];
+        bytes[..32].copy_from_slice(&seed);
+        bytes[32..].copy_from_slice(&[9_u8; 32]);
+        assert!(parse_signing_key_from_blob(&bytes).is_none());
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_hex_with_prefix_and_underscores() {
+        let bytes = [7_u8; 32];
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<Vec<_>>()
+            .join("_");
+        let candidate = format!("0x{hex}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed hex");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_hex_with_whitespace() {
+        let bytes = [61_u8; 32];
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let split = hex.len() / 2;
+        let candidate = format!("0x{} \n{}", &hex[..split], &hex[split..]);
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed hex");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_hex_with_colons() {
+        let bytes = [90_u8; 32];
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<Vec<_>>()
+            .join(":");
+        let candidate = format!("ed25519:{hex}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed hex");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_hex_with_hyphens() {
+        let bytes = [91_u8; 32];
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<Vec<_>>()
+            .join("-");
+        let candidate = format!("ed25519:{hex}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed hex");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_hex_keypair_bytes() {
+        let seed = [92_u8; 32];
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+        let verifying_key = signing_key.verifying_key().to_bytes();
+        let mut bytes = [0_u8; 64];
+        bytes[..32].copy_from_slice(&seed);
+        bytes[32..].copy_from_slice(&verifying_key);
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let parsed = parse_signing_key_from_blob(hex.as_bytes()).expect("parsed hex");
+        assert_eq!(key_id_for(&parsed), key_id_for(&signing_key));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_base64_urlsafe_no_pad() {
+        let bytes = [19_u8; 32];
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let parsed = parse_signing_key_from_blob(encoded.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_base64_no_pad() {
+        let bytes = [20_u8; 32];
+        let encoded = base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes);
+        let parsed = parse_signing_key_from_blob(encoded.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_base64_with_whitespace() {
+        let bytes = [33_u8; 32];
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let split = encoded.len() / 2;
+        let candidate = format!("{} \n{}", &encoded[..split], &encoded[split..]);
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_base64_keypair_bytes() {
+        let seed = [93_u8; 32];
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+        let verifying_key = signing_key.verifying_key().to_bytes();
+        let mut bytes = [0_u8; 64];
+        bytes[..32].copy_from_slice(&seed);
+        bytes[32..].copy_from_slice(&verifying_key);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let parsed = parse_signing_key_from_blob(encoded.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_for(&signing_key));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_base64_prefix() {
+        let bytes = [71_u8; 32];
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let candidate = format!("base64:{encoded}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_b64_prefix() {
+        let bytes = [72_u8; 32];
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let candidate = format!("b64:{encoded}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_base64url_prefix() {
+        let bytes = [73_u8; 32];
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("base64url:{encoded}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_b64url_prefix() {
+        let bytes = [74_u8; 32];
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("b64url:{encoded}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_hex_prefix() {
+        let bytes = [75_u8; 32];
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let candidate = format!("hex:{hex}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed hex");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_base64_ed25519_prefix_chain() {
+        let bytes = [76_u8; 32];
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let candidate = format!("base64:ed25519:{encoded}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_ed25519_base64_prefix_chain() {
+        let bytes = [78_u8; 32];
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let candidate = format!("ed25519:base64:{encoded}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_hex_ed25519_prefix_chain() {
+        let bytes = [77_u8; 32];
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let candidate = format!("hex:ed25519:{hex}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed hex");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_ed25519_hex_prefix_chain() {
+        let bytes = [79_u8; 32];
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let candidate = format!("ed25519:hex:{hex}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed hex");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_json_wrapped_key() {
+        let bytes = [88_u8; 32];
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"signing_key":"ED25519:{encoded}"}}"#);
+        let parsed = parse_signing_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_json_kebabcase_key() {
+        let bytes = [43_u8; 32];
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"signing-key":"ed25519:{encoded}"}}"#);
+        let parsed = parse_signing_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_json_string_key() {
+        let bytes = [144_u8; 32];
+        let encoded = base64::engine::general_purpose::URL_SAFE.encode(bytes);
+        let payload = format!(r#""ed25519:{encoded}""#);
+        let parsed = parse_signing_key_from_blob(payload.as_bytes()).expect("parsed json string");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_json_array_key() {
+        let bytes = [203_u8; 32];
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"["", "ed25519:{encoded}"]"#);
+        let parsed = parse_signing_key_from_blob(payload.as_bytes()).expect("parsed json array");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_json_camelcase_key() {
+        let bytes = [11_u8; 32];
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"secretKey":"ed25519:{encoded}"}}"#);
+        let parsed = parse_signing_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_json_byte_array() {
+        let bytes = [204_u8; 32];
+        let payload = format!(
+            "[{}]",
+            bytes
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let parsed =
+            parse_signing_key_from_blob(payload.as_bytes()).expect("parsed json byte array");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_rejects_invalid_material() {
+        assert!(parse_signing_key_from_blob(b"not-a-key").is_none());
+    }
+}
+
+#[cfg(test)]
+mod verifying_key_parsing_tests {
+    use super::*;
+    use base64::Engine;
+
+    fn verifying_key_bytes(seed: [u8; 32]) -> [u8; 32] {
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+        signing_key.verifying_key().to_bytes()
+    }
+
+    fn ssh_ed25519_public_key_line(bytes: [u8; 32]) -> String {
+        fn push_ssh_string(buf: &mut Vec<u8>, value: &[u8]) {
+            let len = u32::try_from(value.len()).unwrap_or(0);
+            buf.extend_from_slice(&len.to_be_bytes());
+            buf.extend_from_slice(value);
+        }
+
+        let mut blob = Vec::new();
+        push_ssh_string(&mut blob, b"ssh-ed25519");
+        push_ssh_string(&mut blob, &bytes);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(blob);
+        format!("ssh-ed25519 {encoded} local-test")
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_raw_bytes() {
+        let bytes = verifying_key_bytes([101_u8; 32]);
+        let parsed = parse_verifying_key_from_blob(&bytes).expect("parsed raw bytes");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_raw_keypair_bytes() {
+        let seed = [102_u8; 32];
+        let public = verifying_key_bytes(seed);
+        let mut bytes = [0_u8; 64];
+        bytes[..32].copy_from_slice(&seed);
+        bytes[32..].copy_from_slice(&public);
+        let parsed = parse_verifying_key_from_blob(&bytes).expect("parsed keypair bytes");
+        assert_eq!(parsed.to_bytes(), public);
+    }
+
+    #[test]
+    fn parse_verifying_key_rejects_mismatched_keypair_bytes() {
+        let seed = [103_u8; 32];
+        let mut bytes = [0_u8; 64];
+        bytes[..32].copy_from_slice(&seed);
+        bytes[32..].copy_from_slice(&[9_u8; 32]);
+        assert!(parse_verifying_key_from_blob(&bytes).is_none());
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_hex_with_separators() {
+        let bytes = verifying_key_bytes([104_u8; 32]);
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<Vec<_>>()
+            .join("_");
+        let candidate = format!("ed25519:{hex}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed hex");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_hex_prefix_chain() {
+        let bytes = verifying_key_bytes([108_u8; 32]);
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let candidate = format!("hex:ed25519:{hex}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed hex");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_ed25519_hex_prefix_chain() {
+        let bytes = verifying_key_bytes([109_u8; 32]);
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let candidate = format!("ed25519:hex:{hex}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed hex");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_hex_with_whitespace() {
+        let bytes = verifying_key_bytes([110_u8; 32]);
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let split = hex.len() / 2;
+        let candidate = format!("{} \n{}", &hex[..split], &hex[split..]);
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed hex");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_base64_prefix() {
+        let bytes = verifying_key_bytes([112_u8; 32]);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let candidate = format!("base64:{encoded}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_base64_no_pad() {
+        let bytes = verifying_key_bytes([121_u8; 32]);
+        let encoded = base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes);
+        let parsed = parse_verifying_key_from_blob(encoded.as_bytes()).expect("parsed base64");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_b64_prefix() {
+        let bytes = verifying_key_bytes([113_u8; 32]);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let candidate = format!("b64:{encoded}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_b64url_prefix() {
+        let bytes = verifying_key_bytes([114_u8; 32]);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("b64url:{encoded}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_base64_prefix_chain() {
+        let bytes = verifying_key_bytes([105_u8; 32]);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let candidate = format!("base64:ed25519:{encoded}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_base64url_prefix_chain() {
+        let bytes = verifying_key_bytes([116_u8; 32]);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("ed25519:base64url:{encoded}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_json_string_key() {
+        let bytes = verifying_key_bytes([115_u8; 32]);
+        let encoded = base64::engine::general_purpose::URL_SAFE.encode(bytes);
+        let payload = format!(r#""ed25519:{encoded}""#);
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json string");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_json_camelcase_key() {
+        let bytes = verifying_key_bytes([118_u8; 32]);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"verifyingKey":"ed25519:{encoded}"}}"#);
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_json_kebabcase_key() {
+        let bytes = verifying_key_bytes([124_u8; 32]);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"public-key":"ed25519:{encoded}"}}"#);
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_json_wrapped_key() {
+        let bytes = verifying_key_bytes([106_u8; 32]);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"publicKey":"ed25519:{encoded}"}}"#);
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_json_wrapped_byte_array() {
+        let bytes = verifying_key_bytes([111_u8; 32]);
+        let payload = format!(
+            r#"{{"publicKey":[{}]}}"#,
+            bytes
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_json_array_key() {
+        let bytes = verifying_key_bytes([117_u8; 32]);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"["", "ed25519:{encoded}"]"#);
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json array");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_json_byte_array() {
+        let bytes = verifying_key_bytes([107_u8; 32]);
+        let payload = format!(
+            "[{}]",
+            bytes
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let parsed =
+            parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json byte array");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_ssh_ed25519_line() {
+        let bytes = verifying_key_bytes([119_u8; 32]);
+        let line = ssh_ed25519_public_key_line(bytes);
+        let parsed = parse_verifying_key_from_blob(line.as_bytes()).expect("parsed ssh key");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_ssh_ed25519_multiline() {
+        let bytes = verifying_key_bytes([120_u8; 32]);
+        let line = ssh_ed25519_public_key_line(bytes);
+        let payload = format!("comment line\n{line}\n");
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed ssh key");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_ssh_ed25519_with_options() {
+        let bytes = verifying_key_bytes([122_u8; 32]);
+        let line = ssh_ed25519_public_key_line(bytes);
+        let payload = format!("command=\"echo hi\" {line}");
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed ssh key");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_ssh_ed25519_with_comment_line() {
+        let bytes = verifying_key_bytes([123_u8; 32]);
+        let line = ssh_ed25519_public_key_line(bytes);
+        let payload = format!("# local comment\n{line}");
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed ssh key");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+}
+
+#[cfg(test)]
+mod signature_blob_tests {
+    use super::*;
+    use base64::Engine;
+
+    fn signature_bytes(seed: u8) -> [u8; 64] {
+        [seed; 64]
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_hex_prefix_chain() {
+        let bytes = signature_bytes(31);
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<Vec<_>>()
+            .join("_");
+        let candidate = format!("hex:ed25519:{hex}");
+        let decoded = decode_signature_blob(candidate.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_base64_prefix_chain() {
+        let bytes = signature_bytes(32);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let candidate = format!("base64:ed25519:{encoded}");
+        let decoded = decode_signature_blob(candidate.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_base64_no_pad() {
+        let bytes = signature_bytes(35);
+        let encoded = base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes);
+        let decoded = decode_signature_blob(encoded.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_base64url_prefix() {
+        let bytes = signature_bytes(33);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("b64url:{encoded}");
+        let decoded = decode_signature_blob(candidate.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_base64_with_whitespace() {
+        let bytes = signature_bytes(34);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let split = encoded.len() / 2;
+        let candidate = format!("ed25519:{} \n{}", &encoded[..split], &encoded[split..]);
+        let decoded = decode_signature_blob(candidate.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_string() {
+        let bytes = signature_bytes(36);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#""ed25519:{encoded}""#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_byte_array() {
+        let bytes = signature_bytes(37);
+        let payload = format!(
+            "[{}]",
+            bytes
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_ed25519_signature_field() {
+        let bytes = signature_bytes(38);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"ed25519Signature":"ed25519:{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_signature_bytes_kebab() {
+        let bytes = signature_bytes(39);
+        let payload = format!(
+            r#"{{"signature-bytes":[{}]}}"#,
+            bytes
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_signature_base64() {
+        let bytes = signature_bytes(40);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"signatureBase64":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_signature_hex() {
+        let bytes = signature_bytes(41);
+        let encoded = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let payload = format!(r#"{{"signatureHex":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_sig_bytes() {
+        let bytes = signature_bytes(42);
+        let payload = format!(
+            r#"{{"sigBytes":[{}]}}"#,
+            bytes
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_sig_base64() {
+        let bytes = signature_bytes(43);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"sigBase64":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_signature_b64() {
+        let bytes = signature_bytes(45);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"signatureB64":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_sig_hex() {
+        let bytes = signature_bytes(44);
+        let encoded = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let payload = format!(r#"{{"sigHex":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_returns_raw_on_invalid() {
+        let raw = b"not-a-signature";
+        assert_eq!(decode_signature_blob(raw), raw);
+    }
 }
 
 fn resolve_receipt_signing_key_path(
@@ -1596,6 +2463,7 @@ fn deterministic_run_execution_receipt_id(seed_hash: &str) -> String {
     Uuid::from_bytes(bytes).to_string()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_run_execution_receipt(
     app_path: &Path,
     policy_mode: &str,
@@ -1724,7 +2592,11 @@ fn persist_run_execution_receipt(
         .with_context(|| format!("failed creating {}", day_dir.display()))?;
 
     let final_path = day_dir.join(format!("{}.json", receipt.core.receipt_id));
-    let temp_path = day_dir.join(format!("{}.json.tmp", receipt.core.receipt_id));
+    let temp_path = day_dir.join(format!(
+        "{}.json.tmp-{}",
+        receipt.core.receipt_id,
+        Uuid::now_v7()
+    ));
     let mut temp_guard = TempFileGuard::new(temp_path.clone());
     let rendered = serde_json::to_vec_pretty(receipt)
         .context("failed serializing run execution receipt for persistence")?;
@@ -4089,20 +4961,39 @@ mod registry_command_tests {
         assert!(verification.detail.contains("unsafe"));
     }
 
+    fn temp_name_leftovers<F>(dir: &Path, mut predicate: F) -> Vec<String>
+    where
+        F: FnMut(&str) -> bool,
+    {
+        let mut leftovers = Vec::new();
+        for entry in std::fs::read_dir(dir).expect("read dir") {
+            let entry = entry.expect("entry");
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if predicate(&name) {
+                leftovers.push(name.to_string());
+            }
+        }
+        leftovers.sort();
+        leftovers
+    }
+
     #[test]
     fn write_bytes_atomically_replaces_target_without_tmp_leftovers() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let target_path = temp.path().join("nested").join("artifact.bin");
-        let temp_path = temp.path().join("nested").join("artifact.bin.tmp");
+        let dir_path = temp.path().join("nested");
+        let target_path = dir_path.join("artifact.bin");
+        let temp_prefix = "artifact.bin.tmp";
 
         write_bytes_atomically(&target_path, b"first payload").expect("initial write");
         assert_eq!(
             std::fs::read(&target_path).expect("read first payload"),
             b"first payload"
         );
+        let mut leftovers = temp_name_leftovers(&dir_path, |name| name.starts_with(temp_prefix));
         assert!(
-            !temp_path.exists(),
-            "temporary file should be removed after rename"
+            leftovers.is_empty(),
+            "temporary files should be removed after rename: {leftovers:?}"
         );
 
         write_bytes_atomically(&target_path, b"second payload").expect("replacement write");
@@ -4110,9 +5001,54 @@ mod registry_command_tests {
             std::fs::read(&target_path).expect("read second payload"),
             b"second payload"
         );
+        leftovers = temp_name_leftovers(&dir_path, |name| name.starts_with(temp_prefix));
         assert!(
-            !temp_path.exists(),
-            "temporary replacement file should not remain after atomic write"
+            leftovers.is_empty(),
+            "temporary replacement file should not remain after atomic write: {leftovers:?}"
+        );
+    }
+
+    #[test]
+    fn persist_local_registry_artifact_removes_temp_directories() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let stored =
+            persist_registry_artifact_fixture(temp.path(), "plugin.fnext", b"artifact payload");
+        let lineage_root = stored
+            .entry_dir()
+            .parent()
+            .expect("lineage root")
+            .to_path_buf();
+        let leftovers = temp_name_leftovers(&lineage_root, |name| name.contains(".tmp-"));
+        assert!(
+            leftovers.is_empty(),
+            "temp registry directories should be cleaned up: {leftovers:?}"
+        );
+    }
+
+    #[test]
+    fn collect_local_registry_artifacts_skips_hidden_temp_dirs() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let stored =
+            persist_registry_artifact_fixture(temp.path(), "plugin.fnext", b"artifact payload");
+        let lineage_root = stored.entry_dir().parent().expect("lineage root");
+        let entry_name = stored
+            .entry_dir()
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("entry name");
+        let hidden_dir = lineage_root.join(format!(".{entry_name}.tmp-ignored"));
+        std::fs::create_dir_all(&hidden_dir).expect("create hidden dir");
+        std::fs::copy(
+            &stored.manifest_path,
+            hidden_dir.join(REGISTRY_LOCAL_ARTIFACT_MANIFEST_FILE_NAME),
+        )
+        .expect("copy manifest");
+
+        let artifacts = collect_local_registry_artifacts(temp.path(), false).expect("collect");
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(
+            artifacts[0].manifest.extension.extension_id,
+            stored.manifest.extension.extension_id
         );
     }
 
@@ -4307,6 +5243,45 @@ mod build_context_tests {
             _ => None,
         });
         assert_eq!(ctx.builder_identity.as_deref(), Some("config-override"));
+    }
+
+    #[test]
+    fn build_context_strips_credentials_from_http_repository_urls() {
+        let raw = "https://token:secret@github.com/test-org/test-repo.git";
+        assert_eq!(
+            BuildContext::strip_repository_url_credentials(raw),
+            "https://github.com/test-org/test-repo.git"
+        );
+
+        let raw = "https://token@github.com/test-org/test-repo";
+        assert_eq!(
+            BuildContext::strip_repository_url_credentials(raw),
+            "https://github.com/test-org/test-repo"
+        );
+    }
+
+    #[test]
+    fn build_context_preserves_ssh_style_urls_without_passwords() {
+        let ssh_url = "ssh://git@github.com/test-org/test-repo.git";
+        assert_eq!(
+            BuildContext::strip_repository_url_credentials(ssh_url),
+            ssh_url
+        );
+
+        let scp_style = "git@github.com:test-org/test-repo.git";
+        assert_eq!(
+            BuildContext::strip_repository_url_credentials(scp_style),
+            scp_style
+        );
+    }
+
+    #[test]
+    fn build_context_strips_credentials_from_ssh_urls_with_passwords() {
+        let ssh_url = "ssh://user:pass@host.internal/repo.git";
+        assert_eq!(
+            BuildContext::strip_repository_url_credentials(ssh_url),
+            "ssh://host.internal/repo.git"
+        );
     }
 }
 
@@ -6280,6 +7255,27 @@ impl BuildContext {
             .filter(|s| !s.is_empty())
     }
 
+    fn strip_repository_url_credentials(raw: &str) -> String {
+        let Some(scheme_end) = raw.find("://") else {
+            return raw.to_string();
+        };
+        let scheme = &raw[..scheme_end];
+        let scheme_lower = scheme.to_ascii_lowercase();
+        let after_scheme = &raw[scheme_end + 3..];
+        let Some(at_pos) = after_scheme.find('@') else {
+            return raw.to_string();
+        };
+        let userinfo = &after_scheme[..at_pos];
+        let rest = &after_scheme[at_pos + 1..];
+        let should_strip =
+            matches!(scheme_lower.as_str(), "http" | "https") || userinfo.contains(':');
+        if should_strip {
+            format!("{scheme}://{rest}")
+        } else {
+            raw.to_string()
+        }
+    }
+
     fn detect_repository_url_with_env<F>(get_env: &F) -> Option<String>
     where
         F: Fn(&str) -> Option<String>,
@@ -6292,24 +7288,15 @@ impl BuildContext {
         }
         // GitLab CI
         if let Some(url) = get_env("CI_REPOSITORY_URL") {
-            // Strip credentials from URL if present (format: https://user:token@host/path)
-            // Simple approach: find @ and reconstruct without credentials
-            if let Some(at_pos) = url.find('@')
-                && let Some(scheme_end) = url.find("://")
-            {
-                let scheme = &url[..scheme_end + 3];
-                let rest = &url[at_pos + 1..];
-                return Some(format!("{scheme}{rest}"));
-            }
-            return Some(url);
+            return Some(Self::strip_repository_url_credentials(&url));
         }
         // CircleCI
         if let Some(url) = get_env("CIRCLE_REPOSITORY_URL") {
-            return Some(url);
+            return Some(Self::strip_repository_url_credentials(&url));
         }
         // Azure Pipelines
         if let Some(url) = get_env("BUILD_REPOSITORY_URI") {
-            return Some(url);
+            return Some(Self::strip_repository_url_credentials(&url));
         }
         // Try local git
         std::process::Command::new("git")
@@ -6681,6 +7668,12 @@ fn registry_relative_display_path(path: &Path, project_root: &Path) -> String {
         .to_string()
 }
 
+fn registry_should_skip_dir(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with('.'))
+}
+
 fn registry_artifact_file_name_is_safe(file_name: &str) -> bool {
     if file_name.is_empty() {
         return false;
@@ -6707,7 +7700,7 @@ fn write_bytes_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| anyhow::anyhow!("failed deriving file name for {}", path.display()))?;
-    let temp_path = path.with_file_name(format!("{file_name}.tmp"));
+    let temp_path = path.with_file_name(format!("{file_name}.tmp-{}", Uuid::now_v7()));
     let mut temp_guard = TempFileGuard::new(temp_path.clone());
     std::fs::write(&temp_path, bytes)
         .with_context(|| format!("failed writing {}", temp_path.display()))?;
@@ -6839,6 +7832,9 @@ fn collect_local_registry_artifacts_in(
                 .file_type()
                 .with_context(|| format!("failed reading file type for {}", path.display()))?;
             if file_type.is_dir() {
+                if registry_should_skip_dir(&path) {
+                    continue;
+                }
                 stack.push(path);
                 continue;
             }
@@ -7166,20 +8162,29 @@ fn run_command_capture_stdout(
 
     loop {
         match child.try_wait() {
-            Ok(Some(_)) => {
-                let output = child.wait_with_output().map_err(|error| {
-                    format!("{command_label} failed collecting output: {error}")
-                })?;
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            Ok(Some(status)) => {
+                let mut stdout = Vec::new();
+                if let Some(mut pipe) = child.stdout.take() {
+                    pipe.read_to_end(&mut stdout).map_err(|error| {
+                        format!("{command_label} failed collecting output: {error}")
+                    })?;
+                }
+                let mut stderr = Vec::new();
+                if let Some(mut pipe) = child.stderr.take() {
+                    pipe.read_to_end(&mut stderr).map_err(|error| {
+                        format!("{command_label} failed collecting output: {error}")
+                    })?;
+                }
+                if !status.success() {
+                    let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+                    let stdout = String::from_utf8_lossy(&stdout).trim().to_string();
                     let detail = if stderr.is_empty() { stdout } else { stderr };
                     if detail.is_empty() {
-                        return Err(format!("{command_label} exited with {}", output.status));
+                        return Err(format!("{command_label} exited with {status}"));
                     }
                     return Err(format!("{command_label} failed: {detail}"));
                 }
-                return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+                return Ok(String::from_utf8_lossy(&stdout).trim().to_string());
             }
             Ok(None) => {
                 if start.elapsed() >= timeout {
@@ -7257,7 +8262,9 @@ fn resolve_registry_builder_identity() -> String {
 fn collect_git_provenance_context(workspace: &Path) -> GitProvenanceContext {
     let source_repository_url =
         match run_git_capture_stdout(workspace, &["remote", "get-url", "origin"]) {
-            Ok(value) => trim_nonempty(value),
+            Ok(value) => {
+                trim_nonempty(value).map(|url| BuildContext::strip_repository_url_credentials(&url))
+            }
             Err(error) => {
                 tracing::warn!(
                     workspace = %workspace.display(),
@@ -9205,17 +10212,150 @@ struct ReleaseVerificationContext {
 
 fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
     use base64::Engine;
+    use std::borrow::Cow;
 
-    if let Ok(text) = std::str::from_utf8(raw) {
-        let trimmed = text.trim();
-        if !trimmed.is_empty() {
-            if let Ok(decoded_hex) = hex::decode(trimmed)
-                && decoded_hex.len() == 64
-            {
-                return decoded_hex;
+    let Ok(text) = std::str::from_utf8(raw) else {
+        return raw.to_vec();
+    };
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return raw.to_vec();
+    }
+
+    let mut candidates = vec![trimmed.to_string()];
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        let parse_byte_array = |values: &[serde_json::Value]| -> Option<Vec<u8>> {
+            if values.len() != 64 {
+                return None;
             }
+            let mut bytes = Vec::with_capacity(values.len());
+            for value in values {
+                let byte = value.as_u64().and_then(|value| u8::try_from(value).ok())?;
+                bytes.push(byte);
+            }
+            Some(bytes)
+        };
 
-            if let Ok(decoded_b64) = base64::engine::general_purpose::STANDARD.decode(trimmed)
+        match value {
+            serde_json::Value::String(value) => candidates.push(value),
+            serde_json::Value::Array(values) => {
+                if let Some(bytes) = parse_byte_array(&values) {
+                    return bytes;
+                }
+                for entry in values {
+                    if let serde_json::Value::String(value) = entry {
+                        candidates.push(value);
+                    }
+                }
+            }
+            serde_json::Value::Object(value) => {
+                for field in [
+                    "signature",
+                    "sig",
+                    "ed25519_signature",
+                    "ed25519-signature",
+                    "ed25519Signature",
+                    "signature_base64",
+                    "signature-base64",
+                    "signatureBase64",
+                    "signature_b64",
+                    "signature-b64",
+                    "signatureB64",
+                    "signature_hex",
+                    "signature-hex",
+                    "signatureHex",
+                    "signature_bytes",
+                    "signature-bytes",
+                    "signatureBytes",
+                    "sig_base64",
+                    "sig-base64",
+                    "sigBase64",
+                    "sig_b64",
+                    "sig-b64",
+                    "sigB64",
+                    "sig_hex",
+                    "sig-hex",
+                    "sigHex",
+                    "sig_bytes",
+                    "sig-bytes",
+                    "sigBytes",
+                ] {
+                    if let Some(entry) = value.get(field) {
+                        if let Some(bytes) =
+                            entry.as_array().and_then(|values| parse_byte_array(values))
+                        {
+                            return bytes;
+                        }
+                        if let Some(entry) = entry.as_str() {
+                            candidates.push(entry.to_string());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn strip_prefix_ignore_ascii_case<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
+        if value
+            .get(..prefix.len())
+            .is_some_and(|candidate| candidate.eq_ignore_ascii_case(prefix))
+        {
+            Some(&value[prefix.len()..])
+        } else {
+            None
+        }
+    }
+
+    for candidate in candidates {
+        let trimmed = candidate.trim();
+        let mut normalized = trimmed;
+        if let Some(remainder) = strip_prefix_ignore_ascii_case(normalized, "ed25519:") {
+            normalized = remainder;
+        }
+        let mut stripped_encoding = false;
+        for prefix in ["base64:", "b64:", "base64url:", "b64url:", "hex:"] {
+            if let Some(remainder) = strip_prefix_ignore_ascii_case(normalized, prefix) {
+                normalized = remainder;
+                stripped_encoding = true;
+                break;
+            }
+        }
+        if stripped_encoding
+            && let Some(remainder) = strip_prefix_ignore_ascii_case(normalized, "ed25519:")
+        {
+            normalized = remainder;
+        }
+        let normalized = normalized.trim();
+        if normalized.is_empty() {
+            continue;
+        }
+
+        let normalized = if normalized.chars().any(|value| value.is_whitespace()) {
+            Cow::Owned(normalized.split_whitespace().collect::<String>())
+        } else {
+            Cow::Borrowed(normalized)
+        };
+        let normalized = normalized.as_ref();
+
+        let normalized_hex = normalized
+            .strip_prefix("0x")
+            .or_else(|| normalized.strip_prefix("0X"))
+            .unwrap_or(normalized)
+            .replace(['_', ':', '-'], "");
+        if let Ok(decoded_hex) = hex::decode(&normalized_hex)
+            && decoded_hex.len() == 64
+        {
+            return decoded_hex;
+        }
+
+        for engine in [
+            base64::engine::general_purpose::STANDARD,
+            base64::engine::general_purpose::STANDARD_NO_PAD,
+            base64::engine::general_purpose::URL_SAFE,
+            base64::engine::general_purpose::URL_SAFE_NO_PAD,
+        ] {
+            if let Ok(decoded_b64) = engine.decode(normalized)
                 && decoded_b64.len() == 64
             {
                 return decoded_b64;
@@ -9228,11 +10368,92 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
 
 fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingKey> {
     use base64::Engine;
+    use std::borrow::Cow;
 
-    if raw.len() == 32
-        && let Ok(bytes) = <[u8; 32]>::try_from(raw)
-        && let Ok(key) = ed25519_dalek::VerifyingKey::from_bytes(&bytes)
-    {
+    fn verifying_key_from_bytes(raw: &[u8]) -> Option<ed25519_dalek::VerifyingKey> {
+        match raw.len() {
+            32 => {
+                let bytes = <[u8; 32]>::try_from(raw).ok()?;
+                ed25519_dalek::VerifyingKey::from_bytes(&bytes).ok()
+            }
+            64 => {
+                let seed = <[u8; 32]>::try_from(&raw[..32]).ok()?;
+                let public = <[u8; 32]>::try_from(&raw[32..]).ok()?;
+                let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+                let derived = signing_key.verifying_key();
+                if derived.to_bytes() == public {
+                    Some(derived)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn parse_ssh_ed25519_public_key(candidate: &str) -> Option<ed25519_dalek::VerifyingKey> {
+        fn read_ssh_string<'a>(blob: &'a [u8], offset: &mut usize) -> Option<&'a [u8]> {
+            let end = offset.saturating_add(4);
+            if end > blob.len() {
+                return None;
+            }
+            let len = u32::from_be_bytes(blob[*offset..end].try_into().ok()?) as usize;
+            let start = end;
+            let end = start.saturating_add(len);
+            if end > blob.len() {
+                return None;
+            }
+            *offset = end;
+            Some(&blob[start..end])
+        }
+
+        fn parse_ssh_ed25519_blob(blob: &[u8]) -> Option<ed25519_dalek::VerifyingKey> {
+            let mut offset = 0usize;
+            let key_type = read_ssh_string(blob, &mut offset)?;
+            if key_type != b"ssh-ed25519" {
+                return None;
+            }
+            let key_bytes = read_ssh_string(blob, &mut offset)?;
+            if offset != blob.len() {
+                return None;
+            }
+            verifying_key_from_bytes(key_bytes)
+        }
+
+        for line in candidate.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let parts = line.split_whitespace().collect::<Vec<_>>();
+            if parts.is_empty() {
+                continue;
+            }
+            let Some(index) = parts
+                .iter()
+                .position(|part| part.eq_ignore_ascii_case("ssh-ed25519"))
+            else {
+                continue;
+            };
+            let Some(encoded) = parts.get(index + 1) else {
+                continue;
+            };
+            for engine in [
+                base64::engine::general_purpose::STANDARD,
+                base64::engine::general_purpose::STANDARD_NO_PAD,
+            ] {
+                if let Ok(decoded) = engine.decode(encoded)
+                    && let Some(key) = parse_ssh_ed25519_blob(&decoded)
+                {
+                    return Some(key);
+                }
+            }
+        }
+
+        None
+    }
+
+    if let Some(key) = verifying_key_from_bytes(raw) {
         return Some(key);
     }
 
@@ -9245,34 +10466,130 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
     }
 
     let mut candidates = vec![trimmed.to_string()];
-    if trimmed.starts_with('{')
-        && let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed)
-    {
-        for field in ["public_key", "verifying_key", "key", "ed25519_public_key"] {
-            if let Some(entry) = value.get(field).and_then(serde_json::Value::as_str) {
-                candidates.push(entry.to_string());
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        let parse_byte_array = |values: &[serde_json::Value]| -> Option<Vec<u8>> {
+            if values.len() != 32 && values.len() != 64 {
+                return None;
             }
+            let mut bytes = Vec::with_capacity(values.len());
+            for value in values {
+                let byte = value.as_u64().and_then(|value| u8::try_from(value).ok())?;
+                bytes.push(byte);
+            }
+            Some(bytes)
+        };
+
+        match value {
+            serde_json::Value::String(value) => candidates.push(value),
+            serde_json::Value::Array(values) => {
+                if let Some(bytes) = parse_byte_array(&values)
+                    && let Some(key) = verifying_key_from_bytes(&bytes)
+                {
+                    return Some(key);
+                }
+                for entry in values {
+                    if let serde_json::Value::String(value) = entry {
+                        candidates.push(value);
+                    }
+                }
+            }
+            serde_json::Value::Object(value) => {
+                for field in [
+                    "public_key",
+                    "verifying_key",
+                    "key",
+                    "ed25519_public_key",
+                    "public-key",
+                    "verifying-key",
+                    "ed25519-public-key",
+                    "publicKey",
+                    "verifyingKey",
+                    "ed25519PublicKey",
+                ] {
+                    if let Some(entry) = value.get(field) {
+                        if let Some(bytes) =
+                            entry.as_array().and_then(|values| parse_byte_array(values))
+                            && let Some(key) = verifying_key_from_bytes(&bytes)
+                        {
+                            return Some(key);
+                        }
+                        if let Some(entry) = entry.as_str() {
+                            candidates.push(entry.to_string());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn strip_prefix_ignore_ascii_case<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
+        if value
+            .get(..prefix.len())
+            .is_some_and(|candidate| candidate.eq_ignore_ascii_case(prefix))
+        {
+            Some(&value[prefix.len()..])
+        } else {
+            None
         }
     }
 
     for candidate in candidates {
-        let normalized = candidate.trim().trim_start_matches("ed25519:").trim();
+        let trimmed = candidate.trim();
+        if let Some(key) = parse_ssh_ed25519_public_key(trimmed) {
+            return Some(key);
+        }
+        let mut normalized = trimmed;
+        if let Some(remainder) = strip_prefix_ignore_ascii_case(normalized, "ed25519:") {
+            normalized = remainder;
+        }
+        let mut stripped_encoding = false;
+        for prefix in ["base64:", "b64:", "base64url:", "b64url:", "hex:"] {
+            if let Some(remainder) = strip_prefix_ignore_ascii_case(normalized, prefix) {
+                normalized = remainder;
+                stripped_encoding = true;
+                break;
+            }
+        }
+        if stripped_encoding
+            && let Some(remainder) = strip_prefix_ignore_ascii_case(normalized, "ed25519:")
+        {
+            normalized = remainder;
+        }
+        let normalized = normalized.trim();
         if normalized.is_empty() {
             continue;
         }
 
-        if let Ok(decoded_hex) = hex::decode(normalized)
-            && let Ok(bytes) = <[u8; 32]>::try_from(decoded_hex.as_slice())
-            && let Ok(key) = ed25519_dalek::VerifyingKey::from_bytes(&bytes)
+        let normalized = if normalized.chars().any(|value| value.is_whitespace()) {
+            Cow::Owned(normalized.split_whitespace().collect::<String>())
+        } else {
+            Cow::Borrowed(normalized)
+        };
+        let normalized = normalized.as_ref();
+
+        let normalized_hex = normalized
+            .strip_prefix("0x")
+            .or_else(|| normalized.strip_prefix("0X"))
+            .unwrap_or(normalized)
+            .replace(['_', ':', '-'], "");
+        if let Ok(decoded_hex) = hex::decode(&normalized_hex)
+            && let Some(key) = verifying_key_from_bytes(&decoded_hex)
         {
             return Some(key);
         }
 
-        if let Ok(decoded_b64) = base64::engine::general_purpose::STANDARD.decode(normalized)
-            && let Ok(bytes) = <[u8; 32]>::try_from(decoded_b64.as_slice())
-            && let Ok(key) = ed25519_dalek::VerifyingKey::from_bytes(&bytes)
-        {
-            return Some(key);
+        for engine in [
+            base64::engine::general_purpose::STANDARD,
+            base64::engine::general_purpose::STANDARD_NO_PAD,
+            base64::engine::general_purpose::URL_SAFE,
+            base64::engine::general_purpose::URL_SAFE_NO_PAD,
+        ] {
+            if let Ok(decoded_b64) = engine.decode(normalized)
+                && let Some(key) = verifying_key_from_bytes(&decoded_b64)
+            {
+                return Some(key);
+            }
         }
     }
 
@@ -11749,6 +13066,23 @@ mod run_trust_gate_tests {
         .expect("preflight report")
     }
 
+    fn temp_name_leftovers<F>(dir: &Path, mut predicate: F) -> Vec<String>
+    where
+        F: FnMut(&str) -> bool,
+    {
+        let mut leftovers = Vec::new();
+        for entry in std::fs::read_dir(dir).expect("read dir") {
+            let entry = entry.expect("entry");
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if predicate(&name) {
+                leftovers.push(name.to_string());
+            }
+        }
+        leftovers.sort();
+        leftovers
+    }
+
     fn sample_ssrf_telemetry_report() -> TelemetryRuntimeReport {
         TelemetryRuntimeReport {
             final_state: BridgeLifecycleState::Stopped,
@@ -12038,6 +13372,62 @@ mod run_trust_gate_tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(orphaned.len(), 1, "expected one orphaned temp artifact");
+    }
+
+    #[test]
+    fn temp_dir_guard_orphans_abandoned_temp_dirs() {
+        let tmp = TempDir::new().expect("tempdir");
+        let temp_dir = tmp.path().join("registry-artifact.tmp");
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        {
+            let _guard = TempDirGuard::new(temp_dir.clone());
+        }
+
+        assert!(!temp_dir.exists(), "temp dir should be moved aside");
+        let orphaned = std::fs::read_dir(tmp.path())
+            .expect("read dir")
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("registry-artifact.tmp.orphaned-"))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(orphaned.len(), 1, "expected one orphaned temp dir");
+    }
+
+    #[test]
+    fn persist_run_execution_receipt_cleans_temp_files() {
+        let tmp = TempDir::new().expect("tempdir");
+        write_demo_project(tmp.path(), &[("@acme/auth-guard", "^1.4.2")]);
+        write_fixture_registry_to(tmp.path());
+
+        let preflight = evaluate_preflight(tmp.path(), Profile::Balanced);
+        let receipt = build_run_execution_receipt(
+            tmp.path(),
+            "balanced",
+            Profile::Balanced,
+            &preflight,
+            &sample_dispatch_report(
+                tmp.path(),
+                "2026-04-01T00:00:00Z",
+                "2026-04-01T00:00:05Z",
+                None,
+            ),
+            Vec::new(),
+            Vec::new(),
+            None,
+        )
+        .expect("receipt");
+
+        let receipt_path = persist_run_execution_receipt(tmp.path(), &receipt, 2).expect("persist");
+        let day_dir = receipt_path.parent().expect("day dir");
+        let leftovers = temp_name_leftovers(day_dir, |name| name.contains(".tmp-"));
+        assert!(
+            leftovers.is_empty(),
+            "temp receipt files should be cleaned: {leftovers:?}"
+        );
     }
 
     #[test]

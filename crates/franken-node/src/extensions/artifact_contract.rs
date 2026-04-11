@@ -14,6 +14,13 @@ use crate::capacity_defaults::aliases::MAX_TRUSTED_SIGNERS;
 /// Report schema version for capability artifact vectors.
 pub const SCHEMA_VERSION: &str = "capability-artifact-v1.0";
 
+/// Reserved placeholder for unknown artifact identifiers.
+const RESERVED_ARTIFACT_ID: &str = "<unknown>";
+
+fn is_reserved_artifact_id(artifact_id: &str) -> bool {
+    artifact_id.trim() == RESERVED_ARTIFACT_ID
+}
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -30,6 +37,7 @@ pub mod event_codes {
 // ---------------------------------------------------------------------------
 pub mod error_codes {
     pub const ERR_ARTIFACT_MISSING_CONTRACT: &str = "ERR_ARTIFACT_MISSING_CONTRACT";
+    pub const ERR_ARTIFACT_INVALID_CONTRACT: &str = "ERR_ARTIFACT_INVALID_CONTRACT";
     pub const ERR_ARTIFACT_INVALID_CAPABILITY: &str = "ERR_ARTIFACT_INVALID_CAPABILITY";
     pub const ERR_ARTIFACT_SIGNATURE_INVALID: &str = "ERR_ARTIFACT_SIGNATURE_INVALID";
     pub const ERR_ARTIFACT_SCHEMA_MISMATCH: &str = "ERR_ARTIFACT_SCHEMA_MISMATCH";
@@ -94,6 +102,7 @@ pub struct ExtensionArtifact {
 #[serde(rename_all = "snake_case")]
 pub enum AdmissionDenialReason {
     MissingContract,
+    InvalidContract { detail: String },
     InvalidCapability { detail: String },
     SignatureInvalid,
     SchemaMismatch { expected: String, actual: String },
@@ -103,6 +112,7 @@ impl AdmissionDenialReason {
     pub fn code(&self) -> &'static str {
         match self {
             Self::MissingContract => error_codes::ERR_ARTIFACT_MISSING_CONTRACT,
+            Self::InvalidContract { .. } => error_codes::ERR_ARTIFACT_INVALID_CONTRACT,
             Self::InvalidCapability { .. } => error_codes::ERR_ARTIFACT_INVALID_CAPABILITY,
             Self::SignatureInvalid => error_codes::ERR_ARTIFACT_SIGNATURE_INVALID,
             Self::SchemaMismatch { .. } => error_codes::ERR_ARTIFACT_SCHEMA_MISMATCH,
@@ -175,12 +185,20 @@ impl AdmissionConfig {
         &mut self,
         signer_id: impl Into<String>,
     ) -> Result<(), AdmissionConfigError> {
+        let signer_id = signer_id.into();
+        let trimmed = signer_id.trim();
+        if trimmed.is_empty() || trimmed != signer_id.as_str() {
+            return Ok(());
+        }
+        if self.trusted_signers.contains(&signer_id) {
+            return Ok(());
+        }
         if self.trusted_signers.len() >= MAX_TRUSTED_SIGNERS {
             return Err(AdmissionConfigError::TrustedSignerCapacityExceeded {
                 capacity: MAX_TRUSTED_SIGNERS,
             });
         }
-        self.trusted_signers.push(signer_id.into());
+        self.trusted_signers.push(signer_id);
         Ok(())
     }
 }
@@ -215,6 +233,24 @@ impl AdmissionGate {
             }
         };
 
+        if contract.schema_version.trim().is_empty() {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "empty schema_version".to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if contract.schema_version != contract.schema_version.trim() {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "schema_version contains leading or trailing whitespace".to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
         // Schema version check
         if contract.schema_version != self.config.expected_schema_version {
             return AdmissionOutcome::Denied {
@@ -226,30 +262,205 @@ impl AdmissionGate {
             };
         }
 
-        // Reject duplicate capability_ids (INV-ARTIFACT-CAPABILITY-ENVELOPE).
-        {
-            let mut seen_ids = BTreeSet::new();
-            for cap in &contract.capabilities {
-                if !seen_ids.insert(&cap.capability_id) {
-                    return AdmissionOutcome::Denied {
-                        reason: AdmissionDenialReason::InvalidCapability {
-                            detail: format!("duplicate capability_id '{}'", cap.capability_id),
-                        },
-                        event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
-                    };
-                }
-            }
+        if contract.contract_id.trim().is_empty() {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "empty contract_id".to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if contract.contract_id != contract.contract_id.trim() {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "contract_id contains leading or trailing whitespace".to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if contract.extension_id.trim().is_empty() {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "empty contract extension_id".to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if contract.extension_id != contract.extension_id.trim() {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "contract extension_id contains leading or trailing whitespace"
+                        .to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if contract.signer_id.trim().is_empty() {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "empty signer_id".to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if contract.signer_id != contract.signer_id.trim() {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "signer_id contains leading or trailing whitespace".to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if contract.issued_epoch_ms == 0 {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "issued_epoch_ms must be > 0".to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if artifact.artifact_id.trim().is_empty() {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "empty artifact_id".to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if is_reserved_artifact_id(&artifact.artifact_id) {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: format!("artifact_id is reserved: {:?}", artifact.artifact_id),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if artifact.artifact_id != artifact.artifact_id.trim() {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "artifact_id contains leading or trailing whitespace".to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if artifact.extension_id.trim().is_empty() {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "empty artifact extension_id".to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if is_reserved_artifact_id(&artifact.extension_id) {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: format!(
+                        "artifact extension_id is reserved: {:?}",
+                        artifact.extension_id
+                    ),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if artifact.extension_id != artifact.extension_id.trim() {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "artifact extension_id contains leading or trailing whitespace"
+                        .to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if contract.extension_id != artifact.extension_id {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: format!(
+                        "contract extension_id '{}' does not match artifact extension_id '{}'",
+                        contract.extension_id, artifact.extension_id
+                    ),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if contract.signature.trim().is_empty() {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "empty signature".to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if !is_hex_sha256(&contract.signature) {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "signature must be lowercase hex sha256".to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if contract.capabilities.is_empty() {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "capability list is empty".to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
+        }
+
+        if !is_hex_sha256(&artifact.payload_hash) {
+            return AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract {
+                    detail: "payload_hash must be lowercase hex sha256".to_string(),
+                },
+                event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+            };
         }
 
         // Validate each capability entry
+        let mut seen_ids = BTreeSet::new();
         for cap in &contract.capabilities {
-            if cap.capability_id.is_empty() || cap.scope.is_empty() {
+            if cap.capability_id.trim().is_empty() || cap.scope.trim().is_empty() {
                 return AdmissionOutcome::Denied {
                     reason: AdmissionDenialReason::InvalidCapability {
                         detail: format!(
                             "empty capability_id or scope in capability '{}'",
                             cap.capability_id
                         ),
+                    },
+                    event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+                };
+            }
+            if cap.capability_id != cap.capability_id.trim() || cap.scope != cap.scope.trim() {
+                return AdmissionOutcome::Denied {
+                    reason: AdmissionDenialReason::InvalidCapability {
+                        detail: format!(
+                            "capability '{}' has leading or trailing whitespace",
+                            cap.capability_id
+                        ),
+                    },
+                    event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
+                };
+            }
+            if !seen_ids.insert(cap.capability_id.clone()) {
+                return AdmissionOutcome::Denied {
+                    reason: AdmissionDenialReason::InvalidCapability {
+                        detail: format!("duplicate capability_id '{}'", cap.capability_id),
                     },
                     event_code: error_codes::ERR_ARTIFACT_ADMISSION_DENIED.to_string(),
                 };
@@ -348,18 +559,26 @@ impl EnforcementEngine {
     /// INV-ARTIFACT-NO-DRIFT: detects any mismatch between admitted and active sets.
     pub fn check_drift(&self, active_capabilities: &[String]) -> DriftCheckResult {
         let admitted_ids: Vec<String> = self.admitted_capabilities.keys().cloned().collect();
-        let mut missing = Vec::new();
-        let mut extra = Vec::new();
+        let mut active_counts: BTreeMap<String, usize> = BTreeMap::new();
+        let mut missing = BTreeSet::new();
+        let mut extra = BTreeSet::new();
 
-        for admitted_id in &admitted_ids {
-            if !active_capabilities.contains(admitted_id) {
-                missing.push(admitted_id.clone());
+        for active_id in active_capabilities {
+            *active_counts.entry(active_id.clone()).or_insert(0) += 1;
+            if !self.admitted_capabilities.contains_key(active_id) {
+                extra.insert(active_id.clone());
             }
         }
 
-        for active_id in active_capabilities {
-            if !self.admitted_capabilities.contains_key(active_id) {
-                extra.push(active_id.clone());
+        for (active_id, count) in &active_counts {
+            if *count > 1 && self.admitted_capabilities.contains_key(active_id) {
+                extra.insert(active_id.clone());
+            }
+        }
+
+        for admitted_id in &admitted_ids {
+            if !active_counts.contains_key(admitted_id) {
+                missing.insert(admitted_id.clone());
             }
         }
 
@@ -369,8 +588,8 @@ impl EnforcementEngine {
             }
         } else {
             DriftCheckResult::DriftDetected {
-                missing,
-                extra,
+                missing: missing.into_iter().collect(),
+                extra: extra.into_iter().collect(),
                 event_code: event_codes::ARTIFACT_DRIFT_DETECTED.to_string(),
             }
         }
@@ -396,6 +615,15 @@ fn digest_bytes(input: &[u8]) -> String {
     hasher.update(b"artifact_contract_digest_v1:");
     hasher.update(input);
     hex::encode(hasher.finalize())
+}
+
+fn is_hex_sha256(value: &str) -> bool {
+    if value.len() != 64 {
+        return false;
+    }
+    value
+        .bytes()
+        .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 fn verify_contract_signature(contract: &CapabilityContract) -> bool {
@@ -586,6 +814,32 @@ mod tests {
     }
 
     #[test]
+    fn trusted_signer_registration_is_idempotent() {
+        let mut cfg = AdmissionConfig::new(SCHEMA_VERSION);
+        cfg.with_signer("signer-A")
+            .expect("initial signer registration should succeed");
+        cfg.with_signer("signer-A")
+            .expect("duplicate signer registration should be ignored");
+        assert_eq!(cfg.trusted_signers.len(), 1);
+    }
+
+    #[test]
+    fn trusted_signer_registration_ignores_blank_signer() {
+        let mut cfg = AdmissionConfig::new(SCHEMA_VERSION);
+        cfg.with_signer("   ")
+            .expect("blank signer registration should be ignored");
+        assert!(cfg.trusted_signers.is_empty());
+    }
+
+    #[test]
+    fn trusted_signer_registration_ignores_whitespace_wrapped_signer() {
+        let mut cfg = AdmissionConfig::new(SCHEMA_VERSION);
+        cfg.with_signer(" signer-A ")
+            .expect("whitespace signer registration should be ignored");
+        assert!(cfg.trusted_signers.is_empty());
+    }
+
+    #[test]
     fn admission_rejects_missing_contract() {
         let gate = test_gate();
         let artifact = ExtensionArtifact {
@@ -627,10 +881,345 @@ mod tests {
     }
 
     #[test]
+    fn admission_rejects_empty_schema_version() {
+        let gate = test_gate();
+        let contract = make_contract(
+            "contract-1",
+            "ext-alpha",
+            test_capabilities(),
+            "signer-A",
+            "",
+            10_000,
+        );
+        let artifact = make_artifact("a1", "ext-alpha", contract);
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn admission_rejects_schema_version_with_whitespace() {
+        let gate = test_gate();
+        let contract = make_contract(
+            "contract-1",
+            "ext-alpha",
+            test_capabilities(),
+            "signer-A",
+            " capability-artifact-v1.0 ",
+            10_000,
+        );
+        let artifact = make_artifact("a1", "ext-alpha", contract);
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn admission_rejects_zero_issued_epoch_ms() {
+        let gate = test_gate();
+        let contract = make_contract(
+            "contract-1",
+            "ext-alpha",
+            test_capabilities(),
+            "signer-A",
+            SCHEMA_VERSION,
+            0,
+        );
+        let artifact = make_artifact("a1", "ext-alpha", contract);
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn admission_rejects_contract_id_with_whitespace() {
+        let gate = test_gate();
+        let contract = make_contract(
+            " contract-1 ",
+            "ext-alpha",
+            test_capabilities(),
+            "signer-A",
+            SCHEMA_VERSION,
+            10_000,
+        );
+        let artifact = make_artifact("a1", "ext-alpha", contract);
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn admission_rejects_extension_id_mismatch() {
+        let gate = test_gate();
+        let contract = test_contract();
+        let artifact = make_artifact("a1", "ext-beta", contract);
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn admission_rejects_empty_signer_id() {
+        let gate = test_gate();
+        let mut contract = test_contract();
+        contract.signer_id.clear();
+        contract.signature = compute_contract_signature(&contract);
+        let artifact = make_artifact("a1", "ext-alpha", contract);
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn admission_rejects_empty_signature() {
+        let gate = test_gate();
+        let mut contract = test_contract();
+        contract.signature.clear();
+        let artifact = make_artifact("a1", "ext-alpha", contract);
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn admission_rejects_non_hex_signature() {
+        let gate = test_gate();
+        let mut contract = test_contract();
+        contract.signature = "not-hex".to_string();
+        let artifact = make_artifact("a1", "ext-alpha", contract);
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn admission_rejects_empty_capability_list() {
+        let gate = test_gate();
+        let contract = make_contract(
+            "contract-1",
+            "ext-alpha",
+            Vec::new(),
+            "signer-A",
+            SCHEMA_VERSION,
+            10_000,
+        );
+        let artifact = make_artifact("a1", "ext-alpha", contract);
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn admission_rejects_missing_artifact_id() {
+        let gate = test_gate();
+        let contract = test_contract();
+        let mut artifact = make_artifact("a1", "ext-alpha", contract);
+        artifact.artifact_id.clear();
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn admission_rejects_reserved_artifact_id() {
+        let gate = test_gate();
+        let contract = test_contract();
+        let artifact = make_artifact("<unknown>", "ext-alpha", contract);
+        let outcome = gate.evaluate(&artifact);
+        match outcome {
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { detail },
+                ..
+            } => assert!(detail.contains("reserved")),
+            _ => panic!("expected reserved artifact_id to be denied"),
+        }
+
+        let contract = test_contract();
+        let artifact = make_artifact(" <unknown> ", "ext-alpha", contract);
+        let outcome = gate.evaluate(&artifact);
+        match outcome {
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { detail },
+                ..
+            } => assert!(detail.contains("reserved")),
+            _ => panic!("expected reserved artifact_id to be denied"),
+        }
+    }
+
+    #[test]
+    fn admission_rejects_reserved_extension_id() {
+        let gate = test_gate();
+        let contract = test_contract();
+        let artifact = make_artifact("a1", "<unknown>", contract);
+        let outcome = gate.evaluate(&artifact);
+        match outcome {
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { detail },
+                ..
+            } => assert!(detail.contains("reserved")),
+            _ => panic!("expected reserved extension_id to be denied"),
+        }
+
+        let contract = test_contract();
+        let artifact = make_artifact("a1", " <unknown> ", contract);
+        let outcome = gate.evaluate(&artifact);
+        match outcome {
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { detail },
+                ..
+            } => assert!(detail.contains("reserved")),
+            _ => panic!("expected reserved extension_id to be denied"),
+        }
+    }
+
+    #[test]
+    fn admission_rejects_invalid_payload_hash() {
+        let gate = test_gate();
+        let contract = test_contract();
+        let mut artifact = make_artifact("a1", "ext-alpha", contract);
+        artifact.payload_hash = "not-hex".to_string();
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn admission_rejects_uppercase_payload_hash() {
+        let gate = test_gate();
+        let contract = test_contract();
+        let mut artifact = make_artifact("a1", "ext-alpha", contract);
+        artifact.payload_hash = "A".repeat(64);
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidContract { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn admission_rejects_invalid_capability_empty_id() {
         let gate = test_gate();
         let caps = vec![CapabilityEntry {
             capability_id: "".to_string(),
+            scope: "filesystem:read".to_string(),
+            max_calls_per_epoch: 100,
+        }];
+        let contract = make_contract(
+            "contract-1",
+            "ext-alpha",
+            caps,
+            "signer-A",
+            SCHEMA_VERSION,
+            10_000,
+        );
+        let artifact = make_artifact("a1", "ext-alpha", contract);
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidCapability { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn admission_rejects_whitespace_capability_fields() {
+        let gate = test_gate();
+        let caps = vec![
+            CapabilityEntry {
+                capability_id: "   ".to_string(),
+                scope: "filesystem:read".to_string(),
+                max_calls_per_epoch: 100,
+            },
+            CapabilityEntry {
+                capability_id: "fs.read".to_string(),
+                scope: "   ".to_string(),
+                max_calls_per_epoch: 100,
+            },
+        ];
+        let contract = make_contract(
+            "contract-1",
+            "ext-alpha",
+            caps,
+            "signer-A",
+            SCHEMA_VERSION,
+            10_000,
+        );
+        let artifact = make_artifact("a1", "ext-alpha", contract);
+        let outcome = gate.evaluate(&artifact);
+        assert!(matches!(
+            outcome,
+            AdmissionOutcome::Denied {
+                reason: AdmissionDenialReason::InvalidCapability { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn admission_rejects_capability_fields_with_surrounding_whitespace() {
+        let gate = test_gate();
+        let caps = vec![CapabilityEntry {
+            capability_id: " fs.read ".to_string(),
             scope: "filesystem:read".to_string(),
             max_calls_per_epoch: 100,
         }];
@@ -811,6 +1400,24 @@ mod tests {
         if let DriftCheckResult::DriftDetected { missing, extra, .. } = result {
             assert!(missing.is_empty());
             assert!(extra.contains(&"crypto.sign".to_string()));
+        } else {
+            unreachable!("expected drift detected");
+        }
+    }
+
+    #[test]
+    fn drift_check_detects_duplicate_capabilities() {
+        let contract = test_contract();
+        let engine = EnforcementEngine::from_contract(&contract);
+        let active = vec![
+            "fs.read".to_string(),
+            "fs.read".to_string(),
+            "net.egress".to_string(),
+        ];
+        let result = engine.check_drift(&active);
+        if let DriftCheckResult::DriftDetected { missing, extra, .. } = result {
+            assert!(missing.is_empty());
+            assert!(extra.contains(&"fs.read".to_string()));
         } else {
             unreachable!("expected drift detected");
         }

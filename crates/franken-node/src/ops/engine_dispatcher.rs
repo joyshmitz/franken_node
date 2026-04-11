@@ -587,6 +587,15 @@ impl EngineDispatcher {
             // Wire network policy to fallback runtime (bd-3pogm).
             // Even fallback runtimes should receive policy hints for best-effort enforcement.
             let network_policy = &config.security.network_policy;
+
+            // SSRF enforcement mode: none, monitor, or block (must mirror the engine path).
+            let enforcement_mode = match network_policy.ssrf_enforcement {
+                crate::config::SsrfEnforcementMode::None => "none",
+                crate::config::SsrfEnforcementMode::Monitor => "monitor",
+                crate::config::SsrfEnforcementMode::Block => "block",
+            };
+            command.env("FRANKEN_ENGINE_NETWORK_SSRF_ENFORCEMENT", enforcement_mode);
+
             command
                 .env(
                     "FRANKEN_NODE_NETWORK_SSRF_PROTECTION_ENABLED",

@@ -23,6 +23,38 @@ const DEFAULT_POLICY_VERSION: &str = "0.1.0";
 const DEFAULT_CREATED_AT: &str = "1970-01-01T00:00:00.000000Z";
 pub const INCIDENT_EVIDENCE_SCHEMA: &str = "franken-node/incident-evidence-source/v1";
 
+/// RAII guard that orphans a temp file on drop (unless defused after rename).
+#[must_use]
+struct TempFileGuard(Option<std::path::PathBuf>);
+
+impl TempFileGuard {
+    fn new(path: std::path::PathBuf) -> Self {
+        Self(Some(path))
+    }
+
+    fn abandoned_path(path: &Path) -> std::path::PathBuf {
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("replay-bundle.json.tmp");
+        path.with_file_name(format!("{file_name}.orphaned-{}", Uuid::now_v7()))
+    }
+
+    fn defuse(&mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if let Some(path) = self.0.take()
+            && path.is_file()
+        {
+            let _ = std::fs::rename(&path, Self::abandoned_path(&path));
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ReplayBundleError {
     #[error("incident id cannot be empty")]
@@ -659,14 +691,53 @@ pub fn replay_bundle(bundle: &ReplayBundle) -> Result<ReplayOutcome, ReplayBundl
     })
 }
 
-pub fn write_bundle_to_path(bundle: &ReplayBundle, path: &Path) -> Result<(), ReplayBundleError> {
+fn ensure_parent_dir(path: &Path) -> Result<(), ReplayBundleError> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
-        std::fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent).map_err(|err| {
+            std::io::Error::new(
+                err.kind(),
+                format!("failed creating {}: {err}", parent.display()),
+            )
+        })?;
     }
+    Ok(())
+}
+
+fn write_bytes_atomically(path: &Path, bytes: &[u8]) -> Result<(), ReplayBundleError> {
+    ensure_parent_dir(path)?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            std::io::Error::other(format!("failed deriving file name for {}", path.display()))
+        })?;
+    let temp_path = path.with_file_name(format!("{file_name}.tmp-{}", Uuid::now_v7()));
+    let mut temp_guard = TempFileGuard::new(temp_path.clone());
+    std::fs::write(&temp_path, bytes).map_err(|err| {
+        std::io::Error::new(
+            err.kind(),
+            format!("failed writing {}: {err}", temp_path.display()),
+        )
+    })?;
+    std::fs::rename(&temp_path, path).map_err(|err| {
+        std::io::Error::new(
+            err.kind(),
+            format!(
+                "failed promoting bundle {} -> {}: {err}",
+                temp_path.display(),
+                path.display()
+            ),
+        )
+    })?;
+    temp_guard.defuse();
+    Ok(())
+}
+
+pub fn write_bundle_to_path(bundle: &ReplayBundle, path: &Path) -> Result<(), ReplayBundleError> {
     let canonical_json = to_canonical_json(bundle)?;
-    std::fs::write(path, canonical_json)?;
+    write_bytes_atomically(path, canonical_json.as_bytes())?;
     Ok(())
 }
 
@@ -1026,6 +1097,35 @@ mod tests {
         LOCK.get_or_init(|| Mutex::new(()))
     }
 
+    fn temp_leftovers(dir: &Path, prefix: &str) -> Vec<String> {
+        let mut leftovers = Vec::new();
+        for entry in std::fs::read_dir(dir).expect("read dir") {
+            let entry = entry.expect("entry");
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with(prefix) {
+                leftovers.push(name.to_string());
+            }
+        }
+        leftovers.sort();
+        leftovers
+    }
+
+    #[test]
+    fn temp_file_guard_orphans_abandoned_temp_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let temp_path = dir.path().join("bundle.json.tmp");
+        std::fs::write(&temp_path, "pending").expect("write temp file");
+
+        {
+            let _guard = TempFileGuard::new(temp_path.clone());
+        }
+
+        assert!(!temp_path.exists(), "temp file should be moved aside");
+        let leftovers = temp_leftovers(dir.path(), "bundle.json.tmp.orphaned-");
+        assert_eq!(leftovers.len(), 1, "expected one orphaned temp artifact");
+    }
+
     fn fixture_events() -> Vec<RawEvent> {
         vec![
             RawEvent::new(
@@ -1273,6 +1373,32 @@ mod tests {
         write_bundle_to_path(&bundle, &path).expect("write");
         let loaded = read_bundle_from_path(&path).expect("read");
         assert_eq!(bundle, loaded);
+    }
+
+    #[test]
+    fn write_bundle_to_path_is_atomic_and_cleans_temp_files() {
+        let first =
+            generate_replay_bundle("INC-IO-ATOMIC-001", &fixture_events()).expect("first bundle");
+        let second =
+            generate_replay_bundle("INC-IO-ATOMIC-002", &fixture_events()).expect("second bundle");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dir_path = dir.path().join("nested");
+        let path = dir_path.join("bundle.json");
+        let temp_prefix = "bundle.json.tmp";
+
+        write_bundle_to_path(&first, &path).expect("write first");
+        let mut leftovers = temp_leftovers(&dir_path, temp_prefix);
+        assert!(
+            leftovers.is_empty(),
+            "temporary files should not remain after first write: {leftovers:?}"
+        );
+
+        write_bundle_to_path(&second, &path).expect("write second");
+        leftovers = temp_leftovers(&dir_path, temp_prefix);
+        assert!(
+            leftovers.is_empty(),
+            "temporary files should not remain after replacement write: {leftovers:?}"
+        );
     }
 
     #[test]

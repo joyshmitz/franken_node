@@ -114,6 +114,12 @@ pub mod invariants {
     pub const INV_CART_AUDIT_COMPLETE: &str = "INV-CART-AUDIT-COMPLETE";
 }
 
+const RESERVED_ARTIFACT_ID: &str = "<unknown>";
+
+fn is_reserved_artifact_id(artifact_id: &str) -> bool {
+    artifact_id.trim() == RESERVED_ARTIFACT_ID
+}
+
 // ---------------------------------------------------------------------------
 // Maximum capability scope
 // ---------------------------------------------------------------------------
@@ -195,7 +201,8 @@ impl ArtifactIdentity {
 
 impl fmt::Display for ArtifactIdentity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}@{}", self.artifact_id, self.author)
+        let display_id = display_artifact_id(&self.artifact_id);
+        write!(f, "{}@{}", display_id, self.author)
     }
 }
 
@@ -385,55 +392,91 @@ impl ArtifactError {
             Self::DuplicateArtifact { .. } => error_codes::ERR_CART_DUPLICATE_ARTIFACT,
         }
     }
+
+    pub fn artifact_id(&self) -> &str {
+        match self {
+            Self::MissingEnvelope { artifact_id } => artifact_id,
+            Self::InvalidEnvelope { artifact_id, .. } => artifact_id,
+            Self::DigestMismatch { artifact_id } => artifact_id,
+            Self::OverScoped { artifact_id, .. } => artifact_id,
+            Self::DriftDetected { artifact_id, .. } => artifact_id,
+            Self::SchemaUnknown { artifact_id, .. } => artifact_id,
+            Self::EmptyCapabilities { artifact_id } => artifact_id,
+            Self::DuplicateArtifact { artifact_id } => artifact_id,
+        }
+    }
+}
+
+fn display_artifact_id(artifact_id: &str) -> &str {
+    if artifact_id.trim().is_empty() || is_reserved_artifact_id(artifact_id) {
+        RESERVED_ARTIFACT_ID
+    } else {
+        artifact_id
+    }
 }
 
 impl fmt::Display for ArtifactError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingEnvelope { artifact_id } => {
-                write!(f, "artifact {artifact_id} has no capability envelope")
+                let display_id = display_artifact_id(artifact_id);
+                write!(f, "artifact {} has no capability envelope", display_id)
             }
             Self::InvalidEnvelope {
                 artifact_id,
                 detail,
             } => {
-                write!(f, "artifact {artifact_id} envelope invalid: {detail}")
+                let display_id = display_artifact_id(artifact_id);
+                write!(f, "artifact {} envelope invalid: {detail}", display_id)
             }
             Self::DigestMismatch { artifact_id } => {
+                let display_id = display_artifact_id(artifact_id);
                 write!(
                     f,
-                    "artifact {artifact_id} envelope digest does not match identity"
+                    "artifact {} envelope digest does not match identity",
+                    display_id
                 )
             }
             Self::OverScoped {
                 artifact_id,
                 out_of_scope,
             } => {
+                let display_id = display_artifact_id(artifact_id);
                 write!(
                     f,
-                    "artifact {artifact_id} requests out-of-scope capabilities: {out_of_scope:?}"
+                    "artifact {} over-scoped capabilities: {out_of_scope:?}",
+                    display_id
                 )
             }
             Self::DriftDetected {
                 artifact_id,
                 detail,
             } => {
-                write!(f, "artifact {artifact_id} runtime drift: {detail}")
+                let display_id = display_artifact_id(artifact_id);
+                write!(f, "artifact {} runtime drift: {detail}", display_id)
             }
             Self::SchemaUnknown {
                 artifact_id,
                 version,
             } => {
+                let display_id = display_artifact_id(artifact_id);
                 write!(
                     f,
-                    "artifact {artifact_id} has unknown schema version: {version}"
+                    "artifact {} has unknown schema version: {version}",
+                    display_id
                 )
             }
             Self::EmptyCapabilities { artifact_id } => {
-                write!(f, "artifact {artifact_id} declares zero capabilities")
+                let display_id = display_artifact_id(artifact_id);
+                write!(
+                    f,
+                    "artifact {} envelope declares zero capabilities",
+                    display_id
+                )
             }
             Self::DuplicateArtifact { artifact_id } => {
-                write!(f, "artifact {artifact_id} already admitted")
+                let display_id = display_artifact_id(artifact_id);
+                write!(f, "artifact {} has duplicate artifact ID", display_id)
             }
         }
     }
@@ -507,19 +550,160 @@ impl AdmissionGate {
         timestamp: &str,
     ) -> Result<(), ArtifactError> {
         let aid = &artifact.identity.artifact_id;
+        let display_id = display_artifact_id(aid);
 
         // Log submission
         self.push_audit(AuditEntry {
             event_code: event_codes::CART_001.to_string(),
-            artifact_id: aid.clone(),
+            artifact_id: display_id.to_string(),
             timestamp: timestamp.to_string(),
             outcome: "submitted".to_string(),
-            detail: format!("artifact {} submitted for admission", aid),
+            detail: format!("artifact {} submitted for admission", display_id),
         });
+
+        if aid.trim().is_empty() {
+            let detail = "artifact identity artifact_id is empty".to_string();
+            self.log_rejection(aid, timestamp, &detail);
+            self.push_audit(AuditEntry {
+                event_code: event_codes::CART_005.to_string(),
+                artifact_id: display_artifact_id(aid).to_string(),
+                timestamp: timestamp.to_string(),
+                outcome: "rejected".to_string(),
+                detail: detail.clone(),
+            });
+            return Err(ArtifactError::InvalidEnvelope {
+                artifact_id: aid.clone(),
+                detail,
+            });
+        }
+
+        if is_reserved_artifact_id(aid) {
+            let detail = format!("artifact identity artifact_id is reserved: {aid:?}");
+            self.log_rejection(aid, timestamp, &detail);
+            self.push_audit(AuditEntry {
+                event_code: event_codes::CART_005.to_string(),
+                artifact_id: aid.clone(),
+                timestamp: timestamp.to_string(),
+                outcome: "rejected".to_string(),
+                detail: detail.clone(),
+            });
+            return Err(ArtifactError::InvalidEnvelope {
+                artifact_id: aid.clone(),
+                detail,
+            });
+        }
+
+        if aid != aid.trim() {
+            let detail =
+                "artifact identity artifact_id has leading or trailing whitespace".to_string();
+            self.log_rejection(aid, timestamp, &detail);
+            self.push_audit(AuditEntry {
+                event_code: event_codes::CART_005.to_string(),
+                artifact_id: aid.clone(),
+                timestamp: timestamp.to_string(),
+                outcome: "rejected".to_string(),
+                detail: detail.clone(),
+            });
+            return Err(ArtifactError::InvalidEnvelope {
+                artifact_id: aid.clone(),
+                detail,
+            });
+        }
+
+        let author = &artifact.identity.author;
+        if author.trim().is_empty() {
+            let detail = "artifact identity author is empty".to_string();
+            self.log_rejection(aid, timestamp, &detail);
+            self.push_audit(AuditEntry {
+                event_code: event_codes::CART_005.to_string(),
+                artifact_id: aid.clone(),
+                timestamp: timestamp.to_string(),
+                outcome: "rejected".to_string(),
+                detail: detail.clone(),
+            });
+            return Err(ArtifactError::InvalidEnvelope {
+                artifact_id: aid.clone(),
+                detail,
+            });
+        }
+
+        if author != author.trim() {
+            let detail = "artifact identity author has leading or trailing whitespace".to_string();
+            self.log_rejection(aid, timestamp, &detail);
+            self.push_audit(AuditEntry {
+                event_code: event_codes::CART_005.to_string(),
+                artifact_id: aid.clone(),
+                timestamp: timestamp.to_string(),
+                outcome: "rejected".to_string(),
+                detail: detail.clone(),
+            });
+            return Err(ArtifactError::InvalidEnvelope {
+                artifact_id: aid.clone(),
+                detail,
+            });
+        }
+
+        let created_at = &artifact.identity.created_at;
+        if created_at.trim().is_empty() {
+            let detail = "artifact identity created_at is empty".to_string();
+            self.log_rejection(aid, timestamp, &detail);
+            self.push_audit(AuditEntry {
+                event_code: event_codes::CART_005.to_string(),
+                artifact_id: aid.clone(),
+                timestamp: timestamp.to_string(),
+                outcome: "rejected".to_string(),
+                detail: detail.clone(),
+            });
+            return Err(ArtifactError::InvalidEnvelope {
+                artifact_id: aid.clone(),
+                detail,
+            });
+        }
+
+        if created_at != created_at.trim() {
+            let detail =
+                "artifact identity created_at has leading or trailing whitespace".to_string();
+            self.log_rejection(aid, timestamp, &detail);
+            self.push_audit(AuditEntry {
+                event_code: event_codes::CART_005.to_string(),
+                artifact_id: aid.clone(),
+                timestamp: timestamp.to_string(),
+                outcome: "rejected".to_string(),
+                detail: detail.clone(),
+            });
+            return Err(ArtifactError::InvalidEnvelope {
+                artifact_id: aid.clone(),
+                detail,
+            });
+        }
+
+        if chrono::DateTime::parse_from_rfc3339(created_at).is_err() {
+            let detail = "artifact identity created_at is not RFC 3339".to_string();
+            self.log_rejection(aid, timestamp, &detail);
+            self.push_audit(AuditEntry {
+                event_code: event_codes::CART_005.to_string(),
+                artifact_id: aid.clone(),
+                timestamp: timestamp.to_string(),
+                outcome: "rejected".to_string(),
+                detail: detail.clone(),
+            });
+            return Err(ArtifactError::InvalidEnvelope {
+                artifact_id: aid.clone(),
+                detail,
+            });
+        }
 
         // Check for duplicate
         if self.admitted.contains_key(aid) {
-            self.log_rejection(aid, timestamp, "duplicate artifact ID");
+            let detail = "duplicate artifact ID".to_string();
+            self.log_rejection(aid, timestamp, &detail);
+            self.push_audit(AuditEntry {
+                event_code: event_codes::CART_005.to_string(),
+                artifact_id: aid.clone(),
+                timestamp: timestamp.to_string(),
+                outcome: "rejected".to_string(),
+                detail: detail.clone(),
+            });
             return Err(ArtifactError::DuplicateArtifact {
                 artifact_id: aid.clone(),
             });
@@ -529,26 +713,63 @@ impl AdmissionGate {
         let envelope = match &artifact.envelope {
             Some(e) => e,
             None => {
-                self.log_rejection(aid, timestamp, "missing capability envelope");
+                let detail = "missing capability envelope".to_string();
+                self.log_rejection(aid, timestamp, &detail);
+                self.push_audit(AuditEntry {
+                    event_code: event_codes::CART_005.to_string(),
+                    artifact_id: aid.clone(),
+                    timestamp: timestamp.to_string(),
+                    outcome: "rejected".to_string(),
+                    detail: detail.clone(),
+                });
                 return Err(ArtifactError::MissingEnvelope {
                     artifact_id: aid.clone(),
                 });
             }
         };
 
-        // INV-CART-SCHEMA-VERSIONED: validate schema version
-        if !KNOWN_SCHEMA_VERSIONS.contains(&envelope.schema_version.as_str()) {
-            self.log_rejection(
-                aid,
-                timestamp,
-                &format!("unknown schema version: {}", envelope.schema_version),
-            );
+        if envelope.schema_version.trim().is_empty() {
+            let detail = "schema version is empty".to_string();
+            self.log_rejection(aid, timestamp, &detail);
             self.push_audit(AuditEntry {
-                event_code: event_codes::CART_010.to_string(),
+                event_code: event_codes::CART_005.to_string(),
                 artifact_id: aid.clone(),
                 timestamp: timestamp.to_string(),
                 outcome: "rejected".to_string(),
-                detail: format!("schema version {} unknown", envelope.schema_version),
+                detail: detail.clone(),
+            });
+            return Err(ArtifactError::InvalidEnvelope {
+                artifact_id: aid.clone(),
+                detail,
+            });
+        }
+
+        if envelope.schema_version != envelope.schema_version.trim() {
+            let detail = "schema version has leading or trailing whitespace".to_string();
+            self.log_rejection(aid, timestamp, &detail);
+            self.push_audit(AuditEntry {
+                event_code: event_codes::CART_005.to_string(),
+                artifact_id: aid.clone(),
+                timestamp: timestamp.to_string(),
+                outcome: "rejected".to_string(),
+                detail: detail.clone(),
+            });
+            return Err(ArtifactError::InvalidEnvelope {
+                artifact_id: aid.clone(),
+                detail,
+            });
+        }
+
+        // INV-CART-SCHEMA-VERSIONED: validate schema version
+        if !KNOWN_SCHEMA_VERSIONS.contains(&envelope.schema_version.as_str()) {
+            let detail = format!("unknown schema version: {}", envelope.schema_version);
+            self.log_rejection(aid, timestamp, &detail);
+            self.push_audit(AuditEntry {
+                event_code: event_codes::CART_005.to_string(),
+                artifact_id: aid.clone(),
+                timestamp: timestamp.to_string(),
+                outcome: "rejected".to_string(),
+                detail: detail.clone(),
             });
             return Err(ArtifactError::SchemaUnknown {
                 artifact_id: aid.clone(),
@@ -567,17 +788,138 @@ impl AdmissionGate {
 
         // INV-CART-FAIL-CLOSED: envelope must declare at least one capability
         if envelope.requirements.is_empty() {
-            self.log_rejection(aid, timestamp, "envelope declares zero capabilities");
+            let detail = "envelope declares zero capabilities".to_string();
+            self.log_rejection(aid, timestamp, &detail);
             self.push_audit(AuditEntry {
                 event_code: event_codes::CART_005.to_string(),
                 artifact_id: aid.clone(),
                 timestamp: timestamp.to_string(),
                 outcome: "rejected".to_string(),
-                detail: "empty capability envelope".to_string(),
+                detail: detail.clone(),
             });
             return Err(ArtifactError::EmptyCapabilities {
                 artifact_id: aid.clone(),
             });
+        }
+
+        for (name, req) in &envelope.requirements {
+            if name.trim().is_empty() {
+                let detail = "capability requirement key is empty".to_string();
+                self.log_rejection(aid, timestamp, &detail);
+                self.push_audit(AuditEntry {
+                    event_code: event_codes::CART_005.to_string(),
+                    artifact_id: aid.clone(),
+                    timestamp: timestamp.to_string(),
+                    outcome: "rejected".to_string(),
+                    detail: detail.clone(),
+                });
+                return Err(ArtifactError::InvalidEnvelope {
+                    artifact_id: aid.clone(),
+                    detail,
+                });
+            }
+            if name != name.trim() {
+                let detail = format!(
+                    "capability requirement key '{}' has leading or trailing whitespace",
+                    name
+                );
+                self.log_rejection(aid, timestamp, &detail);
+                self.push_audit(AuditEntry {
+                    event_code: event_codes::CART_005.to_string(),
+                    artifact_id: aid.clone(),
+                    timestamp: timestamp.to_string(),
+                    outcome: "rejected".to_string(),
+                    detail: detail.clone(),
+                });
+                return Err(ArtifactError::InvalidEnvelope {
+                    artifact_id: aid.clone(),
+                    detail,
+                });
+            }
+            if req.capability.trim().is_empty() {
+                let detail = "capability requirement payload is empty".to_string();
+                self.log_rejection(aid, timestamp, &detail);
+                self.push_audit(AuditEntry {
+                    event_code: event_codes::CART_005.to_string(),
+                    artifact_id: aid.clone(),
+                    timestamp: timestamp.to_string(),
+                    outcome: "rejected".to_string(),
+                    detail: detail.clone(),
+                });
+                return Err(ArtifactError::InvalidEnvelope {
+                    artifact_id: aid.clone(),
+                    detail,
+                });
+            }
+            if req.capability != req.capability.trim() {
+                let detail = format!(
+                    "capability '{}' has leading or trailing whitespace",
+                    req.capability
+                );
+                self.log_rejection(aid, timestamp, &detail);
+                self.push_audit(AuditEntry {
+                    event_code: event_codes::CART_005.to_string(),
+                    artifact_id: aid.clone(),
+                    timestamp: timestamp.to_string(),
+                    outcome: "rejected".to_string(),
+                    detail: detail.clone(),
+                });
+                return Err(ArtifactError::InvalidEnvelope {
+                    artifact_id: aid.clone(),
+                    detail,
+                });
+            }
+            if name.as_str() != req.capability.as_str() {
+                let detail = format!(
+                    "capability requirement key '{}' does not match payload '{}'",
+                    name, req.capability
+                );
+                self.log_rejection(aid, timestamp, &detail);
+                self.push_audit(AuditEntry {
+                    event_code: event_codes::CART_005.to_string(),
+                    artifact_id: aid.clone(),
+                    timestamp: timestamp.to_string(),
+                    outcome: "rejected".to_string(),
+                    detail: detail.clone(),
+                });
+                return Err(ArtifactError::InvalidEnvelope {
+                    artifact_id: aid.clone(),
+                    detail,
+                });
+            }
+            if req.justification.trim().is_empty() {
+                let detail = format!("capability '{}' has empty justification", name);
+                self.log_rejection(aid, timestamp, &detail);
+                self.push_audit(AuditEntry {
+                    event_code: event_codes::CART_005.to_string(),
+                    artifact_id: aid.clone(),
+                    timestamp: timestamp.to_string(),
+                    outcome: "rejected".to_string(),
+                    detail: detail.clone(),
+                });
+                return Err(ArtifactError::InvalidEnvelope {
+                    artifact_id: aid.clone(),
+                    detail,
+                });
+            }
+            if req.justification != req.justification.trim() {
+                let detail = format!(
+                    "capability '{}' justification has leading or trailing whitespace",
+                    name
+                );
+                self.log_rejection(aid, timestamp, &detail);
+                self.push_audit(AuditEntry {
+                    event_code: event_codes::CART_005.to_string(),
+                    artifact_id: aid.clone(),
+                    timestamp: timestamp.to_string(),
+                    outcome: "rejected".to_string(),
+                    detail: detail.clone(),
+                });
+                return Err(ArtifactError::InvalidEnvelope {
+                    artifact_id: aid.clone(),
+                    detail,
+                });
+            }
         }
 
         // Check scope: all requested capabilities must be in allowed_scope
@@ -585,17 +927,14 @@ impl AdmissionGate {
         let out_of_scope: Vec<String> =
             requested.difference(&self.allowed_scope).cloned().collect();
         if !out_of_scope.is_empty() {
-            self.log_rejection(
-                aid,
-                timestamp,
-                &format!("over-scoped capabilities: {:?}", out_of_scope),
-            );
+            let detail = format!("over-scoped capabilities: {:?}", out_of_scope);
+            self.log_rejection(aid, timestamp, &detail);
             self.push_audit(AuditEntry {
                 event_code: event_codes::CART_005.to_string(),
                 artifact_id: aid.clone(),
                 timestamp: timestamp.to_string(),
                 outcome: "rejected".to_string(),
-                detail: format!("over-scoped: {:?}", out_of_scope),
+                detail: detail.clone(),
             });
             return Err(ArtifactError::OverScoped {
                 artifact_id: aid.clone(),
@@ -605,7 +944,15 @@ impl AdmissionGate {
 
         // INV-CART-DIGEST-BOUND: verify digest
         if !envelope.verify_digest(&artifact.identity) {
-            self.log_rejection(aid, timestamp, "envelope digest does not match identity");
+            let detail = "digest mismatch".to_string();
+            self.log_rejection(aid, timestamp, &detail);
+            self.push_audit(AuditEntry {
+                event_code: event_codes::CART_005.to_string(),
+                artifact_id: aid.clone(),
+                timestamp: timestamp.to_string(),
+                outcome: "rejected".to_string(),
+                detail: detail.clone(),
+            });
             self.push_audit(AuditEntry {
                 event_code: event_codes::CART_009.to_string(),
                 artifact_id: aid.clone(),
@@ -648,7 +995,7 @@ impl AdmissionGate {
             outcome: "admitted".to_string(),
             detail: format!(
                 "artifact {} admitted with {} capabilities",
-                aid,
+                display_id,
                 envelope.capability_count()
             ),
         });
@@ -677,14 +1024,15 @@ impl AdmissionGate {
     fn log_rejection(&mut self, artifact_id: &str, timestamp: &str, detail: &str) {
         self.push_audit(AuditEntry {
             event_code: event_codes::CART_003.to_string(),
-            artifact_id: artifact_id.to_string(),
+            artifact_id: display_artifact_id(artifact_id).to_string(),
             timestamp: timestamp.to_string(),
             outcome: "rejected".to_string(),
             detail: detail.to_string(),
         });
     }
 
-    fn push_audit(&mut self, entry: AuditEntry) {
+    fn push_audit(&mut self, mut entry: AuditEntry) {
+        entry.artifact_id = display_artifact_id(&entry.artifact_id).to_string();
         push_bounded(&mut self.audit_log, entry, MAX_AUDIT_LOG_ENTRIES);
     }
 }
@@ -724,8 +1072,10 @@ pub struct EnvelopeEnforcer {
 impl EnvelopeEnforcer {
     /// Create an enforcer from an admitted envelope.
     pub fn from_envelope(artifact_id: impl Into<String>, envelope: &CapabilityEnvelope) -> Self {
+        let artifact_id = artifact_id.into();
+        let sanitized_id = display_artifact_id(&artifact_id).to_string();
         Self {
-            artifact_id: artifact_id.into(),
+            artifact_id: sanitized_id,
             admitted_capabilities: envelope.requirements.keys().cloned().collect(),
             used_capabilities: BTreeSet::new(),
             revoked_capabilities: BTreeSet::new(),
@@ -742,6 +1092,7 @@ impl EnvelopeEnforcer {
         timestamp: &str,
     ) -> Result<(), ArtifactError> {
         self.used_capabilities.insert(capability.to_string());
+        let display_id = display_artifact_id(&self.artifact_id);
 
         // Check if revoked
         if self.revoked_capabilities.contains(capability) {
@@ -752,7 +1103,7 @@ impl EnvelopeEnforcer {
                 outcome: "drift".to_string(),
                 detail: format!(
                     "capability {} was revoked but used by {}",
-                    capability, self.artifact_id
+                    capability, display_id
                 ),
             });
             return Err(ArtifactError::DriftDetected {
@@ -770,7 +1121,7 @@ impl EnvelopeEnforcer {
                 outcome: "drift".to_string(),
                 detail: format!(
                     "capability {} used but not declared in envelope for {}",
-                    capability, self.artifact_id
+                    capability, display_id
                 ),
             });
             return Err(ArtifactError::DriftDetected {
@@ -785,7 +1136,7 @@ impl EnvelopeEnforcer {
             artifact_id: self.artifact_id.clone(),
             timestamp: timestamp.to_string(),
             outcome: "enforced".to_string(),
-            detail: format!("capability {} allowed for {}", capability, self.artifact_id),
+            detail: format!("capability {} allowed for {}", capability, display_id),
         });
 
         Ok(())
@@ -801,7 +1152,8 @@ impl EnvelopeEnforcer {
         &self.enforcement_log
     }
 
-    fn push_enforcement_audit(&mut self, entry: AuditEntry) {
+    fn push_enforcement_audit(&mut self, mut entry: AuditEntry) {
+        entry.artifact_id = display_artifact_id(&entry.artifact_id).to_string();
         push_bounded(&mut self.enforcement_log, entry, MAX_AUDIT_LOG_ENTRIES);
     }
 
@@ -839,7 +1191,7 @@ pub struct AdmissionReport {
 impl AdmissionReport {
     pub fn pass(artifact_id: &str, capabilities: usize) -> Self {
         Self {
-            artifact_id: artifact_id.to_string(),
+            artifact_id: display_artifact_id(artifact_id).to_string(),
             verdict: "PASS".to_string(),
             capabilities_declared: capabilities,
             detail: format!("artifact admitted with {capabilities} capabilities"),
@@ -847,11 +1199,16 @@ impl AdmissionReport {
     }
 
     pub fn fail(artifact_id: &str, error: &ArtifactError) -> Self {
+        let resolved_id = if artifact_id.trim().is_empty() || is_reserved_artifact_id(artifact_id) {
+            error.artifact_id()
+        } else {
+            artifact_id
+        };
         Self {
-            artifact_id: artifact_id.to_string(),
+            artifact_id: display_artifact_id(resolved_id).to_string(),
             verdict: "FAIL".to_string(),
             capabilities_declared: 0,
-            detail: format!("{error}"),
+            detail: format!("{error} ({})", error.code()),
         }
     }
 }
@@ -1012,6 +1369,20 @@ mod tests {
     }
 
     #[test]
+    fn test_artifact_identity_display_unknown_id() {
+        let id = ArtifactIdentity::new("   ", "alice", "2026-01-01T00:00:00Z");
+        assert_eq!(format!("{id}"), "<unknown>@alice");
+        let id = ArtifactIdentity::new(" <unknown> ", "alice", "2026-01-01T00:00:00Z");
+        assert_eq!(format!("{id}"), "<unknown>@alice");
+    }
+
+    #[test]
+    fn test_artifact_identity_display_preserves_whitespace() {
+        let id = ArtifactIdentity::new(" ext-id ", "alice", "2026-01-01T00:00:00Z");
+        assert_eq!(format!("{id}"), " ext-id @alice");
+    }
+
+    #[test]
     fn test_artifact_identity_serde() {
         let id = ArtifactIdentity::new("ext-1", "alice", "2026-01-01T00:00:00Z");
         let json = serde_json::to_string(&id).unwrap();
@@ -1159,6 +1530,191 @@ mod tests {
             error_codes::ERR_CART_MISSING_ENVELOPE
         );
         assert_eq!(gate.admitted_count(), 0);
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_003
+                && entry.detail.contains("missing capability envelope")
+        }));
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_005
+                && entry.detail.contains("missing capability envelope")
+        }));
+    }
+
+    #[test]
+    fn test_admission_rejects_empty_artifact_id() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("", "author", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        envelope.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_001
+                && entry.artifact_id == "<unknown>"
+                && entry.detail.contains("<unknown>")
+        }));
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_003 && entry.artifact_id == "<unknown>"
+        }));
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_005 && entry.artifact_id == "<unknown>"
+        }));
+    }
+
+    #[test]
+    fn test_admission_rejects_reserved_artifact_id() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("<unknown>", "author", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        envelope.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_003 && entry.artifact_id == "<unknown>"
+        }));
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_005
+                && entry.detail.contains("artifact_id is reserved")
+        }));
+    }
+
+    #[test]
+    fn test_admission_rejects_reserved_artifact_id_whitespace() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new(" <unknown> ", "author", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        envelope.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_003 && entry.artifact_id == "<unknown>"
+        }));
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_005
+                && entry.detail.contains("artifact_id is reserved")
+        }));
+    }
+
+    #[test]
+    fn test_admission_rejects_identity_author_whitespace() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("ext-author-ws", " author ", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        envelope.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+    }
+
+    #[test]
+    fn test_admission_rejects_identity_author_empty() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("ext-author-empty", "", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        envelope.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+    }
+
+    #[test]
+    fn test_admission_rejects_identity_artifact_id_whitespace() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new(" ext-id ", "author", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        envelope.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_001
+                && entry.artifact_id == " ext-id "
+                && entry.detail.contains(" ext-id ")
+        }));
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_003 && entry.artifact_id == " ext-id "
+        }));
+    }
+
+    #[test]
+    fn test_admission_rejects_identity_created_at_empty() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("ext-created-empty", "author", "");
+        let mut envelope = CapabilityEnvelope::new();
+        envelope.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+    }
+
+    #[test]
+    fn test_admission_rejects_identity_created_at_whitespace() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("ext-created-ws", "author", " 2026-02-21T00:00:00Z ");
+        let mut envelope = CapabilityEnvelope::new();
+        envelope.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+    }
+
+    #[test]
+    fn test_admission_rejects_identity_created_at_invalid_rfc3339() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("ext-created-bad", "author", "not-a-time");
+        let mut envelope = CapabilityEnvelope::new();
+        envelope.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
     }
 
     #[test]
@@ -1173,6 +1729,194 @@ mod tests {
         assert_eq!(
             result.unwrap_err().code(),
             error_codes::ERR_CART_EMPTY_CAPABILITIES
+        );
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_003
+                && entry.detail.contains("envelope declares zero capabilities")
+        }));
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_005
+                && entry.detail.contains("envelope declares zero capabilities")
+        }));
+    }
+
+    #[test]
+    fn test_admission_rejects_empty_schema_version() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("ext-empty-schema", "author", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        envelope.schema_version.clear();
+        envelope.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_005
+                && entry.detail.contains("schema version is empty")
+        }));
+    }
+
+    #[test]
+    fn test_admission_rejects_schema_version_whitespace() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("ext-schema-ws", "author", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        envelope.schema_version = format!(" {} ", SCHEMA_VERSION);
+        envelope.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+    }
+
+    #[test]
+    fn test_admission_rejects_empty_justification() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("ext-just-empty", "author", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        envelope.add_requirement(CapabilityRequirement::new("cap:fs:read", "", true));
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+    }
+
+    #[test]
+    fn test_admission_rejects_whitespace_justification() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("ext-just-ws", "author", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        envelope.add_requirement(CapabilityRequirement::new("cap:fs:read", " read ", true));
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+    }
+
+    #[test]
+    fn test_admission_rejects_requirement_payload_whitespace() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("ext-cap-ws", "author", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        let req = CapabilityRequirement::new(" cap:fs:read ", "read", true);
+        envelope.requirements.insert("cap:fs:read".to_string(), req);
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+    }
+
+    #[test]
+    fn test_admission_rejects_requirement_key_whitespace() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("ext-cap-key-ws", "author", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        let req = CapabilityRequirement::new("cap:fs:read", "read", true);
+        envelope
+            .requirements
+            .insert(" cap:fs:read ".to_string(), req);
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+    }
+
+    #[test]
+    fn test_admission_rejects_requirement_payload_empty() {
+        let mut gate = AdmissionGate::new();
+        let identity =
+            ArtifactIdentity::new("ext-cap-payload-empty", "author", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        let req = CapabilityRequirement::new("", "read", true);
+        envelope.requirements.insert("cap:fs:read".to_string(), req);
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+    }
+
+    #[test]
+    fn test_admission_rejects_empty_requirement_key() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("ext-cap-key-empty", "author", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        let req = CapabilityRequirement::new("cap:fs:read", "read", true);
+        envelope.requirements.insert(String::new(), req);
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
+        );
+    }
+
+    #[test]
+    fn test_admission_rejects_duplicate_artifact_id() {
+        let mut gate = AdmissionGate::new();
+        let artifact = build_test_artifact("ext-dup", &[("cap:fs:read", "read config")]);
+        gate.admit(&artifact, "2026-02-21T00:00:00Z").unwrap();
+        let result = gate.admit(&artifact, "2026-02-21T00:00:01Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_DUPLICATE_ARTIFACT
+        );
+        assert_eq!(gate.admitted_count(), 1);
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_003
+                && entry.detail.contains("duplicate artifact ID")
+        }));
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_005
+                && entry.detail.contains("duplicate artifact ID")
+        }));
+    }
+
+    #[test]
+    fn test_admission_rejects_mismatched_requirement_key() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("ext-key-mismatch", "author", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        let req = CapabilityRequirement::new("cap:fs:write", "write", true);
+        envelope.requirements.insert("cap:fs:read".to_string(), req);
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+        let result = gate.admit(&artifact, "2026-02-21T00:00:00Z");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code(),
+            error_codes::ERR_CART_INVALID_ENVELOPE
         );
     }
 
@@ -1190,6 +1934,25 @@ mod tests {
         assert_eq!(
             result.unwrap_err().code(),
             error_codes::ERR_CART_SCHEMA_UNKNOWN
+        );
+        assert!(
+            gate.audit_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::CART_003
+                    && entry.detail.contains("unknown schema version"))
+        );
+        assert!(
+            gate.audit_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::CART_005
+                    && entry.detail.contains("unknown schema version"))
+        );
+        assert!(
+            !gate
+                .audit_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::CART_010
+                    && entry.detail.contains("validated"))
         );
     }
 
@@ -1214,6 +1977,14 @@ mod tests {
         } else {
             unreachable!("expected OverScoped error");
         }
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_003
+                && entry.detail.contains("over-scoped capabilities")
+        }));
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_005
+                && entry.detail.contains("over-scoped capabilities")
+        }));
     }
 
     #[test]
@@ -1232,6 +2003,15 @@ mod tests {
             result.unwrap_err().code(),
             error_codes::ERR_CART_DIGEST_MISMATCH
         );
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_009 && entry.detail.contains("digest mismatch")
+        }));
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_003 && entry.detail.contains("digest mismatch")
+        }));
+        assert!(gate.audit_log().iter().any(|entry| {
+            entry.event_code == event_codes::CART_005 && entry.detail.contains("digest mismatch")
+        }));
     }
 
     #[test]
@@ -1322,6 +2102,21 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_enforcer_sanitizes_artifact_id_in_audit() {
+        let mut env = CapabilityEnvelope::new();
+        env.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        let mut enforcer = EnvelopeEnforcer::from_envelope("   ", &env);
+        assert_eq!(enforcer.artifact_id, "<unknown>");
+        let _ = enforcer.check_capability("cap:fs:read", "t1");
+        let entry = enforcer
+            .enforcement_log()
+            .first()
+            .expect("expected enforcement audit entry");
+        assert_eq!(entry.artifact_id, "<unknown>");
+        assert!(entry.detail.contains("<unknown>"));
+    }
+
     // ── ArtifactError ────────────────────────────────────────────────
 
     #[test]
@@ -1389,6 +2184,70 @@ mod tests {
     }
 
     #[test]
+    fn test_error_artifact_id_accessor() {
+        assert_eq!(
+            ArtifactError::MissingEnvelope {
+                artifact_id: "id-1".into()
+            }
+            .artifact_id(),
+            "id-1"
+        );
+        assert_eq!(
+            ArtifactError::InvalidEnvelope {
+                artifact_id: "id-2".into(),
+                detail: "bad".into()
+            }
+            .artifact_id(),
+            "id-2"
+        );
+        assert_eq!(
+            ArtifactError::DigestMismatch {
+                artifact_id: "id-3".into()
+            }
+            .artifact_id(),
+            "id-3"
+        );
+        assert_eq!(
+            ArtifactError::OverScoped {
+                artifact_id: "id-4".into(),
+                out_of_scope: vec![]
+            }
+            .artifact_id(),
+            "id-4"
+        );
+        assert_eq!(
+            ArtifactError::DriftDetected {
+                artifact_id: "id-5".into(),
+                detail: "drift".into()
+            }
+            .artifact_id(),
+            "id-5"
+        );
+        assert_eq!(
+            ArtifactError::SchemaUnknown {
+                artifact_id: "id-6".into(),
+                version: "v1".into()
+            }
+            .artifact_id(),
+            "id-6"
+        );
+        assert_eq!(
+            ArtifactError::EmptyCapabilities {
+                artifact_id: "id-7".into()
+            }
+            .artifact_id(),
+            "id-7"
+        );
+        assert_eq!(
+            ArtifactError::DuplicateArtifact {
+                artifact_id: "id-8".into()
+            }
+            .artifact_id(),
+            "id-8"
+        );
+    }
+
+    #[test]
     fn test_error_display() {
         let e = ArtifactError::MissingEnvelope {
             artifact_id: "ext-1".into(),
@@ -1396,6 +2255,82 @@ mod tests {
         let s = format!("{e}");
         assert!(s.contains("ext-1"));
         assert!(s.contains("no capability envelope"));
+
+        let e = ArtifactError::MissingEnvelope {
+            artifact_id: "   ".into(),
+        };
+        let s = format!("{e}");
+        assert!(s.contains("<unknown>"));
+        assert!(s.contains("no capability envelope"));
+
+        let e = ArtifactError::EmptyCapabilities {
+            artifact_id: "ext-2".into(),
+        };
+        let s = format!("{e}");
+        assert!(s.contains("ext-2"));
+        assert!(s.contains("envelope declares zero capabilities"));
+
+        let e = ArtifactError::DuplicateArtifact {
+            artifact_id: "ext-dup".into(),
+        };
+        let s = format!("{e}");
+        assert!(s.contains("ext-dup"));
+        assert!(s.contains("duplicate artifact ID"));
+
+        let e = ArtifactError::SchemaUnknown {
+            artifact_id: "ext-schema".into(),
+            version: "cart-v99.0".into(),
+        };
+        let s = format!("{e}");
+        assert!(s.contains("ext-schema"));
+        assert!(s.contains("unknown schema version"));
+        assert!(s.contains("cart-v99.0"));
+
+        let e = ArtifactError::OverScoped {
+            artifact_id: "ext-over".into(),
+            out_of_scope: vec!["cap:forbidden:escalate".into()],
+        };
+        let s = format!("{e}");
+        assert!(s.contains("ext-over"));
+        assert!(s.contains("over-scoped capabilities"));
+        assert!(s.contains("cap:forbidden:escalate"));
+
+        let e = ArtifactError::DigestMismatch {
+            artifact_id: "ext-digest".into(),
+        };
+        let s = format!("{e}");
+        assert!(s.contains("ext-digest"));
+        assert!(s.contains("digest does not match identity"));
+
+        let e = ArtifactError::DriftDetected {
+            artifact_id: "ext-drift".into(),
+            detail: "capability cap:fs:read revoked but used".into(),
+        };
+        let s = format!("{e}");
+        assert!(s.contains("ext-drift"));
+        assert!(s.contains("runtime drift"));
+        assert!(s.contains("revoked but used"));
+
+        let e = ArtifactError::InvalidEnvelope {
+            artifact_id: "ext-bad".into(),
+            detail: "schema version is empty".into(),
+        };
+        let s = format!("{e}");
+        assert!(s.contains("ext-bad"));
+        assert!(s.contains("envelope invalid"));
+        assert!(s.contains("schema version is empty"));
+
+        let e = ArtifactError::MissingEnvelope {
+            artifact_id: "   ".into(),
+        };
+        let s = format!("{e}");
+        assert!(s.contains("<unknown>"));
+
+        let e = ArtifactError::MissingEnvelope {
+            artifact_id: " ext-id ".into(),
+        };
+        let s = format!("{e}");
+        assert!(s.contains(" ext-id "));
     }
 
     // ── AdmissionReport ──────────────────────────────────────────────
@@ -1406,6 +2341,12 @@ mod tests {
         assert_eq!(report.verdict, "PASS");
         assert_eq!(report.capabilities_declared, 3);
         assert!(report.detail.contains("admitted"));
+        let report = AdmissionReport::pass("   ", 1);
+        assert_eq!(report.artifact_id, "<unknown>");
+        let report = AdmissionReport::pass(" <unknown> ", 1);
+        assert_eq!(report.artifact_id, "<unknown>");
+        let report = AdmissionReport::pass(" ext-id ", 1);
+        assert_eq!(report.artifact_id, " ext-id ");
     }
 
     #[test]
@@ -1416,6 +2357,32 @@ mod tests {
         let report = AdmissionReport::fail("ext-1", &err);
         assert_eq!(report.verdict, "FAIL");
         assert!(report.detail.contains("no capability envelope"));
+        assert!(
+            report
+                .detail
+                .contains(error_codes::ERR_CART_MISSING_ENVELOPE)
+        );
+
+        let report = AdmissionReport::fail("<unknown>", &err);
+        assert_eq!(report.artifact_id, "ext-1");
+
+        let report = AdmissionReport::fail(" <unknown> ", &err);
+        assert_eq!(report.artifact_id, "ext-1");
+
+        let report = AdmissionReport::fail("   ", &err);
+        assert_eq!(report.artifact_id, "ext-1");
+
+        let err = ArtifactError::MissingEnvelope {
+            artifact_id: "   ".into(),
+        };
+        let report = AdmissionReport::fail("   ", &err);
+        assert_eq!(report.artifact_id, "<unknown>");
+
+        let err = ArtifactError::MissingEnvelope {
+            artifact_id: " ext-id ".into(),
+        };
+        let report = AdmissionReport::fail("   ", &err);
+        assert_eq!(report.artifact_id, " ext-id ");
     }
 
     // ── build_test_artifact helper ───────────────────────────────────

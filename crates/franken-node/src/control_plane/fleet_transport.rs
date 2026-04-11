@@ -13,6 +13,7 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 pub const FLEET_SHARED_STATE_SCHEMA: &str = "franken-node/fleet-transport-state/v1";
 pub const FLEET_ACTION_LOG_FILE: &str = "actions.jsonl";
@@ -255,11 +256,21 @@ pub struct FileFleetTransport {
     layout: FleetTransportLayout,
 }
 
+/// RAII guard that orphans a temp file on drop (unless defused after rename).
+#[must_use]
 struct TempFileGuard(Option<PathBuf>);
 
 impl TempFileGuard {
     fn new(path: PathBuf) -> Self {
         Self(Some(path))
+    }
+
+    fn abandoned_path(path: &Path) -> PathBuf {
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("fleet-transport.tmp");
+        path.with_file_name(format!("{file_name}.orphaned-{}", Uuid::now_v7()))
     }
 
     fn defuse(&mut self) {
@@ -269,8 +280,10 @@ impl TempFileGuard {
 
 impl Drop for TempFileGuard {
     fn drop(&mut self) {
-        if let Some(path) = &self.0 {
-            let _ = fs::remove_file(path);
+        if let Some(path) = self.0.take()
+            && path.is_file()
+        {
+            let _ = fs::rename(&path, Self::abandoned_path(&path));
         }
     }
 }
@@ -352,7 +365,10 @@ impl FileFleetTransport {
                     })
                     .collect::<Vec<_>>();
 
-            let temp_path = self.layout.actions_path().with_extension("jsonl.tmp");
+            let temp_path = self
+                .layout
+                .actions_path()
+                .with_extension(format!("jsonl.tmp-{}", Uuid::now_v7()));
             let mut temp_guard = TempFileGuard::new(temp_path.clone());
             let mut temp_file = OpenOptions::new()
                 .write(true)
@@ -467,7 +483,8 @@ impl FileFleetTransport {
         lock_file_with_backoff(&lock_file, &lock_path, false)?;
 
         let write_result = (|| {
-            let temp_path = path.with_extension("json.tmp");
+            let temp_path = path.with_extension(format!("json.tmp-{}", Uuid::now_v7()));
+            let mut temp_guard = TempFileGuard::new(temp_path.clone());
             let payload = serde_json::to_vec(status).map_err(|err| {
                 FleetTransportError::serialization(format!(
                     "failed serializing node status {}: {err}",
@@ -504,6 +521,7 @@ impl FileFleetTransport {
                     path.display()
                 ))
             })?;
+            temp_guard.defuse();
             Ok(())
         })();
 
@@ -928,6 +946,37 @@ mod tests {
         }
     }
 
+    fn temp_leftovers(dir: &Path, marker: &str) -> Vec<String> {
+        let mut leftovers = Vec::new();
+        let entries = match fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(_) => return leftovers,
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.contains(marker) {
+                leftovers.push(name);
+            }
+        }
+        leftovers.sort();
+        leftovers
+    }
+
+    #[test]
+    fn temp_file_guard_orphans_abandoned_temp_files() {
+        let tempdir = tempdir().expect("tempdir");
+        let temp_path = tempdir.path().join("actions.json.tmp");
+        fs::write(&temp_path, "pending").expect("write temp file");
+
+        {
+            let _guard = TempFileGuard::new(temp_path.clone());
+        }
+
+        assert!(!temp_path.exists(), "temp file should be moved aside");
+        let leftovers = temp_leftovers(tempdir.path(), "actions.json.tmp.orphaned-");
+        assert_eq!(leftovers.len(), 1, "expected one orphaned temp artifact");
+    }
+
     #[test]
     fn fleet_transport_trait_is_object_safe() {
         let tempdir = tempdir().expect("tempdir");
@@ -1196,6 +1245,30 @@ mod tests {
     }
 
     #[test]
+    fn file_transport_upsert_node_status_cleans_temp_files() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+
+        transport
+            .upsert_node_status(&node_status(
+                "prod",
+                "node-clean",
+                "2026-04-06T02:10:00Z",
+                12,
+                NodeHealth::Healthy,
+            ))
+            .expect("write node");
+
+        let leftovers = temp_leftovers(transport.layout().nodes_dir(), ".json.tmp-");
+        assert!(
+            leftovers.is_empty(),
+            "found temp node status leftovers: {leftovers:?}"
+        );
+    }
+
+    #[test]
     fn file_transport_concurrent_appends_preserve_jsonl_integrity() {
         let tempdir = tempdir().expect("tempdir");
         let root = tempdir.path().join("fleet-state");
@@ -1387,5 +1460,11 @@ mod tests {
         let actions = transport.list_actions().expect("list actions");
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0].action_id, "fleet-action-new");
+
+        let leftovers = temp_leftovers(transport.layout().root_dir(), ".jsonl.tmp-");
+        assert!(
+            leftovers.is_empty(),
+            "found temp compaction leftovers: {leftovers:?}"
+        );
     }
 }
