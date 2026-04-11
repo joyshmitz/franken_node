@@ -235,12 +235,14 @@ fn local_only_mode_keeps_local_ops_functional() {
 #[test]
 fn network_guard_is_enforced_by_capability_gate() {
     let mut policy = EgressPolicy::new("conn-remote-cap".to_string(), Action::Deny);
-    policy.add_rule(EgressRule {
-        host: "api.example.com".to_string(),
-        port: Some(443),
-        action: Action::Allow,
-        protocol: Protocol::Http,
-    });
+    policy
+        .add_rule(EgressRule {
+            host: "api.example.com".to_string(),
+            port: Some(443),
+            action: Action::Allow,
+            protocol: Protocol::Http,
+        })
+        .expect("add rule");
     let mut guard = NetworkGuard::new(policy);
     let mut gate = CapabilityGate::new("remote-cap-test-secret");
 

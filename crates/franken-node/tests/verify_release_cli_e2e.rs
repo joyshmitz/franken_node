@@ -294,12 +294,11 @@ fn verify_migration_reads_state_record_and_checks_post_conditions() {
     assert_eq!(payload["verdict"], "PASS");
     assert_eq!(payload["details"]["status"], "applied");
     assert_eq!(payload["details"]["post_conditions_met"], true);
-    assert_eq!(
+    assert!(
         payload["details"]["record_path"]
             .as_str()
             .unwrap_or_default()
-            .contains(".franken-node/state/migrations/rewrite.json"),
-        true
+            .contains(".franken-node/state/migrations/rewrite.json")
     );
 }
 

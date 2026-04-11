@@ -130,7 +130,7 @@ pub use frankenengine_node::{connector, control_plane, observability, security, 
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
@@ -525,6 +525,36 @@ impl Drop for TempFileGuard {
     fn drop(&mut self) {
         if let Some(path) = self.0.take()
             && path.is_file()
+        {
+            let _ = std::fs::rename(&path, Self::abandoned_path(&path));
+        }
+    }
+}
+
+struct TempDirGuard(Option<PathBuf>);
+
+impl TempDirGuard {
+    fn new(path: PathBuf) -> Self {
+        Self(Some(path))
+    }
+
+    fn abandoned_path(path: &Path) -> PathBuf {
+        let dir_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("registry-artifact.tmp");
+        path.with_file_name(format!("{dir_name}.orphaned-{}", Uuid::now_v7()))
+    }
+
+    fn defuse(&mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for TempDirGuard {
+    fn drop(&mut self) {
+        if let Some(path) = self.0.take()
+            && path.is_dir()
         {
             let _ = std::fs::rename(&path, Self::abandoned_path(&path));
         }
@@ -4034,6 +4064,32 @@ mod registry_command_tests {
     }
 
     #[test]
+    fn inspect_local_registry_artifact_rejects_unsafe_manifest_file_name() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let stored =
+            persist_registry_artifact_fixture(temp.path(), "plugin.fnext", b"artifact payload");
+
+        let raw = std::fs::read_to_string(&stored.manifest_path).expect("read manifest");
+        let mut manifest: LocalRegistryArtifactManifest =
+            serde_json::from_str(&raw).expect("parse manifest");
+        manifest.artifact_file_name = "../escape.bin".to_string();
+        std::fs::write(
+            &stored.manifest_path,
+            serde_json::to_vec_pretty(&manifest).expect("serialize manifest"),
+        )
+        .expect("write tampered manifest");
+
+        let reloaded =
+            load_local_registry_artifact_manifest(&stored.manifest_path, false).expect("reload");
+        let verification = inspect_local_registry_artifact(&reloaded);
+        assert_eq!(
+            verification.status,
+            RegistryArtifactIntegrityStatus::InvalidMetadata
+        );
+        assert!(verification.detail.contains("unsafe"));
+    }
+
+    #[test]
     fn write_bytes_atomically_replaces_target_without_tmp_leftovers() {
         let temp = tempfile::tempdir().expect("tempdir");
         let target_path = temp.path().join("nested").join("artifact.bin");
@@ -6625,6 +6681,21 @@ fn registry_relative_display_path(path: &Path, project_root: &Path) -> String {
         .to_string()
 }
 
+fn registry_artifact_file_name_is_safe(file_name: &str) -> bool {
+    if file_name.is_empty() {
+        return false;
+    }
+    let path = Path::new(file_name);
+    if path.is_absolute() {
+        return false;
+    }
+    let mut components = path.components();
+    match components.next() {
+        Some(Component::Normal(_)) => components.next().is_none(),
+        _ => false,
+    }
+}
+
 fn write_bytes_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path
         .parent()
@@ -6670,12 +6741,21 @@ fn persist_local_registry_artifact(
     let lineage_root = registry_active_artifacts_root(project_root)
         .join(normalize_registry_name(&published.publisher_id))
         .join(normalize_registry_name(&published.name));
-    let entry_dir = lineage_root.join(registry_entry_directory_name(
-        &published.registered_at,
-        &published.extension_id,
-    ));
-    std::fs::create_dir_all(&entry_dir)
-        .with_context(|| format!("failed creating {}", entry_dir.display()))?;
+    std::fs::create_dir_all(&lineage_root)
+        .with_context(|| format!("failed creating {}", lineage_root.display()))?;
+    let entry_dir_name =
+        registry_entry_directory_name(&published.registered_at, &published.extension_id);
+    let entry_dir = lineage_root.join(&entry_dir_name);
+    if entry_dir.exists() {
+        anyhow::bail!(
+            "registry publish entry already exists at {}",
+            entry_dir.display()
+        );
+    }
+    let temp_dir = lineage_root.join(format!(".{entry_dir_name}.tmp-{}", Uuid::now_v7()));
+    std::fs::create_dir_all(&temp_dir)
+        .with_context(|| format!("failed creating {}", temp_dir.display()))?;
+    let mut temp_guard = TempDirGuard::new(temp_dir.clone());
 
     let artifact_file_name = package_path
         .file_name()
@@ -6684,8 +6764,8 @@ fn persist_local_registry_artifact(
             anyhow::anyhow!("package path missing file name: {}", package_path.display())
         })?
         .to_string();
-    let artifact_path = entry_dir.join(&artifact_file_name);
-    let manifest_path = entry_dir.join(REGISTRY_LOCAL_ARTIFACT_MANIFEST_FILE_NAME);
+    let artifact_path = temp_dir.join(&artifact_file_name);
+    let manifest_path = temp_dir.join(REGISTRY_LOCAL_ARTIFACT_MANIFEST_FILE_NAME);
     let manifest = LocalRegistryArtifactManifest {
         schema_version: REGISTRY_LOCAL_ARTIFACT_MANIFEST_SCHEMA_VERSION.to_string(),
         stored_at_utc: published.registered_at.clone(),
@@ -6701,6 +6781,15 @@ fn persist_local_registry_artifact(
     let manifest_bytes = serde_json::to_vec_pretty(&manifest)
         .context("failed serializing local registry artifact manifest")?;
     write_bytes_atomically(&manifest_path, &manifest_bytes)?;
+    std::fs::rename(&temp_dir, &entry_dir).with_context(|| {
+        format!(
+            "failed promoting registry artifact entry {} -> {}",
+            temp_dir.display(),
+            entry_dir.display()
+        )
+    })?;
+    temp_guard.defuse();
+    let manifest_path = entry_dir.join(REGISTRY_LOCAL_ARTIFACT_MANIFEST_FILE_NAME);
 
     Ok(StoredRegistryArtifact {
         manifest_path,
@@ -6800,7 +6889,15 @@ fn find_local_registry_artifact(
 fn inspect_local_registry_artifact(
     artifact: &StoredRegistryArtifact,
 ) -> RegistryArtifactVerification {
-    let artifact_path = artifact.artifact_path();
+    let artifact_file_name = artifact.manifest.artifact_file_name.as_str();
+    if !registry_artifact_file_name_is_safe(artifact_file_name) {
+        return RegistryArtifactVerification {
+            status: RegistryArtifactIntegrityStatus::InvalidMetadata,
+            detail: format!("manifest artifact file name is unsafe: {artifact_file_name}"),
+            artifact_path: artifact.entry_dir().to_path_buf(),
+        };
+    }
+    let artifact_path = artifact.entry_dir().join(artifact_file_name);
     let Some(version_hash) = artifact
         .manifest
         .extension
@@ -6941,7 +7038,7 @@ fn local_registry_search_rows(
                 publisher: extension.publisher_id.clone(),
                 status: extension.status.label().to_string(),
                 artifact_path: registry_relative_display_path(
-                    &artifact.artifact_path(),
+                    &verification.artifact_path,
                     project_root,
                 ),
                 integrity_status: verification.status.label().to_string(),
