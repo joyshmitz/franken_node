@@ -677,6 +677,15 @@ impl EngineDispatcher {
         // These env vars provide a fast path for the engine to read policy without
         // parsing the full TOML config payload.
         let network_policy = &config.security.network_policy;
+
+        // SSRF enforcement mode: none, monitor, or block
+        let enforcement_mode = match network_policy.ssrf_enforcement {
+            crate::config::SsrfEnforcementMode::None => "none",
+            crate::config::SsrfEnforcementMode::Monitor => "monitor",
+            crate::config::SsrfEnforcementMode::Block => "block",
+        };
+        cmd.env("FRANKEN_ENGINE_NETWORK_SSRF_ENFORCEMENT", enforcement_mode);
+
         cmd.env(
             "FRANKEN_ENGINE_NETWORK_SSRF_PROTECTION_ENABLED",
             if network_policy.ssrf_protection_enabled {

@@ -140,6 +140,12 @@ pub struct RunArgs {
     /// Explicit franken_engine binary path or command name.
     #[arg(long)]
     pub engine_bin: Option<PathBuf>,
+
+    /// Run lockstep comparison across runtimes before execution.
+    /// When enabled, the app is run in both node and bun (if available)
+    /// and results are compared. Divergence blocks execution.
+    #[arg(long)]
+    pub lockstep_preflight: bool,
 }
 
 // -- migrate --
@@ -591,20 +597,26 @@ pub struct FleetReconcileArgs {
 #[derive(Debug, Parser)]
 pub struct FleetAgentArgs {
     /// Unique node identifier for this agent instance.
+    /// When omitted, falls back to `fleet.node_id` in `franken_node.toml`.
     #[arg(long)]
-    pub node_id: String,
+    pub node_id: Option<String>,
 
     /// Zone to poll for fleet actions.
     #[arg(long)]
     pub zone: String,
 
-    /// Poll interval in seconds (default: 30).
-    #[arg(long, default_value = "30")]
-    pub poll_interval_secs: u64,
+    /// Poll interval in seconds.
+    /// When omitted, falls back to `fleet.poll_interval_seconds` or 30 seconds.
+    #[arg(long)]
+    pub poll_interval_secs: Option<u64>,
 
-    /// Maximum number of poll cycles (0 = unlimited).
-    #[arg(long, default_value = "0")]
-    pub max_cycles: u64,
+    /// Maximum number of poll cycles (omit for unlimited).
+    #[arg(long)]
+    pub max_cycles: Option<u64>,
+
+    /// Run a single poll cycle and exit after processing all currently pending actions.
+    #[arg(long)]
+    pub once: bool,
 
     /// Emit JSON instead of human-readable output.
     #[arg(long)]

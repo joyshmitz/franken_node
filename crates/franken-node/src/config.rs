@@ -102,6 +102,8 @@ impl Config {
                 },
                 fleet: FleetConfig {
                     state_dir: None,
+                    node_id: None,
+                    poll_interval_seconds: None,
                     convergence_timeout_seconds: 60,
                     barrier_timeout_ms: None,
                 },
@@ -117,6 +119,7 @@ impl Config {
                     max_degraded_duration_secs: 3_600,
                     decision_receipt_signing_key_path: None,
                     authorized_api_keys: std::collections::BTreeSet::new(),
+                    network_policy: NetworkPolicyConfig::default(),
                 },
                 engine: EngineConfig::default(),
                 runtime: RuntimeConfig::strict_defaults(),
@@ -160,6 +163,8 @@ impl Config {
                 },
                 fleet: FleetConfig {
                     state_dir: None,
+                    node_id: None,
+                    poll_interval_seconds: None,
                     convergence_timeout_seconds: 120,
                     barrier_timeout_ms: None,
                 },
@@ -175,6 +180,7 @@ impl Config {
                     max_degraded_duration_secs: 3_600,
                     decision_receipt_signing_key_path: None,
                     authorized_api_keys: std::collections::BTreeSet::new(),
+                    network_policy: NetworkPolicyConfig::default(),
                 },
                 engine: EngineConfig::default(),
                 runtime: RuntimeConfig::balanced_defaults(),
@@ -218,6 +224,8 @@ impl Config {
                 },
                 fleet: FleetConfig {
                     state_dir: None,
+                    node_id: None,
+                    poll_interval_seconds: None,
                     convergence_timeout_seconds: 300,
                     barrier_timeout_ms: None,
                 },
@@ -233,6 +241,7 @@ impl Config {
                     max_degraded_duration_secs: 3_600,
                     decision_receipt_signing_key_path: None,
                     authorized_api_keys: std::collections::BTreeSet::new(),
+                    network_policy: NetworkPolicyConfig::default(),
                 },
                 engine: EngineConfig::default(),
                 runtime: RuntimeConfig::legacy_defaults(),
@@ -643,6 +652,18 @@ impl Config {
                     stage.clone(),
                     "fleet.state_dir",
                     value.display(),
+                ));
+            }
+            if let Some(value) = &section.node_id {
+                self.fleet.node_id = Some(value.clone());
+                decisions.push(MergeDecision::new(stage.clone(), "fleet.node_id", value));
+            }
+            if let Some(value) = section.poll_interval_seconds {
+                self.fleet.poll_interval_seconds = Some(value);
+                decisions.push(MergeDecision::new(
+                    stage.clone(),
+                    "fleet.poll_interval_seconds",
+                    value,
                 ));
             }
             if let Some(value) = section.convergence_timeout_seconds {
@@ -1101,6 +1122,31 @@ impl Config {
                 parsed.display(),
             ));
         }
+        if let Some(raw) = env_lookup("FRANKEN_NODE_FLEET_NODE_ID") {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                return Err(ConfigError::EnvParseFailed {
+                    key: "FRANKEN_NODE_FLEET_NODE_ID".to_string(),
+                    value: raw,
+                    reason: "node id must not be empty".to_string(),
+                });
+            }
+            self.fleet.node_id = Some(trimmed.to_string());
+            decisions.push(MergeDecision::new(
+                MergeStage::Env,
+                "fleet.node_id",
+                trimmed,
+            ));
+        }
+        if let Some(raw) = env_lookup("FRANKEN_NODE_FLEET_POLL_INTERVAL_SECONDS") {
+            let parsed = parse_env_u64("FRANKEN_NODE_FLEET_POLL_INTERVAL_SECONDS", &raw)?;
+            self.fleet.poll_interval_seconds = Some(parsed);
+            decisions.push(MergeDecision::new(
+                MergeStage::Env,
+                "fleet.poll_interval_seconds",
+                parsed,
+            ));
+        }
         if let Some(raw) = env_lookup("FRANKEN_NODE_FLEET_CONVERGENCE_TIMEOUT_SECONDS") {
             let parsed = parse_env_u64("FRANKEN_NODE_FLEET_CONVERGENCE_TIMEOUT_SECONDS", &raw)?;
             self.fleet.convergence_timeout_seconds = parsed;
@@ -1293,6 +1339,18 @@ impl Config {
         {
             return Err(ConfigError::ValidationFailed(
                 "fleet.state_dir must be non-empty when configured".to_string(),
+            ));
+        }
+        if let Some(node_id) = &self.fleet.node_id {
+            crate::control_plane::fleet_transport::validate_node_id(node_id).map_err(|err| {
+                ConfigError::ValidationFailed(format!("fleet.node_id is invalid: {err}"))
+            })?;
+        }
+        if let Some(poll_interval_seconds) = self.fleet.poll_interval_seconds
+            && poll_interval_seconds == 0
+        {
+            return Err(ConfigError::ValidationFailed(
+                "fleet.poll_interval_seconds must be > 0".to_string(),
             ));
         }
         if self.replay.bundle_version.trim().is_empty() {
@@ -1688,6 +1746,8 @@ struct RegistryOverrides {
 #[serde(default, deny_unknown_fields)]
 struct FleetOverrides {
     pub state_dir: Option<PathBuf>,
+    pub node_id: Option<String>,
+    pub poll_interval_seconds: Option<u64>,
     pub convergence_timeout_seconds: Option<u64>,
     pub barrier_timeout_ms: Option<u64>,
 }
@@ -1918,6 +1978,12 @@ pub struct FleetConfig {
     /// Optional override for the persisted fleet shared-state directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_dir: Option<PathBuf>,
+    /// Optional stable node identifier for fleet agent mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<String>,
+    /// Optional default poll interval for fleet agent mode (seconds).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll_interval_seconds: Option<u64>,
     /// Fleet convergence timeout for quarantine/release operations (seconds).
     pub convergence_timeout_seconds: u64,
     /// Optional override for fleet barrier timeout (milliseconds).
@@ -1967,10 +2033,28 @@ pub struct SecurityConfig {
     pub network_policy: NetworkPolicyConfig,
 }
 
+/// SSRF enforcement mode for network policy.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SsrfEnforcementMode {
+    /// No SSRF protection - all requests allowed.
+    None,
+    /// Monitor mode - violations are logged but requests proceed.
+    #[default]
+    Monitor,
+    /// Block mode - violations terminate the runtime process.
+    Block,
+}
+
 /// Network egress policy configuration for spawned runtime processes.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NetworkPolicyConfig {
+    /// SSRF enforcement mode: none, monitor, or block.
+    #[serde(default)]
+    pub ssrf_enforcement: SsrfEnforcementMode,
+
     /// Whether to enforce SSRF protection (block private/internal IPs).
+    /// Deprecated: use ssrf_enforcement instead.
     #[serde(default = "default_true")]
     pub ssrf_protection_enabled: bool,
 
@@ -2006,6 +2090,7 @@ fn default_true() -> bool {
 impl Default for NetworkPolicyConfig {
     fn default() -> Self {
         Self {
+            ssrf_enforcement: SsrfEnforcementMode::Monitor,
             ssrf_protection_enabled: true,
             block_cloud_metadata: true,
             allowlist: Vec::new(),
@@ -2310,6 +2395,8 @@ mod tests {
         let mut config = Config::for_profile(Profile::Balanced);
         config.engine.binary_path = Some(PathBuf::from("/opt/franken-engine"));
         config.fleet.state_dir = Some(PathBuf::from(".franken-node/state/fleet"));
+        config.fleet.node_id = Some("node-balanced-1".to_string());
+        config.fleet.poll_interval_seconds = Some(15);
         config.registry.builder_identity = Some("builder.example.internal".to_string());
         config.security.authorized_api_keys =
             BTreeSet::from(["alpha-key".to_string(), "beta-key".to_string()]);
@@ -2318,6 +2405,11 @@ mod tests {
         assert_eq!(parsed.profile, Profile::Balanced);
         assert_eq!(parsed.engine.binary_path, config.engine.binary_path);
         assert_eq!(parsed.fleet.state_dir, config.fleet.state_dir);
+        assert_eq!(parsed.fleet.node_id, config.fleet.node_id);
+        assert_eq!(
+            parsed.fleet.poll_interval_seconds,
+            config.fleet.poll_interval_seconds
+        );
         assert_eq!(
             parsed.registry.builder_identity,
             config.registry.builder_identity
@@ -2761,6 +2853,51 @@ state_dir = "from-file/fleet"
         }));
         assert!(resolved.decisions.iter().any(|decision| {
             decision.field == "fleet.state_dir" && decision.stage == MergeStage::Env
+        }));
+    }
+
+    #[test]
+    fn resolve_applies_fleet_agent_file_and_env_overrides() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("franken_node.toml");
+        std::fs::write(
+            &path,
+            r#"
+[fleet]
+node_id = "node-from-file"
+poll_interval_seconds = 12
+"#,
+        )
+        .unwrap();
+
+        let env = BTreeMap::from([
+            (
+                "FRANKEN_NODE_FLEET_NODE_ID".to_string(),
+                "node-from-env".to_string(),
+            ),
+            (
+                "FRANKEN_NODE_FLEET_POLL_INTERVAL_SECONDS".to_string(),
+                "30".to_string(),
+            ),
+        ]);
+
+        let resolved =
+            Config::resolve_with_env(Some(&path), CliOverrides::default(), &map_lookup(env))
+                .unwrap();
+
+        assert_eq!(
+            resolved.config.fleet.node_id,
+            Some("node-from-env".to_string())
+        );
+        assert_eq!(resolved.config.fleet.poll_interval_seconds, Some(30));
+        assert!(resolved.decisions.iter().any(|decision| {
+            decision.field == "fleet.node_id" && decision.stage == MergeStage::File
+        }));
+        assert!(resolved.decisions.iter().any(|decision| {
+            decision.field == "fleet.node_id" && decision.stage == MergeStage::Env
+        }));
+        assert!(resolved.decisions.iter().any(|decision| {
+            decision.field == "fleet.poll_interval_seconds" && decision.stage == MergeStage::Env
         }));
     }
 

@@ -1574,6 +1574,7 @@ fn build_run_execution_receipt(
     dispatch: &ops::engine_dispatcher::RunDispatchReport,
     ssrf_violations: Vec<String>,
     auto_quarantined_extensions: Vec<String>,
+    lockstep_verdict: Option<serde_json::Value>,
 ) -> Result<RunExecutionReceipt> {
     let violation_count = ssrf_violations.len();
     let mut core = RunExecutionReceiptCore {
@@ -1591,7 +1592,7 @@ fn build_run_execution_receipt(
         preflight_verdict: preflight.verdict.clone(),
         telemetry_summary: summarize_run_telemetry(dispatch.telemetry.as_ref()),
         ssrf_violations,
-        lockstep_verdict: None,
+        lockstep_verdict,
         violation_count,
         auto_quarantined_extensions,
     };
@@ -3819,7 +3820,7 @@ mod registry_command_tests {
         let package = workspace.join("plugin.fnext");
         std::fs::write(&package, "artifact").expect("write package");
 
-        run_git_test_command(workspace, &["init"]);
+        run_git_test_command(workspace, &["init", "-b", "main"]);
         run_git_test_command(workspace, &["config", "user.email", "test@example.com"]);
         run_git_test_command(workspace, &["config", "user.name", "Test User"]);
         run_git_test_command(
@@ -4013,6 +4014,53 @@ mod registry_command_tests {
     }
 
     #[test]
+    fn persist_local_registry_artifact_records_manifest_hash() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let payload = b"artifact payload";
+        let stored = persist_registry_artifact_fixture(temp.path(), "plugin.fnext", payload);
+        assert_eq!(
+            stored.manifest.artifact_sha256,
+            compute_registry_artifact_sha256(payload)
+        );
+        assert_eq!(
+            stored
+                .manifest
+                .extension
+                .versions
+                .last()
+                .map(|version| version.content_hash.as_str()),
+            Some(stored.manifest.artifact_sha256.as_str())
+        );
+    }
+
+    #[test]
+    fn write_bytes_atomically_replaces_target_without_tmp_leftovers() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let target_path = temp.path().join("nested").join("artifact.bin");
+        let temp_path = temp.path().join("nested").join("artifact.bin.tmp");
+
+        write_bytes_atomically(&target_path, b"first payload").expect("initial write");
+        assert_eq!(
+            std::fs::read(&target_path).expect("read first payload"),
+            b"first payload"
+        );
+        assert!(
+            !temp_path.exists(),
+            "temporary file should be removed after rename"
+        );
+
+        write_bytes_atomically(&target_path, b"second payload").expect("replacement write");
+        assert_eq!(
+            std::fs::read(&target_path).expect("read second payload"),
+            b"second payload"
+        );
+        assert!(
+            !temp_path.exists(),
+            "temporary replacement file should not remain after atomic write"
+        );
+    }
+
+    #[test]
     fn inspect_local_registry_artifact_detects_invalid_manifest_signature() {
         let temp = tempfile::tempdir().expect("tempdir");
         let stored =
@@ -4081,6 +4129,20 @@ mod registry_command_tests {
     }
 
     #[test]
+    fn local_registry_search_rows_exclude_archived_artifacts() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let stored =
+            persist_registry_artifact_fixture(temp.path(), "plugin.fnext", b"artifact payload");
+        archive_local_registry_artifact(temp.path(), &stored).expect("archive artifact");
+
+        let rows = local_registry_search_rows(temp.path(), "plugin", None).expect("search rows");
+        assert!(
+            rows.is_empty(),
+            "archived artifacts should not appear in active search rows"
+        );
+    }
+
+    #[test]
     fn local_registry_search_rows_report_verified_artifact_metadata() {
         let temp = tempfile::tempdir().expect("tempdir");
         let stored =
@@ -4096,6 +4158,41 @@ mod registry_command_tests {
                 .contains(".franken-node/state/registry/artifacts/")
         );
     }
+
+    #[test]
+    fn local_registry_search_rows_report_hash_mismatch_status() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let stored =
+            persist_registry_artifact_fixture(temp.path(), "plugin.fnext", b"artifact payload");
+        std::fs::write(stored.artifact_path(), b"tampered payload").expect("tamper artifact");
+
+        let rows = local_registry_search_rows(temp.path(), "plugin", None).expect("search rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].extension_id, stored.manifest.extension.extension_id);
+        assert_eq!(rows[0].integrity_status, "hash-mismatch");
+    }
+
+    #[test]
+    fn local_registry_search_rows_report_invalid_signature_status() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let stored =
+            persist_registry_artifact_fixture(temp.path(), "plugin.fnext", b"artifact payload");
+
+        let raw = std::fs::read_to_string(&stored.manifest_path).expect("read manifest");
+        let mut manifest: LocalRegistryArtifactManifest =
+            serde_json::from_str(&raw).expect("parse manifest");
+        manifest.manifest_bytes_b64 = BASE64_STANDARD.encode(b"tampered");
+        std::fs::write(
+            &stored.manifest_path,
+            serde_json::to_vec_pretty(&manifest).expect("serialize manifest"),
+        )
+        .expect("write tampered manifest");
+
+        let rows = local_registry_search_rows(temp.path(), "plugin", None).expect("search rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].extension_id, stored.manifest.extension.extension_id);
+        assert_eq!(rows[0].integrity_status, "invalid-signature");
+    }
 }
 
 #[cfg(test)]
@@ -4104,13 +4201,7 @@ mod build_context_tests {
 
     #[test]
     fn build_context_detects_local_build_when_no_ci_env() {
-        // Clear CI env vars to simulate local build
-        std::env::remove_var("GITHUB_ACTIONS");
-        std::env::remove_var("GITLAB_CI");
-        std::env::remove_var("CIRCLECI");
-        std::env::remove_var("CI");
-
-        let ctx = BuildContext::detect(None);
+        let ctx = BuildContext::detect_with_env(None, |_| None);
 
         // Should detect local build
         assert_eq!(ctx.build_system_identifier, "local");
@@ -4131,14 +4222,14 @@ mod build_context_tests {
 
     #[test]
     fn build_context_detects_github_actions() {
-        // Simulate GitHub Actions environment
-        std::env::set_var("GITHUB_ACTIONS", "true");
-        std::env::set_var("GITHUB_SHA", "abcdef1234567890abcdef1234567890abcdef12");
-        std::env::set_var("GITHUB_SERVER_URL", "https://github.com");
-        std::env::set_var("GITHUB_REPOSITORY", "test-org/test-repo");
-        std::env::set_var("GITHUB_ACTOR", "test-actor");
-
-        let ctx = BuildContext::detect(None);
+        let ctx = BuildContext::detect_with_env(None, |key| match key {
+            "GITHUB_ACTIONS" => Some("true".to_string()),
+            "GITHUB_SHA" => Some("abcdef1234567890abcdef1234567890abcdef12".to_string()),
+            "GITHUB_SERVER_URL" => Some("https://github.com".to_string()),
+            "GITHUB_REPOSITORY" => Some("test-org/test-repo".to_string()),
+            "GITHUB_ACTOR" => Some("test-actor".to_string()),
+            _ => None,
+        });
 
         assert_eq!(ctx.build_system_identifier, "github-actions");
         assert_eq!(
@@ -4150,26 +4241,16 @@ mod build_context_tests {
             Some("https://github.com/test-org/test-repo")
         );
         assert_eq!(ctx.builder_identity.as_deref(), Some("test-actor"));
-
-        // Clean up
-        std::env::remove_var("GITHUB_ACTIONS");
-        std::env::remove_var("GITHUB_SHA");
-        std::env::remove_var("GITHUB_SERVER_URL");
-        std::env::remove_var("GITHUB_REPOSITORY");
-        std::env::remove_var("GITHUB_ACTOR");
     }
 
     #[test]
     fn build_context_config_identity_takes_precedence_over_env() {
-        std::env::set_var("GITHUB_ACTIONS", "true");
-        std::env::set_var("GITHUB_ACTOR", "github-user");
-
-        let ctx = BuildContext::detect(Some("config-override"));
+        let ctx = BuildContext::detect_with_env(Some("config-override"), |key| match key {
+            "GITHUB_ACTIONS" => Some("true".to_string()),
+            "GITHUB_ACTOR" => Some("github-user".to_string()),
+            _ => None,
+        });
         assert_eq!(ctx.builder_identity.as_deref(), Some("config-override"));
-
-        // Clean up
-        std::env::remove_var("GITHUB_ACTIONS");
-        std::env::remove_var("GITHUB_ACTOR");
     }
 }
 
@@ -6084,10 +6165,18 @@ impl BuildContext {
     /// 2. Local git repository state
     /// 3. Fallback values
     fn detect(config_builder_identity: Option<&str>) -> Self {
-        let vcs_commit_sha = Self::detect_commit_sha();
-        let source_repository_url = Self::detect_repository_url();
-        let build_system_identifier = Self::detect_build_system();
-        let builder_identity = Self::detect_builder_identity(config_builder_identity);
+        Self::detect_with_env(config_builder_identity, |key| std::env::var(key).ok())
+    }
+
+    fn detect_with_env<F>(config_builder_identity: Option<&str>, get_env: F) -> Self
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        let vcs_commit_sha = Self::detect_commit_sha_with_env(&get_env);
+        let source_repository_url = Self::detect_repository_url_with_env(&get_env);
+        let build_system_identifier = Self::detect_build_system_with_env(&get_env);
+        let builder_identity =
+            Self::detect_builder_identity_with_env(config_builder_identity, &get_env);
 
         Self {
             vcs_commit_sha,
@@ -6097,25 +6186,28 @@ impl BuildContext {
         }
     }
 
-    fn detect_commit_sha() -> Option<String> {
+    fn detect_commit_sha_with_env<F>(get_env: &F) -> Option<String>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
         // GitHub Actions
-        if let Ok(sha) = std::env::var("GITHUB_SHA") {
+        if let Some(sha) = get_env("GITHUB_SHA") {
             return Some(sha);
         }
         // GitLab CI
-        if let Ok(sha) = std::env::var("CI_COMMIT_SHA") {
+        if let Some(sha) = get_env("CI_COMMIT_SHA") {
             return Some(sha);
         }
         // CircleCI
-        if let Ok(sha) = std::env::var("CIRCLE_SHA1") {
+        if let Some(sha) = get_env("CIRCLE_SHA1") {
             return Some(sha);
         }
         // Azure Pipelines
-        if let Ok(sha) = std::env::var("BUILD_SOURCEVERSION") {
+        if let Some(sha) = get_env("BUILD_SOURCEVERSION") {
             return Some(sha);
         }
         // Jenkins
-        if let Ok(sha) = std::env::var("GIT_COMMIT") {
+        if let Some(sha) = get_env("GIT_COMMIT") {
             return Some(sha);
         }
         // Try local git
@@ -6132,16 +6224,18 @@ impl BuildContext {
             .filter(|s| !s.is_empty())
     }
 
-    fn detect_repository_url() -> Option<String> {
+    fn detect_repository_url_with_env<F>(get_env: &F) -> Option<String>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
         // GitHub Actions
-        if let (Ok(server), Ok(repo)) = (
-            std::env::var("GITHUB_SERVER_URL"),
-            std::env::var("GITHUB_REPOSITORY"),
-        ) {
+        if let (Some(server), Some(repo)) =
+            (get_env("GITHUB_SERVER_URL"), get_env("GITHUB_REPOSITORY"))
+        {
             return Some(format!("{server}/{repo}"));
         }
         // GitLab CI
-        if let Ok(url) = std::env::var("CI_REPOSITORY_URL") {
+        if let Some(url) = get_env("CI_REPOSITORY_URL") {
             // Strip credentials from URL if present (format: https://user:token@host/path)
             // Simple approach: find @ and reconstruct without credentials
             if let Some(at_pos) = url.find('@')
@@ -6154,11 +6248,11 @@ impl BuildContext {
             return Some(url);
         }
         // CircleCI
-        if let Ok(url) = std::env::var("CIRCLE_REPOSITORY_URL") {
+        if let Some(url) = get_env("CIRCLE_REPOSITORY_URL") {
             return Some(url);
         }
         // Azure Pipelines
-        if let Ok(url) = std::env::var("BUILD_REPOSITORY_URI") {
+        if let Some(url) = get_env("BUILD_REPOSITORY_URI") {
             return Some(url);
         }
         // Try local git
@@ -6175,60 +6269,67 @@ impl BuildContext {
             .filter(|s| !s.is_empty())
     }
 
-    fn detect_build_system() -> String {
+    fn detect_build_system_with_env<F>(get_env: &F) -> String
+    where
+        F: Fn(&str) -> Option<String>,
+    {
         // GitHub Actions
-        if std::env::var("GITHUB_ACTIONS").is_ok() {
+        if get_env("GITHUB_ACTIONS").is_some() {
             return "github-actions".to_string();
         }
         // GitLab CI
-        if std::env::var("GITLAB_CI").is_ok() {
+        if get_env("GITLAB_CI").is_some() {
             return "gitlab-ci".to_string();
         }
         // CircleCI
-        if std::env::var("CIRCLECI").is_ok() {
+        if get_env("CIRCLECI").is_some() {
             return "circleci".to_string();
         }
         // Azure Pipelines
-        if std::env::var("TF_BUILD").is_ok() {
+        if get_env("TF_BUILD").is_some() {
             return "azure-pipelines".to_string();
         }
         // Jenkins
-        if std::env::var("JENKINS_URL").is_ok() {
+        if get_env("JENKINS_URL").is_some() {
             return "jenkins".to_string();
         }
         // Travis CI
-        if std::env::var("TRAVIS").is_ok() {
+        if get_env("TRAVIS").is_some() {
             return "travis-ci".to_string();
         }
         // Generic CI
-        if std::env::var("CI").is_ok() {
+        if get_env("CI").is_some() {
             return "ci".to_string();
         }
         // Local build
         "local".to_string()
     }
 
-    fn detect_builder_identity(config_override: Option<&str>) -> Option<String> {
+    fn detect_builder_identity_with_env<F>(
+        config_override: Option<&str>,
+        get_env: &F,
+    ) -> Option<String>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
         // Config file override takes precedence
         if let Some(id) = config_override {
             return Some(id.to_string());
         }
         // GitHub Actions
-        if let Ok(actor) = std::env::var("GITHUB_ACTOR") {
+        if let Some(actor) = get_env("GITHUB_ACTOR") {
             return Some(actor);
         }
         // GitLab CI
-        if let Ok(user) = std::env::var("GITLAB_USER_LOGIN") {
+        if let Some(user) = get_env("GITLAB_USER_LOGIN") {
             return Some(user);
         }
         // CircleCI
-        if let Ok(user) = std::env::var("CIRCLE_USERNAME") {
+        if let Some(user) = get_env("CIRCLE_USERNAME") {
             return Some(user);
         }
         // Generic environment user
-        std::env::var("USER")
-            .ok()
-            .or_else(|| std::env::var("USERNAME").ok())
+        get_env("USER").or_else(|| get_env("USERNAME"))
     }
 }
 
@@ -8517,6 +8618,7 @@ pub struct FleetAgentPollResult {
     pub cycle: u64,
     pub node_id: String,
     pub zone_id: String,
+    pub configured_poll_interval_secs: u64,
     pub actions_processed: u64,
     pub last_action_id: Option<String>,
     pub node_health: String,
@@ -8524,54 +8626,302 @@ pub struct FleetAgentPollResult {
     pub poll_timestamp: String,
 }
 
+#[derive(Debug, Clone)]
+struct ResolvedFleetAgentArgs {
+    node_id: String,
+    zone_id: String,
+    poll_interval_secs: u64,
+    max_cycles: Option<u64>,
+    json: bool,
+}
+
+fn resolve_fleet_agent_args(args: &FleetAgentArgs) -> Result<ResolvedFleetAgentArgs> {
+    use control_plane::fleet_transport::{validate_node_id, validate_zone_id};
+
+    let resolved = config::Config::resolve(None, config::CliOverrides::default())
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+    let node_id = args
+        .node_id
+        .clone()
+        .or_else(|| resolved.config.fleet.node_id.clone())
+        .ok_or_else(|| anyhow::anyhow!("fleet agent requires --node-id or fleet.node_id"))?;
+    validate_node_id(&node_id).map_err(|err| anyhow::anyhow!("invalid node_id: {err}"))?;
+    validate_zone_id(&args.zone).map_err(|err| anyhow::anyhow!("invalid zone: {err}"))?;
+
+    let poll_interval_secs = args
+        .poll_interval_secs
+        .or(resolved.config.fleet.poll_interval_seconds)
+        .unwrap_or(30);
+    if poll_interval_secs == 0 {
+        anyhow::bail!("fleet agent poll interval must be greater than zero");
+    }
+
+    let max_cycles = if args.once {
+        Some(1)
+    } else {
+        args.max_cycles.filter(|value| *value > 0)
+    };
+
+    Ok(ResolvedFleetAgentArgs {
+        node_id,
+        zone_id: args.zone.clone(),
+        poll_interval_secs,
+        max_cycles,
+        json: args.json,
+    })
+}
+
+fn install_fleet_agent_shutdown_flag() -> Result<std::sync::Arc<std::sync::atomic::AtomicBool>> {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+
+    let shutdown_requested = Arc::new(AtomicBool::new(false));
+    let handler_flag = Arc::clone(&shutdown_requested);
+    ctrlc::set_handler(move || {
+        handler_flag.store(true, Ordering::SeqCst);
+    })
+    .map_err(|err| anyhow::anyhow!("failed installing fleet agent signal handler: {err}"))?;
+    Ok(shutdown_requested)
+}
+
+fn sleep_until_next_fleet_poll(
+    poll_interval: std::time::Duration,
+    shutdown_requested: &std::sync::atomic::AtomicBool,
+) {
+    use std::sync::atomic::Ordering;
+    use std::time::{Duration, Instant};
+
+    let started = Instant::now();
+    while started.elapsed() < poll_interval {
+        if shutdown_requested.load(Ordering::SeqCst) {
+            return;
+        }
+        let remaining = poll_interval.saturating_sub(started.elapsed());
+        std::thread::sleep(remaining.min(Duration::from_millis(100)));
+    }
+}
+
+fn resolve_fleet_agent_action_targets(
+    registry: &mut TrustCardRegistry,
+    target_id: &str,
+    now_secs: u64,
+    trace_id: &str,
+) -> Result<Vec<String>> {
+    let direct_match = registry
+        .read(target_id, now_secs, trace_id)
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+    if let Some(card) = direct_match {
+        return Ok(vec![card.extension.extension_id]);
+    }
+
+    if !target_id.starts_with("sha256:") {
+        return Ok(Vec::new());
+    }
+
+    let mut targets = registry
+        .list(&TrustCardListFilter::empty(), trace_id, now_secs)
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?
+        .into_iter()
+        .filter(|card| {
+            card.provenance_summary
+                .artifact_hashes
+                .iter()
+                .any(|hash| hash == target_id || hash.starts_with(target_id))
+        })
+        .map(|card| card.extension.extension_id)
+        .collect::<Vec<_>>();
+    targets.sort();
+    targets.dedup();
+    Ok(targets)
+}
+
+fn fleet_agent_registry_state(
+    project_root: &Path,
+    now_secs: u64,
+) -> Result<TrustCardCliRegistryState> {
+    trust_scan_registry_state(project_root, now_secs)
+}
+
+fn apply_fleet_quarantine_action(
+    project_root: &Path,
+    target_id: &str,
+    now_secs: u64,
+) -> Result<Vec<String>> {
+    let mut state = fleet_agent_registry_state(project_root, now_secs)?;
+    let target_extension_ids = resolve_fleet_agent_action_targets(
+        &mut state.registry,
+        target_id,
+        now_secs,
+        "trace-cli-fleet-agent-quarantine-lookup",
+    )?;
+    if target_extension_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let now_rfc3339 = rfc3339_timestamp_from_secs(now_secs);
+    let mut updated_extensions = Vec::with_capacity(target_extension_ids.len());
+    for extension_id in target_extension_ids {
+        state
+            .registry
+            .update(
+                &extension_id,
+                TrustCardMutation {
+                    certification_level: None,
+                    revocation_status: None,
+                    active_quarantine: Some(true),
+                    reputation_score_basis_points: None,
+                    reputation_trend: None,
+                    user_facing_risk_assessment: None,
+                    last_verified_timestamp: Some(now_rfc3339.clone()),
+                    evidence_refs: None,
+                },
+                now_secs,
+                "trace-cli-fleet-agent-quarantine",
+            )
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        updated_extensions.push(extension_id);
+    }
+
+    persist_trust_card_cli_registry(&state)?;
+    Ok(updated_extensions)
+}
+
+fn apply_fleet_release_action(
+    project_root: &Path,
+    zone_id: &str,
+    incident_id: &str,
+    action_history: &[PersistedFleetActionRecord],
+    now_secs: u64,
+) -> Result<Vec<String>> {
+    let mut state = fleet_agent_registry_state(project_root, now_secs)?;
+    let mut targets = std::collections::BTreeSet::new();
+    for action in action_history {
+        let PersistedFleetAction::Quarantine {
+            zone_id: action_zone,
+            incident_id: action_incident,
+            target_id,
+            ..
+        } = &action.action
+        else {
+            continue;
+        };
+        if action_zone != zone_id || action_incident != incident_id {
+            continue;
+        }
+        for extension_id in resolve_fleet_agent_action_targets(
+            &mut state.registry,
+            target_id,
+            now_secs,
+            "trace-cli-fleet-agent-release-lookup",
+        )? {
+            targets.insert(extension_id);
+        }
+    }
+
+    if targets.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let now_rfc3339 = rfc3339_timestamp_from_secs(now_secs);
+    let mut released = Vec::new();
+    for extension_id in targets {
+        state
+            .registry
+            .update(
+                &extension_id,
+                TrustCardMutation {
+                    certification_level: None,
+                    revocation_status: None,
+                    active_quarantine: Some(false),
+                    reputation_score_basis_points: None,
+                    reputation_trend: None,
+                    user_facing_risk_assessment: None,
+                    last_verified_timestamp: Some(now_rfc3339.clone()),
+                    evidence_refs: None,
+                },
+                now_secs,
+                "trace-cli-fleet-agent-release",
+            )
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        released.push(extension_id);
+    }
+    persist_trust_card_cli_registry(&state)?;
+    Ok(released)
+}
+
 /// Run the fleet agent polling loop.
 fn run_fleet_agent(args: &FleetAgentArgs) -> Result<()> {
     use control_plane::fleet_transport::{
-        FleetAction as PersistedFleetAction, NodeHealth, NodeStatus, validate_node_id,
-        validate_zone_id,
+        FleetAction as PersistedFleetAction, NodeHealth, NodeStatus,
     };
+    use std::sync::atomic::Ordering;
 
-    validate_node_id(&args.node_id).map_err(|err| anyhow::anyhow!("invalid node_id: {err}"))?;
-    validate_zone_id(&args.zone).map_err(|err| anyhow::anyhow!("invalid zone: {err}"))?;
-
-    let poll_interval = std::time::Duration::from_secs(args.poll_interval_secs);
+    let shutdown_requested = install_fleet_agent_shutdown_flag()?;
+    let resolved = resolve_fleet_agent_args(args)?;
+    let poll_interval = std::time::Duration::from_secs(resolved.poll_interval_secs);
     let (_, _state_dir, mut transport) = open_fleet_transport(Path::new("."))?;
 
     let mut last_seen_action_id: Option<String> = None;
+    let mut last_seen_action_emitted_at: Option<chrono::DateTime<Utc>> = None;
     let mut quarantine_version: u64 = 0;
     let mut cycle: u64 = 0;
 
-    if !args.json {
+    if !resolved.json {
         eprintln!(
             "fleet agent: starting node_id={} zone={} poll_interval={}s",
-            args.node_id, args.zone, args.poll_interval_secs
+            resolved.node_id, resolved.zone_id, resolved.poll_interval_secs
         );
     }
 
     loop {
+        if shutdown_requested.load(Ordering::SeqCst) {
+            if !resolved.json {
+                eprintln!("fleet agent: shutdown requested, exiting");
+            }
+            break;
+        }
+
         cycle = cycle.saturating_add(1);
         let poll_timestamp = Utc::now();
+        let now_secs = u64::try_from(poll_timestamp.timestamp()).unwrap_or_default();
+        let mut node_health = NodeHealth::Healthy;
 
         // Read current actions from transport
-        let actions = transport
+        let mut actions = transport
             .list_actions()
             .map_err(|err| anyhow::anyhow!("failed listing fleet actions: {err}"))?;
+        actions.sort_by(|left, right| {
+            left.emitted_at
+                .cmp(&right.emitted_at)
+                .then_with(|| left.action_id.cmp(&right.action_id))
+        });
 
         // Filter to actions for our zone, after last seen
         let new_actions: Vec<_> = actions
             .iter()
+            .enumerate()
             .filter(|action| {
-                let zone_matches = match &action.action {
-                    PersistedFleetAction::Quarantine { zone_id, .. } => zone_id == &args.zone,
-                    PersistedFleetAction::Release { zone_id, .. } => zone_id == &args.zone,
-                    PersistedFleetAction::PolicyUpdate { zone_id, .. } => zone_id == &args.zone,
+                let zone_matches = match &action.1.action {
+                    PersistedFleetAction::Quarantine { zone_id, .. } => {
+                        zone_id == &resolved.zone_id
+                    }
+                    PersistedFleetAction::Release { zone_id, .. } => zone_id == &resolved.zone_id,
+                    PersistedFleetAction::PolicyUpdate { zone_id, .. } => {
+                        zone_id == &resolved.zone_id
+                    }
                 };
                 if !zone_matches {
                     return false;
                 }
-                match &last_seen_action_id {
-                    None => true,
-                    Some(last_id) => action.action_id > *last_id,
+                match (&last_seen_action_emitted_at, &last_seen_action_id) {
+                    (Some(last_emitted_at), Some(last_id)) => {
+                        action.1.emitted_at > *last_emitted_at
+                            || (action.1.emitted_at == *last_emitted_at
+                                && action.1.action_id > *last_id)
+                    }
+                    _ => true,
                 }
             })
             .collect();
@@ -8579,58 +8929,118 @@ fn run_fleet_agent(args: &FleetAgentArgs) -> Result<()> {
         let actions_processed = u64::try_from(new_actions.len()).unwrap_or(u64::MAX);
 
         // Apply each action and track quarantine version
-        for action in &new_actions {
-            match &action.action {
+        for (action_index, action) in new_actions {
+            let apply_result = match &action.action {
                 PersistedFleetAction::Quarantine {
                     incident_id,
                     target_id,
                     quarantine_version: qv,
                     reason,
                     ..
-                } => {
-                    quarantine_version = quarantine_version.max(*qv);
-                    if !args.json {
-                        eprintln!(
-                            "fleet agent: applying quarantine incident={} target={} reason={}",
-                            incident_id, target_id, reason
+                } => match apply_fleet_quarantine_action(Path::new("."), target_id, now_secs) {
+                    Ok(updated_extensions) => {
+                        quarantine_version = quarantine_version.max(*qv);
+                        tracing::info!(
+                            node_id = resolved.node_id.as_str(),
+                            zone_id = resolved.zone_id.as_str(),
+                            incident_id = incident_id.as_str(),
+                            target_id = target_id.as_str(),
+                            quarantine_version = *qv,
+                            updated_extensions = updated_extensions.len(),
+                            "fleet agent applied quarantine action"
                         );
+                        if !resolved.json {
+                            eprintln!(
+                                "fleet agent: applying quarantine incident={} target={} reason={} updated_extensions={}",
+                                incident_id,
+                                target_id,
+                                reason,
+                                updated_extensions.len()
+                            );
+                        }
+                        Ok::<(), anyhow::Error>(())
                     }
-                }
+                    Err(err) => Err(err),
+                },
                 PersistedFleetAction::Release {
                     incident_id,
                     reason,
                     ..
-                } => {
-                    if !args.json {
-                        eprintln!(
-                            "fleet agent: applying release incident={} reason={:?}",
-                            incident_id, reason
+                } => match apply_fleet_release_action(
+                    Path::new("."),
+                    &resolved.zone_id,
+                    incident_id,
+                    &actions[..=action_index],
+                    now_secs,
+                ) {
+                    Ok(released_extensions) => {
+                        tracing::info!(
+                            node_id = resolved.node_id.as_str(),
+                            zone_id = resolved.zone_id.as_str(),
+                            incident_id = incident_id.as_str(),
+                            released_extensions = released_extensions.len(),
+                            "fleet agent applied release action"
                         );
+                        if !resolved.json {
+                            eprintln!(
+                                "fleet agent: applying release incident={} reason={:?} released_extensions={}",
+                                incident_id,
+                                reason,
+                                released_extensions.len()
+                            );
+                        }
+                        Ok::<(), anyhow::Error>(())
                     }
-                }
+                    Err(err) => Err(err),
+                },
                 PersistedFleetAction::PolicyUpdate {
                     policy_version,
                     changed_fields,
                     ..
                 } => {
-                    if !args.json {
+                    tracing::info!(
+                        node_id = resolved.node_id.as_str(),
+                        zone_id = resolved.zone_id.as_str(),
+                        policy_version = policy_version.as_str(),
+                        changed_fields = ?changed_fields,
+                        "fleet agent observed policy update action"
+                    );
+                    if !resolved.json {
                         eprintln!(
                             "fleet agent: applying policy update version={} fields={:?}",
                             policy_version, changed_fields
                         );
                     }
+                    Ok::<(), anyhow::Error>(())
+                }
+            };
+            if let Err(err) = apply_result {
+                node_health = NodeHealth::Degraded;
+                tracing::error!(
+                    node_id = resolved.node_id.as_str(),
+                    zone_id = resolved.zone_id.as_str(),
+                    action_id = action.action_id.as_str(),
+                    error = %err,
+                    "fleet agent failed applying action"
+                );
+                if !resolved.json {
+                    eprintln!(
+                        "fleet agent: failed applying action {}: {err}",
+                        action.action_id
+                    );
                 }
             }
             last_seen_action_id = Some(action.action_id.clone());
+            last_seen_action_emitted_at = Some(action.emitted_at);
         }
 
         // Update node status (heartbeat)
         let node_status = NodeStatus {
-            zone_id: args.zone.clone(),
-            node_id: args.node_id.clone(),
+            zone_id: resolved.zone_id.clone(),
+            node_id: resolved.node_id.clone(),
             last_seen: poll_timestamp,
             quarantine_version,
-            health: NodeHealth::Healthy,
+            health: node_health,
         };
         transport
             .upsert_node_status(&node_status)
@@ -8639,16 +9049,23 @@ fn run_fleet_agent(args: &FleetAgentArgs) -> Result<()> {
         // Emit poll result
         let result = FleetAgentPollResult {
             cycle,
-            node_id: args.node_id.clone(),
-            zone_id: args.zone.clone(),
+            node_id: resolved.node_id.clone(),
+            zone_id: resolved.zone_id.clone(),
+            configured_poll_interval_secs: resolved.poll_interval_secs,
             actions_processed,
             last_action_id: last_seen_action_id.clone(),
-            node_health: "healthy".to_string(),
+            node_health: match node_status.health {
+                NodeHealth::Healthy => "healthy",
+                NodeHealth::Degraded => "degraded",
+                NodeHealth::Quarantined => "quarantined",
+                NodeHealth::Stale => "stale",
+            }
+            .to_string(),
             quarantine_version,
             poll_timestamp: poll_timestamp.to_rfc3339(),
         };
 
-        if args.json {
+        if resolved.json {
             println!("{}", serde_json::to_string(&result)?);
         } else {
             eprintln!(
@@ -8658,18 +9075,21 @@ fn run_fleet_agent(args: &FleetAgentArgs) -> Result<()> {
         }
 
         // Check max_cycles limit
-        if args.max_cycles > 0 && cycle >= args.max_cycles {
-            if !args.json {
+        if resolved
+            .max_cycles
+            .is_some_and(|max_cycles| cycle >= max_cycles)
+        {
+            if !resolved.json {
                 eprintln!(
                     "fleet agent: reached max_cycles={}, exiting",
-                    args.max_cycles
+                    resolved.max_cycles.unwrap_or_default()
                 );
             }
             break;
         }
 
         // Sleep until next poll
-        std::thread::sleep(poll_interval);
+        sleep_until_next_fleet_poll(poll_interval, shutdown_requested.as_ref());
     }
 
     Ok(())
@@ -10465,6 +10885,7 @@ fn main() -> Result<()> {
                 config,
                 runtime,
                 engine_bin,
+                lockstep_preflight,
             } = args;
 
             let profile_override = parse_profile_override(Some(&policy))?;
@@ -10486,6 +10907,46 @@ fn main() -> Result<()> {
             if preflight.verdict.is_blocked() {
                 return Err(run_preflight_block_error(&preflight).into());
             }
+
+            // Optional lockstep pre-flight check (bd-3p0qh)
+            let lockstep_verdict = if lockstep_preflight {
+                eprintln!("Running lockstep pre-flight check across runtimes...");
+                let harness = runtime::lockstep_harness::LockstepHarness::new(vec![
+                    "node".to_string(),
+                    "bun".to_string(),
+                ]);
+                match harness.verify_lockstep(&app_path, false) {
+                    Ok(()) => {
+                        eprintln!("Lockstep pre-flight: PASSED");
+                        Some(serde_json::json!({
+                            "status": "passed",
+                            "runtimes": ["node", "bun"]
+                        }))
+                    }
+                    Err(e) => {
+                        let error_msg = e.to_string();
+                        eprintln!("Lockstep pre-flight: DIVERGENCE DETECTED - {}", error_msg);
+                        if resolved.config.migration.require_lockstep_validation {
+                            return Err(ActionableError::new(
+                                format!(
+                                    "run blocked by lockstep pre-flight divergence: {}",
+                                    error_msg
+                                ),
+                                "franken-node verify lockstep . --emit-fixtures",
+                            )
+                            .into());
+                        }
+                        Some(serde_json::json!({
+                            "status": "diverged",
+                            "error": error_msg,
+                            "runtimes": ["node", "bun"],
+                            "blocked": false
+                        }))
+                    }
+                }
+            } else {
+                None
+            };
 
             let requested_runtime = parse_runtime_override(runtime.as_deref())?
                 .unwrap_or(resolved.config.runtime.preferred);
@@ -10509,6 +10970,7 @@ fn main() -> Result<()> {
                 &dispatch,
                 ssrf_violations,
                 auto_quarantined_extensions,
+                lockstep_verdict,
             )?;
             let receipt_path = persist_run_execution_receipt(
                 &project_root,
@@ -11439,6 +11901,7 @@ mod run_trust_gate_tests {
             &dispatch,
             ssrf_violations.clone(),
             Vec::new(),
+            None,
         )
         .expect("first receipt");
         let second = build_run_execution_receipt(
@@ -11449,6 +11912,7 @@ mod run_trust_gate_tests {
             &dispatch,
             ssrf_violations,
             Vec::new(),
+            None,
         )
         .expect("second receipt");
 
@@ -11499,6 +11963,7 @@ mod run_trust_gate_tests {
             ),
             Vec::new(),
             Vec::new(),
+            None,
         )
         .expect("receipt one");
         let receipt_two = build_run_execution_receipt(
@@ -11514,6 +11979,7 @@ mod run_trust_gate_tests {
             ),
             Vec::new(),
             Vec::new(),
+            None,
         )
         .expect("receipt two");
         let receipt_three = build_run_execution_receipt(
@@ -11529,6 +11995,7 @@ mod run_trust_gate_tests {
             ),
             Vec::new(),
             Vec::new(),
+            None,
         )
         .expect("receipt three");
 

@@ -1,10 +1,14 @@
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::{Child, Command, Output};
+use std::time::{Duration, Instant};
 
 use chrono::{TimeDelta, Utc};
 use frankenengine_node::control_plane::fleet_transport::{
     FileFleetTransport, FleetAction, FleetActionRecord, FleetTargetKind, FleetTransport,
     NodeHealth, NodeStatus,
+};
+use frankenengine_node::supply_chain::trust_card::{
+    ReputationTrend, RiskAssessment, RiskLevel, TrustCardMutation, TrustCardRegistry,
 };
 use tempfile::tempdir;
 
@@ -29,6 +33,14 @@ fn run_cli(args: &[&str]) -> Output {
 }
 
 fn run_cli_with_fleet_state(args: &[&str], fleet_state_dir: &std::path::Path) -> Output {
+    run_cli_in_dir_with_fleet_state(&repo_root(), args, fleet_state_dir)
+}
+
+fn run_cli_in_dir_with_fleet_state(
+    current_dir: &std::path::Path,
+    args: &[&str],
+    fleet_state_dir: &std::path::Path,
+) -> Output {
     let binary_path = resolve_binary_path();
     assert!(
         binary_path.is_file(),
@@ -36,17 +48,45 @@ fn run_cli_with_fleet_state(args: &[&str], fleet_state_dir: &std::path::Path) ->
         binary_path.display()
     );
     Command::new(&binary_path)
-        .current_dir(repo_root())
+        .current_dir(current_dir)
         .args(args)
         .env("FRANKEN_NODE_FLEET_STATE_DIR", fleet_state_dir)
         .output()
         .unwrap_or_else(|err| panic!("failed running `{}`: {err}", args.join(" ")))
 }
 
+fn spawn_cli_in_dir_with_fleet_state(
+    current_dir: &std::path::Path,
+    args: &[&str],
+    fleet_state_dir: &std::path::Path,
+) -> Child {
+    let binary_path = resolve_binary_path();
+    assert!(
+        binary_path.is_file(),
+        "franken-node binary not found at {}",
+        binary_path.display()
+    );
+    Command::new(&binary_path)
+        .current_dir(current_dir)
+        .args(args)
+        .env("FRANKEN_NODE_FLEET_STATE_DIR", fleet_state_dir)
+        .spawn()
+        .unwrap_or_else(|err| panic!("failed spawning `{}`: {err}", args.join(" ")))
+}
+
 fn seed_transport(fleet_state_dir: &std::path::Path) -> FileFleetTransport {
     let mut transport = FileFleetTransport::new(fleet_state_dir);
     transport.initialize().expect("initialize fleet transport");
     transport
+}
+
+fn write_fixture_registry_to(root: &std::path::Path) {
+    let registry = frankenengine_node::supply_chain::trust_card::fixture_registry(1_000)
+        .expect("fixture registry");
+    let registry_path = root.join(".franken-node/state/trust-card-registry.v1.json");
+    registry
+        .persist_authoritative_state(&registry_path)
+        .expect("persist trust registry");
 }
 
 #[test]
@@ -393,6 +433,501 @@ fn fleet_agent_processes_quarantine_actions_and_updates_heartbeat() {
     assert_eq!(agent_node.zone_id, "zone-agent");
     assert_eq!(agent_node.quarantine_version, 10);
     assert_eq!(agent_node.health, NodeHealth::Healthy);
+}
+
+#[test]
+fn fleet_agent_once_processes_pending_actions_and_exits() {
+    let fleet_state = tempdir().expect("tempdir");
+    let fleet_state_dir = fleet_state.path().join("fleet-state");
+    seed_transport(&fleet_state_dir);
+
+    let output = run_cli_with_fleet_state(
+        &[
+            "fleet",
+            "agent",
+            "--node-id",
+            "agent-node-once",
+            "--zone",
+            "zone-1",
+            "--once",
+            "--json",
+        ],
+        &fleet_state_dir,
+    );
+    assert!(
+        output.status.success(),
+        "fleet agent --once failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 1, "expected exactly one poll result");
+    let poll: serde_json::Value = serde_json::from_str(lines[0]).expect("poll result");
+    assert_eq!(poll["cycle"], 1);
+    assert_eq!(poll["node_id"], "agent-node-once");
+}
+
+#[test]
+fn fleet_agent_applies_quarantine_actions_to_local_registry() {
+    let project = tempdir().expect("tempdir");
+    let fleet_state_dir = project.path().join("fleet-state");
+    let mut transport = seed_transport(&fleet_state_dir);
+    std::fs::write(
+        project.path().join("franken_node.toml"),
+        "profile = \"balanced\"\n",
+    )
+    .expect("write config");
+    std::fs::create_dir_all(project.path().join(".franken-node/state")).expect("state dir");
+    write_fixture_registry_to(project.path());
+
+    transport
+        .publish_action(&FleetActionRecord {
+            action_id: "fleet-op-quarantine-local".to_string(),
+            emitted_at: Utc::now(),
+            action: FleetAction::Quarantine {
+                zone_id: "zone-local".to_string(),
+                incident_id: "inc-local-1".to_string(),
+                target_id: "npm:@acme/auth-guard".to_string(),
+                target_kind: FleetTargetKind::Extension,
+                reason: "local quarantine".to_string(),
+                quarantine_version: 7,
+            },
+        })
+        .expect("publish quarantine");
+
+    let output = run_cli_in_dir_with_fleet_state(
+        project.path(),
+        &[
+            "fleet",
+            "agent",
+            "--node-id",
+            "agent-local-1",
+            "--zone",
+            "zone-local",
+            "--once",
+            "--json",
+        ],
+        &fleet_state_dir,
+    );
+    assert!(
+        output.status.success(),
+        "fleet agent failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let registry_path = project
+        .path()
+        .join(".franken-node/state/trust-card-registry.v1.json");
+    let mut registry =
+        TrustCardRegistry::load_authoritative_state(&registry_path, 60, 2_000).expect("load");
+    let card = registry
+        .read(
+            "npm:@acme/auth-guard",
+            2_000,
+            "trace-test-fleet-agent-quarantine",
+        )
+        .expect("read")
+        .expect("trust card");
+    assert!(card.active_quarantine, "card should be quarantined");
+}
+
+#[test]
+fn fleet_agent_release_actions_clear_local_quarantine_state() {
+    let project = tempdir().expect("tempdir");
+    let fleet_state_dir = project.path().join("fleet-state");
+    let mut transport = seed_transport(&fleet_state_dir);
+    std::fs::write(
+        project.path().join("franken_node.toml"),
+        "profile = \"balanced\"\n",
+    )
+    .expect("write config");
+    std::fs::create_dir_all(project.path().join(".franken-node/state")).expect("state dir");
+    write_fixture_registry_to(project.path());
+
+    let registry_path = project
+        .path()
+        .join(".franken-node/state/trust-card-registry.v1.json");
+    let mut registry =
+        TrustCardRegistry::load_authoritative_state(&registry_path, 60, 2_000).expect("load");
+    registry
+        .update(
+            "npm:@acme/auth-guard",
+            TrustCardMutation {
+                certification_level: None,
+                revocation_status: None,
+                active_quarantine: Some(true),
+                reputation_score_basis_points: None,
+                reputation_trend: Some(ReputationTrend::Declining),
+                user_facing_risk_assessment: Some(RiskAssessment {
+                    level: RiskLevel::High,
+                    summary: "quarantined before fleet release".to_string(),
+                }),
+                last_verified_timestamp: Some("2026-04-10T00:00:00Z".to_string()),
+                evidence_refs: None,
+            },
+            2_001,
+            "trace-test-fleet-pre-release",
+        )
+        .expect("quarantine card");
+    registry
+        .persist_authoritative_state(&registry_path)
+        .expect("persist registry");
+
+    let emitted_at = Utc::now();
+    transport
+        .publish_action(&FleetActionRecord {
+            action_id: "fleet-op-quarantine-release-source".to_string(),
+            emitted_at,
+            action: FleetAction::Quarantine {
+                zone_id: "zone-release".to_string(),
+                incident_id: "inc-release-1".to_string(),
+                target_id: "npm:@acme/auth-guard".to_string(),
+                target_kind: FleetTargetKind::Extension,
+                reason: "source quarantine".to_string(),
+                quarantine_version: 11,
+            },
+        })
+        .expect("publish quarantine");
+    transport
+        .publish_action(&FleetActionRecord {
+            action_id: "fleet-op-release-local".to_string(),
+            emitted_at,
+            action: FleetAction::Release {
+                zone_id: "zone-release".to_string(),
+                incident_id: "inc-release-1".to_string(),
+                reason: Some("operator cleared incident".to_string()),
+            },
+        })
+        .expect("publish release");
+
+    let output = run_cli_in_dir_with_fleet_state(
+        project.path(),
+        &[
+            "fleet",
+            "agent",
+            "--node-id",
+            "agent-release-1",
+            "--zone",
+            "zone-release",
+            "--once",
+            "--json",
+        ],
+        &fleet_state_dir,
+    );
+    assert!(
+        output.status.success(),
+        "fleet agent failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let mut registry =
+        TrustCardRegistry::load_authoritative_state(&registry_path, 60, 2_100).expect("reload");
+    let card = registry
+        .read(
+            "npm:@acme/auth-guard",
+            2_100,
+            "trace-test-fleet-agent-release",
+        )
+        .expect("read")
+        .expect("trust card");
+    assert!(
+        !card.active_quarantine,
+        "release action should clear quarantine"
+    );
+}
+
+#[test]
+fn fleet_agent_release_actions_clear_local_quarantine_state_across_poll_cycles() {
+    let project = tempdir().expect("tempdir");
+    let fleet_state_dir = project.path().join("fleet-state");
+    let mut transport = seed_transport(&fleet_state_dir);
+    std::fs::write(
+        project.path().join("franken_node.toml"),
+        "profile = \"balanced\"\n",
+    )
+    .expect("write config");
+    std::fs::create_dir_all(project.path().join(".franken-node/state")).expect("state dir");
+    write_fixture_registry_to(project.path());
+
+    transport
+        .publish_action(&FleetActionRecord {
+            action_id: "fleet-op-quarantine-cross-cycle".to_string(),
+            emitted_at: Utc::now(),
+            action: FleetAction::Quarantine {
+                zone_id: "zone-release-cross-cycle".to_string(),
+                incident_id: "inc-release-cross-cycle".to_string(),
+                target_id: "npm:@acme/auth-guard".to_string(),
+                target_kind: FleetTargetKind::Extension,
+                reason: "cross-cycle source quarantine".to_string(),
+                quarantine_version: 12,
+            },
+        })
+        .expect("publish quarantine");
+
+    let project_root = project.path().to_path_buf();
+    let release_fleet_state_dir = fleet_state_dir.clone();
+    let release_publisher = std::thread::spawn(move || {
+        let registry_path = project_root.join(".franken-node/state/trust-card-registry.v1.json");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let mut registry =
+                TrustCardRegistry::load_authoritative_state(&registry_path, 60, 3_000)
+                    .expect("load registry");
+            let card = registry
+                .read(
+                    "npm:@acme/auth-guard",
+                    3_000,
+                    "trace-test-fleet-agent-release-cross-cycle",
+                )
+                .expect("read")
+                .expect("trust card");
+            if card.active_quarantine {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "fleet agent never applied quarantine before release publish"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        let mut release_transport = FileFleetTransport::new(&release_fleet_state_dir);
+        release_transport
+            .initialize()
+            .expect("initialize release transport");
+        release_transport
+            .publish_action(&FleetActionRecord {
+                action_id: "fleet-op-release-cross-cycle".to_string(),
+                emitted_at: Utc::now(),
+                action: FleetAction::Release {
+                    zone_id: "zone-release-cross-cycle".to_string(),
+                    incident_id: "inc-release-cross-cycle".to_string(),
+                    reason: Some("operator cleared incident after first poll".to_string()),
+                },
+            })
+            .expect("publish release");
+    });
+
+    let output = run_cli_in_dir_with_fleet_state(
+        project.path(),
+        &[
+            "fleet",
+            "agent",
+            "--node-id",
+            "agent-release-cross-cycle",
+            "--zone",
+            "zone-release-cross-cycle",
+            "--poll-interval-secs",
+            "1",
+            "--max-cycles",
+            "2",
+            "--json",
+        ],
+        &fleet_state_dir,
+    );
+    release_publisher
+        .join()
+        .expect("cross-cycle release publisher should succeed");
+    assert!(
+        output.status.success(),
+        "fleet agent failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let registry_path = project
+        .path()
+        .join(".franken-node/state/trust-card-registry.v1.json");
+    let mut registry =
+        TrustCardRegistry::load_authoritative_state(&registry_path, 60, 3_100).expect("reload");
+    let card = registry
+        .read(
+            "npm:@acme/auth-guard",
+            3_100,
+            "trace-test-fleet-agent-release-cross-cycle-final",
+        )
+        .expect("read")
+        .expect("trust card");
+    assert!(
+        !card.active_quarantine,
+        "release from a later poll cycle should clear quarantine"
+    );
+}
+
+#[test]
+fn fleet_agent_processes_later_actions_with_lower_lexicographic_ids() {
+    let fleet_state = tempdir().expect("tempdir");
+    let fleet_state_dir = fleet_state.path().join("fleet-state");
+    let mut transport = seed_transport(&fleet_state_dir);
+    transport
+        .publish_action(&FleetActionRecord {
+            action_id: "fleet-op-zz-first".to_string(),
+            emitted_at: Utc::now(),
+            action: FleetAction::PolicyUpdate {
+                zone_id: "zone-ordering".to_string(),
+                policy_version: "policy-v1".to_string(),
+                changed_fields: vec!["risk_threshold".to_string()],
+            },
+        })
+        .expect("publish first policy update");
+
+    let publisher_state_dir = fleet_state_dir.clone();
+    let publisher = std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let mut transport = FileFleetTransport::new(&publisher_state_dir);
+            transport
+                .initialize()
+                .expect("initialize ordering transport");
+            let nodes = transport.list_node_statuses().expect("list node statuses");
+            if nodes
+                .iter()
+                .any(|node| node.zone_id == "zone-ordering" && node.node_id == "agent-ordering-1")
+            {
+                transport
+                    .publish_action(&FleetActionRecord {
+                        action_id: "fleet-op-aa-second".to_string(),
+                        emitted_at: Utc::now(),
+                        action: FleetAction::PolicyUpdate {
+                            zone_id: "zone-ordering".to_string(),
+                            policy_version: "policy-v2".to_string(),
+                            changed_fields: vec!["policy_mode".to_string()],
+                        },
+                    })
+                    .expect("publish second policy update");
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "fleet agent never completed first poll before second publish"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    });
+
+    let output = run_cli_with_fleet_state(
+        &[
+            "fleet",
+            "agent",
+            "--node-id",
+            "agent-ordering-1",
+            "--zone",
+            "zone-ordering",
+            "--poll-interval-secs",
+            "1",
+            "--max-cycles",
+            "2",
+            "--json",
+        ],
+        &fleet_state_dir,
+    );
+    publisher
+        .join()
+        .expect("ordering publisher thread should succeed");
+    assert!(
+        output.status.success(),
+        "fleet agent failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 2, "expected two poll cycles");
+
+    let first: serde_json::Value = serde_json::from_str(lines[0]).expect("first poll result");
+    assert_eq!(first["actions_processed"], 1);
+    assert_eq!(first["last_action_id"], "fleet-op-zz-first");
+
+    let second: serde_json::Value = serde_json::from_str(lines[1]).expect("second poll result");
+    assert_eq!(second["actions_processed"], 1);
+    assert_eq!(second["last_action_id"], "fleet-op-aa-second");
+    assert_eq!(second["node_health"], "healthy");
+}
+
+#[test]
+fn fleet_agent_uses_config_defaults_for_node_id_and_poll_interval() {
+    let project = tempdir().expect("tempdir");
+    let fleet_state_dir = project.path().join("fleet-state");
+    seed_transport(&fleet_state_dir);
+    std::fs::write(
+        project.path().join("franken_node.toml"),
+        "profile = \"balanced\"\n\n[fleet]\nnode_id = \"config-node-1\"\npoll_interval_seconds = 9\n",
+    )
+    .expect("write config");
+
+    let output = run_cli_in_dir_with_fleet_state(
+        project.path(),
+        &[
+            "fleet",
+            "agent",
+            "--zone",
+            "zone-config",
+            "--once",
+            "--json",
+        ],
+        &fleet_state_dir,
+    );
+    assert!(
+        output.status.success(),
+        "fleet agent failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let poll: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("fleet agent json output");
+    assert_eq!(poll["node_id"], "config-node-1");
+    assert_eq!(poll["configured_poll_interval_secs"], 9);
+}
+
+#[cfg(unix)]
+#[test]
+fn fleet_agent_handles_sigterm_gracefully() {
+    let project = tempdir().expect("tempdir");
+    let fleet_state_dir = project.path().join("fleet-state");
+    seed_transport(&fleet_state_dir);
+    std::fs::write(
+        project.path().join("franken_node.toml"),
+        "profile = \"balanced\"\n",
+    )
+    .expect("write config");
+
+    let child = spawn_cli_in_dir_with_fleet_state(
+        project.path(),
+        &[
+            "fleet",
+            "agent",
+            "--node-id",
+            "agent-signal-1",
+            "--zone",
+            "zone-signal",
+            "--poll-interval-secs",
+            "30",
+        ],
+        &fleet_state_dir,
+    );
+    std::thread::sleep(Duration::from_millis(250));
+    let signal_status = Command::new("kill")
+        .args(["-TERM", &child.id().to_string()])
+        .status()
+        .expect("send sigterm");
+    assert!(signal_status.success(), "kill -TERM should succeed");
+
+    let started = Instant::now();
+    let output = child.wait_with_output().expect("wait for child");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "agent should exit quickly after SIGTERM"
+    );
+    assert!(
+        output.status.success(),
+        "fleet agent should exit successfully after SIGTERM: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("shutdown requested"),
+        "expected graceful shutdown log, got: {stderr}"
+    );
 }
 
 #[test]

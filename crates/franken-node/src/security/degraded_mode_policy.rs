@@ -699,6 +699,7 @@ mod tests {
             max_degraded_duration_secs: 42,
             authorized_api_keys,
             decision_receipt_signing_key_path: None,
+            network_policy: crate::config::NetworkPolicyConfig::default(),
         };
         let policy = DegradedModePolicy::with_security_defaults("trust-input-stale", &config);
         assert_eq!(policy.max_degraded_duration_secs, 42);
