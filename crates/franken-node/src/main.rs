@@ -960,7 +960,17 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
             normalized = remainder;
         }
         let mut stripped_encoding = false;
-        for prefix in ["base64:", "b64:", "base64url:", "b64url:", "hex:"] {
+        for prefix in [
+            "base64:",
+            "b64:",
+            "base64url:",
+            "b64url:",
+            "base64-url:",
+            "b64-url:",
+            "base64_url:",
+            "b64_url:",
+            "hex:",
+        ] {
             if let Some(remainder) = strip_prefix_ignore_ascii_case(normalized, prefix) {
                 normalized = remainder;
                 stripped_encoding = true;
@@ -1193,6 +1203,87 @@ mod signing_key_parsing_tests {
         let bytes = [74_u8; 32];
         let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
         let candidate = format!("b64url:{encoded}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_base64_dash_url_prefix() {
+        let bytes = [77_u8; 32];
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("base64-url:{encoded}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_base64_underscore_url_prefix() {
+        let bytes = [76_u8; 32];
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("base64_url:{encoded}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_b64_underscore_url_prefix() {
+        let bytes = [78_u8; 32];
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("b64_url:{encoded}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_base64_dash_url_prefix_chain() {
+        let bytes = [79_u8; 32];
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("base64-url:ed25519:{encoded}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_base64_underscore_url_prefix_chain() {
+        let bytes = [80_u8; 32];
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("base64_url:ed25519:{encoded}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_b64_dash_url_prefix_chain() {
+        let bytes = [81_u8; 32];
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("b64-url:ed25519:{encoded}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_base64url_prefix_chain() {
+        let bytes = [83_u8; 32];
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("base64url:ed25519:{encoded}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_b64url_prefix_chain() {
+        let bytes = [84_u8; 32];
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("b64url:ed25519:{encoded}");
+        let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_b64_underscore_url_prefix_chain() {
+        let bytes = [82_u8; 32];
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("b64_url:ed25519:{encoded}");
         let parsed = parse_signing_key_from_blob(candidate.as_bytes()).expect("parsed base64");
         assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
     }
@@ -1474,10 +1565,28 @@ mod signing_key_parsing_tests {
     }
 
     #[test]
+    fn parse_signing_key_accepts_json_base64url_camel_lower_field() {
+        let bytes = [233_u8; 32];
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"base64url":"{encoded}"}}"#);
+        let parsed = parse_signing_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
     fn parse_signing_key_accepts_json_b64url_camel_field() {
         let bytes = [226_u8; 32];
         let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
         let payload = format!(r#"{{"b64Url":"{encoded}"}}"#);
+        let parsed = parse_signing_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
+    }
+
+    #[test]
+    fn parse_signing_key_accepts_json_b64url_camel_lower_field() {
+        let bytes = [234_u8; 32];
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"b64url":"{encoded}"}}"#);
         let parsed = parse_signing_key_from_blob(payload.as_bytes()).expect("parsed json");
         assert_eq!(key_id_for(&parsed), key_id_from_bytes(&bytes));
     }
@@ -1769,6 +1878,69 @@ mod verifying_key_parsing_tests {
     }
 
     #[test]
+    fn parse_verifying_key_accepts_base64_underscore_url_prefix() {
+        let bytes = verifying_key_bytes([111_u8; 32]);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("base64_url:{encoded}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_base64_dash_url_prefix() {
+        let bytes = verifying_key_bytes([119_u8; 32]);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("base64-url:{encoded}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_base64_underscore_url_prefix_chain() {
+        let bytes = verifying_key_bytes([153_u8; 32]);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("ed25519:base64_url:{encoded}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_b64_underscore_url_prefix() {
+        let bytes = verifying_key_bytes([120_u8; 32]);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("b64_url:{encoded}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_base64_dash_url_prefix_chain() {
+        let bytes = verifying_key_bytes([122_u8; 32]);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("ed25519:base64-url:{encoded}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_b64_underscore_url_prefix_chain() {
+        let bytes = verifying_key_bytes([123_u8; 32]);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("ed25519:b64_url:{encoded}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_b64_dash_url_prefix_chain() {
+        let bytes = verifying_key_bytes([126_u8; 32]);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("ed25519:b64-url:{encoded}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
     fn parse_verifying_key_accepts_base64_prefix_chain() {
         let bytes = verifying_key_bytes([105_u8; 32]);
         let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
@@ -1782,6 +1954,15 @@ mod verifying_key_parsing_tests {
         let bytes = verifying_key_bytes([116_u8; 32]);
         let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
         let candidate = format!("ed25519:base64url:{encoded}");
+        let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed base64");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_b64url_prefix_chain() {
+        let bytes = verifying_key_bytes([154_u8; 32]);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("ed25519:b64url:{encoded}");
         let parsed = parse_verifying_key_from_blob(candidate.as_bytes()).expect("parsed base64");
         assert_eq!(parsed.to_bytes(), bytes);
     }
@@ -1805,6 +1986,42 @@ mod verifying_key_parsing_tests {
     }
 
     #[test]
+    fn parse_verifying_key_accepts_json_snakecase_verifying_key() {
+        let bytes = verifying_key_bytes([155_u8; 32]);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"verifying_key":"ed25519:{encoded}"}}"#);
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_json_kebabcase_verifying_key() {
+        let bytes = verifying_key_bytes([158_u8; 32]);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"verifying-key":"ed25519:{encoded}"}}"#);
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_json_snakecase_public_key() {
+        let bytes = verifying_key_bytes([156_u8; 32]);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"public_key":"ed25519:{encoded}"}}"#);
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_json_key_field() {
+        let bytes = verifying_key_bytes([157_u8; 32]);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"key":"ed25519:{encoded}"}}"#);
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
     fn parse_verifying_key_accepts_json_kebabcase_key() {
         let bytes = verifying_key_bytes([124_u8; 32]);
         let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
@@ -1823,6 +2040,33 @@ mod verifying_key_parsing_tests {
     }
 
     #[test]
+    fn parse_verifying_key_accepts_json_ed25519_public_key_snake() {
+        let bytes = verifying_key_bytes([149_u8; 32]);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"ed25519_public_key":"ed25519:{encoded}"}}"#);
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_json_ed25519_public_key_kebab() {
+        let bytes = verifying_key_bytes([150_u8; 32]);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"ed25519-public-key":"ed25519:{encoded}"}}"#);
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_json_ed25519_public_key_camel() {
+        let bytes = verifying_key_bytes([151_u8; 32]);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"ed25519PublicKey":"ed25519:{encoded}"}}"#);
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
     fn parse_verifying_key_accepts_json_nested_hex_key() {
         let bytes = verifying_key_bytes([130_u8; 32]);
         let encoded = bytes
@@ -1830,6 +2074,14 @@ mod verifying_key_parsing_tests {
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
         let payload = format!(r#"{{"publicKey":{{"hex":"{encoded}"}}}}"#);
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+    #[test]
+    fn parse_verifying_key_accepts_json_key_nested_base64() {
+        let bytes = verifying_key_bytes([159_u8; 32]);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"key":{{"base64":"{encoded}"}}}}"#);
         let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json");
         assert_eq!(parsed.to_bytes(), bytes);
     }
@@ -2001,6 +2253,15 @@ mod verifying_key_parsing_tests {
         let bytes = verifying_key_bytes([139_u8; 32]);
         let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
         let payload = format!(r#"{{"base64url":"{encoded}"}}"#);
+        let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json");
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn parse_verifying_key_accepts_json_b64url_field() {
+        let bytes = verifying_key_bytes([152_u8; 32]);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"b64url":"{encoded}"}}"#);
         let parsed = parse_verifying_key_from_blob(payload.as_bytes()).expect("parsed json");
         assert_eq!(parsed.to_bytes(), bytes);
     }
@@ -2252,6 +2513,87 @@ mod signature_blob_tests {
     }
 
     #[test]
+    fn decode_signature_blob_accepts_base64_underscore_url_prefix() {
+        let bytes = signature_bytes(39);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("base64_url:{encoded}");
+        let decoded = decode_signature_blob(candidate.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_base64_dash_url_prefix() {
+        let bytes = signature_bytes(34);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("base64-url:{encoded}");
+        let decoded = decode_signature_blob(candidate.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_b64_underscore_url_prefix() {
+        let bytes = signature_bytes(36);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("b64_url:{encoded}");
+        let decoded = decode_signature_blob(candidate.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_base64_dash_url_prefix_chain() {
+        let bytes = signature_bytes(37);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("base64-url:ed25519:{encoded}");
+        let decoded = decode_signature_blob(candidate.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_base64url_prefix_chain() {
+        let bytes = signature_bytes(122);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("base64url:ed25519:{encoded}");
+        let decoded = decode_signature_blob(candidate.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_b64url_prefix_chain() {
+        let bytes = signature_bytes(123);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("b64url:ed25519:{encoded}");
+        let decoded = decode_signature_blob(candidate.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_base64_underscore_url_prefix_chain() {
+        let bytes = signature_bytes(121);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("base64_url:ed25519:{encoded}");
+        let decoded = decode_signature_blob(candidate.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_b64_underscore_url_prefix_chain() {
+        let bytes = signature_bytes(38);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("b64_url:ed25519:{encoded}");
+        let decoded = decode_signature_blob(candidate.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_b64_dash_url_prefix_chain() {
+        let bytes = signature_bytes(40);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let candidate = format!("b64-url:ed25519:{encoded}");
+        let decoded = decode_signature_blob(candidate.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
     fn decode_signature_blob_accepts_base64_with_whitespace() {
         let bytes = signature_bytes(34);
         let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
@@ -2350,6 +2692,33 @@ mod signature_blob_tests {
         let bytes = signature_bytes(38);
         let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
         let payload = format!(r#"{{"ed25519Signature":"ed25519:{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_ed25519_signature_snake_field() {
+        let bytes = signature_bytes(118);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"ed25519_signature":"ed25519:{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_ed25519_signature_kebab_field() {
+        let bytes = signature_bytes(119);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"ed25519-signature":"ed25519:{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_nested_ed25519_signature_field() {
+        let bytes = signature_bytes(100);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let payload = format!(r#"{{"value":{{"ed25519_signature":"ed25519:{encoded}"}}}}"#);
         let decoded = decode_signature_blob(payload.as_bytes());
         assert_eq!(decoded, bytes);
     }
@@ -2631,10 +3000,28 @@ mod signature_blob_tests {
     }
 
     #[test]
+    fn decode_signature_blob_accepts_json_object_base64url_upper_field() {
+        let bytes = signature_bytes(98);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"base64URL":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
     fn decode_signature_blob_accepts_json_object_b64url_camel_field() {
         let bytes = signature_bytes(84);
         let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
         let payload = format!(r#"{{"b64Url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_b64url_upper_field() {
+        let bytes = signature_bytes(99);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"b64URL":"{encoded}"}}"#);
         let decoded = decode_signature_blob(payload.as_bytes());
         assert_eq!(decoded, bytes);
     }
@@ -2676,6 +3063,69 @@ mod signature_blob_tests {
     }
 
     #[test]
+    fn decode_signature_blob_accepts_json_object_signature_b64url_kebab_field() {
+        let bytes = signature_bytes(109);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"signature-b64url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_signature_b64_url_kebab_field() {
+        let bytes = signature_bytes(110);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"signature-b64-url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_sig_b64url_kebab_field() {
+        let bytes = signature_bytes(111);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"sig-b64url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_sig_b64_url_kebab_field() {
+        let bytes = signature_bytes(112);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"sig-b64-url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_signature_base64url_kebab_field() {
+        let bytes = signature_bytes(113);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"signature-base64url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_signature_base64_url_kebab_field() {
+        let bytes = signature_bytes(114);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"signature-base64-url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_sig_base64url_kebab_field() {
+        let bytes = signature_bytes(115);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"sig-base64url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
     fn decode_signature_blob_accepts_json_object_signature_base64url_camel_field() {
         let bytes = signature_bytes(87);
         let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
@@ -2685,10 +3135,37 @@ mod signature_blob_tests {
     }
 
     #[test]
+    fn decode_signature_blob_accepts_json_object_signature_base64url_camel_lower_field() {
+        let bytes = signature_bytes(105);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"signatureBase64url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
     fn decode_signature_blob_accepts_json_object_signature_b64url_camel_field() {
         let bytes = signature_bytes(93);
         let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
         let payload = format!(r#"{{"signatureB64Url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_signature_b64url_camel_lower_field() {
+        let bytes = signature_bytes(106);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"signatureB64url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_signature_b64url_upper_field() {
+        let bytes = signature_bytes(97);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"signatureB64URL":"{encoded}"}}"#);
         let decoded = decode_signature_blob(payload.as_bytes());
         assert_eq!(decoded, bytes);
     }
@@ -2712,10 +3189,37 @@ mod signature_blob_tests {
     }
 
     #[test]
+    fn decode_signature_blob_accepts_json_object_sig_base64url_camel_field() {
+        let bytes = signature_bytes(124);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"sigBase64Url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_sig_base64url_camel_lower_field() {
+        let bytes = signature_bytes(107);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"sigBase64url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
     fn decode_signature_blob_accepts_json_object_sig_b64url_upper_field() {
         let bytes = signature_bytes(92);
         let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
         let payload = format!(r#"{{"sigB64URL":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_sig_b64url_camel_lower_field() {
+        let bytes = signature_bytes(108);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"sigB64url":"{encoded}"}}"#);
         let decoded = decode_signature_blob(payload.as_bytes());
         assert_eq!(decoded, bytes);
     }
@@ -2730,10 +3234,109 @@ mod signature_blob_tests {
     }
 
     #[test]
+    fn decode_signature_blob_accepts_json_object_signature_base64url_lower_snake_field() {
+        let bytes = signature_bytes(116);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"signature_base64url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_signature_b64_url_field() {
+        let bytes = signature_bytes(98);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"signature_b64_url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_signature_b64url_lower_field() {
+        let bytes = signature_bytes(103);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"signature_b64url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_signature_base64url_upper_snake_field() {
+        let bytes = signature_bytes(95);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"signature_base64URL":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_signature_b64url_upper_snake_field() {
+        let bytes = signature_bytes(101);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"signature_b64URL":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
     fn decode_signature_blob_accepts_json_object_sig_b64url_camel_field() {
         let bytes = signature_bytes(88);
         let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
         let payload = format!(r#"{{"sigB64Url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_sig_b64url_upper_snake_field() {
+        let bytes = signature_bytes(102);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"sig_b64URL":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_sig_b64url_lower_field() {
+        let bytes = signature_bytes(104);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"sig_b64url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_sig_base64url_upper_snake_field() {
+        let bytes = signature_bytes(96);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"sig_base64URL":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_sig_base64url_lower_snake_field() {
+        let bytes = signature_bytes(117);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"sig_base64url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_sig_b64_url_field() {
+        let bytes = signature_bytes(99);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"sig_b64_url":"{encoded}"}}"#);
+        let decoded = decode_signature_blob(payload.as_bytes());
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn decode_signature_blob_accepts_json_object_sig_base64_url_field() {
+        let bytes = signature_bytes(120);
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let payload = format!(r#"{{"sig_base64_url":"{encoded}"}}"#);
         let decoded = decode_signature_blob(payload.as_bytes());
         assert_eq!(decoded, bytes);
     }
@@ -11786,6 +12389,10 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
                 "signature-b64",
                 "signature_base64url",
                 "signature_base64_url",
+                "signature_b64url",
+                "signature_b64_url",
+                "signature_b64URL",
+                "signature_base64URL",
                 "signature-base64url",
                 "signature-base64-url",
                 "signatureBase64url",
@@ -11803,6 +12410,10 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
                 "sig-b64",
                 "sig_base64url",
                 "sig_base64_url",
+                "sig_b64url",
+                "sig_b64_url",
+                "sig_b64URL",
+                "sig_base64URL",
                 "sig-base64url",
                 "sig-base64-url",
                 "sigBase64url",
@@ -11813,6 +12424,9 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
                 "sigB64URL",
                 "sig-b64url",
                 "sig-b64-url",
+                "ed25519_signature",
+                "ed25519-signature",
+                "ed25519Signature",
                 "signature",
                 "sig",
             ] {
@@ -12127,7 +12741,17 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
             normalized = remainder;
         }
         let mut stripped_encoding = false;
-        for prefix in ["base64:", "b64:", "base64url:", "b64url:", "hex:"] {
+        for prefix in [
+            "base64:",
+            "b64:",
+            "base64url:",
+            "b64url:",
+            "base64-url:",
+            "b64-url:",
+            "base64_url:",
+            "b64_url:",
+            "hex:",
+        ] {
             if let Some(remainder) = strip_prefix_ignore_ascii_case(normalized, prefix) {
                 normalized = remainder;
                 stripped_encoding = true;
@@ -12335,6 +12959,10 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
                 "b64",
                 "base64url",
                 "b64url",
+                "base64Url",
+                "b64Url",
+                "base64URL",
+                "b64URL",
                 "base64-url",
                 "b64-url",
                 "base64_url",
@@ -12624,7 +13252,17 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
             normalized = remainder;
         }
         let mut stripped_encoding = false;
-        for prefix in ["base64:", "b64:", "base64url:", "b64url:", "hex:"] {
+        for prefix in [
+            "base64:",
+            "b64:",
+            "base64url:",
+            "b64url:",
+            "base64-url:",
+            "b64-url:",
+            "base64_url:",
+            "b64_url:",
+            "hex:",
+        ] {
             if let Some(remainder) = strip_prefix_ignore_ascii_case(normalized, prefix) {
                 normalized = remainder;
                 stripped_encoding = true;

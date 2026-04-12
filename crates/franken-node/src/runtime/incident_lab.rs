@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
-#[allow(unused_imports)]
 use crate::capacity_defaults::aliases::MAX_EVENTS;
 
 /// Report schema version.
@@ -40,6 +39,14 @@ pub mod event_codes {
 pub mod error_codes {
     /// Incident trace has no events.
     pub const ERR_ILAB_TRACE_EMPTY: &str = "ERR_ILAB_TRACE_EMPTY";
+    /// Incident trace metadata is invalid.
+    pub const ERR_ILAB_TRACE_INVALID: &str = "ERR_ILAB_TRACE_INVALID";
+    /// Incident trace exceeds maximum allowed events.
+    pub const ERR_ILAB_TRACE_TOO_LARGE: &str = "ERR_ILAB_TRACE_TOO_LARGE";
+    /// Incident trace contains an invalid event payload or label.
+    pub const ERR_ILAB_EVENT_INVALID: &str = "ERR_ILAB_EVENT_INVALID";
+    /// Incident trace events are not strictly ordered by sequence.
+    pub const ERR_ILAB_TRACE_ORDER: &str = "ERR_ILAB_TRACE_ORDER";
     /// Trace integrity check failed.
     pub const ERR_ILAB_TRACE_CORRUPT: &str = "ERR_ILAB_TRACE_CORRUPT";
     /// Replay produced non-deterministic output.
@@ -264,9 +271,7 @@ impl IncidentLab {
         Self { config }
     }
 
-    /// Compute integrity hash for a trace.
-    /// INV-ILAB-TRACE-INTEGRITY: Traces are hash-verified before replay.
-    pub fn compute_trace_hash(trace: &IncidentTrace) -> String {
+    fn compute_trace_digest(trace: &IncidentTrace) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(b"incident_lab_trace_v1:");
         hasher.update((trace.events.len() as u64).to_le_bytes());
@@ -278,24 +283,120 @@ impl IncidentLab {
             hasher.update(ev.payload_hex.as_bytes());
             hasher.update(ev.timestamp_ms.to_le_bytes());
         }
-        hex::encode(hasher.finalize())
+        hasher.finalize().into()
+    }
+
+    /// Compute integrity hash for a trace.
+    /// INV-ILAB-TRACE-INTEGRITY: Traces are hash-verified before replay.
+    pub fn compute_trace_hash(trace: &IncidentTrace) -> String {
+        hex::encode(Self::compute_trace_digest(trace))
     }
 
     /// Validate an incident trace for replay.
     pub fn validate_trace(&self, trace: &IncidentTrace) -> Result<(), LabError> {
+        let trace_id = trace.trace_id.trim();
+        if trace_id.is_empty() {
+            return Err(LabError {
+                code: error_codes::ERR_ILAB_TRACE_INVALID.to_string(),
+                message: "Incident trace_id is empty".to_string(),
+            });
+        }
+        if trace.trace_id != trace_id {
+            return Err(LabError {
+                code: error_codes::ERR_ILAB_TRACE_INVALID.to_string(),
+                message: "Incident trace_id contains leading or trailing whitespace".to_string(),
+            });
+        }
+        let integrity_hash = trace.integrity_hash.trim();
+        if integrity_hash.is_empty() {
+            return Err(LabError {
+                code: error_codes::ERR_ILAB_TRACE_INVALID.to_string(),
+                message: "Incident integrity_hash is empty".to_string(),
+            });
+        }
+        if trace.integrity_hash != integrity_hash {
+            return Err(LabError {
+                code: error_codes::ERR_ILAB_TRACE_INVALID.to_string(),
+                message: "Incident integrity_hash contains leading or trailing whitespace"
+                    .to_string(),
+            });
+        }
+        let provided_hash = hex::decode(integrity_hash).map_err(|_| LabError {
+            code: error_codes::ERR_ILAB_TRACE_INVALID.to_string(),
+            message: "Incident integrity_hash is not valid hex".to_string(),
+        })?;
+        if provided_hash.len() != 32 {
+            return Err(LabError {
+                code: error_codes::ERR_ILAB_TRACE_INVALID.to_string(),
+                message: format!(
+                    "Incident integrity_hash has invalid length: {}",
+                    provided_hash.len()
+                ),
+            });
+        }
         if trace.events.is_empty() {
             return Err(LabError {
                 code: error_codes::ERR_ILAB_TRACE_EMPTY.to_string(),
                 message: "Incident trace has no events".to_string(),
             });
         }
-        let computed = Self::compute_trace_hash(trace);
-        if !crate::security::constant_time::ct_eq(&computed, &trace.integrity_hash) {
+        if trace.events.len() > MAX_EVENTS {
+            return Err(LabError {
+                code: error_codes::ERR_ILAB_TRACE_TOO_LARGE.to_string(),
+                message: format!(
+                    "Incident trace exceeds max events: {} > {}",
+                    trace.events.len(),
+                    MAX_EVENTS
+                ),
+            });
+        }
+        let mut prev_seq: Option<u64> = None;
+        for ev in &trace.events {
+            if ev.label.trim().is_empty() {
+                return Err(LabError {
+                    code: error_codes::ERR_ILAB_EVENT_INVALID.to_string(),
+                    message: format!("Incident trace event label is empty at seq={}", ev.seq),
+                });
+            }
+            if ev.payload_hex.trim().is_empty() {
+                return Err(LabError {
+                    code: error_codes::ERR_ILAB_EVENT_INVALID.to_string(),
+                    message: format!(
+                        "Incident trace event payload_hex is empty at seq={}",
+                        ev.seq
+                    ),
+                });
+            }
+            if hex::decode(&ev.payload_hex).is_err() {
+                return Err(LabError {
+                    code: error_codes::ERR_ILAB_EVENT_INVALID.to_string(),
+                    message: format!(
+                        "Incident trace event payload_hex is invalid hex at seq={}",
+                        ev.seq
+                    ),
+                });
+            }
+            if let Some(prev) = prev_seq
+                && ev.seq <= prev
+            {
+                return Err(LabError {
+                    code: error_codes::ERR_ILAB_TRACE_ORDER.to_string(),
+                    message: format!(
+                        "Incident trace events must be strictly increasing seq: prev={}, curr={}",
+                        prev, ev.seq
+                    ),
+                });
+            }
+            prev_seq = Some(ev.seq);
+        }
+        let computed = Self::compute_trace_digest(trace);
+        if !crate::security::constant_time::ct_eq_bytes(&computed, &provided_hash) {
             return Err(LabError {
                 code: error_codes::ERR_ILAB_TRACE_CORRUPT.to_string(),
                 message: format!(
                     "Integrity hash mismatch: expected={}, computed={}",
-                    trace.integrity_hash, computed,
+                    trace.integrity_hash,
+                    hex::encode(computed),
                 ),
             });
         }
@@ -554,14 +655,33 @@ mod tests {
     #[test]
     fn test_empty_trace_rejected() {
         let lab = lab();
-        let trace = IncidentTrace {
+        let mut trace = IncidentTrace {
             trace_id: "t-empty".to_string(),
             events: vec![],
             integrity_hash: String::new(),
             metadata: BTreeMap::new(),
         };
+        trace.integrity_hash = IncidentLab::compute_trace_hash(&trace);
         let err = lab.validate_trace(&trace).expect_err("should fail");
         assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_EMPTY);
+    }
+
+    #[test]
+    fn test_trace_id_empty_rejected() {
+        let lab = lab();
+        let mut trace = make_test_trace("t-empty-id", 3);
+        trace.trace_id = "   ".to_string();
+        let err = lab.validate_trace(&trace).expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_INVALID);
+    }
+
+    #[test]
+    fn test_integrity_hash_empty_rejected() {
+        let lab = lab();
+        let mut trace = make_test_trace("t-empty-hash", 3);
+        trace.integrity_hash = "  ".to_string();
+        let err = lab.validate_trace(&trace).expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_INVALID);
     }
 
     #[test]
@@ -570,7 +690,7 @@ mod tests {
         let mut trace = make_test_trace("t-corrupt", 3);
         trace.integrity_hash = "badhash".to_string();
         let err = lab.validate_trace(&trace).expect_err("should fail");
-        assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_CORRUPT);
+        assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_INVALID);
     }
 
     #[test]
@@ -582,6 +702,54 @@ mod tests {
         trace.integrity_hash = chars.into_iter().collect();
         let err = lab.validate_trace(&trace).expect_err("should fail");
         assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_CORRUPT);
+    }
+
+    #[test]
+    fn test_trace_too_large_rejected() {
+        let lab = lab();
+        let trace = make_test_trace("t-too-large", MAX_EVENTS + 1);
+        let err = lab.validate_trace(&trace).expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_TOO_LARGE);
+    }
+
+    #[test]
+    fn test_trace_out_of_order_rejected() {
+        let lab = lab();
+        let mut trace = make_test_trace("t-order", 3);
+        trace.events.swap(0, 1);
+        trace.integrity_hash = IncidentLab::compute_trace_hash(&trace);
+        let err = lab.validate_trace(&trace).expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_ORDER);
+    }
+
+    #[test]
+    fn test_trace_duplicate_seq_rejected() {
+        let lab = lab();
+        let mut trace = make_test_trace("t-dup-seq", 3);
+        trace.events[1].seq = trace.events[0].seq;
+        trace.integrity_hash = IncidentLab::compute_trace_hash(&trace);
+        let err = lab.validate_trace(&trace).expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_ORDER);
+    }
+
+    #[test]
+    fn test_trace_empty_label_rejected() {
+        let lab = lab();
+        let mut trace = make_test_trace("t-empty-label", 2);
+        trace.events[0].label = "   ".to_string();
+        trace.integrity_hash = IncidentLab::compute_trace_hash(&trace);
+        let err = lab.validate_trace(&trace).expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_EVENT_INVALID);
+    }
+
+    #[test]
+    fn test_trace_invalid_payload_hex_rejected() {
+        let lab = lab();
+        let mut trace = make_test_trace("t-bad-hex", 2);
+        trace.events[0].payload_hex = "not-hex".to_string();
+        trace.integrity_hash = IncidentLab::compute_trace_hash(&trace);
+        let err = lab.validate_trace(&trace).expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_EVENT_INVALID);
     }
 
     #[test]
@@ -805,7 +973,7 @@ mod tests {
             make_test_scenario("t-e2e-3", "p-e2e-3", "validator-A", 0.5, 100.0, 10.0);
         scenario.trace.integrity_hash = "bad".to_string();
         let err = lab.evaluate_scenario(&scenario).expect_err("should fail");
-        assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_CORRUPT);
+        assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_INVALID);
     }
 
     // -- Schema version / constant tests --
@@ -834,6 +1002,7 @@ mod tests {
     fn test_error_codes_present() {
         let codes = [
             error_codes::ERR_ILAB_TRACE_EMPTY,
+            error_codes::ERR_ILAB_TRACE_INVALID,
             error_codes::ERR_ILAB_TRACE_CORRUPT,
             error_codes::ERR_ILAB_REPLAY_DIVERGENCE,
             error_codes::ERR_ILAB_MITIGATION_INVALID,

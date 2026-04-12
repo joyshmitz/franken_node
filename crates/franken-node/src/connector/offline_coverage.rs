@@ -174,6 +174,7 @@ use crate::capacity_defaults::aliases::MAX_EVENTS;
 pub struct OfflineCoverageTracker {
     scopes: BTreeMap<String, ScopeState>,
     all_events: Vec<CoverageEvent>,
+    total_events: usize,
 }
 
 impl OfflineCoverageTracker {
@@ -213,6 +214,7 @@ impl OfflineCoverageTracker {
         }
         scope.event_count = scope.event_count.saturating_add(1);
         push_bounded(&mut self.all_events, event, MAX_EVENTS);
+        self.total_events = self.total_events.saturating_add(1);
         Ok(())
     }
 
@@ -323,7 +325,7 @@ impl OfflineCoverageTracker {
         DashboardSnapshot {
             metrics,
             alerts: Vec::new(),
-            event_count: self.all_events.len(),
+            event_count: self.total_events,
             trace_id: trace_id.to_string(),
             timestamp: timestamp.to_string(),
         }
@@ -331,7 +333,7 @@ impl OfflineCoverageTracker {
 
     /// Total events recorded.
     pub fn event_count(&self) -> usize {
-        self.all_events.len()
+        self.total_events
     }
 
     /// Known scopes.
@@ -577,6 +579,18 @@ mod tests {
         t.record_event(ev("a2", true, 101, "staging")).unwrap();
         assert_eq!(t.event_count(), 2);
         assert_eq!(t.scope_count(), 2);
+    }
+
+    #[test]
+    fn event_count_tracks_total_events_after_eviction() {
+        let mut t = OfflineCoverageTracker::new();
+        let total = MAX_EVENTS + 3;
+        for i in 0..total {
+            t.record_event(ev("a1", true, i as u64, "prod")).unwrap();
+        }
+        assert_eq!(t.event_count(), total);
+        let snap = t.dashboard_snapshot("tr", "ts");
+        assert_eq!(snap.event_count, total);
     }
 
     #[test]
