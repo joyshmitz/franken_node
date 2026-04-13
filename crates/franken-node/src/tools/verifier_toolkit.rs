@@ -165,8 +165,10 @@ fn deterministic_timestamp(domain: &[u8], fields: &[&str], ordinal: usize) -> St
     let timestamp = Utc
         .timestamp_opt(base.saturating_add(offset as i64), 0)
         .single()
-        .expect("deterministic timestamp must be representable");
-    timestamp.to_rfc3339()
+        .or_else(|| Utc.timestamp_opt(base, 0).single())
+        .map(|ts| ts.to_rfc3339())
+        .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string());
+    timestamp
 }
 
 // ---------------------------------------------------------------------------
@@ -779,8 +781,8 @@ impl VerifierToolkit {
     ) {
         let ordinal = *audit_index;
         let ordinal_string = ordinal.to_string();
-        let details_string =
-            serde_json::to_string(&details).expect("serializing verifier toolkit audit details");
+        let details_string = serde_json::to_string(&details)
+            .unwrap_or_else(|err| format!("__vtk_details_serde_error:{err}"));
         push_bounded(
             &mut self.audit_log,
             VtkAuditRecord {

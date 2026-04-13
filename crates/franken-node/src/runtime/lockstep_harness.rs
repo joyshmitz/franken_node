@@ -117,17 +117,32 @@ impl LockstepHarness {
         let package_json_path = project_dir.join("package.json");
         let mut unresolved_main: Option<String> = None;
         if package_json_path.exists() {
-            let package_json = std::fs::read(&package_json_path).with_context(|| {
+            let root = project_dir.canonicalize().with_context(|| {
                 format!(
-                    "failed reading package manifest {}",
+                    "failed resolving lockstep project root {}",
+                    project_dir.display()
+                )
+            })?;
+            let resolved = package_json_path.canonicalize().with_context(|| {
+                format!(
+                    "failed resolving package manifest {}",
                     package_json_path.display()
                 )
+            })?;
+            if !resolved.starts_with(&root) {
+                anyhow::bail!(
+                    "package.json must reside within {} and not escape via symlinks",
+                    project_dir.display()
+                );
+            }
+            let package_json = std::fs::read(&resolved).with_context(|| {
+                format!("failed reading package manifest {}", resolved.display())
             })?;
             let manifest: serde_json::Value =
                 serde_json::from_slice(&package_json).with_context(|| {
                     format!(
                         "invalid package manifest JSON while resolving lockstep entrypoint: {}",
-                        package_json_path.display()
+                        resolved.display()
                     )
                 })?;
 
@@ -146,7 +161,7 @@ impl LockstepHarness {
 
         for candidate in Self::directory_entry_candidates(runtime) {
             let path = project_dir.join(candidate);
-            if path.is_file() {
+            if path.is_file() && Self::path_within_project(project_dir, &path) {
                 return Ok(path);
             }
         }
@@ -182,29 +197,44 @@ impl LockstepHarness {
         }
 
         let candidate = project_dir.join(normalized);
-        if candidate.is_file() {
+        if candidate.is_file() && Self::path_within_project(project_dir, &candidate) {
             return Some(candidate);
         }
 
         if candidate.extension().is_none() {
             for extension in ["js", "mjs", "cjs"] {
                 let with_extension = candidate.with_extension(extension);
-                if with_extension.is_file() {
+                if with_extension.is_file()
+                    && Self::path_within_project(project_dir, &with_extension)
+                {
                     return Some(with_extension);
                 }
             }
         }
 
         if candidate.is_dir() {
+            if !Self::path_within_project(project_dir, &candidate) {
+                return None;
+            }
             for entry in Self::DIRECTORY_ENTRY_CANDIDATES {
                 let nested = candidate.join(entry);
-                if nested.is_file() {
+                if nested.is_file() && Self::path_within_project(project_dir, &nested) {
                     return Some(nested);
                 }
             }
         }
 
         None
+    }
+
+    fn path_within_project(project_dir: &Path, candidate: &Path) -> bool {
+        let Ok(root) = project_dir.canonicalize() else {
+            return false;
+        };
+        let Ok(resolved) = candidate.canonicalize() else {
+            return false;
+        };
+        resolved.starts_with(&root)
     }
 
     /// Spawns the specified runtimes concurrently, intercepts their outputs,
@@ -955,6 +985,38 @@ mod tests {
                 .is_none(),
             "must reject embedded .. traversal"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_entry_candidate_rejects_symlink_outside_project() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside_dir = tempfile::tempdir().expect("outside");
+        let outside_entry = outside_dir.path().join("entry.js");
+        std::fs::write(&outside_entry, "console.log('outside');").expect("write outside entry");
+        let link_path = temp_dir.path().join("entry.js");
+        std::os::unix::fs::symlink(&outside_entry, &link_path).expect("symlink");
+
+        assert!(
+            LockstepHarness::resolve_entry_candidate(temp_dir.path(), "entry.js").is_none(),
+            "must reject symlinked entrypoint outside project"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_runtime_target_rejects_symlinked_directory_entrypoint() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside_dir = tempfile::tempdir().expect("outside");
+        let outside_entry = outside_dir.path().join("index.js");
+        std::fs::write(&outside_entry, "console.log('outside');").expect("write outside entry");
+        let link_path = temp_dir.path().join("index.js");
+        std::os::unix::fs::symlink(&outside_entry, &link_path).expect("symlink");
+
+        let err = LockstepHarness::resolve_runtime_target("node", temp_dir.path())
+            .expect_err("symlinked entrypoint should be rejected");
+        let message = format!("{err:#}");
+        assert!(message.contains("no executable JS entrypoint found"));
     }
 
     // ── sanitize_strace_output ───────────────────────────────────────

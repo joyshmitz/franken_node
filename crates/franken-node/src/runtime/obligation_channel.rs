@@ -264,11 +264,11 @@ pub struct ObligationChannel<T: Clone + Serialize> {
 
 impl<T: Clone + Serialize> ObligationChannel<T> {
     fn emit_audit(&mut self, record: ChannelAuditRecord) {
-        self.audit_log.push(record);
-        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
-            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+        if self.audit_log.len() >= MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES + 1;
             self.audit_log.drain(0..overflow);
         }
+        self.audit_log.push(record);
     }
 
     fn evict_oldest_terminal_obligation(&mut self) -> bool {
@@ -571,11 +571,11 @@ pub struct ObligationLedger {
 
 impl ObligationLedger {
     fn emit_audit(&mut self, record: ChannelAuditRecord) {
-        self.audit_log.push(record);
-        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
-            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+        if self.audit_log.len() >= MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES + 1;
             self.audit_log.drain(0..overflow);
         }
+        self.audit_log.push(record);
     }
 
     /// Create an empty ledger.
@@ -618,11 +618,19 @@ impl ObligationLedger {
             return Err(error_codes::ERR_OCH_INVALID_TRANSITION.to_string());
         }
 
+        let event_code = match status {
+            ObligationStatus::Created => event_codes::FN_OB_001,
+            ObligationStatus::Fulfilled => event_codes::FN_OB_003,
+            ObligationStatus::Rejected => event_codes::FN_OB_004,
+            ObligationStatus::TimedOut => event_codes::FN_OB_005,
+            ObligationStatus::Cancelled => event_codes::FN_OB_006,
+        };
+
         obligation.status = status;
         obligation.resolved_at_ms = Some(now_ms);
 
         self.emit_audit(ChannelAuditRecord {
-            event_code: event_codes::FN_OB_003.to_string(),
+            event_code: event_code.to_string(),
             obligation_id: obligation_id.to_string(),
             status: status.to_string(),
             trace_id: trace_id.to_string(),
@@ -732,11 +740,11 @@ pub struct TwoPhaseFlow {
 
 impl TwoPhaseFlow {
     fn emit_flow_audit(&mut self, record: ChannelAuditRecord) {
-        self.flow_audit_log.push(record);
-        if self.flow_audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
-            let overflow = self.flow_audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
+        if self.flow_audit_log.len() >= MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.flow_audit_log.len() - MAX_AUDIT_LOG_ENTRIES + 1;
             self.flow_audit_log.drain(0..overflow);
         }
+        self.flow_audit_log.push(record);
     }
 
     /// Create a new two-phase flow.
@@ -1252,6 +1260,28 @@ mod tests {
         let outstanding = ledger.query_outstanding();
         assert_eq!(outstanding.len(), 1);
         assert_eq!(outstanding[0].obligation_id, "obl-2");
+    }
+
+    #[test]
+    fn test_ledger_update_status_emits_matching_event_codes() {
+        let mut ledger = ObligationLedger::new();
+        ledger.record(make_obligation("obl-1", 5000, "trace-1"));
+        ledger.record(make_obligation("obl-2", 5000, "trace-2"));
+
+        ledger
+            .update_status("obl-1", ObligationStatus::Rejected, 2000, "trace-3")
+            .unwrap();
+        ledger
+            .update_status("obl-2", ObligationStatus::Cancelled, 2000, "trace-4")
+            .unwrap();
+
+        let log = ledger.audit_log();
+        assert!(log.iter().any(|entry| {
+            entry.obligation_id == "obl-1" && entry.event_code == event_codes::FN_OB_004
+        }));
+        assert!(log.iter().any(|entry| {
+            entry.obligation_id == "obl-2" && entry.event_code == event_codes::FN_OB_006
+        }));
     }
 
     // 17. Ledger closure proof generation

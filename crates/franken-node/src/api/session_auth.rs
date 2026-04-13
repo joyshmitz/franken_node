@@ -1307,8 +1307,7 @@ pub fn demo_session_lifecycle() -> Vec<SessionEvent> {
     );
 
     // Send 3 messages with strict monotonicity
-    let session = mgr.get_session("sess-001").expect("should exist");
-    let hmac_ref = session.handshake_mac;
+    let hmac_ref = handshake_mac;
     for seq in 0..3 {
         let ph = format!("hash-{seq}");
         let mac = sign_session_message(
@@ -1393,10 +1392,7 @@ pub fn demo_windowed_replay() -> Vec<SessionEvent> {
         handshake_mac,
     );
 
-    let hmac_ref = mgr
-        .get_session("sess-win")
-        .expect("should exist")
-        .handshake_mac;
+    let hmac_ref = handshake_mac;
 
     // Send out-of-order within window
     let mac0 = sign_session_message(

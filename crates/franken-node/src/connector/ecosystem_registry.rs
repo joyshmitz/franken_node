@@ -532,12 +532,12 @@ impl EcosystemRegistry {
             detail: detail.to_owned(),
         };
         entry.entry_hash = compute_audit_hash(&entry);
-        self.audit_trail.push(entry);
-        if self.audit_trail.len() > MAX_AUDIT_LOG_ENTRIES {
-            let overflow = self.audit_trail.len() - MAX_AUDIT_LOG_ENTRIES;
+        if self.audit_trail.len() >= MAX_AUDIT_LOG_ENTRIES {
+            let overflow = self.audit_trail.len() - MAX_AUDIT_LOG_ENTRIES + 1;
             self.chain_anchor_hash = Some(self.audit_trail[overflow - 1].entry_hash.clone());
             self.audit_trail.drain(0..overflow);
         }
+        self.audit_trail.push(entry);
     }
 
     fn emit_event(

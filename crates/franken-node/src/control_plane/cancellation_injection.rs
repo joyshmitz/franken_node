@@ -316,11 +316,11 @@ impl CancelInjectionMatrix {
             push_bounded(&mut self.workflows_tested, wf, MAX_WORKFLOWS_TESTED);
         }
 
-        self.entries.push(entry);
-        if self.entries.len() > MAX_MATRIX_ENTRIES {
-            let overflow = self.entries.len() - MAX_MATRIX_ENTRIES;
+        if self.entries.len() >= MAX_MATRIX_ENTRIES {
+            let overflow = self.entries.len() - MAX_MATRIX_ENTRIES + 1;
             self.entries.drain(0..overflow);
         }
+        self.entries.push(entry);
     }
 
     /// Check if the matrix meets minimum coverage.

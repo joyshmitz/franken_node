@@ -6,6 +6,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::process::Stdio;
+use std::time::{Duration, Instant};
+use std::{process::Command, thread};
 
 use super::sandbox_policy_compiler::{AccessLevel, CompiledPolicy, SandboxProfile, compile_policy};
 
@@ -71,14 +74,43 @@ pub struct PlatformCapabilities {
 /// Checks common OCI runtime executables via PATH lookup. Returns `false`
 /// (fail-closed) if no runtime is found or if all probes fail.
 fn probe_oci_runtime() -> bool {
-    for runtime in &["docker", "podman", "nerdctl"] {
-        if std::process::Command::new(runtime)
+    const OCI_RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(1);
+
+    fn probe_runtime(runtime: &str, timeout: Duration) -> bool {
+        let mut child = match Command::new(runtime)
             .arg("--version")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
         {
+            Ok(child) => child,
+            Err(_) => return false,
+        };
+
+        let start = Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => return status.success(),
+                Ok(None) => {
+                    if start.elapsed() >= timeout {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return false;
+                    }
+                    thread::sleep(Duration::from_millis(25));
+                }
+                Err(_) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return false;
+                }
+            }
+        }
+    }
+
+    for runtime in &["docker", "podman", "nerdctl"] {
+        if probe_runtime(runtime, OCI_RUNTIME_PROBE_TIMEOUT) {
             return true;
         }
     }

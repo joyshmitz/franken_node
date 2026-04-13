@@ -1267,10 +1267,12 @@ impl CompatGateEvaluator {
             reason: format!("failed to canonicalize predicate cache key: {reason}"),
         })?;
 
-        let scope = self
-            .scopes
-            .get_mut(scope_id)
-            .expect("scope existence was checked before predicate compilation");
+        let scope =
+            self.scopes
+                .get_mut(scope_id)
+                .ok_or_else(|| CompatGateError::ScopeNotFound {
+                    scope_id: scope_id.to_string(),
+                })?;
         let predicate_id = predicate.predicate_id.clone();
         scope.policy_predicates.push(predicate);
         self.validated_predicates

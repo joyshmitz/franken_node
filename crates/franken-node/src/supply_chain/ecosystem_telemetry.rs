@@ -497,14 +497,34 @@ impl TelemetryPipeline {
             return false;
         }
 
-        // Enforce resource budget.
-        if self.data_points.len() >= self.resource_budget.max_in_memory_points {
-            // Evict oldest raw data points.
-            self.data_points
-                .retain(|p| p.aggregation != AggregationLevel::Raw);
+        let cap = MAX_DATA_POINTS.min(self.resource_budget.max_in_memory_points);
+        if cap == 0 {
+            return false;
         }
 
-        push_bounded(&mut self.data_points, point, MAX_DATA_POINTS);
+        // Enforce resource budget.
+        if self.data_points.len() >= cap {
+            // Evict oldest raw data points first to make room.
+            let mut overflow = self.data_points.len().saturating_sub(cap - 1);
+            if overflow > 0 {
+                self.data_points.retain(|p| {
+                    if overflow > 0 && p.aggregation == AggregationLevel::Raw {
+                        overflow -= 1;
+                        false
+                    } else {
+                        true
+                    }
+                });
+            }
+
+            // If still over budget, drop oldest entries regardless of aggregation level.
+            let overflow = self.data_points.len().saturating_sub(cap - 1);
+            if overflow > 0 {
+                self.data_points.drain(0..overflow);
+            }
+        }
+
+        push_bounded(&mut self.data_points, point, cap);
         self.ingested_count = self.ingested_count.saturating_add(1);
         true
     }
@@ -1675,8 +1695,7 @@ mod tests {
                 &ts(i as u32 + 1),
             ));
         }
-        // Should not exceed budget significantly.
-        assert!(pipeline.stored_count() <= 10);
+        assert_eq!(pipeline.stored_count(), 5);
     }
 
     #[test]

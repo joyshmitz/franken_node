@@ -11,9 +11,11 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Instant;
 
 pub struct EngineDispatcher {
@@ -321,7 +323,16 @@ fn project_prefers_bun(app_path: &Path) -> bool {
     }
 
     let package_json = root.join("package.json");
-    let Ok(contents) = std::fs::read_to_string(&package_json) else {
+    let Ok(root_canonical) = root.canonicalize() else {
+        return false;
+    };
+    let Ok(resolved) = package_json.canonicalize() else {
+        return false;
+    };
+    if !resolved.starts_with(&root_canonical) {
+        return false;
+    }
+    let Ok(contents) = std::fs::read_to_string(&resolved) else {
         return false;
     };
     let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&contents) else {
@@ -491,6 +502,63 @@ fn captured_output_from(output: Output) -> CapturedProcessOutput {
     }
 }
 
+fn run_command_capture_output(cmd: &mut Command) -> io::Result<Output> {
+    fn join_reader(
+        handle: thread::JoinHandle<io::Result<Vec<u8>>>,
+        label: &'static str,
+    ) -> io::Result<Vec<u8>> {
+        match handle.join() {
+            Ok(Ok(buf)) => Ok(buf),
+            Ok(Err(err)) => Err(err),
+            Err(_) => Err(io::Error::other(format!("{label} reader thread panicked"))),
+        }
+    }
+
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn()?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| io::Error::other("stdout pipe unavailable after spawn"))?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| io::Error::other("stderr pipe unavailable after spawn"))?;
+
+    let stdout_thread = thread::spawn(move || {
+        let mut buf = Vec::new();
+        stdout.read_to_end(&mut buf)?;
+        Ok(buf)
+    });
+    let stderr_thread = thread::spawn(move || {
+        let mut buf = Vec::new();
+        stderr.read_to_end(&mut buf)?;
+        Ok(buf)
+    });
+
+    let status = match child.wait() {
+        Ok(status) => status,
+        Err(err) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = join_reader(stdout_thread, "stdout");
+            let _ = join_reader(stderr_thread, "stderr");
+            return Err(err);
+        }
+    };
+
+    let stdout = join_reader(stdout_thread, "stdout")?;
+    let stderr = join_reader(stderr_thread, "stderr")?;
+
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
 impl Default for EngineDispatcher {
     fn default() -> Self {
         let default_hint = default_engine_binary_candidates()
@@ -627,7 +695,7 @@ impl EngineDispatcher {
                 command.env("FRANKEN_NODE_NETWORK_ALLOWLIST", allowlist_json);
             }
 
-            let output = command.output().with_context(|| {
+            let output = run_command_capture_output(&mut command).with_context(|| {
                 format!(
                     "failed launching runtime `{}` for {}",
                     plan.runtime,
@@ -780,7 +848,7 @@ impl EngineDispatcher {
         cmd: &mut Command,
         telemetry_handle: TelemetryRuntimeHandle,
     ) -> std::result::Result<(Output, TelemetryRuntimeReport), EngineProcessError> {
-        match cmd.output() {
+        match run_command_capture_output(cmd) {
             Ok(output) => {
                 let report = telemetry_handle
                     .stop_and_join(ShutdownReason::EngineExit {

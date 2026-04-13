@@ -747,6 +747,9 @@ fn write_bytes_atomically(path: &Path, bytes: &[u8]) -> Result<(), ReplayBundleE
 }
 
 pub fn write_bundle_to_path(bundle: &ReplayBundle, path: &Path) -> Result<(), ReplayBundleError> {
+    if !validate_bundle_integrity(bundle)? {
+        return Err(ReplayBundleError::IntegrityMismatch);
+    }
     let canonical_json = to_canonical_json(bundle)?;
     write_bytes_atomically(path, canonical_json.as_bytes())?;
     Ok(())

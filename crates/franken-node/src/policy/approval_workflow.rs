@@ -726,13 +726,13 @@ impl PolicyChangeEngine {
         // verify_audit_chain() because the new [0].prev_hash would point to
         // the evicted entry instead of genesis.  Track the anchor hash so
         // the verifier knows which hash to expect for the retained head.
-        self.audit_ledger.push(entry);
-        if self.audit_ledger.len() > MAX_AUDIT_LEDGER_ENTRIES {
-            let overflow = self.audit_ledger.len() - MAX_AUDIT_LEDGER_ENTRIES;
+        if self.audit_ledger.len() >= MAX_AUDIT_LEDGER_ENTRIES {
+            let overflow = self.audit_ledger.len() - MAX_AUDIT_LEDGER_ENTRIES + 1;
             // Save the entry_hash of the last entry being evicted as anchor.
             self.chain_anchor_hash = Some(self.audit_ledger[overflow - 1].entry_hash.clone());
             self.audit_ledger.drain(0..overflow);
         }
+        self.audit_ledger.push(entry);
     }
 }
 

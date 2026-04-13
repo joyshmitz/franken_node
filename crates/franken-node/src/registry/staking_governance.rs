@@ -936,11 +936,11 @@ impl StakingLedger {
             penalty_hash,
         };
         self.state.next_slash_id = self.state.next_slash_id.saturating_add(1);
-        self.state.slash_events.push(slash_event.clone());
-        if self.state.slash_events.len() > MAX_SLASH_EVENTS {
-            let overflow = self.state.slash_events.len() - MAX_SLASH_EVENTS;
+        if self.state.slash_events.len() >= MAX_SLASH_EVENTS {
+            let overflow = self.state.slash_events.len() - MAX_SLASH_EVENTS + 1;
             self.state.slash_events.drain(0..overflow);
         }
+        self.state.slash_events.push(slash_event.clone());
 
         // INV-STAKE-AUDIT-COMPLETE
         self.emit_audit(
@@ -1053,11 +1053,11 @@ impl StakingLedger {
             resolved_at: None,
         };
         self.state.next_appeal_id = self.state.next_appeal_id.saturating_add(1);
-        self.state.appeals.push(appeal.clone());
-        if self.state.appeals.len() > MAX_APPEAL_RECORDS {
-            let overflow = self.state.appeals.len() - MAX_APPEAL_RECORDS;
+        if self.state.appeals.len() >= MAX_APPEAL_RECORDS {
+            let overflow = self.state.appeals.len() - MAX_APPEAL_RECORDS + 1;
             self.state.appeals.drain(0..overflow);
         }
+        self.state.appeals.push(appeal.clone());
 
         self.emit_audit(
             STAKE_003,

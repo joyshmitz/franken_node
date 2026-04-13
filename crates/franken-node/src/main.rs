@@ -130,7 +130,6 @@ pub use frankenengine_node::{connector, control_plane, observability, security, 
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::time::{Duration, Instant};
@@ -7825,6 +7824,31 @@ mod trust_command_tests {
                 .all(|card| card.last_verified_timestamp == expected_timestamp)
         );
     }
+
+    #[test]
+    fn trust_quarantine_rejects_too_short_sha256_prefix() {
+        let now_secs = 1_700_000_500;
+        let mut registry =
+            supply_chain::trust_card::fixture_registry(now_secs).expect("fixture registry");
+
+        let err = quarantine_trust_cards(&mut registry, "sha256:dead", now_secs)
+            .expect_err("should reject short prefix");
+        assert!(
+            err.to_string()
+                .contains("sha256 prefix must include at least")
+        );
+    }
+
+    #[test]
+    fn trust_quarantine_rejects_non_hex_sha256_prefix() {
+        let now_secs = 1_700_000_501;
+        let mut registry =
+            supply_chain::trust_card::fixture_registry(now_secs).expect("fixture registry");
+
+        let err = quarantine_trust_cards(&mut registry, "sha256:zzzzzzzz", now_secs)
+            .expect_err("should reject non-hex prefix");
+        assert!(err.to_string().contains("sha256 digest must be hex"));
+    }
 }
 
 #[cfg(test)]
@@ -8207,6 +8231,14 @@ mod registry_command_tests {
             leftovers.is_empty(),
             "temporary replacement file should not remain after atomic write: {leftovers:?}"
         );
+    }
+
+    #[test]
+    fn registry_entry_directory_name_sanitizes_extension_id() {
+        let entry_name = registry_entry_directory_name("2026-01-01T00:00:00Z", "npm:@scope/name");
+        assert!(!entry_name.contains('/'));
+        assert!(!entry_name.contains('\\'));
+        assert!(!entry_name.contains(".."));
     }
 
     #[test]
@@ -9139,23 +9171,37 @@ fn read_package_manifest_object(
     if !package_json_path.is_file() {
         return Ok(None);
     }
-
-    let raw = std::fs::read_to_string(&package_json_path).with_context(|| {
+    let root = project_root.canonicalize().with_context(|| {
         format!(
-            "failed reading dependency manifest {}",
+            "failed resolving project root while evaluating {context}: {}",
+            project_root.display()
+        )
+    })?;
+    let resolved = package_json_path.canonicalize().with_context(|| {
+        format!(
+            "failed resolving package.json while evaluating {context}: {}",
             package_json_path.display()
         )
     })?;
+    if !resolved.starts_with(&root) {
+        anyhow::bail!(
+            "package.json must reside within {} while evaluating {context}",
+            project_root.display()
+        );
+    }
+
+    let raw = std::fs::read_to_string(&resolved)
+        .with_context(|| format!("failed reading dependency manifest {}", resolved.display()))?;
     let manifest = serde_json::from_str::<serde_json::Value>(&raw).with_context(|| {
         format!(
             "invalid dependency manifest JSON while evaluating {context}: {}",
-            package_json_path.display()
+            resolved.display()
         )
     })?;
     let object = manifest.as_object().cloned().ok_or_else(|| {
         anyhow::anyhow!(
             "dependency manifest must be a JSON object: {}",
-            package_json_path.display()
+            resolved.display()
         )
     })?;
 
@@ -10442,18 +10488,15 @@ impl BuildContext {
         if let Some(sha) = get_env("GIT_COMMIT") {
             return Some(sha);
         }
-        // Try local git
-        std::process::Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-            .and_then(|output| {
-                String::from_utf8(output.stdout)
-                    .ok()
-                    .map(|s| s.trim().to_string())
-            })
-            .filter(|s| !s.is_empty())
+        // Try local git (bounded by timeout to avoid hanging)
+        run_command_capture_stdout(
+            None,
+            "git",
+            &["rev-parse", "HEAD"],
+            REGISTRY_GIT_COMMAND_TIMEOUT,
+        )
+        .ok()
+        .and_then(trim_nonempty)
     }
 
     fn strip_repository_url_credentials(raw: &str) -> String {
@@ -10499,18 +10542,16 @@ impl BuildContext {
         if let Some(url) = get_env("BUILD_REPOSITORY_URI") {
             return Some(Self::strip_repository_url_credentials(&url));
         }
-        // Try local git
-        std::process::Command::new("git")
-            .args(["remote", "get-url", "origin"])
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-            .and_then(|output| {
-                String::from_utf8(output.stdout)
-                    .ok()
-                    .map(|s| s.trim().to_string())
-            })
-            .filter(|s| !s.is_empty())
+        // Try local git (bounded by timeout to avoid hanging)
+        run_command_capture_stdout(
+            None,
+            "git",
+            &["remote", "get-url", "origin"],
+            REGISTRY_GIT_COMMAND_TIMEOUT,
+        )
+        .ok()
+        .and_then(trim_nonempty)
+        .map(|s| Self::strip_repository_url_credentials(&s))
     }
 
     fn detect_build_system_with_env<F>(get_env: &F) -> String
@@ -10859,7 +10900,27 @@ fn registry_entry_directory_name(stored_at_utc: &str, extension_id: &str) -> Str
     let prefix = DateTime::parse_from_rfc3339(stored_at_utc)
         .map(|timestamp| timestamp.format("%Y%m%dT%H%M%S%.3fZ").to_string())
         .unwrap_or_else(|_| "unknown".to_string());
-    format!("{prefix}-{extension_id}")
+    let mut slug = extension_id
+        .trim()
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    slug = slug.trim_matches('-').to_string();
+    if slug.is_empty() {
+        slug = "extension".to_string();
+    }
+    if slug.len() > 64 {
+        slug.truncate(64);
+    }
+    let digest = format!("{:x}", sha2::Sha256::digest(extension_id.as_bytes()));
+    let suffix = digest.get(..12).unwrap_or(digest.as_str());
+    format!("{prefix}-{slug}-{suffix}")
 }
 
 fn registry_relative_display_path(path: &Path, project_root: &Path) -> String {
@@ -12188,6 +12249,31 @@ fn revoke_trust_card(
         })
 }
 
+const MIN_SHA256_PREFIX_LEN: usize = 8;
+const SHA256_HEX_LEN: usize = 64;
+
+fn normalize_sha256_prefix(input: &str, field: &str) -> Result<Option<String>> {
+    let trimmed = input.trim();
+    if !trimmed.starts_with("sha256:") {
+        return Ok(None);
+    }
+
+    let suffix = &trimmed["sha256:".len()..];
+    if suffix.len() < MIN_SHA256_PREFIX_LEN {
+        anyhow::bail!(
+            "{field} sha256 prefix must include at least {MIN_SHA256_PREFIX_LEN} hex characters"
+        );
+    }
+    if suffix.len() > SHA256_HEX_LEN {
+        anyhow::bail!("{field} sha256 digest must be at most {SHA256_HEX_LEN} hex characters");
+    }
+    if !suffix.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        anyhow::bail!("{field} sha256 digest must be hex");
+    }
+
+    Ok(Some(format!("sha256:{}", suffix.to_ascii_lowercase())))
+}
+
 fn quarantine_trust_cards(
     registry: &mut TrustCardRegistry,
     artifact: &str,
@@ -12195,6 +12281,11 @@ fn quarantine_trust_cards(
 ) -> Result<Vec<TrustCard>> {
     let now_rfc3339 = rfc3339_timestamp_from_secs(now_secs);
     let mut targets = Vec::new();
+    let artifact = artifact.trim();
+    if artifact.is_empty() {
+        anyhow::bail!("artifact must not be empty");
+    }
+    let sha256_prefix = normalize_sha256_prefix(artifact, "artifact")?;
 
     let direct_match = registry
         .read(artifact, now_secs, "trace-cli-trust-quarantine-lookup")
@@ -12202,7 +12293,7 @@ fn quarantine_trust_cards(
 
     if let Some(card) = direct_match {
         targets.push(card.extension.extension_id);
-    } else if artifact.starts_with("sha256:") {
+    } else if let Some(prefix) = sha256_prefix {
         targets = registry
             .list(
                 &TrustCardListFilter::empty(),
@@ -12215,13 +12306,13 @@ fn quarantine_trust_cards(
                 card.provenance_summary
                     .artifact_hashes
                     .iter()
-                    .any(|hash| hash == artifact || hash.starts_with(artifact))
+                    .any(|hash| hash == &prefix || hash.starts_with(&prefix))
             })
             .map(|card| card.extension.extension_id)
             .collect();
     } else {
         anyhow::bail!(
-            "artifact `{artifact}` did not match a trust card extension id; use extension id or sha256:* reference"
+            "artifact `{artifact}` did not match a trust card extension id; use extension id or sha256:<hex> prefix (>= {MIN_SHA256_PREFIX_LEN} chars)"
         );
     }
 
@@ -13047,6 +13138,12 @@ fn resolve_fleet_agent_action_targets(
     now_secs: u64,
     trace_id: &str,
 ) -> Result<Vec<String>> {
+    let target_id = target_id.trim();
+    if target_id.is_empty() {
+        anyhow::bail!("fleet action target_id must not be empty");
+    }
+    let sha256_prefix = normalize_sha256_prefix(target_id, "target_id")?;
+
     let direct_match = registry
         .read(target_id, now_secs, trace_id)
         .map_err(|err| anyhow::anyhow!(err.to_string()))?;
@@ -13054,9 +13151,9 @@ fn resolve_fleet_agent_action_targets(
         return Ok(vec![card.extension.extension_id]);
     }
 
-    if !target_id.starts_with("sha256:") {
+    let Some(prefix) = sha256_prefix else {
         return Ok(Vec::new());
-    }
+    };
 
     let mut targets = registry
         .list(&TrustCardListFilter::empty(), trace_id, now_secs)
@@ -13066,7 +13163,7 @@ fn resolve_fleet_agent_action_targets(
             card.provenance_summary
                 .artifact_hashes
                 .iter()
-                .any(|hash| hash == target_id || hash.starts_with(target_id))
+                .any(|hash| hash == &prefix || hash.starts_with(&prefix))
         })
         .map(|card| card.extension.extension_id)
         .collect::<Vec<_>>();
@@ -13264,10 +13361,11 @@ fn run_fleet_agent(args: &FleetAgentArgs) -> Result<()> {
             })
             .collect();
 
-        let actions_processed = u64::try_from(new_actions.len()).unwrap_or(u64::MAX);
+        let mut actions_processed = 0_u64;
 
         // Apply each action and track quarantine version
         for (action_index, action) in new_actions {
+            actions_processed = actions_processed.saturating_add(1);
             let apply_result = match &action.action {
                 PersistedFleetAction::Quarantine {
                     incident_id,
@@ -13367,6 +13465,7 @@ fn run_fleet_agent(args: &FleetAgentArgs) -> Result<()> {
                         action.action_id
                     );
                 }
+                break;
             }
             last_seen_action_id = Some(action.action_id.clone());
             last_seen_action_emitted_at = Some(action.emitted_at);
@@ -13914,6 +14013,18 @@ fn inspect_release_entry_path(root: &Path, path: &Path) -> Result<ReleaseEntrySt
     let mut current = root.to_path_buf();
     let mut last_meta = None;
     for component in relative.components() {
+        match component {
+            std::path::Component::ParentDir
+            | std::path::Component::CurDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => {
+                return Ok(ReleaseEntryState::Blocked(format!(
+                    "release entry contains invalid path component: {}",
+                    path.display()
+                )));
+            }
+            std::path::Component::Normal(_) => {}
+        }
         current.push(component);
         match std::fs::symlink_metadata(&current) {
             Ok(meta) => {
@@ -14492,9 +14603,7 @@ fn collect_release_files(root: &Path) -> Result<Vec<String>> {
             }
             let relative = path
                 .strip_prefix(root)
-                .with_context(|| {
-                    format!("failed deriving relative path for {}", path.display())
-                })?
+                .with_context(|| format!("failed deriving relative path for {}", path.display()))?
                 .to_string_lossy()
                 .replace('\\', "/");
             files.push(relative);

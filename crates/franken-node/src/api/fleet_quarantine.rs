@@ -1072,12 +1072,22 @@ impl FleetControlManager {
         let receipt = self.build_receipt(&op_id, &identity.principal, zone_id, &now);
 
         // Convergence state (INV-FLEET-CONVERGENCE)
+        let total_nodes = scope.affected_nodes;
+        let (progress_pct, eta_seconds, phase) = if total_nodes == 0 {
+            (0, None, ConvergencePhase::Pending)
+        } else {
+            (
+                0,
+                Some(total_nodes.saturating_mul(2)),
+                ConvergencePhase::Propagating,
+            )
+        };
         let convergence = ConvergenceState {
             converged_nodes: 0,
-            total_nodes: scope.affected_nodes,
-            progress_pct: 0,
-            eta_seconds: Some(scope.affected_nodes.saturating_mul(2)),
-            phase: ConvergencePhase::Propagating,
+            total_nodes,
+            progress_pct,
+            eta_seconds,
+            phase,
         };
         self.incident_convergences
             .insert(incident_id.clone(), convergence.clone());

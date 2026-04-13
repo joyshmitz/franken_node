@@ -483,6 +483,7 @@ dependencies = [
  "franken-kernel",
  "frankenengine-extension-host",
  "hex",
+ "hmac",
  "serde",
  "serde_json",
  "sha2",
