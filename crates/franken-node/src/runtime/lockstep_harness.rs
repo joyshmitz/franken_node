@@ -80,6 +80,14 @@ impl LockstepHarness {
         }
     }
 
+    fn entrypoint_extensions(runtime: &str) -> &'static [&'static str] {
+        if runtime == "bun" {
+            &["ts", "tsx", "js", "mjs", "cjs"]
+        } else {
+            &["js", "mjs", "cjs"]
+        }
+    }
+
     fn resolve_runtime_binary(runtime: &str) -> String {
         Self::resolve_runtime_binary_with(runtime, &|configured_hint| {
             crate::ops::engine_dispatcher::resolve_engine_binary_path(configured_hint)
@@ -152,7 +160,7 @@ impl LockstepHarness {
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
             {
-                if let Some(resolved) = Self::resolve_entry_candidate(project_dir, main) {
+                if let Some(resolved) = Self::resolve_entry_candidate(project_dir, main, runtime) {
                     return Ok(resolved);
                 }
                 unresolved_main = Some(main.to_string());
@@ -181,7 +189,11 @@ impl LockstepHarness {
         );
     }
 
-    fn resolve_entry_candidate(project_dir: &Path, raw_target: &str) -> Option<PathBuf> {
+    fn resolve_entry_candidate(
+        project_dir: &Path,
+        raw_target: &str,
+        runtime: &str,
+    ) -> Option<PathBuf> {
         let normalized = raw_target.trim().trim_start_matches("./");
         if normalized.is_empty() {
             return None;
@@ -202,7 +214,7 @@ impl LockstepHarness {
         }
 
         if candidate.extension().is_none() {
-            for extension in ["js", "mjs", "cjs"] {
+            for extension in Self::entrypoint_extensions(runtime) {
                 let with_extension = candidate.with_extension(extension);
                 if with_extension.is_file()
                     && Self::path_within_project(project_dir, &with_extension)
@@ -216,7 +228,7 @@ impl LockstepHarness {
             if !Self::path_within_project(project_dir, &candidate) {
                 return None;
             }
-            for entry in Self::DIRECTORY_ENTRY_CANDIDATES {
+            for entry in Self::directory_entry_candidates(runtime) {
                 let nested = candidate.join(entry);
                 if nested.is_file() && Self::path_within_project(project_dir, &nested) {
                     return Some(nested);
@@ -899,6 +911,42 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let expected = temp_dir.path().join("index.ts");
         std::fs::write(&expected, "console.log('entry');").expect("write entry");
+
+        let resolved =
+            LockstepHarness::resolve_runtime_target("bun", temp_dir.path()).expect("resolve");
+        assert_eq!(resolved, expected);
+    }
+
+    #[test]
+    fn resolve_runtime_target_uses_bun_main_directory_entrypoint() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            temp_dir.path().join("package.json"),
+            r#"{"name":"demo","main":"src"}"#,
+        )
+        .expect("write package");
+        let src_dir = temp_dir.path().join("src");
+        std::fs::create_dir_all(&src_dir).expect("create src");
+        let expected = src_dir.join("index.ts");
+        std::fs::write(&expected, "console.log('entry');").expect("write entry");
+
+        let resolved =
+            LockstepHarness::resolve_runtime_target("bun", temp_dir.path()).expect("resolve");
+        assert_eq!(resolved, expected);
+    }
+
+    #[test]
+    fn resolve_runtime_target_uses_bun_extensionless_main_ts() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            temp_dir.path().join("package.json"),
+            r#"{"name":"demo","main":"dist/server"}"#,
+        )
+        .expect("write package");
+        let dist_dir = temp_dir.path().join("dist");
+        std::fs::create_dir_all(&dist_dir).expect("create dist");
+        let expected = dist_dir.join("server.ts");
+        std::fs::write(&expected, "console.log('server');").expect("write server");
 
         let resolved =
             LockstepHarness::resolve_runtime_target("bun", temp_dir.path()).expect("resolve");
