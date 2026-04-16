@@ -1013,24 +1013,34 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         // ".." segments
         assert!(
-            LockstepHarness::resolve_entry_candidate(temp_dir.path(), "../../etc/passwd").is_none(),
+            LockstepHarness::resolve_entry_candidate(temp_dir.path(), "../../etc/passwd", "node")
+                .is_none(),
             "must reject .. traversal"
         );
         // absolute path
         assert!(
-            LockstepHarness::resolve_entry_candidate(temp_dir.path(), "/etc/passwd").is_none(),
+            LockstepHarness::resolve_entry_candidate(temp_dir.path(), "/etc/passwd", "node")
+                .is_none(),
             "must reject absolute path"
         );
         // backslash
         assert!(
-            LockstepHarness::resolve_entry_candidate(temp_dir.path(), "..\\..\\etc\\passwd")
-                .is_none(),
+            LockstepHarness::resolve_entry_candidate(
+                temp_dir.path(),
+                "..\\..\\etc\\passwd",
+                "node"
+            )
+            .is_none(),
             "must reject backslash traversal"
         );
         // embedded ".." in deeper path
         assert!(
-            LockstepHarness::resolve_entry_candidate(temp_dir.path(), "dist/../../../etc/passwd")
-                .is_none(),
+            LockstepHarness::resolve_entry_candidate(
+                temp_dir.path(),
+                "dist/../../../etc/passwd",
+                "node"
+            )
+            .is_none(),
             "must reject embedded .. traversal"
         );
     }
@@ -1046,7 +1056,7 @@ mod tests {
         std::os::unix::fs::symlink(&outside_entry, &link_path).expect("symlink");
 
         assert!(
-            LockstepHarness::resolve_entry_candidate(temp_dir.path(), "entry.js").is_none(),
+            LockstepHarness::resolve_entry_candidate(temp_dir.path(), "entry.js", "node").is_none(),
             "must reject symlinked entrypoint outside project"
         );
     }

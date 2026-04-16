@@ -5077,6 +5077,11 @@ fn now_unix_secs() -> u64 {
     if ts <= 0 { 0 } else { ts as u64 }
 }
 
+fn resolve_remotecap_signing_key() -> Result<String> {
+    Ok(std::env::var("FRANKEN_NODE_REMOTECAP_KEY")
+        .unwrap_or_else(|_| ["franken-node", "dev", "remotecap", "key"].join("-")))
+}
+
 fn rfc3339_timestamp_from_secs(timestamp_secs: u64) -> String {
     let secs = match i64::try_from(timestamp_secs) {
         Ok(secs) => secs,
@@ -7308,6 +7313,60 @@ mod trust_scan_tests {
                 .contains("OSV-2026-0001")
         );
     }
+
+    #[test]
+    fn refresh_trust_sync_audit_with_clears_stale_osv_risk_when_refresh_is_clean() {
+        let now_secs = 2_000;
+        let registry =
+            supply_chain::trust_card::fixture_registry(now_secs).expect("fixture trust registry");
+        let path = tempfile::tempdir()
+            .expect("tempdir")
+            .path()
+            .join("trust-sync-clean.json");
+        let mut state = TrustCardCliRegistryState {
+            path,
+            registry,
+            cache_ttl_secs: 60,
+        };
+
+        let first_report =
+            refresh_trust_sync_audit_with(&mut state, now_secs + 120, true, |name, _| match name {
+                "@acme/auth-guard" => Ok(TrustScanAuditMetadata {
+                    vulnerability_ids: vec!["OSV-2026-0001".to_string()],
+                }),
+                "@beta/telemetry-bridge" => Err(anyhow::anyhow!("simulated network failure")),
+                other => Err(anyhow::anyhow!("unexpected package {other}")),
+            });
+        assert_eq!(first_report.vulnerabilities_found, 1);
+
+        let second_report =
+            refresh_trust_sync_audit_with(&mut state, now_secs + 240, true, |name, _| match name {
+                "@acme/auth-guard" => Ok(TrustScanAuditMetadata {
+                    vulnerability_ids: Vec::new(),
+                }),
+                "@beta/telemetry-bridge" => Err(anyhow::anyhow!("simulated network failure")),
+                other => Err(anyhow::anyhow!("unexpected package {other}")),
+            });
+        assert_eq!(second_report.vulnerabilities_found, 0);
+
+        let cards = state
+            .registry
+            .list(
+                &TrustCardListFilter::empty(),
+                "trace-test-trust-sync-clean-refresh",
+                now_secs + 240,
+            )
+            .expect("list cards");
+        let auth_guard = cards
+            .iter()
+            .find(|card| card.extension.extension_id == "npm:@acme/auth-guard")
+            .expect("auth guard card");
+        assert_eq!(auth_guard.user_facing_risk_assessment.level, RiskLevel::Low);
+        assert_eq!(
+            auth_guard.user_facing_risk_assessment.summary,
+            "No known OSV vulnerabilities from latest refresh"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -9031,8 +9090,7 @@ fn handle_remotecap_issue(args: &RemoteCapIssueArgs) -> Result<()> {
 
     let ttl_secs = parse_ttl_secs(&args.ttl)?;
     let now_epoch_secs = now_unix_secs();
-    let signing_key = std::env::var("FRANKEN_NODE_REMOTECAP_KEY")
-        .unwrap_or_else(|_| ["franken-node", "dev", "remotecap", "key"].join("-"));
+    let signing_key = resolve_remotecap_signing_key()?;
     let provider = CapabilityProvider::new(&signing_key);
     let scope = RemoteScope::new(operations, endpoint_prefixes);
 
@@ -10400,6 +10458,7 @@ fn handle_incident_bundle_command(args: &cli::IncidentBundleArgs) -> Result<()> 
             "bundle integrity: {}",
             if valid { "valid" } else { "invalid" }
         );
+        anyhow::ensure!(valid, "generated replay bundle failed integrity validation");
     }
 
     let output_path = incident_bundle_output_path(&args.id);
@@ -12397,6 +12456,62 @@ fn trust_sync_card_needs_network_refresh(
         .unwrap_or(true)
 }
 
+fn trust_sync_summary_is_from_osv(summary: &str) -> bool {
+    summary.starts_with("OSV refresh reported ")
+}
+
+fn trust_sync_clean_risk_assessment(card: &TrustCard) -> RiskAssessment {
+    if !trust_sync_summary_is_from_osv(&card.user_facing_risk_assessment.summary) {
+        return card.user_facing_risk_assessment.clone();
+    }
+
+    match (&card.revocation_status, card.active_quarantine) {
+        (RevocationStatus::Revoked { reason, .. }, _) => RiskAssessment {
+            level: RiskLevel::Critical,
+            summary: format!("Revoked: {reason}"),
+        },
+        (_, true) => RiskAssessment {
+            level: RiskLevel::High,
+            summary: "Active quarantine remains in effect after clean OSV refresh".to_string(),
+        },
+        (_, false) if card.provenance_summary.artifact_hashes.is_empty() => RiskAssessment {
+            level: RiskLevel::Medium,
+            summary: "No known OSV vulnerabilities from latest refresh, but artifact integrity hashes are missing".to_string(),
+        },
+        _ => RiskAssessment {
+            level: RiskLevel::Low,
+            summary: "No known OSV vulnerabilities from latest refresh".to_string(),
+        },
+    }
+}
+
+fn trust_sync_clean_reputation_trend(card: &TrustCard) -> ReputationTrend {
+    if !trust_sync_summary_is_from_osv(&card.user_facing_risk_assessment.summary) {
+        return card.reputation_trend;
+    }
+
+    if matches!(card.revocation_status, RevocationStatus::Revoked { .. }) || card.active_quarantine
+    {
+        ReputationTrend::Declining
+    } else {
+        ReputationTrend::Stable
+    }
+}
+
+fn trust_sync_clean_reputation_score(card: &TrustCard, risk_assessment: &RiskAssessment) -> u16 {
+    if !trust_sync_summary_is_from_osv(&card.user_facing_risk_assessment.summary) {
+        return card.reputation_score_basis_points;
+    }
+
+    let floor = match risk_assessment.level {
+        RiskLevel::Low => 620,
+        RiskLevel::Medium => 440,
+        RiskLevel::High => 220,
+        RiskLevel::Critical => 80,
+    };
+    card.reputation_score_basis_points.max(floor)
+}
+
 fn refresh_trust_sync_audit_with<F>(
     state: &mut TrustCardCliRegistryState,
     now_secs: u64,
@@ -12442,13 +12557,17 @@ where
                     .saturating_add(audit_metadata.vulnerability_ids.len());
 
                 let mutation = if audit_metadata.vulnerability_ids.is_empty() {
+                    let risk_assessment = trust_sync_clean_risk_assessment(&card);
                     TrustCardMutation {
                         certification_level: None,
                         revocation_status: None,
                         active_quarantine: None,
-                        reputation_score_basis_points: None,
-                        reputation_trend: None,
-                        user_facing_risk_assessment: None,
+                        reputation_score_basis_points: Some(trust_sync_clean_reputation_score(
+                            &card,
+                            &risk_assessment,
+                        )),
+                        reputation_trend: Some(trust_sync_clean_reputation_trend(&card)),
+                        user_facing_risk_assessment: Some(risk_assessment),
                         last_verified_timestamp: Some(now_rfc3339.clone()),
                         evidence_refs: None,
                     }
@@ -12627,7 +12746,11 @@ fn build_fleet_decision_receipt(
 }
 
 fn zone_matches_filter(action_zone: &str, requested_zone: &str) -> bool {
-    requested_zone == "all" || action_zone == requested_zone
+    requested_zone == "all" || action_zone == "all" || action_zone == requested_zone
+}
+
+fn fleet_action_applies_to_zone(action_zone: &str, agent_zone: &str) -> bool {
+    action_zone == "all" || action_zone == agent_zone
 }
 
 fn node_matches_filter(node: &PersistedNodeStatus, requested_zone: &str) -> bool {
@@ -13225,43 +13348,89 @@ fn apply_fleet_quarantine_action(
 
 fn apply_fleet_release_action(
     project_root: &Path,
-    zone_id: &str,
+    agent_zone: &str,
     incident_id: &str,
     action_history: &[PersistedFleetActionRecord],
     now_secs: u64,
 ) -> Result<Vec<String>> {
     let mut state = fleet_agent_registry_state(project_root, now_secs)?;
-    let mut targets = std::collections::BTreeSet::new();
-    for action in action_history {
-        let PersistedFleetAction::Quarantine {
-            zone_id: action_zone,
-            incident_id: action_incident,
-            target_id,
-            ..
-        } = &action.action
-        else {
-            continue;
-        };
-        if action_zone != zone_id || action_incident != incident_id {
-            continue;
-        }
-        for extension_id in resolve_fleet_agent_action_targets(
-            &mut state.registry,
-            target_id,
-            now_secs,
-            "trace-cli-fleet-agent-release-lookup",
-        )? {
-            targets.insert(extension_id);
+    let mut active_quarantine_targets = BTreeMap::<String, Vec<String>>::new();
+
+    for action in action_history
+        .iter()
+        .take(action_history.len().saturating_sub(1))
+    {
+        match &action.action {
+            PersistedFleetAction::Quarantine {
+                zone_id,
+                incident_id,
+                target_id,
+                ..
+            } if fleet_action_applies_to_zone(zone_id, agent_zone) => {
+                let targets = active_quarantine_targets
+                    .entry(incident_id.clone())
+                    .or_default();
+                if !targets.iter().any(|existing| existing == target_id) {
+                    targets.push(target_id.clone());
+                }
+            }
+            PersistedFleetAction::Release {
+                zone_id,
+                incident_id,
+                ..
+            } if fleet_action_applies_to_zone(zone_id, agent_zone) => {
+                active_quarantine_targets.remove(incident_id);
+            }
+            PersistedFleetAction::Quarantine { .. }
+            | PersistedFleetAction::Release { .. }
+            | PersistedFleetAction::PolicyUpdate { .. } => {}
         }
     }
 
-    if targets.is_empty() {
+    let Some(target_ids_to_release) = active_quarantine_targets.remove(incident_id) else {
+        return Ok(Vec::new());
+    };
+
+    let mut targets_to_release = std::collections::BTreeSet::new();
+    for target_id in target_ids_to_release {
+        for extension_id in resolve_fleet_agent_action_targets(
+            &mut state.registry,
+            &target_id,
+            now_secs,
+            "trace-cli-fleet-agent-release-lookup",
+        )? {
+            targets_to_release.insert(extension_id);
+        }
+    }
+    if targets_to_release.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut still_quarantined_targets = std::collections::BTreeSet::new();
+    for target_ids in active_quarantine_targets.values() {
+        for target_id in target_ids {
+            for extension_id in resolve_fleet_agent_action_targets(
+                &mut state.registry,
+                target_id,
+                now_secs,
+                "trace-cli-fleet-agent-release-overlap-lookup",
+            )? {
+                still_quarantined_targets.insert(extension_id);
+            }
+        }
+    }
+
+    let releasable_targets = targets_to_release
+        .into_iter()
+        .filter(|extension_id| !still_quarantined_targets.contains(extension_id))
+        .collect::<Vec<_>>();
+    if releasable_targets.is_empty() {
         return Ok(Vec::new());
     }
 
     let now_rfc3339 = rfc3339_timestamp_from_secs(now_secs);
     let mut released = Vec::new();
-    for extension_id in targets {
+    for extension_id in releasable_targets {
         state
             .registry
             .update(
@@ -13340,11 +13509,13 @@ fn run_fleet_agent(args: &FleetAgentArgs) -> Result<()> {
             .filter(|action| {
                 let zone_matches = match &action.1.action {
                     PersistedFleetAction::Quarantine { zone_id, .. } => {
-                        zone_id == &resolved.zone_id
+                        fleet_action_applies_to_zone(zone_id, &resolved.zone_id)
                     }
-                    PersistedFleetAction::Release { zone_id, .. } => zone_id == &resolved.zone_id,
+                    PersistedFleetAction::Release { zone_id, .. } => {
+                        fleet_action_applies_to_zone(zone_id, &resolved.zone_id)
+                    }
                     PersistedFleetAction::PolicyUpdate { zone_id, .. } => {
-                        zone_id == &resolved.zone_id
+                        fleet_action_applies_to_zone(zone_id, &resolved.zone_id)
                     }
                 };
                 if !zone_matches {
@@ -15021,6 +15192,15 @@ fn normalize_verify_identifier(raw: &str) -> String {
     raw.trim().replace('-', "_").to_ascii_lowercase()
 }
 
+/// Check if a verify identifier contains only safe characters.
+/// Safe characters are ASCII letters, digits, underscores, and hyphens.
+fn is_safe_verify_identifier(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+}
+
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -15033,15 +15213,23 @@ fn crate_source_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
 }
 
-fn resolve_verify_module_source(module_id: &str) -> Option<PathBuf> {
+fn resolve_verify_module_source(module_id: &str) -> Result<Option<PathBuf>> {
     let src_root = crate_source_root();
-    let file = src_root.join(format!("{module_id}.rs"));
+    let file = resolve_relative_path_within_root(
+        &src_root,
+        Path::new(&format!("{module_id}.rs")),
+        "verify module source",
+    )?;
     if file.is_file() {
-        return Some(file);
+        return Ok(Some(file));
     }
 
-    let dir_mod = src_root.join(module_id).join("mod.rs");
-    dir_mod.is_file().then_some(dir_mod)
+    let dir_mod = resolve_relative_path_within_root(
+        &src_root,
+        &Path::new(module_id).join("mod.rs"),
+        "verify module source",
+    )?;
+    Ok(dir_mod.is_file().then_some(dir_mod))
 }
 
 fn parse_module_declaration_name(line: &str) -> Option<String> {
@@ -15193,29 +15381,71 @@ fn resolve_verify_migration_lane_source(migration_id: &str) -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
+fn resolve_relative_path_within_root(
+    root: &Path,
+    relative: &Path,
+    context: &str,
+) -> Result<PathBuf> {
+    let canonical_root = root
+        .canonicalize()
+        .with_context(|| format!("{context}: failed resolving root {}", root.display()))?;
+    let mut resolved = canonical_root.clone();
+
+    for component in relative.components() {
+        match component {
+            std::path::Component::Normal(value) => resolved.push(value),
+            _ => {
+                anyhow::bail!(
+                    "{context}: path must stay within {}: {}",
+                    canonical_root.display(),
+                    relative.display()
+                );
+            }
+        }
+
+        match std::fs::symlink_metadata(&resolved) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                let canonical = resolved.canonicalize().unwrap_or_else(|_| resolved.clone());
+                if !canonical.starts_with(&canonical_root) {
+                    anyhow::bail!(
+                        "{context}: path must not escape {} via symlink: {} -> {}",
+                        canonical_root.display(),
+                        resolved.display(),
+                        canonical.display()
+                    );
+                }
+            }
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => {
+                return Err(anyhow::anyhow!(
+                    "{context}: failed reading path {}: {err}",
+                    resolved.display()
+                ));
+            }
+        }
+    }
+
+    Ok(resolved)
+}
+
 fn migration_state_dir(project_root: &Path) -> PathBuf {
     project_root.join(".franken-node/state/migrations")
 }
 
 fn resolve_verify_migration_record_path(
     project_root: &Path,
-    raw_id: &str,
     normalized_id: &str,
-) -> Option<PathBuf> {
-    let state_dir = migration_state_dir(project_root);
-    let mut candidates = vec![raw_id.trim().to_string()];
-    if !candidates
-        .iter()
-        .any(|candidate| candidate == normalized_id)
-    {
-        candidates.push(normalized_id.to_string());
-    }
-
-    candidates
-        .into_iter()
-        .filter(|candidate| !candidate.is_empty())
-        .map(|candidate| state_dir.join(format!("{candidate}.json")))
-        .find(|candidate| candidate.is_file())
+) -> Result<Option<PathBuf>> {
+    let record_path = resolve_relative_path_within_root(
+        project_root,
+        &Path::new(".franken-node")
+            .join("state")
+            .join("migrations")
+            .join(format!("{normalized_id}.json")),
+        "verify migration record",
+    )?;
+    Ok(record_path.is_file().then_some(record_path))
 }
 
 fn extract_record_string(
@@ -15245,16 +15475,31 @@ fn evaluate_migration_post_condition(
 ) -> serde_json::Value {
     match condition {
         serde_json::Value::String(path) => {
-            let resolved = project_root.join(path);
-            let exists = resolved.exists();
-            serde_json::json!({
-                "index": index,
-                "path": path,
-                "resolved_path": resolved.display().to_string(),
-                "expected_exists": true,
-                "actual_exists": exists,
-                "passed": exists,
-            })
+            match resolve_relative_path_within_root(
+                project_root,
+                Path::new(path),
+                "migration post-condition",
+            ) {
+                Ok(resolved) => {
+                    let exists = resolved.exists();
+                    serde_json::json!({
+                        "index": index,
+                        "path": path,
+                        "resolved_path": resolved.display().to_string(),
+                        "expected_exists": true,
+                        "actual_exists": exists,
+                        "passed": exists,
+                    })
+                }
+                Err(err) => serde_json::json!({
+                    "index": index,
+                    "path": path,
+                    "expected_exists": true,
+                    "actual_exists": false,
+                    "passed": false,
+                    "error": err.to_string(),
+                }),
+            }
         }
         serde_json::Value::Object(object) => {
             let raw_path = object
@@ -15280,29 +15525,46 @@ fn evaluate_migration_post_condition(
                 });
             };
 
-            let resolved = project_root.join(raw_path);
-            let actual_exists = resolved.exists();
-            let actual_contains = expected_contains.as_ref().and_then(|needle| {
-                std::fs::read_to_string(&resolved)
-                    .ok()
-                    .map(|contents| contents.contains(needle))
-            });
-            let contains_ok = match expected_contains.as_ref() {
-                Some(_) => actual_contains.unwrap_or(false),
-                None => true,
-            };
-            let passed = actual_exists == expected_exists && contains_ok;
+            match resolve_relative_path_within_root(
+                project_root,
+                Path::new(raw_path),
+                "migration post-condition",
+            ) {
+                Ok(resolved) => {
+                    let actual_exists = resolved.exists();
+                    let actual_contains = expected_contains.as_ref().and_then(|needle| {
+                        std::fs::read_to_string(&resolved)
+                            .ok()
+                            .map(|contents| contents.contains(needle))
+                    });
+                    let contains_ok = match expected_contains.as_ref() {
+                        Some(_) => actual_contains.unwrap_or(false),
+                        None => true,
+                    };
+                    let passed = actual_exists == expected_exists && contains_ok;
 
-            serde_json::json!({
-                "index": index,
-                "path": raw_path,
-                "resolved_path": resolved.display().to_string(),
-                "expected_exists": expected_exists,
-                "actual_exists": actual_exists,
-                "expected_contains": expected_contains,
-                "actual_contains": actual_contains,
-                "passed": passed,
-            })
+                    serde_json::json!({
+                        "index": index,
+                        "path": raw_path,
+                        "resolved_path": resolved.display().to_string(),
+                        "expected_exists": expected_exists,
+                        "actual_exists": actual_exists,
+                        "expected_contains": expected_contains,
+                        "actual_contains": actual_contains,
+                        "passed": passed,
+                    })
+                }
+                Err(err) => serde_json::json!({
+                    "index": index,
+                    "path": raw_path,
+                    "expected_exists": expected_exists,
+                    "actual_exists": false,
+                    "expected_contains": expected_contains,
+                    "actual_contains": serde_json::Value::Null,
+                    "passed": false,
+                    "error": err.to_string(),
+                }),
+            }
         }
         _ => serde_json::json!({
             "index": index,
@@ -15480,6 +15742,15 @@ fn runtime_major_satisfies_requirement(major: u64, requirement: &str) -> Option<
     saw_comparison.then_some(true)
 }
 
+fn evaluate_engine_requirement_satisfaction(
+    major_version: Option<u64>,
+    engine_requirement: Option<&str>,
+) -> Option<bool> {
+    let major = major_version?;
+    let requirement = engine_requirement?;
+    runtime_major_satisfies_requirement(major, requirement)
+}
+
 fn read_runtime_engine_requirement(project_root: &Path, runtime: &str) -> Result<Option<String>> {
     let engine_key = match runtime {
         "node" => "node",
@@ -15544,8 +15815,23 @@ fn emit_verify_module(args: &VerifyModuleArgs) -> i32 {
     }
 
     let normalized = normalize_verify_identifier(&args.module_id);
+    if !is_safe_verify_identifier(&normalized) {
+        let payload = build_verify_output(
+            "verify module",
+            args.compat_version,
+            "FAIL",
+            "fail",
+            1,
+            format!(
+                "invalid module identifier `{}`: only ASCII letters, digits, `_`, and `-` are allowed",
+                args.module_id
+            ),
+        );
+        return emit_verify_output("verify module", &payload, args.json);
+    }
+
     let payload = match resolve_verify_module_source(&normalized) {
-        Some(source_path) => match std::fs::read_to_string(&source_path) {
+        Ok(Some(source_path)) => match std::fs::read_to_string(&source_path) {
             Ok(source) => {
                 let declaration_path = locate_verify_module_declaration(&normalized);
                 let dependencies = collect_declared_module_dependencies(&source_path, &source);
@@ -15612,7 +15898,7 @@ fn emit_verify_module(args: &VerifyModuleArgs) -> i32 {
                 ),
             ),
         },
-        None => build_verify_output_with_details(
+        Ok(None) => build_verify_output_with_details(
             "verify module",
             args.compat_version,
             "FAIL",
@@ -15630,6 +15916,17 @@ fn emit_verify_module(args: &VerifyModuleArgs) -> i32 {
                 "search_root": crate_source_root().display().to_string(),
             })),
         ),
+        Err(err) => build_verify_output(
+            "verify module",
+            args.compat_version,
+            "FAIL",
+            "fail",
+            1,
+            format!(
+                "failed resolving module source for `{}`: {err}",
+                args.module_id
+            ),
+        ),
     };
     emit_verify_output("verify module", &payload, args.json)
 }
@@ -15640,6 +15937,21 @@ fn emit_verify_migration(args: &VerifyMigrationArgs) -> i32 {
     }
 
     let normalized = normalize_verify_identifier(&args.migration_id);
+    if !is_safe_verify_identifier(&normalized) {
+        let payload = build_verify_output(
+            "verify migration",
+            args.compat_version,
+            "FAIL",
+            "fail",
+            1,
+            format!(
+                "invalid migration identifier `{}`: only ASCII letters, digits, `_`, and `-` are allowed",
+                args.migration_id
+            ),
+        );
+        return emit_verify_output("verify migration", &payload, args.json);
+    }
+
     let project_root = match std::env::current_dir() {
         Ok(path) => path,
         Err(err) => {
@@ -15655,9 +15967,22 @@ fn emit_verify_migration(args: &VerifyMigrationArgs) -> i32 {
         }
     };
 
-    let payload = if let Some(record_path) =
-        resolve_verify_migration_record_path(&project_root, &args.migration_id, &normalized)
-    {
+    let record_path = match resolve_verify_migration_record_path(&project_root, &normalized) {
+        Ok(path) => path,
+        Err(err) => {
+            let payload = build_verify_output(
+                "verify migration",
+                args.compat_version,
+                "FAIL",
+                "fail",
+                1,
+                format!("failed resolving migration record for `{normalized}`: {err}"),
+            );
+            return emit_verify_output("verify migration", &payload, args.json);
+        }
+    };
+
+    let payload = if let Some(record_path) = record_path {
         match std::fs::read_to_string(&record_path) {
             Ok(raw) => match serde_json::from_str::<serde_json::Value>(&raw) {
                 Ok(serde_json::Value::Object(record)) => {
@@ -15841,12 +16166,10 @@ fn emit_verify_compatibility(args: &VerifyCompatibilityArgs) -> i32 {
                                     read_runtime_engine_requirement(&project_root, runtime)
                                         .unwrap_or(None);
                                 let engine_requirement_satisfied =
-                                    match (major_version, engine_requirement.as_deref()) {
-                                        (Some(major), Some(requirement)) => {
-                                            runtime_major_satisfies_requirement(major, requirement)
-                                        }
-                                        _ => Some(true),
-                                    };
+                                    evaluate_engine_requirement_satisfaction(
+                                        major_version,
+                                        engine_requirement.as_deref(),
+                                    );
                                 let known_issues = known_runtime_compatibility_issues(
                                     runtime,
                                     major_version,

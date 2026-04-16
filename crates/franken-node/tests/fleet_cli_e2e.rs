@@ -638,6 +638,204 @@ fn fleet_agent_release_actions_clear_local_quarantine_state() {
 }
 
 #[test]
+fn fleet_agent_release_actions_clear_global_quarantine_state() {
+    let project = tempdir().expect("tempdir");
+    let fleet_state_dir = project.path().join("fleet-state");
+    let mut transport = seed_transport(&fleet_state_dir);
+    std::fs::write(
+        project.path().join("franken_node.toml"),
+        "profile = \"balanced\"\n",
+    )
+    .expect("write config");
+    std::fs::create_dir_all(project.path().join(".franken-node/state")).expect("state dir");
+    write_fixture_registry_to(project.path());
+
+    let registry_path = project
+        .path()
+        .join(".franken-node/state/trust-card-registry.v1.json");
+    let mut registry =
+        TrustCardRegistry::load_authoritative_state(&registry_path, 60, 2_000).expect("load");
+    registry
+        .update(
+            "npm:@acme/auth-guard",
+            TrustCardMutation {
+                certification_level: None,
+                revocation_status: None,
+                active_quarantine: Some(true),
+                reputation_score_basis_points: None,
+                reputation_trend: Some(ReputationTrend::Declining),
+                user_facing_risk_assessment: Some(RiskAssessment {
+                    level: RiskLevel::High,
+                    summary: "quarantined before global fleet release".to_string(),
+                }),
+                last_verified_timestamp: Some("2026-04-10T00:00:00Z".to_string()),
+                evidence_refs: None,
+            },
+            2_001,
+            "trace-test-fleet-pre-global-release",
+        )
+        .expect("quarantine card");
+    registry
+        .persist_authoritative_state(&registry_path)
+        .expect("persist registry");
+
+    let emitted_at = Utc::now();
+    transport
+        .publish_action(&FleetActionRecord {
+            action_id: "fleet-op-quarantine-global-release-source".to_string(),
+            emitted_at,
+            action: FleetAction::Quarantine {
+                zone_id: "all".to_string(),
+                incident_id: "inc-global-release-1".to_string(),
+                target_id: "npm:@acme/auth-guard".to_string(),
+                target_kind: FleetTargetKind::Extension,
+                reason: "global source quarantine".to_string(),
+                quarantine_version: 13,
+            },
+        })
+        .expect("publish global quarantine");
+    transport
+        .publish_action(&FleetActionRecord {
+            action_id: "fleet-op-release-global".to_string(),
+            emitted_at,
+            action: FleetAction::Release {
+                zone_id: "all".to_string(),
+                incident_id: "inc-global-release-1".to_string(),
+                reason: Some("operator cleared global incident".to_string()),
+            },
+        })
+        .expect("publish global release");
+
+    let output = run_cli_in_dir_with_fleet_state(
+        project.path(),
+        &[
+            "fleet",
+            "agent",
+            "--node-id",
+            "agent-global-release-1",
+            "--zone",
+            "zone-global",
+            "--once",
+            "--json",
+        ],
+        &fleet_state_dir,
+    );
+    assert!(
+        output.status.success(),
+        "fleet agent failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let mut registry =
+        TrustCardRegistry::load_authoritative_state(&registry_path, 60, 2_100).expect("reload");
+    let card = registry
+        .read(
+            "npm:@acme/auth-guard",
+            2_100,
+            "trace-test-fleet-agent-global-release",
+        )
+        .expect("read")
+        .expect("trust card");
+    assert!(
+        !card.active_quarantine,
+        "global release should clear quarantine for zone-local agents"
+    );
+}
+
+#[test]
+fn fleet_agent_release_preserves_quarantine_when_another_incident_is_still_active() {
+    let project = tempdir().expect("tempdir");
+    let fleet_state_dir = project.path().join("fleet-state");
+    let mut transport = seed_transport(&fleet_state_dir);
+    std::fs::write(
+        project.path().join("franken_node.toml"),
+        "profile = \"balanced\"\n",
+    )
+    .expect("write config");
+    std::fs::create_dir_all(project.path().join(".franken-node/state")).expect("state dir");
+    write_fixture_registry_to(project.path());
+
+    let emitted_at = Utc::now();
+    transport
+        .publish_action(&FleetActionRecord {
+            action_id: "fleet-op-quarantine-overlap-1".to_string(),
+            emitted_at,
+            action: FleetAction::Quarantine {
+                zone_id: "zone-overlap".to_string(),
+                incident_id: "inc-overlap-1".to_string(),
+                target_id: "npm:@acme/auth-guard".to_string(),
+                target_kind: FleetTargetKind::Extension,
+                reason: "first quarantine".to_string(),
+                quarantine_version: 20,
+            },
+        })
+        .expect("publish first quarantine");
+    transport
+        .publish_action(&FleetActionRecord {
+            action_id: "fleet-op-quarantine-overlap-2".to_string(),
+            emitted_at: emitted_at + TimeDelta::seconds(1),
+            action: FleetAction::Quarantine {
+                zone_id: "zone-overlap".to_string(),
+                incident_id: "inc-overlap-2".to_string(),
+                target_id: "npm:@acme/auth-guard".to_string(),
+                target_kind: FleetTargetKind::Extension,
+                reason: "second quarantine".to_string(),
+                quarantine_version: 21,
+            },
+        })
+        .expect("publish second quarantine");
+    transport
+        .publish_action(&FleetActionRecord {
+            action_id: "fleet-op-release-overlap-1".to_string(),
+            emitted_at: emitted_at + TimeDelta::seconds(2),
+            action: FleetAction::Release {
+                zone_id: "zone-overlap".to_string(),
+                incident_id: "inc-overlap-1".to_string(),
+                reason: Some("operator cleared first incident".to_string()),
+            },
+        })
+        .expect("publish release");
+
+    let output = run_cli_in_dir_with_fleet_state(
+        project.path(),
+        &[
+            "fleet",
+            "agent",
+            "--node-id",
+            "agent-overlap-1",
+            "--zone",
+            "zone-overlap",
+            "--once",
+            "--json",
+        ],
+        &fleet_state_dir,
+    );
+    assert!(
+        output.status.success(),
+        "fleet agent failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let registry_path = project
+        .path()
+        .join(".franken-node/state/trust-card-registry.v1.json");
+    let mut registry =
+        TrustCardRegistry::load_authoritative_state(&registry_path, 60, 2_100).expect("reload");
+    let card = registry
+        .read(
+            "npm:@acme/auth-guard",
+            2_100,
+            "trace-test-fleet-agent-overlap-release",
+        )
+        .expect("read")
+        .expect("trust card");
+    assert!(
+        card.active_quarantine,
+        "release should not clear quarantine while another active incident still targets the extension"
+    );
+}
+
+#[test]
 fn fleet_agent_release_actions_clear_local_quarantine_state_across_poll_cycles() {
     let project = tempdir().expect("tempdir");
     let fleet_state_dir = project.path().join("fleet-state");
