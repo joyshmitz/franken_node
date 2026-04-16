@@ -604,7 +604,8 @@ impl RuntimeOracle {
         // Count how many runtimes agree with the most common output.
         let mut output_counts: BTreeMap<&[u8], usize> = BTreeMap::new();
         for output in entry.votes.values() {
-            *output_counts.entry(output.as_slice()).or_insert(0) += 1;
+            let count = output_counts.entry(output.as_slice()).or_insert(0);
+            *count = count.saturating_add(1);
         }
         let max_agreement = output_counts.values().max().copied().unwrap_or(0);
 

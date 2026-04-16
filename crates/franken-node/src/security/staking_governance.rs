@@ -997,7 +997,7 @@ impl TrustGovernanceState {
             reason: reason.clone(),
         };
 
-        let stake_id = active_stake.map(|s| s.id).unwrap_or(StakeId(0));
+        let stake_id = active_stake.map_or(StakeId(0), |s| s.id);
 
         // STAKE-007: Gate checked
         self.emit_audit(

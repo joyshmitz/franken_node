@@ -592,7 +592,7 @@ impl RailRouter {
     // ─── Internal helpers ───────────────────────────────────────────────
 
     fn next_trace_id(&mut self) -> String {
-        self.seq += 1;
+        self.seq = self.seq.saturating_add(1);
         format!("trace-iso-{:06}", self.seq)
     }
 

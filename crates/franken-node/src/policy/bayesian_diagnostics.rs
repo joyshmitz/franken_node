@@ -115,8 +115,14 @@ impl BetaState {
     fn update(&mut self, success: bool) {
         if success {
             self.alpha += 1.0;
+            if !self.alpha.is_finite() {
+                self.alpha = f64::MAX;
+            }
         } else {
             self.beta += 1.0;
+            if !self.beta.is_finite() {
+                self.beta = f64::MAX;
+            }
         }
         self.observation_count = self.observation_count.saturating_add(1);
     }

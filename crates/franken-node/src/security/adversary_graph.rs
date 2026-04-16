@@ -204,7 +204,12 @@ fn chain_evidence_hash(
 }
 
 fn project_posterior(principal_id: &str, node: &AdversaryNode) -> AdversaryPosterior {
-    let posterior = (node.alpha as f64) / ((node.alpha + node.beta) as f64);
+    let total = node.alpha.saturating_add(node.beta);
+    let posterior = if total > 0 {
+        (node.alpha as f64) / (total as f64)
+    } else {
+        0.5 // fail-safe: uninformative prior when both alpha and beta are zero
+    };
     AdversaryPosterior {
         principal_id: principal_id.to_string(),
         alpha: node.alpha,

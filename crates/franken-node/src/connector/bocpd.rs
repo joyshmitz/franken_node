@@ -204,10 +204,19 @@ impl GaussianSuffStats {
 
     fn update(&mut self, x: f64) {
         self.n += 1.0;
+        if !self.n.is_finite() {
+            self.n = f64::MAX;
+        }
         let delta = x - self.mean;
         self.mean += delta / self.n;
+        if !self.mean.is_finite() {
+            self.mean = 0.0;
+        }
         let delta2 = x - self.mean;
         self.sum_sq += delta * delta2;
+        if !self.sum_sq.is_finite() {
+            self.sum_sq = 0.0;
+        }
     }
 }
 
@@ -315,7 +324,13 @@ impl PoissonSuffStats {
 
     fn update(&mut self, x: f64) {
         self.n += 1.0;
+        if !self.n.is_finite() {
+            self.n = f64::MAX;
+        }
         self.sum += x;
+        if !self.sum.is_finite() {
+            self.sum = 0.0;
+        }
     }
 }
 
@@ -377,6 +392,9 @@ impl CategoricalSuffStats {
     fn update(&mut self, category: usize) {
         if category < self.counts.len() {
             self.counts[category] += 1.0;
+            if !self.counts[category].is_finite() {
+                self.counts[category] = f64::MAX;
+            }
         }
     }
 }
@@ -605,6 +623,9 @@ impl BocpdDetector {
             self.current_regime_sum = 0.0;
         }
         self.current_regime_count += 1.0;
+        if !self.current_regime_count.is_finite() {
+            self.current_regime_count = f64::MAX;
+        }
 
         // Step 5: Check for changepoint.
         let cp_prob = self.run_length_probs[0];
