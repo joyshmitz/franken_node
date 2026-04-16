@@ -203,7 +203,7 @@ impl GaussianSuffStats {
     }
 
     fn update(&mut self, x: f64) {
-        self.n += 1.0;
+        self.n = self.n.saturating_add(1.0);
         if !self.n.is_finite() {
             self.n = f64::MAX;
         }
@@ -213,7 +213,7 @@ impl GaussianSuffStats {
             self.mean = 0.0;
         }
         let delta2 = x - self.mean;
-        self.sum_sq += delta * delta2;
+        self.sum_sq = self.sum_sq.saturating_add(delta * delta2);
         if !self.sum_sq.is_finite() {
             self.sum_sq = 0.0;
         }
@@ -323,11 +323,11 @@ impl PoissonSuffStats {
     }
 
     fn update(&mut self, x: f64) {
-        self.n += 1.0;
+        self.n = self.n.saturating_add(1.0);
         if !self.n.is_finite() {
             self.n = f64::MAX;
         }
-        self.sum += x;
+        self.sum = self.sum.saturating_add(x);
         if !self.sum.is_finite() {
             self.sum = 0.0;
         }
@@ -391,7 +391,7 @@ impl CategoricalSuffStats {
 
     fn update(&mut self, category: usize) {
         if category < self.counts.len() {
-            self.counts[category] += 1.0;
+            self.counts[category] = self.counts[category].saturating_add(1.0);
             if !self.counts[category].is_finite() {
                 self.counts[category] = f64::MAX;
             }
@@ -406,7 +406,7 @@ impl CategoricalModel {
             return 1e-300;
         }
         let total =
-            stats.counts.iter().copied().fold(0.0_f64, |a, b| a + b) + self.alpha0 * self.k as f64;
+            stats.counts.iter().copied().fold(0.0_f64, |a, b| a.saturating_add(b)) + self.alpha0 * self.k as f64;
         if !total.is_finite() || total <= 0.0 {
             return 1e-300;
         }
@@ -618,11 +618,11 @@ impl BocpdDetector {
         }
 
         // Track regime statistics.
-        self.current_regime_sum += x;
+        self.current_regime_sum = self.current_regime_sum.saturating_add(x);
         if !self.current_regime_sum.is_finite() {
             self.current_regime_sum = 0.0;
         }
-        self.current_regime_count += 1.0;
+        self.current_regime_count = self.current_regime_count.saturating_add(1.0);
         if !self.current_regime_count.is_finite() {
             self.current_regime_count = f64::MAX;
         }
