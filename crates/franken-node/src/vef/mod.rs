@@ -12,3 +12,6 @@ pub mod verification_state;
 // Re-export connector for sibling VEF modules so they can be compiled both
 // from the crate root and from standalone test fixtures.
 pub(crate) use crate::connector;
+
+#[cfg(test)]
+mod proof_verifier_conformance_tests;

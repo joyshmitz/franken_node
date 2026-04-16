@@ -11,3 +11,6 @@ pub mod idempotency_store;
 #[cfg(feature = "extended-surfaces")]
 pub mod remote_bulkhead;
 pub mod virtual_transport_faults;
+
+#[cfg(test)]
+mod remote_conformance_tests;

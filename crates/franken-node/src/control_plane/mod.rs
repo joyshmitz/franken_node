@@ -14,3 +14,6 @@ pub mod key_role_separation;
 pub mod marker_stream;
 pub mod mmr_proofs;
 pub mod transition_abort;
+
+#[cfg(test)]
+mod control_plane_conformance_tests;

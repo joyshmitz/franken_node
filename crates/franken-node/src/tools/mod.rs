@@ -56,3 +56,8 @@ pub mod verifier_benchmark_releases;
 pub mod verifier_toolkit;
 #[cfg(feature = "extended-surfaces")]
 pub mod version_benchmark_standards;
+
+#[cfg(test)]
+mod benchmark_suite_conformance_tests;
+#[cfg(test)]
+mod replay_bundle_conformance_tests;

@@ -3,3 +3,6 @@ pub mod engine_dispatcher;
 pub mod mitigation_synthesis;
 pub mod telemetry_bridge;
 pub mod tokio_drift_checker;
+
+#[cfg(test)]
+mod ops_conformance_tests;
