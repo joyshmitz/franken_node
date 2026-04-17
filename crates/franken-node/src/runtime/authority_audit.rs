@@ -29,8 +29,12 @@ use crate::capacity_defaults::aliases::MAX_EVENTS;
 const MAX_VIOLATIONS: usize = 4096;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
@@ -1113,6 +1117,160 @@ mod tests {
         assert!(codes.contains(&event_codes::FN_AA_003));
     }
 
+    #[test]
+    fn strict_guard_reports_each_missing_capability_for_module() {
+        let mut guard = AuthorityAuditGuard::with_default_inventory(true);
+        let ctx = CapabilityContext::new(&[], "trace-missing-all", "principal-missing-all");
+
+        let violation = guard
+            .check_context("crate::security::network_guard", &ctx)
+            .expect_err("strict guard must reject missing capabilities");
+
+        assert_eq!(violation.code(), error_codes::ERR_AA_MISSING_CAPABILITY);
+        assert!(violation.description.contains("network_egress"));
+        assert!(violation.description.contains("policy_evaluation"));
+        assert_eq!(guard.violations().len(), 1);
+    }
+
+    #[test]
+    fn strict_guard_treats_explicit_false_grant_as_missing() {
+        let mut guard = AuthorityAuditGuard::with_default_inventory(true);
+        let mut ctx = CapabilityContext::new(
+            &[Capability::NetworkEgress, Capability::PolicyEvaluation],
+            "trace-false-grant",
+            "principal-false-grant",
+        );
+        ctx.granted.insert("policy_evaluation".to_string(), false);
+
+        let violation = guard
+            .check_context("crate::security::network_guard", &ctx)
+            .expect_err("explicit false grant must reject");
+
+        assert!(violation.description.contains("policy_evaluation"));
+        assert!(!violation.description.contains("network_egress"));
+        assert!(
+            guard
+                .events()
+                .iter()
+                .any(|event| event.detail == "guard enforcement: REJECT")
+        );
+    }
+
+    #[test]
+    fn advisory_guard_records_violation_but_emits_warn_decision() {
+        let mut guard = AuthorityAuditGuard::with_default_inventory(false);
+        let ctx = CapabilityContext::new(&[], "trace-advisory-warn", "principal-advisory-warn");
+
+        let result = guard.check_context("crate::security::network_guard", &ctx);
+
+        assert!(result.is_ok());
+        assert_eq!(guard.violations().len(), 1);
+        assert!(
+            guard
+                .events()
+                .iter()
+                .any(|event| event.detail == "guard enforcement: WARN")
+        );
+    }
+
+    #[test]
+    fn unknown_required_capability_string_is_not_satisfied_by_known_capabilities() {
+        let mut inventory = SecurityCriticalInventory::new();
+        inventory.add_module(SecurityCriticalModule {
+            module_path: "crate::security::custom_unknown".to_string(),
+            required_capabilities: vec!["capability_that_does_not_exist".to_string()],
+            risk_level: "critical".to_string(),
+            description: "custom unknown capability test".to_string(),
+        });
+        let mut guard = AuthorityAuditGuard::new(inventory, true);
+        let ctx = CapabilityContext::new(
+            Capability::all(),
+            "trace-unknown-capability",
+            "principal-unknown-capability",
+        );
+
+        let violation = guard
+            .check_context("crate::security::custom_unknown", &ctx)
+            .expect_err("unknown required capability must fail closed");
+
+        assert!(
+            violation
+                .description
+                .contains("capability_that_does_not_exist")
+        );
+        assert_eq!(guard.violations().len(), 1);
+    }
+
+    #[test]
+    fn strict_audit_with_partial_capabilities_fails_specific_modules() {
+        let ctx = CapabilityContext::new(
+            &[Capability::NetworkEgress, Capability::PolicyEvaluation],
+            "trace-partial-strict",
+            "principal-partial-strict",
+        );
+
+        let report = generate_audit_report(&ctx, true);
+
+        assert_eq!(report.verdict, "FAIL");
+        assert!(report.failed > 0);
+        let signing = report
+            .module_results
+            .get("crate::supply_chain::artifact_signing")
+            .expect("artifact signing result");
+        assert!(!signing.passed);
+        assert!(signing.violation.is_some());
+    }
+
+    #[test]
+    fn strict_audit_with_no_capabilities_fails_every_inventory_module() {
+        let ctx = CapabilityContext::new(&[], "trace-none-strict", "principal-none-strict");
+
+        let report = generate_audit_report(&ctx, true);
+
+        assert_eq!(report.verdict, "FAIL");
+        assert_eq!(report.failed, report.total_modules);
+        assert_eq!(report.violations.len(), report.total_modules);
+        assert!(
+            report
+                .module_results
+                .values()
+                .all(|result| !result.passed && result.violation.is_some())
+        );
+    }
+
+    #[test]
+    fn advisory_audit_keeps_pass_verdict_while_retaining_violation_log() {
+        let ctx = CapabilityContext::new(&[], "trace-none-advisory", "principal-none-advisory");
+
+        let report = generate_audit_report(&ctx, false);
+
+        assert_eq!(report.verdict, "PASS");
+        assert_eq!(report.failed, 0);
+        assert_eq!(report.violations.len(), report.total_modules);
+        assert!(
+            report
+                .module_results
+                .values()
+                .all(|result| result.passed && result.violation.is_none())
+        );
+    }
+
+    #[test]
+    fn failed_guard_preserves_trace_id_on_rejection_events() {
+        let mut guard = AuthorityAuditGuard::with_default_inventory(true);
+        let ctx = CapabilityContext::new(&[], "trace-reject-events", "principal-reject-events");
+
+        let _ = guard.check_context("crate::security::network_guard", &ctx);
+
+        assert!(
+            guard
+                .events()
+                .iter()
+                .filter(|event| event.event_code == event_codes::FN_AA_003)
+                .all(|event| event.trace_id == "trace-reject-events")
+        );
+    }
+
     // ── AuditReport (audit_all) ──────────────────────────────────────
 
     #[test]
@@ -1200,6 +1358,147 @@ mod tests {
         assert_eq!(parsed.event_code, "FN-AA-001");
     }
 
+    #[test]
+    fn risk_level_from_label_rejects_case_and_whitespace() {
+        assert_eq!(RiskLevel::from_label("High"), None);
+        assert_eq!(RiskLevel::from_label(" critical"), None);
+        assert_eq!(RiskLevel::from_label("critical "), None);
+        assert_eq!(RiskLevel::from_label(""), None);
+    }
+
+    #[test]
+    fn case_mismatched_grant_does_not_satisfy_capability() {
+        let mut ctx = CapabilityContext::new(&[], "trace-case-grant", "principal-case-grant");
+        ctx.granted.insert("NetworkEgress".to_string(), true);
+        ctx.granted.insert("network_egress".to_string(), false);
+
+        assert!(!ctx.has_capability(&Capability::NetworkEgress));
+        assert_eq!(
+            ctx.missing_capabilities(&[Capability::NetworkEgress]),
+            vec![Capability::NetworkEgress]
+        );
+    }
+
+    #[test]
+    fn duplicate_inventory_module_replaces_stale_requirements() {
+        let mut inventory = SecurityCriticalInventory::new();
+        inventory.add_module(SecurityCriticalModule {
+            module_path: "crate::security::replace_me".to_string(),
+            required_capabilities: vec!["key_access".to_string()],
+            risk_level: "high".to_string(),
+            description: "first definition".to_string(),
+        });
+        inventory.add_module(SecurityCriticalModule {
+            module_path: "crate::security::replace_me".to_string(),
+            required_capabilities: vec!["network_egress".to_string()],
+            risk_level: "critical".to_string(),
+            description: "replacement definition".to_string(),
+        });
+
+        let module = inventory
+            .modules
+            .get("crate::security::replace_me")
+            .expect("replacement module");
+        assert_eq!(inventory.module_count(), 1);
+        assert_eq!(module.required_capabilities, vec!["network_egress"]);
+        assert_eq!(module.description, "replacement definition");
+    }
+
+    #[test]
+    fn blank_required_capability_string_fails_closed() {
+        let mut inventory = SecurityCriticalInventory::new();
+        inventory.add_module(SecurityCriticalModule {
+            module_path: "crate::security::blank_required".to_string(),
+            required_capabilities: vec!["".to_string()],
+            risk_level: "critical".to_string(),
+            description: "malformed blank capability".to_string(),
+        });
+        let ctx = CapabilityContext::new(
+            Capability::all(),
+            "trace-blank-required",
+            "principal-blank-required",
+        );
+        let mut guard = AuthorityAuditGuard::new(inventory, true);
+
+        let violation = guard
+            .check_context("crate::security::blank_required", &ctx)
+            .expect_err("blank required capability must fail closed");
+
+        assert_eq!(violation.error_code, error_codes::ERR_AA_MISSING_CAPABILITY);
+        assert_eq!(violation.pattern_id, "capability_check");
+        assert_eq!(guard.violations().len(), 1);
+    }
+
+    #[test]
+    fn strict_rejection_records_violation_before_decision_event() {
+        let mut guard = AuthorityAuditGuard::with_default_inventory(true);
+        let ctx = CapabilityContext::new(&[], "trace-event-order", "principal-event-order");
+
+        let _ = guard.check_context("crate::security::network_guard", &ctx);
+
+        let events = guard.events();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].event_code, event_codes::FN_AA_001);
+        assert_eq!(events[1].event_code, event_codes::FN_AA_003);
+        assert_eq!(events[2].event_code, event_codes::FN_AA_008);
+        assert_eq!(events[2].detail, "guard enforcement: REJECT");
+    }
+
+    #[test]
+    fn advisory_report_keeps_result_violations_empty_on_failed_modules() {
+        let ctx = CapabilityContext::new(
+            &[],
+            "trace-advisory-result-shape",
+            "principal-advisory-result-shape",
+        );
+
+        let report = generate_audit_report(&ctx, false);
+
+        assert_eq!(report.verdict, "PASS");
+        assert_eq!(report.failed, 0);
+        assert_eq!(report.violations.len(), report.total_modules);
+        assert!(
+            report
+                .module_results
+                .values()
+                .all(|result| result.passed && result.violation.is_none())
+        );
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_discards_without_panic() {
+        let mut events = vec![AuditEvent {
+            event_code: event_codes::FN_AA_001.to_string(),
+            module_path: "crate::security::old".to_string(),
+            detail: "old event".to_string(),
+            trace_id: "trace-old".to_string(),
+        }];
+
+        push_bounded(
+            &mut events,
+            AuditEvent {
+                event_code: event_codes::FN_AA_003.to_string(),
+                module_path: "crate::security::new".to_string(),
+                detail: "new event".to_string(),
+                trace_id: "trace-new".to_string(),
+            },
+            0,
+        );
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn push_bounded_retains_latest_entries_after_overflow() {
+        let mut entries = Vec::new();
+
+        for index in 0..5 {
+            push_bounded(&mut entries, format!("entry-{index}"), 2);
+        }
+
+        assert_eq!(entries, vec!["entry-3".to_string(), "entry-4".to_string()]);
+    }
+
     // ── Send + Sync ─────────────────────────────────────────────────
 
     #[test]
@@ -1229,5 +1528,593 @@ mod tests {
         assert_sync::<ModuleAuditResult>();
         assert_send::<AuditReport>();
         assert_sync::<AuditReport>();
+    }
+}
+
+#[cfg(test)]
+mod authority_audit_comprehensive_negative_tests {
+    use super::*;
+
+    #[test]
+    fn negative_capability_context_with_unicode_injection_attacks() {
+        // Test with malicious Unicode patterns in context fields
+        let malicious_contexts = vec![
+            (
+                "trace\u{202E}spoofed\u{202D}",
+                "principal\u{0000}null\r\n\t\x1b[31mred\x1b[0m",
+            ),
+            (
+                "trace\u{FEFF}\u{200B}\u{200C}\u{200D}",
+                "principal\u{10FFFF}\u{E000}\u{FDD0}",
+            ),
+            (
+                "trace\"\\escape\r\n",
+                "principal<script>alert('xss')</script>",
+            ),
+            (
+                "trace' OR '1'='1' --",
+                "principal\u{D800}\u{DFFF}",
+            ),
+            (
+                "trace\x00\x01\x02\x03\x04",
+                "principal\u{202A}bidi\u{202B}isolate\u{202C}",
+            ),
+        ];
+
+        for (malicious_trace, malicious_principal) in malicious_contexts {
+            let ctx = CapabilityContext::new(
+                &[Capability::KeyAccess, Capability::ArtifactSigning],
+                malicious_trace,
+                malicious_principal,
+            );
+
+            // Verify malicious content is preserved exactly
+            assert_eq!(ctx.trace_id, malicious_trace);
+            assert_eq!(ctx.principal, malicious_principal);
+            assert!(ctx.has_capability(&Capability::KeyAccess));
+
+            // Test serialization preserves malicious content
+            let json = serde_json::to_string(&ctx).unwrap();
+            let deserialized: CapabilityContext = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized.trace_id, malicious_trace);
+            assert_eq!(deserialized.principal, malicious_principal);
+        }
+    }
+
+    #[test]
+    fn negative_security_critical_module_with_malicious_paths_and_descriptions() {
+        let mut inventory = SecurityCriticalInventory::new();
+
+        // Test with various malicious module paths and descriptions
+        let malicious_modules = vec![
+            (
+                "crate::security\u{202E}::evil\u{202D}::legitimate",
+                "Description with\r\n\tHTTP/1.1 200 OK\r\n\r\n<html>injection",
+                vec!["key_access\u{FEFF}".to_string()],
+                "critical\u{200B}",
+            ),
+            (
+                "../../../etc/passwd\x00malicious",
+                "XSS<script>alert('audit')</script>description",
+                vec!["network_egress\x00null".to_string()],
+                "high\r\ninjection",
+            ),
+            (
+                "crate::security::unicode\u{10FFFF}\u{E000}",
+                "BiDi\u{202A}attack\u{202C}description",
+                vec!["file_system_read\"quotes".to_string()],
+                "medium' OR '1'='1' --",
+            ),
+        ];
+
+        for (path, description, capabilities, risk_level) in malicious_modules {
+            let malicious_module = SecurityCriticalModule {
+                module_path: path.to_string(),
+                required_capabilities: capabilities.clone(),
+                risk_level: risk_level.to_string(),
+                description: description.to_string(),
+            };
+
+            inventory.add_module(malicious_module);
+
+            // Verify malicious content preserved in inventory
+            let stored_module = inventory.modules.get(path).unwrap();
+            assert_eq!(stored_module.module_path, path);
+            assert_eq!(stored_module.description, description);
+            assert_eq!(stored_module.required_capabilities, capabilities);
+            assert_eq!(stored_module.risk_level, risk_level);
+        }
+
+        // Test inventory serialization with malicious content
+        let json = serde_json::to_string(&inventory).unwrap();
+        let deserialized: SecurityCriticalInventory = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.module_count(), inventory.module_count());
+    }
+
+    #[test]
+    fn negative_authority_audit_guard_with_massive_event_stress_testing() {
+        let mut guard = AuthorityAuditGuard::with_default_inventory(true);
+
+        // Generate massive number of events to test bounded storage
+        for i in 0..MAX_EVENTS * 2 {
+            let massive_ctx = CapabilityContext::new(
+                &[], // Missing capabilities to trigger violations
+                &format!("trace_massive_{}_{'x'.repeat(1000)}", i),
+                &format!("principal_massive_{}_{'y'.repeat(1000)}", i),
+            );
+
+            // Each check generates multiple events
+            let _ = guard.check_context(
+                &format!("crate::security::stress_{}", i),
+                &massive_ctx,
+            );
+        }
+
+        // Events should be bounded by MAX_EVENTS
+        assert_eq!(guard.events().len(), MAX_EVENTS);
+
+        // Violations should be bounded by MAX_VIOLATIONS
+        assert!(guard.violations().len() <= MAX_VIOLATIONS);
+
+        // Verify latest events are preserved
+        let latest_events = &guard.events()[MAX_EVENTS - 10..];
+        for event in latest_events {
+            assert!(event.trace_id.contains("trace_massive_"));
+        }
+    }
+
+    #[test]
+    fn negative_ambient_authority_violation_display_injection_resistance() {
+        // Test violation display with malicious content in all fields
+        let malicious_violations = vec![
+            AmbientAuthorityViolation {
+                module_path: "crate::security\r\n\t\x1b[31mREDTEXT\x1b[0m".to_string(),
+                pattern_id: "AA-PAT\u{202E}spoofed\u{202D}".to_string(),
+                description: "Direct env access\u{0000}null\r\n".to_string(),
+                location: Some("file.rs:42\u{FEFF}BOM".to_string()),
+                error_code: "ERR_AA_AMBIENT_DETECTED\u{200B}zw".to_string(),
+            },
+            AmbientAuthorityViolation {
+                module_path: "crate::security\"quotes'apostrophe\\backslash".to_string(),
+                pattern_id: "AA-PAT<script>alert('xss')</script>".to_string(),
+                description: "HTTP/1.1 200 OK\r\n\r\n<html>injection".to_string(),
+                location: Some("evil.rs:1337' OR '1'='1' --".to_string()),
+                error_code: "ERR_AA\u{10FFFF}\u{E000}UNICODE".to_string(),
+            },
+            AmbientAuthorityViolation {
+                module_path: "crate::security\u{D800}\u{DFFF}surrogate".to_string(),
+                pattern_id: "AA-PAT\u{202A}bidi\u{202B}isolate\u{202C}".to_string(),
+                description: "Unicode\u{FDD0}nonchar\u{FFFE}injection".to_string(),
+                location: None,
+                error_code: "ERR_AA_\x00\x01\x02\x03CONTROL".to_string(),
+            },
+        ];
+
+        for violation in malicious_violations {
+            // Test display formatting safety
+            let display_string = format!("{}", violation);
+            assert!(display_string.contains(&violation.module_path));
+            assert!(display_string.contains(&violation.pattern_id));
+            assert!(display_string.contains(&violation.description));
+
+            // Test code() method
+            assert_eq!(violation.code(), violation.error_code);
+
+            // Test serialization safety
+            let json = serde_json::to_string(&violation).unwrap();
+            let deserialized: AmbientAuthorityViolation = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, violation);
+        }
+    }
+
+    #[test]
+    fn negative_capability_context_manipulation_and_bypass_attempts() {
+        // Test various capability manipulation attempts
+        let mut ctx = CapabilityContext::new(
+            &[Capability::NetworkEgress],
+            "trace-manipulation",
+            "principal-manipulation",
+        );
+
+        // Test case-sensitive capability checking
+        ctx.granted.insert("NETWORK_EGRESS".to_string(), true); // Wrong case
+        ctx.granted.insert("network_egress".to_string(), false); // Explicit false
+        assert!(!ctx.has_capability(&Capability::NetworkEgress));
+
+        // Test capability injection attempts
+        ctx.granted.insert("key_access\x00null".to_string(), true); // Null byte injection
+        ctx.granted.insert("key_access\u{FEFF}bom".to_string(), true); // BOM injection
+        ctx.granted.insert("key_access\u{200B}zw".to_string(), true); // Zero-width injection
+
+        // None of these should satisfy the actual capability
+        assert!(!ctx.has_capability(&Capability::KeyAccess));
+
+        // Test missing capabilities with injection attempts
+        let missing = ctx.missing_capabilities(&[
+            Capability::KeyAccess,
+            Capability::ArtifactSigning,
+            Capability::NetworkEgress,
+        ]);
+        assert_eq!(missing.len(), 3); // All should be missing
+
+        // Test has_all with malicious granted map
+        ctx.granted.clear();
+        ctx.granted.insert("key_access".to_string(), true);
+        ctx.granted.insert("artifact_signing".to_string(), true);
+        ctx.granted.insert("network_egress".to_string(), true);
+        ctx.granted.insert("evil_capability_\u{202E}spoofed".to_string(), true);
+
+        assert!(ctx.has_all(&[
+            Capability::KeyAccess,
+            Capability::ArtifactSigning,
+            Capability::NetworkEgress,
+        ]));
+    }
+
+    #[test]
+    fn negative_ambient_authority_pattern_with_extreme_regex_and_descriptions() {
+        // Test patterns with extreme and malicious content
+        let malicious_patterns = vec![
+            AmbientAuthorityPattern {
+                id: "AA-PAT\u{202E}spoofed\u{202D}".to_string(),
+                description: "Pattern with\r\n\tcontrol\x00chars\u{FEFF}".to_string(),
+                pattern: r"std::env::var\b\u{200B}hidden".to_string(),
+                severity: "critical\u{10FFFF}unicode".to_string(),
+            },
+            AmbientAuthorityPattern {
+                id: "AA-PAT<script>alert('xss')</script>".to_string(),
+                description: "XSS injection pattern\"quotes'apostrophe".to_string(),
+                pattern: r"(.*){1000000}".to_string(), // Potentially catastrophic regex
+                severity: "high\r\nHTTP/1.1 200 OK\r\n\r\n".to_string(),
+            },
+            AmbientAuthorityPattern {
+                id: "AA-PAT\u{D800}\u{DFFF}".to_string(),
+                description: "Unicode\u{FDD0}nonchar\u{FFFE}pattern".to_string(),
+                pattern: r"std::(fs|net)::\b".to_string(),
+                severity: "medium' OR '1'='1' --".to_string(),
+            },
+        ];
+
+        for pattern in malicious_patterns {
+            // Test serialization safety
+            let json = serde_json::to_string(&pattern).unwrap();
+            let deserialized: AmbientAuthorityPattern = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, pattern);
+
+            // Verify malicious content preserved
+            assert_eq!(deserialized.id, pattern.id);
+            assert_eq!(deserialized.description, pattern.description);
+            assert_eq!(deserialized.pattern, pattern.pattern);
+            assert_eq!(deserialized.severity, pattern.severity);
+        }
+
+        // Test builtin patterns are safe
+        let builtin = builtin_patterns();
+        assert_eq!(builtin.len(), 6);
+        for pattern in builtin {
+            assert!(!pattern.id.is_empty());
+            assert!(!pattern.description.is_empty());
+            assert!(!pattern.pattern.is_empty());
+            assert!(!pattern.severity.is_empty());
+        }
+    }
+
+    #[test]
+    fn negative_audit_event_with_massive_field_lengths_and_injection() {
+        // Test events with extreme field sizes and injection patterns
+        let massive_events = vec![
+            AuditEvent {
+                event_code: "FN-AA\u{202E}spoofed\u{202D}".repeat(1000),
+                module_path: "crate::security::".to_string() + &"x".repeat(100000),
+                detail: "Massive detail: ".to_string() + &"y".repeat(1000000), // 1MB detail
+                trace_id: "trace\u{FEFF}\u{200B}\u{200C}\u{200D}".repeat(10000),
+            },
+            AuditEvent {
+                event_code: "FN-AA<script>alert('xss')</script>".to_string(),
+                module_path: "crate::security\r\nHTTP/1.1 200 OK\r\n\r\n".to_string(),
+                detail: "XSS injection\"quotes'apostrophe\\backslash".to_string(),
+                trace_id: "trace' OR '1'='1' --".to_string(),
+            },
+            AuditEvent {
+                event_code: "FN-AA\x00\x01\x02\x03\x04".to_string(),
+                module_path: "crate::security\u{D800}\u{DFFF}".to_string(),
+                detail: "Control\u{FDD0}chars\u{FFFE}detail".to_string(),
+                trace_id: "trace\u{10FFFF}\u{E000}".to_string(),
+            },
+        ];
+
+        for event in massive_events {
+            // Test serialization with massive content
+            let json = serde_json::to_string(&event).unwrap();
+            let deserialized: AuditEvent = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, event);
+
+            // Verify field lengths preserved
+            if event.detail.len() > 1000000 {
+                assert_eq!(deserialized.detail.len(), event.detail.len());
+            }
+        }
+
+        // Test push_bounded with massive events
+        let mut events = Vec::new();
+        for i in 0..100 {
+            push_bounded(
+                &mut events,
+                AuditEvent {
+                    event_code: format!("MASSIVE-{}", i),
+                    module_path: "x".repeat(10000),
+                    detail: "y".repeat(100000), // 100KB each
+                    trace_id: "z".repeat(1000),
+                },
+                50,
+            );
+        }
+        assert_eq!(events.len(), 50);
+    }
+
+    #[test]
+    fn negative_risk_level_and_capability_enum_serialization_tampering() {
+        // Test RiskLevel with invalid serialization attempts
+        let invalid_risk_levels = [
+            "\"Critical\"", // Wrong case
+            "\"CRITICAL\"", // All caps
+            "\"ultra_high\"", // Non-existent level
+            "\"\"", // Empty string
+            "null",
+            "42",
+            "true",
+            "{}",
+            "[]",
+        ];
+
+        for invalid_json in invalid_risk_levels {
+            let result: Result<RiskLevel, _> = serde_json::from_str(invalid_json);
+            assert!(result.is_err(), "Should reject invalid RiskLevel: {}", invalid_json);
+        }
+
+        // Test Capability with invalid serialization attempts
+        let invalid_capabilities = [
+            "\"KeyAccess\"", // Wrong case
+            "\"KEY_ACCESS\"", // Wrong format
+            "\"unknown_capability\"", // Non-existent
+            "\"network-egress\"", // Wrong separator
+            "\"\"",
+            "null",
+            "false",
+        ];
+
+        for invalid_json in invalid_capabilities {
+            let result: Result<Capability, _> = serde_json::from_str(invalid_json);
+            assert!(result.is_err(), "Should reject invalid Capability: {}", invalid_json);
+        }
+
+        // Test valid round-trips still work
+        for risk_level in [RiskLevel::Low, RiskLevel::Medium, RiskLevel::High, RiskLevel::Critical] {
+            let json = serde_json::to_string(&risk_level).unwrap();
+            let parsed: RiskLevel = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, risk_level);
+        }
+
+        for capability in Capability::all() {
+            let json = serde_json::to_string(capability).unwrap();
+            let parsed: Capability = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, *capability);
+        }
+    }
+
+    #[test]
+    fn negative_audit_report_with_malicious_content_and_extreme_sizes() {
+        // Create audit report with malicious module results
+        let mut malicious_module_results = BTreeMap::new();
+
+        // Add results with malicious module paths
+        let malicious_paths = vec![
+            "crate::security\u{202E}spoofed\u{202D}::module",
+            "crate::security\r\nHTTP/1.1 200 OK\r\n\r\n::module",
+            "crate::security\x00null\u{FEFF}bom::module",
+            "../../../etc/passwd\u{10FFFF}::module",
+            "crate::security\"quotes'apostrophe\\backslash::module",
+        ];
+
+        for path in malicious_paths {
+            malicious_module_results.insert(
+                path.to_string(),
+                ModuleAuditResult {
+                    module_path: path.to_string(),
+                    passed: false,
+                    violation: Some(AmbientAuthorityViolation {
+                        module_path: path.to_string(),
+                        pattern_id: "AA-PAT\u{202A}bidi\u{202C}".to_string(),
+                        description: "Malicious\u{FDD0}violation".to_string(),
+                        location: Some("evil.rs:1337\u{200B}".to_string()),
+                        error_code: "ERR_AA_EVIL\u{D800}\u{DFFF}".to_string(),
+                    }),
+                },
+            );
+        }
+
+        // Create massive events and violations arrays
+        let mut massive_events = Vec::new();
+        let mut massive_violations = Vec::new();
+
+        for i in 0..1000 {
+            massive_events.push(AuditEvent {
+                event_code: format!("FN-AA-{:03}", i),
+                module_path: format!("crate::security::module_{}", "x".repeat(1000)),
+                detail: format!("Detail {}: {}", i, "y".repeat(10000)),
+                trace_id: format!("trace_{}_{'z'.repeat(100)}", i),
+            });
+
+            massive_violations.push(AmbientAuthorityViolation {
+                module_path: format!("crate::security::violation_{}", "a".repeat(1000)),
+                pattern_id: format!("AA-PAT-{:03}", i),
+                description: format!("Violation {}: {}", i, "b".repeat(5000)),
+                location: Some(format!("file_{}.rs:{}", i, "c".repeat(100))),
+                error_code: format!("ERR_AA_{}", "d".repeat(500)),
+            });
+        }
+
+        let malicious_report = AuditReport {
+            schema_version: "aa\u{FEFF}bom\u{200B}zw".to_string(),
+            total_modules: usize::MAX,
+            passed: usize::MAX - 1,
+            failed: 1,
+            verdict: "FAIL\r\n\tHTTP/1.1 200 OK\r\n\r\n".to_string(),
+            module_results: malicious_module_results,
+            events: massive_events,
+            violations: massive_violations,
+        };
+
+        // Test serialization with malicious and massive content
+        let json = serde_json::to_string(&malicious_report).unwrap();
+        let deserialized: AuditReport = serde_json::from_str(&json).unwrap();
+
+        // Verify malicious content preserved
+        assert!(deserialized.schema_version.contains("aa"));
+        assert!(deserialized.verdict.contains("FAIL"));
+        assert_eq!(deserialized.total_modules, usize::MAX);
+        assert_eq!(deserialized.events.len(), 1000);
+        assert_eq!(deserialized.violations.len(), 1000);
+
+        // Test summary with malicious content
+        let summary = deserialized.summary();
+        assert!(summary.contains("AuditReport"));
+        assert!(summary.contains(&format!("{}", usize::MAX)));
+    }
+
+    #[test]
+    fn negative_authority_audit_guard_concurrent_stress_and_race_conditions() {
+        use std::sync::{Arc, Mutex};
+        use std::thread;
+
+        let guard = Arc::new(Mutex::new(
+            AuthorityAuditGuard::with_default_inventory(true)
+        ));
+        let mut handles = vec![];
+
+        // Spawn multiple threads performing concurrent operations
+        for thread_id in 0..8 {
+            let guard_clone = Arc::clone(&guard);
+            let handle = thread::spawn(move || {
+                for op_id in 0..100 {
+                    let malicious_ctx = CapabilityContext::new(
+                        &[], // Missing capabilities
+                        &format!("trace_thread_{}_{}_{'x'.repeat(100)}", thread_id, op_id),
+                        &format!("principal_thread_{}_{}_{'y'.repeat(100)}", thread_id, op_id),
+                    );
+
+                    let mut guard = guard_clone.lock().unwrap();
+                    let _ = guard.check_context(
+                        &format!("crate::security::thread_{}_{}", thread_id, op_id),
+                        &malicious_ctx,
+                    );
+
+                    // Test inventory manipulation attempts
+                    if op_id % 10 == 0 {
+                        guard.inventory.add_module(SecurityCriticalModule {
+                            module_path: format!("crate::security::concurrent_{}_{}", thread_id, op_id),
+                            required_capabilities: vec!["key_access".to_string()],
+                            risk_level: "critical".to_string(),
+                            description: "concurrent test module".to_string(),
+                        });
+                    }
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all threads to complete
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Verify final state consistency
+        let guard = guard.lock().unwrap();
+        assert_eq!(guard.events().len(), MAX_EVENTS); // Should be bounded
+        assert!(guard.violations().len() <= MAX_VIOLATIONS); // Should be bounded
+        assert!(guard.inventory.module_count() >= 8); // Original modules + some added
+    }
+
+    #[test]
+    fn negative_push_bounded_with_extreme_capacity_and_overflow_scenarios() {
+        // Test push_bounded with various extreme scenarios
+        let mut items = Vec::new();
+
+        // Test with usize::MAX capacity
+        push_bounded(&mut items, "test1".to_string(), usize::MAX);
+        push_bounded(&mut items, "test2".to_string(), usize::MAX);
+        assert_eq!(items.len(), 2);
+
+        // Test overflow calculation with extreme values
+        let mut large_items: Vec<String> = (0..1000).map(|i| format!("item_{}", i)).collect();
+
+        // Test with capacity 1 (extreme drain)
+        push_bounded(&mut large_items, "final_item".to_string(), 1);
+        assert_eq!(large_items, vec!["final_item".to_string()]);
+
+        // Test with massive items to check memory behavior
+        let mut massive_items: Vec<Vec<u8>> = Vec::new();
+        for i in 0..100 {
+            massive_items.push(vec![i as u8; 100000]); // 100KB each
+        }
+
+        push_bounded(&mut massive_items, vec![255u8; 100000], 50);
+        assert_eq!(massive_items.len(), 50);
+        assert_eq!(massive_items[0], vec![51u8; 100000]); // First remaining
+        assert_eq!(massive_items[49], vec![255u8; 100000]); // New item
+
+        // Test edge case where items.len() == cap
+        let mut exact_items = vec!["a", "b", "c"];
+        push_bounded(&mut exact_items, "d", 3);
+        assert_eq!(exact_items, vec!["b", "c", "d"]);
+    }
+
+    #[test]
+    fn negative_generate_audit_report_with_malformed_context_and_extreme_inventory() {
+        // Test with malformed context containing extreme values
+        let malformed_ctx = CapabilityContext {
+            granted: {
+                let mut granted = BTreeMap::new();
+                // Add 10,000 malformed capability grants
+                for i in 0..10000 {
+                    granted.insert(
+                        format!("malformed_cap_{}_{'x'.repeat(100)}", i),
+                        i % 2 == 0,
+                    );
+                }
+                // Add some valid capabilities with malicious keys
+                granted.insert("key_access\u{FEFF}bom".to_string(), false);
+                granted.insert("network_egress\x00null".to_string(), false);
+                granted.insert("file_system_read\u{202E}spoofed".to_string(), false);
+                granted
+            },
+            trace_id: "trace\u{10FFFF}".repeat(10000), // ~40KB trace ID
+            principal: "principal\u{D800}\u{DFFF}".repeat(5000), // ~20KB principal
+        };
+
+        // Generate report in both strict and advisory modes
+        let strict_report = generate_audit_report(&malformed_ctx, true);
+        let advisory_report = generate_audit_report(&malformed_ctx, false);
+
+        // Verify reports handle malformed context
+        assert_eq!(strict_report.verdict, "FAIL");
+        assert_eq!(advisory_report.verdict, "PASS");
+
+        // Both should have same total modules (default inventory)
+        assert_eq!(strict_report.total_modules, advisory_report.total_modules);
+        assert_eq!(strict_report.total_modules, 8); // Default inventory size
+
+        // Events should contain malformed trace IDs
+        for event in strict_report.events.iter().take(10) {
+            assert!(event.trace_id.contains("trace"));
+            assert!(event.trace_id.len() > 10000); // Massive trace ID preserved
+        }
+
+        // Test report serialization with malformed content
+        let json = serde_json::to_string(&strict_report).unwrap();
+        assert!(json.len() > 1000000); // Should be massive due to malformed content
+
+        let deserialized: AuditReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.total_modules, strict_report.total_modules);
     }
 }

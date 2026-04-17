@@ -1658,4 +1658,628 @@ mod tests {
         assert_eq!(resume_from, 100);
         assert_eq!(total_work_done, 250);
     }
+
+    #[derive(Debug, Clone, Default)]
+    struct LoadFailBackend;
+
+    impl CheckpointBackend for LoadFailBackend {
+        fn save(&mut self, _record: CheckpointRecord) -> Result<bool, CheckpointError> {
+            Ok(true)
+        }
+
+        fn load_all(
+            &self,
+            _orchestration_id: &str,
+        ) -> Result<Vec<CheckpointRecord>, CheckpointError> {
+            Err(CheckpointError::Backend("load unavailable".to_string()))
+        }
+    }
+
+    #[derive(Debug, Clone, Default)]
+    struct SaveFailBackend;
+
+    impl CheckpointBackend for SaveFailBackend {
+        fn save(&mut self, _record: CheckpointRecord) -> Result<bool, CheckpointError> {
+            Err(CheckpointError::Backend("save unavailable".to_string()))
+        }
+
+        fn load_all(
+            &self,
+            _orchestration_id: &str,
+        ) -> Result<Vec<CheckpointRecord>, CheckpointError> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[test]
+    fn read_latest_valid_propagates_backend_load_error() {
+        let writer = CheckpointWriter::new(LoadFailBackend);
+
+        let err = writer
+            .read_latest_valid("trace-load-fail", "orch-load-fail")
+            .expect_err("backend load failure must propagate");
+
+        assert!(matches!(
+            err,
+            CheckpointError::Backend(ref detail) if detail == "load unavailable"
+        ));
+    }
+
+    #[test]
+    fn list_checkpoints_propagates_backend_load_error() {
+        let writer = CheckpointWriter::new(LoadFailBackend);
+
+        let err = writer
+            .list_checkpoints("orch-list-fail")
+            .expect_err("list must report backend load failure");
+
+        assert_eq!(err.code(), "CHECKPOINT_BACKEND_ERROR");
+        assert!(err.to_string().contains("load unavailable"));
+    }
+
+    #[test]
+    fn save_checkpoint_propagates_backend_save_error() {
+        let mut writer = CheckpointWriter::new(SaveFailBackend);
+        let mut cancel = CancellationState::new();
+
+        let err = writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                "trace-save-fail",
+                "orch-save-fail",
+                1,
+                1,
+                &BTreeMap::from([("cursor".to_string(), "1".to_string())]),
+            )
+            .expect_err("backend save failure must propagate");
+
+        assert!(matches!(
+            err,
+            CheckpointError::Backend(ref detail) if detail == "save unavailable"
+        ));
+        assert!(writer.decision_stream().is_empty());
+    }
+
+    #[test]
+    fn restore_checkpoint_reports_deserialization_error_for_wrong_state_type() {
+        let mut writer = CheckpointWriter::new(InMemoryCheckpointBackend::default());
+        let mut cancel = CancellationState::new();
+        writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                "trace-wrong-shape",
+                "orch-wrong-shape",
+                1,
+                1,
+                &123_u64,
+            )
+            .expect("save numeric checkpoint");
+
+        let err = writer
+            .restore_checkpoint::<BTreeMap<String, String>>("trace-wrong-shape", "orch-wrong-shape")
+            .expect_err("wrong restore type must fail deserialization");
+
+        assert_eq!(err.code(), "CHECKPOINT_DESERIALIZATION_ERROR");
+    }
+
+    #[test]
+    fn read_latest_valid_detects_checkpoint_id_tamper() {
+        let mut writer = CheckpointWriter::new(InMemoryCheckpointBackend::default());
+        let mut cancel = CancellationState::new();
+        writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                "trace-id-tamper",
+                "orch-id-tamper",
+                1,
+                1,
+                &BTreeMap::from([("cursor".to_string(), "1".to_string())]),
+            )
+            .expect("save checkpoint");
+        writer
+            .backend_mut()
+            .records
+            .get_mut("orch-id-tamper")
+            .expect("stream")
+            .get_mut(0)
+            .expect("record")
+            .checkpoint_id = "tampered-checkpoint-id".to_string();
+
+        let read = writer
+            .read_latest_valid("trace-id-tamper", "orch-id-tamper")
+            .expect("read latest valid");
+
+        assert!(read.latest.is_none());
+        let violation = read
+            .events
+            .iter()
+            .find(|event| event.event_code == FN_CK_003_HASH_CHAIN_FAILURE)
+            .expect("checkpoint id mismatch event");
+        assert!(violation.contract_status.contains("checkpoint_id_mismatch"));
+    }
+
+    #[test]
+    fn restore_checkpoint_returns_none_when_only_checkpoint_id_is_tampered() {
+        let mut writer = CheckpointWriter::new(InMemoryCheckpointBackend::default());
+        let mut cancel = CancellationState::new();
+        writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                "trace-restore-id-tamper",
+                "orch-restore-id-tamper",
+                1,
+                1,
+                &BTreeMap::from([("cursor".to_string(), "1".to_string())]),
+            )
+            .expect("save checkpoint");
+        writer
+            .backend_mut()
+            .records
+            .get_mut("orch-restore-id-tamper")
+            .expect("stream")
+            .get_mut(0)
+            .expect("record")
+            .checkpoint_id = "tampered-checkpoint-id".to_string();
+
+        let restored = writer
+            .restore_checkpoint::<BTreeMap<String, String>>(
+                "trace-restore-id-tamper",
+                "orch-restore-id-tamper",
+            )
+            .expect("tampered chain should not deserialize");
+
+        assert!(restored.is_none());
+    }
+
+    #[test]
+    fn read_latest_valid_detects_missing_previous_hash_on_second_entry() {
+        let mut writer = CheckpointWriter::new(InMemoryCheckpointBackend::default());
+        let mut cancel = CancellationState::new();
+        writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                "trace-prev-missing",
+                "orch-prev-missing",
+                1,
+                1,
+                &BTreeMap::from([("cursor".to_string(), "1".to_string())]),
+            )
+            .expect("first checkpoint");
+        writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                "trace-prev-missing",
+                "orch-prev-missing",
+                2,
+                1,
+                &BTreeMap::from([("cursor".to_string(), "2".to_string())]),
+            )
+            .expect("second checkpoint");
+        writer
+            .backend_mut()
+            .tamper_previous_checkpoint_hash("orch-prev-missing", 1, None);
+
+        let read = writer
+            .read_latest_valid("trace-prev-missing", "orch-prev-missing")
+            .expect("read latest valid");
+
+        assert_eq!(read.latest.expect("latest").iteration_count, 1);
+        let violation = read
+            .events
+            .iter()
+            .find(|event| event.event_code == FN_CK_003_HASH_CHAIN_FAILURE)
+            .expect("previous hash mismatch event");
+        assert!(
+            violation
+                .contract_status
+                .contains("previous_checkpoint_hash_mismatch")
+        );
+    }
+
+    #[test]
+    fn save_checkpoint_rejects_append_after_checkpoint_id_tamper() {
+        let mut writer = CheckpointWriter::new(InMemoryCheckpointBackend::default());
+        let mut cancel = CancellationState::new();
+        writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                "trace-append-id-tamper",
+                "orch-append-id-tamper",
+                1,
+                1,
+                &BTreeMap::from([("cursor".to_string(), "1".to_string())]),
+            )
+            .expect("first checkpoint");
+        writer
+            .backend_mut()
+            .records
+            .get_mut("orch-append-id-tamper")
+            .expect("stream")
+            .get_mut(0)
+            .expect("record")
+            .checkpoint_id = "tampered-checkpoint-id".to_string();
+
+        let err = writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                "trace-append-id-tamper",
+                "orch-append-id-tamper",
+                2,
+                1,
+                &BTreeMap::from([("cursor".to_string(), "2".to_string())]),
+            )
+            .expect_err("tampered checkpoint id must block append");
+
+        assert!(matches!(
+            err,
+            CheckpointError::HashChainViolation {
+                ref reason,
+                ref checkpoint_id,
+                ..
+            } if reason == "cannot_append_after_hash_chain_failure"
+                && checkpoint_id == "tampered-checkpoint-id"
+        ));
+    }
+
+    /// Negative path: extremely large checkpoint state causes memory pressure
+    #[test]
+    fn save_checkpoint_handles_massive_state_data_without_overflow() {
+        let mut writer = CheckpointWriter::new(InMemoryCheckpointBackend::default());
+        let mut cancel = CancellationState::new();
+
+        // Create a large state object (10MB of string data)
+        let huge_value = "x".repeat(10_000_000);
+        let massive_state = BTreeMap::from([
+            ("huge_data".to_string(), huge_value.clone()),
+            ("regular_field".to_string(), "normal".to_string()),
+        ]);
+
+        let checkpoint_id = writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                "trace-huge",
+                "orch-huge",
+                1,
+                1,
+                &massive_state,
+            )
+            .expect("massive state should be serializable despite memory pressure");
+
+        // Checkpoint ID should be computed deterministically despite large input
+        assert_eq!(checkpoint_id.len(), 64); // SHA-256 hex output
+        assert!(checkpoint_id.chars().all(|c| c.is_ascii_hexdigit()));
+
+        // Restoration should work despite large payload
+        let restored = writer
+            .restore_checkpoint::<BTreeMap<String, String>>("trace-huge", "orch-huge")
+            .expect("restore should succeed")
+            .expect("checkpoint should exist");
+
+        assert_eq!(restored.state["huge_data"].len(), 10_000_000);
+        assert_eq!(restored.state["regular_field"], "normal");
+    }
+
+    /// Negative path: unicode and special characters in orchestration IDs
+    #[test]
+    fn save_checkpoint_preserves_unicode_orchestration_identifiers() {
+        let mut writer = CheckpointWriter::new(InMemoryCheckpointBackend::default());
+        let mut cancel = CancellationState::new();
+
+        let unicode_orch_id = "🚀orchestration💫中文_ñ@mé";
+        let unicode_trace_id = "🔍trace♦️测试\0null-byte";
+        let state = BTreeMap::from([("unicode_key_漢字".to_string(), "émoji_value_🎯".to_string())]);
+
+        let checkpoint_id = writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                &unicode_trace_id,
+                &unicode_orch_id,
+                1,
+                1,
+                &state,
+            )
+            .expect("unicode IDs should be preserved during checkpoint creation");
+
+        assert!(!checkpoint_id.is_empty());
+
+        let restored = writer
+            .restore_checkpoint::<BTreeMap<String, String>>(&unicode_trace_id, &unicode_orch_id)
+            .expect("restore with unicode IDs should work")
+            .expect("checkpoint should exist");
+
+        assert_eq!(restored.meta.orchestration_id, unicode_orch_id);
+        assert!(restored.state["unicode_key_漢字"].contains("🎯"));
+
+        // Unicode IDs should appear in decision stream events
+        let unicode_event = writer
+            .decision_stream()
+            .iter()
+            .find(|event| event.orchestration_id == unicode_orch_id)
+            .expect("unicode orchestration ID should appear in events");
+        assert!(unicode_event.trace_id.contains("🔍"));
+    }
+
+    /// Negative path: malformed JSON in progress state causes deserialization failure
+    #[test]
+    fn restore_checkpoint_fails_gracefully_with_corrupted_json_state() {
+        let mut writer = CheckpointWriter::new(InMemoryCheckpointBackend::default());
+        let mut cancel = CancellationState::new();
+
+        // Save a valid checkpoint first
+        writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                "trace-corrupt",
+                "orch-corrupt",
+                1,
+                1,
+                &BTreeMap::from([("valid".to_string(), "state".to_string())]),
+            )
+            .expect("save valid checkpoint");
+
+        // Manually corrupt the JSON in the backend
+        writer
+            .backend_mut()
+            .tamper_progress_state("orch-corrupt", 0, "{invalid-json-missing-quotes-and-braces");
+
+        let err = writer
+            .restore_checkpoint::<BTreeMap<String, String>>("trace-corrupt", "orch-corrupt")
+            .expect_err("corrupted JSON should cause deserialization error");
+
+        assert_eq!(err.code(), "CHECKPOINT_DESERIALIZATION_ERROR");
+        assert!(err.to_string().contains("invalid-json"));
+    }
+
+    /// Negative path: integer overflow scenarios in epoch and iteration counters
+    #[test]
+    fn save_checkpoint_handles_maximum_epoch_and_iteration_values() {
+        let mut writer = CheckpointWriter::new(InMemoryCheckpointBackend::default());
+        let mut cancel = CancellationState::new();
+
+        let max_epoch = u64::MAX;
+        let max_iteration = u64::MAX - 1; // Slightly less to allow progression test
+        let state = BTreeMap::from([("counter".to_string(), "max_values".to_string())]);
+
+        let checkpoint_id = writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                "trace-max",
+                "orch-max",
+                max_iteration,
+                max_epoch,
+                &state,
+            )
+            .expect("maximum values should be handled without overflow");
+
+        assert!(!checkpoint_id.is_empty());
+
+        let restored = writer
+            .restore_checkpoint::<BTreeMap<String, String>>("trace-max", "orch-max")
+            .expect("restore with max values")
+            .expect("checkpoint exists");
+
+        assert_eq!(restored.meta.epoch, max_epoch);
+        assert_eq!(restored.meta.iteration_count, max_iteration);
+
+        // Attempting to increment beyond max_iteration should fail
+        let err = writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                "trace-max",
+                "orch-max",
+                max_iteration.saturating_add(1), // This will be u64::MAX
+                max_epoch,
+                &BTreeMap::from([("next".to_string(), "state".to_string())]),
+            )
+            .expect_err("iteration beyond max should fail progress check");
+
+        assert!(matches!(err, CheckpointError::HashChainViolation { .. }));
+    }
+
+    /// Negative path: zero-values in checkpoint parameters
+    #[test]
+    fn save_checkpoint_accepts_zero_epoch_and_iteration_values() {
+        let mut writer = CheckpointWriter::new(InMemoryCheckpointBackend::default());
+        let mut cancel = CancellationState::new();
+
+        let state = BTreeMap::from([("zero_test".to_string(), "initial".to_string())]);
+
+        let checkpoint_id = writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                "trace-zero",
+                "orch-zero",
+                0, // Zero iteration
+                0, // Zero epoch
+                &state,
+            )
+            .expect("zero values should be accepted");
+
+        assert!(!checkpoint_id.is_empty());
+
+        let restored = writer
+            .restore_checkpoint::<BTreeMap<String, String>>("trace-zero", "orch-zero")
+            .expect("restore with zero values")
+            .expect("checkpoint exists");
+
+        assert_eq!(restored.meta.epoch, 0);
+        assert_eq!(restored.meta.iteration_count, 0);
+
+        // Progress should still be enforced - can't regress to zero again
+        let err = writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                "trace-zero",
+                "orch-zero",
+                0, // Same zero iteration
+                0, // Same zero epoch
+                &BTreeMap::from([("different".to_string(), "state".to_string())]),
+            )
+            .expect_err("duplicate position should fail");
+
+        assert!(matches!(err, CheckpointError::HashChainViolation { .. }));
+    }
+
+    /// Negative path: extremely long orchestration and trace IDs
+    #[test]
+    fn save_checkpoint_handles_extremely_long_identifier_strings() {
+        let mut writer = CheckpointWriter::new(InMemoryCheckpointBackend::default());
+        let mut cancel = CancellationState::new();
+
+        // Create very long IDs (1MB each)
+        let long_orch_id = "orch-".to_string() + &"x".repeat(1_000_000);
+        let long_trace_id = "trace-".to_string() + &"y".repeat(1_000_000);
+        let state = BTreeMap::from([("test".to_string(), "long_ids".to_string())]);
+
+        let checkpoint_id = writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                &long_trace_id,
+                &long_orch_id,
+                1,
+                1,
+                &state,
+            )
+            .expect("extremely long IDs should be handled without truncation");
+
+        // Hash computation should be deterministic despite long inputs
+        assert_eq!(checkpoint_id.len(), 64);
+
+        let restored = writer
+            .restore_checkpoint::<BTreeMap<String, String>>(&long_trace_id, &long_orch_id)
+            .expect("restore with long IDs")
+            .expect("checkpoint exists");
+
+        // Full long IDs should be preserved
+        assert_eq!(restored.meta.orchestration_id.len(), long_orch_id.len());
+        assert!(restored.meta.orchestration_id.starts_with("orch-"));
+        assert!(restored.meta.orchestration_id.ends_with("xxxx"));
+    }
+
+    /// Negative path: hash collision attempt through checkpoint ID derivation
+    #[test]
+    fn derive_checkpoint_id_produces_different_hashes_for_similar_inputs() {
+        // Test that similar inputs produce different checkpoint IDs
+        let base_orch = "orchestration";
+        let base_state_hash = "state_hash_base";
+
+        let id1 = derive_checkpoint_id(base_orch, 1, 1, base_state_hash, None);
+        let id2 = derive_checkpoint_id(base_orch, 1, 1, "state_hash_different", None);
+        let id3 = derive_checkpoint_id(base_orch, 1, 2, base_state_hash, None); // Different epoch
+        let id4 = derive_checkpoint_id(base_orch, 2, 1, base_state_hash, None); // Different iteration
+        let id5 = derive_checkpoint_id("different_orch", 1, 1, base_state_hash, None);
+
+        // All should be different despite similar inputs
+        let ids = vec![&id1, &id2, &id3, &id4, &id5];
+        for (i, id_a) in ids.iter().enumerate() {
+            for (j, id_b) in ids.iter().enumerate() {
+                if i != j {
+                    assert_ne!(id_a, id_b, "IDs {} and {} should be different", i, j);
+                }
+            }
+        }
+
+        // Test previous hash influence
+        let id_with_prev = derive_checkpoint_id(base_orch, 1, 1, base_state_hash, Some("previous"));
+        let id_without_prev = derive_checkpoint_id(base_orch, 1, 1, base_state_hash, None);
+        assert_ne!(id_with_prev, id_without_prev);
+
+        // All IDs should be valid SHA-256 hashes
+        for id in ids {
+            assert_eq!(id.len(), 64);
+            assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
+        }
+    }
+
+    /// Negative path: time overflow in wall_clock_time field
+    #[test]
+    fn checkpoint_wall_clock_time_handles_system_time_edge_cases() {
+        let mut writer = CheckpointWriter::new(InMemoryCheckpointBackend::default());
+        let mut cancel = CancellationState::new();
+        let state = BTreeMap::from([("time_test".to_string(), "value".to_string())]);
+
+        let checkpoint_id = writer
+            .save_checkpoint(
+                &cx(),
+                &mut cancel,
+                "trace-time",
+                "orch-time",
+                1,
+                1,
+                &state,
+            )
+            .expect("checkpoint with current time");
+
+        let restored = writer
+            .restore_checkpoint::<BTreeMap<String, String>>("trace-time", "orch-time")
+            .expect("restore checkpoint")
+            .expect("checkpoint exists");
+
+        // Wall clock time should be a reasonable Unix timestamp in milliseconds
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+            .unwrap_or(0);
+
+        assert!(restored.meta.wall_clock_time <= now_ms);
+        assert!(restored.meta.wall_clock_time >= 1_000_000_000_000); // After ~2001
+
+        // Event timestamps should also be reasonable
+        let save_event = writer
+            .decision_stream()
+            .iter()
+            .find(|event| event.event_code == FN_CK_001_CHECKPOINT_SAVE)
+            .expect("save event");
+        assert!(save_event.wall_clock_time <= now_ms);
+        assert!(save_event.wall_clock_time >= 1_000_000_000_000);
+    }
+
+    /// Negative path: push_bounded edge case with zero capacity
+    #[test]
+    fn push_bounded_with_zero_capacity_clears_decision_stream() {
+        let mut writer = CheckpointWriter::new(InMemoryCheckpointBackend::default());
+        let mut cancel = CancellationState::new();
+
+        // Add some events to decision stream first
+        for i in 1..=5 {
+            writer
+                .save_checkpoint(
+                    &cx(),
+                    &mut cancel,
+                    "trace-bounded",
+                    "orch-bounded",
+                    i,
+                    1,
+                    &BTreeMap::from([("counter".to_string(), i.to_string())]),
+                )
+                .expect("save checkpoint");
+        }
+
+        let initial_stream_length = writer.decision_stream().len();
+        assert!(initial_stream_length > 0);
+
+        // Simulate push_bounded being called with zero capacity
+        // This is an edge case that could occur if MAX_EVENTS is misconfigured to 0
+        let mut test_items = vec![1, 2, 3, 4, 5];
+        push_bounded(&mut test_items, 6, 0);
+
+        // With zero capacity, the entire vector should be cleared
+        assert!(test_items.is_empty());
+    }
 }

@@ -23,6 +23,7 @@ pub mod error_codes {
     pub const ERR_SPEC_MISSING_PROOF: &str = "ERR_SPEC_MISSING_PROOF";
     pub const ERR_SPEC_EXPIRED_PROOF: &str = "ERR_SPEC_EXPIRED_PROOF";
     pub const ERR_SPEC_SIGNATURE_INVALID: &str = "ERR_SPEC_SIGNATURE_INVALID";
+    pub const ERR_SPEC_INTERFACE_MISMATCH: &str = "ERR_SPEC_INTERFACE_MISMATCH";
     pub const ERR_SPEC_INTERFACE_UNAPPROVED: &str = "ERR_SPEC_INTERFACE_UNAPPROVED";
     pub const ERR_SPEC_GUARD_REJECTED: &str = "ERR_SPEC_GUARD_REJECTED";
     pub const ERR_SPEC_TRANSFORM_MISMATCH: &str = "ERR_SPEC_TRANSFORM_MISMATCH";
@@ -71,6 +72,7 @@ pub enum GuardFailureReason {
     MissingReceipt,
     ExpiredReceipt,
     SignatureInvalid,
+    InterfaceMismatch,
     InterfaceUnapproved,
     GuardRejected,
     TransformMismatch,
@@ -82,6 +84,7 @@ impl GuardFailureReason {
             Self::MissingReceipt => error_codes::ERR_SPEC_MISSING_PROOF,
             Self::ExpiredReceipt => error_codes::ERR_SPEC_EXPIRED_PROOF,
             Self::SignatureInvalid => error_codes::ERR_SPEC_SIGNATURE_INVALID,
+            Self::InterfaceMismatch => error_codes::ERR_SPEC_INTERFACE_MISMATCH,
             Self::InterfaceUnapproved => error_codes::ERR_SPEC_INTERFACE_UNAPPROVED,
             Self::GuardRejected => error_codes::ERR_SPEC_GUARD_REJECTED,
             Self::TransformMismatch => error_codes::ERR_SPEC_TRANSFORM_MISMATCH,
@@ -180,6 +183,14 @@ impl ProofExecutor {
                 event_code: event_codes::SPECULATION_DEGRADED.to_string(),
             };
         };
+
+        if receipt.interface_id != interface_id {
+            return ActivationDecision::Degraded {
+                reason: GuardFailureReason::InterfaceMismatch,
+                baseline_mode: BaselineMode::DeterministicSafe,
+                event_code: event_codes::SPECULATION_DEGRADED.to_string(),
+            };
+        }
 
         if receipt.transform != transform {
             return ActivationDecision::Degraded {
@@ -290,7 +301,35 @@ fn signature_digest(
     hex::encode(hasher.finalize())
 }
 
+fn proof_hash_for(transform: SpeculationTransform, interface_id: &str) -> String {
+    digest_fields(
+        b"proof_executor_proof_v1:",
+        &[transform.as_str().as_bytes(), interface_id.as_bytes()],
+    )
+}
+
 fn verify_signature(receipt: &ProofReceipt) -> bool {
+    if receipt.receipt_id.trim().is_empty()
+        || receipt.receipt_id != receipt.receipt_id.trim()
+        || receipt.interface_id.trim().is_empty()
+        || receipt.interface_id != receipt.interface_id.trim()
+        || receipt.proof_hash.trim().is_empty()
+        || receipt.proof_hash != receipt.proof_hash.trim()
+        || receipt.signer_id.trim().is_empty()
+        || receipt.signer_id != receipt.signer_id.trim()
+        || receipt.signature.trim().is_empty()
+        || receipt.signature != receipt.signature.trim()
+        || receipt.trace_id.trim().is_empty()
+        || receipt.trace_id != receipt.trace_id.trim()
+    {
+        return false;
+    }
+
+    let expected_proof_hash = proof_hash_for(receipt.transform, &receipt.interface_id);
+    if !crate::security::constant_time::ct_eq(&receipt.proof_hash, &expected_proof_hash) {
+        return false;
+    }
+
     let expected = signature_digest(
         &receipt.receipt_id,
         &receipt.proof_hash,
@@ -308,10 +347,7 @@ pub fn make_receipt(
     expires_epoch_ms: u64,
     trace_id: &str,
 ) -> ProofReceipt {
-    let proof_hash = digest_fields(
-        b"proof_executor_proof_v1:",
-        &[transform.as_str().as_bytes(), interface_id.as_bytes()],
-    );
+    let proof_hash = proof_hash_for(transform, interface_id);
     let signature = signature_digest(receipt_id, &proof_hash, signer_id, expires_epoch_ms);
     ProofReceipt {
         receipt_id: receipt_id.to_string(),
@@ -486,6 +522,595 @@ mod tests {
             out.decision,
             ActivationDecision::Degraded {
                 reason: GuardFailureReason::GuardRejected,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_unaccepted_signer_even_with_valid_signature() {
+        let ex = executor(10_000);
+        let receipt = make_receipt(
+            "r-untrusted",
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            "validator-B",
+            20_000,
+            "trace-untrusted",
+        );
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_tampered_receipt_id_signature_binding() {
+        let ex = executor(10_000);
+        let mut receipt = make_receipt(
+            "r-original",
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            "validator-A",
+            20_000,
+            "trace-receipt-id",
+        );
+        receipt.receipt_id = "r-tampered".to_string();
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_tampered_proof_hash_signature_binding() {
+        let ex = executor(10_000);
+        let mut receipt = make_receipt(
+            "r-proof",
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            "validator-A",
+            20_000,
+            "trace-proof",
+        );
+        receipt.proof_hash.push_str("-tampered");
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn unapproved_interface_takes_priority_over_missing_receipt() {
+        let ex = executor(10_000);
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::not-approved",
+            None,
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::InterfaceUnapproved,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn expired_receipt_takes_priority_over_invalid_signature() {
+        let ex = executor(30_000);
+        let mut receipt = make_receipt(
+            "r-expired-tampered",
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            "validator-A",
+            20_000,
+            "trace-expired-tampered",
+        );
+        receipt.signature = "tampered".to_string();
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::ExpiredReceipt,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn missing_receipt_uses_missing_proof_trace_id() {
+        let ex = executor(10_000);
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            None,
+            true,
+            b"safe",
+        );
+
+        assert_eq!(out.trace_id, "trace:missing-proof");
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::MissingReceipt,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_receipt_bound_to_different_interface() {
+        let ex = executor(10_000);
+        let receipt = make_receipt(
+            "r-interface",
+            SpeculationTransform::BranchPredict,
+            "franken_engine::other_hotpath",
+            "validator-A",
+            20_000,
+            "trace-interface",
+        );
+
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::InterfaceMismatch,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_empty_receipt_id_even_with_matching_signature() {
+        let ex = executor(10_000);
+        let mut receipt = make_receipt(
+            "r-empty-id",
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            "validator-A",
+            20_000,
+            "trace-empty-id",
+        );
+        receipt.receipt_id = String::new();
+        receipt.signature = signature_digest(
+            &receipt.receipt_id,
+            &receipt.proof_hash,
+            &receipt.signer_id,
+            receipt.expires_epoch_ms,
+        );
+
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_whitespace_receipt_id() {
+        let ex = executor(10_000);
+        let mut receipt = make_receipt(
+            "r-space-id",
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            "validator-A",
+            20_000,
+            "trace-space-id",
+        );
+        receipt.receipt_id = " r-space-id ".to_string();
+        receipt.signature = signature_digest(
+            &receipt.receipt_id,
+            &receipt.proof_hash,
+            &receipt.signer_id,
+            receipt.expires_epoch_ms,
+        );
+
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_empty_proof_hash_even_with_matching_signature() {
+        let ex = executor(10_000);
+        let mut receipt = make_receipt(
+            "r-empty-proof",
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            "validator-A",
+            20_000,
+            "trace-empty-proof",
+        );
+        receipt.proof_hash = String::new();
+        receipt.signature = signature_digest(
+            &receipt.receipt_id,
+            &receipt.proof_hash,
+            &receipt.signer_id,
+            receipt.expires_epoch_ms,
+        );
+
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_proof_hash_for_other_interface_even_with_valid_signature() {
+        let ex = executor(10_000);
+        let mut receipt = make_receipt(
+            "r-other-proof",
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            "validator-A",
+            20_000,
+            "trace-other-proof",
+        );
+        receipt.proof_hash = proof_hash_for(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::other_hotpath",
+        );
+        receipt.signature = signature_digest(
+            &receipt.receipt_id,
+            &receipt.proof_hash,
+            &receipt.signer_id,
+            receipt.expires_epoch_ms,
+        );
+
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_blank_trace_id_even_with_matching_signature() {
+        let ex = executor(10_000);
+        let mut receipt = make_receipt(
+            "r-blank-trace",
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            "validator-A",
+            20_000,
+            "trace-before-blank",
+        );
+        receipt.trace_id = " \t ".to_string();
+
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert_eq!(out.trace_id, " \t ");
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_empty_interface_id_even_if_allowlisted() {
+        let cfg = GuardConfig::new(10_000)
+            .with_interface("")
+            .with_signer("validator-A");
+        let ex = ProofExecutor::new(cfg);
+        let receipt = make_receipt(
+            "r-empty-interface",
+            SpeculationTransform::BranchPredict,
+            "",
+            "validator-A",
+            20_000,
+            "trace-empty-interface",
+        );
+
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_padded_interface_id_even_if_allowlisted() {
+        let padded_interface = " franken_engine::hotpath ";
+        let cfg = GuardConfig::new(10_000)
+            .with_interface(padded_interface)
+            .with_signer("validator-A");
+        let ex = ProofExecutor::new(cfg);
+        let receipt = make_receipt(
+            "r-padded-interface",
+            SpeculationTransform::BranchPredict,
+            padded_interface,
+            "validator-A",
+            20_000,
+            "trace-padded-interface",
+        );
+
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            padded_interface,
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_empty_signer_id_even_if_accepted() {
+        let cfg = GuardConfig::new(10_000)
+            .with_interface("franken_engine::hotpath")
+            .with_signer("");
+        let ex = ProofExecutor::new(cfg);
+        let receipt = make_receipt(
+            "r-empty-signer",
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            "",
+            20_000,
+            "trace-empty-signer",
+        );
+
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_padded_signer_id_even_if_accepted() {
+        let padded_signer = " validator-A ";
+        let cfg = GuardConfig::new(10_000)
+            .with_interface("franken_engine::hotpath")
+            .with_signer(padded_signer);
+        let ex = ProofExecutor::new(cfg);
+        let receipt = make_receipt(
+            "r-padded-signer",
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            padded_signer,
+            20_000,
+            "trace-padded-signer",
+        );
+
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_empty_signature() {
+        let ex = executor(10_000);
+        let mut receipt = make_receipt(
+            "r-empty-signature",
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            "validator-A",
+            20_000,
+            "trace-empty-signature",
+        );
+        receipt.signature = String::new();
+
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_padded_signature() {
+        let ex = executor(10_000);
+        let mut receipt = make_receipt(
+            "r-padded-signature",
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            "validator-A",
+            20_000,
+            "trace-padded-signature",
+        );
+        receipt.signature = format!(" {} ", receipt.signature);
+
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn activation_rejects_padded_proof_hash_even_if_signature_rebound() {
+        let ex = executor(10_000);
+        let mut receipt = make_receipt(
+            "r-padded-proof",
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            "validator-A",
+            20_000,
+            "trace-padded-proof",
+        );
+        receipt.proof_hash = format!(" {} ", receipt.proof_hash);
+        receipt.signature = signature_digest(
+            &receipt.receipt_id,
+            &receipt.proof_hash,
+            &receipt.signer_id,
+            receipt.expires_epoch_ms,
+        );
+
+        let out = ex.execute_with_fallback(
+            SpeculationTransform::BranchPredict,
+            "franken_engine::hotpath",
+            Some(&receipt),
+            true,
+            b"safe",
+        );
+
+        assert!(matches!(
+            out.decision,
+            ActivationDecision::Degraded {
+                reason: GuardFailureReason::SignatureInvalid,
                 ..
             }
         ));

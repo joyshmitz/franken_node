@@ -1112,6 +1112,36 @@ mod tests {
         let err = lab.validate_trace(&trace).expect_err("should fail");
         assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_INVALID);
     }
+
+    #[test]
+    fn test_integrity_hash_mismatch_rejected_after_valid_hex() {
+        let lab = lab();
+        let mut trace = make_test_trace("t-valid-hex-mismatch", 3);
+        trace.integrity_hash = "0".repeat(64);
+        let err = lab.validate_trace(&trace).expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_CORRUPT);
+    }
+
+    #[test]
+    fn test_trace_payload_mutation_without_integrity_recompute_rejected() {
+        let lab = lab();
+        let mut trace = make_test_trace("t-payload-stale-integrity", 3);
+        trace.events[0].payload_hex = "00".to_string();
+        let err = lab.validate_trace(&trace).expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_CORRUPT);
+    }
+
+    #[test]
+    fn test_trace_metadata_mutation_without_integrity_recompute_rejected() {
+        let lab = lab();
+        let mut trace = make_test_trace("t-metadata-stale-integrity", 3);
+        trace
+            .metadata
+            .insert("region".to_string(), "useast".to_string());
+        let err = lab.validate_trace(&trace).expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_CORRUPT);
+    }
+
     #[test]
     fn test_metadata_key_whitespace_rejected() {
         let lab = lab();
@@ -1441,6 +1471,22 @@ mod tests {
     }
 
     #[test]
+    fn test_negative_reduction_rejected() {
+        let lab = lab();
+        let plan = make_test_plan("p-negative-reduction", "validator-A", -0.1);
+        let err = lab.validate_mitigation(&plan).expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_MITIGATION_INVALID);
+    }
+
+    #[test]
+    fn test_nan_reduction_rejected() {
+        let lab = lab();
+        let plan = make_test_plan("p-nan-reduction", "validator-A", f64::NAN);
+        let err = lab.validate_mitigation(&plan).expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_MITIGATION_INVALID);
+    }
+
+    #[test]
     fn test_unknown_signer_rejected() {
         let lab = lab();
         let plan = make_test_plan("p4", "unknown-signer", 0.5);
@@ -1565,9 +1611,39 @@ mod tests {
     }
 
     #[test]
+    fn test_baseline_nan_rejected() {
+        let lab = lab();
+        let scenario = make_test_scenario(
+            "t-baseline-nan",
+            "p-baseline-nan",
+            "validator-A",
+            0.2,
+            f64::NAN,
+            5.0,
+        );
+        let err = lab.compute_delta(&scenario).expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_SCENARIO_INVALID);
+    }
+
+    #[test]
     fn test_negative_threshold_rejected() {
         let lab = lab();
         let scenario = make_test_scenario("t-thresh", "p-thresh", "validator-A", 0.2, 10.0, -0.5);
+        let err = lab.compute_delta(&scenario).expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_SCENARIO_INVALID);
+    }
+
+    #[test]
+    fn test_promotion_threshold_nan_rejected() {
+        let lab = lab();
+        let scenario = make_test_scenario(
+            "t-threshold-nan",
+            "p-threshold-nan",
+            "validator-A",
+            0.2,
+            10.0,
+            f64::NAN,
+        );
         let err = lab.compute_delta(&scenario).expect_err("should fail");
         assert_eq!(err.code, error_codes::ERR_ILAB_SCENARIO_INVALID);
     }
@@ -1664,6 +1740,26 @@ mod tests {
         assert_eq!(err.code, error_codes::ERR_ILAB_ROLLBACK_INVALID);
     }
 
+    #[test]
+    fn test_rollout_contract_rejects_invalid_plan_after_promotion() {
+        let lab = lab();
+        let scenario = make_test_scenario(
+            "t-invalid-contract-plan",
+            "p-invalid-contract-plan",
+            "validator-A",
+            0.5,
+            100.0,
+            10.0,
+        );
+        let synthesis = lab.compute_delta(&scenario).expect("should succeed");
+        let mut plan = scenario.mitigation.clone();
+        plan.steps[0] = " ".to_string();
+        let err = lab
+            .generate_rollout_contract(&synthesis, &plan)
+            .expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_MITIGATION_INVALID);
+    }
+
     // -- End-to-end scenario tests --
 
     #[test]
@@ -1696,6 +1792,22 @@ mod tests {
         scenario.trace.integrity_hash = "bad".to_string();
         let err = lab.evaluate_scenario(&scenario).expect_err("should fail");
         assert_eq!(err.code, error_codes::ERR_ILAB_TRACE_INVALID);
+    }
+
+    #[test]
+    fn test_evaluate_scenario_rejects_invalid_mitigation() {
+        let lab = lab();
+        let mut scenario = make_test_scenario(
+            "t-e2e-invalid-plan",
+            "p-e2e-invalid-plan",
+            "validator-A",
+            0.5,
+            100.0,
+            10.0,
+        );
+        scenario.mitigation.steps.clear();
+        let err = lab.evaluate_scenario(&scenario).expect_err("should fail");
+        assert_eq!(err.code, error_codes::ERR_ILAB_MITIGATION_INVALID);
     }
 
     // -- Schema version / constant tests --

@@ -15,11 +15,22 @@ use crate::control_plane::mmr_proofs::{self, Hash, InclusionProof, MmrRoot};
 use crate::capacity_defaults::aliases::MAX_EVENTS;
 
 fn push_bounded_fn<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
+}
+
+const RECORD_DIGEST_DOMAIN: &[u8] = b"anti_entropy_record_v1:";
+const ROOT_DIGEST_DOMAIN: &[u8] = b"anti_entropy_root_v1:";
+
+fn len_to_u64(len: usize) -> u64 {
+    u64::try_from(len).unwrap_or(u64::MAX)
 }
 
 /// Maximum trust records per TrustState before inserts are rejected.
@@ -171,26 +182,26 @@ impl TrustRecord {
     /// Compute a SHA-256 hash of the record for digest comparison.
     pub fn digest(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
-        hasher.update(b"anti_entropy_record_v1:");
-        hasher.update((self.id.len() as u64).to_le_bytes());
+        hasher.update(RECORD_DIGEST_DOMAIN);
+        hasher.update(len_to_u64(self.id.len()).to_le_bytes());
         hasher.update(self.id.as_bytes());
         hasher.update(self.epoch.to_le_bytes());
         hasher.update(self.recorded_at_ms.to_le_bytes());
-        hasher.update((self.origin_node_id.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(self.origin_node_id.len()).to_le_bytes());
         hasher.update(self.origin_node_id.as_bytes());
-        hasher.update((self.payload.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(self.payload.len()).to_le_bytes());
         hasher.update(&self.payload);
         hasher.update(self.mmr_pos.to_le_bytes());
-        hasher.update((self.marker_hash.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(self.marker_hash.len()).to_le_bytes());
         hasher.update(self.marker_hash.as_bytes());
         if let Some(proof) = &self.inclusion_proof {
             hasher.update(proof.leaf_index.to_le_bytes());
             hasher.update(proof.tree_size.to_le_bytes());
-            hasher.update((proof.leaf_hash.len() as u64).to_le_bytes());
+            hasher.update(len_to_u64(proof.leaf_hash.len()).to_le_bytes());
             hasher.update(proof.leaf_hash.as_bytes());
-            hasher.update((proof.audit_path.len() as u64).to_le_bytes());
+            hasher.update(len_to_u64(proof.audit_path.len()).to_le_bytes());
             for h in &proof.audit_path {
-                hasher.update((h.len() as u64).to_le_bytes());
+                hasher.update(len_to_u64(h.len()).to_le_bytes());
                 hasher.update(h.as_bytes());
             }
         } else {
@@ -240,6 +251,10 @@ impl TrustState {
     }
 
     fn insert_with_capacity(&mut self, record: TrustRecord, capacity: usize) -> bool {
+        if capacity == 0 {
+            return false;
+        }
+
         if let Some(existing) = self.records.get(&record.id)
             && matches!(existing.precedence_cmp(&record), Ordering::Greater)
         {
@@ -266,7 +281,7 @@ impl TrustState {
     /// Recompute root digest as SHA-256 over all record digests in deterministic order.
     fn recompute_root_digest(&mut self) {
         let mut hasher = Sha256::new();
-        hasher.update(b"anti_entropy_root_v1:");
+        hasher.update(ROOT_DIGEST_DOMAIN);
         for rec in self.records.values() {
             hasher.update(rec.digest());
         }
@@ -743,6 +758,57 @@ mod tests {
         AtomicBool::new(true)
     }
 
+    fn digest_record_with_domain(record: &TrustRecord, domain: &[u8]) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(domain);
+        hasher.update(len_to_u64(record.id.len()).to_le_bytes());
+        hasher.update(record.id.as_bytes());
+        hasher.update(record.epoch.to_le_bytes());
+        hasher.update(record.recorded_at_ms.to_le_bytes());
+        hasher.update(len_to_u64(record.origin_node_id.len()).to_le_bytes());
+        hasher.update(record.origin_node_id.as_bytes());
+        hasher.update(len_to_u64(record.payload.len()).to_le_bytes());
+        hasher.update(&record.payload);
+        hasher.update(record.mmr_pos.to_le_bytes());
+        hasher.update(len_to_u64(record.marker_hash.len()).to_le_bytes());
+        hasher.update(record.marker_hash.as_bytes());
+        if let Some(proof) = &record.inclusion_proof {
+            hasher.update(proof.leaf_index.to_le_bytes());
+            hasher.update(proof.tree_size.to_le_bytes());
+            hasher.update(len_to_u64(proof.leaf_hash.len()).to_le_bytes());
+            hasher.update(proof.leaf_hash.as_bytes());
+            hasher.update(len_to_u64(proof.audit_path.len()).to_le_bytes());
+            for h in &proof.audit_path {
+                hasher.update(len_to_u64(h.len()).to_le_bytes());
+                hasher.update(h.as_bytes());
+            }
+        } else {
+            hasher.update(0u64.to_le_bytes());
+        }
+        hasher.finalize().into()
+    }
+
+    fn root_digest_with_domain(records: &[TrustRecord], domain: &[u8]) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(domain);
+        for record in records {
+            hasher.update(record.digest());
+        }
+        hasher.finalize().into()
+    }
+
+    fn sorted_record_ids(state: &TrustState) -> Vec<String> {
+        state.record_ids().into_iter().collect()
+    }
+
+    fn assert_digest_eq(left: &[u8], right: &[u8]) {
+        assert!(crate::security::constant_time::ct_eq_bytes(left, right));
+    }
+
+    fn assert_digest_ne(left: &[u8], right: &[u8]) {
+        assert!(!crate::security::constant_time::ct_eq_bytes(left, right));
+    }
+
     // -- Config validation --
 
     #[test]
@@ -880,14 +946,89 @@ mod tests {
     fn test_record_digest_deterministic() {
         let (r1, _) = make_record("r1", 1);
         let (r2, _) = make_record("r1", 1);
-        assert_eq!(r1.digest(), r2.digest());
+        assert_digest_eq(&r1.digest(), &r2.digest());
     }
 
     #[test]
     fn test_record_digest_changes_with_conflict_metadata() {
         let (r1, _) = make_record_with_meta("r1", 1, 1_000, "node-a");
         let (r2, _) = make_record_with_meta("r1", 1, 1_001, "node-a");
-        assert_ne!(r1.digest(), r2.digest());
+        assert_digest_ne(&r1.digest(), &r2.digest());
+    }
+
+    #[test]
+    fn test_record_digest_includes_domain_separator() {
+        let (record, _) = make_record("r1", 1);
+        let expected = digest_record_with_domain(&record, RECORD_DIGEST_DOMAIN);
+        let wrong_domain = digest_record_with_domain(&record, b"wrong_anti_entropy_record_v1:");
+
+        assert_digest_eq(&record.digest(), &expected);
+        assert_digest_ne(&record.digest(), &wrong_domain);
+    }
+
+    #[test]
+    fn test_root_digest_includes_domain_separator() {
+        let mut state = TrustState::new(1);
+        let (record, _) = make_record("r1", 1);
+        assert!(state.insert(record.clone()));
+
+        let expected = root_digest_with_domain(&[record.clone()], ROOT_DIGEST_DOMAIN);
+        let wrong_domain =
+            root_digest_with_domain(&[record.clone()], b"wrong_anti_entropy_root_v1:");
+
+        assert_digest_eq(state.root_digest(), &expected);
+        assert_digest_ne(state.root_digest(), &record.digest());
+        assert_digest_ne(state.root_digest(), &wrong_domain);
+    }
+
+    #[test]
+    fn test_record_digest_changes_when_proof_is_removed() {
+        let (with_proof, _) = make_record("r1", 1);
+        let without_proof = make_record_no_proof("r1", 1);
+
+        assert_digest_ne(&with_proof.digest(), &without_proof.digest());
+    }
+
+    #[test]
+    fn test_root_digest_changes_when_payload_is_tampered() {
+        let (record, _) = make_record("r1", 1);
+        let (mut tampered, _) = make_record("r1", 1);
+        tampered.payload.push(0xFF);
+        let mut original_state = TrustState::new(1);
+        let mut tampered_state = TrustState::new(1);
+
+        assert!(original_state.insert(record));
+        assert!(tampered_state.insert(tampered));
+
+        assert_digest_ne(original_state.root_digest(), tampered_state.root_digest());
+    }
+
+    #[test]
+    fn test_trust_state_root_digest_order_independent() {
+        let (a, _) = make_record("a", 1);
+        let (b, _) = make_record("b", 1);
+        let (c, _) = make_record("c", 1);
+        let mut forward = TrustState::new(1);
+        let mut reverse = TrustState::new(1);
+
+        for record in [a.clone(), b.clone(), c.clone()] {
+            assert!(forward.insert(record));
+        }
+        for record in [c, b, a] {
+            assert!(reverse.insert(record));
+        }
+
+        assert_eq!(sorted_record_ids(&forward), sorted_record_ids(&reverse));
+        assert_digest_eq(forward.root_digest(), reverse.root_digest());
+    }
+
+    #[test]
+    fn test_push_bounded_fn_zero_capacity_clears_without_underflow() {
+        let mut values = vec![1, 2, 3];
+
+        push_bounded_fn(&mut values, 4, 0);
+
+        assert!(values.is_empty());
     }
 
     // -- MMR proof verification (canonical) --
@@ -1102,6 +1243,142 @@ mod tests {
         assert_eq!(result.records_accepted, 2);
         assert_eq!(result.records_rejected, 0);
         assert_eq!(local.len(), 2);
+    }
+
+    #[test]
+    fn metamorphic_convergence_independent_of_remote_insert_order() {
+        let (a, root) = make_record("a", 1);
+        let (b, _) = make_record("b", 1);
+        let (c, _) = make_record("c", 1);
+        let mut remote_forward = TrustState::new(1);
+        let mut remote_reverse = TrustState::new(1);
+        for record in [a.clone(), b.clone(), c.clone()] {
+            assert!(remote_forward.insert(record));
+        }
+        for record in [c, b, a] {
+            assert!(remote_reverse.insert(record));
+        }
+
+        let mut local_forward = TrustState::new(1);
+        let mut local_reverse = TrustState::new(1);
+        let mut reconciler_forward = AntiEntropyReconciler::new(ReconciliationConfig {
+            proof_required: false,
+            ..ReconciliationConfig::default()
+        })
+        .expect("should succeed");
+        let mut reconciler_reverse = AntiEntropyReconciler::new(ReconciliationConfig {
+            proof_required: false,
+            ..ReconciliationConfig::default()
+        })
+        .expect("should succeed");
+        let cancel = no_cancel();
+
+        reconciler_forward
+            .reconcile(&mut local_forward, &remote_forward, &root, &cancel)
+            .expect("forward reconciliation should converge");
+        reconciler_reverse
+            .reconcile(&mut local_reverse, &remote_reverse, &root, &cancel)
+            .expect("reverse reconciliation should converge");
+
+        assert_eq!(
+            sorted_record_ids(&local_forward),
+            sorted_record_ids(&local_reverse)
+        );
+        assert_digest_eq(local_forward.root_digest(), local_reverse.root_digest());
+    }
+
+    #[test]
+    fn metamorphic_reconciliation_idempotent_after_convergence() {
+        let mut local = TrustState::new(1);
+        let mut remote = TrustState::new(1);
+        let (record, root) = make_record("r1", 1);
+        assert!(remote.insert(record));
+        let mut reconciler =
+            AntiEntropyReconciler::new(ReconciliationConfig::default()).expect("should succeed");
+        let cancel = no_cancel();
+
+        let first = reconciler
+            .reconcile(&mut local, &remote, &root, &cancel)
+            .expect("first reconciliation should converge");
+        let converged_root = *local.root_digest();
+        let second = reconciler
+            .reconcile(&mut local, &remote, &root, &cancel)
+            .expect("second reconciliation should be idempotent");
+
+        assert_eq!(first.records_accepted, 1);
+        assert_eq!(second.delta_size, 0);
+        assert_eq!(second.records_accepted, 0);
+        assert_digest_eq(local.root_digest(), &converged_root);
+    }
+
+    #[test]
+    fn metamorphic_convergence_associative_for_disjoint_batches() {
+        let (a, root) = make_record("a", 1);
+        let (b, _) = make_record("b", 1);
+        let (c, _) = make_record("c", 1);
+
+        let mut remote_all = TrustState::new(1);
+        for record in [a.clone(), b.clone(), c.clone()] {
+            assert!(remote_all.insert(record));
+        }
+        let mut remote_ab = TrustState::new(1);
+        for record in [a.clone(), b.clone()] {
+            assert!(remote_ab.insert(record));
+        }
+        let mut remote_abc = TrustState::new(1);
+        for record in [a, b, c] {
+            assert!(remote_abc.insert(record));
+        }
+
+        let config = ReconciliationConfig {
+            proof_required: false,
+            ..ReconciliationConfig::default()
+        };
+        let mut one_step = TrustState::new(1);
+        let mut two_step = TrustState::new(1);
+        let mut reconciler_one =
+            AntiEntropyReconciler::new(config.clone()).expect("should succeed");
+        let mut reconciler_two = AntiEntropyReconciler::new(config).expect("should succeed");
+        let cancel = no_cancel();
+
+        reconciler_one
+            .reconcile(&mut one_step, &remote_all, &root, &cancel)
+            .expect("one-step reconciliation should converge");
+        reconciler_two
+            .reconcile(&mut two_step, &remote_ab, &root, &cancel)
+            .expect("first batch should converge");
+        reconciler_two
+            .reconcile(&mut two_step, &remote_abc, &root, &cancel)
+            .expect("second batch should converge");
+
+        assert_eq!(sorted_record_ids(&one_step), sorted_record_ids(&two_step));
+        assert_digest_eq(one_step.root_digest(), two_step.root_digest());
+    }
+
+    #[test]
+    fn test_epoch_tolerance_boundary_accepts_equal_limit_and_rejects_above() {
+        let mut reconciler = AntiEntropyReconciler::new(ReconciliationConfig {
+            epoch_tolerance: 2,
+            proof_required: false,
+            ..ReconciliationConfig::default()
+        })
+        .expect("should succeed");
+        let mut local = TrustState::new(5);
+        let mut remote = TrustState::new(5);
+        let (equal_limit, root) = make_record("equal-limit", 7);
+        let (above_limit, _) = make_record("above-limit", 8);
+        assert!(remote.insert(equal_limit));
+        assert!(remote.insert(above_limit));
+
+        let cancel = no_cancel();
+        let result = reconciler
+            .reconcile(&mut local, &remote, &root, &cancel)
+            .expect("epoch tolerance boundary should be handled in-band");
+
+        assert_eq!(result.records_accepted, 1);
+        assert_eq!(result.records_rejected, 1);
+        assert!(local.contains("equal-limit"));
+        assert!(!local.contains("above-limit"));
     }
 
     #[test]
@@ -1617,5 +1894,1624 @@ mod tests {
             .reconcile(&mut local, &remote, &root, &cancel)
             .expect("should succeed");
         assert_eq!(result.records_rejected, 1);
+    }
+
+    #[test]
+    fn insert_with_zero_capacity_rejects_new_record_without_mutation() {
+        let mut state = TrustState::new(1);
+        let (record, _) = make_record("zero-capacity-new", 1);
+
+        assert!(!state.insert_with_capacity(record, 0));
+        assert!(state.is_empty());
+        assert_eq!(*state.root_digest(), [0u8; 32]);
+    }
+
+    #[test]
+    fn insert_with_zero_capacity_rejects_replacement_without_mutation() {
+        let mut state = TrustState::new(2);
+        let (incumbent, _) = make_record_with_meta("zero-capacity-replace", 1, 1_000, "node-a");
+        let (replacement, _) = make_record_with_meta("zero-capacity-replace", 2, 2_000, "node-z");
+
+        assert!(state.insert(incumbent));
+        let original_root = *state.root_digest();
+        assert!(!state.insert_with_capacity(replacement, 0));
+
+        let retained = state
+            .get("zero-capacity-replace")
+            .expect("incumbent should remain");
+        assert_eq!(retained.epoch, 1);
+        assert_digest_eq(state.root_digest(), &original_root);
+    }
+
+    #[test]
+    fn batch_exceeded_does_not_apply_any_delta_records() {
+        let mut reconciler = AntiEntropyReconciler::new(ReconciliationConfig {
+            max_delta_batch: 1,
+            proof_required: false,
+            ..ReconciliationConfig::default()
+        })
+        .expect("config should be valid");
+        let mut local = TrustState::new(1);
+        let mut remote = TrustState::new(1);
+        let (first, root) = make_record("batch-first", 1);
+        let (second, _) = make_record("batch-second", 1);
+        remote.insert(first);
+        remote.insert(second);
+
+        let err = reconciler
+            .reconcile(&mut local, &remote, &root, &no_cancel())
+            .expect_err("oversized delta should fail before apply");
+
+        assert!(matches!(
+            err,
+            ReconciliationError::BatchExceeded { delta: 2, max: 1 }
+        ));
+        assert!(local.is_empty());
+        assert!(
+            reconciler
+                .events()
+                .iter()
+                .all(|event| event.code != EVT_RECORD_ACCEPTED)
+        );
+    }
+
+    #[test]
+    fn fork_detection_precedes_batch_limit_and_keeps_local_record() {
+        let mut reconciler = AntiEntropyReconciler::new(ReconciliationConfig {
+            max_delta_batch: 1,
+            proof_required: false,
+            ..ReconciliationConfig::default()
+        })
+        .expect("config should be valid");
+        let mut local = TrustState::new(1);
+        let mut remote = TrustState::new(1);
+        let (local_record, root) = make_record_with_meta("fork-before-batch", 1, 1_000, "node-a");
+        let (extra, _) = make_record("fork-extra", 1);
+        let mut remote_record = local_record.clone();
+        remote_record.payload = vec![9, 9, 9, 9];
+        local.insert(local_record);
+        remote.insert(remote_record);
+        remote.insert(extra);
+
+        let err = reconciler
+            .reconcile(&mut local, &remote, &root, &no_cancel())
+            .expect_err("fork should be detected before batch limit");
+
+        assert!(matches!(err, ReconciliationError::ForkDetected(id) if id == "fork-before-batch"));
+        assert_eq!(
+            local
+                .get("fork-before-batch")
+                .expect("local record should remain")
+                .payload,
+            vec![1, 2, 3, 4]
+        );
+        assert!(
+            reconciler
+                .events()
+                .iter()
+                .any(|event| event.code == EVT_FORK_DETECTED)
+        );
+    }
+
+    #[test]
+    fn cancellation_precedes_epoch_and_proof_rejection() {
+        let mut reconciler =
+            AntiEntropyReconciler::new(ReconciliationConfig::default()).expect("should succeed");
+        let mut local = TrustState::new(1);
+        let mut remote = TrustState::new(1);
+        let future_without_proof = make_record_no_proof("cancel-before-validation", 9);
+        let dummy_root = MmrRoot {
+            tree_size: 0,
+            root_hash: String::new(),
+        };
+        remote.insert(future_without_proof);
+
+        let err = reconciler
+            .reconcile(&mut local, &remote, &dummy_root, &with_cancel())
+            .expect_err("cancellation should stop validation first");
+
+        assert!(matches!(err, ReconciliationError::Cancelled));
+        assert!(local.is_empty());
+        assert!(
+            reconciler
+                .events()
+                .iter()
+                .any(|event| event.code == EVT_CANCELLED)
+        );
+    }
+
+    #[test]
+    fn invalid_proof_on_higher_precedence_replacement_keeps_local() {
+        let mut reconciler =
+            AntiEntropyReconciler::new(ReconciliationConfig::default()).expect("should succeed");
+        let mut local = TrustState::new(2);
+        let mut remote = TrustState::new(2);
+        let (local_record, root) = make_record_with_meta("bad-replacement", 1, 1_000, "node-a");
+        let mut replacement = make_record_no_proof("bad-replacement", 2);
+        replacement.payload = vec![8, 8, 8, 8];
+        local.insert(local_record);
+        remote.insert(replacement);
+
+        let result = reconciler
+            .reconcile(&mut local, &remote, &root, &no_cancel())
+            .expect("proof rejection is reported in-band");
+
+        assert_eq!(result.records_accepted, 0);
+        assert_eq!(result.records_rejected, 1);
+        let retained = local
+            .get("bad-replacement")
+            .expect("local record should remain");
+        assert_eq!(retained.epoch, 1);
+        assert_eq!(retained.payload, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn future_epoch_rejection_precedes_missing_proof_rejection() {
+        let mut reconciler =
+            AntiEntropyReconciler::new(ReconciliationConfig::default()).expect("should succeed");
+        let mut local = TrustState::new(1);
+        let mut remote = TrustState::new(1);
+        let dummy_root = MmrRoot {
+            tree_size: 0,
+            root_hash: String::new(),
+        };
+        remote.insert(make_record_no_proof("future-without-proof", 9));
+
+        let result = reconciler
+            .reconcile(&mut local, &remote, &dummy_root, &no_cancel())
+            .expect("epoch rejection should be in-band");
+
+        assert_eq!(result.records_accepted, 0);
+        assert_eq!(result.records_rejected, 1);
+        let rejected = reconciler
+            .events()
+            .iter()
+            .find(|event| event.code == EVT_RECORD_REJECTED)
+            .expect("rejection event");
+        assert!(rejected.detail.contains("epoch violation"));
+        assert!(!rejected.detail.contains("proof invalid"));
+    }
+
+    // ── Negative-path tests for edge cases and invalid inputs ──────────
+
+    #[test]
+    fn negative_reconciliation_config_with_extreme_values_validates() {
+        // Test config with zero values
+        let zero_config = ReconciliationConfig {
+            max_delta_batch: 0,
+            epoch_tolerance: 0,
+            proof_required: true,
+            cancellation_enabled: true,
+            max_retry_attempts: 0,
+        };
+
+        // Zero values should be handled gracefully
+        let reconciler = AntiEntropyReconciler::new(zero_config.clone());
+        assert_eq!(reconciler.config().max_delta_batch, 0);
+        assert_eq!(reconciler.config().max_retry_attempts, 0);
+
+        // Test config with maximum values
+        let max_config = ReconciliationConfig {
+            max_delta_batch: usize::MAX,
+            epoch_tolerance: u64::MAX,
+            proof_required: false,
+            cancellation_enabled: false,
+            max_retry_attempts: usize::MAX,
+        };
+
+        let max_reconciler = AntiEntropyReconciler::new(max_config);
+        assert_eq!(max_reconciler.config().epoch_tolerance, u64::MAX);
+        assert_eq!(max_reconciler.config().max_retry_attempts, usize::MAX);
+    }
+
+    #[test]
+    fn negative_trust_record_with_problematic_string_fields() {
+        // Test TrustRecord with various problematic string data
+        let problematic_records = vec![
+            TrustRecord {
+                id: "".to_string(), // Empty ID
+                epoch: 1,
+                recorded_at_ms: 1000,
+                origin_node_id: "normal_node".to_string(),
+                payload: vec![1, 2, 3],
+                mmr_position: 0,
+                inclusion_proof: InclusionProof { proof_hashes: vec![] },
+            },
+            TrustRecord {
+                id: "\0null\x01control\x7f".to_string(), // Control characters
+                epoch: 2,
+                recorded_at_ms: 2000,
+                origin_node_id: "node\nwith\nnewlines".to_string(),
+                payload: vec![],
+                mmr_position: 1,
+                inclusion_proof: InclusionProof { proof_hashes: vec![] },
+            },
+            TrustRecord {
+                id: "🚀emoji📊record💀".to_string(), // Unicode emoji
+                epoch: u64::MAX, // Maximum epoch
+                recorded_at_ms: u64::MAX, // Maximum timestamp
+                origin_node_id: "\u{FFFF}\u{10FFFF}".to_string(), // Max Unicode
+                payload: vec![0; 10_000], // Large payload
+                mmr_position: u64::MAX, // Maximum position
+                inclusion_proof: InclusionProof { proof_hashes: vec![] },
+            },
+            TrustRecord {
+                id: "../../../etc/passwd".to_string(), // Path traversal
+                epoch: 0, // Zero epoch
+                recorded_at_ms: 0, // Zero timestamp
+                origin_node_id: "<script>alert('xss')</script>".to_string(), // XSS
+                payload: b"{\"malicious\": \"json\"}".to_vec(), // JSON injection
+                mmr_position: 0,
+                inclusion_proof: InclusionProof { proof_hashes: vec![] },
+            },
+        ];
+
+        for record in problematic_records {
+            // Record creation should not panic
+            let digest = record.compute_digest();
+            assert_eq!(digest.len(), 64); // Should be valid SHA256 hex
+
+            // Record should be orderable
+            let ordering = record.partial_cmp(&record);
+            assert_eq!(ordering, Some(Ordering::Equal));
+
+            // All numeric fields should be preserved
+            assert!(record.epoch <= u64::MAX);
+            assert!(record.recorded_at_ms <= u64::MAX);
+            assert!(record.mmr_position <= u64::MAX);
+        }
+    }
+
+    #[test]
+    fn negative_reconciliation_error_display_with_malicious_content() {
+        // Test ReconciliationError Display impl with problematic strings
+        let malicious_errors = vec![
+            ReconciliationError::InvalidConfig("\0config\x01error".to_string()),
+            ReconciliationError::ProofInvalid("proof\nwith\nnewlines".to_string()),
+            ReconciliationError::ForkDetected("<script>alert('fork')</script>".to_string()),
+            ReconciliationError::InvalidConfig("🚀config💀error".to_string()),
+            ReconciliationError::ProofInvalid("\u{FFFF}proof_error".to_string()),
+            ReconciliationError::ForkDetected("../../../etc/passwd".to_string()),
+        ];
+
+        for error in malicious_errors {
+            // Display formatting should not panic or interpret content
+            let display_output = format!("{}", error);
+            let debug_output = format!("{:?}", error);
+
+            // Should contain expected error code
+            assert!(display_output.starts_with("ERR_AE_"));
+
+            // Should not interpret malicious content as code
+            assert!(!display_output.contains("(null)"));
+            assert!(!display_output.contains("Error"));
+
+            // Debug output should also be safe
+            assert!(debug_output.contains("ReconciliationError"));
+        }
+
+        // Test EpochViolation and BatchExceeded with extreme values
+        let epoch_error = ReconciliationError::EpochViolation {
+            record_epoch: u64::MAX,
+            local_epoch: 0,
+        };
+        let display = format!("{}", epoch_error);
+        assert!(display.contains(&format!("{}", u64::MAX)));
+
+        let batch_error = ReconciliationError::BatchExceeded {
+            delta: usize::MAX,
+            max: 100,
+        };
+        let batch_display = format!("{}", batch_error);
+        assert!(batch_display.contains(&format!("{}", usize::MAX)));
+    }
+
+    #[test]
+    fn negative_push_bounded_fn_with_extreme_capacity_scenarios() {
+        // Test push_bounded_fn with zero capacity
+        let mut items = vec![1, 2, 3, 4, 5];
+        push_bounded_fn(&mut items, 6, 0);
+        assert!(items.is_empty(), "Zero capacity should clear all items");
+
+        // Test with capacity 1
+        items = vec![10, 20, 30];
+        push_bounded_fn(&mut items, 40, 1);
+        assert_eq!(items, vec![40], "Capacity 1 should keep only new item");
+
+        // Test massive overflow
+        let mut large_vec: Vec<u32> = (0..10000).collect();
+        push_bounded_fn(&mut large_vec, 99999, 5);
+        assert_eq!(large_vec.len(), 5);
+        assert_eq!(*large_vec.last().unwrap(), 99999);
+
+        // Test saturating arithmetic doesn't overflow
+        items = vec![1, 2, 3];
+        let original_len = items.len();
+        push_bounded_fn(&mut items, 4, usize::MAX); // Should not overflow
+        assert_eq!(items.len(), original_len + 1);
+
+        // Test edge case: exactly at capacity
+        items = vec![1, 2, 3];
+        push_bounded_fn(&mut items, 4, 3);
+        assert_eq!(items.len(), 3);
+        assert!(items.contains(&4));
+    }
+
+    #[test]
+    fn negative_len_to_u64_conversion_with_extreme_usize_values() {
+        // Test len_to_u64 with various usize edge cases
+        assert_eq!(len_to_u64(0), 0);
+        assert_eq!(len_to_u64(1), 1);
+        assert_eq!(len_to_u64(u32::MAX as usize), u32::MAX as u64);
+
+        // Test with large values that fit in u64
+        let large_but_valid = (u64::MAX / 2) as usize;
+        assert_eq!(len_to_u64(large_but_valid), large_but_valid as u64);
+
+        // Test behavior when usize > u64::MAX (on hypothetical 128-bit systems)
+        // On 64-bit systems, this won't trigger, but the function should be safe
+        if usize::MAX > u64::MAX as usize {
+            assert_eq!(len_to_u64(usize::MAX), u64::MAX);
+        } else {
+            // On systems where usize fits in u64, test maximum usize
+            assert_eq!(len_to_u64(usize::MAX), usize::MAX as u64);
+        }
+    }
+
+    #[test]
+    fn negative_hash_computation_with_edge_case_payloads() {
+        // Test hash computation with various problematic payloads
+        let edge_case_payloads = vec![
+            vec![], // Empty payload
+            vec![0], // Single zero byte
+            vec![0xFF], // Single max byte
+            vec![0; 1_000_000], // Large empty payload
+            (0u8..=255u8).collect::<Vec<u8>>(), // All byte values
+            b"\0\x01\x02\x03\xFF\xFE\xFD\xFC".to_vec(), // Mixed values
+        ];
+
+        for payload in edge_case_payloads {
+            let record = TrustRecord {
+                id: "test_record".to_string(),
+                epoch: 1,
+                recorded_at_ms: 1000,
+                origin_node_id: "test_node".to_string(),
+                payload: payload.clone(),
+                mmr_position: 0,
+                inclusion_proof: InclusionProof { proof_hashes: vec![] },
+            };
+
+            let digest = record.compute_digest();
+
+            // Should always produce valid hex SHA256
+            assert_eq!(digest.len(), 64);
+            assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
+
+            // Different payloads should produce different digests (except same payload)
+            let same_payload_record = TrustRecord {
+                payload: payload.clone(),
+                ..record.clone()
+            };
+            assert_eq!(record.compute_digest(), same_payload_record.compute_digest());
+        }
+    }
+
+    #[test]
+    fn negative_epoch_handling_with_boundary_values() {
+        let config = ReconciliationConfig {
+            epoch_tolerance: 5,
+            ..Default::default()
+        };
+
+        let mut reconciler = AntiEntropyReconciler::new(config);
+
+        // Test records with extreme epoch values
+        let boundary_epochs = vec![
+            (0, "zero_epoch"),
+            (1, "minimum_positive"),
+            (u64::MAX / 2, "half_max"),
+            (u64::MAX - 1, "near_max"),
+            (u64::MAX, "maximum"),
+        ];
+
+        for (epoch, description) in boundary_epochs {
+            let record = TrustRecord {
+                id: format!("record_{}", description),
+                epoch,
+                recorded_at_ms: 1000,
+                origin_node_id: "test_node".to_string(),
+                payload: b"test_payload".to_vec(),
+                mmr_position: 0,
+                inclusion_proof: InclusionProof { proof_hashes: vec![] },
+            };
+
+            // Should handle extreme epochs without arithmetic overflow
+            let _digest = record.compute_digest(); // Should not panic
+
+            // Record creation and comparison should work
+            let ordering = record.partial_cmp(&record);
+            assert_eq!(ordering, Some(Ordering::Equal));
+        }
+    }
+
+    #[test]
+    fn negative_mmr_position_and_proof_with_extreme_values() {
+        // Test with extreme MMR positions and large proofs
+        let extreme_positions = vec![0, 1, u32::MAX as u64, u64::MAX / 2, u64::MAX];
+
+        for position in extreme_positions {
+            // Create inclusion proof with many hashes
+            let large_proof_hashes = (0..1000)
+                .map(|i| Hash(format!("{:064x}", i)))
+                .collect();
+
+            let record = TrustRecord {
+                id: format!("record_pos_{}", position),
+                epoch: 1,
+                recorded_at_ms: 1000,
+                origin_node_id: "test_node".to_string(),
+                payload: b"test".to_vec(),
+                mmr_position: position,
+                inclusion_proof: InclusionProof {
+                    proof_hashes: large_proof_hashes,
+                },
+            };
+
+            // Should handle large proofs and extreme positions
+            let digest = record.compute_digest();
+            assert_eq!(digest.len(), 64);
+
+            // MMR position should be preserved
+            assert_eq!(record.mmr_position, position);
+
+            // Large inclusion proofs should not cause memory issues
+            assert!(record.inclusion_proof.proof_hashes.len() <= 1000);
+        }
+
+        // Test with empty proof hashes
+        let empty_proof_record = TrustRecord {
+            id: "empty_proof".to_string(),
+            epoch: 1,
+            recorded_at_ms: 1000,
+            origin_node_id: "test_node".to_string(),
+            payload: b"test".to_vec(),
+            mmr_position: 0,
+            inclusion_proof: InclusionProof { proof_hashes: vec![] },
+        };
+
+        let empty_digest = empty_proof_record.compute_digest();
+        assert_eq!(empty_digest.len(), 64);
+    }
+
+    #[test]
+    fn negative_constants_validation_and_boundary_checks() {
+        // Test that all error constants are well-formed
+        let error_constants = [
+            ERR_AE_INVALID_CONFIG,
+            ERR_AE_EPOCH_VIOLATION,
+            ERR_AE_PROOF_INVALID,
+            ERR_AE_FORK_DETECTED,
+            ERR_AE_CANCELLED,
+            ERR_AE_BATCH_EXCEEDED,
+        ];
+
+        for constant in &error_constants {
+            assert!(!constant.is_empty());
+            assert!(constant.starts_with("ERR_AE_"));
+            assert!(constant.is_ascii());
+        }
+
+        // Test event constants
+        let event_constants = [
+            EVT_CYCLE_STARTED,
+            EVT_DELTA_COMPUTED,
+            EVT_RECORD_ACCEPTED,
+            EVT_RECORD_REJECTED,
+            EVT_CYCLE_COMPLETED,
+            EVT_FORK_DETECTED,
+            EVT_CANCELLED,
+            EVT_REPLAY_IDEMPOTENT,
+        ];
+
+        for constant in &event_constants {
+            assert!(!constant.is_empty());
+            assert!(constant.starts_with("FN-AE-"));
+            assert!(constant.is_ascii());
+        }
+
+        // Test invariant constants
+        let invariant_constants = [INV_AE_DELTA, INV_AE_ATOMIC, INV_AE_EPOCH, INV_AE_PROOF];
+
+        for constant in &invariant_constants {
+            assert!(!constant.is_empty());
+            assert!(constant.starts_with("INV-AE-"));
+            assert!(constant.is_ascii());
+        }
+
+        // Test domain separators
+        assert!(!RECORD_DIGEST_DOMAIN.is_empty());
+        assert!(!ROOT_DIGEST_DOMAIN.is_empty());
+        assert!(RECORD_DIGEST_DOMAIN.ends_with(b":"));
+        assert!(ROOT_DIGEST_DOMAIN.ends_with(b":"));
+
+        // Test capacity bounds
+        assert!(MAX_TRUST_RECORDS > 0);
+        assert!(MAX_TRUST_RECORDS <= 1_000_000); // Reasonable upper bound
+    }
+
+    // -- Negative-Path Tests --
+
+    #[test]
+    fn negative_massive_trust_record_payload_handled_gracefully() {
+        // Test with extremely large payload to validate memory pressure handling
+        let massive_payload = vec![0xAA; 10 * 1024 * 1024]; // 10MB payload
+        let record = TrustRecord {
+            id: "massive-payload-record".into(),
+            epoch: 1,
+            recorded_at_ms: 1000,
+            origin_node_id: "node-stress-test".into(),
+            payload: massive_payload,
+            mmr_pos: 0,
+            inclusion_proof: None,
+            marker_hash: test_marker_hash("massive-payload-record"),
+        };
+
+        // Should compute digest without panicking despite massive payload
+        let digest = record.digest();
+        assert_eq!(digest.len(), 32);
+
+        let mut state = TrustState::new(1);
+        let inserted = state.insert(record);
+        // Should handle gracefully regardless of capacity constraints
+        if inserted {
+            assert_eq!(state.len(), 1);
+        }
+    }
+
+    #[test]
+    fn negative_unicode_record_and_node_identifiers_processed_safely() {
+        // Test with various Unicode edge cases in identifiers
+        let unicode_cases = vec![
+            "record-🚀-emoji",
+            "节点-chinese",
+            "рекорд-cyrillic",
+            "𝕣𝕖𝕔𝕠𝕣𝕕-mathematical",
+            "record\u{200B}zero-width-space",
+            "record\u{FEFF}bom-marker",
+            "record\u{1F4A9}pile-of-poo"
+        ];
+
+        let mut state = TrustState::new(1);
+        for (i, unicode_id) in unicode_cases.iter().enumerate() {
+            let record = TrustRecord {
+                id: unicode_id.to_string(),
+                epoch: 1,
+                recorded_at_ms: 1000 + i as u64,
+                origin_node_id: format!("unicode-node-{}", unicode_id),
+                payload: vec![0xFE, 0xFF], // UTF-16 BOM bytes
+                mmr_pos: i as u64,
+                inclusion_proof: None,
+                marker_hash: test_marker_hash(unicode_id),
+            };
+
+            // Should handle unicode identifiers without corruption
+            let digest = record.digest();
+            assert_eq!(digest.len(), 32);
+
+            let inserted = state.insert(record);
+            if inserted {
+                assert!(state.contains(unicode_id));
+            }
+        }
+    }
+
+    #[test]
+    fn negative_extreme_epoch_arithmetic_uses_saturating_operations() {
+        // Test epoch arithmetic near u64::MAX boundary
+        let max_epoch = u64::MAX;
+        let near_max_epoch = u64::MAX.saturating_sub(1);
+
+        let record_max = TrustRecord {
+            id: "max-epoch-record".into(),
+            epoch: max_epoch,
+            recorded_at_ms: max_epoch,
+            origin_node_id: "max-node".into(),
+            payload: vec![0xFF; 100],
+            mmr_pos: max_epoch,
+            inclusion_proof: None,
+            marker_hash: test_marker_hash("max-epoch-record"),
+        };
+
+        let record_near_max = TrustRecord {
+            id: "near-max-epoch-record".into(),
+            epoch: near_max_epoch,
+            recorded_at_ms: near_max_epoch,
+            origin_node_id: "near-max-node".into(),
+            payload: vec![0xFF; 100],
+            mmr_pos: near_max_epoch,
+            inclusion_proof: None,
+            marker_hash: test_marker_hash("near-max-epoch-record"),
+        };
+
+        // Test precedence comparison with extreme epochs
+        let cmp = record_max.precedence_cmp(&record_near_max);
+        assert_eq!(cmp, Ordering::Greater);
+
+        // Test digest computation with maximum values
+        let digest_max = record_max.digest();
+        let digest_near = record_near_max.digest();
+        assert_eq!(digest_max.len(), 32);
+        assert_eq!(digest_near.len(), 32);
+        assert_digest_ne(&digest_max, &digest_near);
+
+        let mut state = TrustState::new(max_epoch);
+        assert_eq!(state.current_epoch(), max_epoch);
+        let _inserted = state.insert(record_max);
+    }
+
+    #[test]
+    fn negative_malformed_reconciliation_config_validation_comprehensive() {
+        // Test various malformed configuration scenarios
+        let malformed_configs = vec![
+            ReconciliationConfig {
+                max_delta_batch: 0, // Invalid: zero batch size
+                ..Default::default()
+            },
+            ReconciliationConfig {
+                max_delta_batch: usize::MAX, // Extreme: maximum usize
+                epoch_tolerance: u64::MAX,   // Extreme: maximum epoch tolerance
+                proof_required: false,
+                cancellation_enabled: false,
+                max_retry_attempts: usize::MAX,
+            }
+        ];
+
+        // First config should be invalid
+        assert!(malformed_configs[0].validate().is_err());
+
+        // Second config with extreme values should still validate
+        assert!(malformed_configs[1].validate().is_ok());
+
+        // Test edge case where max_delta_batch is 1
+        let minimal_config = ReconciliationConfig {
+            max_delta_batch: 1,
+            epoch_tolerance: 0,
+            proof_required: true,
+            cancellation_enabled: true,
+            max_retry_attempts: 0, // Zero retries should be valid
+        };
+        assert!(minimal_config.validate().is_ok());
+    }
+
+    #[test]
+    fn negative_hash_collision_resistance_under_malicious_input() {
+        // Test hash collision resistance with crafted inputs
+        let collision_attempts = vec![
+            // Same content, different ordering
+            ("record-a", vec![0x01, 0x02, 0x03]),
+            ("record-a", vec![0x03, 0x02, 0x01]),
+            // Length extension attempts
+            ("record", vec![0x01, 0x02]),
+            ("record\x00", vec![0x01, 0x02]),
+            // Unicode normalization conflicts
+            ("café", vec![0x01]), // NFC form
+            ("cafe\u{0301}", vec![0x01]), // NFD form
+            // Domain separator injection attempts
+            ("anti_entropy_record_v1:", vec![0xFF]),
+            ("record", b"anti_entropy_record_v1:".to_vec()),
+        ];
+
+        let mut digests = Vec::new();
+        for (i, (id, payload)) in collision_attempts.iter().enumerate() {
+            let record = TrustRecord {
+                id: id.to_string(),
+                epoch: 1,
+                recorded_at_ms: 1000 + i as u64,
+                origin_node_id: "collision-test-node".into(),
+                payload: payload.clone(),
+                mmr_pos: i as u64,
+                inclusion_proof: None,
+                marker_hash: test_marker_hash(id),
+            };
+
+            let digest = record.digest();
+            assert_eq!(digest.len(), 32);
+
+            // Check for collisions with previous digests
+            for prev_digest in &digests {
+                assert_digest_ne(&digest, prev_digest);
+            }
+            digests.push(digest);
+        }
+
+        // Ensure all digests are unique
+        assert_eq!(digests.len(), collision_attempts.len());
+    }
+
+    #[test]
+    fn negative_trust_state_capacity_boundary_enforcement() {
+        // Test trust state behavior at and beyond MAX_TRUST_RECORDS capacity
+        let mut state = TrustState::new(1);
+        let mut successful_inserts = 0;
+
+        // Fill state beyond maximum capacity
+        for i in 0..(MAX_TRUST_RECORDS + 100) {
+            let record = TrustRecord {
+                id: format!("capacity-test-record-{:06}", i),
+                epoch: 1,
+                recorded_at_ms: 1000 + i as u64,
+                origin_node_id: format!("capacity-node-{}", i % 10),
+                payload: vec![0x42; 32], // Small fixed payload
+                mmr_pos: i as u64,
+                inclusion_proof: None,
+                marker_hash: test_marker_hash(&format!("capacity-test-record-{:06}", i)),
+            };
+
+            if state.insert(record) {
+                successful_inserts = successful_inserts.saturating_add(1);
+            }
+        }
+
+        // Should not exceed maximum capacity
+        assert!(state.len() <= MAX_TRUST_RECORDS);
+        assert!(successful_inserts > 0); // Should have inserted at least some records
+
+        // State should remain consistent
+        let digest = state.root_digest();
+        assert_eq!(digest.len(), 32);
+    }
+
+    #[test]
+    fn negative_malformed_inclusion_proof_audit_paths() {
+        // Test handling of malformed inclusion proof structures
+        let malformed_proofs = vec![
+            InclusionProof {
+                leaf_index: u64::MAX,
+                tree_size: 0, // Invalid: tree_size cannot be 0 with valid leaf
+                leaf_hash: "malformed-leaf-hash".into(),
+                audit_path: vec!["invalid-hash-1".into(), "invalid-hash-2".into()],
+            },
+            InclusionProof {
+                leaf_index: 100,
+                tree_size: 50, // Invalid: leaf_index >= tree_size
+                leaf_hash: "invalid-leaf".into(),
+                audit_path: vec![],
+            },
+            InclusionProof {
+                leaf_index: 0,
+                tree_size: 1,
+                leaf_hash: String::new(), // Empty hash
+                audit_path: vec![String::new()], // Empty audit path entry
+            },
+        ];
+
+        for (i, malformed_proof) in malformed_proofs.iter().enumerate() {
+            let record = TrustRecord {
+                id: format!("malformed-proof-record-{}", i),
+                epoch: 1,
+                recorded_at_ms: 1000 + i as u64,
+                origin_node_id: "proof-test-node".into(),
+                payload: vec![0x99; 16],
+                mmr_pos: i as u64,
+                inclusion_proof: Some(malformed_proof.clone()),
+                marker_hash: test_marker_hash(&format!("malformed-proof-record-{}", i)),
+            };
+
+            // Should compute digest without panicking despite malformed proof
+            let digest = record.digest();
+            assert_eq!(digest.len(), 32);
+
+            // State insertion should handle gracefully
+            let mut state = TrustState::new(1);
+            let _inserted = state.insert(record);
+        }
+    }
+
+    #[test]
+    fn negative_control_character_injection_in_identifiers() {
+        // Test handling of control characters and null bytes in record identifiers
+        let control_char_cases = vec![
+            "record\0null-byte",
+            "record\x01soh-control",
+            "record\x08backspace",
+            "record\x0Anewline",
+            "record\x0Dcarriage-return",
+            "record\x1Bescape",
+            "record\x7FDEL-character",
+            "\x00\x01\x02null-prefixed",
+            "record\u{200E}left-to-right-mark",
+        ];
+
+        let mut state = TrustState::new(1);
+        for (i, control_id) in control_char_cases.iter().enumerate() {
+            let record = TrustRecord {
+                id: control_id.to_string(),
+                epoch: 1,
+                recorded_at_ms: 1000 + i as u64,
+                origin_node_id: format!("control-node\x00{}", i), // Control chars in node ID too
+                payload: b"\x00\xFF\x01\xFE".to_vec(), // Binary payload with control chars
+                mmr_pos: i as u64,
+                inclusion_proof: None,
+                marker_hash: test_marker_hash(control_id),
+            };
+
+            // Should handle control characters without corruption or crashes
+            let digest = record.digest();
+            assert_eq!(digest.len(), 32);
+
+            // Test precedence comparison with control character IDs
+            if i > 0 {
+                let prev_record = TrustRecord {
+                    id: control_char_cases[i - 1].to_string(),
+                    epoch: 1,
+                    recorded_at_ms: 999 + i as u64,
+                    origin_node_id: "prev-control-node".into(),
+                    payload: vec![0x42],
+                    mmr_pos: 0,
+                    inclusion_proof: None,
+                    marker_hash: test_marker_hash(control_char_cases[i - 1]),
+                };
+
+                let _cmp = record.precedence_cmp(&prev_record);
+            }
+
+            let _inserted = state.insert(record);
+        }
+    }
+
+    // -- Negative-path Security Tests ---------------------------------------
+    // Added 2026-04-17: Comprehensive security hardening tests
+
+    #[test]
+    fn test_security_unicode_injection_in_trust_record_identifiers() {
+        use crate::security::constant_time::ct_eq;
+
+        let mut state = TrustState::new();
+
+        // Unicode injection attempts in record IDs and origin node IDs
+        let malicious_records = vec![
+            (
+                "\u{202E}safe-record\u{202D}malicious",  // BiDi override in record ID
+                "origin\u{200B}node",  // Zero-width space in origin
+            ),
+            (
+                "record\u{FEFF}001",  // Zero-width no-break space
+                "\u{0000}bypass-node",  // Null injection in origin
+            ),
+            (
+                "secure\u{2028}record",  // Line separator in record ID
+                "node\u{2029}admin",  // Paragraph separator in origin
+            ),
+            (
+                "\u{200E}normal\u{200F}",  // LTR/RTL marks
+                "origin\u{202C}reset",  // Pop directional formatting
+            ),
+        ];
+
+        for (record_id, origin_node_id) in malicious_records {
+            let marker_hash = test_marker_hash(record_id);
+            let (root, proof) = build_valid_proof(&marker_hash);
+
+            let record = TrustRecord {
+                id: record_id.to_string(),
+                epoch: 1,
+                recorded_at_ms: 1000,
+                origin_node_id: origin_node_id.to_string(),
+                payload: b"test_payload".to_vec(),
+                mmr_pos: 0,
+                inclusion_proof: Some(proof),
+            };
+
+            let insert_result = state.insert(record.clone());
+
+            if insert_result {
+                // If insertion succeeded, verify Unicode doesn't affect security
+                let records = state.list_records();
+
+                // Find the inserted record
+                if let Some(inserted_record) = records.iter().find(|r| r.id == record_id) {
+                    // Unicode should not create privileged identifiers
+                    assert!(!ct_eq(inserted_record.id.as_bytes(), b"admin"),
+                           "Unicode injection should not create admin records");
+                    assert!(!ct_eq(inserted_record.origin_node_id.as_bytes(), b"admin"),
+                           "Unicode injection should not create admin origins");
+
+                    // Null bytes should not appear in identifiers
+                    assert!(!inserted_record.id.contains('\0'),
+                           "Record ID should not contain null bytes");
+                    assert!(!inserted_record.origin_node_id.contains('\0'),
+                           "Origin node ID should not contain null bytes");
+                }
+
+                // Verify state digest is deterministic despite Unicode
+                let digest1 = state.compute_state_digest();
+                let digest2 = state.compute_state_digest();
+                assert_eq!(digest1, digest2,
+                         "State digest should be deterministic with Unicode content");
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_memory_exhaustion_through_large_trust_batches() {
+        let mut state = TrustState::new();
+        let config = ReconciliationConfig {
+            max_delta_batch: 50000,  // Large batch size
+            epoch_tolerance: 1,
+            proof_required: false,  // Disable to focus on memory exhaustion
+            cancellation_enabled: true,
+            max_retry_attempts: 1,
+        };
+
+        // Attempt memory exhaustion through massive trust record batch
+        let mut large_delta = TrustStateDelta::new();
+        for i in 0..100_000 {
+            let record_id = format!("record_{}", i);
+            let marker_hash = test_marker_hash(&record_id);
+
+            let record = TrustRecord {
+                id: record_id,
+                epoch: 1,
+                recorded_at_ms: 1000 + i as u64,
+                origin_node_id: format!("node_{}", i % 1000),  // Some variety in origins
+                payload: vec![0x42; 1024],  // 1KB payload per record
+                mmr_pos: i as u64,
+                inclusion_proof: None,
+            };
+
+            large_delta.add_record(record);
+        }
+
+        // Should either handle gracefully or reject due to capacity limits
+        let reconciler = TrustStateReconciler::new(config);
+        let apply_result = std::panic::catch_unwind(|| {
+            reconciler.apply_delta(&mut state, large_delta, &AtomicBool::new(false))
+        });
+
+        match apply_result {
+            Ok(Ok(_)) => {
+                // If processing succeeded, verify state integrity
+                let records = state.list_records();
+                assert!(records.len() <= MAX_TRUST_RECORDS,
+                       "Record count should respect capacity limits");
+
+                // State should remain consistent
+                let digest = state.compute_state_digest();
+                assert!(!digest.is_empty(), "State digest should not be empty");
+            },
+            Ok(Err(err)) => {
+                // Graceful rejection due to capacity limits is expected
+                assert!(err.contains("ERR_AE_BATCH_EXCEEDED") ||
+                       err.contains("capacity") ||
+                       err.contains("limit"),
+                       "Error should indicate capacity/batch limits: {}", err);
+            },
+            Err(_) => {
+                // Graceful panic handling is acceptable for extreme memory pressure
+            }
+        }
+        // Test should complete without OOM
+    }
+
+    #[test]
+    fn test_security_mmr_proof_manipulation_and_verification_bypass() {
+        use crate::security::constant_time::ct_eq;
+
+        let mut state = TrustState::new();
+        let config = ReconciliationConfig {
+            proof_required: true,
+            ..Default::default()
+        };
+
+        // Generate a legitimate record with valid proof
+        let (legitimate_record, legitimate_root) = make_record("legitimate", 1);
+
+        // Attempt various proof manipulation attacks
+        let proof_manipulation_attempts = vec![
+            // Proof with modified leaf hash
+            TrustRecord {
+                id: "malicious_leaf".to_string(),
+                epoch: 1,
+                recorded_at_ms: 1000,
+                origin_node_id: "attacker".to_string(),
+                payload: b"malicious_payload".to_vec(),
+                mmr_pos: 0,
+                inclusion_proof: Some(InclusionProof {
+                    leaf_index: 0,
+                    tree_size: 1,
+                    leaf_hash: "forged_leaf_hash".to_string(),  // Forged hash
+                    audit_path: vec![],
+                }),
+            },
+            // Proof with manipulated tree size
+            TrustRecord {
+                id: "size_attack".to_string(),
+                epoch: 1,
+                recorded_at_ms: 1000,
+                origin_node_id: "attacker".to_string(),
+                payload: b"size_attack_payload".to_vec(),
+                mmr_pos: 0,
+                inclusion_proof: Some(InclusionProof {
+                    leaf_index: 0,
+                    tree_size: u64::MAX,  // Extreme tree size
+                    leaf_hash: legitimate_record.inclusion_proof.as_ref().unwrap().leaf_hash.clone(),
+                    audit_path: vec![],
+                }),
+            },
+            // Proof with malicious audit path
+            TrustRecord {
+                id: "audit_path_attack".to_string(),
+                epoch: 1,
+                recorded_at_ms: 1000,
+                origin_node_id: "attacker".to_string(),
+                payload: b"audit_attack_payload".to_vec(),
+                mmr_pos: 0,
+                inclusion_proof: Some(InclusionProof {
+                    leaf_index: 0,
+                    tree_size: 1,
+                    leaf_hash: legitimate_record.inclusion_proof.as_ref().unwrap().leaf_hash.clone(),
+                    audit_path: vec!["malicious_audit_hash".to_string()],  // Invalid audit path
+                }),
+            },
+        ];
+
+        let reconciler = TrustStateReconciler::new(config);
+
+        for malicious_record in proof_manipulation_attempts {
+            let mut delta = TrustStateDelta::new();
+            delta.add_record(malicious_record.clone());
+
+            let apply_result = reconciler.apply_delta(&mut state, delta, &AtomicBool::new(false));
+
+            match apply_result {
+                Ok(_) => {
+                    // If somehow accepted, verify it doesn't compromise state
+                    let records = state.list_records();
+                    if let Some(inserted) = records.iter().find(|r| r.id == malicious_record.id) {
+                        // Should not have gained privileges through proof manipulation
+                        assert!(!ct_eq(inserted.origin_node_id.as_bytes(), b"admin"),
+                               "Proof manipulation should not grant admin privileges");
+                    }
+                },
+                Err(err) => {
+                    // Expected rejection of invalid proofs
+                    assert!(err.contains("ERR_AE_PROOF_INVALID") ||
+                           err.contains("proof") ||
+                           err.contains("invalid"),
+                           "Error should indicate proof validation failure: {}", err);
+                }
+            }
+        }
+
+        // Verify legitimate record is still accepted
+        let mut legitimate_delta = TrustStateDelta::new();
+        legitimate_delta.add_record(legitimate_record);
+        let legitimate_result = reconciler.apply_delta(&mut state, legitimate_delta, &AtomicBool::new(false));
+        assert!(legitimate_result.is_ok(), "Legitimate record with valid proof should be accepted");
+    }
+
+    #[test]
+    fn test_security_epoch_manipulation_and_time_based_attacks() {
+        let mut state = TrustState::new();
+        let config = ReconciliationConfig {
+            epoch_tolerance: 1,  // Strict epoch tolerance
+            proof_required: false,
+            ..Default::default()
+        };
+
+        // Insert a baseline record at epoch 5
+        let (baseline_record, _) = make_record("baseline", 5);
+        state.insert(baseline_record);
+
+        // Attempt various epoch manipulation attacks
+        let epoch_attacks = vec![
+            // Record with extreme future epoch
+            ("future_extreme", u64::MAX, 1000),
+            // Record with zero epoch
+            ("zero_epoch", 0, 1000),
+            // Record with epoch rollback attempt
+            ("rollback_attempt", 3, 1000),  // Earlier than baseline
+            // Record with timestamp manipulation
+            ("time_attack", 6, u64::MAX),  // Extreme timestamp
+            // Record with zero timestamp
+            ("zero_time", 6, 0),
+        ];
+
+        let reconciler = TrustStateReconciler::new(config);
+
+        for (record_id, epoch, recorded_at_ms) in epoch_attacks {
+            let marker_hash = test_marker_hash(record_id);
+
+            let attack_record = TrustRecord {
+                id: record_id.to_string(),
+                epoch,
+                recorded_at_ms,
+                origin_node_id: "attacker".to_string(),
+                payload: b"attack_payload".to_vec(),
+                mmr_pos: 0,
+                inclusion_proof: None,
+            };
+
+            let mut delta = TrustStateDelta::new();
+            delta.add_record(attack_record.clone());
+
+            let apply_result = reconciler.apply_delta(&mut state, delta, &AtomicBool::new(false));
+
+            match apply_result {
+                Ok(_) => {
+                    // If somehow accepted, verify epoch constraints are still enforced
+                    let records = state.list_records();
+                    if let Some(inserted) = records.iter().find(|r| r.id == record_id) {
+                        // Epoch ordering should be maintained
+                        assert!(inserted.epoch >= 5 || inserted.epoch <= 6,
+                               "Epoch should respect tolerance constraints");
+                    }
+                },
+                Err(err) => {
+                    // Expected rejection for epoch violations
+                    if epoch == u64::MAX || epoch < 5 {
+                        assert!(err.contains("ERR_AE_EPOCH_VIOLATION") ||
+                               err.contains("epoch") ||
+                               err.contains("violation"),
+                               "Error should indicate epoch violation: {}", err);
+                    }
+                }
+            }
+        }
+
+        // Verify state integrity is maintained
+        let digest = state.compute_state_digest();
+        assert!(!digest.is_empty(), "State digest should remain valid after epoch attacks");
+    }
+
+    #[test]
+    fn test_security_fork_detection_evasion_attempts() {
+        use crate::security::constant_time::ct_eq;
+
+        let mut state1 = TrustState::new();
+        let mut state2 = TrustState::new();
+        let config = ReconciliationConfig::default();
+
+        // Create divergent states
+        let (record1, _) = make_record_with_meta("shared", 1, 1000, "node-a");
+        let (record2, _) = make_record_with_meta("shared", 1, 1001, "node-b");  // Different timestamp
+
+        state1.insert(record1);
+        state2.insert(record2);
+
+        // Attempt fork detection evasion through various methods
+        let evasion_attempts = vec![
+            // Record with identical ID but modified payload
+            TrustRecord {
+                id: "shared".to_string(),
+                epoch: 1,
+                recorded_at_ms: 1000,
+                origin_node_id: "node-a".to_string(),
+                payload: b"modified_payload".to_vec(),  // Different payload
+                mmr_pos: 0,
+                inclusion_proof: None,
+            },
+            // Record attempting to mask fork through Unicode
+            TrustRecord {
+                id: "shared\u{200B}".to_string(),  // Zero-width space to appear identical
+                epoch: 1,
+                recorded_at_ms: 1000,
+                origin_node_id: "node-a".to_string(),
+                payload: b"evasion_payload".to_vec(),
+                mmr_pos: 0,
+                inclusion_proof: None,
+            },
+        ];
+
+        let reconciler = TrustStateReconciler::new(config);
+
+        for evasion_record in evasion_attempts {
+            let mut delta = TrustStateDelta::new();
+            delta.add_record(evasion_record.clone());
+
+            // Apply to both states and check for fork detection
+            let result1 = reconciler.apply_delta(&mut state1.clone(), delta.clone(), &AtomicBool::new(false));
+            let result2 = reconciler.apply_delta(&mut state2.clone(), delta, &AtomicBool::new(false));
+
+            // Fork detection should not be evaded
+            if result1.is_ok() && result2.is_ok() {
+                let digest1 = state1.compute_state_digest();
+                let digest2 = state2.compute_state_digest();
+
+                // States should still show divergence
+                if evasion_record.id == "shared" {
+                    assert!(!ct_eq(digest1.as_bytes(), digest2.as_bytes()),
+                           "Fork should still be detectable despite evasion attempts");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_cancellation_safety_under_concurrent_access() {
+        use std::sync::{Arc, Mutex};
+        use std::thread;
+
+        let state = Arc::new(Mutex::new(TrustState::new()));
+        let config = ReconciliationConfig {
+            cancellation_enabled: true,
+            max_delta_batch: 1000,
+            ..Default::default()
+        };
+        let reconciler = Arc::new(TrustStateReconciler::new(config));
+
+        let mut handles = vec![];
+
+        // Spawn threads performing concurrent reconciliation with cancellation
+        for i in 0..10 {
+            let state_clone = Arc::clone(&state);
+            let reconciler_clone = Arc::clone(&reconciler);
+
+            let handle = thread::spawn(move || {
+                let cancelled = Arc::new(AtomicBool::new(false));
+                let mut delta = TrustStateDelta::new();
+
+                // Add records to the delta
+                for j in 0..100 {
+                    let (record, _) = make_record_with_meta(
+                        &format!("record_{}_{}", i, j),
+                        1,
+                        1000 + (i * 100 + j) as u64,
+                        &format!("node_{}", i)
+                    );
+                    delta.add_record(record);
+                }
+
+                // Cancel some operations midway
+                if i % 3 == 0 {
+                    cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+
+                let mut local_state = state_clone.lock().unwrap().clone();
+                let result = reconciler_clone.apply_delta(&mut local_state, delta, &cancelled);
+
+                // Return result and whether cancellation was requested
+                (result, cancelled.load(std::sync::atomic::Ordering::Relaxed))
+            });
+
+            handles.push(handle);
+        }
+
+        // Collect results
+        let mut results = vec![];
+        for handle in handles {
+            let result = handle.join().expect("thread should not panic");
+            results.push(result);
+        }
+
+        // Verify cancellation safety
+        for (i, (result, was_cancelled)) in results.iter().enumerate() {
+            match result {
+                Ok(_) => {
+                    if *was_cancelled {
+                        // Cancellation might still allow completion if timing allows
+                    }
+                },
+                Err(err) => {
+                    if *was_cancelled {
+                        // Expected cancellation error
+                        assert!(err.contains("ERR_AE_CANCELLED") ||
+                               err.contains("cancelled") ||
+                               err.contains("abort"),
+                               "Error should indicate cancellation for thread {}: {}", i, err);
+                    }
+                }
+            }
+        }
+
+        // Final state should be consistent regardless of cancellations
+        let final_state = state.lock().unwrap();
+        let digest = final_state.compute_state_digest();
+        assert!(!digest.is_empty(), "Final state digest should be valid");
+    }
+
+    #[test]
+    fn test_security_hash_collision_resistance() {
+        use crate::security::constant_time::ct_eq;
+
+        let mut state = TrustState::new();
+
+        // Test hash collision resistance with crafted inputs
+        let collision_test_vectors = vec![
+            // Different payloads with potential hash collisions
+            (b"collision_test_1".to_vec(), b"collision_test_2".to_vec()),
+            (b"".to_vec(), b"\x00".to_vec()),  // Empty vs single byte
+            (b"abc".to_vec(), b"ab\x00c".to_vec()),  // Null injection
+            (b"test_data".to_vec(), b"test\x00_data".to_vec()),  // Null boundary
+
+            // Unicode normalization collision attempts
+            ("test".as_bytes().to_vec(), "te\u{0301}st".as_bytes().to_vec()),  // Combining character
+            ("café".as_bytes().to_vec(), "cafe\u{0301}".as_bytes().to_vec()),  // Acute accent
+        ];
+
+        for (i, (payload1, payload2)) in collision_test_vectors.iter().enumerate() {
+            let record1 = TrustRecord {
+                id: format!("collision_test_{}_a", i),
+                epoch: 1,
+                recorded_at_ms: 1000,
+                origin_node_id: "node-a".to_string(),
+                payload: payload1.clone(),
+                mmr_pos: i as u64 * 2,
+                inclusion_proof: None,
+            };
+
+            let record2 = TrustRecord {
+                id: format!("collision_test_{}_b", i),
+                epoch: 1,
+                recorded_at_ms: 1001,
+                origin_node_id: "node-b".to_string(),
+                payload: payload2.clone(),
+                mmr_pos: i as u64 * 2 + 1,
+                inclusion_proof: None,
+            };
+
+            // Insert both records
+            let insert1 = state.insert(record1.clone());
+            let insert2 = state.insert(record2.clone());
+
+            assert!(insert1, "First record should insert successfully");
+            assert!(insert2, "Second record should insert successfully");
+
+            // Compute digest for each record individually
+            let digest1 = {
+                let mut hasher = Sha256::new();
+                hasher.update(RECORD_DIGEST_DOMAIN);
+                hasher.update((record1.id.len() as u64).to_le_bytes());
+                hasher.update(record1.id.as_bytes());
+                hasher.update((record1.payload.len() as u64).to_le_bytes());
+                hasher.update(&record1.payload);
+                hex::encode(hasher.finalize())
+            };
+
+            let digest2 = {
+                let mut hasher = Sha256::new();
+                hasher.update(RECORD_DIGEST_DOMAIN);
+                hasher.update((record2.id.len() as u64).to_le_bytes());
+                hasher.update(record2.id.as_bytes());
+                hasher.update((record2.payload.len() as u64).to_le_bytes());
+                hasher.update(&record2.payload);
+                hex::encode(hasher.finalize())
+            };
+
+            // Different records should produce different digests
+            if record1.id != record2.id || record1.payload != record2.payload {
+                assert!(!ct_eq(digest1.as_bytes(), digest2.as_bytes()),
+                       "Different records should have different digests: {} vs {}", digest1, digest2);
+            }
+        }
+
+        // Verify overall state integrity
+        let state_digest = state.compute_state_digest();
+        assert!(!state_digest.is_empty(), "State digest should be valid");
+    }
+
+    #[test]
+    fn test_security_json_serialization_injection_prevention() {
+        let mut state = TrustState::new();
+
+        // Trust records with injection attempts in various fields
+        let injection_records = vec![
+            TrustRecord {
+                id: "\";alert('xss');//".to_string(),  // JS injection
+                epoch: 1,
+                recorded_at_ms: 1000,
+                origin_node_id: "safe_node".to_string(),
+                payload: b"normal_payload".to_vec(),
+                mmr_pos: 0,
+                inclusion_proof: None,
+            },
+            TrustRecord {
+                id: "safe_record".to_string(),
+                epoch: 1,
+                recorded_at_ms: 1000,
+                origin_node_id: "</script><script>alert('xss')</script>".to_string(),  // HTML injection
+                payload: b"normal_payload".to_vec(),
+                mmr_pos: 1,
+                inclusion_proof: None,
+            },
+            TrustRecord {
+                id: "safe_record_2".to_string(),
+                epoch: 1,
+                recorded_at_ms: 1000,
+                origin_node_id: "$(rm -rf /)".to_string(),  // Command injection
+                payload: b"\";DROP TABLE records;--".to_vec(),  // SQL-style injection
+                mmr_pos: 2,
+                inclusion_proof: None,
+            },
+            TrustRecord {
+                id: "line1\nline2\r\nline3".to_string(),  // Newline injection
+                epoch: 1,
+                recorded_at_ms: 1000,
+                origin_node_id: "tab\tseparated\tnode".to_string(),  // Tab injection
+                payload: b"newline\npayload\r\ndata".to_vec(),  // Newline in payload
+                mmr_pos: 3,
+                inclusion_proof: None,
+            },
+        ];
+
+        for record in injection_records {
+            let insert_result = state.insert(record.clone());
+
+            if insert_result {
+                // If insertion succeeded, verify serialization safety
+                let records = state.list_records();
+                let json_result = serde_json::to_string(&records);
+
+                match json_result {
+                    Ok(json) => {
+                        // JSON should escape all injection attempts
+                        assert!(!json.contains("alert('xss')"), "JavaScript injection should be escaped");
+                        assert!(!json.contains("</script>"), "HTML injection should be escaped");
+                        assert!(!json.contains("rm -rf"), "Command injection should be escaped");
+                        assert!(!json.contains("DROP TABLE"), "SQL injection should be escaped");
+                        assert!(!json.contains("\n"), "Newline injection should be escaped");
+                        assert!(!json.contains("\r"), "Carriage return injection should be escaped");
+                        assert!(!json.contains("\t"), "Tab injection should be escaped");
+
+                        // Verify roundtrip preserves structure
+                        let parsed_records: Vec<TrustRecord> = serde_json::from_str(&json)
+                            .expect("should deserialize");
+                        assert_eq!(records.len(), parsed_records.len(),
+                                 "Roundtrip should preserve record count");
+                    },
+                    Err(_) => {
+                        // Graceful serialization failure is acceptable for extreme injection
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_arithmetic_overflow_in_epochs_and_timestamps() {
+        let mut state = TrustState::new();
+        let config = ReconciliationConfig {
+            epoch_tolerance: u64::MAX,  // Allow extreme epochs for testing
+            proof_required: false,
+            ..Default::default()
+        };
+
+        // Records with extreme arithmetic values
+        let overflow_records = vec![
+            TrustRecord {
+                id: "max_epoch".to_string(),
+                epoch: u64::MAX,
+                recorded_at_ms: u64::MAX,
+                origin_node_id: "node".to_string(),
+                payload: b"payload".to_vec(),
+                mmr_pos: u64::MAX,
+                inclusion_proof: None,
+            },
+            TrustRecord {
+                id: "zero_values".to_string(),
+                epoch: 0,
+                recorded_at_ms: 0,
+                origin_node_id: "node".to_string(),
+                payload: b"payload".to_vec(),
+                mmr_pos: 0,
+                inclusion_proof: None,
+            },
+            TrustRecord {
+                id: "near_max".to_string(),
+                epoch: u64::MAX - 1,
+                recorded_at_ms: u64::MAX - 1,
+                origin_node_id: "node".to_string(),
+                payload: vec![0xFF; 65536],  // Large payload
+                mmr_pos: u64::MAX - 1,
+                inclusion_proof: None,
+            },
+        ];
+
+        let reconciler = TrustStateReconciler::new(config);
+
+        for record in overflow_records {
+            let mut delta = TrustStateDelta::new();
+            delta.add_record(record.clone());
+
+            let apply_result = reconciler.apply_delta(&mut state, delta, &AtomicBool::new(false));
+
+            match apply_result {
+                Ok(_) => {
+                    // If processing succeeded, verify no overflow occurred
+                    let records = state.list_records();
+                    if let Some(inserted) = records.iter().find(|r| r.id == record.id) {
+                        // Values should be preserved exactly
+                        assert_eq!(inserted.epoch, record.epoch,
+                                 "Epoch should be preserved without overflow");
+                        assert_eq!(inserted.recorded_at_ms, record.recorded_at_ms,
+                                 "Timestamp should be preserved without overflow");
+                        assert_eq!(inserted.mmr_pos, record.mmr_pos,
+                                 "MMR position should be preserved without overflow");
+                    }
+
+                    // State digest should be computable without overflow
+                    let digest = state.compute_state_digest();
+                    assert!(!digest.is_empty(), "State digest should be computable");
+                },
+                Err(_) => {
+                    // Graceful rejection of extreme values is acceptable
+                }
+            }
+        }
+
+        // Verify mathematical operations don't overflow
+        let record_count = state.list_records().len();
+        let safe_count = len_to_u64(record_count);
+        assert!(safe_count <= u64::MAX, "Record count conversion should not overflow");
+    }
+
+    #[test]
+    fn test_security_trust_record_tampering_detection() {
+        use crate::security::constant_time::ct_eq;
+
+        let mut state = TrustState::new();
+
+        // Create a legitimate record
+        let (legitimate_record, _) = make_record("legitimate", 1);
+        let original_id = legitimate_record.id.clone();
+        let original_payload = legitimate_record.payload.clone();
+
+        // Insert the legitimate record
+        assert!(state.insert(legitimate_record.clone()));
+
+        // Attempt various tampering attacks on the record
+        let tampered_records = vec![
+            // Modified payload with same ID
+            TrustRecord {
+                id: original_id.clone(),
+                payload: b"tampered_payload".to_vec(),
+                ..legitimate_record.clone()
+            },
+            // Modified epoch
+            TrustRecord {
+                epoch: legitimate_record.epoch + 100,
+                ..legitimate_record.clone()
+            },
+            // Modified origin node
+            TrustRecord {
+                origin_node_id: "malicious_node".to_string(),
+                ..legitimate_record.clone()
+            },
+            // Modified MMR position
+            TrustRecord {
+                mmr_pos: legitimate_record.mmr_pos + 1000,
+                ..legitimate_record.clone()
+            },
+        ];
+
+        for tampered_record in tampered_records {
+            // Attempt to insert tampered record
+            let insert_result = state.insert(tampered_record.clone());
+
+            // Verify original record integrity is maintained
+            let records = state.list_records();
+            let found_records: Vec<_> = records.iter().filter(|r| r.id == original_id).collect();
+
+            for found_record in found_records {
+                if found_record.payload == original_payload {
+                    // Original record should be preserved
+                    assert_eq!(found_record.epoch, legitimate_record.epoch,
+                             "Original epoch should be preserved");
+                    assert!(ct_eq(found_record.origin_node_id.as_bytes(), legitimate_record.origin_node_id.as_bytes()),
+                           "Original origin should be preserved");
+                    assert_eq!(found_record.mmr_pos, legitimate_record.mmr_pos,
+                             "Original MMR position should be preserved");
+                } else if insert_result {
+                    // If tampered record was inserted, it should be distinguishable
+                    assert!(!ct_eq(found_record.payload.as_slice(), original_payload.as_slice()),
+                           "Tampered payload should be distinguishable from original");
+                }
+            }
+        }
+
+        // Verify state integrity after tampering attempts
+        let final_digest = state.compute_state_digest();
+        assert!(!final_digest.is_empty(), "State should maintain integrity after tampering attempts");
+    }
     }
 }

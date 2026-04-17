@@ -1247,4 +1247,402 @@ mod tests {
     fn all_levels_returns_four_items() {
         assert_eq!(IsolationRailLevel::all().len(), 4);
     }
+
+    // --- additional negative paths ---
+
+    #[test]
+    fn place_unknown_rail_does_not_mutate_mesh_or_emit_event() {
+        let mut mesh = IsolationMesh::new(test_topology()).expect("mesh");
+
+        let err = mesh
+            .place_workload("w-missing-rail", "missing-rail", permissive_policy(), 1)
+            .expect_err("unknown rail");
+
+        assert_eq!(err.code(), error_codes::ERR_MESH_UNKNOWN_RAIL);
+        assert!(mesh.workloads().is_empty());
+        assert!(mesh.events().is_empty());
+        assert!(mesh.rail_states().values().all(|state| {
+            state.active_count == 0
+                && state.total_placed == 0
+                && state.total_elevated_in == 0
+                && state.total_elevated_out == 0
+                && state.total_removed == 0
+        }));
+    }
+
+    #[test]
+    fn duplicate_workload_does_not_move_original_or_increment_target_rail() {
+        let mut mesh = IsolationMesh::new(test_topology()).expect("mesh");
+        mesh.place_workload("w1", "shared-1", permissive_policy(), 1)
+            .expect("first placement");
+
+        let err = mesh
+            .place_workload("w1", "proc-1", permissive_policy(), 2)
+            .expect_err("duplicate workload");
+
+        assert_eq!(err.code(), error_codes::ERR_MESH_DUPLICATE_WORKLOAD);
+        let placement = mesh.workloads().get("w1").expect("original remains");
+        assert_eq!(placement.current_rail_id, "shared-1");
+        assert_eq!(mesh.rail_states().get("shared-1").unwrap().active_count, 1);
+        assert_eq!(mesh.rail_states().get("proc-1").unwrap().active_count, 0);
+        assert_eq!(
+            mesh.events()
+                .iter()
+                .filter(|event| event.event_code == event_codes::MESH_001)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn capacity_rejection_does_not_record_second_placement() {
+        let mut rails = BTreeMap::new();
+        rails.insert(
+            "tiny".to_string(),
+            IsolationRail {
+                rail_id: "tiny".to_string(),
+                level: IsolationRailLevel::Shared,
+                latency_overhead_us: 0,
+                capacity: 1,
+            },
+        );
+        let mut mesh = IsolationMesh::new(MeshTopology { rails }).expect("mesh");
+        mesh.place_workload("w1", "tiny", permissive_policy(), 1)
+            .expect("first placement");
+
+        let err = mesh
+            .place_workload("w2", "tiny", permissive_policy(), 2)
+            .expect_err("at capacity");
+
+        assert_eq!(err.code(), error_codes::ERR_MESH_RAIL_AT_CAPACITY);
+        assert!(!mesh.workloads().contains_key("w2"));
+        let tiny_state = mesh.rail_states().get("tiny").unwrap();
+        assert_eq!(tiny_state.active_count, 1);
+        assert_eq!(tiny_state.total_placed, 1);
+        assert_eq!(mesh.events().len(), 1);
+    }
+
+    #[test]
+    fn elevation_to_unknown_rail_preserves_current_placement_and_history() {
+        let mut mesh = IsolationMesh::new(test_topology()).expect("mesh");
+        mesh.place_workload("w1", "shared-1", permissive_policy(), 1)
+            .expect("place");
+
+        let err = mesh
+            .elevate_workload("w1", "missing-rail", 2)
+            .expect_err("unknown target rail");
+
+        assert_eq!(err.code(), error_codes::ERR_MESH_UNKNOWN_RAIL);
+        let placement = mesh.workloads().get("w1").expect("workload remains");
+        assert_eq!(placement.current_rail_id, "shared-1");
+        assert!(placement.elevation_history.is_empty());
+        assert_eq!(mesh.rail_states().get("shared-1").unwrap().active_count, 1);
+        assert!(
+            !mesh
+                .events()
+                .iter()
+                .any(|event| event.event_code == event_codes::MESH_002)
+        );
+    }
+
+    #[test]
+    fn same_level_elevation_denial_preserves_state_and_emits_policy_denial() {
+        let mut mesh = IsolationMesh::new(test_topology()).expect("mesh");
+        mesh.place_workload("w1", "shared-1", permissive_policy(), 1)
+            .expect("place");
+
+        let err = mesh
+            .elevate_workload("w1", "shared-1", 2)
+            .expect_err("same level");
+
+        assert_eq!(err.code(), error_codes::ERR_MESH_ELEVATION_DENIED);
+        let placement = mesh.workloads().get("w1").expect("workload remains");
+        assert_eq!(placement.current_rail_id, "shared-1");
+        assert_eq!(placement.current_level, IsolationRailLevel::Shared);
+        assert!(placement.elevation_history.is_empty());
+        assert_eq!(mesh.rail_states().get("shared-1").unwrap().active_count, 1);
+        assert!(
+            mesh.events()
+                .iter()
+                .any(|event| event.event_code == event_codes::MESH_003)
+        );
+        assert!(
+            !mesh
+                .events()
+                .iter()
+                .any(|event| event.event_code == event_codes::MESH_002)
+        );
+    }
+
+    #[test]
+    fn latency_denial_preserves_rail_counts_and_history() {
+        let mut mesh = IsolationMesh::new(test_topology()).expect("mesh");
+        mesh.place_workload("w1", "shared-1", budget_policy(30), 1)
+            .expect("place");
+
+        let err = mesh
+            .elevate_workload("w1", "proc-1", 2)
+            .expect_err("latency exceeded");
+
+        assert_eq!(err.code(), error_codes::ERR_MESH_LATENCY_EXCEEDED);
+        let placement = mesh.workloads().get("w1").expect("workload remains");
+        assert_eq!(placement.current_rail_id, "shared-1");
+        assert!(placement.elevation_history.is_empty());
+        assert_eq!(mesh.rail_states().get("shared-1").unwrap().active_count, 1);
+        assert_eq!(mesh.rail_states().get("proc-1").unwrap().active_count, 0);
+        assert!(
+            mesh.events()
+                .iter()
+                .any(|event| event.event_code == event_codes::MESH_004)
+        );
+        assert!(
+            !mesh
+                .events()
+                .iter()
+                .any(|event| event.event_code == event_codes::MESH_002)
+        );
+    }
+
+    #[test]
+    fn target_capacity_elevation_failure_is_atomic() {
+        let mut mesh = IsolationMesh::new(test_topology()).expect("mesh");
+        mesh.place_workload("w1", "proc-1", permissive_policy(), 1)
+            .expect("place w1");
+        mesh.place_workload("w2", "shared-1", permissive_policy(), 2)
+            .expect("place w2");
+        mesh.elevate_workload("w1", "hw-1", 3)
+            .expect("fill hardware rail");
+        let events_before = mesh.events().len();
+
+        let err = mesh
+            .elevate_workload("w2", "hw-1", 4)
+            .expect_err("target full");
+
+        assert_eq!(err.code(), error_codes::ERR_MESH_RAIL_AT_CAPACITY);
+        let w2 = mesh.workloads().get("w2").expect("w2 remains");
+        assert_eq!(w2.current_rail_id, "shared-1");
+        assert!(w2.elevation_history.is_empty());
+        assert_eq!(mesh.rail_states().get("shared-1").unwrap().active_count, 1);
+        assert_eq!(mesh.rail_states().get("hw-1").unwrap().active_count, 1);
+        assert_eq!(mesh.events().len(), events_before);
+    }
+
+    #[test]
+    fn remove_unknown_workload_does_not_emit_remove_event_or_change_counts() {
+        let mut mesh = IsolationMesh::new(test_topology()).expect("mesh");
+        mesh.place_workload("w1", "shared-1", permissive_policy(), 1)
+            .expect("place");
+        let events_before = mesh.events().len();
+
+        let err = mesh
+            .remove_workload("ghost", 2)
+            .expect_err("unknown workload");
+
+        assert_eq!(err.code(), error_codes::ERR_MESH_UNKNOWN_WORKLOAD);
+        assert_eq!(mesh.events().len(), events_before);
+        assert!(
+            !mesh
+                .events()
+                .iter()
+                .any(|event| event.event_code == event_codes::MESH_005)
+        );
+        assert_eq!(mesh.rail_states().get("shared-1").unwrap().active_count, 1);
+        assert_eq!(mesh.rail_states().get("shared-1").unwrap().total_removed, 0);
+    }
+
+    #[test]
+    fn invalid_reload_topology_preserves_existing_topology_and_state() {
+        let mut mesh = IsolationMesh::new(test_topology()).expect("mesh");
+        mesh.place_workload("w1", "shared-1", permissive_policy(), 1)
+            .expect("place");
+        let original_rail_count = mesh.topology().rails.len();
+        let original_state_keys: Vec<String> = mesh.rail_states().keys().cloned().collect();
+        let mut bad_rails = test_topology().rails;
+        bad_rails.insert(
+            "zero".to_string(),
+            IsolationRail {
+                rail_id: "zero".to_string(),
+                level: IsolationRailLevel::SandboxIsolated,
+                latency_overhead_us: 10,
+                capacity: 0,
+            },
+        );
+
+        let err = mesh
+            .reload_topology(MeshTopology { rails: bad_rails }, 2)
+            .expect_err("invalid topology");
+
+        assert_eq!(err.code(), error_codes::ERR_MESH_INVALID_TOPOLOGY);
+        assert_eq!(mesh.topology().rails.len(), original_rail_count);
+        let state_keys: Vec<String> = mesh.rail_states().keys().cloned().collect();
+        assert_eq!(state_keys, original_state_keys);
+        assert!(!mesh.topology().rails.contains_key("zero"));
+        assert!(!mesh.rail_states().contains_key("zero"));
+        assert!(
+            !mesh
+                .events()
+                .iter()
+                .any(|event| event.event_code == event_codes::MESH_006)
+        );
+    }
+
+    #[test]
+    fn empty_reload_topology_preserves_existing_topology_and_events() {
+        let mut mesh = IsolationMesh::new(test_topology()).expect("mesh");
+        mesh.place_workload("w1", "shared-1", permissive_policy(), 1)
+            .expect("place");
+        let events_before = mesh.events().len();
+        let original_rails: Vec<String> = mesh.topology().rails.keys().cloned().collect();
+
+        let err = mesh
+            .reload_topology(
+                MeshTopology {
+                    rails: BTreeMap::new(),
+                },
+                2,
+            )
+            .expect_err("empty reload topology must fail");
+
+        assert_eq!(err.code(), error_codes::ERR_MESH_INVALID_TOPOLOGY);
+        assert_eq!(
+            mesh.topology().rails.keys().cloned().collect::<Vec<_>>(),
+            original_rails
+        );
+        assert_eq!(mesh.events().len(), events_before);
+        assert!(
+            !mesh
+                .events()
+                .iter()
+                .any(|event| { event.event_code == event_codes::MESH_006 && event.now_ms == 2 })
+        );
+    }
+
+    #[test]
+    fn mismatched_reload_rail_id_preserves_existing_state() {
+        let mut mesh = IsolationMesh::new(test_topology()).expect("mesh");
+        let original_state_keys: Vec<String> = mesh.rail_states().keys().cloned().collect();
+        let mut bad_rails = BTreeMap::new();
+        bad_rails.insert(
+            "alias".to_string(),
+            IsolationRail {
+                rail_id: "different".to_string(),
+                level: IsolationRailLevel::Shared,
+                latency_overhead_us: 0,
+                capacity: 1,
+            },
+        );
+
+        let err = mesh
+            .reload_topology(MeshTopology { rails: bad_rails }, 10)
+            .expect_err("mismatched rail id must fail");
+
+        assert_eq!(err.code(), error_codes::ERR_MESH_INVALID_TOPOLOGY);
+        assert_eq!(
+            mesh.rail_states().keys().cloned().collect::<Vec<_>>(),
+            original_state_keys
+        );
+        assert!(!mesh.rail_states().contains_key("alias"));
+        assert!(!mesh.rail_states().contains_key("different"));
+    }
+
+    #[test]
+    fn reload_removing_active_rail_preserves_workload_and_topology() {
+        let mut mesh = IsolationMesh::new(test_topology()).expect("mesh");
+        mesh.place_workload("w1", "shared-1", permissive_policy(), 1)
+            .expect("place");
+        let original_rail_count = mesh.topology().rails.len();
+        let events_before = mesh.events().len();
+        let mut replacement = BTreeMap::new();
+        replacement.insert("proc-1".to_string(), process_rail());
+
+        let err = mesh
+            .reload_topology(MeshTopology { rails: replacement }, 2)
+            .expect_err("active rail removal must fail");
+
+        assert_eq!(err.code(), error_codes::ERR_MESH_INVALID_TOPOLOGY);
+        assert_eq!(mesh.topology().rails.len(), original_rail_count);
+        assert_eq!(
+            mesh.workloads()
+                .get("w1")
+                .map(|placement| placement.current_rail_id.as_str()),
+            Some("shared-1")
+        );
+        assert_eq!(mesh.rail_states().get("shared-1").unwrap().active_count, 1);
+        assert_eq!(mesh.events().len(), events_before);
+    }
+
+    #[test]
+    fn no_elevation_policy_denial_preserves_counts_and_history() {
+        let mut mesh = IsolationMesh::new(test_topology()).expect("mesh");
+        mesh.place_workload("w1", "shared-1", no_elevation_policy(), 1)
+            .expect("place");
+
+        let err = mesh
+            .elevate_workload("w1", "proc-1", 2)
+            .expect_err("policy denied elevation");
+
+        assert_eq!(err.code(), error_codes::ERR_MESH_ELEVATION_DENIED);
+        let placement = mesh.workloads().get("w1").expect("workload remains");
+        assert_eq!(placement.current_rail_id, "shared-1");
+        assert!(placement.elevation_history.is_empty());
+        assert_eq!(mesh.rail_states().get("shared-1").unwrap().active_count, 1);
+        assert_eq!(mesh.rail_states().get("proc-1").unwrap().active_count, 0);
+        assert!(
+            mesh.events()
+                .iter()
+                .any(|event| event.event_code == event_codes::MESH_003)
+        );
+    }
+
+    #[test]
+    fn max_target_denial_preserves_current_rail_and_counts() {
+        let mut mesh = IsolationMesh::new(test_topology()).expect("mesh");
+        let policy = ElevationPolicy {
+            elevation_allowed: true,
+            max_target_level: IsolationRailLevel::ProcessIsolated,
+            preserve_latency_budget: false,
+            latency_budget_us: 0,
+        };
+        mesh.place_workload("w1", "shared-1", policy, 1)
+            .expect("place");
+
+        let err = mesh
+            .elevate_workload("w1", "sandbox-1", 2)
+            .expect_err("target exceeds policy max");
+
+        assert_eq!(err.code(), error_codes::ERR_MESH_ELEVATION_DENIED);
+        let placement = mesh.workloads().get("w1").expect("workload remains");
+        assert_eq!(placement.current_rail_id, "shared-1");
+        assert_eq!(placement.current_level, IsolationRailLevel::Shared);
+        assert!(placement.elevation_history.is_empty());
+        assert_eq!(mesh.rail_states().get("shared-1").unwrap().active_count, 1);
+        assert_eq!(mesh.rail_states().get("sandbox-1").unwrap().active_count, 0);
+    }
+
+    #[test]
+    fn demotion_denial_preserves_strict_rail_after_prior_elevation() {
+        let mut mesh = IsolationMesh::new(test_topology()).expect("mesh");
+        mesh.place_workload("w1", "shared-1", permissive_policy(), 1)
+            .expect("place");
+        mesh.elevate_workload("w1", "sandbox-1", 2)
+            .expect("elevate");
+        let events_before = mesh.events().len();
+
+        let err = mesh
+            .elevate_workload("w1", "proc-1", 3)
+            .expect_err("demotion must fail");
+
+        assert_eq!(err.code(), error_codes::ERR_MESH_DEMOTION_FORBIDDEN);
+        let placement = mesh.workloads().get("w1").expect("workload remains");
+        assert_eq!(placement.current_rail_id, "sandbox-1");
+        assert_eq!(placement.current_level, IsolationRailLevel::SandboxIsolated);
+        assert_eq!(placement.elevation_history.len(), 1);
+        assert_eq!(mesh.rail_states().get("sandbox-1").unwrap().active_count, 1);
+        assert_eq!(mesh.rail_states().get("proc-1").unwrap().active_count, 0);
+        assert_eq!(mesh.events().len(), events_before + 1);
+        assert_eq!(
+            mesh.events().last().unwrap().event_code,
+            event_codes::MESH_007
+        );
+    }
 }

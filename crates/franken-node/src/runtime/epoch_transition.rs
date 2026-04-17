@@ -639,8 +639,12 @@ fn manifest_hash_for_transition(
 }
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
@@ -879,5 +883,678 @@ mod tests {
             .expect("pending transition should be cleared after abort");
         assert_eq!(reproposal.pre_epoch, 7);
         assert_eq!(reproposal.target_epoch, 8);
+    }
+
+    #[test]
+    fn commit_without_active_transition_returns_no_active_transition() {
+        let mut coordinator = ProductEpochCoordinator::new(2, 1, BarrierConfig::default());
+
+        let err = coordinator
+            .commit_transition(1_000, "trace-no-active-commit")
+            .expect_err("commit without proposal must fail");
+
+        assert_eq!(err.code(), "EPOCH_TRANSITION_NO_ACTIVE");
+        assert!(matches!(err, EpochTransitionError::NoActiveTransition));
+        assert_eq!(coordinator.current_epoch(), 2);
+        assert!(coordinator.history().is_empty());
+    }
+
+    #[test]
+    fn ack_without_active_transition_returns_no_active_transition() {
+        let mut coordinator = ProductEpochCoordinator::new(2, 1, BarrierConfig::default());
+        coordinator.register_service("svc-a");
+
+        let err = coordinator
+            .ack_drain("svc-a", 0, 0, "trace-no-active-ack")
+            .expect_err("ack without proposal must fail");
+
+        assert_eq!(err.code(), "EPOCH_TRANSITION_NO_ACTIVE");
+        assert!(matches!(err, EpochTransitionError::NoActiveTransition));
+        assert!(
+            coordinator
+                .events()
+                .iter()
+                .all(|event| event.event_code != EPOCH_DRAIN_CONFIRMED)
+        );
+    }
+
+    #[test]
+    fn abort_timeout_without_active_transition_returns_no_active_transition() {
+        let mut coordinator = ProductEpochCoordinator::new(2, 1, BarrierConfig::default());
+
+        let err = coordinator
+            .abort_transition_timeout(2_000, "trace-no-active-timeout")
+            .expect_err("timeout abort without proposal must fail");
+
+        assert_eq!(err.code(), "EPOCH_TRANSITION_NO_ACTIVE");
+        assert!(matches!(err, EpochTransitionError::NoActiveTransition));
+        assert_eq!(coordinator.abort_manager().abort_count(), 0);
+        assert!(coordinator.history().is_empty());
+    }
+
+    #[test]
+    fn abort_cancellation_without_active_transition_returns_no_active_transition() {
+        let mut coordinator = ProductEpochCoordinator::new(2, 1, BarrierConfig::default());
+
+        let err = coordinator
+            .abort_transition_cancellation("operator-cancel", 2_000, "trace-no-active-cancel")
+            .expect_err("cancellation abort without proposal must fail");
+
+        assert_eq!(err.code(), "EPOCH_TRANSITION_NO_ACTIVE");
+        assert!(matches!(err, EpochTransitionError::NoActiveTransition));
+        assert_eq!(coordinator.abort_manager().abort_count(), 0);
+        assert!(coordinator.history().is_empty());
+    }
+
+    #[test]
+    fn future_replica_lag_rejected_without_stale_event() {
+        let mut coordinator = ProductEpochCoordinator::new(20, 2, BarrierConfig::default());
+
+        let err = coordinator
+            .validate_replica_lag("svc-a", 21, "trace-future-lag")
+            .expect_err("future replica epoch must fail");
+
+        assert_eq!(err.code(), FUTURE_EPOCH_REJECTED);
+        assert!(
+            coordinator
+                .events()
+                .iter()
+                .all(|event| event.event_code != STALE_EPOCH_REJECTED)
+        );
+    }
+
+    #[test]
+    fn commit_without_all_acks_rejects_without_advancing_epoch() {
+        let mut coordinator = ProductEpochCoordinator::new(4, 1, BarrierConfig::default());
+        coordinator.register_service("svc-a");
+        coordinator.register_service("svc-b");
+        coordinator
+            .propose_transition(
+                "operator-1",
+                "partial-drain",
+                1_000,
+                "trace-partial-propose",
+            )
+            .expect("proposal succeeds");
+        coordinator
+            .ack_drain("svc-a", 1, 5, "trace-partial-ack-a")
+            .expect("svc-a ack succeeds");
+
+        let err = coordinator
+            .commit_transition(1_100, "trace-partial-commit")
+            .expect_err("commit must reject missing ack");
+
+        assert_eq!(
+            err.code(),
+            crate::control_plane::epoch_transition_barrier::error_codes::ERR_BARRIER_NOT_ALL_ACKED
+        );
+        assert_eq!(coordinator.current_epoch(), 4);
+        assert!(coordinator.history().is_empty());
+        assert!(
+            coordinator
+                .events()
+                .iter()
+                .all(|event| event.event_code != EPOCH_ADVANCED)
+        );
+    }
+
+    #[test]
+    fn unknown_service_ack_is_rejected_without_confirming_drain() {
+        let mut coordinator = ProductEpochCoordinator::new(4, 1, BarrierConfig::default());
+        coordinator.register_service("svc-a");
+        coordinator
+            .propose_transition("operator-1", "unknown-ack", 1_000, "trace-unknown-propose")
+            .expect("proposal succeeds");
+
+        let err = coordinator
+            .ack_drain("svc-unknown", 1, 5, "trace-unknown-ack")
+            .expect_err("unknown participant ack must fail");
+
+        assert_eq!(
+            err.code(),
+            crate::control_plane::epoch_transition_barrier::error_codes::ERR_BARRIER_UNKNOWN_PARTICIPANT
+        );
+        assert!(coordinator.events().iter().all(|event| {
+            event.event_code != EPOCH_DRAIN_CONFIRMED
+                || event.service_id.as_deref() != Some("svc-unknown")
+        }));
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_discards_without_panicking() {
+        let mut events = vec![EpochTransitionLogEvent {
+            event_code: EPOCH_PROPOSED.to_string(),
+            epoch_current: 1,
+            epoch_artifact: Some(2),
+            transition_id: Some("transition-old".to_string()),
+            service_id: Some("svc-a".to_string()),
+            transition_reason: Some("old".to_string()),
+            quiescence_status: Some("proposed".to_string()),
+            trace_id: "trace-old".to_string(),
+        }];
+
+        push_bounded(
+            &mut events,
+            EpochTransitionLogEvent {
+                event_code: EPOCH_ADVANCED.to_string(),
+                epoch_current: 2,
+                epoch_artifact: Some(2),
+                transition_id: Some("transition-new".to_string()),
+                service_id: Some("svc-a".to_string()),
+                transition_reason: Some("new".to_string()),
+                quiescence_status: Some("committed".to_string()),
+                trace_id: "trace-new".to_string(),
+            },
+            0,
+        );
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn proposal_without_registered_participants_is_rejected_without_events() {
+        let mut coordinator = ProductEpochCoordinator::new(12, 1, BarrierConfig::default());
+
+        let err = coordinator
+            .propose_transition(
+                "operator-1",
+                "no-participants",
+                1_000,
+                "trace-no-participants",
+            )
+            .expect_err("proposal without participants must fail closed");
+
+        assert_eq!(
+            err.code(),
+            crate::control_plane::epoch_transition_barrier::error_codes::ERR_BARRIER_NO_PARTICIPANTS
+        );
+        assert!(matches!(
+            err,
+            EpochTransitionError::Barrier(BarrierError::NoParticipants)
+        ));
+        assert_eq!(coordinator.current_epoch(), 12);
+        assert!(coordinator.events().is_empty());
+        assert!(coordinator.history().is_empty());
+    }
+
+    #[test]
+    fn proposal_at_max_epoch_is_rejected_without_pending_state() {
+        let mut coordinator = ProductEpochCoordinator::new(u64::MAX, 1, BarrierConfig::default());
+        coordinator.register_service("svc-a");
+
+        let err = coordinator
+            .propose_transition("operator-1", "overflow", 1_000, "trace-overflow")
+            .expect_err("max epoch transition must fail before reusing epoch-scoped state");
+
+        assert_eq!(
+            err.code(),
+            crate::control_plane::epoch_transition_barrier::error_codes::ERR_BARRIER_EPOCH_OVERFLOW
+        );
+        assert!(matches!(
+            err,
+            EpochTransitionError::Barrier(BarrierError::EpochOverflow { current: u64::MAX })
+        ));
+        assert_eq!(coordinator.current_epoch(), u64::MAX);
+        assert!(coordinator.events().is_empty());
+        assert!(coordinator.history().is_empty());
+    }
+
+    #[test]
+    fn stale_operation_during_pending_transition_records_context() {
+        let mut coordinator = ProductEpochCoordinator::new(9, 1, BarrierConfig::default());
+        coordinator.register_service("svc-a");
+        let proposal = coordinator
+            .propose_transition("operator-1", "stale-check", 1_000, "trace-propose")
+            .expect("proposal should establish pending context");
+
+        let err = coordinator
+            .validate_operation_epoch("svc-runtime", 8, "trace-stale-operation")
+            .expect_err("stale operation epoch must reject");
+
+        assert_eq!(err.code(), STALE_EPOCH_REJECTED);
+        let event = coordinator
+            .events()
+            .last()
+            .expect("stale rejection should emit an event");
+        assert_eq!(event.event_code, STALE_EPOCH_REJECTED);
+        assert_eq!(
+            event.transition_id.as_deref(),
+            Some(proposal.transition_id.as_str())
+        );
+        assert_eq!(event.service_id.as_deref(), Some("svc-runtime"));
+        assert_eq!(event.transition_reason.as_deref(), Some("stale-check"));
+        assert_eq!(event.quiescence_status.as_deref(), Some("stale"));
+        assert_eq!(event.epoch_artifact, Some(8));
+    }
+
+    #[test]
+    fn future_operation_during_pending_transition_records_context() {
+        let mut coordinator = ProductEpochCoordinator::new(9, 1, BarrierConfig::default());
+        coordinator.register_service("svc-a");
+        let proposal = coordinator
+            .propose_transition("operator-1", "future-check", 1_000, "trace-propose")
+            .expect("proposal should establish pending context");
+
+        let err = coordinator
+            .validate_operation_epoch("svc-runtime", 10, "trace-future-operation")
+            .expect_err("future operation epoch must reject before commit");
+
+        assert_eq!(err.code(), FUTURE_EPOCH_REJECTED);
+        let event = coordinator
+            .events()
+            .last()
+            .expect("future rejection should emit an event");
+        assert_eq!(event.event_code, FUTURE_EPOCH_REJECTED);
+        assert_eq!(
+            event.transition_id.as_deref(),
+            Some(proposal.transition_id.as_str())
+        );
+        assert_eq!(event.service_id.as_deref(), Some("svc-runtime"));
+        assert_eq!(event.transition_reason.as_deref(), Some("future-check"));
+        assert_eq!(event.quiescence_status.as_deref(), Some("future"));
+        assert_eq!(event.epoch_artifact, Some(10));
+    }
+
+    #[test]
+    fn replica_lag_at_boundary_records_lag_exceeded_event() {
+        let mut coordinator = ProductEpochCoordinator::new(20, 2, BarrierConfig::default());
+
+        let err = coordinator
+            .validate_replica_lag("svc-replica", 18, "trace-lag-boundary")
+            .expect_err("lag equal to the configured maximum must fail closed");
+
+        assert_eq!(err.code(), STALE_EPOCH_REJECTED);
+        let event = coordinator
+            .events()
+            .last()
+            .expect("lag rejection should emit an event");
+        assert_eq!(event.event_code, STALE_EPOCH_REJECTED);
+        assert_eq!(event.epoch_current, 20);
+        assert_eq!(event.epoch_artifact, Some(18));
+        assert_eq!(event.service_id.as_deref(), Some("svc-replica"));
+        assert_eq!(event.transition_id, None);
+        assert_eq!(event.transition_reason, None);
+        assert_eq!(event.quiescence_status.as_deref(), Some("lag_exceeded"));
+    }
+
+    #[test]
+    fn commit_after_cancellation_abort_returns_no_active_transition() {
+        let mut coordinator = ProductEpochCoordinator::new(6, 1, BarrierConfig::default());
+        coordinator.register_service("svc-a");
+        coordinator
+            .propose_transition("operator-1", "cancel-before-commit", 1_000, "trace-propose")
+            .expect("proposal should succeed");
+        coordinator
+            .abort_transition_cancellation("operator-cancel", 1_050, "trace-cancel")
+            .expect("cancellation abort should clear pending transition");
+
+        let err = coordinator
+            .commit_transition(1_060, "trace-commit-after-cancel")
+            .expect_err("commit after cancellation must fail closed");
+
+        assert_eq!(err.code(), "EPOCH_TRANSITION_NO_ACTIVE");
+        assert!(matches!(err, EpochTransitionError::NoActiveTransition));
+        assert_eq!(coordinator.current_epoch(), 6);
+        assert_eq!(coordinator.history().len(), 1);
+        assert_eq!(coordinator.history()[0].outcome, "ABORTED");
+    }
+
+    #[test]
+    fn ack_after_cancellation_abort_is_rejected_without_new_confirmation() {
+        let mut coordinator = ProductEpochCoordinator::new(6, 1, BarrierConfig::default());
+        coordinator.register_service("svc-a");
+        coordinator
+            .propose_transition("operator-1", "cancel-before-ack", 1_000, "trace-propose")
+            .expect("proposal should succeed");
+        coordinator
+            .abort_transition_cancellation("operator-cancel", 1_050, "trace-cancel")
+            .expect("cancellation abort should terminalize barrier");
+        let confirmations_before = coordinator
+            .events()
+            .iter()
+            .filter(|event| event.event_code == EPOCH_DRAIN_CONFIRMED)
+            .count();
+
+        let err = coordinator
+            .ack_drain("svc-a", 0, 0, "trace-ack-after-cancel")
+            .expect_err("ack after cancellation must fail closed");
+
+        assert_eq!(
+            err.code(),
+            crate::control_plane::epoch_transition_barrier::error_codes::ERR_BARRIER_ALREADY_COMPLETE
+        );
+        let confirmations_after = coordinator
+            .events()
+            .iter()
+            .filter(|event| event.event_code == EPOCH_DRAIN_CONFIRMED)
+            .count();
+        assert_eq!(confirmations_after, confirmations_before);
+        assert_eq!(coordinator.current_epoch(), 6);
+        assert_eq!(coordinator.history().len(), 1);
+    }
+
+    // === NEGATIVE-PATH ROBUSTNESS TESTS ===
+
+    #[test]
+    fn unicode_injection_in_identifiers_and_reasons_handled_safely() {
+        let mut coordinator = ProductEpochCoordinator::new(1, 1, BarrierConfig::default());
+        let malicious_service = "svc\u{202e}evil\u{200b}\u{0000}inject";
+        let malicious_initiator = "operator\u{feff}\u{1f4a9}\u{2028}bypass";
+        let malicious_reason = "reason\u{0085}\u{2029}\u{00ad}payload\u{061c}";
+        let malicious_trace = "trace\u{034f}\u{180e}\u{200c}id";
+
+        coordinator.register_service(malicious_service);
+
+        // Unicode injection should not break proposal or validation
+        let proposal = coordinator
+            .propose_transition(malicious_initiator, malicious_reason, 1000, malicious_trace)
+            .expect("unicode in identifiers should be handled safely");
+        assert!(proposal.transition_id.len() > 0);
+
+        // Validation with Unicode should work
+        coordinator
+            .validate_operation_epoch(malicious_service, 1, malicious_trace)
+            .expect("unicode service validation should work");
+
+        // Events should contain the Unicode safely
+        assert!(!coordinator.events().is_empty());
+        let event = &coordinator.events()[0];
+        assert!(event.service_id.as_ref().unwrap().contains("svc"));
+        assert!(event.transition_reason.as_ref().unwrap().contains("reason"));
+    }
+
+    #[test]
+    fn extreme_timestamp_arithmetic_near_overflow_boundaries() {
+        let mut coordinator = ProductEpochCoordinator::new(1, 1, BarrierConfig::default());
+        coordinator.register_service("svc-boundary");
+
+        // Test near u64::MAX boundaries
+        let near_max = u64::MAX - 1000;
+        let proposal = coordinator
+            .propose_transition("operator", "boundary-test", near_max, "trace-near-max")
+            .expect("near-max timestamp should work");
+
+        // Arithmetic should be protected with saturating operations
+        coordinator
+            .ack_drain("svc-boundary", 1, 500, "trace-ack")
+            .expect("ack should work with extreme timestamp");
+
+        // Commit with overflow-prone timestamp
+        let committed = coordinator
+            .commit_transition(u64::MAX, "trace-max-commit")
+            .expect("max timestamp commit should use saturating arithmetic");
+        assert_eq!(committed, 2);
+
+        // History should record extreme timestamp safely
+        assert_eq!(coordinator.history().len(), 1);
+        let record = &coordinator.history()[0];
+        assert_eq!(record.timestamp_ms, u64::MAX);
+
+        // Elapsed calculations should be saturating
+        assert!(record.timestamp_ms >= near_max);
+    }
+
+    #[test]
+    fn memory_pressure_with_massive_event_and_history_volumes() {
+        let mut coordinator = ProductEpochCoordinator::new(1, 10000, BarrierConfig::default());
+        coordinator.register_service("svc-pressure");
+
+        // Force MAX_EVENTS overflow to test push_bounded robustness
+        for i in 0..MAX_EVENTS + 1000 {
+            coordinator
+                .validate_operation_epoch("svc-pressure", 0, &format!("trace-{}", i))
+                .expect_err("should reject stale");
+        }
+
+        // Events should be bounded to MAX_EVENTS
+        assert!(coordinator.events().len() <= MAX_EVENTS);
+
+        // Force MAX_HISTORY_ENTRIES overflow
+        for i in 0..MAX_HISTORY_ENTRIES + 500 {
+            let mut temp_coord = ProductEpochCoordinator::new(1, 1, BarrierConfig::default());
+            temp_coord.register_service("svc-temp");
+
+            // Create transition and commit to generate history
+            temp_coord
+                .propose_transition("op", "history-pressure", 1000 + i as u64, "trace")
+                .expect("proposal should work");
+            temp_coord
+                .ack_drain("svc-temp", 1, 1, "trace")
+                .expect("ack should work");
+
+            // Transfer history entry to main coordinator
+            if let Ok(epoch) = temp_coord.commit_transition(2000 + i as u64, "trace") {
+                push_bounded(
+                    &mut coordinator.history,
+                    EpochTransitionRecord {
+                        transition_id: format!("pressure-{}", i),
+                        pre_epoch: epoch.saturating_sub(1),
+                        target_epoch: epoch,
+                        initiator: "pressure-test".to_string(),
+                        reason: "memory-test".to_string(),
+                        timestamp_ms: 1000 + i as u64,
+                        outcome: "COMMITTED".to_string(),
+                        abort_reason: None,
+                        trace_id: format!("trace-{}", i),
+                    },
+                    MAX_HISTORY_ENTRIES,
+                );
+            }
+        }
+
+        // History should be bounded
+        assert!(coordinator.history().len() <= MAX_HISTORY_ENTRIES);
+    }
+
+    #[test]
+    fn malformed_service_registration_edge_cases() {
+        let mut coordinator = ProductEpochCoordinator::new(5, 1, BarrierConfig::default());
+
+        // Empty service ID
+        coordinator.register_service("");
+
+        // Very long service ID (potential DoS)
+        let long_service = "a".repeat(100_000);
+        coordinator.register_service(&long_service);
+
+        // Null bytes in service ID
+        coordinator.register_service("svc\0hidden");
+
+        // Control characters
+        coordinator.register_service("svc\n\r\t\x7f");
+
+        // Proposal should handle all registered services
+        let proposal = coordinator
+            .propose_transition("operator", "malformed-test", 1000, "trace")
+            .expect("should handle malformed service IDs");
+
+        // Should be able to validate operations against any service
+        coordinator
+            .validate_operation_epoch("", 5, "trace-empty")
+            .expect("empty service should work");
+        coordinator
+            .validate_operation_epoch(&long_service, 5, "trace-long")
+            .expect("long service should work");
+        coordinator
+            .validate_operation_epoch("svc\0hidden", 5, "trace-null")
+            .expect("null-containing service should work");
+
+        // Events should contain all the weird service IDs safely
+        assert!(!coordinator.events().is_empty());
+    }
+
+    #[test]
+    fn concurrent_epoch_arithmetic_boundary_conditions() {
+        // Test epoch 0 boundaries
+        let mut coord_zero = ProductEpochCoordinator::new(0, u64::MAX, BarrierConfig::default());
+        coord_zero.register_service("svc-zero");
+
+        // Should handle epoch 0 -> 1 transition
+        let proposal = coord_zero
+            .propose_transition("op-zero", "from-zero", 1000, "trace-zero")
+            .expect("epoch 0 should transition to 1");
+        assert_eq!(proposal.pre_epoch, 0);
+        assert_eq!(proposal.target_epoch, 1);
+
+        // Test near-max epoch lag calculations
+        let mut coord_lag = ProductEpochCoordinator::new(u64::MAX - 100, u64::MAX, BarrierConfig::default());
+
+        // Should handle extreme lag validation without overflow
+        coord_lag
+            .validate_replica_lag("svc-lag", 0, "trace-extreme-lag")
+            .expect_err("extreme lag should be rejected");
+
+        // Lag calculation should use saturating arithmetic
+        coord_lag
+            .validate_replica_lag("svc-lag", u64::MAX - 200, "trace-normal-lag")
+            .expect("reasonable lag should work");
+
+        // Edge case: exactly at max lag boundary
+        let mut coord_boundary = ProductEpochCoordinator::new(100, 50, BarrierConfig::default());
+        coord_boundary
+            .validate_replica_lag("svc-boundary", 50, "trace-boundary")
+            .expect_err("at-boundary lag should fail (fail-closed)");
+        coord_boundary
+            .validate_replica_lag("svc-boundary", 51, "trace-just-under")
+            .expect("just-under-boundary should work");
+    }
+
+    #[test]
+    fn manifest_hash_collision_resistance_edge_cases() {
+        // Test hash collision scenarios with carefully crafted inputs
+        let hash1 = manifest_hash_for_transition(
+            "transition_id_1",
+            "initiator_a",
+            "reason_x",
+            100,
+        );
+
+        // Different field arrangement that could collide without length prefixing
+        let hash2 = manifest_hash_for_transition(
+            "transition_id",
+            "_1initiator_a",
+            "reason_x",
+            100,
+        );
+
+        // Should be different due to length prefixing
+        assert_ne!(hash1, hash2, "length prefixing should prevent delimiter collision");
+
+        // Test with embedded delimiter-like content
+        let hash3 = manifest_hash_for_transition(
+            "transition:id",
+            "init|iator",
+            "reason;with;delims",
+            u64::MAX,
+        );
+
+        let hash4 = manifest_hash_for_transition(
+            "transition",
+            "id:init|iator",
+            "reason;with;delims",
+            u64::MAX,
+        );
+
+        assert_ne!(hash3, hash4, "embedded delimiters should not cause collision");
+
+        // Test extreme epoch values
+        let hash_min = manifest_hash_for_transition("a", "b", "c", 0);
+        let hash_max = manifest_hash_for_transition("a", "b", "c", u64::MAX);
+        assert_ne!(hash_min, hash_max);
+
+        // Test empty strings
+        let hash_empty = manifest_hash_for_transition("", "", "", 1);
+        let hash_space = manifest_hash_for_transition(" ", " ", " ", 1);
+        assert_ne!(hash_empty, hash_space);
+    }
+
+    #[test]
+    fn abort_cascades_and_state_consistency_edge_cases() {
+        let mut coordinator = ProductEpochCoordinator::new(10, 1, BarrierConfig::default());
+        coordinator.register_service("svc-cascade");
+
+        // Start multiple cascading operations
+        coordinator
+            .propose_transition("op1", "cascade-test", 1000, "trace-1")
+            .expect("first proposal should work");
+
+        // Timeout abort should clear all pending state
+        coordinator
+            .abort_transition_timeout(40000, "trace-timeout")
+            .expect("timeout should work");
+
+        assert!(coordinator.pending.is_none(), "pending should be cleared");
+        assert_eq!(coordinator.abort_manager().abort_count(), 1);
+
+        // Should be able to immediately propose again
+        let proposal2 = coordinator
+            .propose_transition("op2", "after-abort", 41000, "trace-2")
+            .expect("post-abort proposal should work");
+        assert_eq!(proposal2.pre_epoch, 10); // Should not have advanced
+
+        // Cancellation abort during drain phase
+        coordinator
+            .abort_transition_cancellation("emergency", 42000, "trace-cancel")
+            .expect("cancellation should work");
+
+        assert!(coordinator.pending.is_none(), "pending should be cleared again");
+        assert_eq!(coordinator.abort_manager().abort_count(), 2);
+
+        // History should record both aborts
+        assert_eq!(coordinator.history().len(), 2);
+        assert!(coordinator.history().iter().all(|h| h.outcome == "ABORTED"));
+
+        // Events should show proper abort sequence
+        let abort_events: Vec<_> = coordinator
+            .events()
+            .iter()
+            .filter(|e| e.event_code == EPOCH_TRANSITION_ABORTED)
+            .collect();
+        assert_eq!(abort_events.len(), 2);
+    }
+
+    #[test]
+    fn error_propagation_and_fail_closed_semantics() {
+        let mut coordinator = ProductEpochCoordinator::new(5, 1, BarrierConfig::default());
+        coordinator.register_service("svc-error");
+
+        // Test commit failure propagation
+        coordinator
+            .propose_transition("op", "error-test", 1000, "trace-error")
+            .expect("proposal should work");
+
+        // Partial ack then force timeout to test commit failure
+        coordinator
+            .ack_drain("svc-error", 100, 50, "trace-ack")
+            .expect("ack should work");
+
+        // Force a commit timeout by waiting
+        let err = coordinator
+            .commit_transition(50000, "trace-late-commit")
+            .expect_err("late commit should auto-abort");
+
+        assert_eq!(err.code(), EPOCH_TRANSITION_COMMIT_ABORTED);
+        assert_eq!(coordinator.current_epoch(), 5); // Should not advance
+
+        // Test error chain propagation - operation after failed commit
+        let stale_err = coordinator
+            .validate_operation_epoch("svc-error", 6, "trace-post-fail")
+            .expect_err("future epoch should still be rejected");
+        assert_eq!(stale_err.code(), FUTURE_EPOCH_REJECTED);
+
+        // Test validation with epoch exactly at boundary conditions
+        coordinator
+            .validate_operation_epoch("svc-error", 5, "trace-current")
+            .expect("current epoch should work");
+
+        // Test error when no participants registered (fail-closed)
+        let mut empty_coord = ProductEpochCoordinator::new(1, 1, BarrierConfig::default());
+        let err = empty_coord
+            .propose_transition("op", "empty", 1000, "trace")
+            .expect_err("no participants should fail closed");
+
+        assert!(matches!(err, EpochTransitionError::Barrier(_)));
+        assert_eq!(empty_coord.current_epoch(), 1); // Should not change
+        assert!(empty_coord.events().is_empty()); // Should not emit events
     }
 }

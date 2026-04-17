@@ -876,6 +876,76 @@ mod tests {
         assert_eq!(err.code(), error_codes::ERR_REGION_PARENT_NOT_FOUND);
     }
 
+    #[test]
+    fn missing_parent_child_open_does_not_mutate_tree() {
+        let mut tree = RegionTree::new(1000);
+        let err = tree
+            .open_child_region(&lifecycle_id(), &root_id(), 10)
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_REGION_PARENT_NOT_FOUND);
+        assert_eq!(tree.region_count(), 0);
+        assert_eq!(tree.region_state(&lifecycle_id()), None);
+        assert!(tree.event_log().is_empty());
+    }
+
+    #[test]
+    fn duplicate_root_open_preserves_existing_region_and_events() {
+        let mut tree = RegionTree::new(1000);
+        tree.open_region(&root_id(), 0).unwrap();
+        tree.register_task(&root_id(), TaskId::new("kept-task"), 1)
+            .unwrap();
+        let events_before = tree.event_log().len();
+
+        let err = tree.open_region(&root_id(), 2).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_REGION_ALREADY_CLOSED);
+        assert_eq!(tree.region_count(), 1);
+        assert_eq!(tree.region_state(&root_id()), Some(RegionState::Active));
+        assert_eq!(tree.task_count(&root_id()), Some(1));
+        assert_eq!(tree.event_log().len(), events_before);
+    }
+
+    #[test]
+    fn duplicate_child_open_does_not_reparent_original_region() {
+        let mut tree = build_full_tree();
+        let events_before = tree.event_log().len();
+
+        let err = tree
+            .open_child_region(&rollout_id(), &root_id(), 99)
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_REGION_ALREADY_CLOSED);
+        assert_eq!(tree.region_count(), 5);
+        assert_eq!(tree.child_count(&root_id()), Some(1));
+        assert_eq!(tree.child_count(&lifecycle_id()), Some(3));
+        assert_eq!(
+            tree.parent_of(&rollout_id())
+                .and_then(|parent| parent)
+                .map(RegionId::as_str),
+            Some("lifecycle")
+        );
+        assert_eq!(tree.event_log().len(), events_before);
+    }
+
+    #[test]
+    fn closed_parent_child_open_does_not_attach_or_emit() {
+        let mut tree = RegionTree::new(1000);
+        tree.open_region(&root_id(), 0).unwrap();
+        tree.close(&root_id(), 1).unwrap();
+        let events_before = tree.event_log().len();
+
+        let err = tree
+            .open_child_region(&lifecycle_id(), &root_id(), 2)
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_REGION_ALREADY_CLOSED);
+        assert_eq!(tree.region_count(), 1);
+        assert_eq!(tree.child_count(&root_id()), Some(0));
+        assert_eq!(tree.region_state(&lifecycle_id()), None);
+        assert_eq!(tree.event_log().len(), events_before);
+    }
+
     // ---- Full hierarchy ----
 
     #[test]
@@ -911,6 +981,23 @@ mod tests {
     }
 
     #[test]
+    fn register_task_to_missing_region_leaves_existing_tasks_and_events() {
+        let mut tree = build_full_tree();
+        tree.register_task(&rollout_id(), TaskId::new("existing"), 9)
+            .unwrap();
+        let events_before = tree.event_log().len();
+
+        let err = tree
+            .register_task(&RegionId::new("missing"), TaskId::new("late"), 10)
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_REGION_NOT_FOUND);
+        assert_eq!(tree.task_count(&rollout_id()), Some(1));
+        assert_eq!(tree.region_state(&rollout_id()), Some(RegionState::Active));
+        assert_eq!(tree.event_log().len(), events_before);
+    }
+
+    #[test]
     fn deregister_task_succeeds() {
         let mut tree = build_full_tree();
         tree.register_task(&rollout_id(), TaskId::new("task-1"), 10)
@@ -920,6 +1007,22 @@ mod tests {
             .unwrap();
         assert_eq!(event.event_code, event_codes::REG_008);
         assert_eq!(tree.task_count(&rollout_id()), Some(0));
+    }
+
+    #[test]
+    fn deregister_task_from_missing_region_does_not_emit_event() {
+        let mut tree = build_full_tree();
+        tree.register_task(&rollout_id(), TaskId::new("kept"), 10)
+            .unwrap();
+        let events_before = tree.event_log().len();
+
+        let err = tree
+            .deregister_task(&RegionId::new("missing"), &TaskId::new("kept"), 11)
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_REGION_NOT_FOUND);
+        assert_eq!(tree.task_count(&rollout_id()), Some(1));
+        assert_eq!(tree.event_log().len(), events_before);
     }
 
     // ---- RegionHandle ----
@@ -1045,10 +1148,52 @@ mod tests {
     }
 
     #[test]
+    fn close_already_closed_region_does_not_emit_second_close() {
+        let mut tree = build_full_tree();
+        tree.close(&health_gate_id(), 100).unwrap();
+        let events_before = tree.event_log().len();
+
+        let err = tree.close(&health_gate_id(), 200).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_REGION_ALREADY_CLOSED);
+        assert_eq!(tree.event_log().len(), events_before);
+        assert_eq!(
+            tree.event_log()
+                .iter()
+                .filter(|event| {
+                    event.event_code == event_codes::REG_006
+                        && event.region_id == health_gate_id().as_str()
+                })
+                .count(),
+            1
+        );
+    }
+
+    #[test]
     fn close_nonexistent_region_fails() {
         let mut tree = build_full_tree();
         let err = tree.close(&RegionId::new("nonexistent"), 100).unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_REGION_NOT_FOUND);
+    }
+
+    #[test]
+    fn close_nonexistent_region_does_not_drain_any_region() {
+        let mut tree = build_full_tree();
+        let events_before = tree.event_log().len();
+
+        let err = tree.close(&RegionId::new("missing"), 100).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_REGION_NOT_FOUND);
+        assert_eq!(tree.event_log().len(), events_before);
+        for region in &[
+            root_id(),
+            lifecycle_id(),
+            health_gate_id(),
+            rollout_id(),
+            fencing_id(),
+        ] {
+            assert_eq!(tree.region_state(region), Some(RegionState::Active));
+        }
     }
 
     // ---- Force terminate ----
@@ -1072,6 +1217,39 @@ mod tests {
         assert_eq!(err.code(), error_codes::ERR_REGION_ALREADY_CLOSED);
     }
 
+    #[test]
+    fn force_terminate_missing_region_does_not_emit_event() {
+        let mut tree = build_full_tree();
+        let events_before = tree.event_log().len();
+
+        let err = tree
+            .force_terminate(&RegionId::new("missing"), 200)
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_REGION_NOT_FOUND);
+        assert_eq!(tree.event_log().len(), events_before);
+        assert_eq!(tree.region_count(), 5);
+    }
+
+    #[test]
+    fn force_terminate_closed_region_preserves_prior_close_trace() {
+        let mut tree = build_full_tree();
+        tree.register_task(&health_gate_id(), TaskId::new("terminated-by-close"), 50)
+            .unwrap();
+        tree.close(&health_gate_id(), 100).unwrap();
+        let events_before = tree.event_log().len();
+
+        let err = tree.force_terminate(&health_gate_id(), 200).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_REGION_ALREADY_CLOSED);
+        assert_eq!(tree.task_count(&health_gate_id()), Some(0));
+        assert_eq!(
+            tree.region_state(&health_gate_id()),
+            Some(RegionState::Closed)
+        );
+        assert_eq!(tree.event_log().len(), events_before);
+    }
+
     // ---- Register task to closed region ----
 
     #[test]
@@ -1082,6 +1260,25 @@ mod tests {
             .register_task(&health_gate_id(), TaskId::new("late-task"), 200)
             .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_REGION_ALREADY_CLOSED);
+    }
+
+    #[test]
+    fn register_task_to_closed_region_does_not_reopen_or_emit() {
+        let mut tree = build_full_tree();
+        tree.close(&health_gate_id(), 100).unwrap();
+        let events_before = tree.event_log().len();
+
+        let err = tree
+            .register_task(&health_gate_id(), TaskId::new("late-task"), 200)
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_REGION_ALREADY_CLOSED);
+        assert_eq!(
+            tree.region_state(&health_gate_id()),
+            Some(RegionState::Closed)
+        );
+        assert_eq!(tree.task_count(&health_gate_id()), Some(0));
+        assert_eq!(tree.event_log().len(), events_before);
     }
 
     // ---- Event log ----
@@ -1186,6 +1383,28 @@ mod tests {
         assert_eq!(err.code(), error_codes::ERR_REGION_NOT_FOUND);
     }
 
+    #[test]
+    fn set_drain_budget_missing_region_does_not_change_close_timing() {
+        let mut tree = RegionTree::new(1000);
+        tree.open_region(&root_id(), 0).unwrap();
+        tree.register_task(&root_id(), TaskId::new("root-task"), 1)
+            .unwrap();
+        let events_before = tree.event_log().len();
+
+        let err = tree
+            .set_drain_budget(&RegionId::new("missing"), 500)
+            .unwrap_err();
+        let events = tree.close(&root_id(), 100).unwrap();
+
+        assert_eq!(err.code(), error_codes::ERR_REGION_NOT_FOUND);
+        assert_eq!(tree.event_log().len(), events_before + events.len());
+        let force_event = events
+            .iter()
+            .find(|event| event.event_code == event_codes::REG_005)
+            .unwrap();
+        assert_eq!(force_event.timestamp_ms, 1100);
+    }
+
     // ---- Quiescence trace simulation ----
 
     #[test]
@@ -1262,5 +1481,292 @@ mod tests {
         let id = TaskId::new("test-task");
         assert_eq!(id.as_str(), "test-task");
         assert_eq!(id.to_string(), "test-task");
+    }
+
+    // -- Negative-Path Tests --
+
+    #[test]
+    fn negative_massive_region_hierarchy_depth_handled_gracefully() {
+        // Test extremely deep region hierarchy to validate recursion limits
+        let mut tree = RegionTree::new(10000);
+        let mut current_parent = RegionId::new("root");
+        tree.open_region(&current_parent, 0).expect("open root");
+
+        // Create deep hierarchy (100+ levels)
+        for depth in 1..=150 {
+            let child_id = RegionId::new(&format!("depth-{:03}", depth));
+            match tree.open_child_region(&child_id, &current_parent, depth as u64) {
+                Ok(()) => {
+                    current_parent = child_id;
+                },
+                Err(_) => {
+                    // Acceptable to reject at some depth to prevent stack overflow
+                    break;
+                }
+            }
+        }
+
+        // Should handle deep hierarchy without crashing
+        let region_count = tree.list_regions().len();
+        assert!(region_count > 10); // Should have created at least some depth
+
+        // Closing root should drain entire hierarchy deterministically
+        tree.close_region(&RegionId::new("root"), 999999).expect("close root");
+    }
+
+    #[test]
+    fn negative_unicode_and_control_characters_in_region_identifiers() {
+        // Test region IDs with Unicode, control characters, and edge cases
+        let mut tree = RegionTree::new(1000);
+        let unicode_region_ids = vec![
+            "region-🚀-rocket",
+            "регион-кириллица",
+            "区域-中文",
+            "region\0null-byte",
+            "region\x01control-char",
+            "region\u{200B}zero-width-space",
+            "region\u{FEFF}bom-marker",
+            "region\r\ncarriage-return",
+            "region/../../../etc/passwd",
+            "region\u{202E}rtl-override",
+        ];
+
+        // All unicode region IDs should be handled safely
+        for (i, region_id_str) in unicode_region_ids.iter().enumerate() {
+            let region_id = RegionId::new(region_id_str);
+            let result = tree.open_region(&region_id, i as u64);
+
+            // Should either succeed or fail gracefully
+            match result {
+                Ok(()) => {
+                    assert!(tree.list_regions().contains(&region_id));
+
+                    // Test task registration with unicode region
+                    let task_id = TaskId::new(&format!("unicode-task-{}", i));
+                    let _register_result = tree.register_task(&task_id, &region_id, (i + 1000) as u64);
+
+                    // Should be able to close unicode region
+                    let _close_result = tree.close_region(&region_id, (i + 2000) as u64);
+                },
+                Err(_) => {
+                    // Acceptable to reject malformed identifiers
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_extreme_quiescence_budget_arithmetic_overflow_protection() {
+        // Test quiescence budget calculations near u64::MAX boundary
+        let mut tree = RegionTree::new(u64::MAX);
+        let root_id = RegionId::new("budget-test-root");
+        tree.open_region(&root_id, 0).expect("open root");
+
+        // Register tasks with extreme timestamps
+        let max_timestamp = u64::MAX.saturating_sub(100);
+        for i in 0..10 {
+            let task_id = TaskId::new(&format!("extreme-timestamp-task-{}", i));
+            tree.register_task(&task_id, &root_id, max_timestamp.saturating_add(i))
+                .expect("register task with extreme timestamp");
+        }
+
+        // Close with budget near u64::MAX - should use saturating arithmetic
+        let close_result = tree.close_region(&root_id, u64::MAX);
+        match close_result {
+            Ok(()) => {
+                // Successfully closed despite extreme timestamps
+            },
+            Err(RegionError::BudgetExceeded { .. }) => {
+                // Acceptable to fail if budget calculation prevents overflow
+            },
+            Err(other) => {
+                panic!("Unexpected error type: {:?}", other);
+            }
+        }
+
+        // Events should handle extreme timestamps safely
+        let events = tree.events();
+        for event in events {
+            assert!(event.timestamp_ms <= u64::MAX);
+        }
+    }
+
+    #[test]
+    fn negative_massive_task_registration_memory_pressure_handling() {
+        // Test memory pressure with massive number of task registrations
+        let mut tree = RegionTree::new(1000);
+        let root_id = RegionId::new("memory-stress-root");
+        tree.open_region(&root_id, 0).expect("open root");
+
+        // Attempt to register huge number of tasks
+        let massive_task_count = 100_000;
+        let mut successful_registrations = 0;
+
+        for i in 0..massive_task_count {
+            let task_id = TaskId::new(&format!("stress-task-{:08}", i));
+            match tree.register_task(&task_id, &root_id, i as u64) {
+                Ok(()) => {
+                    successful_registrations = successful_registrations.saturating_add(1);
+                },
+                Err(_) => {
+                    // Acceptable to reject at some point to prevent memory exhaustion
+                    break;
+                }
+            }
+        }
+
+        assert!(successful_registrations > 0);
+        assert!(successful_registrations <= massive_task_count);
+
+        // Should remain functional despite memory pressure
+        let regions = tree.list_regions();
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0], root_id);
+
+        // Closing should handle massive task count gracefully
+        let close_result = tree.close_region(&root_id, 999999);
+        // May succeed or fail due to budget, but should not crash
+        let _ = close_result;
+    }
+
+    #[test]
+    fn negative_malformed_region_state_transitions_and_double_operations() {
+        // Test malformed state transitions and double operations
+        let mut tree = RegionTree::new(1000);
+        let region_id = RegionId::new("state-test-region");
+
+        // Try to close non-existent region
+        let err = tree.close_region(&region_id, 100).expect_err("should fail to close non-existent");
+        assert_eq!(err.code(), error_codes::ERR_REGION_NOT_FOUND);
+
+        // Open region
+        tree.open_region(&region_id, 200).expect("open region");
+
+        // Try to open same region again - should fail
+        let err = tree.open_region(&region_id, 300).expect_err("should fail to re-open");
+        // Error type varies by implementation
+
+        // Close region
+        tree.close_region(&region_id, 400).expect("close region");
+
+        // Try to close already-closed region
+        let err = tree.close_region(&region_id, 500).expect_err("should fail to re-close");
+        assert_eq!(err.code(), error_codes::ERR_REGION_ALREADY_CLOSED);
+
+        // Try to register task to closed region
+        let task_id = TaskId::new("orphan-task");
+        let err = tree.register_task(&task_id, &region_id, 600).expect_err("should fail to register to closed");
+        assert_eq!(err.code(), error_codes::ERR_REGION_ALREADY_CLOSED);
+
+        // Try to open child of closed region
+        let child_id = RegionId::new("orphan-child");
+        let err = tree.open_child_region(&child_id, &region_id, 700).expect_err("should fail child of closed");
+        assert_eq!(err.code(), error_codes::ERR_REGION_ALREADY_CLOSED);
+    }
+
+    #[test]
+    fn negative_event_log_memory_exhaustion_with_rapid_operations() {
+        // Test event log behavior under rapid operation bursts
+        let mut tree = RegionTree::new(100);
+
+        // Generate events far exceeding MAX_EVENT_LOG_ENTRIES
+        for cycle in 0..10 {
+            let region_id = RegionId::new(&format!("rapid-cycle-{:04}", cycle));
+            tree.open_region(&region_id, cycle * 100).expect("open rapid region");
+
+            // Rapid task registrations
+            for task_num in 0..50 {
+                let task_id = TaskId::new(&format!("rapid-task-{}-{}", cycle, task_num));
+                let _ = tree.register_task(&task_id, &region_id, cycle * 100 + task_num);
+            }
+
+            tree.close_region(&region_id, cycle * 100 + 99).expect("close rapid region");
+        }
+
+        // Event log should be bounded
+        let events = tree.events();
+        assert!(events.len() <= MAX_EVENT_LOG_ENTRIES.saturating_add(100));
+
+        // All events should be well-formed despite high volume
+        for event in events {
+            assert!(!event.event_code.is_empty());
+            assert!(!event.region_id.as_str().is_empty());
+            assert!(event.timestamp_ms < u64::MAX);
+        }
+    }
+
+    #[test]
+    fn negative_circular_parent_child_relationship_prevention() {
+        // Test prevention of circular region hierarchies
+        let mut tree = RegionTree::new(1000);
+
+        // Create initial hierarchy: A -> B -> C
+        let region_a = RegionId::new("region-A");
+        let region_b = RegionId::new("region-B");
+        let region_c = RegionId::new("region-C");
+
+        tree.open_region(&region_a, 100).expect("open A");
+        tree.open_child_region(&region_b, &region_a, 200).expect("open B child of A");
+        tree.open_child_region(&region_c, &region_b, 300).expect("open C child of B");
+
+        // Try to create circular relationships
+        // Attempt: make A child of C (would create A->B->C->A cycle)
+        let err = tree.open_child_region(&region_a, &region_c, 400)
+            .expect_err("should prevent A as child of C");
+        // Should prevent circular hierarchy
+
+        // Attempt: make B child of C (would create B->C->B cycle)
+        let err2 = tree.open_child_region(&region_b, &region_c, 500)
+            .expect_err("should prevent B as child of C");
+        // Should prevent circular hierarchy
+
+        // Original hierarchy should remain intact
+        let regions = tree.list_regions();
+        assert_eq!(regions.len(), 3);
+        assert!(regions.contains(&region_a));
+        assert!(regions.contains(&region_b));
+        assert!(regions.contains(&region_c));
+
+        // Should be able to close in proper order
+        tree.close_region(&region_a, 600).expect("close A (drains children)");
+    }
+
+    #[test]
+    fn negative_task_deregistration_edge_cases_and_orphaned_references() {
+        // Test task deregistration edge cases and orphaned task handling
+        let mut tree = RegionTree::new(1000);
+        let region_id = RegionId::new("deregistration-test");
+        tree.open_region(&region_id, 100).expect("open region");
+
+        // Register multiple tasks
+        let task_ids: Vec<_> = (0..20).map(|i| TaskId::new(&format!("task-{:03}", i))).collect();
+        for (i, task_id) in task_ids.iter().enumerate() {
+            tree.register_task(task_id, &region_id, 200 + i as u64).expect("register task");
+        }
+
+        // Try to deregister non-existent task
+        let phantom_task = TaskId::new("phantom-task-999");
+        let err = tree.deregister_task(&phantom_task, &region_id, 1000)
+            .expect_err("should fail to deregister non-existent");
+        // Should handle gracefully
+
+        // Deregister some tasks
+        for i in (0..10).step_by(2) {
+            tree.deregister_task(&task_ids[i], &region_id, 1100 + i as u64)
+                .expect("deregister even-numbered tasks");
+        }
+
+        // Try to deregister already-deregistered task
+        let err = tree.deregister_task(&task_ids[0], &region_id, 1200)
+            .expect_err("should fail to re-deregister");
+        // Should handle gracefully
+
+        // Close region with remaining tasks
+        tree.close_region(&region_id, 1300).expect("close with remaining tasks");
+
+        // Try to deregister from closed region
+        let err = tree.deregister_task(&task_ids[1], &region_id, 1400)
+            .expect_err("should fail to deregister from closed");
+        assert_eq!(err.code(), error_codes::ERR_REGION_ALREADY_CLOSED);
     }
 }

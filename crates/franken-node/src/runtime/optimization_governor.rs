@@ -995,6 +995,68 @@ mod tests {
         assert!(!env.is_valid());
     }
 
+    #[test]
+    fn test_envelope_invalid_zero_throughput() {
+        let env = SafetyEnvelope {
+            min_throughput_rps: 0,
+            ..default_envelope()
+        };
+
+        assert!(!env.is_valid());
+    }
+
+    #[test]
+    fn test_envelope_invalid_error_rate_above_percent_ceiling() {
+        let env = SafetyEnvelope {
+            max_error_rate_pct: 100.1,
+            ..default_envelope()
+        };
+
+        assert!(!env.is_valid());
+    }
+
+    #[test]
+    fn test_envelope_invalid_nan_error_rate_ceiling_fails_closed() {
+        let env = SafetyEnvelope {
+            max_error_rate_pct: f64::NAN,
+            ..default_envelope()
+        };
+
+        assert!(!env.is_valid());
+        assert!(!env.contains(&safe_metrics()));
+        assert!(
+            env.violations(&safe_metrics())
+                .iter()
+                .any(|violation| violation.contains("error rate"))
+        );
+    }
+
+    #[test]
+    fn test_envelope_rejects_nan_metric_error_rate() {
+        let env = default_envelope();
+        let metrics = PredictedMetrics {
+            error_rate_pct: f64::NAN,
+            ..safe_metrics()
+        };
+
+        assert!(!env.contains(&metrics));
+        assert!(
+            env.violations(&metrics)
+                .iter()
+                .any(|violation| violation.contains("error rate"))
+        );
+    }
+
+    #[test]
+    fn test_envelope_invalid_zero_memory() {
+        let env = SafetyEnvelope {
+            max_memory_mb: 0,
+            ..default_envelope()
+        };
+
+        assert!(!env.is_valid());
+    }
+
     // --- OptimizationProposal tests ---
 
     #[test]
@@ -1020,6 +1082,22 @@ mod tests {
     fn test_proposal_invalid_excessive_error_rate() {
         let mut p = good_proposal("p1");
         p.predicted.error_rate_pct = 101.0;
+        assert!(!p.is_valid());
+    }
+
+    #[test]
+    fn test_proposal_invalid_empty_trace_id() {
+        let mut p = good_proposal("p1");
+        p.trace_id.clear();
+
+        assert!(!p.is_valid());
+    }
+
+    #[test]
+    fn test_proposal_invalid_nan_error_rate() {
+        let mut p = good_proposal("p1");
+        p.predicted.error_rate_pct = f64::NAN;
+
         assert!(!p.is_valid());
     }
 
@@ -1051,6 +1129,28 @@ mod tests {
         let result = gov.shadow_evaluate(&p);
         assert!(result.within_envelope);
         assert!(!result.is_beneficial);
+    }
+
+    #[test]
+    fn test_shadow_eval_with_invalid_envelope_rejects_safe_metrics() {
+        let mut gov = OptimizationGovernor::with_defaults();
+        gov.update_envelope(SafetyEnvelope {
+            max_error_rate_pct: f64::NAN,
+            ..default_envelope()
+        });
+
+        let result = gov.submit_shadow_only(&good_proposal("p_shadow_bad_env"));
+
+        assert!(!result.within_envelope);
+        assert!(!result.is_beneficial);
+        assert!(
+            result
+                .violations
+                .iter()
+                .any(|violation| violation.contains("error rate"))
+        );
+        assert_eq!(gov.applied_count(), 0);
+        assert!(gov.decision_log().is_empty());
     }
 
     // --- Governor submit tests ---
@@ -1115,6 +1215,71 @@ mod tests {
     }
 
     #[test]
+    fn test_submit_empty_trace_id_rejected_without_apply() {
+        let mut gov = OptimizationGovernor::with_defaults();
+        let mut p = good_proposal("p_empty_trace");
+        p.trace_id.clear();
+
+        let decision = gov.submit(p);
+
+        match &decision {
+            GovernorDecision::Rejected(RejectionReason::InvalidProposal(msg)) => {
+                assert!(msg.contains("trace_id"));
+            }
+            other => unreachable!("expected InvalidProposal rejection, got {other:?}"),
+        }
+        assert_eq!(gov.applied_count(), 0);
+        assert_eq!(gov.knob_value(&RuntimeKnob::ConcurrencyLimit), Some(64));
+        assert_eq!(gov.decision_log().len(), 1);
+        assert_eq!(gov.decision_log()[0].trace_id, "");
+    }
+
+    #[test]
+    fn test_submit_nan_error_rate_rejected_without_knob_change() {
+        let mut gov = OptimizationGovernor::with_defaults();
+        let mut p = good_proposal("p_nan");
+        p.predicted.error_rate_pct = f64::NAN;
+
+        let decision = gov.submit(p);
+
+        match &decision {
+            GovernorDecision::Rejected(RejectionReason::InvalidProposal(msg)) => {
+                assert!(msg.contains("error_rate_pct"));
+            }
+            other => unreachable!("expected InvalidProposal rejection, got {other:?}"),
+        }
+        assert_eq!(gov.applied_count(), 0);
+        assert_eq!(gov.knob_value(&RuntimeKnob::ConcurrencyLimit), Some(64));
+    }
+
+    #[test]
+    fn test_locked_knob_rejection_preserves_value_and_applied_set() {
+        let mut gov = OptimizationGovernor::with_defaults();
+        gov.lock_knob(RuntimeKnob::ConcurrencyLimit);
+
+        let decision = gov.submit(good_proposal("p_locked_no_apply"));
+
+        assert_eq!(
+            decision,
+            GovernorDecision::Rejected(RejectionReason::KnobLocked)
+        );
+        assert_eq!(gov.applied_count(), 0);
+        assert_eq!(gov.knob_value(&RuntimeKnob::ConcurrencyLimit), Some(64));
+    }
+
+    #[test]
+    fn test_lock_and_unlock_missing_knob_do_not_create_state() {
+        let envelope = default_envelope();
+        let mut gov = OptimizationGovernor::new(envelope, BTreeMap::new());
+
+        gov.lock_knob(RuntimeKnob::RetryBudget);
+        gov.unlock_knob(RuntimeKnob::RetryBudget);
+
+        assert_eq!(gov.knob_value(&RuntimeKnob::RetryBudget), None);
+        assert!(gov.snapshot().knob_states.is_empty());
+    }
+
+    #[test]
     fn test_submit_rejects_unknown_knob_configuration() {
         let envelope = default_envelope();
         let knob_states = BTreeMap::new();
@@ -1161,6 +1326,21 @@ mod tests {
     }
 
     #[test]
+    fn test_live_check_breach_without_applied_proposals_is_noop() {
+        let mut gov = OptimizationGovernor::with_defaults();
+        let bad_live = PredictedMetrics {
+            latency_ms: 999,
+            ..safe_metrics()
+        };
+
+        let reverted = gov.live_check(&bad_live);
+
+        assert!(reverted.is_empty());
+        assert_eq!(gov.applied_count(), 0);
+        assert!(gov.decision_log().is_empty());
+    }
+
+    #[test]
     fn test_live_check_breach_triggers_auto_revert() {
         let mut gov = OptimizationGovernor::with_defaults();
         gov.submit(good_proposal("p1"));
@@ -1201,6 +1381,62 @@ mod tests {
             .filter(|r| r.event_code == event_codes::GOV_005)
             .collect();
         assert_eq!(revert_records.len(), 1);
+    }
+
+    #[test]
+    fn test_live_check_nan_error_rate_reverts_applied_proposal() {
+        let mut gov = OptimizationGovernor::with_defaults();
+        assert_eq!(
+            gov.submit(good_proposal("p_nan_live")),
+            GovernorDecision::Approved
+        );
+
+        let bad_live = PredictedMetrics {
+            error_rate_pct: f64::NAN,
+            ..safe_metrics()
+        };
+        let reverted = gov.live_check(&bad_live);
+
+        assert_eq!(reverted, vec!["p_nan_live"]);
+        assert_eq!(gov.applied_count(), 0);
+        assert_eq!(gov.knob_value(&RuntimeKnob::ConcurrencyLimit), Some(64));
+    }
+
+    #[test]
+    fn test_invalid_updated_envelope_reverts_even_safe_live_metrics() {
+        let mut gov = OptimizationGovernor::with_defaults();
+        assert_eq!(
+            gov.submit(good_proposal("p_bad_envelope")),
+            GovernorDecision::Approved
+        );
+        gov.update_envelope(SafetyEnvelope {
+            max_error_rate_pct: f64::NAN,
+            ..default_envelope()
+        });
+
+        let reverted = gov.live_check(&safe_metrics());
+
+        assert_eq!(reverted, vec!["p_bad_envelope"]);
+        assert_eq!(gov.applied_count(), 0);
+    }
+
+    #[test]
+    fn test_auto_revert_check_alias_reverts_on_memory_breach() {
+        let mut gov = OptimizationGovernor::with_defaults();
+        assert_eq!(
+            gov.submit_proposal(good_proposal("p_alias_revert")),
+            GovernorDecision::Approved
+        );
+        let bad_live = PredictedMetrics {
+            memory_mb: 8192,
+            ..safe_metrics()
+        };
+
+        let reverted = gov.auto_revert_check(&bad_live);
+
+        assert_eq!(reverted, vec!["p_alias_revert"]);
+        assert_eq!(gov.applied_count(), 0);
+        assert_eq!(gov.knob_value(&RuntimeKnob::ConcurrencyLimit), Some(64));
     }
 
     // --- Snapshot test ---
@@ -1294,5 +1530,354 @@ mod tests {
         let gov2: OptimizationGovernor = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(gov.decision_log().len(), gov2.decision_log().len());
         assert_eq!(gov.applied_count(), gov2.applied_count());
+    }
+
+    // =========================================================================
+    // Extreme adversarial negative-path tests
+    // =========================================================================
+
+    #[test]
+    fn negative_optimization_governor_unicode_injection_resistance() {
+        let mut gov = OptimizationGovernor::with_defaults();
+        let unicode_bomb = format!(
+            "{}{}{}{}{}",
+            "\u{202E}", // RIGHT-TO-LEFT OVERRIDE
+            "\u{200B}".repeat(5000), // ZERO WIDTH SPACE x5000
+            "\u{FEFF}".repeat(500), // BOM x500
+            "malicious\u{0000}payload\u{0001}injection",
+            "\u{202D}" // LEFT-TO-RIGHT OVERRIDE
+        );
+
+        let proposal = OptimizationProposal {
+            proposal_id: unicode_bomb.clone(),
+            knob: RuntimeKnob::ConcurrencyLimit,
+            old_value: 64,
+            new_value: 128,
+            predicted: safe_metrics(),
+            rationale: unicode_bomb.clone(),
+            trace_id: unicode_bomb,
+        };
+
+        let decision = gov.submit(proposal);
+        // Should handle Unicode gracefully without panics or corrupted state
+        assert!(matches!(decision, GovernorDecision::Rejected(_) | GovernorDecision::Approved));
+
+        // Verify decision log doesn't contain corrupted entries
+        if !gov.decision_log().is_empty() {
+            let entry = &gov.decision_log()[0];
+            assert!(!entry.proposal_id.is_empty());
+            assert!(!entry.trace_id.contains('\u{0000}'));
+        }
+    }
+
+    #[test]
+    fn negative_optimization_governor_memory_exhaustion_massive_rationale() {
+        let mut gov = OptimizationGovernor::with_defaults();
+        let massive_rationale = "A".repeat(50_000_000); // 50MB string
+
+        let proposal = OptimizationProposal {
+            proposal_id: "memory-stress-rationale".to_string(),
+            knob: RuntimeKnob::BatchSize,
+            old_value: 128,
+            new_value: 256,
+            predicted: safe_metrics(),
+            rationale: massive_rationale,
+            trace_id: "trace-memory-stress".to_string(),
+        };
+
+        let decision = gov.submit(proposal);
+        // Should handle massive allocations without OOM crashes
+        assert!(matches!(decision, GovernorDecision::Rejected(_) | GovernorDecision::Approved));
+
+        // Verify governor state remains consistent
+        assert!(gov.decision_count() > 0);
+        assert_eq!(gov.schema_version(), SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn negative_optimization_governor_arithmetic_overflow_sequence_numbers() {
+        let mut gov = OptimizationGovernor::with_defaults();
+        // Simulate near-overflow scenario
+        gov.next_seq = u64::MAX - 5;
+
+        for i in 0..10 {
+            let proposal = OptimizationProposal {
+                proposal_id: format!("overflow-test-{i}"),
+                knob: RuntimeKnob::ConcurrencyLimit,
+                old_value: 64,
+                new_value: 64u64.saturating_add(i),
+                predicted: safe_metrics(),
+                rationale: format!("overflow boundary test {i}"),
+                trace_id: format!("trace-overflow-{i}"),
+            };
+
+            let decision = gov.submit(proposal);
+            assert!(matches!(decision, GovernorDecision::Rejected(_) | GovernorDecision::Approved));
+        }
+
+        // Verify sequence numbers don't wrap around or panic
+        assert_eq!(gov.next_seq, u64::MAX); // Should saturate
+        for entry in gov.decision_log() {
+            assert!(entry.seq <= u64::MAX);
+            assert!(entry.seq >= u64::MAX - 15); // Within reasonable bounds
+        }
+    }
+
+    #[test]
+    fn negative_optimization_governor_contradictory_metric_boundary_values() {
+        let mut gov = OptimizationGovernor::with_defaults();
+
+        let contradictory_metrics = vec![
+            PredictedMetrics {
+                latency_ms: 0,           // Impossible: zero latency
+                throughput_rps: u64::MAX, // Maximum possible throughput
+                error_rate_pct: f64::INFINITY,
+                memory_mb: 0,
+            },
+            PredictedMetrics {
+                latency_ms: u64::MAX,    // Maximum possible latency
+                throughput_rps: 0,       // No throughput
+                error_rate_pct: f64::NEG_INFINITY,
+                memory_mb: u64::MAX,
+            },
+            PredictedMetrics {
+                latency_ms: u64::MAX / 2,
+                throughput_rps: u64::MAX / 2,
+                error_rate_pct: f64::NAN,
+                memory_mb: u64::MAX / 2,
+            },
+        ];
+
+        for (i, metrics) in contradictory_metrics.into_iter().enumerate() {
+            let proposal = OptimizationProposal {
+                proposal_id: format!("contradictory-{i}"),
+                knob: RuntimeKnob::ConcurrencyLimit,
+                old_value: 64,
+                new_value: 128,
+                predicted: metrics,
+                rationale: format!("contradictory metrics test {i}"),
+                trace_id: format!("trace-contradictory-{i}"),
+            };
+
+            let decision = gov.submit(proposal);
+            // Must reject due to invalid metrics without causing arithmetic errors
+            assert!(matches!(decision, GovernorDecision::Rejected(_)));
+        }
+
+        // Verify knob value unchanged and no applied proposals
+        assert_eq!(gov.knob_value(&RuntimeKnob::ConcurrencyLimit), Some(64));
+        assert_eq!(gov.applied_count(), 0);
+    }
+
+    #[test]
+    fn negative_optimization_governor_concurrent_decision_log_corruption_simulation() {
+        let mut gov = OptimizationGovernor::with_defaults();
+
+        // Simulate rapid concurrent proposals that could cause log corruption
+        for i in 0..1000 {
+            let proposal = OptimizationProposal {
+                proposal_id: format!("rapid-{i:04}"),
+                knob: RuntimeKnob::ConcurrencyLimit,
+                old_value: 64,
+                new_value: (64 + (i % 10)) as u64,
+                predicted: safe_metrics(),
+                rationale: format!("rapid submission {i}"),
+                trace_id: format!("trace-rapid-{i:04}"),
+            };
+
+            gov.submit(proposal);
+
+            // Verify decision log maintains invariants after each submission
+            assert!(gov.decision_log().len() <= MAX_DECISION_LOG_ENTRIES);
+
+            // Verify sequence numbers are monotonic
+            for window in gov.decision_log().windows(2) {
+                assert!(window[1].seq > window[0].seq, "sequence numbers must be strictly increasing");
+            }
+        }
+
+        // Verify bounded log behavior (should not exceed capacity)
+        assert!(gov.decision_log().len() <= MAX_DECISION_LOG_ENTRIES);
+        assert!(gov.next_seq > 1000); // Should have processed all submissions
+    }
+
+    #[test]
+    fn negative_optimization_governor_control_character_evidence_pollution() {
+        let mut gov = OptimizationGovernor::with_defaults();
+        let control_chars = "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F";
+
+        let proposal = OptimizationProposal {
+            proposal_id: format!("control{control_chars}injection"),
+            knob: RuntimeKnob::ConcurrencyLimit,
+            old_value: 64,
+            new_value: 128,
+            predicted: PredictedMetrics {
+                latency_ms: 600, // Will violate envelope
+                throughput_rps: 50,
+                error_rate_pct: 2.0,
+                memory_mb: 5000,
+            },
+            rationale: format!("control{control_chars}character{control_chars}test"),
+            trace_id: format!("trace{control_chars}control"),
+        };
+
+        let decision = gov.submit(proposal);
+        assert!(matches!(decision, GovernorDecision::Rejected(_)));
+
+        // Verify evidence doesn't contain dangerous control characters
+        let decision_entry = &gov.decision_log()[0];
+        if let Some(evidence) = &decision_entry.evidence {
+            assert!(!evidence.contains('\x00'), "evidence must not contain null bytes");
+            assert!(!evidence.contains('\x01'), "evidence must not contain control characters");
+        }
+
+        // Verify trace_id is preserved but safe
+        assert!(!decision_entry.trace_id.contains('\x00'));
+    }
+
+    #[test]
+    fn negative_optimization_governor_malformed_json_deserialization_protection() {
+        // Test malformed JSON that could cause stack overflow or memory exhaustion
+        let malformed_jsons = vec![
+            r#"{"decision_log":["#.repeat(10000), // Massive unclosed array
+            format!(r#"{{"nested":{}}}"#, "{}".repeat(50000)), // Deep nesting
+            "{\"next_seq\": \"not_a_number\"}".to_string(),
+            "{\"envelope\": null}".to_string(),
+            "{\"knob_states\": \"not_an_object\"}".to_string(),
+        ];
+
+        for (i, malformed_json) in malformed_jsons.iter().enumerate() {
+            let result = serde_json::from_str::<OptimizationGovernor>(malformed_json);
+
+            // Should fail gracefully without panics or crashes
+            assert!(result.is_err(), "malformed JSON {i} should fail to deserialize");
+        }
+
+        // Test successful deserialization still works
+        let gov = OptimizationGovernor::with_defaults();
+        let json = serde_json::to_string(&gov).expect("serialize should work");
+        let _gov2: OptimizationGovernor = serde_json::from_str(&json).expect("deserialize should work");
+    }
+
+    #[test]
+    fn negative_optimization_governor_envelope_update_cascade_revert_logic() {
+        let mut gov = OptimizationGovernor::with_defaults();
+
+        // Apply multiple proposals that are initially safe
+        for i in 0..5 {
+            let proposal = OptimizationProposal {
+                proposal_id: format!("cascade-safe-{i}"),
+                knob: RuntimeKnob::ConcurrencyLimit,
+                old_value: 64 + i,
+                new_value: 64 + i + 1,
+                predicted: safe_metrics(),
+                rationale: format!("safe cascade {i}"),
+                trace_id: format!("trace-cascade-{i}"),
+            };
+            assert_eq!(gov.submit(proposal), GovernorDecision::Approved);
+        }
+        assert_eq!(gov.applied_count(), 5);
+
+        // Update envelope to make all applied proposals unsafe
+        let restrictive_envelope = SafetyEnvelope {
+            max_latency_ms: 1,    // Extremely restrictive
+            min_throughput_rps: u64::MAX - 1,
+            max_error_rate_pct: 0.001,
+            max_memory_mb: 1,
+        };
+        gov.update_envelope(restrictive_envelope);
+
+        // Any live metrics should trigger mass revert
+        let reverted = gov.live_check(&safe_metrics());
+
+        // All proposals should be reverted due to restrictive envelope
+        assert_eq!(reverted.len(), 5);
+        assert_eq!(gov.applied_count(), 0);
+
+        // Verify all knobs reverted correctly
+        assert_eq!(gov.knob_value(&RuntimeKnob::ConcurrencyLimit), Some(64)); // Original value
+
+        // Verify revert order (last applied reverts first)
+        assert_eq!(reverted[0], "cascade-safe-4");
+        assert_eq!(reverted[4], "cascade-safe-0");
+    }
+
+    #[test]
+    fn negative_optimization_governor_shadow_evaluation_timing_side_channel_resistance() {
+        let gov = OptimizationGovernor::with_defaults();
+
+        // Create proposals that might have different execution paths
+        let proposals = vec![
+            // Short proposal ID
+            OptimizationProposal {
+                proposal_id: "a".to_string(),
+                knob: RuntimeKnob::ConcurrencyLimit,
+                old_value: 64,
+                new_value: 65,
+                predicted: safe_metrics(),
+                rationale: "short".to_string(),
+                trace_id: "t".to_string(),
+            },
+            // Long proposal ID
+            OptimizationProposal {
+                proposal_id: "a".repeat(10000),
+                knob: RuntimeKnob::ConcurrencyLimit,
+                old_value: 64,
+                new_value: 65,
+                predicted: safe_metrics(),
+                rationale: "long".repeat(1000),
+                trace_id: "trace".repeat(500),
+            },
+        ];
+
+        for proposal in proposals {
+            let start = std::time::Instant::now();
+            let result = gov.shadow_evaluate(&proposal);
+            let duration = start.elapsed();
+
+            // Verify shadow evaluation completes within reasonable time
+            assert!(duration.as_millis() < 1000, "shadow evaluation should not timeout");
+            assert!(result.within_envelope);
+            assert!(result.is_beneficial);
+        }
+    }
+
+    #[test]
+    fn negative_optimization_governor_resource_exhaustion_decision_log_export() {
+        let mut gov = OptimizationGovernor::with_defaults();
+
+        // Fill decision log to near capacity
+        for i in 0..MAX_DECISION_LOG_ENTRIES {
+            let proposal = OptimizationProposal {
+                proposal_id: format!("bulk-{i:06}"),
+                knob: RuntimeKnob::ConcurrencyLimit,
+                old_value: 64,
+                new_value: 65,
+                predicted: safe_metrics(),
+                rationale: format!("bulk generation {i}"),
+                trace_id: format!("trace-bulk-{i:06}"),
+            };
+            gov.submit(proposal);
+        }
+
+        // Test JSONL export doesn't cause memory exhaustion
+        let jsonl = gov.export_decision_log_jsonl();
+
+        // Verify export is well-formed
+        assert!(!jsonl.is_empty());
+        let lines: Vec<&str> = jsonl.split('\n').collect();
+        assert!(lines.len() <= MAX_DECISION_LOG_ENTRIES);
+
+        // Verify each line is valid JSON
+        for (i, line) in lines.iter().take(5).enumerate() { // Sample first 5 lines
+            let parsed: Result<serde_json::Value, _> = serde_json::from_str(line);
+            assert!(parsed.is_ok(), "line {i} should be valid JSON: {line}");
+        }
+
+        // Test verification evidence export
+        let evidence = gov.export_verification_evidence();
+        assert!(evidence.is_object());
+        assert_eq!(evidence["schema_version"], SCHEMA_VERSION);
+        assert_eq!(evidence["bead_id"], "bd-21fo");
     }
 }

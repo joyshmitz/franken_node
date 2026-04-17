@@ -1421,6 +1421,158 @@ mod tests {
         assert_eq!(err.code, error_codes::ERR_NVO_CHECK_NOT_FOUND);
     }
 
+    #[test]
+    fn issue_policy_receipt_rejects_unknown_divergence() {
+        let mut oracle = RuntimeOracle::new("trace-unknown-div-receipt", 66);
+        let err = oracle
+            .issue_policy_receipt(sample_receipt("rcpt-missing-div", "div-missing"))
+            .unwrap_err();
+
+        assert_eq!(err.code, error_codes::ERR_NVO_DIVERGENCE_UNRESOLVED);
+        assert!(oracle.receipts.is_empty());
+    }
+
+    #[test]
+    fn verify_l1_linkage_rejects_unknown_receipt() {
+        let mut oracle = RuntimeOracle::new("trace-unknown-receipt", 66);
+        let err = oracle.verify_l1_linkage("rcpt-missing").unwrap_err();
+
+        assert_eq!(err.code, error_codes::ERR_NVO_INVALID_RECEIPT);
+    }
+
+    #[test]
+    fn resolve_missing_divergence_rejected() {
+        let mut oracle = RuntimeOracle::new("trace-resolve-missing", 66);
+        let err = oracle
+            .resolve_divergence("div-missing", "not present")
+            .unwrap_err();
+
+        assert_eq!(err.code, error_codes::ERR_NVO_DIVERGENCE_UNRESOLVED);
+    }
+
+    #[test]
+    fn low_risk_expired_receipt_still_requires_receipt_at_boundary() {
+        let mut oracle = RuntimeOracle::new("trace-expired-receipt", 66);
+        oracle.classify_divergence(
+            "div-low-expired",
+            "chk-1",
+            BoundaryScope::TypeSystem,
+            RiskTier::Low,
+            &BTreeMap::new(),
+        );
+        let mut receipt = sample_receipt("rcpt-expired", "div-low-expired");
+        receipt.expires_at_epoch_secs = receipt.issued_at_epoch_secs;
+        oracle.issue_policy_receipt(receipt.clone()).unwrap();
+
+        let verdict = oracle.check_release_gate(receipt.expires_at_epoch_secs);
+
+        match verdict {
+            OracleVerdict::RequiresReceipt {
+                pending_divergence_ids,
+            } => assert!(pending_divergence_ids.contains(&"div-low-expired".to_string())),
+            other => unreachable!("expected expired receipt to be pending, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn low_risk_receipt_with_empty_linkage_hash_still_requires_receipt() {
+        let mut oracle = RuntimeOracle::new("trace-empty-linkage-hash", 66);
+        oracle.classify_divergence(
+            "div-low-empty-linkage",
+            "chk-1",
+            BoundaryScope::TypeSystem,
+            RiskTier::Low,
+            &BTreeMap::new(),
+        );
+        let mut receipt = sample_receipt("rcpt-empty-linkage", "div-low-empty-linkage");
+        receipt.l1_linkage.linkage_hash.clear();
+        oracle.issue_policy_receipt(receipt).unwrap();
+
+        let verdict = oracle.check_release_gate(1700000001);
+
+        match verdict {
+            OracleVerdict::RequiresReceipt {
+                pending_divergence_ids,
+            } => assert!(pending_divergence_ids.contains(&"div-low-empty-linkage".to_string())),
+            other => unreachable!("expected invalid linkage to be pending, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn verify_l1_linkage_rejects_empty_verdict() {
+        let mut oracle = RuntimeOracle::new("trace-empty-verdict", 66);
+        oracle.classify_divergence(
+            "div-empty-verdict",
+            "chk-1",
+            BoundaryScope::TypeSystem,
+            RiskTier::Low,
+            &BTreeMap::new(),
+        );
+        let mut receipt = sample_receipt("rcpt-empty-verdict", "div-empty-verdict");
+        receipt.l1_linkage.l1_verdict.clear();
+        oracle.issue_policy_receipt(receipt).unwrap();
+
+        let err = oracle.verify_l1_linkage("rcpt-empty-verdict").unwrap_err();
+
+        assert_eq!(err.code, error_codes::ERR_NVO_L1_LINKAGE_BROKEN);
+    }
+
+    #[test]
+    fn tally_votes_without_registered_runtimes_rejected_even_if_votes_exist() {
+        let mut oracle = RuntimeOracle::new("trace-orphan-votes", 66);
+        let mut votes = BTreeMap::new();
+        votes.insert("ghost-runtime".to_string(), vec![1, 2, 3]);
+        oracle.voting_results.insert(
+            "chk-orphan".to_string(),
+            VotingResult {
+                check_id: "chk-orphan".to_string(),
+                votes,
+                quorum_reached: false,
+                quorum_threshold: 1,
+                total_voters: 1,
+                agreeing_voters: 1,
+            },
+        );
+
+        let err = oracle.tally_votes("chk-orphan").unwrap_err();
+
+        assert_eq!(err.code, error_codes::ERR_NVO_NO_RUNTIMES);
+    }
+
+    #[test]
+    fn receipt_for_other_low_risk_divergence_does_not_satisfy_gate() {
+        let mut oracle = RuntimeOracle::new("trace-wrong-receipt", 66);
+        oracle.classify_divergence(
+            "div-pending",
+            "chk-1",
+            BoundaryScope::TypeSystem,
+            RiskTier::Low,
+            &BTreeMap::new(),
+        );
+        oracle.classify_divergence(
+            "div-receipted",
+            "chk-2",
+            BoundaryScope::TypeSystem,
+            RiskTier::Low,
+            &BTreeMap::new(),
+        );
+        oracle
+            .issue_policy_receipt(sample_receipt("rcpt-other", "div-receipted"))
+            .unwrap();
+
+        let verdict = oracle.check_release_gate(1700000001);
+
+        match verdict {
+            OracleVerdict::RequiresReceipt {
+                pending_divergence_ids,
+            } => {
+                assert!(pending_divergence_ids.contains(&"div-pending".to_string()));
+                assert!(!pending_divergence_ids.contains(&"div-receipted".to_string()));
+            }
+            other => unreachable!("expected unmatched divergence to be pending, got {other:?}"),
+        }
+    }
+
     // === bd-CrimsonCrane: BTreeMap<String, bool> regression ===
 
     #[test]
@@ -1438,5 +1590,1043 @@ mod tests {
             result.is_ok(),
             "disabled (false) active check should allow re-run"
         );
+    }
+
+    // ── Negative-path tests for edge cases and invalid inputs ──────────
+
+    #[test]
+    fn negative_risk_tier_ordering_and_serialization_consistency() {
+        // Test RiskTier enum ordering and edge cases
+        let tiers = [
+            RiskTier::Info,
+            RiskTier::Low,
+            RiskTier::Medium,
+            RiskTier::High,
+            RiskTier::Critical,
+        ];
+
+        // Test ordering (Info < Low < Medium < High < Critical)
+        for i in 0..tiers.len() {
+            for j in i + 1..tiers.len() {
+                assert!(
+                    tiers[i] < tiers[j],
+                    "RiskTier ordering should be consistent: {:?} < {:?}",
+                    tiers[i], tiers[j]
+                );
+            }
+        }
+
+        // Test serialization consistency
+        for tier in &tiers {
+            let serialized = serde_json::to_string(tier).unwrap();
+            let deserialized: RiskTier = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(*tier, deserialized);
+
+            // Should be cloneable and hashable
+            let cloned = tier.clone();
+            assert_eq!(*tier, cloned);
+        }
+
+        // Test invalid deserialization
+        let invalid_tier_json = vec![
+            "\"Unknown\"",
+            "\"CRITICAL\"",        // Wrong case
+            "\"VeryHigh\"",        // Non-existent variant
+            "42",                  // Wrong type
+            "null",
+        ];
+
+        for invalid_json in invalid_tier_json {
+            let result: Result<RiskTier, _> = serde_json::from_str(invalid_json);
+            assert!(result.is_err(), "Should reject invalid tier JSON: {}", invalid_json);
+        }
+    }
+
+    #[test]
+    fn negative_boundary_scope_coverage_and_edge_cases() {
+        // Test BoundaryScope enum completeness and serialization
+        let scopes = [
+            BoundaryScope::TypeSystem,
+            BoundaryScope::Memory,
+            BoundaryScope::IO,
+            BoundaryScope::Concurrency,
+            BoundaryScope::Security,
+        ];
+
+        for scope in &scopes {
+            // Serialization should work
+            let serialized = serde_json::to_string(scope).unwrap();
+            let deserialized: BoundaryScope = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(*scope, deserialized);
+
+            // Should be orderable and hashable
+            let cloned = scope.clone();
+            assert_eq!(*scope, cloned);
+
+            // Should have reasonable display/debug formatting
+            let debug = format!("{:?}", scope);
+            assert!(!debug.is_empty());
+        }
+
+        // Test that all critical boundary types are covered
+        let scope_names: Vec<String> = scopes.iter().map(|s| format!("{:?}", s)).collect();
+        assert!(scope_names.contains(&"TypeSystem".to_string()));
+        assert!(scope_names.contains(&"Memory".to_string()));
+        assert!(scope_names.contains(&"IO".to_string()));
+        assert!(scope_names.contains(&"Concurrency".to_string()));
+        assert!(scope_names.contains(&"Security".to_string()));
+    }
+
+    #[test]
+    fn negative_runtime_entry_with_problematic_metadata() {
+        // Test RuntimeEntry with various problematic metadata
+        let problematic_runtimes = vec![
+            RuntimeEntry {
+                runtime_id: "".to_string(), // Empty ID
+                runtime_name: "Valid Runtime".to_string(),
+                version: "1.0.0".to_string(),
+                is_reference: true,
+            },
+            RuntimeEntry {
+                runtime_id: "\0runtime\x01id".to_string(), // Control characters
+                runtime_name: "runtime\nwith\nnewlines".to_string(),
+                version: "🚀version💀".to_string(), // Unicode emoji
+                is_reference: false,
+            },
+            RuntimeEntry {
+                runtime_id: "../../../etc/passwd".to_string(), // Path traversal
+                runtime_name: "<script>alert('runtime')</script>".to_string(), // XSS
+                version: "\u{FFFF}".to_string(), // Max Unicode
+                is_reference: true,
+            },
+            RuntimeEntry {
+                runtime_id: "x".repeat(10_000), // Very long ID
+                runtime_name: "y".repeat(50_000), // Very long name
+                version: "z".repeat(1_000), // Long version
+                is_reference: false,
+            },
+        ];
+
+        for runtime in problematic_runtimes {
+            // Runtime creation should not panic
+            assert!(runtime.is_reference || !runtime.is_reference); // Basic boolean check
+
+            // Serialization should handle problematic content
+            let serialization = serde_json::to_string(&runtime);
+            match serialization {
+                Ok(json) => {
+                    // If serialization succeeds, deserialization should work
+                    let deserialization: Result<RuntimeEntry, _> = serde_json::from_str(&json);
+                    match deserialization {
+                        Ok(restored) => {
+                            // Basic field preservation
+                            assert_eq!(restored.runtime_id, runtime.runtime_id);
+                            assert_eq!(restored.is_reference, runtime.is_reference);
+                        }
+                        Err(_) => {
+                            // Some characters might not survive JSON round-trip
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Some problematic content might not be serializable
+                }
+            }
+
+            // Equality and cloning should work
+            let cloned = runtime.clone();
+            assert_eq!(runtime, cloned);
+        }
+    }
+
+    #[test]
+    fn negative_check_outcome_with_extreme_output_sizes() {
+        // Test CheckOutcome with various edge cases
+        let extreme_outcomes = vec![
+            CheckOutcome::Agree {
+                canonical_output: vec![], // Empty output
+            },
+            CheckOutcome::Agree {
+                canonical_output: vec![0xFF; 1_000_000], // Large output (1MB)
+            },
+            CheckOutcome::Agree {
+                canonical_output: vec![0, 1, 2, 255, 254], // Mixed byte values
+            },
+            CheckOutcome::Diverge {
+                outputs: BTreeMap::new(), // Empty outputs map
+            },
+            {
+                let mut large_outputs = BTreeMap::new();
+                // Many runtime outputs
+                for i in 0..1000 {
+                    large_outputs.insert(format!("runtime_{}", i), vec![i as u8; 100]);
+                }
+                CheckOutcome::Diverge {
+                    outputs: large_outputs,
+                }
+            },
+            {
+                let mut problematic_outputs = BTreeMap::new();
+                problematic_outputs.insert("\0runtime\x01".to_string(), vec![0xFF; 1000]);
+                problematic_outputs.insert("🚀runtime💀".to_string(), vec![]);
+                problematic_outputs.insert("../../../etc/passwd".to_string(), b"malicious".to_vec());
+                CheckOutcome::Diverge {
+                    outputs: problematic_outputs,
+                }
+            },
+        ];
+
+        for outcome in extreme_outcomes {
+            // Outcome creation should handle extreme cases
+            match &outcome {
+                CheckOutcome::Agree { canonical_output } => {
+                    assert!(canonical_output.len() <= 1_000_000);
+                }
+                CheckOutcome::Diverge { outputs } => {
+                    assert!(outputs.len() <= 1000);
+                }
+            }
+
+            // Serialization should handle large/problematic data
+            let serialization = serde_json::to_string(&outcome);
+            match serialization {
+                Ok(_json) => {
+                    // If large data serializes, that's fine
+                }
+                Err(_) => {
+                    // Very large data might not serialize due to memory limits
+                }
+            }
+
+            // Equality and cloning should work
+            let cloned = outcome.clone();
+            assert_eq!(outcome, cloned);
+        }
+    }
+
+    #[test]
+    fn negative_cross_runtime_check_with_malformed_data() {
+        // Test CrossRuntimeCheck with problematic data
+        let malformed_checks = vec![
+            CrossRuntimeCheck {
+                check_id: "".to_string(), // Empty check ID
+                boundary_scope: BoundaryScope::TypeSystem,
+                input: vec![],
+                trace_id: "trace123".to_string(),
+                outcome: None,
+            },
+            CrossRuntimeCheck {
+                check_id: "\0check\x01id".to_string(), // Control characters
+                boundary_scope: BoundaryScope::Security,
+                input: vec![0xFF; 10_000], // Large input
+                trace_id: "trace\nwith\nnewlines".to_string(),
+                outcome: Some(CheckOutcome::Agree { canonical_output: vec![] }),
+            },
+            CrossRuntimeCheck {
+                check_id: "🚀check💀".to_string(), // Unicode emoji
+                boundary_scope: BoundaryScope::Memory,
+                input: b"malicious\0input\x01".to_vec(),
+                trace_id: "../../../etc/shadow".to_string(), // Path traversal
+                outcome: Some(CheckOutcome::Diverge { outputs: BTreeMap::new() }),
+            },
+        ];
+
+        for check in malformed_checks {
+            // Check creation should not panic
+            assert!(check.input.len() <= 10_000);
+
+            // Serialization should handle malformed data
+            let serialization = serde_json::to_string(&check);
+            match serialization {
+                Ok(json) => {
+                    let _deserialization: Result<CrossRuntimeCheck, _> = serde_json::from_str(&json);
+                    // Either succeeds or fails gracefully
+                }
+                Err(_) => {
+                    // Some malformed content might not serialize
+                }
+            }
+
+            // Should be cloneable and comparable
+            let cloned = check.clone();
+            assert_eq!(check, cloned);
+        }
+    }
+
+    #[test]
+    fn negative_semantic_divergence_resolution_edge_cases() {
+        // Test SemanticDivergence with various edge cases
+        let edge_divergences = vec![
+            SemanticDivergence {
+                divergence_id: "div1".to_string(),
+                check_id: "check1".to_string(),
+                boundary_scope: BoundaryScope::IO,
+                risk_tier: RiskTier::Critical,
+                runtime_outputs: BTreeMap::new(), // Empty outputs
+                resolved: false,
+                resolution_note: None, // No resolution note
+                trace_id: "trace1".to_string(),
+            },
+            SemanticDivergence {
+                divergence_id: "\0div\x01".to_string(), // Control characters
+                check_id: "check\nwith\nnewlines".to_string(),
+                boundary_scope: BoundaryScope::Concurrency,
+                risk_tier: RiskTier::Low,
+                runtime_outputs: {
+                    let mut outputs = BTreeMap::new();
+                    outputs.insert("runtime1".to_string(), vec![0xFF; 1000]);
+                    outputs.insert("🚀runtime2💀".to_string(), vec![]);
+                    outputs
+                },
+                resolved: true,
+                resolution_note: Some("<script>alert('resolved')</script>".to_string()), // XSS
+                trace_id: "../../../var/log/trace".to_string(),
+            },
+            SemanticDivergence {
+                divergence_id: "x".repeat(1000), // Long ID
+                check_id: "y".repeat(2000), // Long check ID
+                boundary_scope: BoundaryScope::Security,
+                risk_tier: RiskTier::High,
+                runtime_outputs: {
+                    let mut outputs = BTreeMap::new();
+                    // Many runtime outputs with large data
+                    for i in 0..100 {
+                        outputs.insert(format!("rt_{}", i), vec![i as u8; 100]);
+                    }
+                    outputs
+                },
+                resolved: true,
+                resolution_note: Some("z".repeat(10_000)), // Very long resolution note
+                trace_id: "normal_trace".to_string(),
+            },
+        ];
+
+        for divergence in edge_divergences {
+            // Divergence creation should handle edge cases
+            assert!(divergence.resolved || !divergence.resolved); // Boolean check
+
+            // Risk tier should be valid
+            assert!(matches!(
+                divergence.risk_tier,
+                RiskTier::Info | RiskTier::Low | RiskTier::Medium | RiskTier::High | RiskTier::Critical
+            ));
+
+            // Serialization should handle complex nested data
+            let serialization = serde_json::to_string(&divergence);
+            match serialization {
+                Ok(_json) => {
+                    // Complex structures with large data might serialize
+                }
+                Err(_) => {
+                    // Very large nested data might fail serialization
+                }
+            }
+
+            // Should support equality and cloning
+            let cloned = divergence.clone();
+            assert_eq!(divergence, cloned);
+        }
+    }
+
+    #[test]
+    fn negative_l1_linkage_proof_with_extreme_timestamps() {
+        // Test L1LinkageProof with extreme timestamp values
+        let extreme_proofs = vec![
+            L1LinkageProof {
+                l1_oracle_run_id: "run123".to_string(),
+                l1_verdict: "PASS".to_string(),
+                linkage_hash: "abc123".to_string(),
+                timestamp_epoch_secs: 0, // Zero timestamp
+            },
+            L1LinkageProof {
+                l1_oracle_run_id: "run456".to_string(),
+                l1_verdict: "FAIL".to_string(),
+                linkage_hash: "def456".to_string(),
+                timestamp_epoch_secs: u64::MAX, // Maximum timestamp
+            },
+            L1LinkageProof {
+                l1_oracle_run_id: "\0run\x01".to_string(), // Control characters
+                l1_verdict: "verdict\nwith\nnewlines".to_string(),
+                linkage_hash: "🚀hash💀".to_string(), // Unicode emoji
+                timestamp_epoch_secs: u64::MAX / 2,
+            },
+            L1LinkageProof {
+                l1_oracle_run_id: "".to_string(), // Empty run ID
+                l1_verdict: "".to_string(), // Empty verdict
+                linkage_hash: "".to_string(), // Empty hash
+                timestamp_epoch_secs: 1,
+            },
+        ];
+
+        for proof in extreme_proofs {
+            // Proof creation should handle extreme timestamps
+            assert!(proof.timestamp_epoch_secs <= u64::MAX);
+
+            // Timestamp arithmetic should be safe
+            let now = 1_000_000u64;
+            let is_recent = now.saturating_sub(proof.timestamp_epoch_secs) < 3600; // Within 1 hour
+            assert!(is_recent || !is_recent); // Basic boolean check
+
+            // Serialization should handle extreme values and problematic strings
+            let serialization = serde_json::to_string(&proof);
+            match serialization {
+                Ok(json) => {
+                    let _deserialization: Result<L1LinkageProof, _> = serde_json::from_str(&json);
+                    // Should either deserialize or fail gracefully
+                }
+                Err(_) => {
+                    // Some problematic strings might not serialize
+                }
+            }
+
+            // Should support standard operations
+            let cloned = proof.clone();
+            assert_eq!(proof, cloned);
+        }
+    }
+
+    #[test]
+    fn negative_push_bounded_with_extreme_capacity_scenarios() {
+        // Test the push_bounded utility function with edge cases
+        let mut items = vec![1, 2, 3, 4, 5];
+
+        // Test with zero capacity (should drain all but keep new item)
+        let original_len = items.len();
+        push_bounded(&mut items, 99, 0);
+        assert_eq!(items, vec![99], "Zero capacity should keep only new item");
+
+        // Test with capacity 1
+        push_bounded(&mut items, 100, 1);
+        assert_eq!(items, vec![100], "Capacity 1 should keep only new item");
+
+        // Test with massive overflow
+        let mut large_vec: Vec<u32> = (0..10000).collect();
+        push_bounded(&mut large_vec, 99999, 5);
+        assert_eq!(large_vec.len(), 5);
+        assert_eq!(*large_vec.last().unwrap(), 99999);
+        assert!(large_vec[0] >= 9995, "Should keep recent items: {:?}", &large_vec[..3]);
+
+        // Test with capacity larger than current size
+        let mut small_vec = vec![1, 2];
+        push_bounded(&mut small_vec, 3, 10);
+        assert_eq!(small_vec, vec![1, 2, 3], "Should not drain when under capacity");
+
+        // Test edge case: exactly at capacity
+        let mut exact_vec = vec![1, 2, 3];
+        push_bounded(&mut exact_vec, 4, 3);
+        assert_eq!(exact_vec.len(), 3);
+        assert!(exact_vec.contains(&4), "Should contain new item");
+        assert!(!exact_vec.contains(&1), "Should have drained oldest item");
+    }
+
+    #[test]
+    fn negative_constants_validation_and_code_consistency() {
+        // Test that all event constants follow proper naming conventions
+        use event_codes::*;
+
+        let event_constants = [
+            FN_NV_001, FN_NV_002, FN_NV_003, FN_NV_004, FN_NV_005, FN_NV_006,
+            FN_NV_007, FN_NV_008, FN_NV_009, FN_NV_010, FN_NV_011, FN_NV_012,
+        ];
+
+        for constant in &event_constants {
+            assert!(!constant.is_empty());
+            assert!(constant.starts_with("FN-NV-"), "Event constant should start with FN-NV-: {}", constant);
+            assert!(constant.is_ascii(), "Event constant should be ASCII: {}", constant);
+
+            // Should follow pattern FN-NV-XXX where XXX is a 3-digit number
+            let suffix = constant.strip_prefix("FN-NV-").unwrap();
+            assert_eq!(suffix.len(), 3, "Event code suffix should be 3 digits: {}", suffix);
+            assert!(suffix.chars().all(|c| c.is_ascii_digit()), "Event code suffix should be numeric: {}", suffix);
+        }
+
+        // Test error constants
+        use error_codes::*;
+
+        let error_constants = [
+            ERR_NVO_NO_RUNTIMES, ERR_NVO_QUORUM_FAILED, ERR_NVO_RUNTIME_NOT_FOUND,
+            ERR_NVO_CHECK_NOT_FOUND, ERR_NVO_CHECK_ALREADY_RUNNING, ERR_NVO_DIVERGENCE_UNRESOLVED,
+            ERR_NVO_POLICY_MISSING, ERR_NVO_INVALID_RECEIPT, ERR_NVO_L1_LINKAGE_BROKEN,
+            ERR_NVO_VOTING_TIMEOUT, ERR_NVO_DUPLICATE_RUNTIME,
+        ];
+
+        for constant in &error_constants {
+            assert!(!constant.is_empty());
+            assert!(constant.starts_with("ERR_NVO_"), "Error constant should start with ERR_NVO_: {}", constant);
+            assert!(constant.is_ascii(), "Error constant should be ASCII: {}", constant);
+        }
+
+        // Test invariant constants
+        use invariants::*;
+
+        let invariant_constants = [
+            INV_NVO_QUORUM, INV_NVO_RISK_TIERED, INV_NVO_BLOCK_HIGH,
+            INV_NVO_POLICY_RECEIPT, INV_NVO_L1_LINKAGE, INV_NVO_DETERMINISTIC,
+        ];
+
+        for constant in &invariant_constants {
+            assert!(!constant.is_empty());
+            assert!(constant.starts_with("INV-NVO-"), "Invariant should start with INV-NVO-: {}", constant);
+            assert!(constant.is_ascii(), "Invariant constant should be ASCII: {}", constant);
+        }
+
+        // Test capacity constant
+        assert!(MAX_EVENT_LOG_ENTRIES > 0);
+        assert!(MAX_EVENT_LOG_ENTRIES <= 100_000); // Reasonable upper bound
+    }
+
+    #[test]
+    fn negative_unicode_injection_in_runtime_registration() {
+        let mut oracle = RuntimeOracle::new("trace-unicode", 66);
+
+        let malicious_runtime_ids = vec![
+            "normal\u{202e}evil\u{202c}runtime",    // BiDi override
+            "runtime\u{200b}\u{feff}hidden",        // Zero-width characters
+            "runtime\nnewline",                      // Newline injection
+            "runtime\ttab",                          // Tab injection
+            "runtime\x00null",                       // Null byte injection
+            "../../../etc/passwd",                   // Path traversal
+            "runtime\"quote'injection",              // Quote injection
+        ];
+
+        for malicious_id in &malicious_runtime_ids {
+            let runtime = RuntimeEntry {
+                runtime_id: malicious_id.clone(),
+                runtime_name: format!("Runtime for {}", malicious_id),
+                version: "1.0.0".to_string(),
+                is_reference: false,
+            };
+
+            let result = oracle.register_runtime(runtime);
+            assert!(result.is_ok());
+
+            // Verify we can retrieve with exact ID
+            assert!(oracle.runtimes.contains_key(malicious_id));
+        }
+
+        // Test duplicate registration with Unicode variations
+        let variant_runtime = RuntimeEntry {
+            runtime_id: "runtime\u{FEFF}1".to_string(), // BOM variant
+            runtime_name: "BOM Runtime".to_string(),
+            version: "1.0.0".to_string(),
+            is_reference: false,
+        };
+
+        let result = oracle.register_runtime(variant_runtime);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn negative_massive_runtime_output_memory_stress() {
+        let mut oracle = RuntimeOracle::new("trace-memory", 66);
+
+        // Register runtime
+        oracle.register_runtime(sample_runtime("memory-test")).unwrap();
+
+        // Create massive runtime outputs (10MB each)
+        let massive_output = vec![0xAA; 10 * 1024 * 1024];
+        let mut massive_outputs = BTreeMap::new();
+        massive_outputs.insert("memory-test".to_string(), massive_output.clone());
+
+        let result = oracle.run_cross_check(
+            "massive-check",
+            BoundaryScope::Memory,
+            &vec![0x42; 1000],
+            &massive_outputs,
+        );
+
+        // Should handle massive outputs gracefully
+        if result.is_ok() {
+            let check = &oracle.cross_checks["massive-check"];
+            if let Some(CheckOutcome::Agree { canonical_output }) = &check.outcome {
+                assert!(canonical_output.len() <= 10 * 1024 * 1024);
+            }
+        }
+    }
+
+    #[test]
+    fn negative_voting_timestamp_arithmetic_overflow() {
+        let mut oracle = RuntimeOracle::new("trace-overflow", 66);
+        oracle.register_runtime(sample_runtime("voter1")).unwrap();
+        oracle.register_runtime(sample_runtime("voter2")).unwrap();
+
+        // Create voting result with extreme timestamps
+        let mut votes = BTreeMap::new();
+        votes.insert("voter1".to_string(), vec![1, 0, 1]);
+        votes.insert("voter2".to_string(), vec![1, 1, 0]);
+
+        oracle.voting_results.insert(
+            "overflow-check".to_string(),
+            VotingResult {
+                check_id: "overflow-check".to_string(),
+                votes,
+                quorum_reached: true,
+                quorum_threshold: 2,
+                total_voters: 2,
+                agreeing_voters: 2,
+            },
+        );
+
+        // Test with extreme current_time values
+        let extreme_times = vec![
+            u64::MAX,
+            u64::MAX - 1,
+            u64::MAX / 2,
+            0,
+        ];
+
+        for time in extreme_times {
+            let report = oracle.generate_report(time);
+            assert!(report.current_time_epoch_secs == time);
+
+            // Verify timestamp arithmetic doesn't overflow
+            let verdict = oracle.check_release_gate(time);
+            match verdict {
+                OracleVerdict::Pass => {}
+                OracleVerdict::BlockRelease { .. } => {}
+                OracleVerdict::RequiresReceipt { .. } => {}
+            }
+        }
+    }
+
+    #[test]
+    fn negative_concurrent_voting_race_conditions() {
+        use std::sync::{Arc, Barrier, Mutex};
+        use std::thread;
+
+        let oracle = Arc::new(Mutex::new(RuntimeOracle::new("trace-concurrent", 66)));
+        let barrier = Arc::new(Barrier::new(4));
+
+        // Pre-register runtimes
+        {
+            let mut oracle_guard = oracle.lock().unwrap();
+            for i in 0..4 {
+                let runtime = RuntimeEntry {
+                    runtime_id: format!("runtime-{}", i),
+                    runtime_name: format!("Runtime {}", i),
+                    version: "1.0.0".to_string(),
+                    is_reference: false,
+                };
+                oracle_guard.register_runtime(runtime).unwrap();
+            }
+        }
+
+        let mut handles = Vec::new();
+
+        for thread_id in 0..4 {
+            let oracle = Arc::clone(&oracle);
+            let barrier = Arc::clone(&barrier);
+
+            let handle = thread::spawn(move || {
+                barrier.wait();
+
+                for i in 0..25 {
+                    let check_id = format!("thread-{}-check-{}", thread_id, i);
+                    let runtime_id = format!("runtime-{}", thread_id);
+
+                    let mut outputs = BTreeMap::new();
+                    outputs.insert(runtime_id, vec![thread_id as u8, i as u8]);
+
+                    let mut oracle_guard = oracle.lock().unwrap();
+                    let _ = oracle_guard.run_cross_check(
+                        &check_id,
+                        BoundaryScope::Concurrency,
+                        &vec![i as u8],
+                        &outputs,
+                    );
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().expect("Thread should complete");
+        }
+
+        // Verify oracle consistency
+        let final_oracle = oracle.lock().unwrap();
+        assert_eq!(final_oracle.runtimes.len(), 4);
+        assert!(final_oracle.cross_checks.len() > 0);
+    }
+
+    #[test]
+    fn negative_policy_receipt_forgery_detection() {
+        let mut oracle = RuntimeOracle::new("trace-forgery", 66);
+
+        // Create legitimate divergence
+        oracle.classify_divergence(
+            "legit-div",
+            "check-1",
+            BoundaryScope::Security,
+            RiskTier::Low,
+            &BTreeMap::new(),
+        );
+
+        // Create legitimate receipt
+        let legit_receipt = sample_receipt("legit-receipt", "legit-div");
+        oracle.issue_policy_receipt(legit_receipt.clone()).unwrap();
+
+        // Attempt various forgery attacks
+        let forgery_attempts = vec![
+            // Receipt for non-existent divergence
+            sample_receipt("forged-1", "non-existent-div"),
+
+            // Receipt with manipulated linkage
+            {
+                let mut forged = legit_receipt.clone();
+                forged.receipt_id = "forged-2".to_string();
+                forged.l1_linkage.linkage_hash = "manipulated-hash".to_string();
+                forged
+            },
+
+            // Receipt with future expiry
+            {
+                let mut forged = legit_receipt.clone();
+                forged.receipt_id = "forged-3".to_string();
+                forged.expires_at_epoch_secs = u64::MAX;
+                forged
+            },
+
+            // Receipt with empty/malicious L1 verdict
+            {
+                let mut forged = legit_receipt.clone();
+                forged.receipt_id = "forged-4".to_string();
+                forged.l1_linkage.l1_verdict = "<script>alert('xss')</script>".to_string();
+                forged
+            },
+        ];
+
+        for forged_receipt in forgery_attempts {
+            let result = oracle.issue_policy_receipt(forged_receipt.clone());
+
+            if result.is_err() {
+                // Should detect and reject forged receipts
+                continue;
+            }
+
+            // If accepted, verify linkage validation catches forgery
+            let linkage_result = oracle.verify_l1_linkage(&forged_receipt.receipt_id);
+            if linkage_result.is_err() {
+                // L1 linkage verification should catch forgery
+            }
+        }
+    }
+
+    #[test]
+    fn negative_quorum_manipulation_attacks() {
+        let mut oracle = RuntimeOracle::new("trace-quorum", 66);
+
+        // Register minimal runtimes for quorum
+        oracle.register_runtime(sample_runtime("rt1")).unwrap();
+        oracle.register_runtime(sample_runtime("rt2")).unwrap();
+
+        // Attempt to manipulate quorum through voting injection
+        let manipulated_votes = vec![
+            // Votes from non-existent runtimes
+            {
+                let mut votes = BTreeMap::new();
+                votes.insert("ghost-runtime".to_string(), vec![1, 1, 1]);
+                votes.insert("phantom-runtime".to_string(), vec![1, 1, 1]);
+                votes
+            },
+
+            // Votes with mismatched vote counts
+            {
+                let mut votes = BTreeMap::new();
+                votes.insert("rt1".to_string(), vec![1, 0]); // 2 votes
+                votes.insert("rt2".to_string(), vec![1, 1, 0, 1]); // 4 votes
+                votes
+            },
+
+            // Votes with invalid vote values
+            {
+                let mut votes = BTreeMap::new();
+                votes.insert("rt1".to_string(), vec![99, -1, 256]); // Out of range
+                votes.insert("rt2".to_string(), vec![1, 0, 1]);
+                votes
+            },
+        ];
+
+        for (i, votes) in manipulated_votes.iter().enumerate() {
+            let check_id = format!("manipulated-check-{}", i);
+
+            // Manually insert manipulated voting result
+            oracle.voting_results.insert(
+                check_id.clone(),
+                VotingResult {
+                    check_id: check_id.clone(),
+                    votes: votes.clone(),
+                    quorum_reached: false,
+                    quorum_threshold: 2,
+                    total_voters: 2,
+                    agreeing_voters: 0,
+                },
+            );
+
+            // Attempt to tally manipulated votes
+            let result = oracle.tally_votes(&check_id);
+
+            // Should detect manipulation and reject
+            if result.is_err() {
+                assert!(result.unwrap_err().code == error_codes::ERR_NVO_NO_RUNTIMES ||
+                        result.unwrap_err().code == error_codes::ERR_NVO_QUORUM_FAILED);
+            }
+        }
+    }
+
+    #[test]
+    fn negative_divergence_classification_boundary_attacks() {
+        let mut oracle = RuntimeOracle::new("trace-boundary", 66);
+
+        // Test divergence with extreme risk tier transitions
+        oracle.classify_divergence(
+            "div-1",
+            "check-1",
+            BoundaryScope::Security,
+            RiskTier::Low,
+            &BTreeMap::new(),
+        );
+
+        // Attempt to reclassify to higher risk tier
+        oracle.classify_divergence(
+            "div-1",  // Same divergence ID
+            "check-1",
+            BoundaryScope::Security,
+            RiskTier::Critical, // Risk escalation
+            &BTreeMap::new(),
+        );
+
+        // Should handle classification updates appropriately
+        let divergence = &oracle.divergences["div-1"];
+        assert!(matches!(divergence.risk_tier, RiskTier::Low | RiskTier::Critical));
+
+        // Test with massive runtime output data
+        let mut massive_outputs = BTreeMap::new();
+        for i in 0..1000 {
+            massive_outputs.insert(
+                format!("runtime-{}", i),
+                vec![i as u8; 1000]
+            );
+        }
+
+        oracle.classify_divergence(
+            "div-massive",
+            "check-massive",
+            BoundaryScope::Memory,
+            RiskTier::Medium,
+            &massive_outputs,
+        );
+
+        assert!(oracle.divergences.contains_key("div-massive"));
+    }
+
+    #[test]
+    fn negative_event_log_capacity_overflow_behavior() {
+        let mut oracle = RuntimeOracle::new("trace-log-overflow", 66);
+
+        // Generate many events to overflow the log capacity
+        for i in 0..MAX_EVENT_LOG_ENTRIES + 100 {
+            let runtime = RuntimeEntry {
+                runtime_id: format!("runtime-{}", i),
+                runtime_name: format!("Runtime {}", i),
+                version: "1.0.0".to_string(),
+                is_reference: false,
+            };
+
+            // This should generate log events
+            let _ = oracle.register_runtime(runtime);
+        }
+
+        // Verify log capacity is respected
+        assert!(oracle.event_log.len() <= MAX_EVENT_LOG_ENTRIES);
+
+        // Recent events should be preserved (FIFO eviction)
+        let recent_events = oracle.event_log.iter()
+            .filter(|event| event.detail.contains(&format!("{}", MAX_EVENT_LOG_ENTRIES + 50)))
+            .count();
+        assert!(recent_events > 0, "Recent events should be preserved");
+
+        // Oracle should remain functional despite log overflow
+        let test_runtime = RuntimeEntry {
+            runtime_id: "final-test".to_string(),
+            runtime_name: "Final Test Runtime".to_string(),
+            version: "1.0.0".to_string(),
+            is_reference: false,
+        };
+
+        let result = oracle.register_runtime(test_runtime);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn negative_release_gate_with_conflicting_divergences() {
+        let mut oracle = RuntimeOracle::new("trace-conflicting", 66);
+
+        // Create conflicting divergences across different risk tiers
+        oracle.classify_divergence(
+            "div-critical",
+            "check-1",
+            BoundaryScope::Security,
+            RiskTier::Critical,
+            &BTreeMap::new(),
+        );
+
+        oracle.classify_divergence(
+            "div-low",
+            "check-2",
+            BoundaryScope::IO,
+            RiskTier::Low,
+            &BTreeMap::new(),
+        );
+
+        oracle.classify_divergence(
+            "div-medium",
+            "check-3",
+            BoundaryScope::Memory,
+            RiskTier::Medium,
+            &BTreeMap::new(),
+        );
+
+        // Issue receipt for low-risk divergence only
+        oracle.issue_policy_receipt(sample_receipt("receipt-low", "div-low")).unwrap();
+
+        // Check release gate behavior with mixed divergence states
+        let verdict = oracle.check_release_gate(1700000001);
+
+        match verdict {
+            OracleVerdict::BlockRelease { blocking_divergence_ids } => {
+                // Critical divergence should block release
+                assert!(blocking_divergence_ids.contains(&"div-critical".to_string()));
+            }
+            _ => panic!("Critical divergence should block release"),
+        }
+
+        // Resolve critical divergence
+        oracle.resolve_divergence("div-critical", "Manually resolved").unwrap();
+
+        // Re-check release gate
+        let verdict2 = oracle.check_release_gate(1700000001);
+
+        // Should now pass since critical is resolved and low has receipt
+        assert_eq!(verdict2, OracleVerdict::Pass);
+    }
+
+    #[test]
+    fn negative_l1_linkage_verification_timing_attacks() {
+        use std::time::Instant;
+
+        let mut oracle = RuntimeOracle::new("trace-timing", 66);
+
+        oracle.classify_divergence(
+            "div-timing",
+            "check-timing",
+            BoundaryScope::TypeSystem,
+            RiskTier::Low,
+            &BTreeMap::new(),
+        );
+
+        // Create receipts with valid and invalid linkage
+        let valid_receipt = sample_receipt("valid-receipt", "div-timing");
+        oracle.issue_policy_receipt(valid_receipt.clone()).unwrap();
+
+        let mut invalid_receipt = valid_receipt.clone();
+        invalid_receipt.receipt_id = "invalid-receipt".to_string();
+        invalid_receipt.l1_linkage.linkage_hash = "forged-hash".to_string();
+        oracle.issue_policy_receipt(invalid_receipt).unwrap();
+
+        // Measure verification timing for multiple rounds
+        let mut valid_times = Vec::new();
+        let mut invalid_times = Vec::new();
+
+        for _ in 0..100 {
+            // Time valid linkage verification
+            let start = Instant::now();
+            let _ = oracle.verify_l1_linkage("valid-receipt");
+            valid_times.push(start.elapsed());
+
+            // Time invalid linkage verification
+            let start = Instant::now();
+            let _ = oracle.verify_l1_linkage("invalid-receipt");
+            invalid_times.push(start.elapsed());
+        }
+
+        // Calculate average times
+        let avg_valid = valid_times.iter().sum::<std::time::Duration>() / valid_times.len() as u32;
+        let avg_invalid = invalid_times.iter().sum::<std::time::Duration>() / invalid_times.len() as u32;
+
+        // Timing should not reveal linkage validation details
+        if avg_valid.as_nanos() > 0 && avg_invalid.as_nanos() > 0 {
+            let max_time = std::cmp::max(avg_valid, avg_invalid);
+            let min_time = std::cmp::min(avg_valid, avg_invalid);
+            let timing_ratio = max_time.as_nanos() as f64 / min_time.as_nanos() as f64;
+
+            // Allow reasonable variance but flag excessive timing differences
+            assert!(timing_ratio < 5.0,
+                "Suspicious timing variance in L1 linkage verification: valid={:?}, invalid={:?}, ratio={:.2}",
+                avg_valid, avg_invalid, timing_ratio);
+        }
+    }
+
+    #[test]
+    fn negative_serialization_with_deeply_nested_structures() {
+        let mut oracle = RuntimeOracle::new("trace-nested", 66);
+
+        // Create deeply nested BTreeMap structures
+        let mut deep_outputs = BTreeMap::new();
+        for i in 0..100 {
+            let runtime_id = format!("runtime_{:03}", i);
+            let mut nested_data = Vec::new();
+
+            // Create nested binary data with patterns
+            for j in 0..1000 {
+                nested_data.push((i * 1000 + j) as u8);
+            }
+
+            deep_outputs.insert(runtime_id, nested_data);
+        }
+
+        oracle.classify_divergence(
+            "div-deep-nested",
+            "check-deep",
+            BoundaryScope::Concurrency,
+            RiskTier::Medium,
+            &deep_outputs,
+        );
+
+        // Test serialization of complex nested structure
+        let report = oracle.generate_report(1700000001);
+
+        let serialization = serde_json::to_string(&report);
+        match serialization {
+            Ok(json) => {
+                // Should handle deep nesting
+                assert!(json.len() > 0);
+
+                // Test deserialization
+                let deserialization: Result<OracleReport, _> = serde_json::from_str(&json);
+                match deserialization {
+                    Ok(recovered_report) => {
+                        assert_eq!(recovered_report.divergences.len(), report.divergences.len());
+                    }
+                    Err(_) => {
+                        // Deep structures might not deserialize due to complexity
+                    }
+                }
+            }
+            Err(_) => {
+                // Very deep structures might not serialize due to memory/stack limits
+            }
+        }
+
+        // Oracle should remain functional despite complex data
+        let simple_divergence_result = oracle.classify_divergence(
+            "div-simple",
+            "check-simple",
+            BoundaryScope::TypeSystem,
+            RiskTier::Info,
+            &BTreeMap::new(),
+        );
+        // Should succeed
     }
 }

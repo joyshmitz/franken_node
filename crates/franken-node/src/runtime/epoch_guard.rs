@@ -382,6 +382,11 @@ mod tests {
             .expect("valid root secret")
     }
 
+    fn alternate_root_secret() -> RootSecret {
+        RootSecret::from_hex("1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100")
+            .expect("valid alternate root secret")
+    }
+
     #[test]
     fn operation_epoch_exact_match_passes() {
         let guard = EpochGuard::default();
@@ -545,6 +550,258 @@ mod tests {
     }
 
     #[test]
+    fn invalid_artifact_id_rejects_newline_padding() {
+        let reason = invalid_artifact_id_reason("artifact-1\n")
+            .expect("newline-padded artifact id must reject");
+
+        assert!(reason.contains("leading or trailing whitespace"));
+    }
+
+    #[test]
+    fn invalid_artifact_id_rejects_tab_padding() {
+        let reason =
+            invalid_artifact_id_reason("\tartifact-1").expect("tab-padded artifact id must reject");
+
+        assert!(reason.contains("leading or trailing whitespace"));
+    }
+
+    #[test]
+    fn invalid_artifact_id_takes_precedence_over_unavailable_epoch_source() {
+        let guard = EpochGuard::new(1);
+        let source = StaticEpochSource::unavailable(ControlEpoch::new(10));
+
+        let err = guard
+            .validate_artifact_epoch(" artifact-1", ControlEpoch::new(10), &source, "trace-id")
+            .expect_err("invalid artifact id should reject before source access");
+
+        assert_eq!(err.code(), EPOCH_ARTIFACT_ID_REJECTED);
+    }
+
+    #[test]
+    fn stale_operation_error_preserves_presented_and_current_epochs() {
+        let guard = EpochGuard::default();
+        let source = StaticEpochSource::available(ControlEpoch::new(12));
+
+        let err = guard
+            .validate_operation_epoch(ControlEpoch::new(11), &source, "trace-stale-detail")
+            .expect_err("stale operation must reject");
+
+        match err {
+            EpochGuardError::EpochMismatch {
+                presented_epoch,
+                current_epoch,
+            } => {
+                assert_eq!(presented_epoch, ControlEpoch::new(11));
+                assert_eq!(current_epoch, ControlEpoch::new(12));
+            }
+            other => unreachable!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn future_operation_error_preserves_presented_and_current_epochs() {
+        let guard = EpochGuard::default();
+        let source = StaticEpochSource::available(ControlEpoch::new(12));
+
+        let err = guard
+            .validate_operation_epoch(ControlEpoch::new(13), &source, "trace-future-detail")
+            .expect_err("future operation must reject");
+
+        match err {
+            EpochGuardError::FutureEpochRejected {
+                presented_epoch,
+                current_epoch,
+            } => {
+                assert_eq!(presented_epoch, ControlEpoch::new(13));
+                assert_eq!(current_epoch, ControlEpoch::new(12));
+            }
+            other => unreachable!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stale_tagged_artifact_rejects_before_authentication_event() {
+        let root = root_secret();
+        let guard = EpochGuard::new(1);
+        let source = StaticEpochSource::available(ControlEpoch::new(10));
+        let artifact = EpochTaggedArtifact::new_signed(
+            "artifact-stale-tagged",
+            ControlEpoch::new(7),
+            "trust",
+            b"payload".to_vec(),
+            &root,
+        )
+        .expect("artifact signs");
+
+        let err = guard
+            .verify_tagged_artifact(&artifact, &source, &root, "trace-stale-tagged")
+            .expect_err("stale tagged artifact must reject");
+
+        assert_eq!(err.code(), STALE_EPOCH_REJECTED);
+    }
+
+    #[test]
+    fn tagged_artifact_rejects_when_epoch_source_unavailable() {
+        let root = root_secret();
+        let guard = EpochGuard::new(1);
+        let source = StaticEpochSource::unavailable(ControlEpoch::new(9));
+        let artifact = EpochTaggedArtifact::new_signed(
+            "artifact-unavailable",
+            ControlEpoch::new(9),
+            "trust",
+            b"payload".to_vec(),
+            &root,
+        )
+        .expect("artifact signs");
+
+        let err = guard
+            .verify_tagged_artifact(&artifact, &source, &root, "trace-unavailable-tagged")
+            .expect_err("unavailable epoch source must reject");
+
+        assert_eq!(err.code(), EPOCH_UNAVAILABLE);
+    }
+
+    #[test]
+    fn tagged_artifact_rejects_wrong_root_secret() {
+        let root = root_secret();
+        let wrong_root = alternate_root_secret();
+        let guard = EpochGuard::new(1);
+        let source = StaticEpochSource::available(ControlEpoch::new(9));
+        let artifact = EpochTaggedArtifact::new_signed(
+            "artifact-wrong-root",
+            ControlEpoch::new(9),
+            "trust",
+            b"payload".to_vec(),
+            &root,
+        )
+        .expect("artifact signs");
+
+        let err = guard
+            .verify_tagged_artifact(&artifact, &source, &wrong_root, "trace-wrong-root")
+            .expect_err("wrong root secret must reject");
+
+        assert!(matches!(err, EpochGuardError::SignatureRejected { .. }));
+    }
+
+    #[test]
+    fn operation_rechecks_updated_epoch_source_and_rejects_stale() {
+        let guard = EpochGuard::default();
+        let mut source = StaticEpochSource::available(ControlEpoch::new(9));
+        source.set_epoch(ControlEpoch::new(10));
+
+        let err = guard
+            .validate_operation_epoch(ControlEpoch::new(9), &source, "trace-source-update")
+            .expect_err("updated source epoch should make presented epoch stale");
+
+        assert_eq!(err.code(), STALE_EPOCH_REJECTED);
+        assert!(err.to_string().contains("presented epoch 9 is stale"));
+    }
+
+    #[test]
+    fn zero_lookback_artifact_rejects_previous_epoch() {
+        let guard = EpochGuard::new(0);
+        let source = StaticEpochSource::available(ControlEpoch::new(10));
+
+        let err = guard
+            .validate_artifact_epoch(
+                "artifact-no-lookback",
+                ControlEpoch::new(9),
+                &source,
+                "trace-no-lookback",
+            )
+            .expect_err("zero lookback should reject previous epoch");
+
+        assert_eq!(err.code(), STALE_EPOCH_REJECTED);
+    }
+
+    #[test]
+    fn invalid_artifact_id_precedes_future_epoch_rejection() {
+        let guard = EpochGuard::new(1);
+        let source = StaticEpochSource::available(ControlEpoch::new(10));
+
+        let err = guard
+            .validate_artifact_epoch(
+                " artifact-future",
+                ControlEpoch::new(99),
+                &source,
+                "trace-invalid-before-future",
+            )
+            .expect_err("invalid id should reject before future epoch check");
+
+        assert_eq!(err.code(), EPOCH_ARTIFACT_ID_REJECTED);
+        assert!(err.to_string().contains("leading or trailing whitespace"));
+    }
+
+    #[test]
+    fn verify_tagged_artifact_rejects_invalid_id_before_signature() {
+        let root = root_secret();
+        let wrong_root = alternate_root_secret();
+        let payload = b"payload".to_vec();
+        let signature =
+            sign_epoch_artifact(&payload, ControlEpoch::new(9), "trust", &root).expect("signature");
+        let artifact = EpochTaggedArtifact {
+            artifact_id: " artifact-invalid".to_string(),
+            creation_epoch: ControlEpoch::new(9),
+            domain: "trust".to_string(),
+            payload,
+            signature,
+        };
+        let guard = EpochGuard::new(1);
+        let source = StaticEpochSource::available(ControlEpoch::new(9));
+
+        let err = guard
+            .verify_tagged_artifact(&artifact, &source, &wrong_root, "trace-invalid-before-auth")
+            .expect_err("invalid id should reject before signature verification");
+
+        assert_eq!(err.code(), EPOCH_ARTIFACT_ID_REJECTED);
+    }
+
+    #[test]
+    fn verify_tagged_artifact_rejects_future_epoch_before_signature() {
+        let root = root_secret();
+        let wrong_root = alternate_root_secret();
+        let guard = EpochGuard::new(1);
+        let source = StaticEpochSource::available(ControlEpoch::new(9));
+        let artifact = EpochTaggedArtifact::new_signed(
+            "artifact-future-tagged",
+            ControlEpoch::new(11),
+            "trust",
+            b"payload".to_vec(),
+            &root,
+        )
+        .expect("artifact signs");
+
+        let err = guard
+            .verify_tagged_artifact(&artifact, &source, &wrong_root, "trace-future-before-auth")
+            .expect_err("future epoch should reject before signature verification");
+
+        assert_eq!(err.code(), FUTURE_EPOCH_REJECTED);
+    }
+
+    #[test]
+    fn verify_tagged_artifact_rejects_domain_mismatch_signature() {
+        let root = root_secret();
+        let payload = b"payload".to_vec();
+        let signature = sign_epoch_artifact(&payload, ControlEpoch::new(9), "other-domain", &root)
+            .expect("signature");
+        let artifact = EpochTaggedArtifact {
+            artifact_id: "artifact-domain-mismatch".to_string(),
+            creation_epoch: ControlEpoch::new(9),
+            domain: "trust".to_string(),
+            payload,
+            signature,
+        };
+        let guard = EpochGuard::new(1);
+        let source = StaticEpochSource::available(ControlEpoch::new(9));
+
+        let err = guard
+            .verify_tagged_artifact(&artifact, &source, &root, "trace-domain-mismatch")
+            .expect_err("signature domain mismatch should reject");
+
+        assert_eq!(err.code(), EPOCH_SIGNATURE_REJECTED);
+    }
+
+    #[test]
     fn verify_tagged_artifact_emits_epoch_and_signature_events() {
         let root = root_secret();
         let guard = EpochGuard::new(1);
@@ -564,5 +821,510 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].event_code, "EPOCH_ARTIFACT_ACCEPTED");
         assert_eq!(events[1].event_code, EPOCH_SIGNATURE_VERIFIED);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // NEGATIVE-PATH EDGE CASE AND ATTACK VECTOR TESTS
+    // ═══════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn negative_epoch_guard_with_u64_max_lookback_handles_arithmetic_safely() {
+        // Test epoch guard with maximum lookback to ensure no arithmetic overflow
+        let guard = EpochGuard::new(u64::MAX);
+        assert_eq!(guard.max_lookback(), u64::MAX);
+
+        let source = StaticEpochSource::available(ControlEpoch::new(u64::MAX));
+
+        // Test with maximum epoch values - should not panic or overflow
+        let result = guard.validate_operation_epoch(
+            ControlEpoch::new(u64::MAX),
+            &source,
+            "trace-max-epoch"
+        );
+        assert!(result.is_ok());
+
+        // Test with near-maximum values
+        let result2 = guard.validate_operation_epoch(
+            ControlEpoch::new(u64::MAX.saturating_sub(1)),
+            &source,
+            "trace-near-max-epoch"
+        );
+        assert!(result2.is_err()); // Should be stale
+
+        // Test artifact validation with maximum epochs
+        let result3 = guard.validate_artifact_epoch(
+            "artifact-max-epoch",
+            ControlEpoch::new(u64::MAX),
+            &source,
+            "trace-artifact-max"
+        );
+        assert!(result3.is_ok());
+    }
+
+    #[test]
+    fn negative_artifact_id_with_unicode_injection_and_normalization_attacks() {
+        // Test various Unicode-based injection attacks in artifact IDs
+        let malicious_ids = vec![
+            "artifact\u{202E}fake\u{202D}",           // Unicode BiDi override attack
+            "artifact\u{00A0}nonbreaking",             // Non-breaking space
+            "artifact\u{200B}zerowidth",               // Zero-width space
+            "artifact\u{FEFF}bom",                     // BOM character
+            "artifact\u{034F}invisible",               // Combining grapheme joiner
+            "artifact\u{2060}wordjoiner",              // Word joiner (invisible)
+            "\u{1F4A9}emoji-artifact",                 // Emoji in ID
+            "café\u{0301}artifact",                    // Combining accent (NFD)
+            "artifact\u{0000}null",                    // Null byte
+            "artifact\u{007F}del",                     // DEL control character
+            "artifact\u{0001}soh",                     // Start of heading
+            "artifact\u{001F}unit-sep",                // Unit separator
+        ];
+
+        for malicious_id in malicious_ids {
+            // Test invalid_artifact_id_reason with malicious IDs
+            let reason = invalid_artifact_id_reason(malicious_id);
+
+            // Some may be rejected for specific reasons, others may pass literally
+            if let Some(rejection_reason) = reason {
+                assert!(!rejection_reason.is_empty(),
+                       "Rejection reason should not be empty for ID: {:?}", malicious_id);
+            }
+
+            // Test EpochTaggedArtifact creation with malicious IDs
+            let root = root_secret();
+            let result = EpochTaggedArtifact::new_signed(
+                malicious_id,
+                ControlEpoch::new(9),
+                "trust",
+                b"payload".to_vec(),
+                &root,
+            );
+
+            // Should either succeed (storing ID literally) or fail with clear error
+            match result {
+                Ok(artifact) => {
+                    // If accepted, ID should be stored exactly as provided (no normalization)
+                    assert_eq!(artifact.artifact_id(), malicious_id);
+                }
+                Err(err) => {
+                    // If rejected, should be due to artifact ID validation
+                    assert_eq!(err.code(), EPOCH_ARTIFACT_ID_REJECTED);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_epoch_guard_event_with_massive_field_lengths() {
+        // Test EpochGuardEvent with extremely large field values to check memory handling
+        let huge_trace_id = "t".repeat(1_000_000);  // 1MB trace ID
+        let huge_detail = "d".repeat(500_000);       // 500KB detail
+        let huge_artifact_id = "a".repeat(250_000);  // 250KB artifact ID
+
+        let event = EpochGuardEvent {
+            event_code: EPOCH_OPERATION_ACCEPTED.to_string(),
+            artifact_id: Some(huge_artifact_id.clone()),
+            current_epoch: u64::MAX,
+            presented_epoch: Some(u64::MAX.saturating_sub(1)),
+            detail: huge_detail.clone(),
+            trace_id: huge_trace_id.clone(),
+        };
+
+        // Should handle large fields without panic
+        assert_eq!(event.trace_id.len(), 1_000_000);
+        assert_eq!(event.detail.len(), 500_000);
+        assert_eq!(event.artifact_id.as_ref().unwrap().len(), 250_000);
+
+        // Test serialization/deserialization with massive fields
+        let start = std::time::Instant::now();
+        let json_result = serde_json::to_string(&event);
+        let duration = start.elapsed();
+
+        // Should complete within reasonable time (10 seconds is generous)
+        assert!(json_result.is_ok());
+        assert!(duration < std::time::Duration::from_secs(10));
+
+        let json = json_result.unwrap();
+        let parsed_result: Result<EpochGuardEvent, _> = serde_json::from_str(&json);
+        assert!(parsed_result.is_ok());
+        let parsed = parsed_result.unwrap();
+        assert_eq!(parsed.trace_id.len(), 1_000_000);
+    }
+
+    #[test]
+    fn negative_static_epoch_source_state_consistency_under_rapid_updates() {
+        // Test StaticEpochSource state consistency under rapid availability/epoch changes
+        let mut source = StaticEpochSource::available(ControlEpoch::new(100));
+
+        // Rapidly toggle availability and update epochs
+        for i in 0..1000 {
+            let epoch_val = i % 50; // Cycle through epoch values
+            source.set_epoch(ControlEpoch::new(epoch_val));
+
+            // Toggle availability every few iterations
+            if i % 7 == 0 {
+                source = StaticEpochSource::unavailable(ControlEpoch::new(epoch_val));
+            } else {
+                source = StaticEpochSource::available(ControlEpoch::new(epoch_val));
+            }
+
+            // Test current_epoch consistency
+            let result = source.current_epoch();
+            if i % 7 == 0 {
+                assert_eq!(result, Err(EpochGuardError::EpochUnavailable {
+                    detail: "epoch source unavailable".to_string()
+                }));
+            } else {
+                assert_eq!(result, Ok(ControlEpoch::new(epoch_val)));
+            }
+        }
+    }
+
+    #[test]
+    fn negative_epoch_tagged_artifact_with_zero_length_and_massive_payloads() {
+        let root = root_secret();
+
+        // Test with zero-length payload
+        let zero_payload_artifact = EpochTaggedArtifact::new_signed(
+            "zero-payload-artifact",
+            ControlEpoch::new(10),
+            "trust",
+            Vec::new(), // Zero length payload
+            &root,
+        );
+        assert!(zero_payload_artifact.is_ok());
+        let artifact = zero_payload_artifact.unwrap();
+        assert_eq!(artifact.payload().len(), 0);
+
+        // Test with massive payload (10MB)
+        let massive_payload = vec![0x42u8; 10_000_000];
+        let start = std::time::Instant::now();
+        let massive_artifact = EpochTaggedArtifact::new_signed(
+            "massive-payload-artifact",
+            ControlEpoch::new(10),
+            "trust",
+            massive_payload.clone(),
+            &root,
+        );
+        let creation_duration = start.elapsed();
+
+        assert!(massive_artifact.is_ok());
+        assert!(creation_duration < std::time::Duration::from_secs(30)); // Generous timeout
+        let artifact = massive_artifact.unwrap();
+        assert_eq!(artifact.payload().len(), 10_000_000);
+
+        // Test verification with massive payload
+        let guard = EpochGuard::new(1);
+        let source = StaticEpochSource::available(ControlEpoch::new(10));
+
+        let verify_start = std::time::Instant::now();
+        let events = guard.verify_tagged_artifact(&artifact, &source, &root, "trace-massive");
+        let verify_duration = verify_start.elapsed();
+
+        assert!(events.is_ok());
+        assert!(verify_duration < std::time::Duration::from_secs(30));
+    }
+
+    #[test]
+    fn negative_epoch_guard_error_display_injection_resistance() {
+        // Test that error display strings are safe from injection attacks
+        let injection_attempts = vec![
+            "<script>alert('xss')</script>",
+            "'; DROP TABLE artifacts; --",
+            "\x00\x01\x02\x03null_bytes",
+            "\n\r\nHTTP/1.1 200 OK\r\n\r\n<html>",
+            "\u{202E}override\u{202D}",
+        ];
+
+        for injection in &injection_attempts {
+            // Test various error types with injection content
+            let errors = vec![
+                EpochGuardError::EpochUnavailable { detail: injection.to_string() },
+                EpochGuardError::InvalidArtifactId { reason: injection.to_string() },
+                EpochGuardError::SignatureRejected { reason: injection.to_string() },
+            ];
+
+            for error in errors {
+                let display_string = format!("{}", error);
+
+                // Error display should contain the injection content literally (no interpretation)
+                assert!(display_string.contains(injection));
+
+                // But should be prefixed with safe error code
+                assert!(display_string.starts_with(error.code()));
+
+                // Should not contain dangerous HTML/script patterns that could be interpreted
+                // Note: We allow the literal content but ensure it's safely formatted
+                let code = error.code();
+                assert!(code.chars().all(|c| c.is_ascii_uppercase() || c == '_'));
+            }
+        }
+    }
+
+    #[test]
+    fn negative_validate_operation_epoch_with_arithmetic_boundary_conditions() {
+        let guard = EpochGuard::new(5);
+
+        // Test arithmetic boundaries around epoch comparison
+        let boundary_cases = vec![
+            (0, 0, true),                    // Both zero
+            (0, 1, false),                   // Presented zero, current one (stale)
+            (1, 0, false),                   // Presented one, current zero (future)
+            (u64::MAX, u64::MAX, true),      // Both maximum
+            (u64::MAX, u64::MAX.saturating_sub(1), false), // Presented max, current max-1 (future)
+            (u64::MAX.saturating_sub(1), u64::MAX, false), // Presented max-1, current max (stale)
+            (u64::MAX / 2, u64::MAX / 2, true), // Both at midpoint
+        ];
+
+        for (presented, current, should_pass) in boundary_cases {
+            let source = StaticEpochSource::available(ControlEpoch::new(current));
+            let result = guard.validate_operation_epoch(
+                ControlEpoch::new(presented),
+                &source,
+                &format!("trace-boundary-{}-{}", presented, current)
+            );
+
+            if should_pass {
+                assert!(result.is_ok(),
+                       "Presented {} should match current {}", presented, current);
+            } else {
+                assert!(result.is_err(),
+                       "Presented {} should not match current {}", presented, current);
+
+                let error = result.unwrap_err();
+                if presented < current {
+                    assert_eq!(error.code(), STALE_EPOCH_REJECTED);
+                } else {
+                    assert_eq!(error.code(), FUTURE_EPOCH_REJECTED);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_artifact_validation_with_extreme_lookback_values() {
+        // Test artifact validation with various extreme lookback configurations
+        let extreme_lookbacks = vec![
+            0,                               // No lookback allowed
+            1,                               // Minimal lookback
+            u64::MAX,                        // Maximum lookback
+            u64::MAX / 2,                    // Half maximum
+            u64::MAX.saturating_sub(1),      // Near maximum
+        ];
+
+        for lookback in extreme_lookbacks {
+            let guard = EpochGuard::new(lookback);
+            let current_epoch = 1000u64;
+            let source = StaticEpochSource::available(ControlEpoch::new(current_epoch));
+
+            // Test various artifact epoch values against this lookback
+            let test_epochs = vec![
+                0,                                           // Minimum epoch
+                current_epoch.saturating_sub(lookback),      // Exactly at lookback boundary
+                current_epoch.saturating_sub(lookback + 1),  // One past lookback (should fail)
+                current_epoch,                               // Current epoch (should pass)
+                current_epoch + 1,                           // Future epoch (should fail)
+                u64::MAX,                                     // Maximum epoch (should fail)
+            ];
+
+            for artifact_epoch in test_epochs {
+                let result = guard.validate_artifact_epoch(
+                    &format!("artifact-lookback-{}-epoch-{}", lookback, artifact_epoch),
+                    ControlEpoch::new(artifact_epoch),
+                    &source,
+                    &format!("trace-lookback-{}-{}", lookback, artifact_epoch)
+                );
+
+                // Determine expected result based on validity window
+                let is_future = artifact_epoch > current_epoch;
+                let is_stale = lookback < u64::MAX &&
+                              current_epoch > lookback &&
+                              artifact_epoch < current_epoch.saturating_sub(lookback);
+                let is_valid = !is_future && !is_stale;
+
+                if is_valid {
+                    assert!(result.is_ok(),
+                           "Artifact epoch {} should be valid with lookback {} and current {}",
+                           artifact_epoch, lookback, current_epoch);
+                } else {
+                    assert!(result.is_err(),
+                           "Artifact epoch {} should be invalid with lookback {} and current {}",
+                           artifact_epoch, lookback, current_epoch);
+
+                    let error = result.unwrap_err();
+                    if is_future {
+                        assert_eq!(error.code(), FUTURE_EPOCH_REJECTED);
+                    } else {
+                        assert_eq!(error.code(), STALE_EPOCH_REJECTED);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_tagged_artifact_signature_verification_with_corrupted_signatures() {
+        let root = root_secret();
+        let alternate_root = alternate_root_secret();
+
+        // Create a valid artifact
+        let valid_artifact = EpochTaggedArtifact::new_signed(
+            "test-artifact",
+            ControlEpoch::new(10),
+            "trust",
+            b"test payload".to_vec(),
+            &root,
+        ).unwrap();
+
+        // Test various signature corruption scenarios
+        let corruption_tests = vec![
+            // Flip single bits in signature at different positions
+            (0, "first byte corruption"),
+            (15, "middle byte corruption"),
+            (31, "last byte corruption"),
+        ];
+
+        for (byte_index, description) in corruption_tests {
+            let mut corrupted_artifact = valid_artifact.clone();
+
+            // Access signature bytes and corrupt one bit
+            let signature_bytes = corrupted_artifact.signature.as_bytes();
+            let mut new_signature_bytes = signature_bytes.to_vec();
+            if byte_index < new_signature_bytes.len() {
+                new_signature_bytes[byte_index] ^= 0x01; // Flip lowest bit
+            }
+
+            // Create new signature from corrupted bytes
+            let corrupted_signature = match Signature::from_bytes(&new_signature_bytes) {
+                Ok(sig) => sig,
+                Err(_) => continue, // Skip if signature format is completely invalid
+            };
+
+            // Create artifact with corrupted signature
+            let test_artifact = EpochTaggedArtifact {
+                artifact_id: format!("corrupted-sig-{}", byte_index),
+                creation_epoch: corrupted_artifact.creation_epoch,
+                domain: corrupted_artifact.domain.clone(),
+                payload: corrupted_artifact.payload.clone(),
+                signature: corrupted_signature,
+            };
+
+            let guard = EpochGuard::new(1);
+            let source = StaticEpochSource::available(ControlEpoch::new(10));
+
+            // Verification should fail with signature rejection
+            let result = guard.verify_tagged_artifact(&test_artifact, &source, &root,
+                                                    &format!("trace-corrupted-{}", byte_index));
+
+            assert!(result.is_err(), "Corrupted signature should fail verification: {}", description);
+            let error = result.unwrap_err();
+            assert_eq!(error.code(), EPOCH_SIGNATURE_REJECTED);
+        }
+    }
+
+    #[test]
+    fn negative_artifact_id_with_filesystem_dangerous_characters() {
+        // Test artifact IDs containing characters dangerous for filesystem operations
+        let dangerous_ids = vec![
+            "../../../etc/passwd",           // Path traversal Unix
+            "..\\..\\..\\windows\\system32", // Path traversal Windows
+            "artifact/with/slashes",         // Forward slashes
+            "artifact\\with\\backslashes",   // Backslashes
+            "artifact:with:colons",          // Colons (Windows drive separator)
+            "artifact|with|pipes",           // Pipes
+            "artifact<with>brackets",        // Angle brackets
+            "artifact\"with\"quotes",        // Double quotes
+            "artifact*with?wildcards",       // Wildcards
+            "CON",                           // Windows reserved name
+            "PRN",                           // Windows reserved name
+            "AUX",                           // Windows reserved name
+            "NUL",                           // Windows reserved name
+            "artifact\x00null",              // Null byte
+            "artifact\x1Fcontrol",           // Control character
+        ];
+
+        for dangerous_id in dangerous_ids {
+            // Test that dangerous IDs are either rejected or stored literally
+            let reason = invalid_artifact_id_reason(dangerous_id);
+
+            if reason.is_some() {
+                // If rejected, should have clear reason
+                assert!(!reason.unwrap().is_empty());
+            }
+
+            // Test artifact creation with dangerous ID
+            let root = root_secret();
+            let result = EpochTaggedArtifact::new_signed(
+                dangerous_id,
+                ControlEpoch::new(10),
+                "trust",
+                b"payload".to_vec(),
+                &root,
+            );
+
+            match result {
+                Ok(artifact) => {
+                    // If accepted, ID should be stored exactly as provided
+                    assert_eq!(artifact.artifact_id(), dangerous_id);
+
+                    // And should be accessible through normal methods
+                    assert_eq!(artifact.creation_epoch(), ControlEpoch::new(10));
+                    assert_eq!(artifact.domain(), "trust");
+                    assert_eq!(artifact.payload(), b"payload");
+                }
+                Err(err) => {
+                    // If rejected, should be clear artifact ID rejection
+                    assert_eq!(err.code(), EPOCH_ARTIFACT_ID_REJECTED);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_epoch_source_trait_consistency_under_error_conditions() {
+        // Test EpochSource trait implementations for consistency under error conditions
+
+        // Test ControlEpoch as EpochSource (always succeeds)
+        let epoch = ControlEpoch::new(42);
+        for _ in 0..100 {
+            let result = epoch.current_epoch();
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), ControlEpoch::new(42));
+        }
+
+        // Test StaticEpochSource consistency
+        let mut static_source = StaticEpochSource::available(ControlEpoch::new(100));
+
+        // Multiple calls when available should return same result
+        for _ in 0..100 {
+            let result = static_source.current_epoch();
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), ControlEpoch::new(100));
+        }
+
+        // Set to unavailable
+        static_source = StaticEpochSource::unavailable(ControlEpoch::new(100));
+
+        // Multiple calls when unavailable should consistently fail
+        for _ in 0..100 {
+            let result = static_source.current_epoch();
+            assert!(result.is_err());
+            match result {
+                Err(EpochGuardError::EpochUnavailable { detail }) => {
+                    assert_eq!(detail, "epoch source unavailable");
+                }
+                _ => panic!("Unexpected error type"),
+            }
+        }
+
+        // Test rapid availability changes
+        for i in 0..1000 {
+            if i % 2 == 0 {
+                static_source = StaticEpochSource::available(ControlEpoch::new(i));
+                assert!(static_source.current_epoch().is_ok());
+            } else {
+                static_source = StaticEpochSource::unavailable(ControlEpoch::new(i));
+                assert!(static_source.current_epoch().is_err());
+            }
+        }
     }
 }

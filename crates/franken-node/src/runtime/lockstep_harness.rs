@@ -200,9 +200,10 @@ impl LockstepHarness {
         }
 
         // Reject path traversal in untrusted package.json main field:
-        // absolute paths, ".." segments, and backslashes.
+        // absolute paths, ".." segments, backslashes, and embedded NULs.
         if normalized.starts_with('/')
             || normalized.contains('\\')
+            || normalized.contains('\0')
             || normalized.split('/').any(|seg| seg == "..")
         {
             return None;
@@ -825,6 +826,16 @@ mod tests {
     }
 
     #[test]
+    fn validate_runtimes_rejects_blank_only_entries() {
+        let err = LockstepHarness::new(vec![" ".into(), "\n\t".into()])
+            .validate_runtimes()
+            .expect_err("blank-only runtime list must fail");
+        let message = format!("{err:#}");
+        assert!(message.contains("at least two distinct runtimes"));
+        assert!(message.contains("got none"));
+    }
+
+    #[test]
     fn read_strace_output_reads_existing_file() {
         let temp_file = tempfile::NamedTempFile::new().expect("tempfile");
         std::fs::write(temp_file.path(), b"open(\"/tmp/test\", O_RDONLY) = 3\n")
@@ -843,6 +854,16 @@ mod tests {
 
         let err = LockstepHarness::read_strace_output(&path, "node")
             .expect_err("missing strace file must fail");
+        let message = format!("{err:#}");
+        assert!(message.contains("strace output missing or unreadable for runtime node"));
+    }
+
+    #[test]
+    fn read_strace_output_errors_when_path_is_directory() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+
+        let err = LockstepHarness::read_strace_output(temp_dir.path(), "node")
+            .expect_err("directory cannot be read as strace output");
         let message = format!("{err:#}");
         assert!(message.contains("strace output missing or unreadable for runtime node"));
     }
@@ -1006,6 +1027,33 @@ mod tests {
         assert!(message.contains("no executable JS entrypoint found"));
     }
 
+    #[test]
+    fn resolve_runtime_target_rejects_invalid_package_json() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(temp_dir.path().join("package.json"), b"{not-json")
+            .expect("write malformed package");
+
+        let err = LockstepHarness::resolve_runtime_target("node", temp_dir.path())
+            .expect_err("malformed package manifest must fail");
+        let message = format!("{err:#}");
+        assert!(message.contains("invalid package manifest JSON"));
+    }
+
+    #[test]
+    fn resolve_runtime_target_rejects_absolute_package_main_without_fallback() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            temp_dir.path().join("package.json"),
+            r#"{"name":"demo","main":"/tmp/escape.js"}"#,
+        )
+        .expect("write package");
+
+        let err = LockstepHarness::resolve_runtime_target("node", temp_dir.path())
+            .expect_err("absolute package main must fail when no fallback exists");
+        let message = format!("{err:#}");
+        assert!(message.contains("package.json main `/tmp/escape.js` did not resolve"));
+    }
+
     // ── path traversal regression ─────────────────────────────────────
 
     #[test]
@@ -1043,6 +1091,89 @@ mod tests {
             .is_none(),
             "must reject embedded .. traversal"
         );
+    }
+
+    #[test]
+    fn resolve_entry_candidate_rejects_empty_after_normalization() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+
+        assert!(
+            LockstepHarness::resolve_entry_candidate(temp_dir.path(), " ./ ", "node").is_none()
+        );
+        assert!(LockstepHarness::resolve_entry_candidate(temp_dir.path(), "", "node").is_none());
+    }
+
+    #[test]
+    fn resolve_entry_candidate_rejects_null_byte_target() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(temp_dir.path().join("index.js"), "console.log('ok');")
+            .expect("write fallback entry");
+
+        assert!(
+            LockstepHarness::resolve_entry_candidate(temp_dir.path(), "index\0.js", "node")
+                .is_none(),
+            "embedded NUL in package main must fail closed"
+        );
+    }
+
+    #[test]
+    fn resolve_runtime_target_rejects_null_byte_package_main_without_fallback() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            temp_dir.path().join("package.json"),
+            r#"{"name":"demo","main":"index\u0000.js"}"#,
+        )
+        .expect("write package");
+
+        let err = LockstepHarness::resolve_runtime_target("node", temp_dir.path())
+            .expect_err("NUL-bearing package main must fail when no fallback exists");
+        let message = format!("{err:#}");
+        assert!(message.contains("package.json main"));
+        assert!(message.contains("did not resolve"));
+    }
+
+    #[test]
+    fn resolve_runtime_target_rejects_backslash_package_main_without_fallback() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            temp_dir.path().join("package.json"),
+            r#"{"name":"demo","main":"dist\\index.js"}"#,
+        )
+        .expect("write package");
+
+        let err = LockstepHarness::resolve_runtime_target("node", temp_dir.path())
+            .expect_err("backslash package main must fail when no fallback exists");
+        let message = format!("{err:#}");
+        assert!(message.contains("package.json main"));
+        assert!(message.contains("did not resolve"));
+    }
+
+    #[test]
+    fn resolve_entry_candidate_rejects_directory_without_nested_entrypoint() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(temp_dir.path().join("dist")).expect("create dist");
+
+        assert!(
+            LockstepHarness::resolve_entry_candidate(temp_dir.path(), "dist", "node").is_none(),
+            "directory main without index candidate must not resolve"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_runtime_target_rejects_symlinked_package_manifest_outside_project() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside_dir = tempfile::tempdir().expect("outside");
+        let outside_package = outside_dir.path().join("package.json");
+        std::fs::write(&outside_package, r#"{"name":"outside","main":"index.js"}"#)
+            .expect("write outside package");
+        std::os::unix::fs::symlink(&outside_package, temp_dir.path().join("package.json"))
+            .expect("symlink package");
+
+        let err = LockstepHarness::resolve_runtime_target("node", temp_dir.path())
+            .expect_err("symlinked package manifest outside project must fail");
+        let message = format!("{err:#}");
+        assert!(message.contains("package.json must reside within"));
     }
 
     #[cfg(unix)]
@@ -1127,6 +1258,61 @@ mod tests {
         assert_ne!(ok_out, err_out);
         assert!(ok_text.contains("=> ok"));
         assert!(err_text.contains("=> err:ENOENT"));
+    }
+
+    #[test]
+    fn sanitize_lowercase_errno_falls_back_to_generic_error() {
+        let raw = b"open(\"/tmp/missing\", O_RDONLY) = -1 enoent (lowercase)\n";
+
+        let result = LockstepHarness::sanitize_strace_output(raw);
+        let output = String::from_utf8_lossy(&result);
+
+        assert!(output.contains("=> err:ERR"));
+        assert!(!output.contains("err:enoent"));
+    }
+
+    #[test]
+    fn sanitize_missing_errno_after_error_uses_generic_error() {
+        let raw = b"open(\"/tmp/missing\", O_RDONLY) = -1\n";
+
+        let result = LockstepHarness::sanitize_strace_output(raw);
+        let output = String::from_utf8_lossy(&result);
+
+        assert!(output.contains("=> err:ERR"));
+    }
+
+    #[test]
+    fn sanitize_mixed_case_errno_uses_generic_error() {
+        let raw = b"open(\"/tmp/missing\", O_RDONLY) = -1 Eperm (mixed case)\n";
+
+        let result = LockstepHarness::sanitize_strace_output(raw);
+        let output = String::from_utf8_lossy(&result);
+
+        assert!(output.contains("=> err:ERR"));
+        assert!(!output.contains("err:Eperm"));
+    }
+
+    #[test]
+    fn sanitize_negative_fd_argument_is_not_normalized() {
+        let raw = b"read(-1, \"\", 0) = -1 EBADF (Bad file descriptor)\n";
+
+        let result = LockstepHarness::sanitize_strace_output(raw);
+        let output = String::from_utf8_lossy(&result);
+
+        assert!(output.contains("read(-1"));
+        assert!(!output.contains("read(FD"));
+        assert!(output.contains("=> err:EBADF"));
+    }
+
+    #[test]
+    fn sanitize_unknown_return_outcome_for_question_mark() {
+        let raw = b"read(3, \"\", 0) = ?\n";
+
+        let result = LockstepHarness::sanitize_strace_output(raw);
+        let output = String::from_utf8_lossy(&result);
+
+        assert!(output.contains("read(FD"));
+        assert!(output.contains("=> unknown"));
     }
 
     #[test]
@@ -1381,6 +1567,19 @@ mod tests {
             .expect_err("blocking divergence must fail verification");
         let message = format!("{err:#}");
         assert!(message.contains("verdict=block_release"));
+        assert!(message.contains("div-1"));
+    }
+
+    #[test]
+    fn ensure_report_passes_rejects_requires_receipt_verdict() {
+        let report = sample_divergence_report(OracleVerdict::RequiresReceipt {
+            pending_divergence_ids: vec!["div-1".to_string()],
+        });
+
+        let err = LockstepHarness::ensure_report_passes(&report)
+            .expect_err("pending divergence receipt must fail verification");
+        let message = format!("{err:#}");
+        assert!(message.contains("verdict=requires_receipt"));
         assert!(message.contains("div-1"));
     }
 

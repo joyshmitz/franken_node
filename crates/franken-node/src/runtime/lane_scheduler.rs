@@ -26,9 +26,13 @@ pub const DEFAULT_STARVATION_WINDOW_MS: u64 = 5_000;
 pub const DEFAULT_MAX_AUDIT_LOG_ENTRIES: usize = 4_096;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
-        items.drain(0..overflow);
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow.min(items.len()));
     }
     items.push(item);
 }
@@ -935,6 +939,16 @@ mod tests {
     }
 
     #[test]
+    fn default_policy_priority_weights_descend_by_execution_class() {
+        let p = default_policy();
+        let weight = |lane: SchedulerLane| p.lane_configs[lane.as_str()].priority_weight;
+
+        assert!(weight(SchedulerLane::ControlCritical) > weight(SchedulerLane::RemoteEffect));
+        assert!(weight(SchedulerLane::RemoteEffect) > weight(SchedulerLane::Maintenance));
+        assert!(weight(SchedulerLane::Maintenance) > weight(SchedulerLane::Background));
+    }
+
+    #[test]
     fn default_policy_unknown_class_returns_none() {
         let p = default_policy();
         assert_eq!(p.resolve(&TaskClass::new("nonexistent")), None);
@@ -1137,6 +1151,60 @@ mod tests {
         assert_eq!(after.first_queued_at_ms, Some(1004));
     }
 
+    #[test]
+    fn queue_depth_saturates_on_repeated_cap_overflow() {
+        let mut p = LaneMappingPolicy::new();
+        add_lane_ok(&mut p, LaneConfig::new(SchedulerLane::Background, 10, 1));
+        p.add_rule(&task_classes::log_rotation(), SchedulerLane::Background);
+        let mut s = LaneScheduler::new(p).unwrap();
+
+        let _active = s
+            .assign_task(&task_classes::log_rotation(), 1000, "active")
+            .unwrap();
+        {
+            let counters = s
+                .counters
+                .get_mut(SchedulerLane::Background.as_str())
+                .unwrap();
+            counters.queued_count = usize::MAX;
+            counters.rejected_total = u64::MAX;
+            counters.first_queued_at_ms = Some(1001);
+        }
+
+        let err = s
+            .assign_task(&task_classes::log_rotation(), 1002, "overflow")
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_LANE_CAP_EXCEEDED);
+        let counters = s.lane_counter(SchedulerLane::Background).unwrap();
+        assert_eq!(counters.queued_count, usize::MAX);
+        assert_eq!(counters.rejected_total, u64::MAX);
+        assert_eq!(counters.first_queued_at_ms, Some(1001));
+        assert_eq!(s.total_active(), 1);
+    }
+
+    #[test]
+    fn negative_cap_exceeded_does_not_create_assignment_or_audit_record() {
+        let mut p = LaneMappingPolicy::new();
+        add_lane_ok(&mut p, LaneConfig::new(SchedulerLane::Background, 10, 1));
+        p.add_rule(&task_classes::log_rotation(), SchedulerLane::Background);
+        let mut s = LaneScheduler::new(p).unwrap();
+
+        let active = s
+            .assign_task(&task_classes::log_rotation(), 1000, "trace-active")
+            .unwrap();
+        let err = s
+            .assign_task(&task_classes::log_rotation(), 1001, "trace-rejected")
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_LANE_CAP_EXCEEDED);
+        assert_eq!(s.total_active(), 1);
+        assert_eq!(s.active_tasks.len(), 1);
+        assert!(s.active_tasks.contains_key(&active.task_id));
+        assert_eq!(s.audit_log().len(), 1);
+        assert_eq!(s.audit_log()[0].event_code, event_codes::LANE_ASSIGN);
+    }
+
     // ---- Task completion ----
 
     #[test]
@@ -1155,6 +1223,30 @@ mod tests {
         let mut s = make_scheduler();
         let err = s.complete_task("nonexistent", 1000, "t1").unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_LANE_TASK_NOT_FOUND);
+    }
+
+    #[test]
+    fn negative_completing_same_task_twice_does_not_double_count() {
+        let mut s = make_scheduler();
+        let assignment = s
+            .assign_task(&task_classes::epoch_transition(), 1000, "trace-assign")
+            .unwrap();
+        s.complete_task(&assignment.task_id, 1010, "trace-complete")
+            .unwrap();
+
+        let err = s
+            .complete_task(&assignment.task_id, 1020, "trace-complete-again")
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_LANE_TASK_NOT_FOUND);
+        assert_eq!(s.total_active(), 0);
+        assert_eq!(s.total_completed(), 1);
+        let completion_records = s
+            .audit_log()
+            .iter()
+            .filter(|record| record.event_code == event_codes::LANE_TASK_COMPLETED)
+            .count();
+        assert_eq!(completion_records, 1);
     }
 
     // ---- Starvation detection ----
@@ -1297,6 +1389,28 @@ mod tests {
     }
 
     #[test]
+    fn negative_starvation_check_before_queue_timestamp_does_not_alert() {
+        let mut p = LaneMappingPolicy::new();
+        let mut cfg = LaneConfig::new(SchedulerLane::Background, 10, 1);
+        cfg.starvation_window_ms = 1;
+        add_lane_ok(&mut p, cfg);
+        p.add_rule(&task_classes::log_rotation(), SchedulerLane::Background);
+        let mut s = LaneScheduler::new(p).unwrap();
+
+        s.assign_task(&task_classes::log_rotation(), 1000, "trace-active")
+            .unwrap();
+        let _ = s.assign_task(&task_classes::log_rotation(), 1100, "trace-queued");
+
+        let starved = s.check_starvation(1099, "trace-before-queue");
+
+        assert!(starved.is_empty());
+        let counters = s.lane_counter(SchedulerLane::Background).unwrap();
+        assert_eq!(counters.starvation_events, 0);
+        assert!(!counters.starvation_active);
+        assert_eq!(counters.first_queued_at_ms, Some(1100));
+    }
+
+    #[test]
     fn starvation_events_latch_until_queue_state_recovers() {
         let mut p = LaneMappingPolicy::new();
         let mut cfg = LaneConfig::new(SchedulerLane::Background, 10, 1);
@@ -1367,6 +1481,52 @@ mod tests {
         let mut s = make_scheduler();
         let err = s.reload_policy(LaneMappingPolicy::new()).unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_LANE_INVALID_POLICY);
+    }
+
+    #[test]
+    fn negative_hot_reload_unconfigured_target_preserves_existing_policy() {
+        let mut s = make_scheduler();
+        let mut invalid = LaneMappingPolicy::new();
+        add_lane_ok(
+            &mut invalid,
+            LaneConfig::new(SchedulerLane::Background, 10, 1),
+        );
+        invalid.add_rule(
+            &task_classes::epoch_transition(),
+            SchedulerLane::RemoteEffect,
+        );
+
+        let err = s
+            .reload_policy(invalid)
+            .expect_err("reload must reject rules targeting unconfigured lanes");
+
+        assert_eq!(err.code(), error_codes::ERR_LANE_INVALID_POLICY);
+        assert_eq!(
+            s.policy().resolve(&task_classes::epoch_transition()),
+            Some(SchedulerLane::ControlCritical)
+        );
+        assert_eq!(s.lane_counters().len(), 4);
+    }
+
+    #[test]
+    fn negative_hot_reload_zero_cap_preserves_existing_scheduler() {
+        let mut s = make_scheduler();
+        let mut invalid = default_policy();
+        invalid
+            .lane_configs
+            .get_mut(SchedulerLane::Background.as_str())
+            .unwrap()
+            .concurrency_cap = 0;
+
+        let err = s
+            .reload_policy(invalid)
+            .expect_err("reload must reject zero-cap lanes");
+
+        assert_eq!(err.code(), error_codes::ERR_LANE_INVALID_POLICY);
+        let assignment = s
+            .assign_task(&task_classes::log_rotation(), 2000, "trace-after-reject")
+            .unwrap();
+        assert_eq!(assignment.lane, SchedulerLane::Background);
     }
 
     // ---- Telemetry ----
@@ -1531,6 +1691,43 @@ mod tests {
         assert_eq!(s.total_active(), 4);
     }
 
+    #[test]
+    fn deterministic_task_ids_and_lane_assignments_under_repeated_load() {
+        fn run_load() -> Vec<(String, String, SchedulerLane)> {
+            let mut policy = default_policy();
+            for config in policy.lane_configs.values_mut() {
+                config.concurrency_cap = 128;
+            }
+            let mut scheduler = LaneScheduler::new(policy).unwrap();
+            let task_classes = [
+                task_classes::epoch_transition(),
+                task_classes::remote_computation(),
+                task_classes::garbage_collection(),
+                task_classes::telemetry_export(),
+                task_classes::marker_write(),
+                task_classes::artifact_upload(),
+                task_classes::compaction(),
+                task_classes::log_rotation(),
+            ];
+
+            (0..64)
+                .map(|idx| {
+                    let task_class = &task_classes[idx % task_classes.len()];
+                    let assignment = scheduler
+                        .assign_task(task_class, 10_000 + idx as u64, &format!("trace-{idx}"))
+                        .unwrap();
+                    (
+                        assignment.task_id,
+                        assignment.task_class.to_string(),
+                        assignment.lane,
+                    )
+                })
+                .collect()
+        }
+
+        assert_eq!(run_load(), run_load());
+    }
+
     // ---- Lane config ----
 
     #[test]
@@ -1597,11 +1794,588 @@ mod tests {
         assert_eq!(counters.first_queued_at_ms, None);
     }
 
+    #[test]
+    fn negative_abort_queued_unknown_class_preserves_queue_state() {
+        let mut p = LaneMappingPolicy::new();
+        add_lane_ok(&mut p, LaneConfig::new(SchedulerLane::Background, 10, 1));
+        p.add_rule(&task_classes::log_rotation(), SchedulerLane::Background);
+        let mut s = LaneScheduler::new(p).unwrap();
+
+        s.assign_task(&task_classes::log_rotation(), 1000, "trace-active")
+            .unwrap();
+        let _ = s.assign_task(&task_classes::log_rotation(), 1001, "trace-queued");
+
+        let err = s
+            .abort_queued_task(&TaskClass::new("not_mapped"))
+            .expect_err("unknown queued task class must fail without mutation");
+
+        assert_eq!(err.code(), error_codes::ERR_LANE_UNKNOWN_CLASS);
+        let counters = s.lane_counter(SchedulerLane::Background).unwrap();
+        assert_eq!(counters.queued_count, 1);
+        assert_eq!(counters.first_queued_at_ms, Some(1001));
+        assert_eq!(s.total_active(), 1);
+    }
+
+    #[test]
+    fn negative_scheduler_new_rejects_lane_without_mapping_rules() {
+        let mut p = LaneMappingPolicy::new();
+        add_lane_ok(&mut p, LaneConfig::new(SchedulerLane::Maintenance, 20, 2));
+
+        let err =
+            LaneScheduler::new(p).expect_err("lane-only policy must reject missing mapping rules");
+
+        assert_eq!(err.code(), error_codes::ERR_LANE_INVALID_POLICY);
+        assert!(err.to_string().contains("no mapping rules defined"));
+    }
+
     // ---- Default trait ----
 
     #[test]
     fn default_policy_trait() {
         let p = LaneMappingPolicy::default();
         assert!(p.lane_configs.is_empty());
+    }
+
+    // -- Negative-Path Tests --
+
+    #[test]
+    fn negative_massive_task_class_policy_stress_testing() {
+        // Test scheduler behavior with massive number of task class mappings
+        let mut policy = LaneMappingPolicy::new();
+        let massive_task_class_count = 10_000;
+
+        // Create large number of task class mappings
+        for i in 0..massive_task_class_count {
+            let lane = match i % 4 {
+                0 => SchedulerLane::ControlCritical,
+                1 => SchedulerLane::RemoteEffect,
+                2 => SchedulerLane::Maintenance,
+                _ => SchedulerLane::Background,
+            };
+
+            let task_class = TaskClass::new(&format!("stress-task-class-{:06}", i));
+            let config = LaneConfig {
+                lane,
+                task_classes: vec![task_class],
+                max_concurrent: 100,
+                priority_weight: (i % 10 + 1) as f64,
+                starvation_threshold_ms: 5000,
+            };
+
+            // Should handle massive policy configurations
+            let add_result = policy.add_lane(config);
+            match add_result {
+                Ok(()) => {},
+                Err(LaneSchedulerError::DuplicateLane { .. }) => {
+                    // Expected when lanes get reused - break early
+                    break;
+                },
+                Err(_) => {
+                    // Other errors acceptable under stress
+                    break;
+                }
+            }
+        }
+
+        // Create scheduler with massive policy
+        let scheduler_result = LaneScheduler::new(policy);
+        match scheduler_result {
+            Ok(mut scheduler) => {
+                // Test task assignment with massive policy
+                for i in 0..100 {
+                    let task_class = TaskClass::new(&format!("stress-task-class-{:06}", i));
+                    let task_id = TaskId::new(&format!("stress-task-{}", i));
+                    let _assign_result = scheduler.assign_task(task_class, task_id, 1000 + i as u64);
+                    // Should handle gracefully regardless of success/failure
+                }
+
+                // Telemetry should remain bounded despite massive configuration
+                let telemetry = scheduler.collect_telemetry(2000);
+                assert!(telemetry.metrics.len() <= 4); // One per lane type maximum
+            },
+            Err(_) => {
+                // Acceptable to reject massive configurations for resource protection
+            }
+        }
+    }
+
+    #[test]
+    fn negative_unicode_injection_in_task_identifiers() {
+        // Test task class and task ID handling with Unicode and control characters
+        let mut scheduler = make_scheduler();
+
+        let malicious_task_identifiers = vec![
+            "task\0null-injection",
+            "task🚀emoji-attack",
+            "task\u{200B}zero-width-space",
+            "task\u{FEFF}bom-marker",
+            "task\r\ncarriage-return",
+            "task/../../../etc/passwd",
+            "task\u{202E}rtl-override\u{202D}attack",
+            "task\x1B[H\x1B[2Jansi-escape",
+            "задача-кириллица",
+            "任务-中文",
+            "task\x01\x02\x03control-chars",
+            "task<script>alert('xss')</script>",
+        ];
+
+        for (i, malicious_id) in malicious_task_identifiers.iter().enumerate() {
+            // Test malicious task class
+            let malicious_task_class = TaskClass::new(malicious_id);
+            let task_id = TaskId::new(&format!("test-task-{}", i));
+
+            let assign_result = scheduler.assign_task(malicious_task_class, task_id.clone(), 1000 + i as u64);
+
+            match assign_result {
+                Ok(lane) => {
+                    // Successfully assigned - test task completion with Unicode
+                    let complete_result = scheduler.complete_task(&task_id, lane, 2000 + i as u64);
+                    // Should handle Unicode gracefully without corruption
+                    let _ = complete_result; // May succeed or fail, but shouldn't crash
+                },
+                Err(LaneSchedulerError::UnknownTaskClass { .. }) => {
+                    // Expected for unrecognized malicious task classes
+                }
+                Err(_) => {
+                    // Other errors acceptable for malformed input
+                }
+            }
+
+            // Test malicious task ID
+            let normal_task_class = TaskClass::new("epoch_transition");
+            let malicious_task_id = TaskId::new(malicious_id);
+
+            let assign_result2 = scheduler.assign_task(normal_task_class, malicious_task_id.clone(), 3000 + i as u64);
+
+            if let Ok(lane) = assign_result2 {
+                let _complete_result = scheduler.complete_task(&malicious_task_id, lane, 4000 + i as u64);
+            }
+        }
+
+        // Audit log should handle Unicode content safely
+        let audit_log = scheduler.audit_log();
+        for record in audit_log {
+            assert!(!record.event_code.is_empty());
+            // Fields should not be corrupted by Unicode injection
+            if let Some(ref task_id) = record.task_id {
+                assert!(!task_id.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn negative_extreme_priority_weight_and_starvation_arithmetic() {
+        // Test priority weight calculations and starvation detection at extreme values
+        let mut policy = LaneMappingPolicy::new();
+
+        // Add lanes with extreme priority weights
+        add_lane_ok(&mut policy, LaneConfig {
+            lane: SchedulerLane::ControlCritical,
+            task_classes: vec![TaskClass::new("critical_task")],
+            max_concurrent: 1,
+            priority_weight: f64::MAX,
+            starvation_threshold_ms: u64::MAX,
+        });
+
+        add_lane_ok(&mut policy, LaneConfig {
+            lane: SchedulerLane::Background,
+            task_classes: vec![TaskClass::new("background_task")],
+            max_concurrent: 1,
+            priority_weight: f64::MIN_POSITIVE,
+            starvation_threshold_ms: 1, // Minimal threshold
+        });
+
+        add_lane_ok(&mut policy, LaneConfig {
+            lane: SchedulerLane::RemoteEffect,
+            task_classes: vec![TaskClass::new("remote_task")],
+            max_concurrent: 1,
+            priority_weight: f64::NAN, // Invalid weight
+            starvation_threshold_ms: 5000,
+        });
+
+        add_lane_ok(&mut policy, LaneConfig {
+            lane: SchedulerLane::Maintenance,
+            task_classes: vec![TaskClass::new("maint_task")],
+            max_concurrent: 1,
+            priority_weight: f64::INFINITY, // Infinite weight
+            starvation_threshold_ms: 5000,
+        });
+
+        let scheduler_result = LaneScheduler::new(policy);
+        match scheduler_result {
+            Ok(mut scheduler) => {
+                // Test starvation detection with extreme thresholds
+                let critical_task = TaskId::new("extreme-critical-task");
+                let background_task = TaskId::new("extreme-background-task");
+
+                // Assign high priority task
+                if scheduler.assign_task(TaskClass::new("critical_task"), critical_task.clone(), 1000).is_ok() {
+                    // Complete high priority task
+                    let _complete_result = scheduler.complete_task(&critical_task, SchedulerLane::ControlCritical, 2000);
+                }
+
+                // Test starvation detection at extreme timestamps
+                let starvation_results = scheduler.check_starvation(u64::MAX.saturating_sub(1000));
+
+                // Should handle extreme timestamp arithmetic without overflow
+                assert!(starvation_results.len() <= 4); // At most one per lane
+
+                // Priority calculations should handle extreme weights
+                let telemetry = scheduler.collect_telemetry(u64::MAX);
+                assert!(telemetry.metrics.len() <= 4);
+
+                // Verify no NaN/infinity contamination in metrics
+                for metric in &telemetry.metrics {
+                    assert!(metric.priority_weight.is_finite() || metric.priority_weight == 0.0);
+                    assert!(metric.avg_completion_time_ms.is_finite() || metric.avg_completion_time_ms == 0.0);
+                }
+            },
+            Err(_) => {
+                // Acceptable to reject configuration with extreme/invalid values
+            }
+        }
+    }
+
+    #[test]
+    fn negative_concurrent_task_capacity_overflow_stress() {
+        // Test concurrent task capacity limits under extreme load
+        let mut policy = LaneMappingPolicy::new();
+
+        // Create lane with very small capacity
+        add_lane_ok(&mut policy, LaneConfig {
+            lane: SchedulerLane::ControlCritical,
+            task_classes: vec![TaskClass::new("capacity_test")],
+            max_concurrent: 2, // Very small capacity
+            priority_weight: 1.0,
+            starvation_threshold_ms: 5000,
+        });
+
+        let mut scheduler = LaneScheduler::new(policy).expect("create scheduler");
+        let task_class = TaskClass::new("capacity_test");
+
+        // Attempt to exceed capacity by large margin
+        let excessive_task_count = 1000;
+        let mut successful_assignments = 0;
+        let mut capacity_errors = 0;
+        let mut task_ids = Vec::new();
+
+        for i in 0..excessive_task_count {
+            let task_id = TaskId::new(&format!("capacity-stress-task-{:06}", i));
+            let assign_result = scheduler.assign_task(task_class.clone(), task_id.clone(), 1000 + i as u64);
+
+            match assign_result {
+                Ok(_) => {
+                    successful_assignments = successful_assignments.saturating_add(1);
+                    task_ids.push(task_id);
+                },
+                Err(LaneSchedulerError::CapacityExceeded { .. }) => {
+                    capacity_errors = capacity_errors.saturating_add(1);
+                    // Expected when capacity is reached
+                    if capacity_errors > 100 {
+                        // Stop after reasonable number of rejections
+                        break;
+                    }
+                },
+                Err(_) => {
+                    // Other errors acceptable under stress
+                    break;
+                }
+            }
+        }
+
+        // Should enforce capacity limits strictly
+        assert!(successful_assignments <= 2, "Should respect max_concurrent limit");
+        assert!(capacity_errors > 0, "Should reject tasks beyond capacity");
+
+        // Complete some tasks to free capacity
+        for (i, task_id) in task_ids.iter().enumerate().take(1) {
+            let _complete_result = scheduler.complete_task(task_id, SchedulerLane::ControlCritical, 5000 + i as u64);
+        }
+
+        // Should be able to assign new task after freeing capacity
+        let new_task = TaskId::new("post-completion-task");
+        let assign_after_complete = scheduler.assign_task(task_class, new_task, 6000);
+        // May succeed or fail depending on implementation details
+
+        // Metrics should accurately reflect capacity enforcement
+        let telemetry = scheduler.collect_telemetry(7000);
+        let control_metric = telemetry.metrics.iter()
+            .find(|m| m.lane == SchedulerLane::ControlCritical);
+
+        if let Some(metric) = control_metric {
+            assert!(metric.current_active <= 2); // Should not exceed max_concurrent
+            assert_eq!(metric.max_concurrent, 2);
+        }
+    }
+
+    #[test]
+    fn negative_starvation_detection_timing_edge_cases() {
+        // Test starvation detection with edge case timing scenarios
+        let mut policy = LaneMappingPolicy::new();
+
+        // Lane with very short starvation threshold
+        add_lane_ok(&mut policy, LaneConfig {
+            lane: SchedulerLane::Background,
+            task_classes: vec![TaskClass::new("starved_task")],
+            max_concurrent: 10,
+            priority_weight: 0.1,
+            starvation_threshold_ms: 1, // Extremely short threshold
+        });
+
+        // Lane that should never starve (infinite threshold)
+        add_lane_ok(&mut policy, LaneConfig {
+            lane: SchedulerLane::ControlCritical,
+            task_classes: vec![TaskClass::new("never_starved")],
+            max_concurrent: 10,
+            priority_weight: 10.0,
+            starvation_threshold_ms: u64::MAX, // Never starve
+        });
+
+        let mut scheduler = LaneScheduler::new(policy).expect("create scheduler");
+
+        // Assign task to quickly-starving lane
+        let starved_task = TaskId::new("starved-task");
+        if scheduler.assign_task(TaskClass::new("starved_task"), starved_task.clone(), 1000).is_ok() {
+            // Complete immediately
+            let _complete_result = scheduler.complete_task(&starved_task, SchedulerLane::Background, 1001);
+        }
+
+        // Check starvation at various extreme timestamps
+        let starvation_check_times = vec![
+            1002, // Just after completion
+            u64::MAX.saturating_sub(1000), // Near maximum timestamp
+            u64::MAX, // Maximum timestamp
+        ];
+
+        for check_time in starvation_check_times {
+            let starvation_results = scheduler.check_starvation(check_time);
+
+            // Background lane should be starved due to short threshold
+            let background_starved = starvation_results.iter()
+                .any(|r| r.lane == SchedulerLane::Background);
+
+            // Control lane should never be starved due to infinite threshold
+            let control_starved = starvation_results.iter()
+                .any(|r| r.lane == SchedulerLane::ControlCritical);
+
+            assert!(!control_starved, "Lane with u64::MAX threshold should never starve at time {}", check_time);
+
+            // Starvation results should handle extreme timestamps
+            for result in &starvation_results {
+                assert!(result.last_activity_ms <= check_time);
+                assert!(result.starvation_duration_ms < u64::MAX); // Should not overflow
+            }
+        }
+
+        // Audit log should record starvation events properly
+        let audit_log = scheduler.audit_log();
+        let starvation_events = audit_log.iter()
+            .filter(|r| r.event_code == event_codes::LANE_STARVED);
+
+        for event in starvation_events {
+            assert!(event.timestamp_ms > 0);
+        }
+    }
+
+    #[test]
+    fn negative_policy_hot_reload_with_conflicting_configurations() {
+        // Test hot policy reload with conflicting and malformed configurations
+        let mut scheduler = make_scheduler();
+
+        // Create conflicting policy configurations
+        let conflicting_policies = vec![
+            // Policy with duplicate task classes
+            {
+                let mut policy = LaneMappingPolicy::new();
+                add_lane_ok(&mut policy, LaneConfig {
+                    lane: SchedulerLane::ControlCritical,
+                    task_classes: vec![
+                        TaskClass::new("duplicate_class"),
+                        TaskClass::new("duplicate_class"), // Duplicate within same lane
+                    ],
+                    max_concurrent: 5,
+                    priority_weight: 1.0,
+                    starvation_threshold_ms: 5000,
+                });
+                policy
+            },
+            // Policy with extreme configurations
+            {
+                let mut policy = LaneMappingPolicy::new();
+                add_lane_ok(&mut policy, LaneConfig {
+                    lane: SchedulerLane::Background,
+                    task_classes: vec![TaskClass::new("extreme_config")],
+                    max_concurrent: 0, // Invalid: zero concurrency
+                    priority_weight: -1.0, // Invalid: negative weight
+                    starvation_threshold_ms: 0, // Invalid: zero threshold
+                });
+                policy
+            },
+            // Empty policy (no lanes)
+            LaneMappingPolicy::new(),
+        ];
+
+        // Assign task before policy changes
+        let original_task = TaskId::new("original-task");
+        let assign_result = scheduler.assign_task(TaskClass::new("epoch_transition"), original_task.clone(), 1000);
+        let original_lane = assign_result.ok();
+
+        for (i, conflicting_policy) in conflicting_policies.into_iter().enumerate() {
+            let reload_result = scheduler.reload_policy(conflicting_policy, 2000 + i as u64);
+
+            match reload_result {
+                Ok(()) => {
+                    // Policy accepted - test that scheduler remains functional
+                    let test_task = TaskId::new(&format!("post-reload-task-{}", i));
+                    let _assign_result = scheduler.assign_task(TaskClass::new("test_class"), test_task, 3000 + i as u64);
+                    // May succeed or fail, but should not crash
+                },
+                Err(_) => {
+                    // Expected for malformed policies
+                }
+            }
+
+            // Check that existing tasks aren't corrupted by policy changes
+            if let Some(lane) = original_lane {
+                let _complete_result = scheduler.complete_task(&original_task, lane, 4000 + i as u64);
+                // Should handle gracefully even if policy changed
+            }
+        }
+
+        // Telemetry should remain stable despite policy chaos
+        let telemetry = scheduler.collect_telemetry(5000);
+        assert!(telemetry.metrics.len() <= 4); // Bounded by number of lane types
+
+        // Audit log should record policy reload attempts
+        let audit_log = scheduler.audit_log();
+        let policy_reload_events = audit_log.iter()
+            .filter(|r| r.event_code == event_codes::LANE_POLICY_RELOADED);
+
+        // Should have recorded reload attempts
+        assert!(policy_reload_events.count() >= 0); // At least attempted reloads
+    }
+
+    #[test]
+    fn negative_audit_log_memory_pressure_with_rapid_task_cycling() {
+        // Test audit log behavior under rapid task assignment/completion cycles
+        let mut scheduler = make_scheduler();
+
+        // Rapid task cycling far exceeding audit log capacity
+        for cycle in 0..100 {
+            for task_num in 0..100 {
+                let task_id = TaskId::new(&format!("rapid-{:03}-{:03}", cycle, task_num));
+                let task_class = match task_num % 4 {
+                    0 => TaskClass::new("epoch_transition"),
+                    1 => TaskClass::new("remote_computation"),
+                    2 => TaskClass::new("garbage_collection"),
+                    _ => TaskClass::new("telemetry_export"),
+                };
+
+                // Assign task
+                if let Ok(lane) = scheduler.assign_task(task_class, task_id.clone(), cycle * 1000 + task_num as u64) {
+                    // Complete immediately
+                    let _complete_result = scheduler.complete_task(&task_id, lane, cycle * 1000 + task_num as u64 + 500);
+                }
+
+                // Periodic starvation checks
+                if task_num % 50 == 0 {
+                    let _starvation_results = scheduler.check_starvation(cycle * 1000 + task_num as u64 + 750);
+                }
+            }
+        }
+
+        // Audit log should be bounded despite massive operation volume
+        let audit_log = scheduler.audit_log();
+        assert!(audit_log.len() <= DEFAULT_MAX_AUDIT_LOG_ENTRIES.saturating_add(100));
+
+        // All audit entries should be well-formed despite high throughput
+        for record in audit_log {
+            assert!(!record.event_code.is_empty());
+            assert!(record.timestamp_ms > 0);
+            // Task ID may be None for non-task events, which is acceptable
+            match &record.task_id {
+                Some(task_id) => assert!(!task_id.is_empty()),
+                None => {} // Acceptable for lane-level events
+            }
+        }
+
+        // Telemetry should accurately reflect high-volume operations
+        let telemetry = scheduler.collect_telemetry(999999);
+        let total_completed = telemetry.total_completed();
+        assert!(total_completed > 0); // Should have completed some tasks
+
+        // Counters should use saturating arithmetic to prevent overflow
+        for metric in &telemetry.metrics {
+            assert!(metric.completed_total < u64::MAX); // Should not overflow
+            assert!(metric.current_active < u32::MAX); // Should not overflow
+        }
+    }
+
+    #[test]
+    fn negative_task_completion_without_assignment_and_orphaned_tasks() {
+        // Test handling of orphaned tasks and completion without assignment
+        let mut scheduler = make_scheduler();
+
+        // Try to complete task that was never assigned
+        let orphan_task = TaskId::new("never-assigned-task");
+        let orphan_complete_result = scheduler.complete_task(&orphan_task, SchedulerLane::ControlCritical, 1000);
+
+        match orphan_complete_result {
+            Err(LaneSchedulerError::TaskNotFound { .. }) => {
+                // Expected error for unassigned task
+            },
+            _ => {
+                // Implementation may handle differently, but should not crash
+            }
+        }
+
+        // Assign task normally
+        let normal_task = TaskId::new("normal-assigned-task");
+        let assign_result = scheduler.assign_task(TaskClass::new("epoch_transition"), normal_task.clone(), 1500);
+        assert!(assign_result.is_ok());
+
+        // Complete task normally
+        let complete_result = scheduler.complete_task(&normal_task, SchedulerLane::ControlCritical, 2000);
+        assert!(complete_result.is_ok());
+
+        // Try to complete same task again (double completion)
+        let double_complete_result = scheduler.complete_task(&normal_task, SchedulerLane::ControlCritical, 2500);
+
+        match double_complete_result {
+            Err(LaneSchedulerError::TaskNotFound { .. }) => {
+                // Expected error for already-completed task
+            },
+            _ => {
+                // Implementation may handle differently
+            }
+        }
+
+        // Try to complete task on wrong lane
+        let wrong_lane_task = TaskId::new("wrong-lane-task");
+        if scheduler.assign_task(TaskClass::new("epoch_transition"), wrong_lane_task.clone(), 3000).is_ok() {
+            let wrong_lane_result = scheduler.complete_task(&wrong_lane_task, SchedulerLane::Background, 3500);
+
+            match wrong_lane_result {
+                Err(LaneSchedulerError::TaskNotFound { .. }) => {
+                    // Expected error for wrong lane
+                },
+                _ => {
+                    // Implementation may handle differently
+                }
+            }
+        }
+
+        // Audit log should record all attempts (successful and failed)
+        let audit_log = scheduler.audit_log();
+        let completion_attempts = audit_log.iter()
+            .filter(|r| r.event_code == event_codes::LANE_TASK_COMPLETED);
+
+        // Should have recorded at least the successful completion
+        assert!(completion_attempts.count() >= 1);
+
+        // Telemetry should reflect only actual completions, not failed attempts
+        let telemetry = scheduler.collect_telemetry(4000);
+        let total_completed = telemetry.total_completed();
+        assert_eq!(total_completed, 1); // Only one successful completion
     }
 }

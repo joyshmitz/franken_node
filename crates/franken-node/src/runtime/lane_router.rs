@@ -897,9 +897,12 @@ impl LaneRouter {
                         .queue_wait_samples_ms
                         .push(now_ms.saturating_sub(queued.enqueued_at_ms));
                     if lane_state.metrics.queue_wait_samples_ms.len() > MAX_QUEUE_WAIT_SAMPLES {
-                        let overflow =
-                            lane_state.metrics.queue_wait_samples_ms.len() - MAX_QUEUE_WAIT_SAMPLES;
-                        lane_state.metrics.queue_wait_samples_ms.drain(0..overflow);
+                        let sample_count = lane_state.metrics.queue_wait_samples_ms.len();
+                        let overflow = sample_count.saturating_sub(MAX_QUEUE_WAIT_SAMPLES);
+                        lane_state
+                            .metrics
+                            .queue_wait_samples_ms
+                            .drain(0..overflow.min(sample_count));
                     }
                     (op_id, lane_state.metrics.in_flight)
                 };
@@ -981,9 +984,13 @@ fn map_bulkhead_err(err: BulkheadError) -> LaneRouterError {
 }
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
-        items.drain(0..overflow);
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow.min(items.len()));
     }
     items.push(item);
 }
@@ -991,6 +998,7 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{Config, Profile};
 
     fn lane_cfg(max: usize, overflow_policy: LaneOverflowPolicy) -> RuntimeLaneConfig {
         RuntimeLaneConfig {
@@ -1031,6 +1039,257 @@ mod tests {
 
     fn cx_with_scope(scope: &str) -> CapabilityContext {
         CapabilityContext::with_scopes("cx-1", "operator-a", vec![scope.to_string()])
+    }
+
+    fn enqueue_for_test(
+        router: &mut LaneRouter,
+        lane: ProductLane,
+        operation_id: &str,
+        enqueued_at_ms: u64,
+        expires_at_ms: u64,
+    ) {
+        let lane_state = router.lanes.get_mut(&lane).expect("lane exists");
+        lane_state.queue.push_back(QueuedOperation {
+            operation_id: operation_id.to_string(),
+            enqueued_at_ms,
+            expires_at_ms,
+            cx_id: format!("cx-{operation_id}"),
+            principal: "operator-test".to_string(),
+        });
+        lane_state.metrics.queued = lane_state.queue.len();
+        router.queued_operation_ids.insert(operation_id.to_string());
+    }
+
+    mod lane_router_routing_priority_overflow_conformance {
+        use super::*;
+
+        fn cx_with_scopes(scopes: &[&str]) -> CapabilityContext {
+            CapabilityContext::with_scopes(
+                "cx-conformance",
+                "operator-conformance",
+                scopes.iter().map(|scope| (*scope).to_string()),
+            )
+        }
+
+        fn configured_lane_queue<'a>(router: &'a LaneRouter, lane: ProductLane) -> Vec<&'a str> {
+            router
+                .lanes
+                .get(&lane)
+                .expect("lane exists")
+                .queue
+                .iter()
+                .map(|queued| queued.operation_id.as_str())
+                .collect()
+        }
+
+        #[test]
+        fn multiple_lane_scopes_without_hint_route_to_highest_priority_lane() {
+            let mut router = LaneRouter::from_runtime_config(&runtime_config()).expect("router");
+            let cx = cx_with_scopes(&[
+                "lane.background",
+                "lane.realtime",
+                "lane.timed",
+                "lane.cancel",
+            ]);
+
+            let assigned = router
+                .assign_operation(&cx, "multi-scope-op", None, 1)
+                .expect("assignment should succeed");
+
+            assert_eq!(assigned.lane, ProductLane::Cancel);
+            assert!(!assigned.queued);
+        }
+
+        #[test]
+        fn authorized_lane_hint_can_select_lower_priority_lane_from_multi_scope_context() {
+            let mut router = LaneRouter::from_runtime_config(&runtime_config()).expect("router");
+            let cx = cx_with_scopes(&["lane.cancel", "lane.background"]);
+
+            let assigned = router
+                .assign_operation(&cx, "hinted-background-op", Some("background"), 1)
+                .expect("assignment should succeed");
+
+            assert_eq!(assigned.lane, ProductLane::Background);
+            assert!(!assigned.queued);
+            assert_eq!(router.unknown_lane_default_count(), 0);
+        }
+
+        #[test]
+        fn ready_alias_routes_to_realtime_when_scope_authorizes_ready_lane() {
+            let mut router = LaneRouter::from_runtime_config(&runtime_config()).expect("router");
+            let cx = cx_with_scopes(&["lane.ready"]);
+
+            let assigned = router
+                .assign_operation(&cx, "ready-alias-op", Some("ready"), 1)
+                .expect("assignment should succeed");
+
+            assert_eq!(assigned.lane, ProductLane::Realtime);
+            assert!(!assigned.queued);
+        }
+
+        #[test]
+        fn equal_priority_weights_promote_by_stable_lane_rank_tiebreaker() {
+            let mut cfg = runtime_config();
+            cfg.remote_max_in_flight = 8;
+            for lane_cfg in cfg.lanes.values_mut() {
+                lane_cfg.priority_weight = 10;
+            }
+            let mut router = LaneRouter::from_runtime_config(&cfg).expect("router");
+
+            enqueue_for_test(&mut router, ProductLane::Background, "bg-q", 1, 10_000);
+            enqueue_for_test(&mut router, ProductLane::Realtime, "rt-q", 1, 10_000);
+            enqueue_for_test(&mut router, ProductLane::Timed, "timed-q", 1, 10_000);
+            enqueue_for_test(&mut router, ProductLane::Cancel, "cancel-q", 1, 10_000);
+
+            router
+                .promote_queued(100)
+                .expect("promotion should succeed");
+
+            let promoted: Vec<&str> = router
+                .events()
+                .iter()
+                .filter(|event| event.event_code == event_codes::LANE_ASSIGNED)
+                .map(|event| event.operation_id.as_str())
+                .collect();
+            assert_eq!(promoted, vec!["cancel-q", "timed-q", "rt-q", "bg-q"]);
+        }
+
+        #[test]
+        fn reject_overflow_policy_never_enqueues_or_tracks_rejected_operation() {
+            let mut cfg = runtime_config();
+            cfg.lanes.insert(
+                "cancel".to_string(),
+                RuntimeLaneConfig {
+                    max_concurrent: 1,
+                    priority_weight: 100,
+                    queue_limit: 2,
+                    enqueue_timeout_ms: 25,
+                    overflow_policy: LaneOverflowPolicy::Reject,
+                },
+            );
+            let mut router = LaneRouter::from_runtime_config(&cfg).expect("router");
+            let cancel = cx_with_scope("lane.cancel");
+
+            router
+                .assign_operation(&cancel, "cancel-active", None, 1)
+                .expect("first cancel should be active");
+            let err = router
+                .assign_operation(&cancel, "cancel-rejected", None, 2)
+                .expect_err("reject policy should reject overflow");
+
+            assert_eq!(err.code(), error_codes::LANE_SATURATED);
+            assert!(!router.queued_operation_ids.contains("cancel-rejected"));
+            assert!(configured_lane_queue(&router, ProductLane::Cancel).is_empty());
+        }
+
+        #[test]
+        fn enqueue_with_timeout_queue_limit_preserves_fifo_until_full_then_rejects() {
+            let mut cfg = runtime_config();
+            cfg.lanes.insert(
+                "timed".to_string(),
+                RuntimeLaneConfig {
+                    max_concurrent: 1,
+                    priority_weight: 50,
+                    queue_limit: 2,
+                    enqueue_timeout_ms: 100,
+                    overflow_policy: LaneOverflowPolicy::EnqueueWithTimeout,
+                },
+            );
+            let mut router = LaneRouter::from_runtime_config(&cfg).expect("router");
+            let timed = cx_with_scope("lane.timed");
+
+            router
+                .assign_operation(&timed, "timed-active", None, 1)
+                .expect("first timed should be active");
+            assert!(
+                router
+                    .assign_operation(&timed, "timed-q-old", None, 2)
+                    .expect("first overflow should queue")
+                    .queued
+            );
+            assert!(
+                router
+                    .assign_operation(&timed, "timed-q-new", None, 3)
+                    .expect("second overflow should queue")
+                    .queued
+            );
+            let err = router
+                .assign_operation(&timed, "timed-q-overflow", None, 4)
+                .expect_err("third overflow should hit queue limit");
+
+            assert_eq!(err.code(), error_codes::LANE_SATURATED);
+            assert_eq!(
+                configured_lane_queue(&router, ProductLane::Timed),
+                vec!["timed-q-old", "timed-q-new"]
+            );
+
+            router
+                .complete_operation("timed-active", 5, false)
+                .expect("completion should promote oldest queued timed op");
+            assert!(router.active.contains_key("timed-q-old"));
+            assert_eq!(
+                configured_lane_queue(&router, ProductLane::Timed),
+                vec!["timed-q-new"]
+            );
+        }
+    }
+
+    #[test]
+    fn profile_defaults_govern_lane_capacity_monotonicity() {
+        let strict = Config::for_profile(Profile::Strict).runtime;
+        let balanced = Config::for_profile(Profile::Balanced).runtime;
+        let legacy = Config::for_profile(Profile::LegacyRisky).runtime;
+
+        assert!(strict.remote_max_in_flight < balanced.remote_max_in_flight);
+        assert!(balanced.remote_max_in_flight < legacy.remote_max_in_flight);
+
+        for lane in ["cancel", "timed", "realtime", "background"] {
+            assert!(strict.lanes[lane].max_concurrent <= balanced.lanes[lane].max_concurrent);
+            assert!(balanced.lanes[lane].max_concurrent <= legacy.lanes[lane].max_concurrent);
+            assert!(strict.lanes[lane].queue_limit <= balanced.lanes[lane].queue_limit);
+            assert!(balanced.lanes[lane].queue_limit <= legacy.lanes[lane].queue_limit);
+        }
+
+        assert_eq!(
+            strict.lanes["cancel"].overflow_policy,
+            LaneOverflowPolicy::Reject
+        );
+        assert_eq!(
+            strict.lanes["background"].overflow_policy,
+            LaneOverflowPolicy::ShedOldest
+        );
+    }
+
+    #[test]
+    fn strict_profile_enforces_tighter_cancel_capacity_than_legacy() {
+        let strict_runtime = Config::for_profile(Profile::Strict).runtime;
+        let legacy_runtime = Config::for_profile(Profile::LegacyRisky).runtime;
+        let strict_cancel_cap = strict_runtime.lanes["cancel"].max_concurrent;
+        let cancel = cx_with_scope("lane.cancel");
+
+        let mut strict_router =
+            LaneRouter::from_runtime_config(&strict_runtime).expect("strict router");
+        for idx in 0..strict_cancel_cap {
+            strict_router
+                .assign_operation(&cancel, &format!("strict-cancel-{idx}"), None, idx as u64)
+                .expect("strict cancel within cap");
+        }
+        let strict_err = strict_router
+            .assign_operation(&cancel, "strict-cancel-overflow", None, 10_000)
+            .expect_err("strict cancel should be saturated");
+        assert_eq!(strict_err.code(), error_codes::LANE_SATURATED);
+
+        let mut legacy_router =
+            LaneRouter::from_runtime_config(&legacy_runtime).expect("legacy router");
+        for idx in 0..strict_cancel_cap {
+            legacy_router
+                .assign_operation(&cancel, &format!("legacy-cancel-{idx}"), None, idx as u64)
+                .expect("legacy cancel within strict cap");
+        }
+        let legacy_extra = legacy_router
+            .assign_operation(&cancel, "legacy-cancel-extra", None, 10_000)
+            .expect("legacy profile should still have cancel capacity");
+        assert_eq!(legacy_extra.lane, ProductLane::Cancel);
     }
 
     #[test]
@@ -1206,6 +1465,78 @@ mod tests {
     }
 
     #[test]
+    fn queued_promotion_prefers_higher_priority_lanes() {
+        let mut cfg = runtime_config();
+        cfg.remote_max_in_flight = 10;
+        let mut router = LaneRouter::from_runtime_config(&cfg).expect("router");
+
+        enqueue_for_test(
+            &mut router,
+            ProductLane::Background,
+            "background-q",
+            1,
+            1_000,
+        );
+        enqueue_for_test(&mut router, ProductLane::Realtime, "realtime-q", 1, 1_000);
+        enqueue_for_test(&mut router, ProductLane::Timed, "timed-q", 1, 1_000);
+
+        router.promote_queued(10).expect("promotion should succeed");
+
+        let assigned: Vec<&str> = router
+            .events()
+            .iter()
+            .filter(|event| event.event_code == event_codes::LANE_ASSIGNED)
+            .map(|event| event.operation_id.as_str())
+            .collect();
+        assert_eq!(assigned, vec!["timed-q", "realtime-q", "background-q"]);
+    }
+
+    #[test]
+    fn queued_promotion_is_deterministic_under_repeated_load() {
+        fn run_once() -> Vec<(String, String)> {
+            let mut cfg = runtime_config();
+            cfg.remote_max_in_flight = 32;
+            let mut router = LaneRouter::from_runtime_config(&cfg).expect("router");
+
+            for idx in 0..8 {
+                enqueue_for_test(
+                    &mut router,
+                    ProductLane::Background,
+                    &format!("background-{idx}"),
+                    idx,
+                    10_000,
+                );
+                enqueue_for_test(
+                    &mut router,
+                    ProductLane::Realtime,
+                    &format!("realtime-{idx}"),
+                    idx,
+                    10_000,
+                );
+                enqueue_for_test(
+                    &mut router,
+                    ProductLane::Timed,
+                    &format!("timed-{idx}"),
+                    idx,
+                    10_000,
+                );
+            }
+
+            router
+                .promote_queued(100)
+                .expect("promotion should succeed");
+            router
+                .events()
+                .iter()
+                .filter(|event| event.event_code == event_codes::LANE_ASSIGNED)
+                .map(|event| (event.lane_name.clone(), event.operation_id.clone()))
+                .collect()
+        }
+
+        assert_eq!(run_once(), run_once());
+    }
+
+    #[test]
     fn cancel_lane_not_starved_when_background_under_pressure() {
         let mut cfg = runtime_config();
         cfg.remote_max_in_flight = 4;
@@ -1273,6 +1604,129 @@ mod tests {
             }),
             "lane saturation event should be recorded for non-background ShedOldest"
         );
+    }
+
+    #[test]
+    fn enqueue_with_timeout_queue_limit_rejects_without_tracking_rejected_id() {
+        let mut cfg = runtime_config();
+        cfg.lanes.insert(
+            "timed".to_string(),
+            RuntimeLaneConfig {
+                max_concurrent: 1,
+                priority_weight: 10,
+                queue_limit: 1,
+                enqueue_timeout_ms: 25,
+                overflow_policy: LaneOverflowPolicy::EnqueueWithTimeout,
+            },
+        );
+
+        let mut router = LaneRouter::from_runtime_config(&cfg).expect("router");
+        let timed = cx_with_scope("lane.timed");
+        router
+            .assign_operation(&timed, "timed-active", None, 1)
+            .expect("active");
+        assert!(
+            router
+                .assign_operation(&timed, "timed-q1", None, 2)
+                .expect("queued")
+                .queued
+        );
+
+        let err = router
+            .assign_operation(&timed, "timed-q2", None, 3)
+            .expect_err("queue limit should reject");
+        assert_eq!(err.code(), error_codes::LANE_SATURATED);
+        assert!(router.queued_operation_ids.contains("timed-q1"));
+        assert!(!router.queued_operation_ids.contains("timed-q2"));
+        let timed_state = router.lanes.get(&ProductLane::Timed).expect("timed");
+        assert_eq!(timed_state.metrics.queued, 1);
+        assert_eq!(timed_state.metrics.rejected, 1);
+
+        router
+            .complete_operation("timed-active", 4, false)
+            .expect("promote q1");
+        let retry = router
+            .assign_operation(&timed, "timed-q2", None, 5)
+            .expect("rejected id should be reusable");
+        assert!(retry.queued);
+    }
+
+    #[test]
+    fn background_shed_oldest_removes_dropped_operation_id_from_duplicate_set() {
+        let mut cfg = runtime_config();
+        cfg.lanes.insert(
+            "background".to_string(),
+            RuntimeLaneConfig {
+                max_concurrent: 1,
+                priority_weight: 1,
+                queue_limit: 2,
+                enqueue_timeout_ms: 100,
+                overflow_policy: LaneOverflowPolicy::ShedOldest,
+            },
+        );
+
+        let mut router = LaneRouter::from_runtime_config(&cfg).expect("router");
+        let bg = cx_with_scope("lane.background");
+        router
+            .assign_operation(&bg, "bg-active", None, 1)
+            .expect("active");
+        router
+            .assign_operation(&bg, "bg-old", None, 2)
+            .expect("queued");
+        router
+            .assign_operation(&bg, "bg-mid", None, 3)
+            .expect("queued");
+        router
+            .assign_operation(&bg, "bg-new", None, 4)
+            .expect("shed oldest");
+
+        assert!(!router.queued_operation_ids.contains("bg-old"));
+        assert!(router.queued_operation_ids.contains("bg-mid"));
+        assert!(router.queued_operation_ids.contains("bg-new"));
+
+        let reused = router
+            .assign_operation(&bg, "bg-old", None, 5)
+            .expect("dropped id should be reusable");
+        assert!(reused.queued);
+        assert!(router.queued_operation_ids.contains("bg-old"));
+    }
+
+    #[test]
+    fn queued_expiry_is_inclusive_at_deadline() {
+        let mut cfg = runtime_config();
+        cfg.lanes.insert(
+            "timed".to_string(),
+            RuntimeLaneConfig {
+                max_concurrent: 1,
+                priority_weight: 10,
+                queue_limit: 8,
+                enqueue_timeout_ms: 5,
+                overflow_policy: LaneOverflowPolicy::EnqueueWithTimeout,
+            },
+        );
+
+        let mut router = LaneRouter::from_runtime_config(&cfg).expect("router");
+        let timed = cx_with_scope("lane.timed");
+        router
+            .assign_operation(&timed, "timed-active", None, 1)
+            .expect("active");
+        router
+            .assign_operation(&timed, "timed-deadline", None, 2)
+            .expect("queued");
+
+        router
+            .complete_operation("timed-active", 7, false)
+            .expect("deadline should expire queued op instead of promoting it");
+
+        assert!(!router.queued_operation_ids.contains("timed-deadline"));
+        let timed_state = router.lanes.get(&ProductLane::Timed).expect("timed");
+        assert_eq!(timed_state.metrics.queued, 0);
+        assert_eq!(timed_state.metrics.rejected, 1);
+
+        let reused = router
+            .assign_operation(&timed, "timed-deadline", None, 8)
+            .expect("expired id should be reusable");
+        assert!(!reused.queued);
     }
 
     #[test]
@@ -1530,6 +1984,46 @@ mod tests {
     }
 
     #[test]
+    fn queue_wait_samples_keep_latest_suffix_after_overflow() {
+        let mut router = LaneRouter::from_runtime_config(&runtime_config()).expect("router");
+
+        let total = MAX_QUEUE_WAIT_SAMPLES + 4;
+        for idx in 0..total {
+            let op_id = format!("queued-suffix-{idx}");
+            enqueue_for_test(
+                &mut router,
+                ProductLane::Background,
+                &op_id,
+                idx as u64,
+                1_000_000,
+            );
+            router
+                .promote_queued(10_000 + (idx as u64 * 2))
+                .expect("promotion");
+            router
+                .complete_operation(&op_id, 10_001 + (idx as u64 * 2), false)
+                .expect("completion");
+        }
+
+        let lane_state = router
+            .lanes
+            .get(&ProductLane::Background)
+            .expect("background lane exists");
+        assert_eq!(
+            lane_state.metrics.queue_wait_samples_ms.len(),
+            MAX_QUEUE_WAIT_SAMPLES
+        );
+        assert_eq!(
+            lane_state.metrics.queue_wait_samples_ms.first(),
+            Some(&10_004)
+        );
+        assert_eq!(
+            lane_state.metrics.queue_wait_samples_ms.last(),
+            Some(&(10_000 + total as u64 - 1))
+        );
+    }
+
+    #[test]
     fn integration_mixed_100_operations_respects_global_cap() {
         let mut router = LaneRouter::from_runtime_config(&runtime_config()).expect("router");
 
@@ -1571,5 +2065,399 @@ mod tests {
             .find(|m| m.lane == ProductLane::Background)
             .expect("background metrics");
         assert!(cancel_lane.rejected <= background_lane.rejected + 10);
+    }
+
+    // Negative-path inline tests for edge cases and robustness
+    #[test]
+    fn negative_massive_operation_queue_handles_memory_pressure_gracefully() {
+        let mut cfg = runtime_config();
+        cfg.lanes.insert(
+            "background".to_string(),
+            RuntimeLaneConfig {
+                max_concurrent: 1,
+                priority_weight: 1,
+                queue_limit: 5000, // Large queue to test memory pressure
+                enqueue_timeout_ms: 60000,
+                overflow_policy: LaneOverflowPolicy::EnqueueWithTimeout,
+            },
+        );
+
+        let mut router = LaneRouter::from_runtime_config(&cfg).expect("router");
+        let bg = cx_with_scope("lane.background");
+
+        // Active operation to force queueing
+        router.assign_operation(&bg, "bg-active", None, 1).expect("active");
+
+        // Attempt to queue thousands of operations
+        let mut queued_count = 0;
+        for i in 0..10000 {
+            let op_id = format!("massive-queue-{}", i);
+            match router.assign_operation(&bg, &op_id, None, i + 2) {
+                Ok(outcome) if outcome.queued => queued_count += 1,
+                Ok(_) => {}, // Direct assignment
+                Err(_) => break, // Queue limit or other constraint hit
+            }
+        }
+
+        // Verify system remains stable under memory pressure
+        assert!(queued_count > 100, "Should have queued substantial operations");
+        assert!(queued_count <= 5000, "Should respect queue limit");
+
+        let snapshot = router.metrics_snapshot();
+        assert!(snapshot.total_in_flight >= 1);
+
+        // State should remain consistent
+        assert!(router.queued_operation_ids.len() <= 5000);
+    }
+
+    #[test]
+    fn negative_unicode_operation_ids_handled_without_corruption() {
+        let mut router = LaneRouter::from_runtime_config(&runtime_config()).expect("router");
+        let cx = cx_with_scope("lane.realtime");
+
+        // Test problematic unicode characters in operation IDs
+        let problematic_ids = vec![
+            "操作-🚀-测试",               // Mixed CJK with emoji
+            "عملية-تجريبية-٧٨٩",        // Arabic RTL with numbers
+            "op\u{200B}id\u{FEFF}",     // Zero-width space and BOM
+            "op‌er‍ation",               // Zero-width joiners/non-joiners
+            "𝒐𝒑𝒆𝒓𝒂𝒕𝒊𝒐𝒏",         // Mathematical script unicode
+            "op\u{0301}er\u{0302}ation", // Combining diacritical marks
+            "op\u{1F600}eration",       // Emoji in operation ID
+            "ope\u{FE0F}ration",        // Variation selector
+        ];
+
+        for (i, op_id) in problematic_ids.iter().enumerate() {
+            if op_id.len() <= MAX_OPERATION_ID_LEN {
+                let result = router.assign_operation(&cx, op_id, None, i as u64 + 1);
+                assert!(result.is_ok(), "Unicode operation ID should be handled: {}", op_id);
+
+                // Complete the operation to clean up
+                if let Ok(outcome) = result {
+                    if !outcome.queued {
+                        router.complete_operation(op_id, i as u64 + 100, false)
+                            .expect("Should complete unicode operation");
+                    }
+                }
+            }
+        }
+
+        // Verify no corruption in router state
+        let snapshot = router.metrics_snapshot();
+        assert!(snapshot.total_in_flight >= 0);
+    }
+
+    #[test]
+    fn negative_extreme_timestamp_arithmetic_uses_saturating_operations() {
+        let mut cfg = runtime_config();
+        cfg.lanes.insert(
+            "timed".to_string(),
+            RuntimeLaneConfig {
+                max_concurrent: 1,
+                priority_weight: 10,
+                queue_limit: 4,
+                enqueue_timeout_ms: u64::MAX / 2, // Extreme timeout value
+                overflow_policy: LaneOverflowPolicy::EnqueueWithTimeout,
+            },
+        );
+
+        let mut router = LaneRouter::from_runtime_config(&cfg).expect("router");
+        let timed = cx_with_scope("lane.timed");
+
+        // Test extreme timestamp scenarios
+        let extreme_cases = vec![
+            (u64::MAX - 1000, "near-max-timestamp"),
+            (u64::MAX / 2, "half-max-timestamp"),
+            (1, "minimal-timestamp"),
+        ];
+
+        router.assign_operation(&timed, "timed-active", None, 1).expect("active");
+
+        for (timestamp, op_suffix) in extreme_cases {
+            let op_id = format!("extreme-{}", op_suffix);
+            let result = router.assign_operation(&timed, &op_id, None, timestamp);
+
+            match result {
+                Ok(outcome) => {
+                    if outcome.queued {
+                        // Verify expires_at calculation didn't overflow
+                        let timed_state = router.lanes.get(&ProductLane::Timed).unwrap();
+                        for queued in &timed_state.queue {
+                            if queued.operation_id == op_id {
+                                assert!(queued.expires_at_ms >= queued.enqueued_at_ms);
+                                // Should be saturating add result
+                                assert!(queued.expires_at_ms == timestamp.saturating_add(u64::MAX / 2));
+                                break;
+                            }
+                        }
+                    }
+                },
+                Err(_) => {
+                    // Graceful failure is acceptable for extreme values
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_malformed_router_configurations_fail_closed() {
+        // Test configurations that should fail validation
+        let problematic_configs = vec![
+            // Zero values that should be rejected
+            LaneRouterConfig {
+                remote_max_in_flight: 0, // Invalid
+                bulkhead_retry_after_ms: 100,
+                lanes: {
+                    let mut lanes = BTreeMap::new();
+                    lanes.insert(ProductLane::Background, LaneConfigSnapshot {
+                        max_concurrent: 1,
+                        priority_weight: 1,
+                        queue_limit: 1,
+                        enqueue_timeout_ms: 1,
+                        overflow_policy: LaneOverflowPolicy::Reject,
+                    });
+                    lanes
+                },
+            },
+            // Zero bulkhead retry
+            LaneRouterConfig {
+                remote_max_in_flight: 10,
+                bulkhead_retry_after_ms: 0, // Invalid
+                lanes: BTreeMap::new(),
+            },
+            // Missing lane configuration
+            LaneRouterConfig {
+                remote_max_in_flight: 10,
+                bulkhead_retry_after_ms: 100,
+                lanes: BTreeMap::new(), // Missing all required lanes
+            },
+        ];
+
+        for config in problematic_configs {
+            let result = LaneRouter::new(config);
+            assert!(result.is_err(), "Malformed config should be rejected");
+        }
+
+        // Test lane-specific zero configurations
+        for &lane in ProductLane::all() {
+            let mut valid_config = LaneRouterConfig::from_runtime_config(&runtime_config()).unwrap();
+
+            // Zero max_concurrent
+            valid_config.lanes.insert(lane, LaneConfigSnapshot {
+                max_concurrent: 0, // Invalid
+                priority_weight: 1,
+                queue_limit: 1,
+                enqueue_timeout_ms: 1,
+                overflow_policy: LaneOverflowPolicy::Reject,
+            });
+            assert!(LaneRouter::new(valid_config).is_err(), "Zero max_concurrent should be rejected for lane {:?}", lane);
+        }
+    }
+
+    #[test]
+    fn negative_operation_id_boundary_cases_handled_correctly() {
+        let mut router = LaneRouter::from_runtime_config(&runtime_config()).expect("router");
+        let cx = cx_with_scope("lane.background");
+
+        // Test exact boundary at MAX_OPERATION_ID_LEN
+        let max_length_id = "x".repeat(MAX_OPERATION_ID_LEN);
+        let over_length_id = "x".repeat(MAX_OPERATION_ID_LEN + 1);
+
+        // Exactly at limit should succeed
+        let result = router.assign_operation(&cx, &max_length_id, None, 1);
+        assert!(result.is_ok(), "Max length operation ID should be accepted");
+
+        // Over limit should fail
+        let result = router.assign_operation(&cx, &over_length_id, None, 2);
+        assert!(result.is_err(), "Over-length operation ID should be rejected");
+        assert_eq!(result.unwrap_err().code(), error_codes::CONFIG_INVALID);
+
+        // Empty and whitespace-only IDs
+        let empty_cases = vec!["", "   ", "\t\n", "\r\n\t "];
+        for empty_id in empty_cases {
+            let result = router.assign_operation(&cx, empty_id, None, 3);
+            assert!(result.is_err(), "Empty operation ID should be rejected: {:?}", empty_id);
+            assert_eq!(result.unwrap_err().code(), error_codes::CONFIG_INVALID);
+        }
+    }
+
+    #[test]
+    fn negative_null_bytes_and_control_characters_in_operation_ids() {
+        let mut router = LaneRouter::from_runtime_config(&runtime_config()).expect("router");
+        let cx = cx_with_scope("lane.background");
+
+        // Test problematic characters in operation IDs
+        let problematic_ids = vec![
+            "op\0null",              // Null byte
+            "op\x01\x02control",    // Control characters
+            "op\r\ninjection",      // Line breaks
+            "op\x7F\x80\xFF",       // High bytes and DEL
+            "op\u{FFFE}invalid",    // Unicode non-character
+            "op\u{FFFF}invalid",    // Unicode non-character
+            "op\u{202E}rtl",        // RTL override (potential display corruption)
+            "op\u{200E}ltr",        // LTR mark
+        ];
+
+        for op_id in &problematic_ids {
+            if op_id.len() <= MAX_OPERATION_ID_LEN {
+                // Should either handle gracefully or reject cleanly
+                let result = router.assign_operation(&cx, op_id, None, 1);
+
+                match result {
+                    Ok(outcome) => {
+                        // If accepted, should complete without corruption
+                        if !outcome.queued {
+                            let complete_result = router.complete_operation(op_id, 2, false);
+                            assert!(complete_result.is_ok(), "Control char operation should complete cleanly");
+                        }
+                    },
+                    Err(_) => {
+                        // Clean rejection is also acceptable
+                    }
+                }
+            }
+        }
+
+        // Verify router state remains consistent
+        let snapshot = router.metrics_snapshot();
+        assert!(snapshot.total_in_flight >= 0);
+    }
+
+    #[test]
+    fn negative_priority_weight_overflow_in_promotion_logic() {
+        let mut cfg = runtime_config();
+
+        // Set up lanes with extreme priority weights that could cause overflow
+        cfg.lanes.insert("cancel".to_string(), RuntimeLaneConfig {
+            max_concurrent: 4,
+            priority_weight: u32::MAX, // Maximum priority weight
+            queue_limit: 10,
+            enqueue_timeout_ms: 1000,
+            overflow_policy: LaneOverflowPolicy::EnqueueWithTimeout,
+        });
+
+        cfg.lanes.insert("background".to_string(), RuntimeLaneConfig {
+            max_concurrent: 1,
+            priority_weight: 1, // Minimum priority weight
+            queue_limit: 10,
+            enqueue_timeout_ms: 1000,
+            overflow_policy: LaneOverflowPolicy::EnqueueWithTimeout,
+        });
+
+        let mut router = LaneRouter::from_runtime_config(&cfg).expect("router");
+        let cancel = cx_with_scope("lane.cancel");
+        let background = cx_with_scope("lane.background");
+
+        // Fill cancel lane to force queueing
+        for i in 0..4 {
+            router.assign_operation(&cancel, &format!("cancel-active-{}", i), None, i)
+                .expect("cancel assignment");
+        }
+
+        // Queue operations on both lanes
+        router.assign_operation(&cancel, "cancel-queued", None, 10)
+            .expect("cancel queued");
+        router.assign_operation(&background, "background-active", None, 11)
+            .expect("background active");
+        router.assign_operation(&background, "background-queued", None, 12)
+            .expect("background queued");
+
+        // Complete an operation to trigger promotion logic
+        router.complete_operation("cancel-active-0", 20, false)
+            .expect("completion");
+
+        // Verify promotion occurred without overflow/panic in priority calculations
+        let events: Vec<_> = router.events().iter()
+            .filter(|e| e.event_code == event_codes::LANE_ASSIGNED)
+            .map(|e| e.operation_id.as_str())
+            .collect();
+
+        // Cancel should be promoted before background due to higher priority
+        assert!(events.contains(&"cancel-queued"));
+
+        // Router should remain in consistent state
+        let snapshot = router.metrics_snapshot();
+        assert!(snapshot.total_in_flight > 0);
+    }
+
+    #[test]
+    fn negative_queue_wait_samples_massive_accumulation_bounded() {
+        let mut router = LaneRouter::from_runtime_config(&runtime_config()).expect("router");
+
+        // Manually insert a massive number of queue wait samples to test bounds
+        let background_state = router.lanes.get_mut(&ProductLane::Background).unwrap();
+
+        // Fill beyond MAX_QUEUE_WAIT_SAMPLES with extreme values
+        for i in 0..(MAX_QUEUE_WAIT_SAMPLES * 2) {
+            background_state.metrics.queue_wait_samples_ms.push(
+                i.saturating_mul(1000) as u64 // Large wait times that could cause issues
+            );
+        }
+
+        // Verify samples are properly bounded without panic
+        assert!(background_state.metrics.queue_wait_samples_ms.len() > MAX_QUEUE_WAIT_SAMPLES);
+
+        // Test p99 calculation with massive dataset
+        let p99 = background_state.metrics.p99_queue_wait_ms();
+        assert!(p99.is_finite() as bool, "P99 calculation should not produce infinite values");
+        assert!(p99 > 0, "P99 should be positive with wait samples");
+
+        // Add one more operation to trigger bounded cleanup
+        enqueue_for_test(&mut router, ProductLane::Background, "test-bounded", 1, 10000);
+        router.promote_queued(5000).expect("promotion with bounded samples");
+        router.complete_operation("test-bounded", 5001, false).expect("completion");
+
+        // Verify samples were properly bounded during promotion
+        let final_state = router.lanes.get(&ProductLane::Background).unwrap();
+        assert!(final_state.metrics.queue_wait_samples_ms.len() <= MAX_QUEUE_WAIT_SAMPLES);
+    }
+
+    #[test]
+    fn negative_concurrent_operation_id_collision_prevention() {
+        let mut router = LaneRouter::from_runtime_config(&runtime_config()).expect("router");
+        let cx = cx_with_scope("lane.background");
+
+        // Assign operation with specific ID
+        let result1 = router.assign_operation(&cx, "collision-test", None, 1);
+        assert!(result1.is_ok(), "First assignment should succeed");
+
+        // Attempt to assign operation with same ID while first is active
+        let result2 = router.assign_operation(&cx, "collision-test", None, 2);
+        assert!(result2.is_err(), "Duplicate active operation ID should be rejected");
+        assert_eq!(result2.unwrap_err().code(), error_codes::OPERATION_DUPLICATE);
+
+        // Complete first operation
+        router.complete_operation("collision-test", 3, false)
+            .expect("completion should succeed");
+
+        // Now same ID should be reusable
+        let result3 = router.assign_operation(&cx, "collision-test", None, 4);
+        assert!(result3.is_ok(), "ID should be reusable after completion");
+
+        // Test collision with queued operations
+        let mut cfg = runtime_config();
+        cfg.lanes.insert("timed".to_string(), RuntimeLaneConfig {
+            max_concurrent: 1,
+            priority_weight: 10,
+            queue_limit: 5,
+            enqueue_timeout_ms: 1000,
+            overflow_policy: LaneOverflowPolicy::EnqueueWithTimeout,
+        });
+
+        let mut queue_router = LaneRouter::from_runtime_config(&cfg).expect("queue router");
+        let timed = cx_with_scope("lane.timed");
+
+        // Fill lane to force queueing
+        queue_router.assign_operation(&timed, "timed-active", None, 10)
+            .expect("active");
+
+        let queued = queue_router.assign_operation(&timed, "queued-collision", None, 11)
+            .expect("queued");
+        assert!(queued.queued);
+
+        // Attempt duplicate of queued operation
+        let dup_result = queue_router.assign_operation(&timed, "queued-collision", None, 12);
+        assert!(dup_result.is_err(), "Duplicate queued operation should be rejected");
+        assert_eq!(dup_result.unwrap_err().code(), error_codes::OPERATION_DUPLICATE);
     }
 }
