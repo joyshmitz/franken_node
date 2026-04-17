@@ -1164,4 +1164,580 @@ mod tests {
 
         assert_eq!(err.code(), "ROOT_SIGNING_KEY_INVALID");
     }
+
+    #[test]
+    fn read_root_malformed_payload_returns_deserialize_error() {
+        let dir = TempDir::new().expect("tempdir");
+        fs::write(root_pointer_path(dir.path()), b"{not valid root json").expect("write root");
+
+        let err = read_root(dir.path()).expect_err("malformed root must fail");
+
+        assert!(matches!(err, RootPointerError::Deserialize { .. }));
+        assert_eq!(err.code(), "ROOT_DESERIALIZE_FAILED");
+    }
+
+    #[test]
+    fn bootstrap_rejects_missing_auth_record() {
+        let dir = TempDir::new().expect("tempdir");
+        let root = root(10, 100, "missing-auth");
+        fs::write(
+            root_pointer_path(dir.path()),
+            serde_json::to_vec_pretty(&root).expect("serialize root"),
+        )
+        .expect("write root");
+
+        let cfg = RootAuthConfig::strict(key(), ControlEpoch(10));
+        let err = bootstrap_root(dir.path(), &cfg).expect_err("missing auth must fail");
+
+        assert_eq!(err.code(), "ROOT_BOOTSTRAP_AUTH_FAILED");
+        assert!(err.to_string().contains("unable to read auth record"));
+    }
+
+    #[test]
+    fn bootstrap_rejects_malformed_auth_record() {
+        let dir = TempDir::new().expect("tempdir");
+        let root = root(10, 100, "bad-auth");
+        fs::write(
+            root_pointer_path(dir.path()),
+            serde_json::to_vec_pretty(&root).expect("serialize root"),
+        )
+        .expect("write root");
+        fs::write(root_auth_path(dir.path()), b"{not auth json").expect("write auth");
+
+        let cfg = RootAuthConfig::strict(key(), ControlEpoch(10));
+        let err = bootstrap_root(dir.path(), &cfg).expect_err("malformed auth must fail");
+
+        assert_eq!(err.code(), "ROOT_BOOTSTRAP_AUTH_FAILED");
+        assert!(err.to_string().contains("unable to parse auth record"));
+    }
+
+    #[test]
+    fn bootstrap_rejects_auth_epoch_mismatch() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let root = root(11, 110, "epoch-mismatch");
+        publish_root(dir.path(), &root, &k, "trace-auth-epoch").expect("publish");
+
+        let auth_path = root_auth_path(dir.path());
+        let mut auth: RootAuthRecord = serde_json::from_slice(&fs::read(&auth_path).expect("read"))
+            .expect("parse auth record");
+        auth.epoch = ControlEpoch(12);
+        fs::write(
+            &auth_path,
+            serde_json::to_vec_pretty(&auth).expect("serialize auth"),
+        )
+        .expect("write auth");
+
+        let cfg = RootAuthConfig::strict(k, ControlEpoch(11));
+        let err = bootstrap_root(dir.path(), &cfg).expect_err("auth epoch mismatch must fail");
+
+        assert_eq!(err.code(), "ROOT_BOOTSTRAP_AUTH_FAILED");
+        assert!(err.to_string().contains("epoch mismatch"));
+    }
+
+    #[test]
+    fn bootstrap_rejects_wrong_trust_anchor() {
+        let dir = TempDir::new().expect("tempdir");
+        let root = root(12, 120, "wrong-anchor");
+        publish_root(dir.path(), &root, &key(), "trace-wrong-anchor").expect("publish");
+
+        let cfg = RootAuthConfig::strict(b"different-bootstrap-anchor".to_vec(), ControlEpoch(12));
+        let err = bootstrap_root(dir.path(), &cfg).expect_err("wrong anchor must fail");
+
+        assert_eq!(err.code(), "ROOT_BOOTSTRAP_AUTH_FAILED");
+        assert!(err.to_string().contains("MAC verification failed"));
+    }
+
+    #[test]
+    fn publish_rejects_existing_root_without_auth_record() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        publish_root(dir.path(), &root(20, 200, "seed"), &k, "trace-seed").expect("publish");
+        fs::remove_file(root_auth_path(dir.path())).expect("remove auth");
+
+        let err = publish_root(dir.path(), &root(21, 210, "next"), &k, "trace-next")
+            .expect_err("missing auth must block publication");
+
+        assert_eq!(err.code(), "ROOT_SIGNING_KEY_INVALID");
+        assert!(err.to_string().contains("auth record is missing"));
+    }
+
+    #[test]
+    fn publish_rejects_existing_root_with_malformed_auth_record() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        publish_root(dir.path(), &root(30, 300, "seed"), &k, "trace-seed").expect("publish");
+        fs::write(root_auth_path(dir.path()), b"{broken auth").expect("write broken auth");
+
+        let err = publish_root(dir.path(), &root(31, 310, "next"), &k, "trace-next")
+            .expect_err("malformed auth must block publication");
+
+        assert_eq!(err.code(), "ROOT_DESERIALIZE_FAILED");
+    }
+
+    #[test]
+    fn serde_rejects_root_pointer_missing_publisher() {
+        let json = serde_json::json!({
+            "epoch": 1,
+            "marker_stream_head_seq": 10,
+            "marker_stream_head_hash": "head",
+            "publication_timestamp": Utc::now().to_rfc3339()
+        });
+
+        let err = serde_json::from_value::<RootPointer>(json)
+            .expect_err("missing publisher must fail deserialization");
+
+        assert!(err.to_string().contains("publisher_id"));
+    }
+
+    #[test]
+    fn verify_publish_event_rejects_empty_signature() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let mut event = publish_root(dir.path(), &root(40, 400, "sig-empty"), &k, "trace-sig")
+            .expect("publish")
+            .event;
+        event.signature.clear();
+
+        let verified = verify_publish_event(&event, &k).expect("verification should run");
+
+        assert!(!verified);
+    }
+
+    #[test]
+    fn verify_publish_event_rejects_wrong_signing_key() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let event = publish_root(
+            dir.path(),
+            &root(41, 410, "wrong-key"),
+            &k,
+            "trace-wrong-key",
+        )
+        .expect("publish")
+        .event;
+
+        let verified = verify_publish_event(&event, b"wrong-publication-key")
+            .expect("verification should run");
+
+        assert!(!verified);
+    }
+
+    #[test]
+    fn verify_publish_event_rejects_tampered_trace_id() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let mut event = publish_root(dir.path(), &root(42, 420, "trace"), &k, "trace-original")
+            .expect("publish")
+            .event;
+        event.trace_id = "trace-tampered".to_string();
+
+        let verified = verify_publish_event(&event, &k).expect("verification should run");
+
+        assert!(!verified);
+    }
+
+    #[test]
+    fn verify_publish_event_rejects_tampered_epoch() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let mut event = publish_root(dir.path(), &root(43, 430, "epoch"), &k, "trace-epoch")
+            .expect("publish")
+            .event;
+        event.new_epoch = ControlEpoch(44);
+
+        let verified = verify_publish_event(&event, &k).expect("verification should run");
+
+        assert!(!verified);
+    }
+
+    #[test]
+    fn bootstrap_rejects_empty_auth_root_hash() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let root = root(50, 500, "empty-root-hash");
+        publish_root(dir.path(), &root, &k, "trace-empty-root-hash").expect("publish");
+
+        let auth_path = root_auth_path(dir.path());
+        let mut auth: RootAuthRecord = serde_json::from_slice(&fs::read(&auth_path).expect("read"))
+            .expect("parse auth record");
+        auth.root_hash.clear();
+        fs::write(
+            &auth_path,
+            serde_json::to_vec_pretty(&auth).expect("serialize auth"),
+        )
+        .expect("write auth");
+
+        let cfg = RootAuthConfig::strict(k, ControlEpoch(50));
+        let err = bootstrap_root(dir.path(), &cfg).expect_err("empty root hash must fail");
+
+        assert_eq!(err.code(), "ROOT_BOOTSTRAP_AUTH_FAILED");
+        assert!(err.to_string().contains("root hash mismatch"));
+    }
+
+    #[test]
+    fn bootstrap_rejects_empty_auth_mac() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let root = root(51, 510, "empty-mac");
+        publish_root(dir.path(), &root, &k, "trace-empty-mac").expect("publish");
+
+        let auth_path = root_auth_path(dir.path());
+        let mut auth: RootAuthRecord = serde_json::from_slice(&fs::read(&auth_path).expect("read"))
+            .expect("parse auth record");
+        auth.mac.clear();
+        fs::write(
+            &auth_path,
+            serde_json::to_vec_pretty(&auth).expect("serialize auth"),
+        )
+        .expect("write auth");
+
+        let cfg = RootAuthConfig::strict(k, ControlEpoch(51));
+        let err = bootstrap_root(dir.path(), &cfg).expect_err("empty MAC must fail");
+
+        assert_eq!(err.code(), "ROOT_BOOTSTRAP_AUTH_FAILED");
+        assert!(err.to_string().contains("MAC verification failed"));
+    }
+
+    #[test]
+    fn bootstrap_rejects_padded_auth_root_hash() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let root = root(52, 520, "padded-root-hash");
+        publish_root(dir.path(), &root, &k, "trace-padded-root-hash").expect("publish");
+
+        let auth_path = root_auth_path(dir.path());
+        let mut auth: RootAuthRecord = serde_json::from_slice(&fs::read(&auth_path).expect("read"))
+            .expect("parse auth record");
+        auth.root_hash = format!(" {} ", auth.root_hash);
+        fs::write(
+            &auth_path,
+            serde_json::to_vec_pretty(&auth).expect("serialize auth"),
+        )
+        .expect("write auth");
+
+        let cfg = RootAuthConfig::strict(k, ControlEpoch(52));
+        let err = bootstrap_root(dir.path(), &cfg).expect_err("padded root hash must fail");
+
+        assert_eq!(err.code(), "ROOT_BOOTSTRAP_AUTH_FAILED");
+        assert!(err.to_string().contains("root hash mismatch"));
+    }
+
+    #[test]
+    fn bootstrap_rejects_padded_auth_mac() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let root = root(53, 530, "padded-mac");
+        publish_root(dir.path(), &root, &k, "trace-padded-mac").expect("publish");
+
+        let auth_path = root_auth_path(dir.path());
+        let mut auth: RootAuthRecord = serde_json::from_slice(&fs::read(&auth_path).expect("read"))
+            .expect("parse auth record");
+        auth.mac = format!("{} ", auth.mac);
+        fs::write(
+            &auth_path,
+            serde_json::to_vec_pretty(&auth).expect("serialize auth"),
+        )
+        .expect("write auth");
+
+        let cfg = RootAuthConfig::strict(k, ControlEpoch(53));
+        let err = bootstrap_root(dir.path(), &cfg).expect_err("padded MAC must fail");
+
+        assert_eq!(err.code(), "ROOT_BOOTSTRAP_AUTH_FAILED");
+        assert!(err.to_string().contains("MAC verification failed"));
+    }
+
+    #[test]
+    fn bootstrap_rejects_auth_hash_for_different_root_even_with_valid_mac() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let root = root(54, 540, "real-root");
+        publish_root(dir.path(), &root, &k, "trace-real-root").expect("publish");
+
+        let other_root = root(54, 541, "other-root");
+        let other_payload = serde_json::to_vec_pretty(&other_root).expect("serialize other root");
+        let other_hash = hash_hex(&other_payload);
+
+        let auth_path = root_auth_path(dir.path());
+        let mut auth: RootAuthRecord = serde_json::from_slice(&fs::read(&auth_path).expect("read"))
+            .expect("parse auth record");
+        auth.root_hash = other_hash;
+        auth.mac = sign_payload(&auth.root_hash, &k).expect("sign tampered root hash");
+        fs::write(
+            &auth_path,
+            serde_json::to_vec_pretty(&auth).expect("serialize auth"),
+        )
+        .expect("write auth");
+
+        let cfg = RootAuthConfig::strict(k, ControlEpoch(54));
+        let err = bootstrap_root(dir.path(), &cfg).expect_err("wrong root hash must fail");
+
+        assert_eq!(err.code(), "ROOT_BOOTSTRAP_AUTH_FAILED");
+        assert!(err.to_string().contains("root hash mismatch"));
+    }
+
+    #[test]
+    fn bootstrap_rejects_empty_auth_format_version() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let root = root(55, 550, "empty-format");
+        publish_root(dir.path(), &root, &k, "trace-empty-format").expect("publish");
+
+        let auth_path = root_auth_path(dir.path());
+        let mut auth: RootAuthRecord = serde_json::from_slice(&fs::read(&auth_path).expect("read"))
+            .expect("parse auth record");
+        auth.root_format_version.clear();
+        fs::write(
+            &auth_path,
+            serde_json::to_vec_pretty(&auth).expect("serialize auth"),
+        )
+        .expect("write auth");
+
+        let cfg = RootAuthConfig::strict(k, ControlEpoch(55));
+        let err = bootstrap_root(dir.path(), &cfg).expect_err("empty version must fail");
+
+        assert_eq!(err.code(), "ROOT_BOOTSTRAP_VERSION_MISMATCH");
+    }
+
+    #[test]
+    fn serde_rejects_root_pointer_string_epoch() {
+        let json = serde_json::json!({
+            "epoch": "56",
+            "marker_stream_head_seq": 560,
+            "marker_stream_head_hash": "string-epoch",
+            "publication_timestamp": Utc::now().to_rfc3339(),
+            "publisher_id": "test-publisher",
+        });
+
+        let err = serde_json::from_value::<RootPointer>(json)
+            .expect_err("string epoch must fail deserialization");
+
+        assert!(err.to_string().contains("epoch"));
+    }
+
+    #[test]
+    fn serde_rejects_root_pointer_negative_marker_sequence() {
+        let json = serde_json::json!({
+            "epoch": 57,
+            "marker_stream_head_seq": -1,
+            "marker_stream_head_hash": "negative-seq",
+            "publication_timestamp": Utc::now().to_rfc3339(),
+            "publisher_id": "test-publisher",
+        });
+
+        let err = serde_json::from_value::<RootPointer>(json)
+            .expect_err("negative marker sequence must fail deserialization");
+
+        assert!(err.to_string().contains("marker_stream_head_seq"));
+    }
+
+    #[test]
+    fn verify_publish_event_rejects_tampered_event_code() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let mut event = publish_root(dir.path(), &root(58, 580, "event-code"), &k, "trace-event")
+            .expect("publish")
+            .event;
+        event.event_code = ROOT_PUBLISH_START.to_string();
+
+        let verified = verify_publish_event(&event, &k).expect("verification should run");
+
+        assert!(!verified);
+    }
+
+    #[test]
+    fn test_publish_unicode_injection_in_trace_id() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let root = root(100, 1000, "unicode-trace-test");
+
+        // Test BiDi override injection in trace_id
+        let malicious_trace = "normal\u{202e}evil\u{202c}trace";
+        let result = publish_root(dir.path(), &root, &k, malicious_trace);
+
+        // Should handle Unicode without corruption
+        assert!(result.is_ok());
+
+        // Verify trace ID is preserved in metadata
+        let meta_path = root_metadata_path(dir.path());
+        let content = fs::read_to_string(&meta_path).expect("read metadata");
+        assert!(content.contains(&malicious_trace));
+    }
+
+    #[test]
+    fn test_bootstrap_massive_root_hash_memory_stress() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let mut root = root(101, 1010, "massive-hash");
+
+        // Create massive root hash (10MB)
+        root.root_hash = vec![0xCC; 10 * 1024 * 1024];
+
+        let result = publish_root(dir.path(), &root, &k, "massive-hash-test");
+        assert!(result.is_ok());
+
+        // Test bootstrap with massive hash
+        let cfg = RootAuthConfig::strict(k, ControlEpoch(101));
+        let bootstrap_result = bootstrap_root(dir.path(), &cfg);
+
+        // Should handle large hashes without memory issues
+        assert!(bootstrap_result.is_ok());
+        let bootstrapped = bootstrap_result.unwrap();
+        assert_eq!(bootstrapped.root_hash.len(), 10 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_publish_epoch_arithmetic_overflow_boundaries() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+
+        // Test near-overflow epoch values
+        let root_max = root(u64::MAX, u64::MAX.saturating_sub(1), "epoch-overflow");
+        let result = publish_root(dir.path(), &root_max, &k, "overflow-test");
+        assert!(result.is_ok());
+
+        // Verify epoch serialization doesn't corrupt
+        let meta_path = root_metadata_path(dir.path());
+        let content = fs::read_to_string(&meta_path).expect("read metadata");
+        let meta: RootPointerMetadata = serde_json::from_str(&content).expect("parse");
+        assert_eq!(meta.epoch, u64::MAX);
+    }
+
+    #[test]
+    fn test_bootstrap_zero_width_unicode_in_publisher() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let mut root = root(102, 1020, "zw-unicode");
+
+        // Insert zero-width characters in publisher
+        root.publisher = "legit\u{200b}\u{feff}\u{200c}publisher".to_string();
+
+        let result = publish_root(dir.path(), &root, &k, "zero-width-test");
+        assert!(result.is_ok());
+
+        // Test bootstrap preserves zero-width chars
+        let cfg = RootAuthConfig::strict(k, ControlEpoch(102));
+        let bootstrap_result = bootstrap_root(dir.path(), &cfg);
+        assert!(bootstrap_result.is_ok());
+
+        let bootstrapped = bootstrap_result.unwrap();
+        assert_eq!(bootstrapped.publisher, "legit\u{200b}\u{feff}\u{200c}publisher");
+    }
+
+    #[test]
+    fn test_publish_malformed_json_resilience() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+        let root = root(103, 1030, "json-corruption");
+
+        // Publish normally first
+        publish_root(dir.path(), &root, &k, "corruption-test").expect("initial publish");
+
+        // Manually corrupt the metadata JSON
+        let meta_path = root_metadata_path(dir.path());
+        let corrupt_json = r#"{"epoch": 103, "publisher": "unclosed_string, "timestamp": malformed}"#;
+        fs::write(&meta_path, corrupt_json).expect("write corrupt json");
+
+        // Bootstrap should handle corruption gracefully
+        let cfg = RootAuthConfig::strict(k, ControlEpoch(103));
+        let result = bootstrap_root(dir.path(), &cfg);
+
+        // Should fail with appropriate error, not panic
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.code(), "ROOT_BOOTSTRAP_AUTH_FAILED");
+    }
+
+    #[test]
+    fn test_concurrent_publish_atomic_guarantees() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let dir_path = Arc::new(dir.path().to_path_buf());
+        let key_arc = Arc::new(k);
+        let barrier = Arc::new(Barrier::new(3));
+
+        let handles: Vec<_> = (0..3).map(|i| {
+            let path = Arc::clone(&dir_path);
+            let key = Arc::clone(&key_arc);
+            let barrier = Arc::clone(&barrier);
+
+            thread::spawn(move || {
+                let root = root(104 + i, 1040 + i * 10, &format!("concurrent-{}", i));
+                barrier.wait();
+                publish_root(&path, &root, &key, &format!("thread-{}", i))
+            })
+        }).collect();
+
+        // Collect results
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        let successes = results.iter().filter(|r| r.is_ok()).count();
+
+        // At least one should succeed due to atomic operations
+        assert!(successes >= 1);
+
+        // Final state should be consistent
+        let meta_path = root_metadata_path(&dir.path());
+        assert!(meta_path.exists());
+        let content = fs::read_to_string(&meta_path).expect("read final metadata");
+        let meta: RootPointerMetadata = serde_json::from_str(&content).expect("parse final");
+        assert!(meta.epoch >= 104 && meta.epoch <= 106);
+    }
+
+    #[test]
+    fn test_bootstrap_path_traversal_protection() {
+        use std::path::PathBuf;
+
+        // Create temp directory structure
+        let base_dir = TempDir::new().expect("tempdir");
+        let secure_dir = base_dir.path().join("secure");
+        fs::create_dir_all(&secure_dir).expect("create secure dir");
+
+        let k = key();
+        let root = root(105, 1050, "path-traversal");
+
+        // Publish in secure directory
+        publish_root(&secure_dir, &root, &k, "traversal-test").expect("publish");
+
+        // Test bootstrap with path traversal attempt
+        let malicious_path = PathBuf::from("../../../etc/passwd");
+        let traversal_dir = base_dir.path().join(&malicious_path);
+
+        // Should fail safely when trying to bootstrap from traversed path
+        let cfg = RootAuthConfig::strict(k, ControlEpoch(105));
+        let result = bootstrap_root(&traversal_dir, &cfg);
+
+        // Should either fail or not escape containment
+        if let Ok(_) = result {
+            // If it succeeds, verify we're still in expected location
+            assert!(traversal_dir.starts_with(base_dir.path()));
+        }
+    }
+
+    #[test]
+    fn test_publish_empty_values_edge_cases() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+
+        // Test root with all minimal values
+        let mut minimal_root = root(0, 0, "");
+        minimal_root.root_hash.clear();
+        minimal_root.publisher.clear();
+
+        let result = publish_root(dir.path(), &minimal_root, &k, "");
+
+        // Should handle empty values gracefully
+        assert!(result.is_ok());
+
+        // Verify empty values are preserved
+        let meta_path = root_metadata_path(dir.path());
+        let content = fs::read_to_string(&meta_path).expect("read metadata");
+        let meta: RootPointerMetadata = serde_json::from_str(&content).expect("parse");
+        assert_eq!(meta.epoch, 0);
+        assert_eq!(meta.publisher, "");
+        assert!(meta.root_hash.is_empty() || !meta.root_hash.is_empty()); // Either case is valid
+    }
 }

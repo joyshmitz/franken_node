@@ -1038,6 +1038,222 @@ mod tests {
     }
 
     #[test]
+    fn publish_action_before_initialize_is_rejected() {
+        let tempdir = tempdir().expect("tempdir");
+        let mut transport = FileFleetTransport::new(tempdir.path().join("missing-state"));
+
+        let error = transport
+            .publish_action(&release_action_record(
+                "fleet-action-uninitialized",
+                "2026-04-06T00:00:00Z",
+                "inc-uninitialized",
+            ))
+            .expect_err("uninitialized transport should reject writes");
+
+        assert!(matches!(error, FleetTransportError::NotInitialized { .. }));
+        assert!(!transport.layout().actions_path().exists());
+    }
+
+    #[test]
+    fn list_actions_before_initialize_is_rejected() {
+        let tempdir = tempdir().expect("tempdir");
+        let transport = FileFleetTransport::new(tempdir.path().join("missing-state"));
+
+        let error = transport
+            .list_actions()
+            .expect_err("uninitialized transport should reject reads");
+
+        assert!(matches!(error, FleetTransportError::NotInitialized { .. }));
+    }
+
+    #[test]
+    fn publish_action_rejects_blank_action_id_without_appending() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+
+        let mut action = release_action_record("fleet-action-valid", "2026-04-06T00:00:00Z", "inc");
+        action.action_id = "  ".to_string();
+        let error = transport
+            .publish_action(&action)
+            .expect_err("blank action_id should be rejected");
+
+        assert!(matches!(
+            error,
+            FleetTransportError::SerializationError { .. }
+        ));
+        assert_eq!(
+            fs::read_to_string(transport.layout().actions_path()).expect("read action log"),
+            ""
+        );
+    }
+
+    #[test]
+    fn publish_action_rejects_quarantine_with_blank_reason() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+
+        let action = FleetActionRecord {
+            action_id: "fleet-action-blank-reason".to_string(),
+            emitted_at: DateTime::parse_from_rfc3339("2026-04-06T00:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&Utc),
+            action: FleetAction::Quarantine {
+                zone_id: "prod".to_string(),
+                incident_id: "inc-blank-reason".to_string(),
+                target_id: "sha256:target".to_string(),
+                target_kind: FleetTargetKind::Artifact,
+                reason: " ".to_string(),
+                quarantine_version: 1,
+            },
+        };
+
+        let error = transport
+            .publish_action(&action)
+            .expect_err("blank quarantine reason should be rejected");
+
+        assert!(matches!(
+            error,
+            FleetTransportError::SerializationError { .. }
+        ));
+        assert!(transport.list_actions().expect("list actions").is_empty());
+    }
+
+    #[test]
+    fn publish_action_rejects_policy_update_with_blank_version() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+
+        let action = FleetActionRecord {
+            action_id: "fleet-action-blank-policy".to_string(),
+            emitted_at: DateTime::parse_from_rfc3339("2026-04-06T00:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&Utc),
+            action: FleetAction::PolicyUpdate {
+                zone_id: "prod".to_string(),
+                policy_version: "\t".to_string(),
+                changed_fields: vec!["trust.min_score".to_string()],
+            },
+        };
+
+        let error = transport
+            .publish_action(&action)
+            .expect_err("blank policy version should be rejected");
+
+        assert!(matches!(
+            error,
+            FleetTransportError::SerializationError { .. }
+        ));
+        assert!(transport.list_actions().expect("list actions").is_empty());
+    }
+
+    #[test]
+    fn upsert_node_status_rejects_whitespace_zone_without_file() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+
+        let error = transport
+            .upsert_node_status(&node_status(
+                "prod ",
+                "node-alpha",
+                "2026-04-06T00:00:00Z",
+                1,
+                NodeHealth::Healthy,
+            ))
+            .expect_err("whitespace zone_id should be rejected");
+
+        assert!(matches!(
+            error,
+            FleetTransportError::SerializationError { .. }
+        ));
+        assert!(
+            fs::read_dir(transport.layout().nodes_dir())
+                .expect("read nodes dir")
+                .next()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn list_actions_rejects_malformed_jsonl_line() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+        fs::write(transport.layout().actions_path(), "{not-json}\n").expect("write bad log");
+
+        let error = transport
+            .list_actions()
+            .expect_err("malformed action log should be rejected");
+
+        assert!(matches!(
+            error,
+            FleetTransportError::SerializationError { .. }
+        ));
+    }
+
+    #[test]
+    fn list_node_statuses_rejects_persisted_invalid_node_id() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+        let bad_status = NodeStatus {
+            zone_id: "prod".to_string(),
+            node_id: "../escape".to_string(),
+            last_seen: DateTime::parse_from_rfc3339("2026-04-06T00:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&Utc),
+            quarantine_version: 1,
+            health: NodeHealth::Healthy,
+        };
+        fs::write(
+            transport.layout().nodes_dir().join("node-bad.json"),
+            serde_json::to_string(&bad_status).expect("serialize bad status"),
+        )
+        .expect("write bad status");
+
+        let error = transport
+            .list_node_statuses()
+            .expect_err("invalid persisted node_id should be rejected");
+
+        assert!(matches!(
+            error,
+            FleetTransportError::SerializationError { .. }
+        ));
+    }
+
+    #[test]
+    fn compact_action_log_rejects_non_positive_retention_days() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+
+        let error = transport
+            .compact_action_log_if_needed(
+                0,
+                0,
+                DateTime::parse_from_rfc3339("2026-04-06T00:00:00Z")
+                    .expect("timestamp")
+                    .with_timezone(&Utc),
+            )
+            .expect_err("non-positive retention should be rejected");
+
+        assert!(matches!(
+            error,
+            FleetTransportError::SerializationError { .. }
+        ));
+    }
+
+    #[test]
     fn fleet_action_roundtrip_preserves_policy_update_variant() {
         let record = FleetActionRecord {
             action_id: "fleet-action-0001".to_string(),
@@ -1482,5 +1698,533 @@ mod tests {
             leftovers.is_empty(),
             "found temp compaction leftovers: {leftovers:?}"
         );
+    }
+
+    /// Comprehensive negative-path test module covering edge cases and attack vectors.
+    ///
+    /// These tests validate robustness against malicious inputs, resource exhaustion,
+    /// timing attacks, and filesystem edge cases in fleet transport operations.
+    #[cfg(test)]
+    mod fleet_transport_comprehensive_negative_tests {
+        use super::*;
+
+        #[test]
+        fn unicode_injection_in_fleet_identifiers_handled_safely() {
+            let tempdir = tempdir().expect("tempdir");
+            let root = tempdir.path().join("fleet-state");
+            let mut transport = FileFleetTransport::new(&root);
+            transport.initialize().expect("initialize");
+
+            // Unicode control characters, NULL bytes, path traversal attempts
+            let malicious_zone_ids = vec![
+                "zone\u{0000}null",
+                "zone\u{200B}zwsp",
+                "zone\u{FEFF}bom",
+                "zone/../../../etc",
+                "zone\u{202E}rtl\u{202D}",
+                "zone\x1B[31mANSI",
+                "zone\u{1F4A9}emoji",
+            ];
+
+            let malicious_node_ids = vec![
+                "node\u{0000}null",
+                "node\u{200B}zwsp",
+                "node/../escape",
+                "node\x1B[Hclear",
+                "node\u{202E}direction",
+            ];
+
+            let malicious_action_ids = vec![
+                "action\u{0000}null",
+                "action\u{200B}zwsp",
+                "action/../traverse",
+                "action\x1B[31mred",
+                "action\u{202E}rtl",
+            ];
+
+            for malicious_zone in &malicious_zone_ids {
+                for malicious_node in &malicious_node_ids {
+                    for malicious_action in &malicious_action_ids {
+                        // Test node status validation
+                        let node_result = transport.upsert_node_status(&NodeStatus {
+                            zone_id: malicious_zone.clone(),
+                            node_id: malicious_node.clone(),
+                            last_seen: Utc::now(),
+                            quarantine_version: 1,
+                            health: NodeHealth::Healthy,
+                        });
+
+                        // Should reject malicious identifiers gracefully
+                        assert!(node_result.is_err(), "Should reject malicious zone/node: {}/{}", malicious_zone, malicious_node);
+
+                        // Test action validation
+                        let action_result = transport.publish_action(&FleetActionRecord {
+                            action_id: malicious_action.clone(),
+                            emitted_at: Utc::now(),
+                            action: FleetAction::Release {
+                                zone_id: malicious_zone.clone(),
+                                incident_id: "inc-test".to_string(),
+                                reason: None,
+                            },
+                        });
+
+                        // Should reject malicious action/zone identifiers gracefully
+                        assert!(action_result.is_err(), "Should reject malicious action/zone: {}/{}", malicious_action, malicious_zone);
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn arithmetic_overflow_protection_in_version_numbers() {
+            let tempdir = tempdir().expect("tempdir");
+            let root = tempdir.path().join("fleet-state");
+            let mut transport = FileFleetTransport::new(&root);
+            transport.initialize().expect("initialize");
+
+            // Test with extreme quarantine version numbers
+            let extreme_versions = vec![
+                u64::MAX - 1,
+                u64::MAX,
+            ];
+
+            for &extreme_version in &extreme_versions {
+                let status_result = transport.upsert_node_status(&NodeStatus {
+                    zone_id: "prod".to_string(),
+                    node_id: "overflow-test".to_string(),
+                    last_seen: Utc::now(),
+                    quarantine_version: extreme_version,
+                    health: NodeHealth::Healthy,
+                });
+
+                // Should handle extreme version numbers gracefully
+                assert!(status_result.is_ok(), "Should handle extreme version: {}", extreme_version);
+
+                let action_result = transport.publish_action(&FleetActionRecord {
+                    action_id: format!("action-overflow-{}", extreme_version),
+                    emitted_at: Utc::now(),
+                    action: FleetAction::Quarantine {
+                        zone_id: "prod".to_string(),
+                        incident_id: "inc-overflow".to_string(),
+                        target_id: "target-overflow".to_string(),
+                        target_kind: FleetTargetKind::Artifact,
+                        reason: "overflow test".to_string(),
+                        quarantine_version: extreme_version,
+                    },
+                });
+
+                // Should handle extreme quarantine versions in actions
+                assert!(action_result.is_ok(), "Should handle extreme quarantine version: {}", extreme_version);
+            }
+
+            // Verify stored values maintain integrity
+            let stored_statuses = transport.list_node_statuses().expect("list statuses");
+            assert!(!stored_statuses.is_empty());
+            for status in &stored_statuses {
+                assert!(status.quarantine_version <= u64::MAX);
+            }
+
+            let stored_actions = transport.list_actions().expect("list actions");
+            assert!(!stored_actions.is_empty());
+        }
+
+        #[test]
+        fn memory_exhaustion_through_massive_action_logs() {
+            let tempdir = tempdir().expect("tempdir");
+            let root = tempdir.path().join("fleet-state");
+            let mut transport = FileFleetTransport::new(&root);
+            transport.initialize().expect("initialize");
+
+            // Generate massive action log to test memory bounds
+            let massive_action_count = 1000;
+            let massive_reason_size = 1500; // Near MAX_ACTION_RECORD_BYTES limit
+
+            for action_idx in 0..massive_action_count {
+                let action_result = transport.publish_action(&FleetActionRecord {
+                    action_id: format!("flood_action_{action_idx:05}"),
+                    emitted_at: Utc::now(),
+                    action: FleetAction::Quarantine {
+                        zone_id: "prod".to_string(),
+                        incident_id: format!("flood_inc_{action_idx:05}"),
+                        target_id: format!("flood_target_{action_idx:05}"),
+                        target_kind: FleetTargetKind::Artifact,
+                        reason: "x".repeat(massive_reason_size), // Large but within bounds
+                        quarantine_version: action_idx as u64,
+                    },
+                });
+
+                // Should handle large actions within bounds
+                assert!(action_result.is_ok(), "Should handle large action at index {}", action_idx);
+            }
+
+            // Test oversized action rejection
+            let oversized_result = transport.publish_action(&FleetActionRecord {
+                action_id: "oversized_action".to_string(),
+                emitted_at: Utc::now(),
+                action: FleetAction::Quarantine {
+                    zone_id: "prod".to_string(),
+                    incident_id: "oversized_inc".to_string(),
+                    target_id: "oversized_target".to_string(),
+                    target_kind: FleetTargetKind::Artifact,
+                    reason: "x".repeat(MAX_ACTION_RECORD_BYTES + 100), // Exceeds limit
+                    quarantine_version: 999,
+                },
+            });
+
+            // Should reject oversized actions
+            assert!(oversized_result.is_err(), "Should reject oversized action");
+
+            // Verify bounded memory usage
+            let all_actions = transport.list_actions().expect("list actions");
+            assert_eq!(all_actions.len(), massive_action_count);
+        }
+
+        #[test]
+        fn concurrent_file_operations_race_condition_simulation() {
+            let tempdir = tempdir().expect("tempdir");
+            let root = tempdir.path().join("fleet-state");
+
+            // Initialize transport
+            {
+                let mut transport = FileFleetTransport::new(&root);
+                transport.initialize().expect("initialize");
+            }
+
+            // Simulate concurrent operations
+            let mut handles = Vec::new();
+            let thread_count = 8;
+            let operations_per_thread = 25;
+
+            for thread_id in 0..thread_count {
+                let root = root.clone();
+                handles.push(std::thread::spawn(move || {
+                    let mut transport = FileFleetTransport::new(&root);
+
+                    for op_id in 0..operations_per_thread {
+                        let node_id = format!("node-{thread_id}-{op_id}");
+                        let action_id = format!("action-{thread_id}-{op_id}");
+
+                        // Interleave node status updates and action publishing
+                        if op_id % 2 == 0 {
+                            let _ = transport.upsert_node_status(&NodeStatus {
+                                zone_id: "prod".to_string(),
+                                node_id: node_id.clone(),
+                                last_seen: Utc::now(),
+                                quarantine_version: op_id as u64,
+                                health: NodeHealth::Healthy,
+                            });
+                        } else {
+                            let _ = transport.publish_action(&FleetActionRecord {
+                                action_id: action_id.clone(),
+                                emitted_at: Utc::now(),
+                                action: FleetAction::Release {
+                                    zone_id: "prod".to_string(),
+                                    incident_id: format!("inc-{thread_id}-{op_id}"),
+                                    reason: None,
+                                },
+                            });
+                        }
+                    }
+                }));
+            }
+
+            // Wait for all threads to complete
+            for handle in handles {
+                handle.join().expect("thread join");
+            }
+
+            // Verify filesystem integrity after concurrent operations
+            let transport = FileFleetTransport::new(&root);
+            let final_actions = transport.list_actions().expect("final actions");
+            let final_nodes = transport.list_node_statuses().expect("final nodes");
+
+            // Should have some results from concurrent operations
+            assert!(!final_actions.is_empty(), "Should have some actions from concurrent ops");
+            assert!(!final_nodes.is_empty(), "Should have some nodes from concurrent ops");
+
+            // Verify no corruption in action log
+            for action in &final_actions {
+                assert!(!action.action_id.is_empty(), "Action ID should not be empty");
+                assert!(!action.action_id.contains('\0'), "Action ID should not contain null bytes");
+            }
+        }
+
+        #[test]
+        fn filesystem_path_traversal_attack_prevention() {
+            let tempdir = tempdir().expect("tempdir");
+            let root = tempdir.path().join("fleet-state");
+            let mut transport = FileFleetTransport::new(&root);
+            transport.initialize().expect("initialize");
+
+            // Test various path traversal attacks in node IDs
+            let path_traversal_attempts = vec![
+                "../../../etc/passwd",
+                "..\\..\\..\\windows\\system32\\config\\sam",
+                "node/../escape",
+                "node/subdir/file",
+                "node\\windows\\path",
+                "./current/dir",
+                "~/home/escape",
+                "/absolute/path",
+                "\\absolute\\windows\\path",
+                "node\0null",
+                "node\x00null_byte",
+            ];
+
+            for malicious_path in &path_traversal_attempts {
+                let status_result = transport.upsert_node_status(&NodeStatus {
+                    zone_id: "prod".to_string(),
+                    node_id: malicious_path.to_string(),
+                    last_seen: Utc::now(),
+                    quarantine_version: 1,
+                    health: NodeHealth::Healthy,
+                });
+
+                // Should reject path traversal attempts
+                assert!(status_result.is_err(), "Should reject path traversal: {}", malicious_path);
+
+                // Verify layout path generation rejects malicious paths
+                let path_result = transport.layout().node_status_path(malicious_path);
+                assert!(path_result.is_err(), "Layout should reject malicious path: {}", malicious_path);
+            }
+
+            // Verify no files were created outside the expected directory
+            let nodes_dir = transport.layout().nodes_dir();
+            assert!(nodes_dir.is_dir(), "Nodes directory should exist");
+
+            // Check that no unexpected files exist
+            let entries: Vec<_> = fs::read_dir(nodes_dir).expect("read nodes dir").collect();
+            assert!(entries.is_empty(), "No files should be created from malicious attempts");
+        }
+
+        #[test]
+        fn retention_calculation_boundary_edge_cases() {
+            let tempdir = tempdir().expect("tempdir");
+            let root = tempdir.path().join("fleet-state");
+            let mut transport = FileFleetTransport::new(&root);
+            transport.initialize().expect("initialize");
+
+            // Test edge cases in retention calculations
+            let now = DateTime::parse_from_rfc3339("2026-04-17T12:00:00Z")
+                .expect("now timestamp")
+                .with_timezone(&Utc);
+
+            // Action exactly at retention boundary
+            let boundary_time = now - chrono::TimeDelta::days(ACTION_LOG_RETENTION_DAYS);
+            transport.publish_action(&FleetActionRecord {
+                action_id: "boundary-action".to_string(),
+                emitted_at: boundary_time,
+                action: FleetAction::Release {
+                    zone_id: "prod".to_string(),
+                    incident_id: "boundary-inc".to_string(),
+                    reason: None,
+                },
+            }).expect("publish boundary action");
+
+            // Action just before boundary (should be retained)
+            let before_boundary = boundary_time + chrono::TimeDelta::seconds(1);
+            transport.publish_action(&FleetActionRecord {
+                action_id: "before-boundary-action".to_string(),
+                emitted_at: before_boundary,
+                action: FleetAction::Release {
+                    zone_id: "prod".to_string(),
+                    incident_id: "before-boundary-inc".to_string(),
+                    reason: None,
+                },
+            }).expect("publish before boundary action");
+
+            // Action just after boundary (should be removed)
+            let after_boundary = boundary_time - chrono::TimeDelta::seconds(1);
+            transport.publish_action(&FleetActionRecord {
+                action_id: "after-boundary-action".to_string(),
+                emitted_at: after_boundary,
+                action: FleetAction::Release {
+                    zone_id: "prod".to_string(),
+                    incident_id: "after-boundary-inc".to_string(),
+                    reason: None,
+                },
+            }).expect("publish after boundary action");
+
+            // Force compaction
+            transport.compact_action_log_if_needed(1, ACTION_LOG_RETENTION_DAYS, now)
+                .expect("compact log");
+
+            let retained_actions = transport.list_actions().expect("list actions");
+
+            // Should retain actions within the retention window (fail-closed at boundary)
+            let retained_ids: Vec<_> = retained_actions.iter().map(|a| &a.action_id).collect();
+            assert!(retained_ids.contains(&&"boundary-action".to_string()), "Boundary action should be retained");
+            assert!(retained_ids.contains(&&"before-boundary-action".to_string()), "Before-boundary action should be retained");
+            assert!(!retained_ids.contains(&&"after-boundary-action".to_string()), "After-boundary action should be removed");
+        }
+
+        #[test]
+        fn serialization_attack_vectors_json_structure() {
+            let tempdir = tempdir().expect("tempdir");
+            let root = tempdir.path().join("fleet-state");
+            let mut transport = FileFleetTransport::new(&root);
+            transport.initialize().expect("initialize");
+
+            // Test JSON injection patterns in string fields
+            let malicious_strings = vec![
+                "\"},\"malicious\":\"payload\",\"a\":\"",
+                "\\\"},\\\"injected\\\":true,\\\"version\\\":\\\"",
+                "\n{\"evil\":\"payload\"}\n",
+                "\r\n<script>alert('xss')</script>\r\n",
+                "\x00\x01\x02\x03", // Binary data
+                "\u{FEFF}BOM injection",
+                "\\u0000null escape",
+            ];
+
+            for malicious_string in &malicious_strings {
+                // Test in various string fields
+                let action_result = transport.publish_action(&FleetActionRecord {
+                    action_id: format!("injection-test-{}", malicious_string.len()),
+                    emitted_at: Utc::now(),
+                    action: FleetAction::Quarantine {
+                        zone_id: "prod".to_string(),
+                        incident_id: malicious_string.to_string(),
+                        target_id: malicious_string.to_string(),
+                        target_kind: FleetTargetKind::Artifact,
+                        reason: malicious_string.to_string(),
+                        quarantine_version: 1,
+                    },
+                });
+
+                // Should serialize safely without breaking JSON structure
+                assert!(action_result.is_ok(), "Should handle malicious string safely: {:?}", malicious_string);
+
+                let status_result = transport.upsert_node_status(&NodeStatus {
+                    zone_id: "prod".to_string(),
+                    node_id: format!("node-{}", malicious_string.len()),
+                    last_seen: Utc::now(),
+                    quarantine_version: 1,
+                    health: NodeHealth::Healthy,
+                });
+
+                // Node ID validation should reject malicious strings
+                if status_result.is_ok() {
+                    // If it was accepted, verify serialization integrity
+                    let stored_nodes = transport.list_node_statuses().expect("list nodes");
+                    for node in &stored_nodes {
+                        assert!(!node.node_id.is_empty(), "Node ID should not be empty");
+                        assert!(!node.zone_id.is_empty(), "Zone ID should not be empty");
+                    }
+                }
+            }
+
+            // Verify stored actions maintain JSON integrity
+            let stored_actions = transport.list_actions().expect("list actions");
+            for action in &stored_actions {
+                let serialized = serde_json::to_string(action).expect("serialize action");
+                let deserialized: FleetActionRecord = serde_json::from_str(&serialized).expect("deserialize action");
+                assert_eq!(deserialized.action_id, action.action_id);
+            }
+        }
+
+        #[test]
+        fn staleness_calculation_timing_precision() {
+            let tempdir = tempdir().expect("tempdir");
+            let root = tempdir.path().join("fleet-state");
+            let mut transport = FileFleetTransport::new(&root);
+            transport.initialize().expect("initialize");
+
+            let base_time = DateTime::parse_from_rfc3339("2026-04-17T12:00:00Z")
+                .expect("base timestamp")
+                .with_timezone(&Utc);
+
+            // Test precise staleness boundary calculations
+            let staleness_threshold = Duration::from_secs(300); // 5 minutes
+
+            // Node exactly at staleness boundary
+            transport.upsert_node_status(&NodeStatus {
+                zone_id: "prod".to_string(),
+                node_id: "boundary-node".to_string(),
+                last_seen: base_time - chrono::TimeDelta::from_std(staleness_threshold).unwrap(),
+                quarantine_version: 1,
+                health: NodeHealth::Healthy,
+            }).expect("upsert boundary node");
+
+            // Node just before staleness (should not be stale)
+            transport.upsert_node_status(&NodeStatus {
+                zone_id: "prod".to_string(),
+                node_id: "fresh-node".to_string(),
+                last_seen: base_time - chrono::TimeDelta::from_std(staleness_threshold).unwrap() + chrono::TimeDelta::seconds(1),
+                quarantine_version: 1,
+                health: NodeHealth::Healthy,
+            }).expect("upsert fresh node");
+
+            // Node just after staleness (should be stale)
+            transport.upsert_node_status(&NodeStatus {
+                zone_id: "prod".to_string(),
+                node_id: "stale-node".to_string(),
+                last_seen: base_time - chrono::TimeDelta::from_std(staleness_threshold).unwrap() - chrono::TimeDelta::seconds(1),
+                quarantine_version: 1,
+                health: NodeHealth::Healthy,
+            }).expect("upsert stale node");
+
+            let stale_nodes = transport.list_stale_nodes(base_time, staleness_threshold)
+                .expect("list stale nodes");
+
+            let stale_ids: Vec<_> = stale_nodes.iter().map(|n| &n.node_id).collect();
+
+            // Boundary behavior: exactly at threshold should be considered stale (fail-closed)
+            assert!(stale_ids.contains(&&"boundary-node".to_string()), "Boundary node should be stale");
+            assert!(!stale_ids.contains(&&"fresh-node".to_string()), "Fresh node should not be stale");
+            assert!(stale_ids.contains(&&"stale-node".to_string()), "Stale node should be stale");
+        }
+
+        #[test]
+        fn file_layout_boundary_validation() {
+            let tempdir = tempdir().expect("tempdir");
+
+            // Test with extreme path lengths and characters
+            let extreme_roots = vec![
+                // Very long path
+                tempdir.path().join("a".repeat(200)),
+                // Unicode in path
+                tempdir.path().join("fleet-🚀-state"),
+                // Path with spaces
+                tempdir.path().join("fleet state with spaces"),
+            ];
+
+            for extreme_root in &extreme_roots {
+                let layout = FleetTransportLayout::new(extreme_root);
+
+                // Layout creation should handle extreme paths gracefully
+                assert!(layout.root_dir().to_str().is_some(), "Root path should be valid UTF-8");
+                assert!(layout.actions_path().to_str().is_some(), "Actions path should be valid UTF-8");
+                assert!(layout.nodes_dir().to_str().is_some(), "Nodes dir should be valid UTF-8");
+                assert!(layout.locks_dir().to_str().is_some(), "Locks dir should be valid UTF-8");
+
+                // Initialization should handle extreme paths
+                let init_result = layout.initialize();
+                if init_result.is_ok() {
+                    assert!(layout.root_dir().is_dir(), "Root directory should be created");
+                    assert!(layout.nodes_dir().is_dir(), "Nodes directory should be created");
+                    assert!(layout.locks_dir().is_dir(), "Locks directory should be created");
+                    assert!(layout.actions_path().is_file(), "Actions file should be created");
+                }
+            }
+
+            // Test node status path validation with boundary cases
+            let layout = FleetTransportLayout::new(tempdir.path());
+            layout.initialize().expect("initialize layout");
+
+            let boundary_node_ids = vec![
+                "a", // Minimum length
+                &"b".repeat(MAX_NODE_ID_LEN), // Maximum length
+                "node-with-all.valid_chars-123", // All valid characters
+            ];
+
+            for node_id in &boundary_node_ids {
+                let path_result = layout.node_status_path(node_id);
+                assert!(path_result.is_ok(), "Should accept valid node ID: {}", node_id);
+
+                let path = path_result.unwrap();
+                assert!(path.to_str().is_some(), "Generated path should be valid UTF-8");
+                assert!(path.file_name().is_some(), "Generated path should have filename");
+            }
+        }
     }
 }

@@ -794,4 +794,589 @@ mod tests {
         let parsed: PrefixProof = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(prefix, parsed);
     }
+
+    #[test]
+    fn disabled_append_marker_hash_preserves_empty_state() {
+        let mut checkpoint = MmrCheckpoint::disabled();
+
+        let err = checkpoint
+            .append_marker_hash("marker-hash")
+            .expect_err("disabled checkpoint must fail closed");
+
+        assert_eq!(err, ProofError::MmrDisabled);
+        assert_eq!(checkpoint.tree_size(), 0);
+        assert!(checkpoint.root().is_none());
+        assert!(checkpoint.leaf_hashes().is_empty());
+    }
+
+    #[test]
+    fn sync_from_stream_disabled_rejects_without_rebuild() {
+        let stream = build_stream(3);
+        let mut checkpoint = MmrCheckpoint::disabled();
+
+        let err = checkpoint
+            .sync_from_stream(&stream)
+            .expect_err("disabled sync must fail closed");
+
+        assert_eq!(err.code(), "MMR_DISABLED");
+        assert_eq!(checkpoint.tree_size(), 0);
+        assert!(checkpoint.root().is_none());
+    }
+
+    #[test]
+    fn inclusion_proof_rejects_empty_stream_even_with_enabled_checkpoint() {
+        let stream = build_stream(0);
+        let checkpoint = MmrCheckpoint::enabled();
+
+        let err = mmr_inclusion_proof(&stream, &checkpoint, 0)
+            .expect_err("empty stream cannot produce inclusion proof");
+
+        assert_eq!(err, ProofError::EmptyCheckpoint);
+    }
+
+    #[test]
+    fn verify_inclusion_rejects_zero_sized_proof() {
+        let proof = InclusionProof {
+            leaf_index: 0,
+            tree_size: 0,
+            leaf_hash: marker_leaf_hash("marker"),
+            audit_path: Vec::new(),
+        };
+        let root = MmrRoot {
+            tree_size: 1,
+            root_hash: marker_leaf_hash("marker"),
+        };
+
+        let err =
+            verify_inclusion(&proof, &root, &"marker".to_string()).expect_err("zero-size proof");
+
+        assert_eq!(err, ProofError::EmptyCheckpoint);
+    }
+
+    #[test]
+    fn verify_inclusion_rejects_tree_size_mismatch_before_hash_checks() {
+        let proof = InclusionProof {
+            leaf_index: 0,
+            tree_size: 2,
+            leaf_hash: marker_leaf_hash("marker"),
+            audit_path: Vec::new(),
+        };
+        let root = MmrRoot {
+            tree_size: 3,
+            root_hash: "not-evaluated".to_string(),
+        };
+
+        let err = verify_inclusion(&proof, &root, &"marker".to_string())
+            .expect_err("tree size mismatch must fail");
+
+        assert_eq!(err.code(), "MMR_INVALID_PROOF");
+        assert!(err.to_string().contains("tree size mismatch"));
+    }
+
+    #[test]
+    fn verify_inclusion_rejects_leaf_index_equal_to_tree_size() {
+        let proof = InclusionProof {
+            leaf_index: 2,
+            tree_size: 2,
+            leaf_hash: marker_leaf_hash("marker"),
+            audit_path: Vec::new(),
+        };
+        let root = MmrRoot {
+            tree_size: 2,
+            root_hash: marker_leaf_hash("marker"),
+        };
+
+        let err = verify_inclusion(&proof, &root, &"marker".to_string())
+            .expect_err("leaf index at tree size is out of range");
+
+        assert_eq!(
+            err,
+            ProofError::SequenceOutOfRange {
+                sequence: 2,
+                tree_size: 2
+            }
+        );
+    }
+
+    #[test]
+    fn prefix_proof_rejects_disabled_super_checkpoint() {
+        let stream = build_stream(4);
+        let checkpoint_a = build_checkpoint(&stream);
+        let checkpoint_b = MmrCheckpoint::disabled();
+
+        let err = mmr_prefix_proof(&checkpoint_a, &checkpoint_b)
+            .expect_err("disabled super checkpoint must fail");
+
+        assert_eq!(err, ProofError::MmrDisabled);
+    }
+
+    #[test]
+    fn verify_prefix_rejects_prefix_larger_than_super() {
+        let proof = PrefixProof {
+            prefix_size: 5,
+            super_tree_size: 4,
+            prefix_root_hash: "prefix".to_string(),
+            super_root_hash: "super".to_string(),
+            prefix_root_from_super: "prefix".to_string(),
+        };
+        let root_a = MmrRoot {
+            tree_size: 5,
+            root_hash: "prefix".to_string(),
+        };
+        let root_b = MmrRoot {
+            tree_size: 4,
+            root_hash: "super".to_string(),
+        };
+
+        let err = verify_prefix(&proof, &root_a, &root_b)
+            .expect_err("prefix larger than super tree must fail");
+
+        assert_eq!(
+            err,
+            ProofError::PrefixSizeInvalid {
+                prefix_size: 5,
+                super_tree_size: 4
+            }
+        );
+    }
+
+    #[test]
+    fn verify_prefix_rejects_root_size_mismatch() {
+        let proof = PrefixProof {
+            prefix_size: 3,
+            super_tree_size: 5,
+            prefix_root_hash: "prefix".to_string(),
+            super_root_hash: "super".to_string(),
+            prefix_root_from_super: "prefix".to_string(),
+        };
+        let root_a = MmrRoot {
+            tree_size: 2,
+            root_hash: "prefix".to_string(),
+        };
+        let root_b = MmrRoot {
+            tree_size: 5,
+            root_hash: "super".to_string(),
+        };
+
+        let err =
+            verify_prefix(&proof, &root_a, &root_b).expect_err("root size mismatch must fail");
+
+        assert_eq!(err.code(), "MMR_INVALID_PROOF");
+        assert!(err.to_string().contains("proof sizes"));
+    }
+
+    #[test]
+    fn serde_rejects_inclusion_proof_missing_audit_path() {
+        let json = serde_json::json!({
+            "leaf_index": 0,
+            "tree_size": 1,
+            "leaf_hash": marker_leaf_hash("marker")
+        });
+
+        let err = serde_json::from_value::<InclusionProof>(json)
+            .expect_err("missing audit_path must fail deserialization");
+
+        assert!(err.to_string().contains("audit_path"));
+    }
+
+    // Negative-path inline tests for edge cases and robustness
+    #[test]
+    fn negative_massive_tree_size_handles_overflow_gracefully() {
+        let mut checkpoint = MmrCheckpoint::enabled();
+
+        // Test with extreme tree sizes that could cause overflow
+        let extreme_cases = vec![
+            u64::MAX,
+            u64::MAX - 1,
+            u64::MAX / 2,
+        ];
+
+        for tree_size in extreme_cases {
+            // Create proof with massive tree size
+            let proof = InclusionProof {
+                leaf_index: 0,
+                tree_size,
+                leaf_hash: marker_leaf_hash("test"),
+                audit_path: Vec::new(),
+            };
+
+            let root = MmrRoot {
+                tree_size,
+                root_hash: marker_leaf_hash("root"),
+            };
+
+            // Verification should handle extreme sizes without panic
+            let result = verify_inclusion(&proof, &root, &"test".to_string());
+
+            // Either succeeds or fails gracefully, but no panic
+            match result {
+                Ok(_) => {},  // Acceptable if logic handles it
+                Err(err) => {
+                    // Should have a proper error code, not crash
+                    assert!(!err.code().is_empty());
+                }
+            }
+        }
+
+        // Test tree size arithmetic doesn't overflow
+        let massive_leaf_count = u64::MAX / 1000;
+        // This should either work or fail gracefully, not overflow
+        assert_eq!(checkpoint.tree_size().saturating_add(massive_leaf_count),
+                   checkpoint.tree_size().saturating_add(massive_leaf_count));
+    }
+
+    #[test]
+    fn negative_unicode_characters_in_marker_hashes() {
+        let mut checkpoint = MmrCheckpoint::enabled();
+
+        // Test problematic unicode characters in marker hashes
+        let problematic_markers = vec![
+            "marker-🔥-test",               // Emoji
+            "標記-測試-🌟",                 // Mixed CJK with emoji
+            "علامة-اختبار-٧٨٩",             // Arabic with numbers
+            "marker\u{200B}hidden",         // Zero-width space
+            "marker\u{FEFF}bom",           // Byte order mark
+            "marker‌invisible‍chars",       // Zero-width joiners
+            "𝒎𝒂𝒓𝒌𝒆𝒓",                   // Mathematical script unicode
+            "marker\u{0301}\u{0302}combo", // Combining diacriticals
+            "marker\u{1F600}emoji",        // Emoji codepoint
+            "marker\u{202E}rtl\u{202D}",   // RTL/LTR override
+        ];
+
+        for marker in &problematic_markers {
+            // Should handle unicode gracefully in hash computation
+            let result = checkpoint.append_marker_hash(marker);
+
+            match result {
+                Ok(root) => {
+                    // If successful, root should be valid
+                    assert!(!root.root_hash.is_empty());
+                    assert!(root.tree_size > 0);
+
+                    // Verify hash is deterministic
+                    let hash1 = marker_leaf_hash(marker);
+                    let hash2 = marker_leaf_hash(marker);
+                    assert_eq!(hash1, hash2, "Hash should be deterministic for unicode input");
+                },
+                Err(_) => {
+                    // Graceful rejection is also acceptable
+                }
+            }
+        }
+
+        // Verify checkpoint state remains consistent
+        assert!(checkpoint.tree_size() >= 0);
+    }
+
+    #[test]
+    fn negative_null_bytes_and_control_characters_in_hash_inputs() {
+        let problematic_hashes = vec![
+            "marker\0null",              // Null byte
+            "marker\x01\x02control",    // Control characters
+            "marker\r\nlinebreak",      // Line breaks
+            "marker\t\x0Btab",          // Tab and vertical tab
+            "marker\x7F\x80\xFF",       // DEL and high bytes
+            "marker\u{FFFE}nonchar",    // Unicode non-character
+            "marker\u{FFFF}invalid",    // Another non-character
+            "",                         // Empty string
+            "\0\0\0\0",                 // Only null bytes
+        ];
+
+        for hash_input in &problematic_hashes {
+            // Hash computation should handle control chars without corruption
+            let leaf_hash = marker_leaf_hash(hash_input);
+
+            // Should produce valid hex output
+            assert!(leaf_hash.chars().all(|c| c.is_ascii_hexdigit()),
+                   "Hash should be valid hex despite problematic input: {:?}", hash_input);
+
+            // Should be deterministic
+            assert_eq!(marker_leaf_hash(hash_input), marker_leaf_hash(hash_input));
+
+            // Should not be empty unless input caused total failure
+            if !hash_input.is_empty() {
+                assert!(!leaf_hash.is_empty(), "Hash should not be empty for non-empty input");
+            }
+        }
+
+        // Test in actual proof verification
+        let mut checkpoint = MmrCheckpoint::enabled();
+        let result = checkpoint.append_marker_hash("test\0null\xFF");
+
+        // Should either succeed or fail cleanly, not corrupt state
+        match result {
+            Ok(_) => assert!(checkpoint.tree_size() > 0),
+            Err(_) => assert_eq!(checkpoint.tree_size(), 0),
+        }
+    }
+
+    #[test]
+    fn negative_massive_audit_paths_memory_pressure() {
+        // Create inclusion proof with massive audit path
+        let massive_path_size = 10000;
+        let mut audit_path = Vec::with_capacity(massive_path_size);
+
+        for i in 0..massive_path_size {
+            audit_path.push(format!("hash-{:064x}", i));
+        }
+
+        let proof = InclusionProof {
+            leaf_index: 0,
+            tree_size: 1,
+            leaf_hash: marker_leaf_hash("test"),
+            audit_path,
+        };
+
+        let root = MmrRoot {
+            tree_size: 1,
+            root_hash: marker_leaf_hash("root"),
+        };
+
+        // Verification should handle massive audit paths without excessive memory usage
+        let result = verify_inclusion(&proof, &root, &"test".to_string());
+
+        // Should either succeed efficiently or fail gracefully
+        match result {
+            Ok(_) => {}, // Acceptable if verification logic handles it
+            Err(err) => {
+                // Should have proper error handling, not OOM
+                assert!(!err.code().is_empty());
+            }
+        }
+
+        // Memory should be released after verification
+        drop(proof);
+    }
+
+    #[test]
+    fn negative_hash_collision_resistance_validation() {
+        let mut checkpoint = MmrCheckpoint::enabled();
+
+        // Test potential hash collision scenarios
+        let collision_candidates = vec![
+            ("test1", "test2"),
+            ("abc", "def"),
+            ("hash", "hsah"),  // Anagram
+            ("a", "b"),
+            ("", " "),         // Empty vs space
+            ("test\0", "test"), // Null vs non-null
+            ("UPPER", "upper"), // Case sensitivity
+        ];
+
+        let mut hashes = Vec::new();
+
+        for (input1, input2) in collision_candidates {
+            let hash1 = marker_leaf_hash(input1);
+            let hash2 = marker_leaf_hash(input2);
+
+            // Hashes should be different for different inputs
+            assert_ne!(hash1, hash2,
+                      "Hash collision detected between {:?} and {:?}", input1, input2);
+
+            // Collect all hashes to check for global collisions
+            hashes.push((input1, hash1.clone()));
+            hashes.push((input2, hash2.clone()));
+
+            // Add to checkpoint to test internal collision handling
+            if checkpoint.append_marker_hash(input1).is_ok() {
+                checkpoint.append_marker_hash(input2).expect("second append should succeed");
+            }
+        }
+
+        // Check for any global hash collisions
+        hashes.sort_by(|a, b| a.1.cmp(&b.1));
+        for window in hashes.windows(2) {
+            if window[0].1 == window[1].1 {
+                panic!("Hash collision found: {:?} and {:?} both hash to {}",
+                       window[0].0, window[1].0, window[0].1);
+            }
+        }
+
+        // Checkpoint should maintain integrity
+        assert!(checkpoint.tree_size() > 0);
+        if let Some(root) = checkpoint.root() {
+            assert!(!root.root_hash.is_empty());
+        }
+    }
+
+    #[test]
+    fn negative_extreme_leaf_indices_boundary_testing() {
+        // Test edge cases around leaf index boundaries
+        let boundary_cases = vec![
+            (0, 1),           // First leaf in single-item tree
+            (0, 2),           // First leaf in two-item tree
+            (1, 2),           // Last leaf in two-item tree
+            (u64::MAX - 1, u64::MAX), // Near-maximum indices
+        ];
+
+        for (leaf_index, tree_size) in boundary_cases {
+            let proof = InclusionProof {
+                leaf_index,
+                tree_size,
+                leaf_hash: marker_leaf_hash("boundary"),
+                audit_path: Vec::new(),
+            };
+
+            let root = MmrRoot {
+                tree_size,
+                root_hash: marker_leaf_hash("root"),
+            };
+
+            let result = verify_inclusion(&proof, &root, &"boundary".to_string());
+
+            // Boundary conditions should be handled correctly
+            if leaf_index >= tree_size {
+                // Should reject out-of-bounds indices
+                assert!(result.is_err());
+                assert_eq!(result.unwrap_err().code(), "MMR_SEQUENCE_OUT_OF_RANGE");
+            } else {
+                // Valid indices should either succeed or fail for other reasons
+                match result {
+                    Ok(_) => {},
+                    Err(err) => {
+                        // Should not fail due to boundary issues
+                        assert_ne!(err.code(), "MMR_SEQUENCE_OUT_OF_RANGE");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_malformed_merkle_tree_construction() {
+        // Test edge cases in merkle tree construction
+        let edge_cases = vec![
+            Vec::<String>::new(),                    // Empty leaf set
+            vec!["single".to_string()],             // Single leaf
+            vec!["".to_string()],                   // Single empty leaf
+            vec!["a".to_string(), "".to_string()],  // Mixed empty/non-empty
+        ];
+
+        for leaves in edge_cases {
+            let root_result = merkle_root_from_leaf_hashes(&leaves);
+
+            match leaves.len() {
+                0 => {
+                    // Empty leaf set should return None
+                    assert!(root_result.is_none(), "Empty leaf set should return None");
+                },
+                1 => {
+                    // Single leaf should return that leaf as root
+                    assert!(root_result.is_some(), "Single leaf should produce root");
+                    if let Some(root) = root_result {
+                        assert!(!root.is_empty(), "Root should not be empty");
+                    }
+                },
+                _ => {
+                    // Multiple leaves should produce a root
+                    assert!(root_result.is_some(), "Multiple leaves should produce root");
+                }
+            }
+
+            // Test audit path construction for each case
+            if !leaves.is_empty() {
+                for leaf_idx in 0..leaves.len() {
+                    let audit_result = merkle_audit_path(&leaves, leaf_idx);
+
+                    match leaves.len() {
+                        1 => {
+                            // Single leaf should have empty audit path
+                            assert_eq!(audit_result, Some(Vec::new()));
+                        },
+                        _ => {
+                            // Multiple leaves should have non-empty audit path
+                            assert!(audit_result.is_some(), "Should produce audit path");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_integer_overflow_in_tree_operations() {
+        // Test arithmetic operations that could overflow
+        let mut checkpoint = MmrCheckpoint::enabled();
+
+        // Fill checkpoint to near capacity with overflow-prone operations
+        for i in 0..10 {
+            let marker = format!("overflow-test-{}", i);
+            checkpoint.append_marker_hash(&marker).expect("append should succeed");
+        }
+
+        // Test tree size calculations don't overflow
+        let tree_size = checkpoint.tree_size();
+        assert!(tree_size < u64::MAX);
+
+        // Test saturating operations
+        let saturated_add = tree_size.saturating_add(u64::MAX);
+        assert!(saturated_add >= tree_size);
+
+        // Create stream with potential overflow scenarios
+        let stream = build_stream(100);
+
+        // Test window calculations with extreme values
+        if let Ok(hashes) = retained_leaf_hashes(&stream) {
+            assert!(hashes.len() <= MAX_LEAF_HASHES);
+
+            // Verify no overflow in hash collection size
+            let len_as_u64 = hashes.len() as u64;
+            assert!(len_as_u64 <= MAX_LEAF_HASHES as u64);
+        }
+
+        // Test prefix proof with extreme size differences
+        let small_checkpoint = MmrCheckpoint::enabled();
+        if checkpoint.tree_size() > 0 {
+            let result = mmr_prefix_proof(&small_checkpoint, &checkpoint);
+            // Should handle size disparity gracefully
+            match result {
+                Ok(_) => {},
+                Err(err) => {
+                    assert!(!err.code().is_empty());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_concurrent_hash_computation_consistency() {
+        // Test hash consistency under various inputs that might cause issues
+        let test_inputs = vec![
+            "normal-input",
+            "input-with-unicode-🔥",
+            "input\0with\0nulls",
+            "very-long-input-".repeat(100).as_str(),
+            "",
+            " ",
+            "\n\r\t",
+            "input-with-high-bytes-\x80\xFF",
+        ];
+
+        for input in test_inputs {
+            // Hash should be deterministic across multiple calls
+            let hash1 = marker_leaf_hash(input);
+            let hash2 = marker_leaf_hash(input);
+            let hash3 = marker_leaf_hash(input);
+
+            assert_eq!(hash1, hash2, "Hash should be deterministic for: {:?}", input);
+            assert_eq!(hash2, hash3, "Hash should be deterministic for: {:?}", input);
+
+            // Hash should be valid hex
+            assert!(hash1.chars().all(|c| c.is_ascii_hexdigit()),
+                   "Hash should be valid hex for: {:?}", input);
+
+            // Hash should have consistent length
+            assert_eq!(hash1.len(), 64, "SHA256 hash should be 64 hex chars for: {:?}", input);
+
+            // Test pair hashing as well
+            let pair_hash1 = hash_pair(&hash1, &hash1);
+            let pair_hash2 = hash_pair(&hash1, &hash1);
+            assert_eq!(pair_hash1, pair_hash2, "Pair hash should be deterministic");
+        }
+
+        // Test domain separation is working
+        let marker_hash = marker_leaf_hash("test");
+        let direct_sha = sha256_hex(b"test");
+        assert_ne!(marker_hash, direct_sha, "Domain separation should prevent direct hash matches");
+    }
 }

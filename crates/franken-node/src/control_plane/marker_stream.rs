@@ -359,9 +359,14 @@ impl MarkerStream {
         trace_id: &str,
     ) -> Result<&Marker, MarkerStreamError> {
         // Validate payload hash
-        if payload_hash.is_empty() {
+        if payload_hash.trim().is_empty() {
             return Err(MarkerStreamError::InvalidPayload {
                 reason: "payload_hash must not be empty".into(),
+            });
+        }
+        if trace_id.trim().is_empty() {
+            return Err(MarkerStreamError::InvalidPayload {
+                reason: "trace_id must not be empty".into(),
             });
         }
 
@@ -909,6 +914,292 @@ mod tests {
             .append(MarkerEventType::TrustDecision, "", 1000, &trace(1))
             .unwrap_err();
         assert_eq!(err.code(), "MKS_INVALID_PAYLOAD");
+    }
+
+    // ---- Negative regression tests ----
+
+    #[test]
+    fn empty_payload_rejection_does_not_advance_sequence() {
+        let mut stream = MarkerStream::new();
+        let err = stream
+            .append(MarkerEventType::TrustDecision, "", 1000, &trace(1))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "MKS_INVALID_PAYLOAD");
+        let marker = stream
+            .append(MarkerEventType::TrustDecision, &payload(1), 1001, &trace(2))
+            .unwrap();
+        assert_eq!(marker.sequence, 0);
+        assert_eq!(stream.len(), 1);
+    }
+
+    #[test]
+    fn time_regression_rejection_does_not_skip_sequence() {
+        let mut stream = MarkerStream::new();
+        stream
+            .append(MarkerEventType::TrustDecision, &payload(1), 1000, &trace(1))
+            .unwrap();
+        let err = stream
+            .append(
+                MarkerEventType::RevocationEvent,
+                &payload(2),
+                999,
+                &trace(2),
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code(), "MKS_TIME_REGRESSION");
+        let marker = stream
+            .append(
+                MarkerEventType::RevocationEvent,
+                &payload(3),
+                1001,
+                &trace(3),
+            )
+            .unwrap();
+        assert_eq!(marker.sequence, 1);
+        assert_eq!(stream.len(), 2);
+    }
+
+    #[test]
+    fn verify_integrity_detects_injected_sequence_gap() {
+        let mut base = MarkerStream::new();
+        base.append(MarkerEventType::TrustDecision, &payload(1), 1000, &trace(1))
+            .unwrap();
+        let first = base.get(0).unwrap().clone();
+        let gap_marker = Marker {
+            sequence: 2,
+            event_type: MarkerEventType::PolicyChange,
+            payload_hash: payload(2),
+            prev_hash: first.marker_hash.clone(),
+            marker_hash: Marker::compute_hash(
+                2,
+                MarkerEventType::PolicyChange,
+                &payload(2),
+                &first.marker_hash,
+                1001,
+                &trace(2),
+            ),
+            timestamp: 1001,
+            trace_id: trace(2),
+        };
+        let mut stream = MarkerStream::new();
+        stream.inject_for_test(first);
+        stream.inject_for_test(gap_marker);
+
+        let err = stream.verify_integrity().unwrap_err();
+
+        assert_eq!(err.code(), "MKS_INTEGRITY_FAILURE");
+        assert!(err.to_string().contains("sequence mismatch"));
+    }
+
+    #[test]
+    fn verify_integrity_detects_marker_hash_mismatch_with_valid_chain() {
+        let mut stream = MarkerStream::new();
+        stream
+            .append(MarkerEventType::TrustDecision, &payload(1), 1000, &trace(1))
+            .unwrap();
+        stream
+            .append(
+                MarkerEventType::RevocationEvent,
+                &payload(2),
+                1001,
+                &trace(2),
+            )
+            .unwrap();
+        let first = stream.get(0).unwrap().clone();
+        let mut second = stream.get(1).unwrap().clone();
+        second.marker_hash = "wrong-but-prev-chain-remains-valid".to_string();
+        let mut corrupted = MarkerStream::new();
+        corrupted.inject_for_test(first);
+        corrupted.inject_for_test(second);
+
+        let err = corrupted.verify_integrity().unwrap_err();
+
+        assert_eq!(err.code(), "MKS_INTEGRITY_FAILURE");
+        assert!(err.to_string().contains("marker_hash mismatch"));
+    }
+
+    #[test]
+    fn verify_integrity_detects_injected_time_regression() {
+        let mut base = MarkerStream::new();
+        base.append(MarkerEventType::TrustDecision, &payload(1), 1000, &trace(1))
+            .unwrap();
+        let first = base.get(0).unwrap().clone();
+        let regressed = Marker {
+            sequence: 1,
+            event_type: MarkerEventType::RevocationEvent,
+            payload_hash: payload(2),
+            prev_hash: first.marker_hash.clone(),
+            marker_hash: Marker::compute_hash(
+                1,
+                MarkerEventType::RevocationEvent,
+                &payload(2),
+                &first.marker_hash,
+                999,
+                &trace(2),
+            ),
+            timestamp: 999,
+            trace_id: trace(2),
+        };
+        let mut stream = MarkerStream::new();
+        stream.inject_for_test(first);
+        stream.inject_for_test(regressed);
+
+        let err = stream.verify_integrity().unwrap_err();
+
+        assert_eq!(err.code(), "MKS_INTEGRITY_FAILURE");
+        assert!(err.to_string().contains("time regression"));
+    }
+
+    #[test]
+    fn recover_torn_tail_does_not_mask_non_tail_corruption() {
+        let mut stream = MarkerStream::new();
+        stream
+            .append(MarkerEventType::TrustDecision, &payload(1), 1000, &trace(1))
+            .unwrap();
+        stream
+            .append(
+                MarkerEventType::RevocationEvent,
+                &payload(2),
+                1001,
+                &trace(2),
+            )
+            .unwrap();
+        let mut first = stream.get(0).unwrap().clone();
+        let second = stream.get(1).unwrap().clone();
+        first.marker_hash = "non-tail-corruption".to_string();
+        let mut corrupted = MarkerStream::new();
+        corrupted.inject_for_test(first);
+        corrupted.inject_for_test(second);
+
+        assert!(corrupted.recover_torn_tail().is_none());
+        assert_eq!(
+            corrupted.verify_integrity().unwrap_err().code(),
+            "MKS_INTEGRITY_FAILURE"
+        );
+    }
+
+    #[test]
+    fn lookup_before_evicted_base_returns_none() {
+        let mut stream = MarkerStream::new();
+        for i in 0..(MAX_MARKERS + 2) {
+            let n = u32::try_from(i).expect("test marker index fits u32");
+            let ts = 1000_u64.saturating_add(u64::try_from(i).expect("usize fits u64"));
+            stream
+                .append(MarkerEventType::PolicyChange, &payload(n), ts, &trace(n))
+                .unwrap();
+        }
+
+        assert!(stream.get(0).is_none());
+        assert!(stream.marker_by_sequence(1).is_none());
+        assert!(stream.range(0, 2).is_empty());
+        assert_eq!(stream.len(), MAX_MARKERS);
+    }
+
+    #[test]
+    fn event_type_from_label_rejects_near_misses() {
+        for label in [
+            "",
+            "TRUST_DECISION",
+            "trust_decision ",
+            " trust_decision",
+            "trust-decision",
+            "policy/change",
+        ] {
+            assert!(MarkerEventType::from_label(label).is_none());
+        }
+    }
+
+    #[test]
+    fn whitespace_payload_hash_rejected_without_advancing_sequence() {
+        let mut stream = MarkerStream::new();
+        let err = stream
+            .append(MarkerEventType::TrustDecision, " \t\n", 1000, &trace(1))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "MKS_INVALID_PAYLOAD");
+        assert!(err.to_string().contains("payload_hash"));
+        let marker = stream
+            .append(MarkerEventType::TrustDecision, &payload(1), 1001, &trace(2))
+            .unwrap();
+        assert_eq!(marker.sequence, 0);
+        assert_eq!(stream.len(), 1);
+    }
+
+    #[test]
+    fn empty_trace_id_rejected_without_advancing_sequence() {
+        let mut stream = MarkerStream::new();
+        let err = stream
+            .append(MarkerEventType::PolicyChange, &payload(1), 1000, "")
+            .unwrap_err();
+
+        assert_eq!(err.code(), "MKS_INVALID_PAYLOAD");
+        assert!(err.to_string().contains("trace_id"));
+        let marker = stream
+            .append(MarkerEventType::PolicyChange, &payload(2), 1001, &trace(2))
+            .unwrap();
+        assert_eq!(marker.sequence, 0);
+    }
+
+    #[test]
+    fn whitespace_trace_id_rejected_without_advancing_sequence() {
+        let mut stream = MarkerStream::new();
+        let err = stream
+            .append(MarkerEventType::EpochTransition, &payload(1), 1000, "   ")
+            .unwrap_err();
+
+        assert_eq!(err.code(), "MKS_INVALID_PAYLOAD");
+        assert!(err.to_string().contains("trace_id"));
+        assert!(stream.is_empty());
+    }
+
+    #[test]
+    fn invalid_payload_takes_precedence_over_time_regression() {
+        let mut stream = MarkerStream::new();
+        stream
+            .append(MarkerEventType::TrustDecision, &payload(1), 1000, &trace(1))
+            .unwrap();
+
+        let err = stream
+            .append(MarkerEventType::TrustDecision, "", 999, &trace(2))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "MKS_INVALID_PAYLOAD");
+        assert_eq!(stream.len(), 1);
+        assert_eq!(stream.head().expect("head").sequence, 0);
+    }
+
+    #[test]
+    fn invalid_trace_takes_precedence_over_time_regression() {
+        let mut stream = MarkerStream::new();
+        stream
+            .append(MarkerEventType::TrustDecision, &payload(1), 1000, &trace(1))
+            .unwrap();
+
+        let err = stream
+            .append(MarkerEventType::TrustDecision, &payload(2), 999, "\n")
+            .unwrap_err();
+
+        assert_eq!(err.code(), "MKS_INVALID_PAYLOAD");
+        assert_eq!(stream.len(), 1);
+        assert_eq!(stream.head().expect("head").sequence, 0);
+    }
+
+    #[test]
+    fn failed_trace_validation_preserves_next_valid_sequence() {
+        let mut stream = MarkerStream::new();
+        stream
+            .append(MarkerEventType::PolicyChange, &payload(1), 1000, &trace(1))
+            .unwrap();
+        let _ = stream.append(MarkerEventType::PolicyChange, &payload(2), 1001, "\t");
+
+        let marker = stream
+            .append(MarkerEventType::PolicyChange, &payload(3), 1002, &trace(3))
+            .unwrap();
+
+        assert_eq!(marker.sequence, 1);
+        assert_eq!(stream.len(), 2);
     }
 
     // ---- Integrity verification ----

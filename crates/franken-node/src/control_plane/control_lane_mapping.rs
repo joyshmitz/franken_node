@@ -30,8 +30,12 @@ pub const DEFAULT_STARVATION_THRESHOLD_TICKS: u32 = 3;
 pub const DEFAULT_MAX_AUDIT_LOG_ENTRIES: usize = 4_096;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
@@ -226,6 +230,14 @@ impl ControlLanePolicy {
             });
         }
 
+        for task_class in self.assignments.keys() {
+            if task_class.trim().is_empty() || task_class.trim() != task_class {
+                return Err(ControlLanePolicyError::IncompleteMap {
+                    detail: format!("invalid task assignment key: {task_class:?}"),
+                });
+            }
+        }
+
         // Check budget sum
         let total: u32 = self
             .budgets
@@ -254,6 +266,22 @@ impl ControlLanePolicy {
             return Err(ControlLanePolicyError::InvalidBudget {
                 lane: ControlLane::Timed,
                 detail: format!("timed budget {}% < 30% minimum", timed.min_percent),
+            });
+        }
+
+        for lane in ControlLane::all() {
+            if !self.budgets.contains_key(lane.as_str()) {
+                return Err(ControlLanePolicyError::InvalidBudget {
+                    lane: *lane,
+                    detail: "missing lane budget".to_string(),
+                });
+            }
+        }
+
+        if total != 100 {
+            return Err(ControlLanePolicyError::InvalidBudget {
+                lane: ControlLane::Ready,
+                detail: format!("budget total {total}% != 100%"),
             });
         }
 
@@ -1070,5 +1098,280 @@ mod tests {
             let s = e.to_string();
             assert!(s.contains(e.code()), "{:?} should contain {}", e, e.code());
         }
+    }
+
+    #[test]
+    fn scheduler_constructor_rejects_empty_policy() {
+        let err = match ControlLaneScheduler::new(ControlLanePolicy::new()) {
+            Ok(_) => panic!("empty policy must not construct a scheduler"),
+            Err(err) => err,
+        };
+
+        match err {
+            ControlLanePolicyError::IncompleteMap { detail } => {
+                assert!(detail.contains("no task assignments"));
+            }
+            other => unreachable!("unexpected error: {other}"),
+        }
+    }
+
+    #[test]
+    fn scheduler_constructor_rejects_budget_overflow() {
+        let mut policy = ControlLanePolicy::new();
+        policy.assign(&task_classes::cancellation_handler(), ControlLane::Cancel);
+        policy.set_budget(LaneBudget {
+            lane: ControlLane::Cancel,
+            min_percent: 40,
+            starvation_threshold_ticks: 1,
+        });
+        policy.set_budget(LaneBudget {
+            lane: ControlLane::Timed,
+            min_percent: 40,
+            starvation_threshold_ticks: 2,
+        });
+        policy.set_budget(LaneBudget {
+            lane: ControlLane::Ready,
+            min_percent: 30,
+            starvation_threshold_ticks: 3,
+        });
+
+        let err = match ControlLaneScheduler::new(policy) {
+            Ok(_) => panic!("scheduler must reject policies above 100 percent"),
+            Err(err) => err,
+        };
+        match err {
+            ControlLanePolicyError::BudgetOverflow { total_percent } => {
+                assert_eq!(total_percent, 110);
+            }
+            other => unreachable!("unexpected error: {other}"),
+        }
+    }
+
+    #[test]
+    fn scheduler_constructor_rejects_cancel_budget_below_minimum() {
+        let mut policy = ControlLanePolicy::new();
+        policy.assign(&task_classes::cancellation_handler(), ControlLane::Cancel);
+        policy.set_budget(LaneBudget {
+            lane: ControlLane::Cancel,
+            min_percent: 19,
+            starvation_threshold_ticks: 1,
+        });
+        policy.set_budget(LaneBudget {
+            lane: ControlLane::Timed,
+            min_percent: 30,
+            starvation_threshold_ticks: 2,
+        });
+
+        let err = match ControlLaneScheduler::new(policy) {
+            Ok(_) => panic!("cancel lane budget below minimum must fail closed"),
+            Err(err) => err,
+        };
+        match err {
+            ControlLanePolicyError::InvalidBudget { lane, detail } => {
+                assert_eq!(lane, ControlLane::Cancel);
+                assert!(detail.contains("20% minimum"));
+            }
+            other => unreachable!("unexpected error: {other}"),
+        }
+    }
+
+    #[test]
+    fn unknown_task_assignment_does_not_mutate_audit_or_counters() {
+        let mut scheduler = make_scheduler();
+        let before_counters = scheduler.counters().clone();
+        let err = scheduler
+            .assign_task(
+                &ControlTaskClass::new("unknown_control_task"),
+                1000,
+                "trace",
+            )
+            .expect_err("unknown task must be rejected");
+
+        match err {
+            ControlLanePolicyError::UnknownTask { task_class } => {
+                assert_eq!(task_class, "unknown_control_task");
+            }
+            other => unreachable!("unexpected error: {other}"),
+        }
+        assert!(scheduler.audit_log().is_empty());
+        assert_eq!(scheduler.counters(), &before_counters);
+    }
+
+    #[test]
+    fn whitespace_task_class_is_unknown_and_preserved_in_error() {
+        let mut scheduler = make_scheduler();
+        let err = scheduler
+            .assign_task(
+                &ControlTaskClass::new(" cancellation_handler "),
+                1000,
+                "trace",
+            )
+            .expect_err("whitespace-padded task must not match canonical class");
+
+        match err {
+            ControlLanePolicyError::UnknownTask { task_class } => {
+                assert_eq!(task_class, " cancellation_handler ");
+            }
+            other => unreachable!("unexpected error: {other}"),
+        }
+        assert!(scheduler.audit_log().is_empty());
+    }
+
+    #[test]
+    fn assignment_fails_when_resolved_lane_counter_is_missing() {
+        let mut scheduler = make_scheduler();
+        scheduler.counters.remove(ControlLane::Cancel.as_str());
+
+        let err = scheduler
+            .assign_task(&task_classes::cancellation_handler(), 1000, "trace")
+            .expect_err("missing lane counter must fail assignment");
+
+        match err {
+            ControlLanePolicyError::IncompleteMap { detail } => {
+                assert!(detail.contains("counters missing for lane cancel"));
+            }
+            other => unreachable!("unexpected error: {other}"),
+        }
+        assert!(scheduler.audit_log().is_empty());
+    }
+
+    #[test]
+    fn advance_tick_reports_missing_counter_as_incomplete_map() {
+        let mut scheduler = make_scheduler();
+        scheduler.counters.remove(ControlLane::Timed.as_str());
+        let mut tick = BTreeMap::new();
+        tick.insert(ControlLane::Timed.as_str().to_string(), 1);
+
+        let alerts = scheduler.advance_tick(&tick, 1000, "trace");
+
+        assert_eq!(alerts.len(), 1);
+        match &alerts[0] {
+            ControlLanePolicyError::IncompleteMap { detail } => {
+                assert!(detail.contains("counters missing for lane timed"));
+            }
+            other => unreachable!("unexpected error: {other}"),
+        }
+        assert!(scheduler.audit_log().is_empty());
+    }
+
+    #[test]
+    fn select_next_lane_ignores_zero_count_high_priority_lanes() {
+        let mut pending = BTreeMap::new();
+        pending.insert(ControlLane::Cancel, 0);
+        pending.insert(ControlLane::Timed, 0);
+        pending.insert(ControlLane::Ready, 4);
+
+        assert_eq!(select_next_lane(&pending), Some(ControlLane::Ready));
+    }
+
+    #[test]
+    fn policy_validate_rejects_missing_ready_budget() {
+        let mut policy = ControlLanePolicy::new();
+        policy.assign(&task_classes::health_check(), ControlLane::Timed);
+        policy.set_budget(LaneBudget {
+            lane: ControlLane::Cancel,
+            min_percent: 20,
+            starvation_threshold_ticks: 1,
+        });
+        policy.set_budget(LaneBudget {
+            lane: ControlLane::Timed,
+            min_percent: 80,
+            starvation_threshold_ticks: 2,
+        });
+
+        let err = policy
+            .validate()
+            .expect_err("missing ready budget must fail");
+
+        assert_eq!(err.code(), error_codes::ERR_CLM_INVALID_BUDGET);
+        assert!(err.to_string().contains("missing lane budget"));
+    }
+
+    #[test]
+    fn policy_validate_rejects_missing_cancel_budget() {
+        let mut policy = ControlLanePolicy::new();
+        policy.assign(&task_classes::telemetry_flush(), ControlLane::Ready);
+        policy.set_budget(LaneBudget {
+            lane: ControlLane::Timed,
+            min_percent: 50,
+            starvation_threshold_ticks: 2,
+        });
+        policy.set_budget(LaneBudget {
+            lane: ControlLane::Ready,
+            min_percent: 50,
+            starvation_threshold_ticks: 3,
+        });
+
+        let err = policy
+            .validate()
+            .expect_err("missing cancel budget must fail");
+
+        assert_eq!(err.code(), error_codes::ERR_CLM_INVALID_BUDGET);
+        assert!(err.to_string().contains("cancel missing lane budget"));
+    }
+
+    #[test]
+    fn policy_validate_rejects_budget_total_below_100() {
+        let mut policy = ControlLanePolicy::new();
+        policy.assign(&task_classes::telemetry_flush(), ControlLane::Ready);
+        policy.set_budget(LaneBudget {
+            lane: ControlLane::Cancel,
+            min_percent: 20,
+            starvation_threshold_ticks: 1,
+        });
+        policy.set_budget(LaneBudget {
+            lane: ControlLane::Timed,
+            min_percent: 30,
+            starvation_threshold_ticks: 2,
+        });
+        policy.set_budget(LaneBudget {
+            lane: ControlLane::Ready,
+            min_percent: 40,
+            starvation_threshold_ticks: 3,
+        });
+
+        let err = policy
+            .validate()
+            .expect_err("budget total below 100 must fail");
+
+        assert_eq!(err.code(), error_codes::ERR_CLM_INVALID_BUDGET);
+        assert!(err.to_string().contains("budget total 90%"));
+    }
+
+    #[test]
+    fn policy_validate_rejects_blank_task_assignment_key() {
+        let mut policy = default_control_lane_policy();
+        policy.assignments.insert(String::new(), ControlLane::Ready);
+
+        let err = policy
+            .validate()
+            .expect_err("blank assignment key must fail");
+
+        assert_eq!(err.code(), error_codes::ERR_CLM_INCOMPLETE_MAP);
+        assert!(err.to_string().contains("invalid task assignment key"));
+    }
+
+    #[test]
+    fn policy_validate_rejects_padded_task_assignment_key() {
+        let mut policy = default_control_lane_policy();
+        policy
+            .assignments
+            .insert(" health_check ".to_string(), ControlLane::Timed);
+
+        let err = policy
+            .validate()
+            .expect_err("padded assignment key must fail");
+
+        assert_eq!(err.code(), error_codes::ERR_CLM_INCOMPLETE_MAP);
+        assert!(err.to_string().contains("invalid task assignment key"));
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_without_inserting() {
+        let mut records = vec!["old-a".to_string(), "old-b".to_string()];
+
+        push_bounded(&mut records, "new".to_string(), 0);
+
+        assert!(records.is_empty());
     }
 }

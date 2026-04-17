@@ -450,8 +450,13 @@ impl EvidenceReplayGate {
 }
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
+
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
@@ -663,5 +668,275 @@ mod tests {
             .filter(|e| e.event_code == RPL_005_GATE_DECISION)
             .collect();
         assert_eq!(gate_entries.len(), 1);
+    }
+
+    #[test]
+    fn replay_errors_when_input_entries_change_after_hash_capture() {
+        let mut gate = EvidenceReplayGate::new();
+        let mut ev = make_evidence("d-mut-entry", DecisionType::Rollout, "proceed");
+        ev.input_entries.push("late-entry".to_owned());
+
+        let result = gate.replay_decision(&ev, "proceed", "2026-01-15T02:00:00Z");
+
+        assert!(matches!(result.verdict, ReplayVerdict::Error { .. }));
+        assert_eq!(result.event_code, RPL_004_ERROR);
+        assert_eq!(gate.total_errors(), 1);
+        assert_eq!(gate.total_reproduced(), 0);
+    }
+
+    #[test]
+    fn replay_errors_when_input_context_value_changes_after_hash_capture() {
+        let mut gate = EvidenceReplayGate::new();
+        let mut ev = make_evidence("d-mut-context", DecisionType::HealthGate, "admit");
+        ev.input_context
+            .insert("key".to_owned(), "tampered".to_owned());
+
+        let result = gate.replay_decision(&ev, "admit", "2026-01-15T02:01:00Z");
+
+        assert!(matches!(result.verdict, ReplayVerdict::Error { .. }));
+        assert_eq!(gate.total_errors(), 1);
+        assert_eq!(gate.total_replays(), 1);
+    }
+
+    #[test]
+    fn replay_errors_when_decision_id_changes_after_hash_capture() {
+        let mut gate = EvidenceReplayGate::new();
+        let mut ev = make_evidence("d-original", DecisionType::Quarantine, "quarantine");
+        ev.decision_id = "d-tampered".to_owned();
+
+        let result = gate.replay_decision(&ev, "quarantine", "2026-01-15T02:02:00Z");
+
+        match result.verdict {
+            ReplayVerdict::Error { reason } => {
+                assert!(reason.contains("Input hash mismatch"));
+            }
+            other => panic!("expected error verdict, got {other:?}"),
+        }
+        assert_eq!(gate.total_errors(), 1);
+    }
+
+    #[test]
+    fn replay_errors_when_epoch_changes_after_hash_capture() {
+        let mut gate = EvidenceReplayGate::new();
+        let mut ev = make_evidence("d-mut-epoch", DecisionType::Fencing, "fence");
+        ev.epoch_id = ev.epoch_id.saturating_add(1);
+
+        let result = gate.replay_decision(&ev, "fence", "2026-01-15T02:03:00Z");
+
+        assert!(matches!(result.verdict, ReplayVerdict::Error { .. }));
+        assert_eq!(gate.total_errors(), 1);
+    }
+
+    #[test]
+    fn divergent_replay_records_diff_metadata_for_empty_replayed_action() {
+        let mut gate = EvidenceReplayGate::new();
+        let ev = make_evidence("d-empty-replay", DecisionType::Rollout, "proceed");
+
+        let result = gate.replay_decision(&ev, "", "2026-01-15T02:04:00Z");
+
+        match result.verdict {
+            ReplayVerdict::Diverged {
+                original_action,
+                replayed_action,
+                diff_hash,
+                diff_size_bytes,
+            } => {
+                assert_eq!(original_action, "proceed");
+                assert_eq!(replayed_action, "");
+                assert!(!diff_hash.is_empty());
+                assert!(diff_size_bytes > 0);
+            }
+            other => panic!("expected divergence, got {other:?}"),
+        }
+        assert_eq!(gate.total_diverged(), 1);
+    }
+
+    #[test]
+    fn evaluate_gate_fails_with_mixed_reproduced_and_tampered_evidence() {
+        let mut gate = EvidenceReplayGate::new();
+        gate.capture_evidence(make_evidence("d-valid", DecisionType::HealthGate, "admit"));
+        let mut tampered = make_evidence("d-invalid", DecisionType::Rollout, "proceed");
+        tampered.input_entries.push("late-entry".to_owned());
+        gate.capture_evidence(tampered);
+
+        let result = gate.evaluate_gate("2026-01-15T02:05:00Z");
+
+        assert_eq!(result.decision, GateDecision::Fail);
+        assert_eq!(result.reproduced_count, 1);
+        assert_eq!(result.error_count, 1);
+        assert_eq!(result.diverged_count, 0);
+    }
+
+    #[test]
+    fn hash_mismatch_logs_initiated_then_error_without_reproduced_event() {
+        let mut gate = EvidenceReplayGate::new();
+        let mut ev = make_evidence("d-log-error", DecisionType::Quarantine, "quarantine");
+        ev.input_context
+            .insert("key".to_owned(), "mutated".to_owned());
+
+        let result = gate.replay_decision(&ev, "quarantine", "2026-01-15T02:06:00Z");
+        let log = gate.replay_log();
+
+        assert!(matches!(result.verdict, ReplayVerdict::Error { .. }));
+        assert_eq!(log.len(), 2);
+        assert_eq!(log[0].event_code, RPL_001_REPLAY_INITIATED);
+        assert_eq!(log[1].event_code, RPL_004_ERROR);
+        assert!(
+            !log.iter()
+                .any(|entry| entry.event_code == RPL_002_REPRODUCED)
+        );
+    }
+
+    #[test]
+    fn evaluate_gate_with_only_tampered_evidence_has_no_reproduced_count() {
+        let mut gate = EvidenceReplayGate::new();
+        let mut ev = make_evidence("d-only-error", DecisionType::Fencing, "fence");
+        ev.input_hash = "0".repeat(ev.input_hash.len());
+        gate.capture_evidence(ev);
+
+        let result = gate.evaluate_gate("2026-01-15T02:07:00Z");
+
+        assert_eq!(result.decision, GateDecision::Fail);
+        assert_eq!(result.reproduced_count, 0);
+        assert_eq!(result.error_count, 1);
+        assert_eq!(gate.total_errors(), 1);
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_existing_replay_logs() {
+        let old = ReplayLogEntry {
+            event_code: RPL_001_REPLAY_INITIATED.to_owned(),
+            decision_id: "old".to_owned(),
+            verdict: None,
+            diff_size_bytes: None,
+            trace_id: "trace-old".to_owned(),
+            timestamp: "2026-01-15T03:00:00Z".to_owned(),
+        };
+        let new = ReplayLogEntry {
+            event_code: RPL_004_ERROR.to_owned(),
+            decision_id: "new".to_owned(),
+            verdict: Some("error".to_owned()),
+            diff_size_bytes: None,
+            trace_id: "trace-new".to_owned(),
+            timestamp: "2026-01-15T03:01:00Z".to_owned(),
+        };
+        let mut logs = vec![old];
+
+        push_bounded(&mut logs, new, 0);
+
+        assert!(logs.is_empty());
+    }
+
+    #[test]
+    fn push_bounded_over_capacity_keeps_latest_replay_logs() {
+        let first = ReplayLogEntry {
+            event_code: RPL_001_REPLAY_INITIATED.to_owned(),
+            decision_id: "first".to_owned(),
+            verdict: None,
+            diff_size_bytes: None,
+            trace_id: "trace-first".to_owned(),
+            timestamp: "2026-01-15T03:00:00Z".to_owned(),
+        };
+        let second = ReplayLogEntry {
+            event_code: RPL_002_REPRODUCED.to_owned(),
+            decision_id: "second".to_owned(),
+            verdict: Some("reproduced".to_owned()),
+            diff_size_bytes: None,
+            trace_id: "trace-second".to_owned(),
+            timestamp: "2026-01-15T03:01:00Z".to_owned(),
+        };
+        let third = ReplayLogEntry {
+            event_code: RPL_005_GATE_DECISION.to_owned(),
+            decision_id: "third".to_owned(),
+            verdict: Some("Pass".to_owned()),
+            diff_size_bytes: None,
+            trace_id: "trace-third".to_owned(),
+            timestamp: "2026-01-15T03:02:00Z".to_owned(),
+        };
+        let mut logs = vec![first, second];
+
+        push_bounded(&mut logs, third, 2);
+
+        assert_eq!(logs[0].decision_id, "second");
+        assert_eq!(logs[1].decision_id, "third");
+    }
+
+    #[test]
+    fn decision_type_deserialize_rejects_unknown_variant() {
+        let result: Result<DecisionType, _> = serde_json::from_str(r#""authority_gate""#);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn gate_decision_deserialize_rejects_wrong_case() {
+        let result: Result<GateDecision, _> = serde_json::from_str(r#""Pass""#);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn replay_verdict_deserialize_rejects_missing_diff_hash() {
+        let raw = serde_json::json!({
+            "diverged": {
+                "original_action": "proceed",
+                "replayed_action": "rollback",
+                "diff_size_bytes": 42_usize
+            }
+        });
+
+        let result: Result<ReplayVerdict, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn captured_evidence_deserialize_rejects_string_epoch() {
+        let raw = serde_json::json!({
+            "decision_id": "d-string-epoch",
+            "decision_type": "rollout",
+            "epoch_id": "1",
+            "timestamp": "2026-01-15T03:00:00Z",
+            "chosen_action": "proceed",
+            "input_entries": ["entry-1"],
+            "input_context": {},
+            "input_hash": "abc",
+            "trace_id": "trace-string-epoch"
+        });
+
+        let result: Result<CapturedEvidence, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn gate_result_deserialize_rejects_missing_replay_results() {
+        let raw = serde_json::json!({
+            "decision": "fail",
+            "reproduced_count": 0_usize,
+            "diverged_count": 0_usize,
+            "error_count": 1_usize,
+            "evaluated_at": "2026-01-15T03:00:00Z"
+        });
+
+        let result: Result<GateResult, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn replay_log_entry_deserialize_rejects_scalar_diff_size() {
+        let raw = serde_json::json!({
+            "event_code": RPL_003_DIVERGED,
+            "decision_id": "d-bad-log",
+            "verdict": "diverged",
+            "diff_size_bytes": "42",
+            "trace_id": "trace-bad-log",
+            "timestamp": "2026-01-15T03:00:00Z"
+        });
+
+        let result: Result<ReplayLogEntry, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
     }
 }

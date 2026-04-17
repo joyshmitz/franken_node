@@ -183,8 +183,63 @@ impl ProtocolModel {
                 model: self.id.to_string(),
             });
         }
+
+        let mut ids = BTreeSet::new();
+        for op in &self.operations {
+            if op.id.trim().is_empty() {
+                return Err(DporError::InvalidOperation {
+                    model: self.id.to_string(),
+                    detail: "operation id must not be empty".to_string(),
+                });
+            }
+            if op.id.trim() != op.id.as_str() {
+                return Err(DporError::InvalidOperation {
+                    model: self.id.to_string(),
+                    detail: format!(
+                        "operation id {} must not include surrounding whitespace",
+                        op.id
+                    ),
+                });
+            }
+            if !ids.insert(op.id.as_str()) {
+                return Err(DporError::InvalidOperation {
+                    model: self.id.to_string(),
+                    detail: format!("duplicate operation id {}", op.id),
+                });
+            }
+            if op.actor.trim().is_empty() {
+                return Err(DporError::InvalidOperation {
+                    model: self.id.to_string(),
+                    detail: format!("op {} actor must not be empty", op.id),
+                });
+            }
+            if op.label.trim().is_empty() {
+                return Err(DporError::InvalidOperation {
+                    model: self.id.to_string(),
+                    detail: format!("op {} label must not be empty", op.id),
+                });
+            }
+        }
+
+        for prop in &self.safety_properties {
+            if prop.name.trim().is_empty() {
+                return Err(DporError::InvalidOperation {
+                    model: self.id.to_string(),
+                    detail: "safety property name must not be empty".to_string(),
+                });
+            }
+            if prop.description.trim().is_empty() {
+                return Err(DporError::InvalidOperation {
+                    model: self.id.to_string(),
+                    detail: format!(
+                        "safety property {} description must not be empty",
+                        prop.name
+                    ),
+                });
+            }
+        }
+
         // Check for unknown dependency references
-        let ids: BTreeSet<&str> = self.operations.iter().map(|op| op.id.as_str()).collect();
         for op in &self.operations {
             for dep in &op.depends_on {
                 if !ids.contains(dep.as_str()) {
@@ -210,9 +265,9 @@ impl ProtocolModel {
             }
         }
 
-        let mut processed = 0;
+        let mut processed: usize = 0;
         while let Some(id) = queue.pop_front() {
-            processed += 1;
+            processed = processed.saturating_add(1);
             for op in &self.operations {
                 if op.depends_on.contains(id)
                     && let Some(count) = in_degree.get_mut(op.id.as_str())
@@ -529,11 +584,11 @@ impl DporExplorer {
                 .collect::<Vec<_>>()
                 .join(",");
             if seen_hashes.contains(&hash) {
-                pruned += 1;
+                pruned = pruned.saturating_add(1);
                 continue;
             }
             seen_hashes.insert(hash);
-            explored += 1;
+            explored = explored.saturating_add(1);
 
             // Check safety properties
             let op_refs: Vec<&Operation> = schedule.iter().collect();
@@ -781,6 +836,13 @@ mod tests {
         None
     }
 
+    fn minimal_valid_model(name: &str) -> ProtocolModel {
+        let mut model = ProtocolModel::new(ProtocolModelId::Custom(name.to_string()), "minimal");
+        model.add_operation(Operation::new("op1", "actor", "label"));
+        model.add_safety_property(SafetyProperty::new("prop", "desc"));
+        model
+    }
+
     // ---- Setup ----
 
     #[test]
@@ -928,6 +990,122 @@ mod tests {
 
         let err = m.validate().unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_DPOR_CYCLE_DETECTED);
+    }
+
+    #[test]
+    fn model_with_empty_operation_id_rejected() {
+        let mut m = ProtocolModel::new(ProtocolModelId::Custom("empty-op-id".into()), "test");
+        m.add_operation(Operation::new("", "actor", "label"));
+        m.add_safety_property(SafetyProperty::new("prop", "desc"));
+
+        let err = m.validate().unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_DPOR_INVALID_OPERATION);
+        assert!(err.to_string().contains("operation id must not be empty"));
+    }
+
+    #[test]
+    fn model_with_whitespace_operation_id_rejected() {
+        let mut m = ProtocolModel::new(ProtocolModelId::Custom("space-op-id".into()), "test");
+        m.add_operation(Operation::new(" op1 ", "actor", "label"));
+        m.add_safety_property(SafetyProperty::new("prop", "desc"));
+
+        let err = m.validate().unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_DPOR_INVALID_OPERATION);
+        assert!(err.to_string().contains("surrounding whitespace"));
+    }
+
+    #[test]
+    fn model_with_duplicate_operation_ids_rejected() {
+        let mut m = minimal_valid_model("duplicate-op-id");
+        m.add_operation(Operation::new("op1", "other-actor", "other label"));
+
+        let err = m.validate().unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_DPOR_INVALID_OPERATION);
+        assert!(err.to_string().contains("duplicate operation id op1"));
+    }
+
+    #[test]
+    fn model_with_blank_operation_actor_rejected() {
+        let mut m = ProtocolModel::new(ProtocolModelId::Custom("blank-actor".into()), "test");
+        m.add_operation(Operation::new("op1", " ", "label"));
+        m.add_safety_property(SafetyProperty::new("prop", "desc"));
+
+        let err = m.validate().unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_DPOR_INVALID_OPERATION);
+        assert!(err.to_string().contains("actor must not be empty"));
+    }
+
+    #[test]
+    fn model_with_blank_operation_label_rejected() {
+        let mut m = ProtocolModel::new(ProtocolModelId::Custom("blank-label".into()), "test");
+        m.add_operation(Operation::new("op1", "actor", "\t"));
+        m.add_safety_property(SafetyProperty::new("prop", "desc"));
+
+        let err = m.validate().unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_DPOR_INVALID_OPERATION);
+        assert!(err.to_string().contains("label must not be empty"));
+    }
+
+    #[test]
+    fn model_with_blank_safety_property_name_rejected() {
+        let mut m = ProtocolModel::new(ProtocolModelId::Custom("blank-prop-name".into()), "test");
+        m.add_operation(Operation::new("op1", "actor", "label"));
+        m.add_safety_property(SafetyProperty::new(" ", "desc"));
+
+        let err = m.validate().unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_DPOR_INVALID_OPERATION);
+        assert!(err.to_string().contains("safety property name"));
+    }
+
+    #[test]
+    fn model_with_blank_safety_property_description_rejected() {
+        let mut m = ProtocolModel::new(ProtocolModelId::Custom("blank-prop-desc".into()), "test");
+        m.add_operation(Operation::new("op1", "actor", "label"));
+        m.add_safety_property(SafetyProperty::new("prop", ""));
+
+        let err = m.validate().unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_DPOR_INVALID_OPERATION);
+        assert!(err.to_string().contains("description must not be empty"));
+    }
+
+    #[test]
+    fn rejected_register_model_does_not_mutate_registered_models() {
+        let mut explorer = DporExplorer::default();
+        explorer
+            .register_model(minimal_valid_model("stable"))
+            .expect("register valid model");
+        let mut invalid = ProtocolModel::new(ProtocolModelId::Custom("bad".into()), "bad");
+        invalid.add_operation(Operation::new("", "actor", "label"));
+        invalid.add_safety_property(SafetyProperty::new("prop", "desc"));
+
+        let err = explorer.register_model(invalid).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_DPOR_INVALID_OPERATION);
+        assert_eq!(explorer.registered_models().len(), 1);
+        assert_eq!(
+            explorer.registered_models()[0].id,
+            ProtocolModelId::Custom("stable".to_string())
+        );
+    }
+
+    #[test]
+    fn explore_unknown_model_leaves_audit_and_results_empty() {
+        let mut explorer = DporExplorer::default();
+
+        let err = explorer
+            .explore("missing", &no_violations, "trace-missing")
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_DPOR_UNKNOWN_MODEL);
+        assert!(explorer.audit_log().is_empty());
+        assert!(explorer.results().is_empty());
     }
 
     // ---- Estimated schedules ----

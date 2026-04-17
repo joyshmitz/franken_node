@@ -1032,6 +1032,13 @@ mod tests {
         (local, remote)
     }
 
+    fn diverged_gate() -> ControlPlaneDivergenceGate {
+        let mut gate = ControlPlaneDivergenceGate::new("test");
+        let (local, remote) = forked_pair();
+        gate.check_propagation(&local, &remote, 2000, "trace-1");
+        gate
+    }
+
     // --- Construction ---
 
     #[test]
@@ -1162,6 +1169,19 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[test]
+    fn test_halt_from_normal_does_not_emit_or_audit() {
+        let mut gate = ControlPlaneDivergenceGate::new("test");
+
+        let err = gate.respond_halt(2000, "trace-1").unwrap_err();
+
+        assert!(matches!(err, DivergenceGateError::InvalidTransition { .. }));
+        assert_eq!(gate.state(), GateState::Normal);
+        assert!(gate.events().is_empty());
+        assert!(gate.audit_log().is_empty());
+        assert!(gate.active_divergence().is_none());
+    }
+
     // --- QUARANTINE response ---
 
     #[test]
@@ -1182,6 +1202,21 @@ mod tests {
         let mut gate = ControlPlaneDivergenceGate::new("test");
         let result = gate.respond_quarantine("part-1", "node-B", 2000, "trace-1");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_quarantine_from_normal_does_not_create_partition() {
+        let mut gate = ControlPlaneDivergenceGate::new("test");
+
+        let err = gate
+            .respond_quarantine("part-1", "node-B", 2000, "trace-1")
+            .unwrap_err();
+
+        assert!(matches!(err, DivergenceGateError::InvalidTransition { .. }));
+        assert_eq!(gate.state(), GateState::Normal);
+        assert!(gate.quarantined_partitions().is_empty());
+        assert!(gate.events().is_empty());
+        assert!(gate.audit_log().is_empty());
     }
 
     #[test]
@@ -1229,6 +1264,20 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[test]
+    fn test_alert_from_normal_does_not_increment_or_emit() {
+        let mut gate = ControlPlaneDivergenceGate::new("test");
+
+        let err = gate.respond_alert(2000, "trace-1").unwrap_err();
+
+        assert!(matches!(err, DivergenceGateError::InvalidTransition { .. }));
+        assert_eq!(gate.state(), GateState::Normal);
+        assert_eq!(gate.alert_counter, 0);
+        assert!(gate.alerts().is_empty());
+        assert!(gate.events().is_empty());
+        assert!(gate.audit_log().is_empty());
+    }
+
     // --- RECOVER response ---
 
     #[test]
@@ -1267,6 +1316,22 @@ mod tests {
     }
 
     #[test]
+    fn test_recover_from_normal_does_not_reset_or_emit() {
+        let mut gate = ControlPlaneDivergenceGate::new("test");
+        let auth = OperatorAuthorization::new("operator-1", 9, 2000, "fix", b"test-key");
+
+        let err = gate
+            .respond_recover(&auth, b"test-key", 10, 2000, "trace-1")
+            .unwrap_err();
+
+        assert!(matches!(err, DivergenceGateError::InvalidTransition { .. }));
+        assert_eq!(gate.state(), GateState::Normal);
+        assert!(gate.events().is_empty());
+        assert!(gate.audit_log().is_empty());
+        assert!(gate.active_divergence().is_none());
+    }
+
+    #[test]
     fn test_recover_unauthorized_fails() {
         let mut gate = ControlPlaneDivergenceGate::new("test");
         let (local, remote) = forked_pair();
@@ -1283,6 +1348,37 @@ mod tests {
     }
 
     #[test]
+    fn test_recover_bad_signature_preserves_divergence_state() {
+        let mut gate = diverged_gate();
+        let events_before = gate.events().len();
+        let audit_before = gate.audit_log().len();
+        let active_before = gate.active_divergence().cloned().unwrap();
+        let mut auth = OperatorAuthorization::new("operator-1", 9, 2001, "fix", b"test-key");
+        auth.signature = "tampered".to_string();
+
+        let err = gate
+            .respond_recover(&auth, b"test-key", 10, 2001, "trace-2")
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DivergenceGateError::UnauthorizedRecovery { .. }
+        ));
+        assert_eq!(gate.state(), GateState::Diverged);
+        assert_eq!(gate.events().len(), events_before);
+        assert_eq!(gate.audit_log().len(), audit_before);
+        let active_after = gate.active_divergence().unwrap();
+        assert_eq!(
+            active_after.detection_result,
+            active_before.detection_result
+        );
+        assert_eq!(active_after.fork_epoch, active_before.fork_epoch);
+        assert_eq!(active_after.local_hash, active_before.local_hash);
+        assert_eq!(active_after.remote_hash, active_before.remote_hash);
+        assert_eq!(active_after.response_mode, active_before.response_mode);
+    }
+
+    #[test]
     fn test_recover_empty_operator_fails() {
         let mut gate = ControlPlaneDivergenceGate::new("test");
         let (local, remote) = forked_pair();
@@ -1290,6 +1386,40 @@ mod tests {
         let auth = OperatorAuthorization::new("", 9, 2001, "fix", b"test-key");
         let result = gate.respond_recover(&auth, b"test-key", 10, 2001, "trace-2");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_recover_empty_operator_preserves_quarantine_state() {
+        let mut gate = diverged_gate();
+        gate.respond_quarantine("part-1", "node-B", 2001, "trace-2")
+            .unwrap();
+        let events_before = gate.events().len();
+        let audit_before = gate.audit_log().len();
+        let partitions_before = gate.quarantined_partitions().len();
+        let active_before = gate.active_divergence().cloned().unwrap();
+        let auth = OperatorAuthorization::new("", 9, 2002, "fix", b"test-key");
+
+        let err = gate
+            .respond_recover(&auth, b"test-key", 10, 2002, "trace-3")
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DivergenceGateError::UnauthorizedRecovery { .. }
+        ));
+        assert_eq!(gate.state(), GateState::Quarantined);
+        assert_eq!(gate.events().len(), events_before);
+        assert_eq!(gate.audit_log().len(), audit_before);
+        assert_eq!(gate.quarantined_partitions().len(), partitions_before);
+        let active_after = gate.active_divergence().unwrap();
+        assert_eq!(
+            active_after.detection_result,
+            active_before.detection_result
+        );
+        assert_eq!(active_after.fork_epoch, active_before.fork_epoch);
+        assert_eq!(active_after.local_hash, active_before.local_hash);
+        assert_eq!(active_after.remote_hash, active_before.remote_hash);
+        assert_eq!(active_after.response_mode, active_before.response_mode);
     }
 
     // --- OperatorAuthorization ---
@@ -1304,6 +1434,23 @@ mod tests {
     fn test_operator_authorization_tampered() {
         let mut auth = OperatorAuthorization::new("op-1", 50, 3000, "reason", b"test-key");
         auth.authorization_hash = "bad".to_string();
+        assert!(!auth.verify(b"test-key"));
+    }
+
+    #[test]
+    fn test_operator_authorization_wrong_key_fails_without_mutation() {
+        let auth = OperatorAuthorization::new("op-1", 50, 3000, "reason", b"test-key");
+        let original = auth.clone();
+
+        assert!(!auth.verify(b"wrong-key"));
+        assert_eq!(auth, original);
+    }
+
+    #[test]
+    fn test_operator_authorization_tampered_reason_fails_verification() {
+        let mut auth = OperatorAuthorization::new("op-1", 50, 3000, "reason", b"test-key");
+        auth.reason = "different reason".to_string();
+
         assert!(!auth.verify(b"test-key"));
     }
 

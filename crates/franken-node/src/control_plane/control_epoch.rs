@@ -426,7 +426,7 @@ impl EpochStore {
         timestamp: u64,
         trace_id: &str,
     ) -> Result<EpochTransition, EpochError> {
-        if manifest_hash.is_empty() {
+        if manifest_hash.trim().is_empty() {
             return Err(EpochError::InvalidManifestHash {
                 reason: "manifest_hash must not be empty".into(),
             });
@@ -478,7 +478,7 @@ impl EpochStore {
             });
         }
 
-        if manifest_hash.is_empty() {
+        if manifest_hash.trim().is_empty() {
             return Err(EpochError::InvalidManifestHash {
                 reason: "manifest_hash must not be empty".into(),
             });
@@ -542,8 +542,12 @@ impl Default for EpochStore {
 }
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
@@ -1092,5 +1096,189 @@ mod tests {
             Some(EpochRejectionReason::InvalidArtifactId)
         );
         assert_eq!(event.trace_id, "trace-invalid");
+    }
+
+    #[test]
+    fn epoch_set_rejects_empty_manifest_for_forward_jump() {
+        let mut store = EpochStore::new();
+        let err = store
+            .epoch_set(5, "", 1000, &tid(1))
+            .expect_err("forward jump with empty manifest hash must fail");
+
+        assert_eq!(err.code(), "EPOCH_INVALID_MANIFEST");
+        assert_eq!(store.epoch_read(), ControlEpoch::GENESIS);
+        assert_eq!(store.committed_epoch(), ControlEpoch::GENESIS);
+        assert_eq!(store.transition_count(), 0);
+    }
+
+    #[test]
+    fn epoch_set_regression_precedes_empty_manifest_validation() {
+        let mut store = EpochStore::new();
+        store.epoch_advance(&mhash(1), 1000, &tid(1)).unwrap();
+
+        let err = store
+            .epoch_set(0, "", 1001, &tid(2))
+            .expect_err("regression should be rejected before manifest validation");
+
+        match err {
+            EpochError::EpochRegression { current, attempted } => {
+                assert_eq!(current, ControlEpoch::new(1));
+                assert_eq!(attempted, ControlEpoch::GENESIS);
+            }
+            other => unreachable!("unexpected error: {other}"),
+        }
+        assert_eq!(store.epoch_read(), ControlEpoch::new(1));
+        assert_eq!(store.committed_epoch(), ControlEpoch::new(1));
+        assert_eq!(store.transition_count(), 1);
+    }
+
+    #[test]
+    fn transition_event_tamper_timestamp_detected() {
+        let mut store = EpochStore::new();
+        let mut transition = store.epoch_advance(&mhash(1), 1000, &tid(1)).unwrap();
+        transition.timestamp = 1001;
+
+        assert!(!transition.verify());
+    }
+
+    #[test]
+    fn transition_event_tamper_trace_detected() {
+        let mut store = EpochStore::new();
+        let mut transition = store.epoch_advance(&mhash(1), 1000, &tid(1)).unwrap();
+        transition.trace_id = tid(2);
+
+        assert!(!transition.verify());
+    }
+
+    #[test]
+    fn transition_event_tamper_epoch_pair_detected() {
+        let mut store = EpochStore::new();
+        let mut transition = store.epoch_advance(&mhash(1), 1000, &tid(1)).unwrap();
+        transition.new_epoch = ControlEpoch::new(2);
+
+        assert!(!transition.verify());
+    }
+
+    #[test]
+    fn validity_window_rejects_invalid_artifact_before_future_epoch() {
+        let policy = ValidityWindowPolicy::new(ControlEpoch::new(10), 1);
+        let err = check_artifact_epoch(
+            " artifact-future ",
+            ControlEpoch::new(99),
+            &policy,
+            "trace-invalid-future",
+        )
+        .expect_err("invalid artifact id must take precedence over future epoch");
+
+        assert_eq!(
+            err.rejection_reason,
+            EpochRejectionReason::InvalidArtifactId
+        );
+        assert_eq!(err.artifact_epoch, ControlEpoch::new(99));
+        assert_eq!(err.current_epoch, ControlEpoch::new(10));
+        assert_eq!(err.trace_id, "trace-invalid-future");
+    }
+
+    #[test]
+    fn validity_window_rejects_invalid_artifact_before_expired_epoch() {
+        let policy = ValidityWindowPolicy::new(ControlEpoch::new(10), 1);
+        let err = check_artifact_epoch(
+            RESERVED_ARTIFACT_ID,
+            ControlEpoch::new(0),
+            &policy,
+            "trace-invalid-expired",
+        )
+        .expect_err("invalid artifact id must take precedence over expired epoch");
+
+        assert_eq!(
+            err.rejection_reason,
+            EpochRejectionReason::InvalidArtifactId
+        );
+        assert_eq!(err.artifact_epoch, ControlEpoch::GENESIS);
+        assert_eq!(err.current_epoch, ControlEpoch::new(10));
+        assert_eq!(err.trace_id, "trace-invalid-expired");
+    }
+
+    #[test]
+    fn validity_window_zero_lookback_rejects_previous_epoch() {
+        let policy = ValidityWindowPolicy::new(ControlEpoch::new(10), 0);
+        let err = check_artifact_epoch(
+            "artifact-previous",
+            ControlEpoch::new(9),
+            &policy,
+            "trace-zero-lookback",
+        )
+        .expect_err("zero lookback must reject previous epoch");
+
+        assert_eq!(err.rejection_reason, EpochRejectionReason::ExpiredEpoch);
+        assert_eq!(err.code(), "EPOCH_REJECT_EXPIRED");
+        assert_eq!(err.artifact_id, "artifact-previous");
+        assert_eq!(err.current_epoch, ControlEpoch::new(10));
+    }
+
+    #[test]
+    fn epoch_advance_rejects_whitespace_manifest_hash() {
+        let mut store = EpochStore::new();
+        let err = store
+            .epoch_advance(" \t\n", 1000, &tid(1))
+            .expect_err("whitespace manifest hash must fail closed");
+
+        assert_eq!(err.code(), "EPOCH_INVALID_MANIFEST");
+        assert_eq!(store.epoch_read(), ControlEpoch::GENESIS);
+        assert_eq!(store.committed_epoch(), ControlEpoch::GENESIS);
+        assert_eq!(store.transition_count(), 0);
+    }
+
+    #[test]
+    fn epoch_set_rejects_whitespace_manifest_hash_without_mutating() {
+        let mut store = EpochStore::recover(7);
+        let err = store
+            .epoch_set(8, "   ", 1000, &tid(1))
+            .expect_err("forward set with whitespace manifest hash must fail");
+
+        assert_eq!(err.code(), "EPOCH_INVALID_MANIFEST");
+        assert_eq!(store.epoch_read(), ControlEpoch::new(7));
+        assert_eq!(store.committed_epoch(), ControlEpoch::new(7));
+        assert_eq!(store.transition_count(), 0);
+    }
+
+    #[test]
+    fn epoch_set_regression_masks_whitespace_manifest_hash() {
+        let mut store = EpochStore::recover(7);
+        let err = store
+            .epoch_set(7, "   ", 1000, &tid(1))
+            .expect_err("regression order must stay fail-closed and stable");
+
+        assert_eq!(err.code(), "EPOCH_REGRESSION");
+        assert_eq!(store.epoch_read(), ControlEpoch::new(7));
+        assert_eq!(store.committed_epoch(), ControlEpoch::new(7));
+        assert_eq!(store.transition_count(), 0);
+    }
+
+    #[test]
+    fn transition_event_empty_mac_is_rejected() {
+        let mut store = EpochStore::new();
+        let mut transition = store.epoch_advance(&mhash(1), 1000, &tid(1)).unwrap();
+        transition.event_mac.clear();
+
+        assert!(!transition.verify());
+    }
+
+    #[test]
+    fn transition_event_wrong_mac_prefix_is_rejected() {
+        let mut store = EpochStore::new();
+        let mut transition = store.epoch_advance(&mhash(1), 1000, &tid(1)).unwrap();
+        transition.event_mac = transition.event_mac.replacen("mac:", "hash:", 1);
+
+        assert!(!transition.verify());
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_without_inserting() {
+        let mut items = vec![1_u8, 2, 3];
+
+        push_bounded(&mut items, 4, 0);
+
+        assert!(items.is_empty());
     }
 }

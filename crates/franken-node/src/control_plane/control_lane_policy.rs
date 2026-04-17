@@ -713,7 +713,8 @@ impl ControlLanePolicy {
             counts.insert(*lane, 0);
         }
         for a in self.assignments.values() {
-            *counts.entry(a.lane).or_insert(0) += 1;
+            let count = counts.entry(a.lane).or_insert(0);
+            *count = count.saturating_add(1);
         }
         counts
     }
@@ -729,6 +730,10 @@ impl ControlLanePolicy {
     }
 
     fn push_bounded<T>(entries: &mut Vec<T>, value: T, max_entries: usize) {
+        if max_entries == 0 {
+            entries.clear();
+            return;
+        }
         if entries.len() >= max_entries {
             let overflow = entries.len() - max_entries + 1;
             entries.drain(0..overflow);
@@ -793,6 +798,70 @@ mod tests {
     fn test_budget_sums_to_100() {
         let policy = ControlLanePolicy::new();
         assert!(policy.verify_budget_sum(), "INV-CLP-BUDGET-SUM");
+    }
+
+    #[test]
+    fn test_verify_all_assigned_rejects_missing_assignment() {
+        let mut policy = ControlLanePolicy::new();
+        policy
+            .assignments
+            .remove(&ControlTaskClass::CancellationHandler);
+
+        assert!(!policy.verify_all_assigned());
+        assert_eq!(
+            policy.total_task_classes(),
+            ControlTaskClass::all().len() - 1
+        );
+    }
+
+    #[test]
+    fn test_assign_task_rejects_missing_assignment_without_audit_or_run_count() {
+        let mut policy = ControlLanePolicy::new();
+        policy.assignments.remove(&ControlTaskClass::HealthCheck);
+        let timed_before = *policy
+            .lane_run_counts
+            .get(&ControlLane::Timed)
+            .expect("timed run count");
+
+        let err = policy
+            .assign_task(
+                ControlTaskClass::HealthCheck,
+                "task-1",
+                "trace-missing",
+                1_000,
+            )
+            .expect_err("missing assignment must fail closed");
+
+        assert!(err.contains(error_codes::ERR_CLP_UNKNOWN_TASK));
+        assert!(policy.audit_log().is_empty());
+        assert_eq!(
+            policy.lane_run_counts.get(&ControlLane::Timed).copied(),
+            Some(timed_before)
+        );
+    }
+
+    #[test]
+    fn test_verify_budget_sum_rejects_missing_lane_budget() {
+        let mut policy = ControlLanePolicy::new();
+        policy.budgets.remove(&ControlLane::Ready);
+
+        assert!(!policy.verify_budget_sum());
+        assert!(policy.budget(ControlLane::Ready).is_none());
+    }
+
+    #[test]
+    fn test_verify_budget_sum_rejects_overallocated_budget() {
+        let mut policy = ControlLanePolicy::new();
+        policy.budgets.insert(
+            ControlLane::Ready,
+            LaneBudget {
+                lane: ControlLane::Ready,
+                min_pct: 99,
+                max_starve_ticks: DEFAULT_STARVATION_THRESHOLD_TICKS,
+            },
+        );
+
+        assert!(!policy.verify_budget_sum());
     }
 
     #[test]
@@ -950,6 +1019,131 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_cancel_no_starve_rejects_repeated_cancel_starvation() {
+        let mut policy = ControlLanePolicy::new();
+        policy.tick(1, 0, 0, 0, "trace-cancel-starve-1");
+        policy.tick(1, 0, 0, 0, "trace-cancel-starve-2");
+
+        assert!(!policy.verify_cancel_no_starve());
+        assert!(policy.starvation_events().iter().any(|event| {
+            event.lane == ControlLane::Cancel
+                && event.event_code == event_codes::LAN_003
+                && event.consecutive_zero_ticks > CANCEL_MAX_STARVE_TICKS
+        }));
+    }
+
+    #[test]
+    fn test_starvation_resolution_not_recorded_before_threshold() {
+        let mut policy = ControlLanePolicy::new();
+        policy.tick(0, 0, 1, 0, "trace-ready-starve-1");
+        policy.tick(0, 0, 1, 10, "trace-ready-resolve");
+
+        assert!(policy.starvation_events().is_empty());
+    }
+
+    #[test]
+    fn negative_zero_slot_tick_starves_all_pending_lanes() {
+        let mut policy = ControlLanePolicy::new();
+
+        let metrics = policy.tick(1, 1, 1, 0, "trace-zero-slot");
+
+        assert_eq!(metrics.cancel_lane_tasks_run, 0);
+        assert_eq!(metrics.timed_lane_tasks_run, 0);
+        assert_eq!(metrics.ready_lane_tasks_run, 0);
+        assert!(metrics.cancel_lane_starved);
+        assert!(metrics.timed_lane_starved);
+        assert!(metrics.ready_lane_starved);
+        policy.tick(1, 1, 1, 0, "trace-zero-slot-repeat");
+        assert!(!policy.verify_cancel_no_starve());
+    }
+
+    #[test]
+    fn negative_missing_timed_budget_uses_default_starvation_threshold() {
+        let mut policy = ControlLanePolicy::new();
+        policy.budgets.remove(&ControlLane::Timed);
+
+        policy.tick(0, 1, 0, 0, "trace-missing-budget-1");
+        policy.tick(0, 1, 0, 0, "trace-missing-budget-2");
+        policy.tick(0, 1, 0, 0, "trace-missing-budget-3");
+
+        let event = policy
+            .starvation_events()
+            .iter()
+            .find(|event| event.lane == ControlLane::Timed)
+            .expect("timed starvation event");
+        assert_eq!(event.threshold, DEFAULT_STARVATION_THRESHOLD_TICKS);
+        assert_eq!(
+            event.consecutive_zero_ticks,
+            DEFAULT_STARVATION_THRESHOLD_TICKS
+        );
+    }
+
+    #[test]
+    fn negative_assign_failure_after_success_preserves_existing_audit_log() {
+        let mut policy = ControlLanePolicy::new();
+        policy
+            .assign_task(
+                ControlTaskClass::LeaseRenewal,
+                "task-good",
+                "trace-good",
+                10,
+            )
+            .unwrap();
+        policy.assignments.remove(&ControlTaskClass::HealthCheck);
+
+        let err = policy
+            .assign_task(ControlTaskClass::HealthCheck, "task-bad", "trace-bad", 20)
+            .expect_err("removed assignment must reject");
+
+        assert!(err.contains(error_codes::ERR_CLP_UNKNOWN_TASK));
+        assert_eq!(policy.audit_log().len(), 1);
+        assert_eq!(policy.audit_log()[0].trace_id, "trace-good");
+    }
+
+    #[test]
+    fn negative_zero_capacity_push_bounded_clears_without_panic() {
+        let mut values = vec![1, 2, 3];
+
+        ControlLanePolicy::push_bounded(&mut values, 4, 0);
+
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn negative_export_audit_jsonl_capacity_one_keeps_only_latest_record() {
+        let mut policy = make_policy_with_capacities(8, 8, 8, 1);
+        policy
+            .assign_task(ControlTaskClass::HealthCheck, "task-old", "trace-old", 10)
+            .unwrap();
+        policy
+            .assign_task(ControlTaskClass::LeaseRenewal, "task-new", "trace-new", 20)
+            .unwrap();
+
+        let jsonl = policy.export_audit_log_jsonl();
+
+        assert_eq!(jsonl.lines().count(), 1);
+        assert!(!jsonl.contains("trace-old"));
+        assert!(jsonl.contains("trace-new"));
+    }
+
+    #[test]
+    fn negative_snapshot_reflects_corrupted_missing_assignment() {
+        let mut policy = ControlLanePolicy::new();
+        policy
+            .assignments
+            .remove(&ControlTaskClass::AbortCompensation);
+
+        let snapshot = ControlLanePolicySnapshot::from_policy(&policy);
+
+        assert_eq!(
+            snapshot.task_class_count,
+            ControlTaskClass::all().len().saturating_sub(1)
+        );
+        assert_eq!(snapshot.lane_count, ControlLane::all().len());
+        assert_eq!(snapshot.assignments.len(), snapshot.task_class_count);
+    }
+
+    #[test]
     fn test_cancel_no_starve_normal_load() {
         let mut policy = ControlLanePolicy::new();
         // Normal mixed workload: cancel should never starve
@@ -1088,6 +1282,19 @@ mod tests {
         assert_eq!(*counts.get(&ControlLane::Cancel).unwrap(), 5);
         assert_eq!(*counts.get(&ControlLane::Timed).unwrap(), 7);
         assert_eq!(*counts.get(&ControlLane::Ready).unwrap(), 7);
+    }
+
+    #[test]
+    fn test_class_counts_do_not_invent_removed_assignments() {
+        let mut policy = ControlLanePolicy::new();
+        policy
+            .assignments
+            .remove(&ControlTaskClass::StaleEntryCleanup);
+
+        let counts = policy.class_counts_per_lane();
+
+        assert_eq!(*counts.get(&ControlLane::Ready).unwrap(), 6);
+        assert_eq!(counts.values().sum::<usize>(), policy.total_task_classes());
     }
 
     #[test]

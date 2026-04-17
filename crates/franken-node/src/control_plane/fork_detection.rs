@@ -325,7 +325,7 @@ impl DivergenceDetector {
         if self.history.last().is_some_and(|last| {
             last.marker_id == sv.marker_id
                 && last.epoch == sv.epoch
-                && last.state_hash == sv.state_hash
+                && crate::security::constant_time::ct_eq(&last.state_hash, &sv.state_hash)
                 && last.node_id == sv.node_id
         }) {
             return;
@@ -678,8 +678,12 @@ impl MarkerProofVerifier {
 }
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
@@ -931,6 +935,65 @@ mod tests {
         assert!(detector.is_halted());
     }
 
+    #[test]
+    fn same_epoch_same_state_hash_with_different_parent_chain_detects_rollback() {
+        let mut detector = DivergenceDetector::new();
+        let sv1 = make_sv(12, "same-state", "parent-a", "node-a");
+        let sv2 = StateVector {
+            node_id: "node-b".to_string(),
+            parent_state_hash: StateVector::compute_state_hash("parent-b"),
+            ..sv1.clone()
+        };
+
+        let (result, proof) = detector.compare(&sv1, &sv2);
+
+        assert_eq!(result, DetectionResult::RollbackDetected);
+        assert!(detector.is_halted());
+        let proof = proof.expect("parent-chain divergence should produce proof");
+        assert_eq!(proof.detection_result, DetectionResult::RollbackDetected);
+        assert_eq!(proof.expected_parent_hash, sv1.parent_state_hash);
+        assert_eq!(proof.actual_parent_hash, sv2.parent_state_hash);
+    }
+
+    #[test]
+    fn halted_state_survives_later_converged_compare_until_operator_reset() {
+        let mut detector = DivergenceDetector::new();
+        let fork_a = make_sv(3, "fork-a", "parent", "node-a");
+        let fork_b = make_sv(3, "fork-b", "parent", "node-b");
+        detector.compare(&fork_a, &fork_b);
+        assert!(detector.is_halted());
+
+        let converged_a = make_sv(4, "same-state", "parent-3", "node-a");
+        let converged_b = StateVector {
+            node_id: "node-b".to_string(),
+            ..converged_a.clone()
+        };
+        let (result, proof) = detector.compare(&converged_a, &converged_b);
+
+        assert_eq!(result, DetectionResult::Converged);
+        assert!(proof.is_none());
+        assert!(
+            detector.is_halted(),
+            "convergence must not clear halt state"
+        );
+        detector.operator_reset();
+        assert!(!detector.is_halted());
+    }
+
+    #[test]
+    fn gap_detection_does_not_halt_or_emit_rollback_proof() {
+        let mut detector = DivergenceDetector::new();
+        let sv1 = make_sv(2, "state-2", "parent-1", "node-a");
+        let sv2 = make_sv(5, "state-5", "parent-4", "node-b");
+
+        let (result, proof) = detector.compare(&sv1, &sv2);
+
+        assert_eq!(result, DetectionResult::GapDetected);
+        assert!(proof.is_none());
+        assert!(!detector.is_halted());
+        assert_eq!(detector.last_result(), Some(&DetectionResult::GapDetected));
+    }
+
     // ---- DivergenceDetector: operator_reset ----
 
     #[test]
@@ -1009,6 +1072,28 @@ mod tests {
         assert_eq!(event.severity, "WARN");
     }
 
+    #[test]
+    fn compare_and_log_rollback_event_is_critical() {
+        let mut detector = DivergenceDetector::new();
+        let sv1 = make_sv(8, "state-8", "parent-7", "node-a");
+        let sv2 = StateVector {
+            epoch: 9,
+            marker_id: "marker-9".to_string(),
+            state_hash: StateVector::compute_state_hash("state-9"),
+            parent_state_hash: StateVector::compute_state_hash("wrong-parent"),
+            timestamp: 1009,
+            node_id: "node-b".to_string(),
+        };
+
+        let (result, proof, event) = detector.compare_and_log(&sv1, &sv2);
+
+        assert_eq!(result, DetectionResult::RollbackDetected);
+        assert!(proof.is_some());
+        assert_eq!(event.event_code, event_codes::RFD_DIVERGENCE_DETECTED);
+        assert_eq!(event.severity, "CRITICAL");
+        assert_eq!(event.detection_result, DetectionResult::RollbackDetected);
+    }
+
     // ---- ReconciliationSuggestion ----
 
     #[test]
@@ -1084,6 +1169,24 @@ mod tests {
         assert!(matches!(
             suggestion,
             ReconciliationSuggestion::InvestigateRollback { .. }
+        ));
+    }
+
+    #[test]
+    fn reconciliation_rollback_without_proof_falls_back_to_conflict() {
+        let sv1 = make_sv(9, "local", "parent", "node-a");
+        let sv2 = make_sv(10, "remote", "wrong-parent", "node-b");
+
+        let suggestion = DivergenceDetector::suggest_reconciliation(
+            &sv1,
+            &sv2,
+            &DetectionResult::RollbackDetected,
+            None,
+        );
+
+        assert!(matches!(
+            suggestion,
+            ReconciliationSuggestion::ResolveConflict { epoch: 9, .. }
         ));
     }
 
@@ -1188,6 +1291,43 @@ mod tests {
         assert!(detector.proof_count() >= 1);
     }
 
+    #[test]
+    fn rollback_detector_rejects_same_epoch_replay() {
+        let mut detector = RollbackDetector::new();
+        let first = make_sv(4, "state-4", "parent-3", "node");
+        detector.feed(first.clone()).unwrap();
+
+        let replay = StateVector {
+            state_hash: StateVector::compute_state_hash("state-4-replayed"),
+            parent_state_hash: StateVector::compute_state_hash("parent-3-replayed"),
+            ..first.clone()
+        };
+        let err = detector
+            .feed(replay)
+            .expect_err("same epoch replay should be classified as rollback");
+
+        assert_eq!(err.code(), "RFD_ROLLBACK_DETECTED");
+        assert_eq!(detector.proof_count(), 1);
+        assert_eq!(detector.last_known().unwrap().epoch, 4);
+    }
+
+    #[test]
+    fn rollback_detector_rejects_lower_epoch_regression() {
+        let mut detector = RollbackDetector::new();
+        let chain = make_chain(4, "node");
+        for sv in &chain {
+            detector.feed(sv.clone()).unwrap();
+        }
+
+        let err = detector
+            .feed(make_sv(2, "state-2-regressed", "parent-1", "node"))
+            .expect_err("lower epoch should be classified as rollback");
+
+        assert_eq!(err.code(), "RFD_ROLLBACK_DETECTED");
+        assert_eq!(detector.proof_count(), 1);
+        assert_eq!(detector.last_known().unwrap().epoch, 3);
+    }
+
     // ---- MarkerProofVerifier ----
 
     #[test]
@@ -1228,6 +1368,26 @@ mod tests {
         let stream = MarkerStream::new();
         let result = MarkerProofVerifier::verify(&stream, "any", 0);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn marker_proof_max_epoch_out_of_range_fails_closed() {
+        let mut stream = MarkerStream::new();
+        stream
+            .append(MarkerEventType::PolicyChange, "payload-0", 1000, "trace-0")
+            .unwrap();
+
+        let err = MarkerProofVerifier::verify(&stream, "marker-never-present", u64::MAX)
+            .expect_err("max claimed epoch should fail closed");
+
+        assert_eq!(err.code(), "RFD_MARKER_NOT_FOUND");
+        assert!(matches!(
+            err,
+            ForkDetectionError::RfdMarkerNotFound {
+                claimed_epoch: u64::MAX,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -1544,5 +1704,252 @@ mod tests {
         let d = RollbackDetector::default();
         assert!(d.last_known().is_none());
         assert_eq!(d.proof_count(), 0);
+    }
+
+    #[test]
+    fn marker_proof_blank_marker_id_fails_closed() {
+        let mut stream = MarkerStream::new();
+        stream
+            .append(
+                MarkerEventType::PolicyChange,
+                "payload-blank",
+                1000,
+                "trace",
+            )
+            .unwrap();
+
+        let err = MarkerProofVerifier::verify(&stream, "", 0)
+            .expect_err("blank marker id must not validate");
+
+        assert_eq!(err.code(), "RFD_MARKER_NOT_FOUND");
+        assert!(matches!(
+            err,
+            ForkDetectionError::RfdMarkerNotFound {
+                claimed_epoch: 0,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn marker_proof_whitespace_marker_id_fails_closed() {
+        let mut stream = MarkerStream::new();
+        stream
+            .append(
+                MarkerEventType::PolicyChange,
+                "payload-whitespace",
+                1000,
+                "trace",
+            )
+            .unwrap();
+
+        let err = MarkerProofVerifier::verify(&stream, "   ", 0)
+            .expect_err("whitespace marker id must not validate");
+
+        assert_eq!(err.code(), "RFD_MARKER_NOT_FOUND");
+    }
+
+    #[test]
+    fn rollback_detector_gap_error_does_not_create_rollback_proof() {
+        let mut detector = RollbackDetector::new();
+        let first = make_sv(10, "state-10", "state-9", "node");
+        detector.feed(first).unwrap();
+
+        let err = detector
+            .feed(make_sv(15, "state-15", "state-14", "node"))
+            .expect_err("gap must be reported");
+
+        assert_eq!(err.code(), "RFD_GAP_DETECTED");
+        assert_eq!(detector.proof_count(), 0);
+        assert_eq!(detector.last_known().expect("last known").epoch, 15);
+    }
+
+    #[test]
+    fn rollback_detector_rejects_replay_after_gap_advances_last_known() {
+        let mut detector = RollbackDetector::new();
+        detector
+            .feed(make_sv(10, "state-10", "state-9", "node"))
+            .unwrap();
+        let _ = detector.feed(make_sv(15, "state-15", "state-14", "node"));
+
+        let err = detector
+            .feed(make_sv(14, "state-14-replay", "state-13", "node"))
+            .expect_err("post-gap replay below last known must be rollback");
+
+        assert_eq!(err.code(), "RFD_ROLLBACK_DETECTED");
+        assert_eq!(detector.proof_count(), 1);
+        assert_eq!(detector.last_known().expect("last known").epoch, 15);
+    }
+
+    #[test]
+    fn rollback_detector_rejects_u64_max_same_epoch_replay() {
+        let mut detector = RollbackDetector::new();
+        let first = make_sv(u64::MAX, "max-state", "max-parent", "node");
+        detector.feed(first.clone()).unwrap();
+
+        let err = detector
+            .feed(StateVector {
+                state_hash: StateVector::compute_state_hash("max-replay"),
+                parent_state_hash: StateVector::compute_state_hash("max-replay-parent"),
+                ..first
+            })
+            .expect_err("same max epoch replay must be rollback");
+
+        assert_eq!(err.code(), "RFD_ROLLBACK_DETECTED");
+        assert_eq!(detector.proof_count(), 1);
+    }
+
+    #[test]
+    fn rollback_proof_serde_rejects_missing_detection_result() {
+        let local = make_sv(2, "local", "parent", "node-a");
+        let remote = make_sv(2, "remote", "parent", "node-b");
+        let json = serde_json::json!({
+            "local_state": local,
+            "remote_state": remote,
+            "expected_parent_hash": "expected",
+            "actual_parent_hash": "actual",
+            "detection_timestamp": 1234,
+            "trace_id": "trace-missing-result"
+        });
+
+        let err = serde_json::from_value::<RollbackProof>(json)
+            .expect_err("missing detection_result must fail");
+
+        assert!(err.to_string().contains("detection_result"));
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_without_inserting() {
+        let mut items = vec![1_u8, 2, 3];
+
+        push_bounded(&mut items, 4, 0);
+
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn record_state_deduplicates_latest_duplicate_without_growth() {
+        let mut detector = DivergenceDetector::new();
+        let sv = make_sv(21, "dedupe-state", "parent", "node-a");
+
+        detector.record_state(sv.clone());
+        detector.record_state(sv);
+
+        assert_eq!(detector.history_len(), 1);
+    }
+
+    #[test]
+    fn record_state_same_hash_different_node_is_not_deduplicated() {
+        let mut detector = DivergenceDetector::new();
+        let local = make_sv(22, "same-state", "parent", "node-a");
+        let remote = StateVector {
+            node_id: "node-b".to_string(),
+            ..local.clone()
+        };
+
+        detector.record_state(local);
+        detector.record_state(remote);
+
+        assert_eq!(detector.history_len(), 2);
+    }
+
+    #[test]
+    fn operator_reset_clears_history_after_detected_fork() {
+        let mut detector = DivergenceDetector::new();
+        let local = make_sv(23, "fork-local", "parent", "node-a");
+        let remote = make_sv(23, "fork-remote", "parent", "node-b");
+        detector.compare(&local, &remote);
+        assert!(detector.is_halted());
+        assert_eq!(detector.history_len(), 2);
+
+        detector.operator_reset();
+
+        assert!(!detector.is_halted());
+        assert!(detector.last_result().is_none());
+        assert_eq!(detector.history_len(), 0);
+    }
+
+    #[test]
+    fn compare_gap_records_vectors_without_rollback_proof_or_halt() {
+        let mut detector = DivergenceDetector::new();
+        let local = make_sv(30, "state-30", "parent-29", "node-a");
+        let remote = make_sv(33, "state-33", "parent-32", "node-b");
+
+        let (result, proof) = detector.compare(&local, &remote);
+
+        assert_eq!(result, DetectionResult::GapDetected);
+        assert!(proof.is_none());
+        assert!(!detector.is_halted());
+        assert_eq!(detector.history_len(), 2);
+        assert_eq!(detector.last_result(), Some(&DetectionResult::GapDetected));
+    }
+
+    #[test]
+    fn marker_proof_null_marker_id_fails_closed() {
+        let mut stream = MarkerStream::new();
+        stream
+            .append(
+                MarkerEventType::PolicyChange,
+                "payload-null-marker",
+                1000,
+                "trace-null-marker",
+            )
+            .unwrap();
+
+        let err = MarkerProofVerifier::verify(&stream, "marker-0\0suffix", 0)
+            .expect_err("marker id with NUL byte must not validate");
+
+        assert_eq!(err.code(), "RFD_MARKER_NOT_FOUND");
+        assert!(matches!(
+            err,
+            ForkDetectionError::RfdMarkerNotFound {
+                claimed_epoch: 0,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn rollback_detector_gap_to_u64_max_advances_without_proof() {
+        let mut detector = RollbackDetector::new();
+        detector
+            .feed(make_sv(u64::MAX - 2, "near-max", "near-parent", "node"))
+            .unwrap();
+
+        let err = detector
+            .feed(make_sv(u64::MAX, "max-state", "max-parent", "node"))
+            .expect_err("two-epoch jump to u64::MAX must be a gap");
+
+        assert_eq!(err.code(), "RFD_GAP_DETECTED");
+        assert_eq!(detector.proof_count(), 0);
+        assert_eq!(detector.last_known().expect("last known").epoch, u64::MAX);
+    }
+
+    #[test]
+    fn fork_detection_error_deserialize_unknown_variant_rejected() {
+        let err = serde_json::from_str::<ForkDetectionError>(r#"{"UnknownForkError":{"epoch":1}}"#)
+            .expect_err("unknown error variant must fail closed");
+
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn rollback_proof_serde_rejects_non_numeric_detection_timestamp() {
+        let local = make_sv(40, "local", "parent", "node-a");
+        let remote = make_sv(41, "remote", "wrong-parent", "node-b");
+        let json = serde_json::json!({
+            "local_state": local,
+            "remote_state": remote,
+            "expected_parent_hash": "expected",
+            "actual_parent_hash": "actual",
+            "detection_timestamp": "not-a-number",
+            "trace_id": "trace-bad-timestamp",
+            "detection_result": "RollbackDetected"
+        });
+
+        let err = serde_json::from_value::<RollbackProof>(json)
+            .expect_err("non-numeric detection_timestamp must fail");
+
+        assert!(err.to_string().contains("invalid type"));
     }
 }

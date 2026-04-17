@@ -317,8 +317,12 @@ const MAX_ACTIVE_BINDINGS: usize = 4096;
 const MAX_KEY_ROLE_EVENTS: usize = 4096;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
@@ -488,6 +492,13 @@ impl KeyRoleRegistry {
         max_validity_seconds: u64,
         trace_id: &str,
     ) -> Result<&KeyRoleBinding, KeyRoleSeparationError> {
+        if old_key_id == new_key_id {
+            return Err(KeyRoleSeparationError::RotationFailed {
+                role,
+                reason: "old_key_id and new_key_id must differ".to_string(),
+            });
+        }
+
         // Validate: old key must exist and be bound to the specified role.
         let old_binding =
             self.active
@@ -1286,6 +1297,283 @@ mod tests {
         assert!(reg.lookup("k-new-r").is_some());
     }
 
+    // ---- Negative regression tests ----
+
+    #[test]
+    fn role_deserialize_rejects_unknown_variant() {
+        let invalid_role = serde_json::from_str::<KeyRole>("\"verification\"");
+
+        assert!(invalid_role.is_err());
+    }
+
+    #[test]
+    fn bind_role_violation_preserves_original_binding() {
+        let mut reg = KeyRoleRegistry::new();
+        reg.bind(
+            "k-preserve",
+            KeyRole::Signing,
+            pub_key(10),
+            "auth-original",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
+
+        let err = reg
+            .bind(
+                "k-preserve",
+                KeyRole::Encryption,
+                pub_key(99),
+                "auth-rejected",
+                500,
+                30,
+                &tid(2),
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code(), "KRS_ROLE_SEPARATION_VIOLATION");
+        let binding = reg.lookup("k-preserve").unwrap();
+        assert_eq!(binding.role, KeyRole::Signing);
+        assert_eq!(binding.bound_by, "auth-original");
+        assert_eq!(binding.bound_at, 100);
+        assert_eq!(binding.max_validity_seconds, 3600);
+        assert_eq!(binding.public_key_bytes, pub_key(10));
+        assert_eq!(reg.active_count(), 1);
+    }
+
+    #[test]
+    fn rebind_material_mismatch_records_no_extra_event() {
+        let mut reg = KeyRoleRegistry::new();
+        reg.bind(
+            "k-material-event",
+            KeyRole::Attestation,
+            pub_key(4),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
+        let initial_events = reg.event_count();
+
+        let err = reg
+            .bind(
+                "k-material-event",
+                KeyRole::Attestation,
+                pub_key(5),
+                "auth",
+                200,
+                3600,
+                &tid(2),
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code(), "KRS_KEY_MATERIAL_MISMATCH");
+        assert_eq!(reg.event_count(), initial_events);
+        assert_eq!(reg.active_count(), 1);
+        assert_eq!(
+            reg.lookup("k-material-event").unwrap().public_key_bytes,
+            pub_key(4)
+        );
+    }
+
+    #[test]
+    fn bind_at_capacity_rejects_without_event() {
+        let mut reg = KeyRoleRegistry::new();
+        for slot in 0..MAX_ACTIVE_BINDINGS {
+            let key_id = format!("k-capacity-{slot}");
+            reg.active.insert(
+                key_id.clone(),
+                KeyRoleBinding {
+                    key_id,
+                    role: KeyRole::Signing,
+                    public_key_bytes: pub_key(7),
+                    bound_at: 1,
+                    bound_by: "fixture".into(),
+                    max_validity_seconds: 60,
+                },
+            );
+        }
+
+        let err = reg
+            .bind(
+                "k-over-capacity",
+                KeyRole::Signing,
+                pub_key(8),
+                "auth",
+                2,
+                60,
+                &tid(3),
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code(), "KRS_REGISTRY_FULL");
+        assert_eq!(reg.active_count(), MAX_ACTIVE_BINDINGS);
+        assert_eq!(reg.event_count(), 0);
+        assert!(reg.lookup("k-over-capacity").is_none());
+    }
+
+    #[test]
+    fn rotate_missing_old_key_leaves_registry_unchanged() {
+        let mut reg = KeyRoleRegistry::new();
+        reg.bind(
+            "k-stable",
+            KeyRole::Encryption,
+            pub_key(2),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
+        let initial_events = reg.event_count();
+
+        let err = reg
+            .rotate(
+                KeyRole::Encryption,
+                "k-missing-old",
+                "k-should-not-exist",
+                pub_key(3),
+                "auth",
+                200,
+                3600,
+                &tid(2),
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code(), "KRS_ROTATION_FAILED");
+        assert!(reg.lookup("k-stable").is_some());
+        assert!(reg.lookup("k-should-not-exist").is_none());
+        assert_eq!(reg.active_count(), 1);
+        assert_eq!(reg.revoked_count(), 0);
+        assert_eq!(reg.event_count(), initial_events);
+    }
+
+    #[test]
+    fn rotate_conflicting_new_key_leaves_counts_and_events_unchanged() {
+        let mut reg = KeyRoleRegistry::new();
+        reg.bind(
+            "k-rotate-source",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
+        reg.bind(
+            "k-rotate-conflict",
+            KeyRole::Issuance,
+            pub_key(3),
+            "auth",
+            100,
+            3600,
+            &tid(2),
+        )
+        .unwrap();
+        let initial_events = reg.event_count();
+
+        let err = reg
+            .rotate(
+                KeyRole::Signing,
+                "k-rotate-source",
+                "k-rotate-conflict",
+                pub_key(9),
+                "auth",
+                200,
+                3600,
+                &tid(3),
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code(), "KRS_ROLE_SEPARATION_VIOLATION");
+        assert_eq!(reg.active_count(), 2);
+        assert_eq!(reg.revoked_count(), 0);
+        assert_eq!(reg.event_count(), initial_events);
+        assert_eq!(
+            reg.lookup("k-rotate-source").unwrap().role,
+            KeyRole::Signing
+        );
+        assert_eq!(
+            reg.lookup("k-rotate-conflict").unwrap().role,
+            KeyRole::Issuance
+        );
+    }
+
+    #[test]
+    fn verify_mismatch_does_not_revoke_binding() {
+        let mut reg = KeyRoleRegistry::new();
+        reg.bind(
+            "k-mismatch-stable",
+            KeyRole::Issuance,
+            pub_key(3),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
+
+        let err = reg
+            .verify_role("k-mismatch-stable", KeyRole::Signing, 200, &tid(2))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "KRS_KEY_ROLE_MISMATCH");
+        assert!(reg.lookup("k-mismatch-stable").is_some());
+        assert_eq!(reg.active_count(), 1);
+        assert_eq!(reg.revoked_count(), 0);
+    }
+
+    #[test]
+    fn verify_zero_validity_rejects_at_bound_time() {
+        let mut reg = KeyRoleRegistry::new();
+        reg.bind(
+            "k-zero-validity",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            500,
+            0,
+            &tid(1),
+        )
+        .unwrap();
+
+        let err = reg
+            .verify_role("k-zero-validity", KeyRole::Signing, 500, &tid(2))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "KRS_KEY_EXPIRED");
+        assert_eq!(reg.active_count(), 1);
+    }
+
+    #[test]
+    fn verify_saturating_expiry_rejects_at_u64_max() {
+        let mut reg = KeyRoleRegistry::new();
+        reg.bind(
+            "k-saturating-expiry",
+            KeyRole::Encryption,
+            pub_key(2),
+            "auth",
+            u64::MAX - 4,
+            10,
+            &tid(1),
+        )
+        .unwrap();
+
+        let err = reg
+            .verify_role(
+                "k-saturating-expiry",
+                KeyRole::Encryption,
+                u64::MAX,
+                &tid(2),
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code(), "KRS_KEY_EXPIRED");
+    }
+
     // ---- verify_role tests ----
 
     #[test]
@@ -1822,5 +2110,187 @@ mod tests {
         let json = serde_json::to_string(&ev).unwrap();
         let back: KeyRoleEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(ev, back);
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_events_without_appending() {
+        let mut events = vec![KeyRoleEvent::bound(
+            "k-old",
+            KeyRole::Signing,
+            "auth",
+            "trace-old",
+        )];
+
+        push_bounded(
+            &mut events,
+            KeyRoleEvent::bound("k-new", KeyRole::Signing, "auth", "trace-new"),
+            0,
+        );
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn push_bounded_single_capacity_evicts_oldest_event() {
+        let mut events = vec![KeyRoleEvent::bound(
+            "k-old",
+            KeyRole::Signing,
+            "auth",
+            "trace-old",
+        )];
+
+        push_bounded(
+            &mut events,
+            KeyRoleEvent::revoked("k-new", KeyRole::Signing, "auth", "trace-new"),
+            1,
+        );
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].key_id, "k-new");
+        assert_eq!(events[0].event_code, event_codes::KRS_KEY_ROLE_REVOKED);
+    }
+
+    #[test]
+    fn rotate_same_key_id_rejected_without_state_change() {
+        let mut reg = KeyRoleRegistry::new();
+        reg.bind(
+            "k-same-rotate",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
+        let initial_events = reg.event_count();
+
+        let err = reg
+            .rotate(
+                KeyRole::Signing,
+                "k-same-rotate",
+                "k-same-rotate",
+                pub_key(2),
+                "auth",
+                200,
+                3600,
+                &tid(2),
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code(), "KRS_ROTATION_FAILED");
+        assert!(err.to_string().contains("must differ"));
+        assert_eq!(reg.active_count(), 1);
+        assert_eq!(reg.revoked_count(), 0);
+        assert_eq!(reg.event_count(), initial_events);
+        let binding = reg.lookup("k-same-rotate").unwrap();
+        assert_eq!(binding.public_key_bytes, pub_key(1));
+        assert_eq!(binding.bound_at, 100);
+    }
+
+    #[test]
+    fn revoke_missing_key_does_not_emit_event_or_change_counts() {
+        let mut reg = KeyRoleRegistry::new();
+        reg.bind(
+            "k-stable",
+            KeyRole::Encryption,
+            pub_key(2),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
+        let initial_events = reg.event_count();
+
+        let err = reg.revoke("k-missing", "auth", &tid(2)).unwrap_err();
+
+        assert_eq!(err.code(), "KRS_KEY_NOT_FOUND");
+        assert_eq!(reg.active_count(), 1);
+        assert_eq!(reg.revoked_count(), 0);
+        assert_eq!(reg.event_count(), initial_events);
+        assert!(reg.lookup("k-stable").is_some());
+    }
+
+    #[test]
+    fn verify_missing_key_does_not_emit_violation_event() {
+        let mut reg = KeyRoleRegistry::new();
+
+        let err = reg
+            .verify_role("k-missing", KeyRole::Signing, 200, &tid(1))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "KRS_KEY_NOT_FOUND");
+        assert!(reg.events().is_empty());
+        assert_eq!(reg.active_count(), 0);
+        assert_eq!(reg.revoked_count(), 0);
+    }
+
+    #[test]
+    fn verify_expired_key_does_not_emit_role_violation_event() {
+        let mut reg = KeyRoleRegistry::new();
+        reg.bind(
+            "k-expired-event",
+            KeyRole::Issuance,
+            pub_key(3),
+            "auth",
+            100,
+            10,
+            &tid(1),
+        )
+        .unwrap();
+        let initial_events = reg.event_count();
+
+        let err = reg
+            .verify_role("k-expired-event", KeyRole::Issuance, 110, &tid(2))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "KRS_KEY_EXPIRED");
+        assert_eq!(reg.event_count(), initial_events);
+        assert!(
+            reg.events()
+                .iter()
+                .all(|event| event.event_code != event_codes::KRS_ROLE_VIOLATION_ATTEMPT)
+        );
+        assert!(reg.lookup("k-expired-event").is_some());
+    }
+
+    #[test]
+    fn bind_role_violation_records_critical_event_without_rebinding() {
+        let mut reg = KeyRoleRegistry::new();
+        reg.bind(
+            "k-cross-role-event",
+            KeyRole::Signing,
+            pub_key(1),
+            "auth",
+            100,
+            3600,
+            &tid(1),
+        )
+        .unwrap();
+
+        let err = reg
+            .bind(
+                "k-cross-role-event",
+                KeyRole::Encryption,
+                pub_key(1),
+                "auth",
+                200,
+                3600,
+                &tid(2),
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code(), "KRS_ROLE_SEPARATION_VIOLATION");
+        assert_eq!(reg.active_count(), 1);
+        assert_eq!(
+            reg.lookup("k-cross-role-event").unwrap().role,
+            KeyRole::Signing
+        );
+        let event = reg.events().last().expect("violation event");
+        assert_eq!(event.event_code, event_codes::KRS_ROLE_VIOLATION_ATTEMPT);
+        assert_eq!(event.severity, "CRITICAL");
+        assert_eq!(event.role, Some(KeyRole::Signing));
+        assert!(event.detail.contains("Encryption"));
     }
 }

@@ -491,8 +491,12 @@ const MAX_TOKENS: usize = 4096;
 const MAX_NONCES: usize = 65_536;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
@@ -507,6 +511,11 @@ fn insert_nonce_bounded(
     nonce: String,
     cap: usize,
 ) {
+    if cap == 0 {
+        set.clear();
+        queue.clear();
+        return;
+    }
     if set.insert(nonce.clone()) {
         while queue.len() >= cap {
             if let Some(oldest) = queue.pop_front() {
@@ -674,6 +683,28 @@ impl TokenValidator {
         }
 
         // INV-ABT-REPLAY: check nonce replay.
+        let mut chain_nonces = BTreeSet::new();
+        for token in tokens.iter() {
+            if !chain_nonces.insert(token.nonce.clone()) {
+                self.tokens_rejected = self.tokens_rejected.saturating_add(1);
+                let err = TokenError::replay_detected(&token.nonce);
+                push_bounded(
+                    &mut self.events,
+                    TokenEvent {
+                        event_code: ABT_004.to_string(),
+                        token_id: token.token_id.as_str().to_string(),
+                        trace_id: trace_id.to_string(),
+                        epoch_id: self.epoch_id,
+                        action_id: format!("verify-replay-{}", token.token_id),
+                        detail: format!("Nonce '{}' duplicated within token chain", token.nonce),
+                        timestamp_ms: now_ms,
+                    },
+                    MAX_EVENTS,
+                );
+                return Err(err);
+            }
+        }
+
         // In multi-token chains the root token is allowed to appear in multiple
         // delegation chains (different leaves), so its nonce is skipped during
         // the check.  In single-token (root-only) chains the root IS checked.
@@ -1620,5 +1651,365 @@ mod tests {
             .verify_chain(&chain2, "kernel-B", 50_000, "trace-2")
             .unwrap_err();
         assert_eq!(err.code, ERR_ABT_REPLAY_DETECTED);
+    }
+
+    #[test]
+    fn test_deserialize_empty_chain_rejected() {
+        let err = serde_json::from_str::<TokenChain>(r#"{"tokens":[]}"#).unwrap_err();
+
+        assert!(err.to_string().contains("token chain cannot be empty"));
+    }
+
+    #[test]
+    fn test_deserialize_non_root_first_rejected() {
+        let mut token = root_token("root-with-parent", 3);
+        token.parent_token_hash = Some("unexpected-parent-link".to_string());
+        let json = serde_json::json!({ "tokens": [token] }).to_string();
+
+        let err = serde_json::from_str::<TokenChain>(&json).unwrap_err();
+
+        assert!(err.to_string().contains("First token in chain"));
+    }
+
+    #[test]
+    fn test_deserialize_mismatched_delegate_parent_rejected() {
+        let root = root_token("root-1", 3);
+        let mut child = delegate_token(
+            &root,
+            "child-mismatch",
+            vec!["kernel-A".to_string()],
+            narrow_caps(),
+        );
+        child.parent_token_hash = Some("wrong-parent-link".to_string());
+        let json = serde_json::json!({ "tokens": [root, child] }).to_string();
+
+        let err = serde_json::from_str::<TokenChain>(&json).unwrap_err();
+
+        assert!(err.to_string().contains("parent_token_hash mismatch"));
+    }
+
+    #[test]
+    fn test_append_child_issued_before_parent_rejected() {
+        let root = root_token("root-1", 3);
+        let mut child = delegate_token(
+            &root,
+            "child-issued-before-parent",
+            vec!["kernel-A".to_string()],
+            narrow_caps(),
+        );
+        child.issued_at = root.issued_at.saturating_sub(1);
+        child.parent_token_hash = Some(root.hash());
+        let mut chain = TokenChain::new(root).unwrap();
+
+        let err = chain.append(child).unwrap_err();
+
+        assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
+        assert!(err.message.contains("issued_at"));
+    }
+
+    #[test]
+    fn test_append_child_outliving_parent_rejected() {
+        let root = root_token("root-1", 3);
+        let mut child = delegate_token(
+            &root,
+            "child-outlives-parent",
+            vec!["kernel-A".to_string()],
+            narrow_caps(),
+        );
+        child.expires_at = root.expires_at.saturating_add(1);
+        child.parent_token_hash = Some(root.hash());
+        let mut chain = TokenChain::new(root).unwrap();
+
+        let err = chain.append(child).unwrap_err();
+
+        assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
+        assert!(err.message.contains("expires_at"));
+    }
+
+    #[test]
+    fn test_append_child_with_equal_delegation_depth_rejected() {
+        let root = root_token("root-1", 3);
+        let mut child = delegate_token(
+            &root,
+            "child-equal-depth",
+            vec!["kernel-A".to_string()],
+            narrow_caps(),
+        );
+        child.max_delegation_depth = root.max_delegation_depth;
+        child.parent_token_hash = Some(root.hash());
+        let mut chain = TokenChain::new(root).unwrap();
+
+        let err = chain.append(child).unwrap_err();
+
+        assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
+        assert!(err.message.contains("strictly less"));
+    }
+
+    #[test]
+    fn test_verify_empty_manual_chain_rejected() {
+        let mut v = TokenValidator::new(1);
+        let chain = TokenChain { tokens: Vec::new() };
+
+        let err = v
+            .verify_chain(&chain, "kernel-A", 50_000, "trace-empty")
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
+        assert_eq!(v.tokens_verified(), 0);
+        assert!(v.events().is_empty());
+    }
+
+    #[test]
+    fn test_verify_invalid_window_manual_chain_rejected() {
+        let mut v = TokenValidator::new(1);
+        let mut root = root_token("root-invalid-window", 0);
+        root.expires_at = root.issued_at;
+        let chain = TokenChain { tokens: vec![root] };
+
+        let err = v
+            .verify_chain(&chain, "kernel-A", 999, "trace-invalid-window")
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_ABT_TOKEN_EXPIRED);
+        assert_eq!(v.tokens_rejected(), 1);
+        assert_eq!(v.nonce_count(), 0);
+    }
+
+    #[test]
+    fn test_check_audience_empty_audience_rejected() {
+        let v = TokenValidator::new(1);
+        let mut token = root_token("root-empty-audience", 0);
+        token.audience.clear();
+
+        let err = v.check_audience(&token, "kernel-A").unwrap_err();
+
+        assert_eq!(err.code, ERR_ABT_AUDIENCE_MISMATCH);
+        assert!(err.message.contains("kernel-A"));
+    }
+
+    #[test]
+    fn negative_action_scope_unknown_variant_is_rejected_by_serde() {
+        let err = serde_json::from_str::<ActionScope>(r#""snapshot""#).unwrap_err();
+
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn negative_action_scope_wrong_case_is_rejected_by_serde() {
+        let err = serde_json::from_str::<ActionScope>(r#""migrate""#).unwrap_err();
+
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn negative_token_missing_nonce_is_rejected_by_serde() {
+        let token = root_token("root-missing-nonce", 0);
+        let mut value = serde_json::to_value(token).expect("token should serialize");
+        value
+            .as_object_mut()
+            .expect("token json should be an object")
+            .remove("nonce");
+
+        let err = serde_json::from_value::<AudienceBoundToken>(value).unwrap_err();
+
+        assert!(err.to_string().contains("nonce"));
+    }
+
+    #[test]
+    fn negative_token_wrong_expiry_type_is_rejected_by_serde() {
+        let token = root_token("root-bad-expiry-type", 0);
+        let mut value = serde_json::to_value(token).expect("token should serialize");
+        value
+            .as_object_mut()
+            .expect("token json should be an object")
+            .insert(
+                "expires_at".to_string(),
+                serde_json::Value::String("tomorrow".to_string()),
+            );
+
+        let err = serde_json::from_value::<AudienceBoundToken>(value).unwrap_err();
+
+        assert!(err.to_string().contains("invalid type"));
+    }
+
+    #[test]
+    fn negative_verify_expiry_boundary_precedes_nonce_replay_check() {
+        let mut validator = TokenValidator::new(7);
+        let root = root_token("root-expiry-precedence", 0);
+        validator.record_issuance(&root, "trace-issued", root.issued_at);
+        let chain = TokenChain::new(root.clone()).unwrap();
+
+        let err = validator
+            .verify_chain(
+                &chain,
+                "kernel-A",
+                root.expires_at,
+                "trace-expired-boundary",
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_ABT_TOKEN_EXPIRED);
+        assert_eq!(validator.tokens_rejected(), 1);
+        assert_eq!(
+            validator
+                .events()
+                .last()
+                .map(|event| event.event_code.as_str()),
+            Some(ABT_004)
+        );
+        assert!(
+            validator
+                .events()
+                .last()
+                .expect("rejection event should be recorded")
+                .detail
+                .contains("expired")
+        );
+    }
+
+    #[test]
+    fn negative_manual_child_without_parent_link_fails_chain_integrity() {
+        let mut validator = TokenValidator::new(7);
+        let root = root_token("root-manual-missing-parent", 3);
+        let mut child = delegate_token(
+            &root,
+            "child-manual-missing-parent",
+            vec!["kernel-A".to_string()],
+            narrow_caps(),
+        );
+        child.parent_token_hash = None;
+        let chain = TokenChain {
+            tokens: vec![root, child],
+        };
+
+        let err = validator
+            .verify_chain(&chain, "kernel-A", 50_000, "trace-missing-parent-link")
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
+        assert!(err.message.contains("parent_token_hash mismatch"));
+        assert_eq!(validator.tokens_rejected(), 1);
+    }
+
+    #[test]
+    fn negative_check_audience_is_case_sensitive() {
+        let validator = TokenValidator::new(7);
+        let token = root_token("root-audience-case", 0);
+
+        let err = validator.check_audience(&token, "KERNEL-A").unwrap_err();
+
+        assert_eq!(err.code, ERR_ABT_AUDIENCE_MISMATCH);
+        assert!(err.message.contains("KERNEL-A"));
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_tokens_without_appending() {
+        let mut tokens = vec![root_token("root-old", 0)];
+
+        push_bounded(&mut tokens, root_token("root-new", 0), 0);
+
+        assert!(tokens.is_empty());
+    }
+
+    #[test]
+    fn push_bounded_single_capacity_evicts_oldest_token() {
+        let mut tokens = vec![root_token("root-old", 0)];
+
+        push_bounded(&mut tokens, root_token("root-new", 0), 1);
+
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].token_id.as_str(), "root-new");
+    }
+
+    #[test]
+    fn insert_nonce_bounded_zero_capacity_clears_existing_state() {
+        let mut set = BTreeSet::new();
+        let mut queue = VecDeque::new();
+        set.insert("old-nonce".to_string());
+        queue.push_back("old-nonce".to_string());
+
+        insert_nonce_bounded(&mut set, &mut queue, "new-nonce".to_string(), 0);
+
+        assert!(set.is_empty());
+        assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn insert_nonce_bounded_duplicate_nonce_does_not_extend_queue() {
+        let mut set = BTreeSet::new();
+        let mut queue = VecDeque::new();
+
+        insert_nonce_bounded(&mut set, &mut queue, "dup-nonce".to_string(), 4);
+        insert_nonce_bounded(&mut set, &mut queue, "dup-nonce".to_string(), 4);
+
+        assert_eq!(set.len(), 1);
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue.front().map(String::as_str), Some("dup-nonce"));
+    }
+
+    #[test]
+    fn insert_nonce_bounded_capacity_evicts_oldest_nonce() {
+        let mut set = BTreeSet::new();
+        let mut queue = VecDeque::new();
+
+        insert_nonce_bounded(&mut set, &mut queue, "nonce-a".to_string(), 2);
+        insert_nonce_bounded(&mut set, &mut queue, "nonce-b".to_string(), 2);
+        insert_nonce_bounded(&mut set, &mut queue, "nonce-c".to_string(), 2);
+
+        assert!(!set.contains("nonce-a"));
+        assert!(set.contains("nonce-b"));
+        assert!(set.contains("nonce-c"));
+        assert_eq!(
+            queue.iter().map(String::as_str).collect::<Vec<_>>(),
+            vec!["nonce-b", "nonce-c"]
+        );
+    }
+
+    #[test]
+    fn verify_chain_rejects_duplicate_nonce_inside_single_chain() {
+        let mut validator = TokenValidator::new(8);
+        let root = root_token("root-duplicate-nonce", 3);
+        let mut child = delegate_token(
+            &root,
+            "child-duplicate-nonce",
+            vec!["kernel-A".to_string()],
+            narrow_caps(),
+        );
+        child.nonce = root.nonce.clone();
+        let mut chain = TokenChain::new(root).unwrap();
+        chain.append(child).unwrap();
+
+        let err = validator
+            .verify_chain(&chain, "kernel-A", 50_000, "trace-duplicate-nonce")
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_ABT_REPLAY_DETECTED);
+        assert_eq!(validator.tokens_rejected(), 1);
+        assert_eq!(validator.nonce_count(), 0);
+        assert!(
+            validator
+                .events()
+                .last()
+                .expect("rejection event")
+                .detail
+                .contains("duplicated within token chain")
+        );
+    }
+
+    #[test]
+    fn verify_chain_empty_leaf_audience_rejected_without_nonce_recording() {
+        let mut validator = TokenValidator::new(8);
+        let root = root_token("root-empty-leaf-audience", 3);
+        let child = delegate_token(&root, "child-empty-audience", Vec::new(), narrow_caps());
+        let mut chain = TokenChain::new(root).unwrap();
+        chain.append(child).unwrap();
+
+        let err = validator
+            .verify_chain(&chain, "kernel-A", 50_000, "trace-empty-audience")
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_ABT_AUDIENCE_MISMATCH);
+        assert_eq!(validator.tokens_rejected(), 1);
+        assert_eq!(validator.nonce_count(), 0);
     }
 }

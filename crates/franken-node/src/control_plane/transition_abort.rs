@@ -359,11 +359,26 @@ impl TransitionAbortManager {
         known_participants: &BTreeSet<String>,
     ) -> Result<(), AbortError> {
         // INV-ABORT-FORCE-EXPLICIT: no default — caller must construct
-        if policy.operator_id.is_empty() {
+        if policy.operator_id.trim().is_empty() {
             return Err(AbortError::NoOperator);
         }
-        if policy.audit_reason.is_empty() {
+        if policy.audit_reason.trim().is_empty() {
             return Err(AbortError::NoReason);
+        }
+
+        for pid in &policy.skippable_participants {
+            if pid.trim().is_empty() {
+                return Err(AbortError::UnknownParticipant {
+                    participant_id: pid.clone(),
+                });
+            }
+        }
+        for pid in known_participants {
+            if pid.trim().is_empty() {
+                return Err(AbortError::UnknownParticipant {
+                    participant_id: pid.clone(),
+                });
+            }
         }
 
         // INV-ABORT-FORCE-BOUNDED
@@ -523,8 +538,12 @@ impl Default for TransitionAbortManager {
 }
 
 fn push_bounded<T>(entries: &mut Vec<T>, entry: T, max_entries: usize) {
+    if max_entries == 0 {
+        entries.clear();
+        return;
+    }
     if entries.len() >= max_entries {
-        let overflow = entries.len() - max_entries + 1;
+        let overflow = entries.len().saturating_sub(max_entries).saturating_add(1);
         entries.drain(0..overflow);
     }
     entries.push(entry);
@@ -995,5 +1014,343 @@ mod tests {
             !event.verify_no_partial_state(),
             "empty participant list must not pass verification (vacuous truth guard)"
         );
+    }
+
+    #[test]
+    fn validate_force_policy_reports_missing_operator_first() {
+        let mgr = TransitionAbortManager::new();
+        let known = participants_3();
+        let mut skip = BTreeSet::new();
+        skip.insert("svc-a".to_string());
+        skip.insert("svc-b".to_string());
+        let policy = ForceTransitionPolicy::new(skip, 1, "", "");
+
+        let err = mgr.validate_force_policy(&policy, &known).unwrap_err();
+
+        assert_eq!(err, AbortError::NoOperator);
+        assert_eq!(err.code(), error_codes::ERR_FORCE_NO_OPERATOR);
+    }
+
+    #[test]
+    fn validate_force_policy_rejects_unknown_participant_with_empty_known_set() {
+        let mgr = TransitionAbortManager::new();
+        let known = BTreeSet::new();
+        let mut skip = BTreeSet::new();
+        skip.insert("svc-ghost".to_string());
+        let policy = ForceTransitionPolicy::new(skip, 1, "admin", "reason");
+
+        let err = mgr.validate_force_policy(&policy, &known).unwrap_err();
+
+        assert_eq!(
+            err,
+            AbortError::UnknownParticipant {
+                participant_id: "svc-ghost".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn validate_force_policy_rejects_all_skipped_before_unknown_check() {
+        let mgr = TransitionAbortManager::new();
+        let known = participants_3();
+        let mut skip = known.clone();
+        skip.insert("svc-ghost".to_string());
+        let policy = ForceTransitionPolicy::new(skip, 4, "admin", "reason");
+
+        let err = mgr.validate_force_policy(&policy, &known).unwrap_err();
+
+        assert_eq!(err, AbortError::AllSkipped { total: known.len() });
+    }
+
+    #[test]
+    fn serde_rejects_timeout_reason_missing_elapsed() {
+        let err = serde_json::from_str::<TransitionAbortReason>(r#"{"Timeout":{}}"#).unwrap_err();
+
+        assert!(err.to_string().contains("elapsed_ms"));
+    }
+
+    #[test]
+    fn serde_rejects_abort_event_missing_schema_version() {
+        let json = serde_json::json!({
+            "barrier_id": "b-missing-schema",
+            "reason": { "Timeout": { "elapsed_ms": 1000 } },
+            "pre_epoch": 7,
+            "proposed_epoch": 8,
+            "participant_states": [],
+            "elapsed_ms": 1000,
+            "timestamp_ms": 2000,
+            "trace_id": "trace-missing-schema"
+        });
+
+        let err = serde_json::from_value::<TransitionAbortEvent>(json).unwrap_err();
+
+        assert!(err.to_string().contains("schema_version"));
+    }
+
+    #[test]
+    fn serde_rejects_force_policy_missing_operator_id() {
+        let json = serde_json::json!({
+            "skippable_participants": ["svc-a"],
+            "max_skippable": 1,
+            "audit_reason": "reason"
+        });
+
+        let err = serde_json::from_value::<ForceTransitionPolicy>(json).unwrap_err();
+
+        assert!(err.to_string().contains("operator_id"));
+    }
+
+    #[test]
+    fn serde_rejects_force_event_missing_policy_hash() {
+        let json = serde_json::json!({
+            "barrier_id": "b-force",
+            "operator_id": "admin",
+            "skipped_participants": ["svc-c"],
+            "audit_reason": "reason",
+            "pre_epoch": 5,
+            "target_epoch": 6,
+            "timestamp_ms": 3000,
+            "trace_id": "trace-force",
+            "schema_version": SCHEMA_VERSION
+        });
+
+        let err = serde_json::from_value::<ForceTransitionEvent>(json).unwrap_err();
+
+        assert!(err.to_string().contains("policy_hash"));
+    }
+
+    #[test]
+    fn serde_rejects_participant_state_bad_in_flight_type() {
+        let json = serde_json::json!({
+            "participant_id": "svc-a",
+            "had_acked": false,
+            "current_epoch": 5,
+            "in_flight_items": "five"
+        });
+
+        let err = serde_json::from_value::<ParticipantAbortState>(json).unwrap_err();
+
+        assert!(err.to_string().contains("in_flight_items"));
+    }
+
+    #[test]
+    fn validate_force_policy_rejects_whitespace_operator() {
+        let mgr = TransitionAbortManager::new();
+        let policy = ForceTransitionPolicy::new(BTreeSet::new(), 0, "   ", "reason");
+
+        let err = mgr
+            .validate_force_policy(&policy, &participants_3())
+            .unwrap_err();
+
+        assert_eq!(err, AbortError::NoOperator);
+        assert_eq!(err.code(), error_codes::ERR_FORCE_NO_OPERATOR);
+    }
+
+    #[test]
+    fn validate_force_policy_rejects_whitespace_reason() {
+        let mgr = TransitionAbortManager::new();
+        let policy = ForceTransitionPolicy::new(BTreeSet::new(), 0, "admin", "\t\n");
+
+        let err = mgr
+            .validate_force_policy(&policy, &participants_3())
+            .unwrap_err();
+
+        assert_eq!(err, AbortError::NoReason);
+        assert_eq!(err.code(), error_codes::ERR_FORCE_NO_REASON);
+    }
+
+    #[test]
+    fn validate_force_policy_rejects_blank_skippable_participant() {
+        let mgr = TransitionAbortManager::new();
+        let known = ["", "svc-a"].into_iter().map(str::to_string).collect();
+        let skip = [""].into_iter().map(str::to_string).collect();
+        let policy = ForceTransitionPolicy::new(skip, 1, "admin", "reason");
+
+        let err = mgr.validate_force_policy(&policy, &known).unwrap_err();
+
+        assert_eq!(
+            err,
+            AbortError::UnknownParticipant {
+                participant_id: String::new()
+            }
+        );
+        assert_eq!(err.code(), error_codes::ERR_FORCE_UNKNOWN_PARTICIPANT);
+    }
+
+    #[test]
+    fn validate_force_policy_rejects_whitespace_skippable_participant() {
+        let mgr = TransitionAbortManager::new();
+        let known = ["   ", "svc-a"].into_iter().map(str::to_string).collect();
+        let skip = ["   "].into_iter().map(str::to_string).collect();
+        let policy = ForceTransitionPolicy::new(skip, 1, "admin", "reason");
+
+        let err = mgr.validate_force_policy(&policy, &known).unwrap_err();
+
+        assert_eq!(
+            err,
+            AbortError::UnknownParticipant {
+                participant_id: "   ".to_string()
+            }
+        );
+        assert_eq!(err.code(), error_codes::ERR_FORCE_UNKNOWN_PARTICIPANT);
+    }
+
+    #[test]
+    fn validate_force_policy_rejects_blank_known_participant() {
+        let mgr = TransitionAbortManager::new();
+        let known = ["", "svc-a"].into_iter().map(str::to_string).collect();
+        let policy = ForceTransitionPolicy::new(BTreeSet::new(), 0, "admin", "reason");
+
+        let err = mgr.validate_force_policy(&policy, &known).unwrap_err();
+
+        assert_eq!(
+            err,
+            AbortError::UnknownParticipant {
+                participant_id: String::new()
+            }
+        );
+    }
+
+    #[test]
+    fn validate_force_policy_rejects_zero_limit_skip() {
+        let mgr = TransitionAbortManager::new();
+        let skip = ["svc-a"].into_iter().map(str::to_string).collect();
+        let policy = ForceTransitionPolicy::new(skip, 0, "admin", "reason");
+
+        let err = mgr
+            .validate_force_policy(&policy, &participants_3())
+            .unwrap_err();
+
+        assert_eq!(err, AbortError::OverLimit { skipped: 1, max: 0 });
+        assert_eq!(err.code(), error_codes::ERR_FORCE_OVER_LIMIT);
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_existing_entries() {
+        let mut entries = vec!["old-a".to_string(), "old-b".to_string()];
+
+        push_bounded(&mut entries, "new".to_string(), 0);
+
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn serde_rejects_unknown_abort_reason_variant() {
+        let err =
+            serde_json::from_str::<TransitionAbortReason>(r#"{"ClockSkew":{"ms":50}}"#)
+                .unwrap_err();
+
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn serde_rejects_cancellation_reason_missing_source() {
+        let err =
+            serde_json::from_str::<TransitionAbortReason>(r#"{"Cancellation":{}}"#).unwrap_err();
+
+        assert!(err.to_string().contains("source"));
+    }
+
+    #[test]
+    fn serde_rejects_participant_failure_missing_detail() {
+        let json = serde_json::json!({
+            "ParticipantFailure": {
+                "participant_id": "svc-a"
+            }
+        });
+
+        let err = serde_json::from_value::<TransitionAbortReason>(json).unwrap_err();
+
+        assert!(err.to_string().contains("detail"));
+    }
+
+    #[test]
+    fn serde_rejects_abort_event_non_array_participant_states() {
+        let json = serde_json::json!({
+            "barrier_id": "b-bad-participants",
+            "reason": { "Timeout": { "elapsed_ms": 1000 } },
+            "pre_epoch": 7,
+            "proposed_epoch": 8,
+            "participant_states": { "svc-a": { "current_epoch": 7 } },
+            "elapsed_ms": 1000,
+            "timestamp_ms": 2000,
+            "trace_id": "trace-bad-participants",
+            "schema_version": SCHEMA_VERSION
+        });
+
+        let err = serde_json::from_value::<TransitionAbortEvent>(json).unwrap_err();
+
+        assert!(err.to_string().contains("participant_states"));
+    }
+
+    #[test]
+    fn serde_rejects_force_policy_negative_max_skippable() {
+        let json = serde_json::json!({
+            "skippable_participants": ["svc-a"],
+            "max_skippable": -1,
+            "operator_id": "admin",
+            "audit_reason": "reason"
+        });
+
+        let err = serde_json::from_value::<ForceTransitionPolicy>(json).unwrap_err();
+
+        assert!(err.to_string().contains("max_skippable"));
+    }
+
+    #[test]
+    fn serde_rejects_force_event_non_array_skipped_participants() {
+        let json = serde_json::json!({
+            "barrier_id": "b-force",
+            "policy_hash": "policy:abc",
+            "operator_id": "admin",
+            "skipped_participants": "svc-c",
+            "audit_reason": "reason",
+            "pre_epoch": 5,
+            "target_epoch": 6,
+            "timestamp_ms": 3000,
+            "trace_id": "trace-force",
+            "schema_version": SCHEMA_VERSION
+        });
+
+        let err = serde_json::from_value::<ForceTransitionEvent>(json).unwrap_err();
+
+        assert!(err.to_string().contains("skipped_participants"));
+    }
+
+    #[test]
+    fn serde_rejects_audit_record_missing_outcome() {
+        let json = serde_json::json!({
+            "event_code": event_codes::TRANSITION_ABORTED,
+            "barrier_id": "b-audit",
+            "pre_epoch": 5,
+            "proposed_epoch": 6,
+            "reason": "timeout after 1000ms",
+            "timestamp_ms": 4000,
+            "trace_id": "trace-audit",
+            "schema_version": SCHEMA_VERSION
+        });
+
+        let err = serde_json::from_value::<AbortAuditRecord>(json).unwrap_err();
+
+        assert!(err.to_string().contains("outcome"));
+    }
+
+    #[test]
+    fn serde_rejects_audit_record_bad_timestamp_type() {
+        let json = serde_json::json!({
+            "event_code": event_codes::TRANSITION_ABORTED,
+            "barrier_id": "b-audit",
+            "pre_epoch": 5,
+            "proposed_epoch": 6,
+            "outcome": "ABORTED",
+            "reason": "timeout after 1000ms",
+            "timestamp_ms": "later",
+            "trace_id": "trace-audit",
+            "schema_version": SCHEMA_VERSION
+        });
+
+        let err = serde_json::from_value::<AbortAuditRecord>(json).unwrap_err();
+
+        assert!(err.to_string().contains("timestamp_ms"));
     }
 }

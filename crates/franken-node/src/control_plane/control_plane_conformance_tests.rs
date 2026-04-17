@@ -9,22 +9,22 @@
 //! - Thread safety and poison recovery
 
 use super::cancellation_protocol::{
-    CancellationProtocol, DrainConfig, ResourceTracker, AbortReason,
+    AbortReason, CancellationProtocol, DrainConfig, ResourceTracker,
     error_codes as cancel_error_codes,
 };
 use super::control_epoch::{
-    ControlEpoch, EpochStore, EpochError, ValidityWindowPolicy,
-    check_artifact_epoch, EpochRejectionReason,
+    ControlEpoch, EpochError, EpochRejectionReason, EpochStore, ValidityWindowPolicy,
+    check_artifact_epoch,
 };
 use super::epoch_transition_barrier::{
-    EpochTransitionBarrier, BarrierConfig, DrainAck, BarrierPhase, BarrierError,
+    BarrierConfig, BarrierError, BarrierPhase, DrainAck, EpochTransitionBarrier,
     error_codes as barrier_error_codes,
 };
 use super::fork_detection::{
-    DivergenceDetector, RollbackDetector, StateVector, DetectionResult,
-    ForkDetectionError, MarkerProofVerifier,
+    DetectionResult, DivergenceDetector, ForkDetectionError, MarkerProofVerifier, RollbackDetector,
+    StateVector,
 };
-use crate::control_plane::marker_stream::{MarkerStream, MarkerEventType};
+use crate::control_plane::marker_stream::{MarkerEventType, MarkerStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -36,11 +36,15 @@ fn epoch_store_overflow_protection() {
     let mut store = EpochStore::recover(u64::MAX - 1);
 
     // Should advance to MAX successfully
-    let t1 = store.epoch_advance("manifest-max", 9000, "trace-max").unwrap();
+    let t1 = store
+        .epoch_advance("manifest-max", 9000, "trace-max")
+        .unwrap();
     assert_eq!(t1.new_epoch.value(), u64::MAX);
 
     // Next advance should fail with overflow
-    let err = store.epoch_advance("manifest-overflow", 9001, "trace-overflow").unwrap_err();
+    let err = store
+        .epoch_advance("manifest-overflow", 9001, "trace-overflow")
+        .unwrap_err();
     assert_eq!(err.code(), "EPOCH_OVERFLOW");
 
     // Store state should remain at MAX, not wrap around
@@ -72,12 +76,73 @@ fn validity_window_boundary_conditions() {
     let policy = ValidityWindowPolicy::new(ControlEpoch::new(10), 5);
 
     // Exactly at boundary should pass
-    let result = check_artifact_epoch("artifact-boundary", ControlEpoch::new(5), &policy, "trace-1");
+    let result = check_artifact_epoch(
+        "artifact-boundary",
+        ControlEpoch::new(5),
+        &policy,
+        "trace-1",
+    );
     assert!(result.is_ok());
 
     // One past boundary should fail
-    let err = check_artifact_epoch("artifact-expired", ControlEpoch::new(4), &policy, "trace-2").unwrap_err();
+    let err = check_artifact_epoch("artifact-expired", ControlEpoch::new(4), &policy, "trace-2")
+        .unwrap_err();
     assert_eq!(err.rejection_reason, EpochRejectionReason::ExpiredEpoch);
+}
+
+#[test]
+fn validity_window_rejects_future_epoch() {
+    let policy = ValidityWindowPolicy::new(ControlEpoch::new(10), 5);
+
+    let err = check_artifact_epoch(
+        "artifact-future",
+        ControlEpoch::new(11),
+        &policy,
+        "trace-future",
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code(), "EPOCH_REJECT_FUTURE");
+    assert_eq!(err.rejection_reason, EpochRejectionReason::FutureEpoch);
+}
+
+#[test]
+fn validity_window_rejects_empty_artifact_id() {
+    let policy = ValidityWindowPolicy::new(ControlEpoch::new(10), 5);
+
+    let err = check_artifact_epoch("", ControlEpoch::new(10), &policy, "trace-empty").unwrap_err();
+
+    assert_eq!(err.code(), "EPOCH_REJECT_INVALID_ARTIFACT_ID");
+    assert_eq!(
+        err.rejection_reason,
+        EpochRejectionReason::InvalidArtifactId
+    );
+}
+
+#[test]
+fn validity_window_rejects_padded_artifact_id() {
+    let policy = ValidityWindowPolicy::new(ControlEpoch::new(10), 5);
+
+    let err = check_artifact_epoch(" artifact ", ControlEpoch::new(10), &policy, "trace-padded")
+        .unwrap_err();
+
+    assert_eq!(err.code(), "EPOCH_REJECT_INVALID_ARTIFACT_ID");
+    assert_eq!(
+        err.rejection_reason,
+        EpochRejectionReason::InvalidArtifactId
+    );
+}
+
+#[test]
+fn epoch_store_rejects_empty_manifest_without_advancing() {
+    let mut store = EpochStore::new();
+
+    let err = store
+        .epoch_advance("", 1000, "trace-empty-manifest")
+        .unwrap_err();
+
+    assert_eq!(err.code(), "EPOCH_INVALID_MANIFEST");
+    assert_eq!(store.epoch_read().value(), 0);
 }
 
 #[test]
@@ -92,7 +157,11 @@ fn epoch_concurrent_access_safety() {
             for j in 0..100 {
                 let manifest = format!("manifest-{}-{}", i, j);
                 let trace = format!("trace-{}-{}", i, j);
-                let _result = store_clone.lock().unwrap().epoch_advance(&manifest, 1000 + j, &trace);
+                let _result =
+                    store_clone
+                        .lock()
+                        .unwrap()
+                        .epoch_advance(&manifest, 1000 + j, &trace);
             }
         });
         handles.push(handle);
@@ -114,31 +183,50 @@ fn cancellation_drain_timeout_boundary() {
     let config = DrainConfig::new(1000, false); // 1s timeout, no force
     let mut protocol = CancellationProtocol::new(config);
 
-    protocol.request_cancel("workflow-1", 5, 1000, "trace-1").unwrap();
+    protocol
+        .request_cancel("workflow-1", 5, 1000, "trace-1")
+        .unwrap();
     protocol.start_drain("workflow-1", 1100, "trace-1").unwrap();
 
     // Exactly at timeout boundary (elapsed = 1000ms)
-    let err = protocol.complete_drain("workflow-1", 2100, "trace-1").unwrap_err();
+    let err = protocol
+        .complete_drain("workflow-1", 2100, "trace-1")
+        .unwrap_err();
     assert_eq!(err.code(), cancel_error_codes::ERR_CANCEL_DRAIN_TIMEOUT);
 
     // Just under timeout should work with force=true
     let config_force = DrainConfig::new(1000, true);
     let mut protocol_force = CancellationProtocol::new(config_force);
-    protocol_force.request_cancel("workflow-2", 5, 1000, "trace-2").unwrap();
-    protocol_force.start_drain("workflow-2", 1100, "trace-2").unwrap();
+    protocol_force
+        .request_cancel("workflow-2", 5, 1000, "trace-2")
+        .unwrap();
+    protocol_force
+        .start_drain("workflow-2", 1100, "trace-2")
+        .unwrap();
 
     // At timeout with force should succeed
-    let result = protocol_force.complete_drain("workflow-2", 2100, "trace-2").unwrap();
+    let result = protocol_force
+        .complete_drain("workflow-2", 2100, "trace-2")
+        .unwrap();
     assert!(result.drain_timed_out);
-    assert_eq!(result.current_phase, super::cancellation_protocol::CancelPhase::DrainComplete);
+    assert_eq!(
+        result.current_phase,
+        super::cancellation_protocol::CancelPhase::DrainComplete
+    );
 }
 
 #[test]
 fn cancellation_resource_leak_detection() {
     let mut protocol = CancellationProtocol::default();
-    protocol.request_cancel("workflow-leak", 0, 1000, "trace-1").unwrap();
-    protocol.start_drain("workflow-leak", 1100, "trace-1").unwrap();
-    protocol.complete_drain("workflow-leak", 1200, "trace-1").unwrap();
+    protocol
+        .request_cancel("workflow-leak", 0, 1000, "trace-1")
+        .unwrap();
+    protocol
+        .start_drain("workflow-leak", 1100, "trace-1")
+        .unwrap();
+    protocol
+        .complete_drain("workflow-leak", 1200, "trace-1")
+        .unwrap();
 
     // Create resources with various leak types
     let mut resources = ResourceTracker::empty();
@@ -146,7 +234,9 @@ fn cancellation_resource_leak_detection() {
     resources.pending_writes = u64::MAX; // Extreme case
     resources.held_locks.push("mutex-critical".to_string());
 
-    let err = protocol.finalize("workflow-leak", &resources, 1300, "trace-1").unwrap_err();
+    let err = protocol
+        .finalize("workflow-leak", &resources, 1300, "trace-1")
+        .unwrap_err();
     assert_eq!(err.code(), cancel_error_codes::ERR_CANCEL_LEAK);
 
     // Phase should remain Finalizing, not advance to Finalized
@@ -161,7 +251,9 @@ fn cancellation_audit_log_bounded_growth() {
     // Generate more events than capacity
     for i in 0..10 {
         let workflow_id = format!("workflow-{}", i);
-        protocol.request_cancel(&workflow_id, 0, 1000 + i, &format!("trace-{}", i)).unwrap();
+        protocol
+            .request_cancel(&workflow_id, 0, 1000 + i, &format!("trace-{}", i))
+            .unwrap();
     }
 
     // Audit log should be bounded to capacity
@@ -169,9 +261,58 @@ fn cancellation_audit_log_bounded_growth() {
 
     // Should contain only the most recent events
     let events = protocol.audit_log();
-    assert!(events[0].workflow_id.contains("workflow-7") ||
-            events[0].workflow_id.contains("workflow-8") ||
-            events[0].workflow_id.contains("workflow-9"));
+    assert!(
+        events[0].workflow_id.contains("workflow-7")
+            || events[0].workflow_id.contains("workflow-8")
+            || events[0].workflow_id.contains("workflow-9")
+    );
+}
+
+#[test]
+fn cancellation_start_drain_unknown_workflow_rejected() {
+    let mut protocol = CancellationProtocol::default();
+
+    let err = protocol
+        .start_drain("missing-workflow", 1000, "trace-missing")
+        .unwrap_err();
+
+    assert_eq!(err.code(), cancel_error_codes::ERR_CANCEL_NOT_FOUND);
+    assert!(protocol.audit_log().is_empty());
+}
+
+#[test]
+fn cancellation_complete_drain_before_start_rejected() {
+    let mut protocol = CancellationProtocol::default();
+    protocol
+        .request_cancel("workflow-no-drain", 3, 1000, "trace-no-drain")
+        .unwrap();
+
+    let err = protocol
+        .complete_drain("workflow-no-drain", 1100, "trace-no-drain")
+        .unwrap_err();
+
+    assert_eq!(err.code(), cancel_error_codes::ERR_CANCEL_INVALID_PHASE);
+    assert_eq!(
+        protocol.current_phase("workflow-no-drain").unwrap(),
+        super::cancellation_protocol::CancelPhase::CancelRequested
+    );
+}
+
+#[test]
+fn cancellation_finalize_unknown_workflow_rejected() {
+    let mut protocol = CancellationProtocol::default();
+
+    let err = protocol
+        .finalize(
+            "missing-workflow",
+            &ResourceTracker::empty(),
+            1200,
+            "trace-finalize-missing",
+        )
+        .unwrap_err();
+
+    assert_eq!(err.code(), cancel_error_codes::ERR_CANCEL_NOT_FOUND);
+    assert_eq!(protocol.finalized_count(), 0);
 }
 
 // ---- Barrier Coordination Hardening Tests ----
@@ -194,7 +335,9 @@ fn barrier_counter_overflow_protection() {
         if let Ok(instance) = _result {
             // Abort each barrier to allow the next proposal
             let _abort = test_barrier.abort(
-                AbortReason::Cancelled { detail: "test".to_string() },
+                AbortReason::Cancelled {
+                    detail: "test".to_string(),
+                },
                 1001,
                 "trace-counter",
             );
@@ -217,10 +360,15 @@ fn barrier_timeout_boundary_conditions() {
     // Exactly at global timeout boundary
     let outcome = barrier.try_commit(6000, "trace-timeout").unwrap();
     match outcome {
-        super::epoch_transition_barrier::BarrierCommitOutcome::Aborted { current_epoch, reason } => {
+        super::epoch_transition_barrier::BarrierCommitOutcome::Aborted {
+            current_epoch,
+            reason,
+        } => {
             assert_eq!(current_epoch, 0);
             match reason {
-                AbortReason::Timeout { missing_participants } => {
+                AbortReason::Timeout {
+                    missing_participants,
+                } => {
                     assert!(missing_participants.contains(&"slow-svc".to_string()));
                 }
                 _ => panic!("Expected timeout abort reason"),
@@ -233,8 +381,12 @@ fn barrier_timeout_boundary_conditions() {
 #[test]
 fn barrier_participant_timeout_granular() {
     let mut config = BarrierConfig::new(10000, 2000);
-    config.participant_timeouts.insert("fast-svc".to_string(), 500);
-    config.participant_timeouts.insert("slow-svc".to_string(), 5000);
+    config
+        .participant_timeouts
+        .insert("fast-svc".to_string(), 500);
+    config
+        .participant_timeouts
+        .insert("slow-svc".to_string(), 5000);
 
     let mut barrier = EpochTransitionBarrier::new(config);
     barrier.register_participant("fast-svc");
@@ -273,7 +425,14 @@ fn barrier_history_bounded_growth() {
         let current_epoch = i as u64;
         let target_epoch = current_epoch + 1;
 
-        barrier.propose(current_epoch, target_epoch, 1000 + i, &format!("trace-{}", i)).unwrap();
+        barrier
+            .propose(
+                current_epoch,
+                target_epoch,
+                1000 + i,
+                &format!("trace-{}", i),
+            )
+            .unwrap();
 
         let ack = DrainAck {
             participant_id: "test-svc".to_string(),
@@ -284,13 +443,70 @@ fn barrier_history_bounded_growth() {
         };
         barrier.record_drain_ack(ack).unwrap();
 
-        barrier.try_commit(1100 + i, &format!("trace-commit-{}", i)).unwrap();
+        barrier
+            .try_commit(1100 + i, &format!("trace-commit-{}", i))
+            .unwrap();
     }
 
     // History should be bounded and contain recent entries
     let history = barrier.audit_history();
     assert!(history.len() <= 10); // Should be bounded by implementation limit
     assert_eq!(barrier.completed_barrier_count(), history.len());
+}
+
+#[test]
+fn barrier_propose_without_participants_rejected() {
+    let mut barrier = EpochTransitionBarrier::default();
+
+    let err = barrier
+        .propose(0, 1, 1000, "trace-no-participants")
+        .unwrap_err();
+
+    assert_eq!(err.code(), barrier_error_codes::ERR_BARRIER_NO_PARTICIPANTS);
+    assert!(!barrier.is_barrier_active());
+}
+
+#[test]
+fn barrier_rejects_ack_from_unknown_participant() {
+    let mut barrier = EpochTransitionBarrier::default();
+    barrier.register_participant("known-svc");
+    barrier.propose(0, 1, 1000, "trace-known").unwrap();
+
+    let err = barrier
+        .record_drain_ack(DrainAck {
+            participant_id: "unknown-svc".to_string(),
+            barrier_id: "barrier-000001".to_string(),
+            drained_items: 0,
+            elapsed_ms: 10,
+            trace_id: "trace-unknown".to_string(),
+        })
+        .unwrap_err();
+
+    assert_eq!(
+        err.code(),
+        barrier_error_codes::ERR_BARRIER_UNKNOWN_PARTICIPANT
+    );
+    assert!(barrier.is_barrier_active());
+}
+
+#[test]
+fn barrier_rejects_ack_with_wrong_barrier_id() {
+    let mut barrier = EpochTransitionBarrier::default();
+    barrier.register_participant("known-svc");
+    barrier.propose(0, 1, 1000, "trace-known").unwrap();
+
+    let err = barrier
+        .record_drain_ack(DrainAck {
+            participant_id: "known-svc".to_string(),
+            barrier_id: "barrier-wrong".to_string(),
+            drained_items: 0,
+            elapsed_ms: 10,
+            trace_id: "trace-wrong-id".to_string(),
+        })
+        .unwrap_err();
+
+    assert_eq!(err.code(), barrier_error_codes::ERR_BARRIER_ID_MISMATCH);
+    assert!(barrier.is_barrier_active());
 }
 
 // ---- Fork Detection Hardening Tests ----
@@ -397,7 +613,11 @@ fn fork_detection_history_bounded_growth() {
             epoch: i,
             marker_id: format!("marker-{}", i),
             state_hash: format!("hash-{}", i),
-            parent_state_hash: if i > 0 { format!("hash-{}", i - 1) } else { "genesis".to_string() },
+            parent_state_hash: if i > 0 {
+                format!("hash-{}", i - 1)
+            } else {
+                "genesis".to_string()
+            },
             timestamp: 1000 + i,
             node_id: "node-history".to_string(),
         };
@@ -414,12 +634,14 @@ fn marker_proof_verifier_boundary_conditions() {
 
     // Add markers up to a reasonable limit
     for i in 0..10 {
-        stream.append(
-            MarkerEventType::PolicyChange,
-            &format!("payload-{}", i),
-            1000 + i,
-            &format!("trace-{}", i),
-        ).unwrap();
+        stream
+            .append(
+                MarkerEventType::PolicyChange,
+                &format!("payload-{}", i),
+                1000 + i,
+                &format!("trace-{}", i),
+            )
+            .unwrap();
     }
 
     // Test boundary: verify marker at exact stream length
@@ -475,7 +697,13 @@ fn control_plane_components_thread_safe() {
     }
 
     // Verify state after concurrent access
-    assert!(barrier.lock().unwrap().registered_participants().contains("thread-svc-1"));
+    assert!(
+        barrier
+            .lock()
+            .unwrap()
+            .registered_participants()
+            .contains("thread-svc-1")
+    );
     assert_eq!(detector.lock().unwrap().history_len(), 1);
 }
 
@@ -493,17 +721,21 @@ fn control_plane_full_integration() {
     // Phase 1: Advance epochs with barrier coordination
     for i in 0..3 {
         // Advance epoch
-        let transition = epoch_store.epoch_advance(
-            &format!("manifest-{}", i + 1),
-            1000 + i,
-            &format!("trace-epoch-{}", i + 1),
-        ).unwrap();
+        let transition = epoch_store
+            .epoch_advance(
+                &format!("manifest-{}", i + 1),
+                1000 + i,
+                &format!("trace-epoch-{}", i + 1),
+            )
+            .unwrap();
 
         assert_eq!(transition.old_epoch.value(), i);
         assert_eq!(transition.new_epoch.value(), i + 1);
 
         // Coordinate barrier for epoch transition
-        let instance = barrier.propose(i, i + 1, 1000 + i, &format!("trace-barrier-{}", i + 1)).unwrap();
+        let instance = barrier
+            .propose(i, i + 1, 1000 + i, &format!("trace-barrier-{}", i + 1))
+            .unwrap();
         assert_eq!(instance.phase, BarrierPhase::Draining);
 
         // Simulate participant drain ACK
@@ -517,7 +749,9 @@ fn control_plane_full_integration() {
         barrier.record_drain_ack(ack).unwrap();
 
         // Commit barrier
-        let outcome = barrier.try_commit(1050 + i, &format!("trace-commit-{}", i + 1)).unwrap();
+        let outcome = barrier
+            .try_commit(1050 + i, &format!("trace-commit-{}", i + 1))
+            .unwrap();
         match outcome {
             super::epoch_transition_barrier::BarrierCommitOutcome::Committed { target_epoch } => {
                 assert_eq!(target_epoch, i + 1);
@@ -530,7 +764,11 @@ fn control_plane_full_integration() {
             epoch: i + 1,
             marker_id: format!("marker-{}", i + 1),
             state_hash: transition.manifest_hash.clone(),
-            parent_state_hash: if i > 0 { format!("prev-hash-{}", i) } else { "genesis".to_string() },
+            parent_state_hash: if i > 0 {
+                format!("prev-hash-{}", i)
+            } else {
+                "genesis".to_string()
+            },
             timestamp: transition.timestamp,
             node_id: "integration-node".to_string(),
         };

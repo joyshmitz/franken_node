@@ -216,6 +216,12 @@ impl StateSnapshot {
                 self.saga_phase, after.saga_phase
             ));
         }
+        if self.custom_fields != after.custom_fields {
+            changes.push(format!(
+                "custom_fields: {:?} -> {:?}",
+                self.custom_fields, after.custom_fields
+            ));
+        }
 
         if changes.is_empty() {
             None
@@ -316,11 +322,7 @@ impl CancelInjectionMatrix {
             push_bounded(&mut self.workflows_tested, wf, MAX_WORKFLOWS_TESTED);
         }
 
-        if self.entries.len() >= MAX_MATRIX_ENTRIES {
-            let overflow = self.entries.len() - MAX_MATRIX_ENTRIES + 1;
-            self.entries.drain(0..overflow);
-        }
-        self.entries.push(entry);
+        push_bounded(&mut self.entries, entry, MAX_MATRIX_ENTRIES);
     }
 
     /// Check if the matrix meets minimum coverage.
@@ -651,7 +653,7 @@ impl CancellationInjectionFramework {
             event_codes::CANCEL_CASE_FAILED
         };
 
-        self.audit_log.push(CancelAuditRecord {
+        let audit_record = CancelAuditRecord {
             event_code: event_code.to_string(),
             workflow: workflow.to_string(),
             await_point_index: point,
@@ -659,11 +661,8 @@ impl CancellationInjectionFramework {
             trace_id: trace_id.to_string(),
             timestamp_ms: 0,
             schema_version: SCHEMA_VERSION.to_string(),
-        });
-        if self.audit_log.len() > MAX_AUDIT_LOG_ENTRIES {
-            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES;
-            self.audit_log.drain(0..overflow);
-        }
+        };
+        push_bounded(&mut self.audit_log, audit_record, MAX_AUDIT_LOG_ENTRIES);
     }
 
     /// Get the current matrix report.
@@ -880,8 +879,12 @@ impl Default for CancellationInjectionFramework {
 }
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
@@ -910,6 +913,23 @@ mod tests {
         let sb = StateSnapshot::new(5, ts);
         let sa = StateSnapshot::new(5, ts + 100);
         (rb, ra, sb, sa)
+    }
+
+    fn matrix_entry(
+        workflow: &str,
+        await_point_index: usize,
+        outcome: CancelTestOutcome,
+    ) -> CancelMatrixEntry {
+        CancelMatrixEntry {
+            workflow: workflow.to_string(),
+            await_point_index,
+            await_point_label: format!("point-{await_point_index}"),
+            outcome,
+            resource_delta: ResourceDelta::zero(),
+            halfcommit_detected: false,
+            elapsed_ms: 10,
+            trace_id: format!("trace-{workflow}-{await_point_index}"),
+        }
     }
 
     // ---- Framework setup ----
@@ -1018,6 +1038,196 @@ mod tests {
         assert_eq!(err.code(), error_codes::ERR_CANCEL_INVALID_POINT);
     }
 
+    #[test]
+    fn unknown_workflow_does_not_mutate_matrix_or_audit_log() {
+        let mut f = make_framework();
+        let (rb, ra, sb, sa) = clean_snapshots(1000);
+        let err = f
+            .run_cancel_case("missing-workflow", 0, &rb, &ra, &sb, &sa, 50, "t-missing")
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CANCEL_UNKNOWN_WORKFLOW);
+        assert_eq!(f.matrix().total_cases, 0);
+        assert!(f.audit_log().is_empty());
+    }
+
+    #[test]
+    fn invalid_point_at_workflow_len_does_not_mutate_matrix_or_audit_log() {
+        let mut f = make_framework();
+        let (rb, ra, sb, sa) = clean_snapshots(1000);
+        let err = f
+            .run_cancel_case(
+                "marker_stream_append",
+                4,
+                &rb,
+                &ra,
+                &sb,
+                &sa,
+                50,
+                "t-invalid",
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            CancelError::InvalidPoint {
+                workflow: "marker_stream_append".into(),
+                point: 4,
+                max: 3,
+            }
+        );
+        assert_eq!(f.matrix().total_cases, 0);
+        assert!(f.audit_log().is_empty());
+    }
+
+    #[test]
+    fn zero_await_custom_workflow_rejects_point_zero() {
+        let mut f = CancellationInjectionFramework::new();
+        f.register_workflow(WorkflowRegistration {
+            id: WorkflowId::Custom("empty".into()),
+            await_points: Vec::new(),
+            description: "custom workflow with no await points".into(),
+        });
+        let (rb, ra, sb, sa) = clean_snapshots(1000);
+        let err = f
+            .run_cancel_case("custom:empty", 0, &rb, &ra, &sb, &sa, 50, "t-empty")
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            CancelError::InvalidPoint {
+                workflow: "custom:empty".into(),
+                point: 0,
+                max: 0,
+            }
+        );
+        assert_eq!(f.matrix().total_cases, 0);
+        assert!(f.audit_log().is_empty());
+    }
+
+    #[test]
+    fn padded_workflow_name_is_rejected_without_aliasing() {
+        let mut f = make_framework();
+        let (rb, ra, sb, sa) = clean_snapshots(1000);
+        let err = f
+            .run_cancel_case(
+                " epoch_transition_barrier ",
+                0,
+                &rb,
+                &ra,
+                &sb,
+                &sa,
+                50,
+                "t-padded",
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CANCEL_UNKNOWN_WORKFLOW);
+        assert_eq!(f.matrix().total_cases, 0);
+        assert!(f.audit_log().is_empty());
+    }
+
+    #[test]
+    fn case_changed_workflow_name_is_rejected() {
+        let mut f = make_framework();
+        let (rb, ra, sb, sa) = clean_snapshots(1000);
+        let err = f
+            .run_cancel_case(
+                "Epoch_Transition_Barrier",
+                0,
+                &rb,
+                &ra,
+                &sb,
+                &sa,
+                50,
+                "t-case",
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CANCEL_UNKNOWN_WORKFLOW);
+        assert_eq!(f.matrix().total_cases, 0);
+        assert!(f.audit_log().is_empty());
+    }
+
+    #[test]
+    fn custom_workflow_without_custom_prefix_is_rejected() {
+        let mut f = CancellationInjectionFramework::new();
+        f.register_workflow(WorkflowRegistration {
+            id: WorkflowId::Custom("repair".into()),
+            await_points: vec![AwaitPoint::new(
+                WorkflowId::Custom("repair".into()),
+                0,
+                "repair_begin",
+                "Before repair workflow starts",
+            )],
+            description: "repair workflow".into(),
+        });
+        let (rb, ra, sb, sa) = clean_snapshots(1000);
+        let err = f
+            .run_cancel_case("repair", 0, &rb, &ra, &sb, &sa, 50, "t-custom")
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CANCEL_UNKNOWN_WORKFLOW);
+        assert_eq!(f.matrix().total_cases, 0);
+        assert!(f.audit_log().is_empty());
+    }
+
+    #[test]
+    fn usize_max_await_point_is_rejected_without_matrix_mutation() {
+        let mut f = make_framework();
+        let (rb, ra, sb, sa) = clean_snapshots(1000);
+        let err = f
+            .run_cancel_case(
+                "evidence_commit",
+                usize::MAX,
+                &rb,
+                &ra,
+                &sb,
+                &sa,
+                50,
+                "t-max-point",
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            CancelError::InvalidPoint {
+                workflow: "evidence_commit".into(),
+                point: usize::MAX,
+                max: 3,
+            }
+        );
+        assert_eq!(f.matrix().total_cases, 0);
+        assert!(f.audit_log().is_empty());
+    }
+
+    #[test]
+    fn leak_outcome_preempts_halfcommit_detection() {
+        let mut f = make_framework();
+        let rb = ResourceSnapshot::empty(1000);
+        let mut ra = ResourceSnapshot::empty(1100);
+        ra.file_handles = 1;
+        let sb = StateSnapshot::new(5, 1000);
+        let sa = StateSnapshot::new(6, 1100);
+        let outcome = f
+            .run_cancel_case(
+                "epoch_transition_barrier",
+                2,
+                &rb,
+                &ra,
+                &sb,
+                &sa,
+                50,
+                "t-leak",
+            )
+            .unwrap();
+
+        assert!(matches!(outcome, CancelTestOutcome::LeakDetected { .. }));
+        assert_eq!(f.matrix().fail_count, 1);
+        assert!(!f.matrix().entries[0].halfcommit_detected);
+        assert_eq!(f.audit_log()[0].event_code, event_codes::CANCEL_CASE_FAILED);
+    }
+
     // ---- Matrix recording ----
 
     #[test]
@@ -1120,6 +1330,44 @@ mod tests {
         assert_eq!(m.verdict(), "FAIL");
     }
 
+    #[test]
+    fn matrix_record_case_saturates_total_and_pass_counts() {
+        let mut m = CancelInjectionMatrix::new();
+        m.total_cases = usize::MAX;
+        m.pass_count = usize::MAX;
+
+        m.record_case(matrix_entry(
+            "saturating-pass",
+            0,
+            CancelTestOutcome::Passed,
+        ));
+
+        assert_eq!(m.total_cases, usize::MAX);
+        assert_eq!(m.pass_count, usize::MAX);
+        assert_eq!(m.fail_count, 0);
+        assert_eq!(m.entries.len(), 1);
+    }
+
+    #[test]
+    fn matrix_record_case_saturates_total_and_fail_counts() {
+        let mut m = CancelInjectionMatrix::new();
+        m.total_cases = usize::MAX;
+        m.fail_count = usize::MAX;
+
+        m.record_case(matrix_entry(
+            "saturating-fail",
+            0,
+            CancelTestOutcome::FrameworkError {
+                detail: "forced failure".into(),
+            },
+        ));
+
+        assert_eq!(m.total_cases, usize::MAX);
+        assert_eq!(m.pass_count, 0);
+        assert_eq!(m.fail_count, usize::MAX);
+        assert_eq!(m.entries.len(), 1);
+    }
+
     // ---- Full matrix run ----
 
     #[test]
@@ -1192,6 +1440,44 @@ mod tests {
         assert!(delta.has_leaks());
     }
 
+    #[test]
+    fn resource_delta_reductions_are_not_reported_as_leaks() {
+        let before = ResourceSnapshot {
+            file_handles: 5,
+            locks_held: 4,
+            memory_allocations: 3,
+            temp_files: 2,
+            timestamp_ms: 1000,
+        };
+        let after = ResourceSnapshot::empty(1100);
+        let delta = before.delta(&after);
+
+        assert_eq!(delta.file_handles, -5);
+        assert_eq!(delta.locks_held, -4);
+        assert_eq!(delta.memory_allocations, -3);
+        assert_eq!(delta.temp_files, -2);
+        assert!(!delta.has_leaks());
+    }
+
+    #[test]
+    fn resource_delta_detects_each_positive_resource_class() {
+        let before = ResourceSnapshot::empty(1000);
+        let after = ResourceSnapshot {
+            file_handles: 1,
+            locks_held: 1,
+            memory_allocations: 1,
+            temp_files: 1,
+            timestamp_ms: 1100,
+        };
+        let delta = before.delta(&after);
+
+        assert!(delta.has_leaks());
+        assert_eq!(delta.file_handles, 1);
+        assert_eq!(delta.locks_held, 1);
+        assert_eq!(delta.memory_allocations, 1);
+        assert_eq!(delta.temp_files, 1);
+    }
+
     // ---- State snapshot half-commit ----
 
     #[test]
@@ -1208,6 +1494,58 @@ mod tests {
         let hc = s1.detect_halfcommit(&s2).unwrap();
         assert!(!hc.changes.is_empty());
         assert!(hc.changes[0].contains("epoch"));
+    }
+
+    #[test]
+    fn state_snapshot_detects_custom_field_addition_halfcommit() {
+        let before = StateSnapshot::new(5, 1000);
+        let mut after = StateSnapshot::new(5, 1100);
+        after
+            .custom_fields
+            .insert("phase_guard".into(), "armed".into());
+        let detection = before.detect_halfcommit(&after).unwrap();
+
+        assert_eq!(detection.changes.len(), 1);
+        assert!(detection.changes[0].contains("custom_fields"));
+    }
+
+    #[test]
+    fn state_snapshot_detects_custom_field_value_change_halfcommit() {
+        let mut before = StateSnapshot::new(5, 1000);
+        before
+            .custom_fields
+            .insert("repair_state".into(), "a".into());
+        let mut after = StateSnapshot::new(5, 1100);
+        after
+            .custom_fields
+            .insert("repair_state".into(), "b".into());
+        let detection = before.detect_halfcommit(&after).unwrap();
+
+        assert_eq!(detection.changes.len(), 1);
+        assert!(detection.changes[0].contains("repair_state"));
+    }
+
+    #[test]
+    fn state_snapshot_detects_custom_field_removal_halfcommit() {
+        let mut before = StateSnapshot::new(5, 1000);
+        before
+            .custom_fields
+            .insert("cleanup_guard".into(), "present".into());
+        let after = StateSnapshot::new(5, 1100);
+
+        let detection = before.detect_halfcommit(&after).unwrap();
+
+        assert_eq!(detection.changes.len(), 1);
+        assert!(detection.changes[0].contains("cleanup_guard"));
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_drops_item() {
+        let mut items = vec!["old".to_string()];
+
+        push_bounded(&mut items, "new".to_string(), 0);
+
+        assert!(items.is_empty());
     }
 
     // ---- Audit log ----
